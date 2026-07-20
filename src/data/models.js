@@ -82,6 +82,45 @@ export function getStatus(statusId) {
   return STATUS_LIST.find((s) => s.id === statusId) || STATUS_LIST[0];
 }
 
+/** Employment type (ประเภทพนักงาน). */
+export const EMPLOYEE_TYPES = {
+  INHOUSE: 'inhouse',
+  OUTSOURCE_REGULAR: 'outsource_regular',
+  OUTSOURCE_EXTRA: 'outsource_extra',
+};
+
+export const TYPE_LIST = [
+  {
+    id: EMPLOYEE_TYPES.INHOUSE,
+    label: 'Inhouse',
+    labelTh: 'พนักงานบริษัท',
+    short: 'IH',
+    badge: 'bg-sky-100 text-sky-800 border-sky-300',
+    dot: 'bg-sky-500',
+  },
+  {
+    id: EMPLOYEE_TYPES.OUTSOURCE_REGULAR,
+    label: 'Outsource ประจำ',
+    labelTh: 'outsource ประจำ',
+    short: 'OS',
+    badge: 'bg-violet-100 text-violet-800 border-violet-300',
+    dot: 'bg-violet-500',
+  },
+  {
+    id: EMPLOYEE_TYPES.OUTSOURCE_EXTRA,
+    label: 'Outsource เสริม',
+    labelTh: 'outsource เสริม',
+    short: 'OS+',
+    badge: 'bg-pink-100 text-pink-800 border-pink-300',
+    dot: 'bg-pink-500',
+  },
+];
+
+/** Lookup an employment-type descriptor; missing/legacy data counts as Inhouse. */
+export function getType(typeId) {
+  return TYPE_LIST.find((t) => t.id === typeId) || TYPE_LIST[0];
+}
+
 /** Special sentinel duty id used when an eligible employee is not assigned a task. */
 export const STANDBY = 'standby';
 
@@ -129,6 +168,7 @@ export function uid(prefix = 'id') {
  * @property {string} nickname
  * @property {'morning'|'afternoon'} primaryShift
  * @property {'active'|'on_leave'|'resigned'} status
+ * @property {'inhouse'|'outsource_regular'|'outsource_extra'} type
  * @property {string} [createdAt]
  */
 
@@ -140,6 +180,7 @@ export function makeEmployee(partial = {}) {
     nickname: partial.nickname || '',
     primaryShift: partial.primaryShift || SHIFTS.MORNING,
     status: partial.status || EMPLOYEE_STATUS.ACTIVE,
+    type: partial.type || EMPLOYEE_TYPES.INHOUSE,
     createdAt: partial.createdAt || new Date().toISOString(),
   };
 }
@@ -177,34 +218,37 @@ export function makeTask(partial = {}) {
 export function demoEmployees() {
   // Sized to roughly match the default task requirements (Morning ≈ 11/day,
   // Afternoon ≈ 9/day) so a fresh demo fills the grid with a little standby.
+  const IH = EMPLOYEE_TYPES.INHOUSE;
+  const OS = EMPLOYEE_TYPES.OUTSOURCE_REGULAR;
+  const OX = EMPLOYEE_TYPES.OUTSOURCE_EXTRA;
   const raw = [
-    // Morning (12)
-    ['สมชาย ใจดี', 'ชาย', SHIFTS.MORNING],
-    ['สมหญิง รักงาน', 'หญิง', SHIFTS.MORNING],
-    ['อนุชา ขยัน', 'นุ', SHIFTS.MORNING],
-    ['ปรียา ตั้งใจ', 'ปุ๊ก', SHIFTS.MORNING],
-    ['วีระ มานะ', 'ต้น', SHIFTS.MORNING],
-    ['กมล สุขใจ', 'กล', SHIFTS.MORNING],
-    ['ธนา ทองดี', 'นา', SHIFTS.MORNING],
-    ['ศิริพร ยิ้มแย้ม', 'พร', SHIFTS.MORNING],
-    ['วิชัย ตรงเวลา', 'ชัย', SHIFTS.MORNING],
-    ['กนกพร ใจเย็น', 'นก', SHIFTS.MORNING],
-    ['ประเสริฐ ทำดี', 'เสริฐ', SHIFTS.MORNING],
-    ['อารีย์ เอื้อเฟื้อ', 'รี', SHIFTS.MORNING],
-    // Afternoon (10)
-    ['ณัฐพล เก่งกล้า', 'พล', SHIFTS.AFTERNOON],
-    ['สุดา อ่อนหวาน', 'ดา', SHIFTS.AFTERNOON],
-    ['ชัยวัฒน์ ทรงพล', 'ตุ้ย', SHIFTS.AFTERNOON],
-    ['เมธี คิดไว', 'ธี', SHIFTS.AFTERNOON],
-    ['พิมพ์ใจ งามงด', 'พิม', SHIFTS.AFTERNOON],
-    ['รัตนา เพียรดี', 'นา2', SHIFTS.AFTERNOON],
-    ['ภูวดล แข็งแรง', 'ภู', SHIFTS.AFTERNOON],
-    ['จิราพร สดใส', 'จิ', SHIFTS.AFTERNOON],
-    ['สมศักดิ์ อดทน', 'ศักดิ์', SHIFTS.AFTERNOON],
-    ['เบญจา ว่องไว', 'เบน', SHIFTS.AFTERNOON],
+    // Morning (12): 6 inhouse, 4 outsource ประจำ, 2 outsource เสริม
+    ['สมชาย ใจดี', 'ชาย', SHIFTS.MORNING, IH],
+    ['สมหญิง รักงาน', 'หญิง', SHIFTS.MORNING, IH],
+    ['อนุชา ขยัน', 'นุ', SHIFTS.MORNING, IH],
+    ['ปรียา ตั้งใจ', 'ปุ๊ก', SHIFTS.MORNING, IH],
+    ['วีระ มานะ', 'ต้น', SHIFTS.MORNING, IH],
+    ['กมล สุขใจ', 'กล', SHIFTS.MORNING, IH],
+    ['ธนา ทองดี', 'นา', SHIFTS.MORNING, OS],
+    ['ศิริพร ยิ้มแย้ม', 'พร', SHIFTS.MORNING, OS],
+    ['วิชัย ตรงเวลา', 'ชัย', SHIFTS.MORNING, OS],
+    ['กนกพร ใจเย็น', 'นก', SHIFTS.MORNING, OS],
+    ['ประเสริฐ ทำดี', 'เสริฐ', SHIFTS.MORNING, OX],
+    ['อารีย์ เอื้อเฟื้อ', 'รี', SHIFTS.MORNING, OX],
+    // Afternoon (10): 5 inhouse, 3 outsource ประจำ, 2 outsource เสริม
+    ['ณัฐพล เก่งกล้า', 'พล', SHIFTS.AFTERNOON, IH],
+    ['สุดา อ่อนหวาน', 'ดา', SHIFTS.AFTERNOON, IH],
+    ['ชัยวัฒน์ ทรงพล', 'ตุ้ย', SHIFTS.AFTERNOON, IH],
+    ['เมธี คิดไว', 'ธี', SHIFTS.AFTERNOON, IH],
+    ['พิมพ์ใจ งามงด', 'พิม', SHIFTS.AFTERNOON, IH],
+    ['รัตนา เพียรดี', 'นา2', SHIFTS.AFTERNOON, OS],
+    ['ภูวดล แข็งแรง', 'ภู', SHIFTS.AFTERNOON, OS],
+    ['จิราพร สดใส', 'จิ', SHIFTS.AFTERNOON, OS],
+    ['สมศักดิ์ อดทน', 'ศักดิ์', SHIFTS.AFTERNOON, OX],
+    ['เบญจา ว่องไว', 'เบน', SHIFTS.AFTERNOON, OX],
   ];
-  return raw.map(([name, nickname, primaryShift]) =>
-    makeEmployee({ name, nickname, primaryShift, status: EMPLOYEE_STATUS.ACTIVE })
+  return raw.map(([name, nickname, primaryShift, type]) =>
+    makeEmployee({ name, nickname, primaryShift, type, status: EMPLOYEE_STATUS.ACTIVE })
   );
 }
 

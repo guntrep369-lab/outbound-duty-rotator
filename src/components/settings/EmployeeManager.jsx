@@ -11,8 +11,8 @@ import {
   Users,
 } from 'lucide-react';
 import { useApp } from '../../context/useApp.js';
-import { SHIFT_LIST, STATUS_LIST, EMPLOYEE_STATUS, SHIFTS } from '../../data/models.js';
-import { ShiftBadge, StatusBadge } from '../ui/Badge.jsx';
+import { SHIFT_LIST, STATUS_LIST, TYPE_LIST, EMPLOYEE_STATUS, EMPLOYEE_TYPES, SHIFTS } from '../../data/models.js';
+import { ShiftBadge, StatusBadge, TypeBadge } from '../ui/Badge.jsx';
 import { Modal } from '../ui/Modal.jsx';
 
 const FILTERS = [
@@ -28,6 +28,7 @@ function EmployeeForm({ initial, onSubmit, onCancel }) {
     nickname: initial?.nickname || '',
     primaryShift: initial?.primaryShift || SHIFTS.MORNING,
     status: initial?.status || EMPLOYEE_STATUS.ACTIVE,
+    type: initial?.type || EMPLOYEE_TYPES.INHOUSE,
   });
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const valid = form.name.trim().length > 0;
@@ -88,6 +89,27 @@ function EmployeeForm({ initial, onSubmit, onCancel }) {
       </div>
 
       <div>
+        <label className="label">Employment type · ประเภทพนักงาน</label>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {TYPE_LIST.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => set('type', t.id)}
+              className={`flex items-center justify-center gap-2 rounded-lg border-2 px-2 py-2 text-sm transition ${
+                form.type === t.id
+                  ? `${t.badge} font-semibold`
+                  : 'border-slate-200 text-slate-600 hover:border-slate-300'
+              }`}
+            >
+              <span className={`h-2 w-2 rounded-full ${t.dot}`} />
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
         <label className="label">Status · สถานะ</label>
         <select className="input" value={form.status} onChange={(e) => set('status', e.target.value)}>
           {STATUS_LIST.map((s) => (
@@ -114,6 +136,7 @@ export function EmployeeManager() {
   } = useApp();
 
   const [filter, setFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
   const [query, setQuery] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -128,11 +151,12 @@ export function EmployeeManager() {
     const q = query.trim().toLowerCase();
     return employees
       .filter((e) => (filter === 'all' ? true : e.status === filter))
+      .filter((e) => (typeFilter === 'all' ? true : (e.type || EMPLOYEE_TYPES.INHOUSE) === typeFilter))
       .filter((e) =>
         q ? `${e.name} ${e.nickname}`.toLowerCase().includes(q) : true
       )
       .sort((a, b) => a.name.localeCompare(b.name, 'th'));
-  }, [employees, filter, query]);
+  }, [employees, filter, typeFilter, query]);
 
   const openAdd = () => {
     setEditing(null);
@@ -178,14 +202,29 @@ export function EmployeeManager() {
             </button>
           ))}
         </div>
-        <div className="relative sm:w-64">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <input
-            className="input pl-9"
-            placeholder="Search name / nickname…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <select
+            className="input sm:w-44"
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            aria-label="Filter by employment type"
+          >
+            <option value="all">ทุกประเภท (all types)</option>
+            {TYPE_LIST.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+          <div className="relative sm:w-64">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              className="input pl-9"
+              placeholder="Search name / nickname…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
         </div>
       </div>
 
@@ -222,6 +261,7 @@ export function EmployeeManager() {
                 <p className="truncate text-xs text-slate-500">{emp.name}</p>
                 <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                   <ShiftBadge shiftId={emp.primaryShift} showTh={false} />
+                  <TypeBadge typeId={emp.type} />
                   <StatusBadge status={emp.status} showTh={false} />
                 </div>
               </div>

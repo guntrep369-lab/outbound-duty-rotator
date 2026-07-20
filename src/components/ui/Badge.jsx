@@ -1,5 +1,5 @@
 import React from 'react';
-import { getShift, getStatus } from '../../data/models.js';
+import { getShift, getStatus, getType } from '../../data/models.js';
 
 /** Coloured badge marking the Morning / Afternoon shift. */
 export function ShiftBadge({ shiftId, showTh = true, className = '' }) {
@@ -25,6 +25,19 @@ export function StatusBadge({ status, showTh = true, className = '' }) {
       <span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} />
       {s.label}
       {showTh && <span className="font-normal opacity-80">· {s.labelTh}</span>}
+    </span>
+  );
+}
+
+/** Employment-type pill: Inhouse / Outsource ประจำ / Outsource เสริม. */
+export function TypeBadge({ typeId, className = '' }) {
+  const t = getType(typeId);
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${t.badge} ${className}`}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${t.dot}`} />
+      {t.label}
     </span>
   );
 }

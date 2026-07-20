@@ -10,7 +10,7 @@
  * regenerations stable) yet varies naturally week-to-week as history accumulates.
  */
 
-import { SHIFTS, EMPLOYEE_STATUS, STATUS_LIST } from '../data/models.js';
+import { SHIFTS, EMPLOYEE_STATUS, EMPLOYEE_TYPES, STATUS_LIST } from '../data/models.js';
 import { weekKey as makeWeekKey, previousWeekKeys, weeksAgo, datesOfISOWeek } from '../utils/dateUtils.js';
 import { WEEKDAYS } from '../data/models.js';
 
@@ -101,6 +101,10 @@ function assignShiftDay({
   const workloadCost = (empId) =>
     (genWorkload.get(empId) || 0) * 100 + (hist.workload.get(empId) || 0);
 
+  // Outsource เสริม are surge staff: they only receive duties once every
+  // inhouse / outsource-ประจำ person on the shift is already assigned that day.
+  const typeRank = (emp) => (emp.type === EMPLOYEE_TYPES.OUTSOURCE_EXTRA ? 1 : 0);
+
   for (const duty of rotated) {
     const need = Number(duty.req[shift]) || 0;
     const chosen = [];
@@ -109,6 +113,9 @@ function assignShiftDay({
       if (pool.length === 0) break;
 
       pool.sort((a, b) => {
+        // Policy first: regulars (inhouse + outsource ประจำ) before outsource เสริม.
+        const t = typeRank(a) - typeRank(b);
+        if (t !== 0) return t;
         const c = dutyCost(a.id, duty.id) - dutyCost(b.id, duty.id);
         if (c !== 0) return c;
         const w = workloadCost(a.id) - workloadCost(b.id);

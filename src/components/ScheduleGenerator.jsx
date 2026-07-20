@@ -17,7 +17,7 @@ import { generateSchedule } from '../engine/rotationEngine.js';
 import { reassignSlot, addToSlot, benchEmployee, refreshDerived } from '../utils/scheduleUtils.js';
 import { scheduleToCSV, scheduleToText, downloadFile, copyToClipboard } from '../utils/exportUtils.js';
 import { currentWeek } from '../utils/dateUtils.js';
-import { EMPLOYEE_STATUS, getShift } from '../data/models.js';
+import { EMPLOYEE_STATUS, getShift, getType } from '../data/models.js';
 import { WeekPicker } from './ui/WeekPicker.jsx';
 import { ScheduleGrid } from './schedule/ScheduleGrid.jsx';
 import { ShiftBadge } from './ui/Badge.jsx';
@@ -217,7 +217,8 @@ export function ScheduleGenerator() {
         <p className="flex items-center gap-1.5 text-xs text-slate-400">
           <Scale className="h-3.5 w-3.5" />
           Fair rotation looks back {config.lookbackWeeks} weeks and prioritises duties each person hasn't done recently.
-          Click any name in the grid to swap or bench.
+          Outsource เสริม ถูกจัดงานเฉพาะเมื่อกำลังหลัก (inhouse + outsource ประจำ) ไม่พอ. Click any name in the grid to
+          swap or bench.
         </p>
       </div>
 
@@ -298,9 +299,13 @@ export function ScheduleGenerator() {
                         : 'border-slate-200 hover:border-indigo-300 hover:bg-indigo-50'
                     }`}
                   >
-                    <span className="font-medium text-slate-700">
+                    <span className="flex min-w-0 items-center gap-1.5 font-medium text-slate-700">
+                      <span
+                        className={`h-2 w-2 shrink-0 rounded-full ${getType(c.type).dot}`}
+                        title={getType(c.type).label}
+                      />
                       {c.nickname || c.name}
-                      <span className="ml-1.5 text-xs font-normal text-slate-400">{c.name}</span>
+                      <span className="truncate text-xs font-normal text-slate-400">{c.name}</span>
                     </span>
                     <span className="shrink-0 rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">{where}</span>
                   </button>

@@ -37,6 +37,11 @@ For every **working day** and **shift** the engine assigns employees by minimisi
 3. **Deterministic tie-breaks** — a seeded hash keeps results stable across regenerations of the
    same week, yet naturally different week-to-week.
 
+**Employment types** (ประเภทพนักงาน): each employee is `inhouse`, `outsource ประจำ`, or
+`outsource เสริม`. The first two rotate as the core workforce; **outsource เสริม are surge
+staff** — they only receive duties on days when the core staff can't fill every slot, and
+otherwise sit on standby.
+
 If there are **more required slots than eligible staff**, the shortfall is flagged (empty slots)
 instead of silently dropping tasks. If there are **more staff than slots**, the extras go to
 Standby, and who rests rotates by workload. New hires and resignations are handled automatically
@@ -118,7 +123,8 @@ src/
 
 ## 🧾 Data files (the "database")
 
-- **`employees.json`** — array of `{ id, name, nickname, primaryShift, status, createdAt }`
+- **`employees.json`** — array of `{ id, name, nickname, primaryShift, status, type, createdAt }`
+  (`type`: `inhouse` | `outsource_regular` | `outsource_extra`; older records without `type` count as inhouse)
 - **`duties.json`** — `{ tasks: [{ id, name, nameTh, color, req:{morning,afternoon}, active }], workingDays, lookbackWeeks }`
 - **`history.json`** — array of `{ id, weekKey, year, week, dayKey, date, shift, dutyId, employeeId }`
 
