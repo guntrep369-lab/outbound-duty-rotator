@@ -49,6 +49,11 @@ otherwise sit on standby. Two policy controls refine this:
   worker at least _N_ working days (the engine force-schedules them on the days they'd otherwise
   miss the target), and `extraRules.maxDays` caps them at most _N_ days. If min > max, the cap wins.
 
+**Fixed position** (`employee.fixedDutyId`): pin a specialist to a single duty — e.g. an outsource
+เสริม who is great at Pick. A fixed employee only ever works that one task (never rotates), and
+gets first priority for that station. Unset = rotate normally. Restricted by `allowedTypes` too
+(you can't pin someone to a task their type isn't allowed to do — they'd be benched instead).
+
 If there are **more required slots than eligible staff**, the shortfall is flagged (empty slots)
 instead of silently dropping tasks. If there are **more staff than slots**, the extras go to
 Standby, and who rests rotates by workload. New hires and resignations are handled automatically
@@ -130,8 +135,9 @@ src/
 
 ## 🧾 Data files (the "database")
 
-- **`employees.json`** — array of `{ id, name, nickname, primaryShift, status, type, createdAt }`
-  (`type`: `inhouse` | `outsource_regular` | `outsource_extra`; older records without `type` count as inhouse)
+- **`employees.json`** — array of `{ id, name, nickname, primaryShift, status, type, fixedDutyId, createdAt }`
+  (`type`: `inhouse` | `outsource_regular` | `outsource_extra`; older records without `type` count as inhouse.
+  `fixedDutyId`: a task id to pin the person to, or `null` to rotate)
 - **`duties.json`** — `{ tasks: [{ id, name, nameTh, color, req:{morning,afternoon}, active, allowedTypes[] }], workingDays, lookbackWeeks, extraRules:{ minDays, maxDays } }`
   (`allowedTypes`: empty = any type; `extraRules` applies to `outsource_extra` only)
 - **`history.json`** — array of `{ id, weekKey, year, week, dayKey, date, shift, dutyId, employeeId }`

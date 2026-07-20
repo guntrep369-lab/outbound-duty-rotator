@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, AlertTriangle } from 'lucide-react';
+import { Plus, AlertTriangle, Pin } from 'lucide-react';
 import { useApp } from '../../context/useApp.js';
 import { SHIFT_LIST, WEEKDAYS, SHIFTS } from '../../data/models.js';
 import { TaskDot } from '../ui/Badge.jsx';
@@ -9,12 +9,13 @@ function EmpChip({ empId, color, editable, onClick }) {
   const { getEmployee } = useApp();
   const emp = getEmployee(empId);
   const label = emp ? emp.nickname || emp.name : '—';
+  const pinned = !!emp?.fixedDutyId;
   return (
     <button
       type="button"
       disabled={!editable}
       onClick={onClick}
-      title={emp ? emp.name : 'Unknown'}
+      title={emp ? `${emp.name}${pinned ? ' · ตำแหน่งประจำ (fixed)' : ''}` : 'Unknown'}
       className={`inline-flex max-w-full items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs font-medium ${
         editable ? 'cursor-pointer hover:ring-2 hover:ring-indigo-300' : 'cursor-default'
       }`}
@@ -22,6 +23,7 @@ function EmpChip({ empId, color, editable, onClick }) {
     >
       <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color || '#94a3b8' }} />
       <span className="truncate">{label}</span>
+      {pinned && <Pin className="h-2.5 w-2.5 shrink-0 opacity-60" />}
     </button>
   );
 }

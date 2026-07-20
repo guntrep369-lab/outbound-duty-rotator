@@ -132,12 +132,18 @@ function assignShiftDay({
           // Task may be restricted to certain employment types.
           taskAllowsType(duty, e.type) &&
           // Cap outsource เสริม at maxDays working days per week.
-          !(isExtra(e) && maxDays != null && daysWorked(e.id) >= maxDays)
+          !(isExtra(e) && maxDays != null && daysWorked(e.id) >= maxDays) &&
+          // A "fixed" employee only ever works their pinned duty; a free
+          // (unpinned) employee can work any duty.
+          (!e.fixedDutyId || e.fixedDutyId === duty.id)
       );
       if (pool.length === 0) break;
 
       pool.sort((a, b) => {
-        // Policy first (min-day forcing → regulars → surge เสริม).
+        // Specialists pinned to THIS duty get their station first.
+        const pin = (a.fixedDutyId === duty.id ? 0 : 1) - (b.fixedDutyId === duty.id ? 0 : 1);
+        if (pin !== 0) return pin;
+        // Policy next (min-day forcing → regulars → surge เสริม).
         const t = policyRank(a) - policyRank(b);
         if (t !== 0) return t;
         const c = dutyCost(a.id, duty.id) - dutyCost(b.id, duty.id);

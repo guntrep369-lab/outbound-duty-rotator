@@ -11,8 +11,18 @@ import {
   Users,
 } from 'lucide-react';
 import { useApp } from '../../context/useApp.js';
-import { SHIFT_LIST, STATUS_LIST, TYPE_LIST, EMPLOYEE_STATUS, EMPLOYEE_TYPES, SHIFTS } from '../../data/models.js';
+import {
+  SHIFT_LIST,
+  STATUS_LIST,
+  TYPE_LIST,
+  EMPLOYEE_STATUS,
+  EMPLOYEE_TYPES,
+  SHIFTS,
+  taskAllowsType,
+  getType,
+} from '../../data/models.js';
 import { ShiftBadge, StatusBadge, TypeBadge } from '../ui/Badge.jsx';
+import { Pin } from 'lucide-react';
 import { Modal } from '../ui/Modal.jsx';
 
 const FILTERS = [
@@ -23,22 +33,30 @@ const FILTERS = [
 ];
 
 function EmployeeForm({ initial, onSubmit, onCancel }) {
+  const { config } = useApp();
   const [form, setForm] = useState({
     name: initial?.name || '',
     nickname: initial?.nickname || '',
     primaryShift: initial?.primaryShift || SHIFTS.MORNING,
     status: initial?.status || EMPLOYEE_STATUS.ACTIVE,
     type: initial?.type || EMPLOYEE_TYPES.INHOUSE,
+    fixedDutyId: initial?.fixedDutyId || '',
   });
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const valid = form.name.trim().length > 0;
+
+  // Tasks that actually need staff on the chosen shift.
+  const shiftTasks = config.tasks.filter((t) => t.active && Number(t.req?.[form.primaryShift]) > 0);
+  const fixedTask = config.tasks.find((t) => t.id === form.fixedDutyId) || null;
+  // Warn if pinning to a task whose type-restriction excludes this employee.
+  const fixedTypeConflict = fixedTask && !taskAllowsType(fixedTask, form.type);
 
   return (
     <form
       id="employee-form"
       onSubmit={(e) => {
         e.preventDefault();
-        if (valid) onSubmit(form);
+        if (valid) onSubmit({ ...form, fixedDutyId: form.fixedDutyId || null });
       }}
       className="space-y-4"
     >
@@ -119,6 +137,42 @@ function EmployeeForm({ initial, onSubmit, onCancel }) {
           ))}
         </select>
       </div>
+
+      <div>
+        <label className="label">
+          <span className="inline-flex items-center gap-1.5">
+            <Pin className="h-3.5 w-3.5" /> Fixed duty · ตำแหน่งประจำ (optional)
+          </span>
+        </label>
+        <select
+          className="input"
+          value={form.fixedDutyId}
+          onChange={(e) => set('fixedDutyId', e.target.value)}
+        >
+          <option value="">🔄 Rotate all duties · หมุนเวียนทุกงาน (default)</option>
+          {shiftTasks.map((t) => (
+            <option key={t.id} value={t.id}>
+              📌 {t.name}
+              {t.nameTh ? ` · ${t.nameTh}` : ''}
+            </option>
+          ))}
+        </select>
+        {form.fixedDutyId ? (
+          <p className="mt-1.5 text-xs text-slate-400">
+            คนนี้จะถูกจัดให้ทำ <b>เฉพาะงานนี้เท่านั้น</b> ไม่หมุนเวียนงานอื่น (เหมาะกับคนที่ชำนาญเฉพาะทาง)
+          </p>
+        ) : (
+          <p className="mt-1.5 text-xs text-slate-400">
+            เว้นว่าง = หมุนเวียนงานปกติตามอัลกอริทึม
+          </p>
+        )}
+        {fixedTypeConflict && (
+          <p className="mt-1.5 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-medium text-rose-700">
+            ⚠ งาน “{fixedTask.name}” จำกัดเฉพาะ {fixedTask.allowedTypes.map((id) => getType(id).label).join(', ')} —
+            พนักงานประเภท {getType(form.type).label} จะทำงานนี้ไม่ได้ (จะถูกพักแทน)
+          </p>
+        )}
+      </div>
     </form>
   );
 }
@@ -133,6 +187,7 @@ export function EmployeeManager() {
     restoreEmployee,
     deleteEmployee,
     loadDemoTeam,
+    getTask,
   } = useApp();
 
   const [filter, setFilter] = useState('all');
@@ -263,6 +318,12 @@ export function EmployeeManager() {
                   <ShiftBadge shiftId={emp.primaryShift} showTh={false} />
                   <TypeBadge typeId={emp.type} />
                   <StatusBadge status={emp.status} showTh={false} />
+                  {emp.fixedDutyId && getTask(emp.fixedDutyId) && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                      <Pin className="h-3 w-3" />
+                      {getTask(emp.fixedDutyId).name}
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="flex flex-col items-end gap-1">

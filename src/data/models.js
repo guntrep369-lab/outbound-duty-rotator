@@ -172,6 +172,7 @@ export function uid(prefix = 'id') {
  * @property {'morning'|'afternoon'} primaryShift
  * @property {'active'|'on_leave'|'resigned'} status
  * @property {'inhouse'|'outsource_regular'|'outsource_extra'} type
+ * @property {string|null} fixedDutyId  If set, always work this one task (no rotation).
  * @property {string} [createdAt]
  */
 
@@ -184,6 +185,9 @@ export function makeEmployee(partial = {}) {
     primaryShift: partial.primaryShift || SHIFTS.MORNING,
     status: partial.status || EMPLOYEE_STATUS.ACTIVE,
     type: partial.type || EMPLOYEE_TYPES.INHOUSE,
+    // Pin a specialist to a single duty (e.g. an outsource เสริม who only does
+    // Pick). null/empty = rotate normally across duties.
+    fixedDutyId: partial.fixedDutyId || null,
     createdAt: partial.createdAt || new Date().toISOString(),
   };
 }
@@ -266,9 +270,20 @@ export function demoEmployees() {
     ['สมศักดิ์ อดทน', 'ศักดิ์', SHIFTS.AFTERNOON, OX],
     ['เบญจา ว่องไว', 'เบน', SHIFTS.AFTERNOON, OX],
   ];
-  return raw.map(([name, nickname, primaryShift, type]) =>
+  const team = raw.map(([name, nickname, primaryShift, type]) =>
     makeEmployee({ name, nickname, primaryShift, type, status: EMPLOYEE_STATUS.ACTIVE })
   );
+  // Showcase "fixed position": pin the surge (เสริม) specialists to a Pick station
+  // so they always work Pick instead of rotating through every duty.
+  const pin = (nickname, dutyId) => {
+    const e = team.find((x) => x.nickname === nickname);
+    if (e) e.fixedDutyId = dutyId;
+  };
+  pin('เสริฐ', 'pick_small');
+  pin('รี', 'pick_mattress');
+  pin('ศักดิ์', 'pick_small');
+  pin('เบน', 'pick_mattress');
+  return team;
 }
 
 /**
