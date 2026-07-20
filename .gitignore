@@ -1,0 +1,14 @@
+node_modules
+dist
+dist-ssr
+*.local
+.DS_Store
+
+# Never commit local editor / env files
+.env
+.env.*
+.vscode/*
+!.vscode/extensions.json
+.idea
+
+# The GitHub PAT is stored only in the browser localStorage, never on disk.
