@@ -40,7 +40,14 @@ For every **working day** and **shift** the engine assigns employees by minimisi
 **Employment types** (ประเภทพนักงาน): each employee is `inhouse`, `outsource ประจำ`, or
 `outsource เสริม`. The first two rotate as the core workforce; **outsource เสริม are surge
 staff** — they only receive duties on days when the core staff can't fill every slot, and
-otherwise sit on standby.
+otherwise sit on standby. Two policy controls refine this:
+
+- **Task type restrictions** — each task can be limited to specific employment types
+  (e.g. QC ที่นอน → inhouse only). Restricted tasks are only offered to allowed types, in both
+  auto-generation and the manual swap dialog. No restriction = any type may do it.
+- **Weekly min / max days for outsource เสริม** — `extraRules.minDays` guarantees each surge
+  worker at least _N_ working days (the engine force-schedules them on the days they'd otherwise
+  miss the target), and `extraRules.maxDays` caps them at most _N_ days. If min > max, the cap wins.
 
 If there are **more required slots than eligible staff**, the shortfall is flagged (empty slots)
 instead of silently dropping tasks. If there are **more staff than slots**, the extras go to
@@ -125,7 +132,8 @@ src/
 
 - **`employees.json`** — array of `{ id, name, nickname, primaryShift, status, type, createdAt }`
   (`type`: `inhouse` | `outsource_regular` | `outsource_extra`; older records without `type` count as inhouse)
-- **`duties.json`** — `{ tasks: [{ id, name, nameTh, color, req:{morning,afternoon}, active }], workingDays, lookbackWeeks }`
+- **`duties.json`** — `{ tasks: [{ id, name, nameTh, color, req:{morning,afternoon}, active, allowedTypes[] }], workingDays, lookbackWeeks, extraRules:{ minDays, maxDays } }`
+  (`allowedTypes`: empty = any type; `extraRules` applies to `outsource_extra` only)
 - **`history.json`** — array of `{ id, weekKey, year, week, dayKey, date, shift, dutyId, employeeId }`
 
 All three are plain JSON you can read, diff, and edit directly on GitHub.

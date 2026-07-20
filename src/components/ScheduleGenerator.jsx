@@ -17,7 +17,7 @@ import { generateSchedule } from '../engine/rotationEngine.js';
 import { reassignSlot, addToSlot, benchEmployee, refreshDerived } from '../utils/scheduleUtils.js';
 import { scheduleToCSV, scheduleToText, downloadFile, copyToClipboard } from '../utils/exportUtils.js';
 import { currentWeek } from '../utils/dateUtils.js';
-import { EMPLOYEE_STATUS, getShift, getType } from '../data/models.js';
+import { EMPLOYEE_STATUS, getShift, getType, taskAllowsType } from '../data/models.js';
 import { WeekPicker } from './ui/WeekPicker.jsx';
 import { ScheduleGrid } from './schedule/ScheduleGrid.jsx';
 import { ShiftBadge } from './ui/Badge.jsx';
@@ -288,14 +288,19 @@ export function ScheduleGenerator() {
               {candidates.map((c) => {
                 const where = placementLabel(editCell, edit.shiftId, c.id, getTask);
                 const isCurrent = c.id === edit.currentEmpId;
+                const allowed = taskAllowsType(getTask(edit.dutyId), c.type);
+                const disabled = isCurrent || !allowed;
                 return (
                   <button
                     key={c.id}
-                    disabled={isCurrent}
+                    disabled={disabled}
                     onClick={() => pickEmployee(c.id)}
+                    title={allowed ? undefined : `งานนี้จำกัดเฉพาะบางประเภท — ${getType(c.type).label} ทำไม่ได้`}
                     className={`flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-2 text-left text-sm transition ${
                       isCurrent
                         ? 'cursor-default border-indigo-200 bg-indigo-50'
+                        : !allowed
+                        ? 'cursor-not-allowed border-slate-100 bg-slate-50 opacity-50'
                         : 'border-slate-200 hover:border-indigo-300 hover:bg-indigo-50'
                     }`}
                   >
@@ -307,7 +312,9 @@ export function ScheduleGenerator() {
                       {c.nickname || c.name}
                       <span className="truncate text-xs font-normal text-slate-400">{c.name}</span>
                     </span>
-                    <span className="shrink-0 rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">{where}</span>
+                    <span className="shrink-0 rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+                      {allowed ? where : 'ไม่อนุญาต'}
+                    </span>
                   </button>
                 );
               })}

@@ -83,7 +83,11 @@ export function normalizeDutyDoc(doc) {
     ? doc.workingDays.filter((d) => d >= 1 && d <= 7)
     : base.workingDays;
   const lookbackWeeks = Number(doc.lookbackWeeks) > 0 ? Number(doc.lookbackWeeks) : base.lookbackWeeks;
-  return { tasks, workingDays, lookbackWeeks };
+  const rules = doc.extraRules || {};
+  const minDays = Math.max(0, Math.min(7, Number(rules.minDays) || 0));
+  const rawMax = rules.maxDays;
+  const maxDays = rawMax == null || rawMax === '' ? null : Math.max(0, Math.min(7, Number(rawMax) || 0));
+  return { tasks, workingDays, lookbackWeeks, extraRules: { minDays, maxDays } };
 }
 
 /* ------------------------------- load / save ------------------------------ */

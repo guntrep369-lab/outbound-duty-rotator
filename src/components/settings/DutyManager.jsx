@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, Pencil, Trash2, ClipboardList, CalendarDays, Users2, AlertTriangle } from 'lucide-react';
+import { Plus, Pencil, Trash2, ClipboardList, CalendarDays, Users2, AlertTriangle, Lock, UserCog } from 'lucide-react';
 import { useApp } from '../../context/useApp.js';
-import { SHIFT_LIST, SHIFTS, WEEKDAYS, EMPLOYEE_STATUS } from '../../data/models.js';
+import { SHIFT_LIST, SHIFTS, WEEKDAYS, TYPE_LIST, EMPLOYEE_STATUS, EMPLOYEE_TYPES, getType } from '../../data/models.js';
 import { TaskDot } from '../ui/Badge.jsx';
 import { Modal } from '../ui/Modal.jsx';
 
@@ -14,8 +14,16 @@ function TaskForm({ initial, onSubmit }) {
     color: initial?.color || PALETTE[0],
     morning: initial?.req?.morning ?? 1,
     afternoon: initial?.req?.afternoon ?? 1,
+    allowedTypes: Array.isArray(initial?.allowedTypes) ? initial.allowedTypes : [],
   });
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const toggleType = (id) =>
+    setForm((f) => ({
+      ...f,
+      allowedTypes: f.allowedTypes.includes(id)
+        ? f.allowedTypes.filter((x) => x !== id)
+        : [...f.allowedTypes, id],
+    }));
 
   return (
     <form
@@ -28,6 +36,7 @@ function TaskForm({ initial, onSubmit }) {
           nameTh: form.nameTh.trim(),
           color: form.color,
           req: { morning: Math.max(0, Number(form.morning) || 0), afternoon: Math.max(0, Number(form.afternoon) || 0) },
+          allowedTypes: form.allowedTypes,
         });
       }}
       className="space-y-4"
@@ -81,6 +90,33 @@ function TaskForm({ initial, onSubmit }) {
         ))}
       </div>
       <p className="text-xs text-slate-400">Set a shift requirement to 0 to disable this task on that shift.</p>
+
+      <div>
+        <label className="label">Restrict to employment types · จำกัดประเภทพนักงาน</label>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {TYPE_LIST.map((t) => {
+            const on = form.allowedTypes.includes(t.id);
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => toggleType(t.id)}
+                className={`flex items-center justify-center gap-2 rounded-lg border-2 px-2 py-2 text-sm transition ${
+                  on ? `${t.badge} font-semibold` : 'border-slate-200 text-slate-500 hover:border-slate-300'
+                }`}
+              >
+                <span className={`h-2 w-2 rounded-full ${t.dot}`} />
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-1.5 text-xs text-slate-400">
+          {form.allowedTypes.length === 0
+            ? 'ไม่เลือก = ทุกประเภททำงานนี้ได้ (no restriction).'
+            : `เฉพาะประเภทที่เลือกเท่านั้นที่จะถูกจัดลงงานนี้ (${form.allowedTypes.length} selected).`}
+        </p>
+      </div>
     </form>
   );
 }
@@ -113,7 +149,8 @@ function CapacityBar({ shift }) {
 }
 
 export function DutyManager() {
-  const { config, addTask, updateTask, removeTask, setWorkingDays, setLookbackWeeks } = useApp();
+  const { config, addTask, updateTask, removeTask, setWorkingDays, setLookbackWeeks, setExtraRules } = useApp();
+  const extraRules = config.extraRules || { minDays: 0, maxDays: null };
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
 
@@ -178,6 +215,16 @@ export function DutyManager() {
               <div className="min-w-0">
                 <p className="truncate font-medium text-slate-800">{t.name}</p>
                 {t.nameTh && <p className="truncate text-xs text-slate-500">{t.nameTh}</p>}
+                {Array.isArray(t.allowedTypes) && t.allowedTypes.length > 0 && (
+                  <p className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-slate-500">
+                    <Lock className="h-3 w-3 text-slate-400" />
+                    {t.allowedTypes.map((id) => (
+                      <span key={id} className={`rounded border px-1.5 py-px font-medium ${getType(id).badge}`}>
+                        {getType(id).label}
+                      </span>
+                    ))}
+                  </p>
+                )}
               </div>
             </div>
             <div className="col-span-2 text-center text-sm font-semibold text-amber-700">
@@ -268,6 +315,60 @@ export function DutyManager() {
             The engine gives priority to duties a person has not done within this window.
           </p>
         </div>
+      </div>
+
+      {/* Outsource เสริม weekly rules */}
+      <div className="card p-4">
+        <div className="mb-1 flex items-center gap-2 text-slate-700">
+          <UserCog className="h-4 w-4 text-pink-500" />
+          <h3 className="text-sm font-semibold">Outsource เสริม rules · กติกากำลังเสริม</h3>
+        </div>
+        <p className="mb-3 text-xs text-slate-400">
+          กำลังเสริมจะถูกจัดงานเฉพาะเมื่อกำลังหลักไม่พอ — ตั้งค่าจำนวนวันทำงานต่อสัปดาห์ได้ที่นี่
+        </p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label className="label">Minimum days / week · ขั้นต่ำ (วัน)</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min="0"
+                max={config.workingDays.length}
+                className="input w-24"
+                value={extraRules.minDays ?? 0}
+                onChange={(e) =>
+                  setExtraRules({ minDays: Math.max(0, Math.min(config.workingDays.length, Number(e.target.value) || 0)) })
+                }
+              />
+              <span className="text-sm text-slate-500">รับประกันอย่างน้อยกี่วัน (0 = ไม่การันตี)</span>
+            </div>
+          </div>
+          <div>
+            <label className="label">Maximum days / week · สูงสุด (วัน)</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min="0"
+                max={config.workingDays.length}
+                placeholder="∞"
+                className="input w-24"
+                value={extraRules.maxDays ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setExtraRules({
+                    maxDays: v === '' ? null : Math.max(0, Math.min(config.workingDays.length, Number(v) || 0)),
+                  });
+                }}
+              />
+              <span className="text-sm text-slate-500">เพดานสูงสุด (เว้นว่าง = ไม่จำกัด)</span>
+            </div>
+          </div>
+        </div>
+        {extraRules.maxDays != null && (extraRules.minDays ?? 0) > extraRules.maxDays && (
+          <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-rose-600">
+            <AlertTriangle className="h-3.5 w-3.5" /> ขั้นต่ำมากกว่าสูงสุด — ระบบจะยึดเพดานสูงสุดเป็นหลัก
+          </p>
+        )}
       </div>
 
       <Modal

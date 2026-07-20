@@ -131,7 +131,7 @@ export const STANDBY = 'standby';
 export const DEFAULT_TASKS = [
   { id: 'pick_mattress', name: 'Pick Mattress', nameTh: 'Pick ที่นอน', color: '#0ea5e9', req: { morning: 2, afternoon: 2 }, active: true },
   { id: 'pick_small', name: 'Pick Small', nameTh: 'Pick ชิ้นเล็ก', color: '#8b5cf6', req: { morning: 2, afternoon: 2 }, active: true },
-  { id: 'qc_mattress', name: 'QC Mattress', nameTh: 'QC ที่นอน', color: '#f43f5e', req: { morning: 1, afternoon: 1 }, active: true },
+  { id: 'qc_mattress', name: 'QC Mattress', nameTh: 'QC ที่นอน', color: '#f43f5e', req: { morning: 1, afternoon: 1 }, active: true, allowedTypes: [EMPLOYEE_TYPES.INHOUSE] },
   { id: 'pack_small', name: 'Pack Small', nameTh: 'Pack ชิ้นเล็ก', color: '#10b981', req: { morning: 2, afternoon: 2 }, active: true },
   { id: 'pack_mattress', name: 'Pack Mattress', nameTh: 'Pack ที่นอน', color: '#f59e0b', req: { morning: 2, afternoon: 2 }, active: true },
 ];
@@ -150,9 +150,12 @@ export const WEEKDAYS = [
 /** Default duty configuration document. */
 export function defaultDutyConfig() {
   return {
-    tasks: DEFAULT_TASKS.map((t) => ({ ...t, req: { ...t.req } })),
+    tasks: DEFAULT_TASKS.map((t) => makeTask(t)),
     workingDays: [1, 2, 3, 4, 5], // Mon–Fri
     lookbackWeeks: 4,
+    // Weekly rules for outsource เสริม (surge staff):
+    // minDays = guaranteed working days; maxDays = cap (null = unlimited).
+    extraRules: { minDays: 0, maxDays: null },
   };
 }
 
@@ -193,10 +196,16 @@ export function makeEmployee(partial = {}) {
  * @property {string} color
  * @property {{morning:number, afternoon:number}} req
  * @property {boolean} active
+ * @property {string[]} allowedTypes  Employment types allowed; empty = all types.
  */
+
+const VALID_TYPE_IDS = new Set(Object.values(EMPLOYEE_TYPES));
 
 /** @returns {Task} */
 export function makeTask(partial = {}) {
+  const allowed = Array.isArray(partial.allowedTypes)
+    ? partial.allowedTypes.filter((t) => VALID_TYPE_IDS.has(t))
+    : [];
   return {
     id: partial.id || uid('task'),
     name: partial.name || '',
@@ -207,7 +216,17 @@ export function makeTask(partial = {}) {
       afternoon: Number(partial.req?.afternoon ?? 1),
     },
     active: partial.active !== false,
+    // Empty array means "any employment type". A non-empty list restricts the
+    // task to only those types (e.g. QC ที่นอน → inhouse only).
+    allowedTypes: allowed,
   };
+}
+
+/** Does an employee's type satisfy a task's allowedTypes restriction? */
+export function taskAllowsType(task, employeeType) {
+  const allowed = task?.allowedTypes;
+  if (!Array.isArray(allowed) || allowed.length === 0) return true;
+  return allowed.includes(employeeType || EMPLOYEE_TYPES.INHOUSE);
 }
 
 /**

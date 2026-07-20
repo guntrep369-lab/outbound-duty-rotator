@@ -10,7 +10,7 @@
  * regenerations stable) yet varies naturally week-to-week as history accumulates.
  */
 
-import { SHIFTS, EMPLOYEE_STATUS, EMPLOYEE_TYPES, STATUS_LIST } from '../data/models.js';
+import { SHIFTS, EMPLOYEE_STATUS, EMPLOYEE_TYPES, STATUS_LIST, taskAllowsType } from '../data/models.js';
 import { weekKey as makeWeekKey, previousWeekKeys, weeksAgo, datesOfISOWeek } from '../utils/dateUtils.js';
 import { WEEKDAYS } from '../data/models.js';
 
@@ -66,6 +66,7 @@ function analyzeHistory(history, year, week, lookbackWeeks) {
  */
 function assignShiftDay({
   dayIndex,
+  totalDays,
   dayKey,
   shift,
   eligible,
@@ -73,20 +74,23 @@ function assignShiftDay({
   hist,
   genWorkload,
   genDuty,
+  extraRules,
   seed,
 }) {
   const assignments = {}; // dutyId -> [empId]
   const understaffed = []; // { dutyId, needed, got }
   const assignedToday = new Set();
 
-  // Duties needing people on this shift, config order rotated by day so the
-  // "first pick" of scarce staff rotates fairly across the week.
-  const active = tasks
-    .filter((t) => t.active && Number(t.req?.[shift]) > 0)
-    .map((t) => t);
-  const rotated = active.map(
-    (_, i) => active[(i + dayIndex) % active.length]
-  );
+  // Duties needing people on this shift. Fill TYPE-RESTRICTED tasks first so
+  // their scarce allowed-type staff aren't used up by open tasks (otherwise a
+  // restricted task like "QC → inhouse only" can be left understaffed even
+  // though inhouse people exist). Within each group, rotate the order by day so
+  // the "first pick" of scarce staff still rotates fairly across the week.
+  const active = tasks.filter((t) => t.active && Number(t.req?.[shift]) > 0);
+  const rotate = (arr) => (arr.length ? arr.map((_, i) => arr[(i + dayIndex) % arr.length]) : arr);
+  const restricted = active.filter((t) => Array.isArray(t.allowedTypes) && t.allowedTypes.length > 0);
+  const openTasks = active.filter((t) => !(Array.isArray(t.allowedTypes) && t.allowedTypes.length > 0));
+  const rotated = [...rotate(restricted), ...rotate(openTasks)];
 
   // Cost of putting `emp` on `duty` right now. Lower = better.
   const dutyCost = (empId, dutyId) => {
@@ -101,20 +105,40 @@ function assignShiftDay({
   const workloadCost = (empId) =>
     (genWorkload.get(empId) || 0) * 100 + (hist.workload.get(empId) || 0);
 
-  // Outsource เสริม are surge staff: they only receive duties once every
-  // inhouse / outsource-ประจำ person on the shift is already assigned that day.
-  const typeRank = (emp) => (emp.type === EMPLOYEE_TYPES.OUTSOURCE_EXTRA ? 1 : 0);
+  // Weekly rules for outsource เสริม (surge staff).
+  const minDays = Math.max(0, Number(extraRules?.minDays) || 0);
+  const maxDays = extraRules?.maxDays == null ? null : Math.max(0, Number(extraRules.maxDays) || 0);
+  const remaining = totalDays - dayIndex; // working days left, including today
+  const isExtra = (emp) => emp.type === EMPLOYEE_TYPES.OUTSOURCE_EXTRA;
+  const daysWorked = (empId) => genWorkload.get(empId) || 0; // one duty/day → = days worked
+
+  // Policy priority. Lower = assigned first.
+  //  -1  outsource เสริม that MUST work today to still reach its weekly minDays
+  //   0  regulars (inhouse + outsource ประจำ)
+  //   1  outsource เสริม as ordinary surge (only when core staff run out)
+  const policyRank = (emp) => {
+    if (!isExtra(emp)) return 0;
+    const needMore = minDays - daysWorked(emp.id);
+    return needMore > 0 && needMore >= remaining ? -1 : 1;
+  };
 
   for (const duty of rotated) {
     const need = Number(duty.req[shift]) || 0;
     const chosen = [];
     for (let slot = 0; slot < need; slot++) {
-      const pool = eligible.filter((e) => !assignedToday.has(e.id));
+      const pool = eligible.filter(
+        (e) =>
+          !assignedToday.has(e.id) &&
+          // Task may be restricted to certain employment types.
+          taskAllowsType(duty, e.type) &&
+          // Cap outsource เสริม at maxDays working days per week.
+          !(isExtra(e) && maxDays != null && daysWorked(e.id) >= maxDays)
+      );
       if (pool.length === 0) break;
 
       pool.sort((a, b) => {
-        // Policy first: regulars (inhouse + outsource ประจำ) before outsource เสริม.
-        const t = typeRank(a) - typeRank(b);
+        // Policy first (min-day forcing → regulars → surge เสริม).
+        const t = policyRank(a) - policyRank(b);
         if (t !== 0) return t;
         const c = dutyCost(a.id, duty.id) - dutyCost(b.id, duty.id);
         if (c !== 0) return c;
@@ -190,6 +214,7 @@ export function generateSchedule({ year, week, employees, config, history }) {
     for (const shift of [SHIFTS.MORNING, SHIFTS.AFTERNOON]) {
       const res = assignShiftDay({
         dayIndex,
+        totalDays: workingDays.length,
         dayKey: wd.key,
         shift,
         eligible: byShift[shift],
@@ -197,6 +222,7 @@ export function generateSchedule({ year, week, employees, config, history }) {
         hist,
         genWorkload,
         genDuty,
+        extraRules: config.extraRules,
         seed: `${wk}:${wd.key}`,
       });
       dayCell[shift] = res;

@@ -197,6 +197,15 @@ export function AppProvider({ children }) {
     [config, commitConfig]
   );
 
+  const setExtraRules = useCallback(
+    (patch) =>
+      commitConfig(
+        { ...config, extraRules: { ...(config.extraRules || {}), ...patch } },
+        'chore(duties): outsource-เสริม rules'
+      ),
+    [config, commitConfig]
+  );
+
   /* -------------------------------- history ------------------------------ */
   const saveScheduleToHistory = useCallback(
     (schedule) => {
@@ -290,6 +299,7 @@ export function AppProvider({ children }) {
     removeTask,
     setWorkingDays,
     setLookbackWeeks,
+    setExtraRules,
     saveScheduleToHistory,
     deleteWeekFromHistory,
     clearHistory,
