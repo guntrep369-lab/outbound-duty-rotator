@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   LayoutDashboard,
   CalendarRange,
+  CalendarDays,
   History as HistoryIcon,
   Settings as SettingsIcon,
   PackageOpen,
@@ -14,12 +15,14 @@ import { useApp } from './context/useApp.js';
 import { Toasts } from './components/ui/Toasts.jsx';
 import { Dashboard } from './components/Dashboard.jsx';
 import { ScheduleGenerator } from './components/ScheduleGenerator.jsx';
+import { CalendarView } from './components/Calendar.jsx';
 import { HistoryViewer } from './components/HistoryViewer.jsx';
 import { Settings } from './components/Settings.jsx';
 
 const NAV = [
   { id: 'dashboard', label: 'Dashboard', labelTh: 'หน้าหลัก', icon: LayoutDashboard },
   { id: 'schedule', label: 'Schedule', labelTh: 'จัดตาราง', icon: CalendarRange },
+  { id: 'calendar', label: 'Calendar', labelTh: 'ปฏิทิน', icon: CalendarDays },
   { id: 'history', label: 'History', labelTh: 'ประวัติ', icon: HistoryIcon },
   { id: 'settings', label: 'Settings', labelTh: 'ตั้งค่า', icon: SettingsIcon },
 ];
@@ -110,6 +113,7 @@ export default function App() {
           <>
             {tab === 'dashboard' && <Dashboard onNavigate={setTab} />}
             {tab === 'schedule' && <ScheduleGenerator />}
+            {tab === 'calendar' && <CalendarView />}
             {tab === 'history' && <HistoryViewer />}
             {tab === 'settings' && <Settings />}
           </>

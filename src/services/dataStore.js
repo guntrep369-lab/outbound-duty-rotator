@@ -6,7 +6,7 @@
  */
 
 import { GitHubService, describeGitHubError } from './githubService.js';
-import { defaultDutyConfig, makeTask } from '../data/models.js';
+import { defaultDutyConfig, makeTask, makeEmployee } from '../data/models.js';
 
 const KEYS = {
   settings: 'odr:settings',
@@ -148,7 +148,8 @@ export async function loadAll() {
   }
 
   return {
-    employees: Array.isArray(employees) ? employees : [],
+    // Normalise so older records gain new fields (type, fixedDutyId, weeklyOffDays, leaves).
+    employees: (Array.isArray(employees) ? employees : []).map((e) => makeEmployee(e)),
     config: normalizeDutyDoc(dutyDoc),
     history: Array.isArray(history) ? history : [],
     source,

@@ -14,7 +14,7 @@ import {
   testConnection as testConn,
 } from '../services/dataStore.js';
 import { describeGitHubError } from '../services/githubService.js';
-import { makeEmployee, makeTask, defaultDutyConfig, demoEmployees, EMPLOYEE_STATUS } from '../data/models.js';
+import { makeEmployee, makeTask, makeLeave, defaultDutyConfig, demoEmployees, EMPLOYEE_STATUS } from '../data/models.js';
 import { AppContext } from './useApp.js';
 
 let toastSeq = 0;
@@ -143,6 +143,30 @@ export function AppProvider({ children }) {
       const next = employees.filter((e) => e.id !== id);
       commitEmployees(next, `chore(employees): delete ${id}`);
       notify('info', 'Employee permanently removed.', 2500);
+    },
+    [employees, commitEmployees, notify]
+  );
+
+  const addLeave = useCallback(
+    (empId, leave) => {
+      const record = makeLeave(leave);
+      const next = employees.map((e) =>
+        e.id === empId ? { ...e, leaves: [...(e.leaves || []), record] } : e
+      );
+      commitEmployees(next, `chore(employees): add leave for ${empId}`);
+      notify('success', 'บันทึกวันลาแล้ว', 2500);
+      return record;
+    },
+    [employees, commitEmployees, notify]
+  );
+
+  const removeLeave = useCallback(
+    (empId, leaveId) => {
+      const next = employees.map((e) =>
+        e.id === empId ? { ...e, leaves: (e.leaves || []).filter((l) => l.id !== leaveId) } : e
+      );
+      commitEmployees(next, `chore(employees): remove leave ${leaveId}`);
+      notify('info', 'ลบวันลาแล้ว', 2000);
     },
     [employees, commitEmployees, notify]
   );
@@ -294,6 +318,8 @@ export function AppProvider({ children }) {
     restoreEmployee,
     deleteEmployee,
     loadDemoTeam,
+    addLeave,
+    removeLeave,
     addTask,
     updateTask,
     removeTask,

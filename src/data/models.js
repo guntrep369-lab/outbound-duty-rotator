@@ -121,6 +121,41 @@ export function getType(typeId) {
   return TYPE_LIST.find((t) => t.id === typeId) || TYPE_LIST[0];
 }
 
+/** Leave categories (ประเภทวันลา). */
+export const LEAVE_TYPES = [
+  {
+    id: 'vacation',
+    label: 'พักร้อน',
+    labelEn: 'Vacation',
+    color: '#0ea5e9',
+    badge: 'bg-sky-100 text-sky-800 border-sky-300',
+    dot: 'bg-sky-500',
+    emoji: '🌴',
+  },
+  {
+    id: 'sick',
+    label: 'ลาป่วย',
+    labelEn: 'Sick',
+    color: '#f43f5e',
+    badge: 'bg-rose-100 text-rose-800 border-rose-300',
+    dot: 'bg-rose-500',
+    emoji: '🤒',
+  },
+  {
+    id: 'personal',
+    label: 'ลากิจ',
+    labelEn: 'Personal',
+    color: '#f59e0b',
+    badge: 'bg-amber-100 text-amber-800 border-amber-300',
+    dot: 'bg-amber-500',
+    emoji: '📋',
+  },
+];
+
+export function getLeaveType(id) {
+  return LEAVE_TYPES.find((t) => t.id === id) || LEAVE_TYPES[0];
+}
+
 /** Special sentinel duty id used when an eligible employee is not assigned a task. */
 export const STANDBY = 'standby';
 
@@ -173,8 +208,31 @@ export function uid(prefix = 'id') {
  * @property {'active'|'on_leave'|'resigned'} status
  * @property {'inhouse'|'outsource_regular'|'outsource_extra'} type
  * @property {string|null} fixedDutyId  If set, always work this one task (no rotation).
+ * @property {number[]} weeklyOffDays   Recurring days off (ISO 1-7); empty = none.
+ * @property {Leave[]} leaves           Dated leave/vacation ranges.
  * @property {string} [createdAt]
  */
+
+/**
+ * @typedef {Object} Leave
+ * @property {string} id
+ * @property {string} start  ISO date "YYYY-MM-DD"
+ * @property {string} end    ISO date "YYYY-MM-DD" (inclusive)
+ * @property {'vacation'|'sick'|'personal'} type
+ * @property {string} note
+ */
+
+/** @returns {Leave} */
+export function makeLeave(partial = {}) {
+  const start = partial.start || '';
+  return {
+    id: partial.id || uid('lv'),
+    start,
+    end: partial.end || start,
+    type: partial.type || 'vacation',
+    note: partial.note || '',
+  };
+}
 
 /** @returns {Employee} */
 export function makeEmployee(partial = {}) {
@@ -188,8 +246,44 @@ export function makeEmployee(partial = {}) {
     // Pin a specialist to a single duty (e.g. an outsource เสริม who only does
     // Pick). null/empty = rotate normally across duties.
     fixedDutyId: partial.fixedDutyId || null,
+    // Recurring weekly day(s) off (ISO weekday numbers, Mon=1 … Sun=7).
+    weeklyOffDays: Array.isArray(partial.weeklyOffDays)
+      ? partial.weeklyOffDays.filter((d) => d >= 1 && d <= 7)
+      : [],
+    // Dated leave ranges (vacation / sick / personal).
+    leaves: Array.isArray(partial.leaves) ? partial.leaves.map(makeLeave) : [],
     createdAt: partial.createdAt || new Date().toISOString(),
   };
+}
+
+/** True if the ISO weekday is one of the employee's recurring days off. */
+export function isDayOff(emp, iso) {
+  return Array.isArray(emp?.weeklyOffDays) && emp.weeklyOffDays.includes(iso);
+}
+
+/** Return the leave record covering `ymd` for this employee, or null. */
+export function leaveOn(emp, ymd) {
+  if (!Array.isArray(emp?.leaves)) return null;
+  return emp.leaves.find((l) => l.start && l.end && l.start <= ymd && ymd <= l.end) || null;
+}
+
+/**
+ * Is the employee available to be scheduled on a given calendar day?
+ * (Ignores employment status — the engine already filters that separately.)
+ * @param {Employee} emp
+ * @param {string} ymd  "YYYY-MM-DD"
+ * @param {number} iso  ISO weekday 1-7
+ */
+export function isAvailableOn(emp, ymd, iso) {
+  return !isDayOff(emp, iso) && !leaveOn(emp, ymd);
+}
+
+/** Why an employee is unavailable on a day, or null if available. */
+export function unavailabilityOn(emp, ymd, iso) {
+  const leave = leaveOn(emp, ymd);
+  if (leave) return { kind: 'leave', leaveType: leave.type, note: leave.note };
+  if (isDayOff(emp, iso)) return { kind: 'off' };
+  return null;
 }
 
 /**
@@ -283,6 +377,25 @@ export function demoEmployees() {
   pin('รี', 'pick_mattress');
   pin('ศักดิ์', 'pick_small');
   pin('เบน', 'pick_mattress');
+
+  // Showcase weekly day-off (staggered so coverage holds) …
+  const off = (nickname, ...isos) => {
+    const e = team.find((x) => x.nickname === nickname);
+    if (e) e.weeklyOffDays = isos;
+  };
+  off('ชาย', 1); // จันทร์
+  off('นุ', 3); // พุธ
+  off('ต้น', 5); // ศุกร์
+  off('พล', 2); // อังคาร
+  off('ดา', 4); // พฤหัส
+
+  // … and a couple of sample leaves near the demo week (2026-W30).
+  const addLeave = (nickname, start, end, type, note) => {
+    const e = team.find((x) => x.nickname === nickname);
+    if (e) e.leaves.push(makeLeave({ start, end, type, note }));
+  };
+  addLeave('ปุ๊ก', '2026-07-22', '2026-07-24', 'vacation', 'พาครอบครัวเที่ยว');
+  addLeave('จิ', '2026-07-21', '2026-07-21', 'sick', '');
   return team;
 }
 

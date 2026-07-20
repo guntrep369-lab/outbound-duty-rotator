@@ -54,6 +54,12 @@ otherwise sit on standby. Two policy controls refine this:
 gets first priority for that station. Unset = rotate normally. Restricted by `allowedTypes` too
 (you can't pin someone to a task their type isn't allowed to do — they'd be benched instead).
 
+**Availability — day-off & leave**: each employee has `weeklyOffDays` (recurring days off, e.g.
+an inhouse person who is off every Sunday) and `leaves` (dated ranges: vacation / sick / personal).
+The engine checks availability **per calendar day** and skips anyone off or on leave that day; the
+roster shows a "หยุด/ลา · Off/Leave" row explaining each gap. Manage leaves visually in the
+**Calendar** tab (month view — click any day to add a leave, plus an upcoming-leaves list).
+
 If there are **more required slots than eligible staff**, the shortfall is flagged (empty slots)
 instead of silently dropping tasks. If there are **more staff than slots**, the extras go to
 Standby, and who rests rotates by workload. New hires and resignations are handled automatically
@@ -135,9 +141,11 @@ src/
 
 ## 🧾 Data files (the "database")
 
-- **`employees.json`** — array of `{ id, name, nickname, primaryShift, status, type, fixedDutyId, createdAt }`
+- **`employees.json`** — array of `{ id, name, nickname, primaryShift, status, type, fixedDutyId, weeklyOffDays, leaves, createdAt }`
   (`type`: `inhouse` | `outsource_regular` | `outsource_extra`; older records without `type` count as inhouse.
-  `fixedDutyId`: a task id to pin the person to, or `null` to rotate)
+  `fixedDutyId`: a task id to pin the person to, or `null` to rotate.
+  `weeklyOffDays`: ISO weekday numbers (Mon=1…Sun=7).
+  `leaves`: `[{ id, start, end, type: vacation|sick|personal, note }]`)
 - **`duties.json`** — `{ tasks: [{ id, name, nameTh, color, req:{morning,afternoon}, active, allowedTypes[] }], workingDays, lookbackWeeks, extraRules:{ minDays, maxDays } }`
   (`allowedTypes`: empty = any type; `extraRules` applies to `outsource_extra` only)
 - **`history.json`** — array of `{ id, weekKey, year, week, dayKey, date, shift, dutyId, employeeId }`

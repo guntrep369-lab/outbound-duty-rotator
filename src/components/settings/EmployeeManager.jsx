@@ -9,6 +9,7 @@ import {
   Coffee,
   CircleCheck,
   Users,
+  CalendarOff,
 } from 'lucide-react';
 import { useApp } from '../../context/useApp.js';
 import {
@@ -18,6 +19,7 @@ import {
   EMPLOYEE_STATUS,
   EMPLOYEE_TYPES,
   SHIFTS,
+  WEEKDAYS,
   taskAllowsType,
   getType,
 } from '../../data/models.js';
@@ -41,8 +43,16 @@ function EmployeeForm({ initial, onSubmit, onCancel }) {
     status: initial?.status || EMPLOYEE_STATUS.ACTIVE,
     type: initial?.type || EMPLOYEE_TYPES.INHOUSE,
     fixedDutyId: initial?.fixedDutyId || '',
+    weeklyOffDays: Array.isArray(initial?.weeklyOffDays) ? initial.weeklyOffDays : [],
   });
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const toggleOff = (iso) =>
+    setForm((f) => ({
+      ...f,
+      weeklyOffDays: f.weeklyOffDays.includes(iso)
+        ? f.weeklyOffDays.filter((d) => d !== iso)
+        : [...f.weeklyOffDays, iso].sort((a, b) => a - b),
+    }));
   const valid = form.name.trim().length > 0;
 
   // Tasks that actually need staff on the chosen shift.
@@ -56,7 +66,7 @@ function EmployeeForm({ initial, onSubmit, onCancel }) {
       id="employee-form"
       onSubmit={(e) => {
         e.preventDefault();
-        if (valid) onSubmit({ ...form, fixedDutyId: form.fixedDutyId || null });
+        if (valid) onSubmit({ ...form, fixedDutyId: form.fixedDutyId || null, weeklyOffDays: form.weeklyOffDays });
       }}
       className="space-y-4"
     >
@@ -172,6 +182,31 @@ function EmployeeForm({ initial, onSubmit, onCancel }) {
             พนักงานประเภท {getType(form.type).label} จะทำงานนี้ไม่ได้ (จะถูกพักแทน)
           </p>
         )}
+      </div>
+
+      <div>
+        <label className="label">Weekly day off · วันหยุดประจำสัปดาห์</label>
+        <div className="flex flex-wrap gap-1.5">
+          {WEEKDAYS.map((d) => {
+            const on = form.weeklyOffDays.includes(d.iso);
+            return (
+              <button
+                key={d.iso}
+                type="button"
+                onClick={() => toggleOff(d.iso)}
+                title={d.labelTh}
+                className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+                  on ? 'bg-rose-500 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                }`}
+              >
+                {d.label}
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-1.5 text-xs text-slate-400">
+          เลือกวันที่หยุดประจำ (เช่น inhouse/outsource ประจำ หยุดสัปดาห์ละ 1 วัน) — ระบบจะไม่จัดคนนี้ลงงานในวันนั้นทุกสัปดาห์
+        </p>
       </div>
     </form>
   );
@@ -322,6 +357,12 @@ export function EmployeeManager() {
                     <span className="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
                       <Pin className="h-3 w-3" />
                       {getTask(emp.fixedDutyId).name}
+                    </span>
+                  )}
+                  {Array.isArray(emp.weeklyOffDays) && emp.weeklyOffDays.length > 0 && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-600">
+                      <CalendarOff className="h-3 w-3" />
+                      {emp.weeklyOffDays.map((iso) => WEEKDAYS.find((d) => d.iso === iso)?.label).join(',')}
                     </span>
                   )}
                 </div>

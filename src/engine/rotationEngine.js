@@ -10,7 +10,15 @@
  * regenerations stable) yet varies naturally week-to-week as history accumulates.
  */
 
-import { SHIFTS, EMPLOYEE_STATUS, EMPLOYEE_TYPES, STATUS_LIST, taskAllowsType } from '../data/models.js';
+import {
+  SHIFTS,
+  EMPLOYEE_STATUS,
+  EMPLOYEE_TYPES,
+  STATUS_LIST,
+  taskAllowsType,
+  isAvailableOn,
+  unavailabilityOn,
+} from '../data/models.js';
 import { weekKey as makeWeekKey, previousWeekKeys, weeksAgo, datesOfISOWeek } from '../utils/dateUtils.js';
 import { WEEKDAYS } from '../data/models.js';
 
@@ -68,6 +76,8 @@ function assignShiftDay({
   dayIndex,
   totalDays,
   dayKey,
+  ymd,
+  iso,
   shift,
   eligible,
   tasks,
@@ -80,6 +90,13 @@ function assignShiftDay({
   const assignments = {}; // dutyId -> [empId]
   const understaffed = []; // { dutyId, needed, got }
   const assignedToday = new Set();
+
+  // Remove anyone unavailable on this calendar day (recurring day-off or on
+  // leave). They are reported separately so the roster can explain the gap.
+  const unavailable = eligible
+    .filter((e) => !isAvailableOn(e, ymd, iso))
+    .map((e) => ({ employeeId: e.id, ...unavailabilityOn(e, ymd, iso) }));
+  const present = eligible.filter((e) => isAvailableOn(e, ymd, iso));
 
   // Duties needing people on this shift. Fill TYPE-RESTRICTED tasks first so
   // their scarce allowed-type staff aren't used up by open tasks (otherwise a
@@ -126,7 +143,7 @@ function assignShiftDay({
     const need = Number(duty.req[shift]) || 0;
     const chosen = [];
     for (let slot = 0; slot < need; slot++) {
-      const pool = eligible.filter(
+      const pool = present.filter(
         (e) =>
           !assignedToday.has(e.id) &&
           // Task may be restricted to certain employment types.
@@ -172,11 +189,11 @@ function assignShiftDay({
     }
   }
 
-  // Whoever is eligible but not placed today rests (standby). Because busy
+  // Whoever is present but not placed today rests (standby). Because busy
   // people sort last for duties, standby naturally rotates by workload.
-  const standby = eligible.filter((e) => !assignedToday.has(e.id)).map((e) => e.id);
+  const standby = present.filter((e) => !assignedToday.has(e.id)).map((e) => e.id);
 
-  return { assignments, standby, understaffed };
+  return { assignments, standby, understaffed, unavailable };
 }
 
 /**
@@ -222,6 +239,8 @@ export function generateSchedule({ year, week, employees, config, history }) {
         dayIndex,
         totalDays: workingDays.length,
         dayKey: wd.key,
+        ymd: dayCell.date,
+        iso,
         shift,
         eligible: byShift[shift],
         tasks: config.tasks,

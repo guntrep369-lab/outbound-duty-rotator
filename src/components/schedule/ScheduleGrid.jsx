@@ -1,7 +1,7 @@
 import React from 'react';
 import { Plus, AlertTriangle, Pin } from 'lucide-react';
 import { useApp } from '../../context/useApp.js';
-import { SHIFT_LIST, WEEKDAYS, SHIFTS } from '../../data/models.js';
+import { SHIFT_LIST, WEEKDAYS, SHIFTS, getLeaveType } from '../../data/models.js';
 import { TaskDot } from '../ui/Badge.jsx';
 
 /** Chip for one assigned employee. Clickable in edit mode to swap. */
@@ -33,7 +33,7 @@ function EmpChip({ empId, color, editable, onClick }) {
  * scrollable on small screens.
  */
 export function ScheduleGrid({ schedule, editable = false, onSlotClick, onAddClick }) {
-  const { config, getTask } = useApp();
+  const { config, getTask, getEmployee } = useApp();
   const days = WEEKDAYS.filter((d) => schedule.grid[d.key]).map((d) => ({ ...d, cell: schedule.grid[d.key] }));
 
   if (days.length === 0) {
@@ -98,6 +98,40 @@ export function ScheduleGrid({ schedule, editable = false, onSlotClick, onAddCli
                 editable={false}
               />
             ))
+          )}
+        </div>
+      </td>
+    );
+  };
+
+  const renderUnavailableCell = (dayKey, cell, shiftId) => {
+    const res = cell[shiftId];
+    const list = res?.unavailable || [];
+    const emp = (id) => getEmployee(id);
+    return (
+      <td key={dayKey} className="border border-slate-100 bg-rose-50/30 p-1.5 align-top">
+        <div className="flex flex-wrap gap-1">
+          {list.length === 0 ? (
+            <span className="text-xs text-slate-300">—</span>
+          ) : (
+            list.map((u, idx) => {
+              const e = emp(u.employeeId);
+              const label = e ? e.nickname || e.name : '—';
+              const isLeave = u.kind === 'leave';
+              const lt = isLeave ? getLeaveType(u.leaveType) : null;
+              return (
+                <span
+                  key={u.employeeId + idx}
+                  title={isLeave ? `${lt.label}${u.note ? ' · ' + u.note : ''}` : 'วันหยุดประจำ'}
+                  className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs font-medium ${
+                    isLeave ? lt.badge : 'border-slate-300 bg-slate-100 text-slate-500'
+                  }`}
+                >
+                  <span>{isLeave ? lt.emoji : '💤'}</span>
+                  <span className="truncate">{label}</span>
+                </span>
+              );
+            })
           )}
         </div>
       </td>
@@ -169,6 +203,15 @@ export function ScheduleGrid({ schedule, editable = false, onSlotClick, onAddCli
                   </th>
                   {days.map((d) => renderStandbyCell(d.key, d.cell, shift.id))}
                 </tr>
+                {/* Day-off / leave row (only if anyone is off this shift-week) */}
+                {days.some((d) => (d.cell[shift.id]?.unavailable || []).length > 0) && (
+                  <tr>
+                    <th className="sticky left-0 z-10 border border-slate-100 bg-white px-3 py-1.5 text-left text-xs font-medium text-rose-400">
+                      หยุด/ลา · Off/Leave
+                    </th>
+                    {days.map((d) => renderUnavailableCell(d.key, d.cell, shift.id))}
+                  </tr>
+                )}
               </React.Fragment>
             );
           })}

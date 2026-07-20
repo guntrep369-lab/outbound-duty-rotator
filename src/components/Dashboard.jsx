@@ -10,7 +10,14 @@ import {
   PackageOpen,
 } from 'lucide-react';
 import { useApp } from '../context/useApp.js';
-import { SHIFT_LIST, EMPLOYEE_STATUS, WEEKDAYS } from '../data/models.js';
+import {
+  SHIFT_LIST,
+  EMPLOYEE_STATUS,
+  WEEKDAYS,
+  isAvailableOn,
+  unavailabilityOn,
+  getLeaveType,
+} from '../data/models.js';
 import { getISOWeek, weekKey, formatShort } from '../utils/dateUtils.js';
 import { TaskDot } from './ui/Badge.jsx';
 
@@ -131,11 +138,27 @@ export function Dashboard({ onNavigate }) {
     for (const s of SHIFT_LIST) {
       const assigned = new Set(todaysRecords.filter((r) => r.shift === s.id).map((r) => r.employeeId));
       res[s.id] = employees.filter(
-        (e) => e.status === EMPLOYEE_STATUS.ACTIVE && e.primaryShift === s.id && !assigned.has(e.id)
+        (e) =>
+          e.status === EMPLOYEE_STATUS.ACTIVE &&
+          e.primaryShift === s.id &&
+          !assigned.has(e.id) &&
+          // Not on a recurring day off or dated leave today.
+          isAvailableOn(e, todayYmd, todayIso)
       );
     }
     return res;
-  }, [todaysRecords, employees]);
+  }, [todaysRecords, employees, todayYmd, todayIso]);
+
+  // Who is off / on leave today (across both shifts).
+  const unavailableToday = useMemo(() => {
+    const rows = [];
+    for (const e of employees) {
+      if (e.status !== EMPLOYEE_STATUS.ACTIVE) continue;
+      const u = unavailabilityOn(e, todayYmd, todayIso);
+      if (u) rows.push({ emp: e, ...u });
+    }
+    return rows;
+  }, [employees, todayYmd, todayIso]);
 
   const hasToday = todaysRecords.length > 0;
 
@@ -169,6 +192,27 @@ export function Dashboard({ onNavigate }) {
         <StatCard icon={ClipboardList} label="Active tasks" value={stats.tasks} tint="bg-indigo-100 text-indigo-600" />
         <StatCard icon={CalendarRange} label="Working days/wk" value={stats.working} tint="bg-sky-100 text-sky-600" />
       </div>
+
+      {/* Off / leave today */}
+      {unavailableToday.length > 0 && (
+        <div className="card flex flex-wrap items-center gap-2 p-3.5">
+          <span className="text-sm font-semibold text-slate-600">หยุด/ลาวันนี้:</span>
+          {unavailableToday.map(({ emp, kind, leaveType }) => {
+            const lt = kind === 'leave' ? getLeaveType(leaveType) : null;
+            return (
+              <span
+                key={emp.id}
+                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium ${
+                  lt ? lt.badge : 'border-slate-300 bg-slate-100 text-slate-500'
+                }`}
+                title={lt ? lt.label : 'วันหยุดประจำ'}
+              >
+                {lt ? lt.emoji : '💤'} {emp.nickname || emp.name}
+              </span>
+            );
+          })}
+        </div>
+      )}
 
       {/* Today's assignments */}
       {hasToday ? (
