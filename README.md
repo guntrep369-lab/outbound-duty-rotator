@@ -58,7 +58,9 @@ gets first priority for that station. Unset = rotate normally. Restricted by `al
 the auto-computed inhouse / outsource-ประจำ availability (accounting for day-off & leave) and an
 editable planned เสริม head-count. It's a planning reference; with the **"ใช้แผนนี้คุมจำนวนเสริม"**
 toggle on (`config.useSurgePlan`), the generator schedules **at most** the planned number of เสริม
-each day. Stored per ISO week in `plans.json`.
+each day. Stored per ISO week in `plans.json`. After generating, a **จริง (actual)** row compares
+the เสริม actually scheduled against the plan (green = on plan, amber = under, red = over), and a
+**copy-from-previous-week** button reuses last week's plan.
 
 **Availability — day-off & leave**: each employee has `weeklyOffDays` (recurring days off, e.g.
 an inhouse person who is off every Sunday) and `leaves` (dated ranges: vacation / sick / personal).
