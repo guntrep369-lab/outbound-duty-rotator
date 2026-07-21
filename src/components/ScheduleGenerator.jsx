@@ -225,7 +225,7 @@ export function ScheduleGenerator() {
 
       {/* Surge plan (แผนกำลังเสริม) for the selected week */}
       <div className="no-print">
-        <SurgePlanPanel year={year} week={week} />
+        <SurgePlanPanel year={year} week={week} schedule={schedule} />
       </div>
 
       {/* Preview */}

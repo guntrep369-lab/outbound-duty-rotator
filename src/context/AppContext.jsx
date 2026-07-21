@@ -267,6 +267,21 @@ export function AppProvider({ children }) {
     [plans, persist]
   );
 
+  // Replace (or clear) a whole week's plan in one write — used for copy/clear.
+  const setSurgePlanWeek = useCallback(
+    (weekKey, weekPlan) => {
+      const next = { ...plans };
+      if (weekPlan && Object.keys(weekPlan).length) {
+        next[weekKey] = JSON.parse(JSON.stringify(weekPlan));
+      } else {
+        delete next[weekKey];
+      }
+      setPlans(next);
+      persist('plans', next, `chore(plans): set week ${weekKey}`);
+    },
+    [plans, persist]
+  );
+
   /* -------------------------------- history ------------------------------ */
   const saveScheduleToHistory = useCallback(
     (schedule) => {
@@ -366,6 +381,7 @@ export function AppProvider({ children }) {
     setExtraRules,
     setUseSurgePlan,
     setSurgePlanCount,
+    setSurgePlanWeek,
     saveScheduleToHistory,
     deleteWeekFromHistory,
     clearHistory,

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Users2, ChevronDown, ChevronRight, Info } from 'lucide-react';
+import { Users2, ChevronDown, ChevronRight, Info, Copy, Eraser } from 'lucide-react';
 import { useApp } from '../../context/useApp.js';
 import {
   SHIFT_LIST,
@@ -8,21 +8,37 @@ import {
   EMPLOYEE_TYPES,
   isAvailableOn,
 } from '../../data/models.js';
-import { datesOfISOWeek, weekKey as makeWeekKey } from '../../utils/dateUtils.js';
+import { datesOfISOWeek, weekKey as makeWeekKey, previousWeekKeys } from '../../utils/dateUtils.js';
 
 /**
  * Weekly "Surge Plan" grid (แผนกำลังเสริม): shows, per day and shift, the
  * auto-computed inhouse / outsource-ประจำ availability and an editable planned
  * เสริม head-count. Optionally caps how many เสริม the generator schedules.
  */
-export function SurgePlanPanel({ year, week }) {
-  const { employees, config, plans, setSurgePlanCount, setUseSurgePlan } = useApp();
+export function SurgePlanPanel({ year, week, schedule }) {
+  const { employees, config, plans, getEmployee, setSurgePlanCount, setUseSurgePlan, setSurgePlanWeek } = useApp();
   const [open, setOpen] = useState(true);
 
   const wk = makeWeekKey(year, week);
   const days = useMemo(() => datesOfISOWeek(year, week), [year, week]);
   const weekPlan = plans[wk] || {};
   const workingSet = new Set(config.workingDays || []);
+
+  // Previous week's plan (for the "copy" button).
+  const prevWk = previousWeekKeys(year, week, 1)[0];
+  const hasPrev = !!plans[prevWk] && Object.keys(plans[prevWk]).length > 0;
+  const hasThis = Object.keys(weekPlan).length > 0;
+
+  // Actual เสริม scheduled per shift/day (only when the generated roster is this week).
+  const actualFor = (shiftId, iso) => {
+    if (!schedule || schedule.weekKey !== wk) return null;
+    const dayKey = WEEKDAYS.find((w) => w.iso === iso)?.key;
+    const res = schedule.grid?.[dayKey]?.[shiftId];
+    if (!res) return null;
+    const ids = Object.values(res.assignments || {}).flat();
+    return ids.filter((id) => getEmployee(id)?.type === EMPLOYEE_TYPES.OUTSOURCE_EXTRA).length;
+  };
+  const showActual = !!schedule && schedule.weekKey === wk;
 
   // Count active employees of a type on a shift who are available on a given day.
   const countAvail = (type, shiftId, ymd, iso) =>
@@ -35,6 +51,14 @@ export function SurgePlanPanel({ year, week }) {
     ).length;
 
   const planVal = (shiftId, iso) => weekPlan?.[shiftId]?.[iso] ?? 0;
+
+  const copyPrev = () => {
+    if (hasThis && !window.confirm(`เขียนทับแผนของ ${wk} ด้วยแผนจาก ${prevWk}?`)) return;
+    setSurgePlanWeek(wk, plans[prevWk]);
+  };
+  const clearWeek = () => {
+    if (window.confirm(`ล้างแผนเสริมของ ${wk}?`)) setSurgePlanWeek(wk, null);
+  };
 
   return (
     <div className="card overflow-hidden">
@@ -68,6 +92,16 @@ export function SurgePlanPanel({ year, week }) {
               <span className="ml-1 text-xs text-slate-400">(เปิด = จัดเสริมไม่เกินจำนวนที่วางไว้ต่อวัน)</span>
             </span>
           </label>
+
+          {/* Copy / clear */}
+          <div className="mb-3 flex flex-wrap gap-2">
+            <button className="btn-secondary !py-1.5 text-xs" onClick={copyPrev} disabled={!hasPrev} title={hasPrev ? '' : `ไม่มีแผนของ ${prevWk}`}>
+              <Copy className="h-3.5 w-3.5" /> คัดลอกจากสัปดาห์ก่อน ({prevWk})
+            </button>
+            <button className="btn-ghost !py-1.5 text-xs text-rose-500" onClick={clearWeek} disabled={!hasThis}>
+              <Eraser className="h-3.5 w-3.5" /> ล้างแผนสัปดาห์นี้
+            </button>
+          </div>
 
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] border-collapse text-sm">
@@ -148,6 +182,43 @@ export function SurgePlanPanel({ year, week }) {
                         );
                       })}
                     </tr>
+                    {/* Actual เสริม scheduled (only after generating this week) */}
+                    {showActual && (
+                      <tr>
+                        <th className="sticky left-0 z-10 border border-slate-100 bg-white px-2 py-1.5 text-left text-xs font-medium text-slate-500">
+                          จริง
+                        </th>
+                        {days.map((d) => {
+                          const plan = planVal(shift.id, d.iso);
+                          const act = actualFor(shift.id, d.iso);
+                          const working = workingSet.has(d.iso);
+                          if (!working || act == null) {
+                            return (
+                              <td key={d.iso} className="border border-slate-100 px-1 py-1 text-center text-slate-300">
+                                —
+                              </td>
+                            );
+                          }
+                          const cls =
+                            act === plan
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : act < plan
+                              ? 'bg-amber-50 text-amber-700'
+                              : 'bg-rose-50 text-rose-700';
+                          const diff = act - plan;
+                          return (
+                            <td
+                              key={d.iso}
+                              className={`border border-slate-100 px-1 py-1 text-center text-xs font-semibold ${cls}`}
+                              title={`วางแผน ${plan} · จัดจริง ${act}${diff ? ` (${diff > 0 ? '+' : ''}${diff})` : ' (ตรงแผน)'}`}
+                            >
+                              {act}
+                              {diff !== 0 && <span className="ml-0.5 opacity-70">({diff > 0 ? '+' : ''}{diff})</span>}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    )}
                     {/* Total planned manpower */}
                     <tr>
                       <th className="sticky left-0 z-10 border border-slate-100 bg-white px-2 py-1.5 text-left text-xs font-semibold text-slate-500">
@@ -174,7 +245,8 @@ export function SurgePlanPanel({ year, week }) {
           <p className="mt-2 flex items-start gap-1.5 text-xs text-slate-400">
             <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             IH/OS คำนวณอัตโนมัติจากพนักงานที่พร้อมทำงานในแต่ละวัน (หักวันหยุด/ลาแล้ว). ช่อง “เสริม” คือจำนวนที่วางแผนไว้
-            (กรอกเอง). วันที่เป็นสีจาง = ไม่ใช่วันทำงาน (การ generate จะข้าม — เปิดวันทำงานได้ที่ Settings → Duties).
+            (กรอกเอง). แถว “จริง” จะขึ้นหลังกด Generate — เขียว = ตรงแผน, เหลือง = น้อยกว่าแผน, แดง = เกินแผน.
+            วันที่เป็นสีจาง = ไม่ใช่วันทำงาน (การ generate จะข้าม — เปิดวันทำงานได้ที่ Settings → Duties).
           </p>
         </div>
       )}
