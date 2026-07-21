@@ -107,7 +107,7 @@ function FairnessPanel({ schedule }) {
 
 export function ScheduleGenerator() {
   const app = useApp();
-  const { employees, config, history, plans, shiftPlans, getEmployee, getTask, notify, saveScheduleToHistory, savedWeeks } = app;
+  const { employees, config, history, plans, shiftRotations, getEmployee, getTask, notify, saveScheduleToHistory, savedWeeks } = app;
 
   const now = currentWeek();
   const [year, setYear] = useState(now.year);
@@ -132,7 +132,7 @@ export function ScheduleGenerator() {
       config,
       history,
       surgePlan: plans[weekKey(year, week)],
-      shiftPlans,
+      shiftRotations,
     });
     setSchedule(sched);
     notify('success', `Generated roster for ${sched.weekKey}.`, 2500);

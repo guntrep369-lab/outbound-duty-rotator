@@ -14,7 +14,15 @@ import {
   testConnection as testConn,
 } from '../services/dataStore.js';
 import { describeGitHubError } from '../services/githubService.js';
-import { makeEmployee, makeTask, makeLeave, defaultDutyConfig, demoEmployees, EMPLOYEE_STATUS } from '../data/models.js';
+import {
+  makeEmployee,
+  makeTask,
+  makeLeave,
+  makeShiftRound,
+  defaultDutyConfig,
+  demoEmployees,
+  EMPLOYEE_STATUS,
+} from '../data/models.js';
 import { AppContext } from './useApp.js';
 import { currentWeek, weekKey as makeWeekKey } from '../utils/dateUtils.js';
 
@@ -37,7 +45,7 @@ export function AppProvider({ children }) {
   const [config, setConfig] = useState(defaultDutyConfig());
   const [history, setHistory] = useState([]);
   const [plans, setPlans] = useState({}); // surge plan keyed by weekKey
-  const [shiftPlans, setShiftPlans] = useState({}); // monthly shift rotation keyed by "YYYY-MM"
+  const [shiftRotations, setShiftRotations] = useState([]); // date-based shift rotation rounds
   const [settings, setSettings] = useState(loadSettings());
   const [source, setSource] = useState('local'); // 'github' | 'local'
   const [online, setOnline] = useState(false);
@@ -69,7 +77,7 @@ export function AppProvider({ children }) {
       setConfig(res.config);
       setHistory(res.history);
       setPlans(res.plans || {});
-      setShiftPlans(res.shiftPlans || {});
+      setShiftRotations(res.shiftRotations || []);
       setSource(res.source);
       setOnline(res.online);
       setSettings(loadSettings());
@@ -304,27 +312,41 @@ export function AppProvider({ children }) {
     [plans, persist]
   );
 
-  /* --------------------- monthly shift rotation (สลับกะ) ----------------- */
-  // shiftPlans = { [monthKey]: { [empId]: 'morning'|'afternoon' } }
-  const setShiftPlanFor = useCallback(
-    (monthKey, empId, shift) => {
-      const month = { ...(shiftPlans[monthKey] || {}), [empId]: shift };
-      const next = { ...shiftPlans, [monthKey]: month };
-      setShiftPlans(next);
-      persist('shiftPlans', next, `chore(shifts): ${monthKey} ${empId}=${shift}`);
+  /* ---------------- date-based shift rotation rounds (สลับกะ) ------------ */
+  // shiftRotations = [{ id, effectiveFrom:'YYYY-MM-DD', shifts:{ [empId]: shift } }]
+  const commitRotations = useCallback(
+    (next, message) => {
+      const sorted = [...next].sort((a, b) => (a.effectiveFrom || '').localeCompare(b.effectiveFrom || ''));
+      setShiftRotations(sorted);
+      persist('shiftRotations', sorted, message);
     },
-    [shiftPlans, persist]
+    [persist]
   );
-  // Replace (or clear) a whole month's shift map in one write.
-  const setShiftPlanMonth = useCallback(
-    (monthKey, map) => {
-      const next = { ...shiftPlans };
-      if (map && Object.keys(map).length) next[monthKey] = { ...map };
-      else delete next[monthKey];
-      setShiftPlans(next);
-      persist('shiftPlans', next, `chore(shifts): set month ${monthKey}`);
+  const addShiftRound = useCallback(
+    (effectiveFrom, shifts) => {
+      const round = makeShiftRound({ effectiveFrom, shifts });
+      commitRotations([...shiftRotations, round], `chore(shifts): add round ${effectiveFrom}`);
+      notify('success', `เพิ่มรอบสลับกะ (เริ่ม ${effectiveFrom}) แล้ว`, 2500);
+      return round;
     },
-    [shiftPlans, persist]
+    [shiftRotations, commitRotations, notify]
+  );
+  const updateShiftRound = useCallback(
+    (id, patch) => {
+      const next = shiftRotations.map((r) => (r.id === id ? makeShiftRound({ ...r, ...patch, id }) : r));
+      commitRotations(next, `chore(shifts): update round ${id}`);
+    },
+    [shiftRotations, commitRotations]
+  );
+  const removeShiftRound = useCallback(
+    (id) => {
+      commitRotations(
+        shiftRotations.filter((r) => r.id !== id),
+        `chore(shifts): remove round ${id}`
+      );
+      notify('info', 'ลบรอบสลับกะแล้ว', 2000);
+    },
+    [shiftRotations, commitRotations, notify]
   );
 
   /* -------------------------------- history ------------------------------ */
@@ -393,7 +415,7 @@ export function AppProvider({ children }) {
     config,
     history,
     plans,
-    shiftPlans,
+    shiftRotations,
     settings,
     source,
     online,
@@ -430,8 +452,9 @@ export function AppProvider({ children }) {
     setSurgePlanWeek,
     addHoliday,
     removeHoliday,
-    setShiftPlanFor,
-    setShiftPlanMonth,
+    addShiftRound,
+    updateShiftRound,
+    removeShiftRound,
     saveScheduleToHistory,
     deleteWeekFromHistory,
     clearHistory,

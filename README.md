@@ -66,11 +66,13 @@ the เสริม actually scheduled against the plan (green = on plan, amber 
 tab. On a closed day the engine schedules nothing — the roster shows a **🔒 ปิด** column and the
 Dashboard shows a "คลังปิด" banner. Company-wide, not per-employee.
 
-**Monthly shift rotation** (สลับกะ): only **inhouse + outsource ประจำ** swap between morning and
-afternoon. The supervisor sets each person's shift per month in **Settings → Shift Rotation**
-(with a one-click "สลับทั้งหมด", copy-previous-month, and reset). Stored in `shiftPlans.json` keyed
-by `YYYY-MM`; the generator uses the plan for the month that owns each roster week (by its Thursday).
-เสริม never swap.
+**Shift rotation** (สลับกะ): only **inhouse + outsource ประจำ** swap between morning and afternoon.
+The supervisor defines rotation **rounds** in **Settings → Shift Rotation**, each with an
+**effective-from date** — so a changeover can happen on any day (mid-week is fine), not just month
+boundaries. Each round is a full snapshot (with a one-click "สลับทั้งหมด"); the engine resolves each
+person's shift **per calendar day** using the latest round in effect on that date, so a week that
+straddles a changeover shows the old shift before it and the new shift after. Stored as an array in
+`shiftRotations.json`. เสริม never swap.
 
 **Availability — day-off & leave**: each employee has `weeklyOffDays` (recurring days off, e.g.
 an inhouse person who is off every Sunday) and `leaves` (dated ranges: vacation / sick / personal).
@@ -168,7 +170,7 @@ src/
   (`allowedTypes`: empty = any type; `extraRules` applies to `outsource_extra` only)
 - **`history.json`** — array of `{ id, weekKey, year, week, dayKey, date, shift, dutyId, employeeId }`
 - **`plans.json`** — surge plan keyed by ISO week: `{ "2026-W30": { morning: { "1": 5, … }, afternoon: { … } } }` (numbers are planned เสริม head-count per ISO weekday)
-- **`shiftPlans.json`** — monthly shift rotation keyed by month: `{ "2026-08": { "<empId>": "afternoon", … } }` (only inhouse + outsource ประจำ; missing = primaryShift)
+- **`shiftRotations.json`** — array of rotation rounds: `[{ id, effectiveFrom: "2026-08-05", shifts: { "<empId>": "afternoon", … } }]` (latest round on/before a date wins; only inhouse + outsource ประจำ; missing = primaryShift)
 - Warehouse holidays live in **`duties.json`** under `holidays: [{ date, name }]`
 
 All three are plain JSON you can read, diff, and edit directly on GitHub.

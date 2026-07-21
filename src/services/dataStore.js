@@ -14,7 +14,7 @@ const KEYS = {
   duties: 'odr:duties',
   history: 'odr:history',
   plans: 'odr:plans',
-  shiftPlans: 'odr:shiftPlans',
+  shiftRotations: 'odr:shiftRotations',
   sha: (file) => `odr:sha:${file}`,
 };
 
@@ -24,7 +24,7 @@ export const FILES = {
   duties: 'duties.json',
   history: 'history.json',
   plans: 'plans.json',
-  shiftPlans: 'shiftPlans.json',
+  shiftRotations: 'shiftRotations.json',
 };
 
 /* ------------------------------- local layer ------------------------------ */
@@ -117,7 +117,7 @@ export async function loadAll() {
   let dutyDoc = localGet(KEYS.duties, defaultDutyConfig());
   let history = localGet(KEYS.history, []);
   let plans = localGet(KEYS.plans, {});
-  let shiftPlans = localGet(KEYS.shiftPlans, {});
+  let shiftRotations = localGet(KEYS.shiftRotations, []);
   const warnings = [];
   let source = 'local';
   let online = false;
@@ -130,7 +130,7 @@ export async function loadAll() {
         svc.getJson(FILES.duties),
         svc.getJson(FILES.history),
         svc.getJson(FILES.plans),
-        svc.getJson(FILES.shiftPlans),
+        svc.getJson(FILES.shiftRotations),
       ]);
       online = true;
       source = 'github';
@@ -166,10 +166,10 @@ export async function loadAll() {
       localSet(KEYS.sha(FILES.plans), p.sha);
 
       if (sp.data) {
-        shiftPlans = sp.data;
-        localSet(KEYS.shiftPlans, shiftPlans);
+        shiftRotations = sp.data;
+        localSet(KEYS.shiftRotations, shiftRotations);
       }
-      localSet(KEYS.sha(FILES.shiftPlans), sp.sha);
+      localSet(KEYS.sha(FILES.shiftRotations), sp.sha);
     } catch (err) {
       warnings.push(`GitHub load failed — using local data. (${describeGitHubError(err)})`);
       source = 'local';
@@ -183,7 +183,7 @@ export async function loadAll() {
     config: normalizeDutyDoc(dutyDoc),
     history: Array.isArray(history) ? history : [],
     plans: plans && typeof plans === 'object' ? plans : {},
-    shiftPlans: shiftPlans && typeof shiftPlans === 'object' ? shiftPlans : {},
+    shiftRotations: Array.isArray(shiftRotations) ? shiftRotations : [],
     source,
     online,
     warnings,

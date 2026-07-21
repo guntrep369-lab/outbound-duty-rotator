@@ -18,16 +18,10 @@ import {
   taskAllowsType,
   isAvailableOn,
   unavailabilityOn,
-  effectiveShift,
+  effectiveShiftOn,
   holidayOn,
 } from '../data/models.js';
-import {
-  weekKey as makeWeekKey,
-  previousWeekKeys,
-  weeksAgo,
-  datesOfISOWeek,
-  monthKeyOfWeek,
-} from '../utils/dateUtils.js';
+import { weekKey as makeWeekKey, previousWeekKeys, weeksAgo, datesOfISOWeek } from '../utils/dateUtils.js';
 import { WEEKDAYS } from '../data/models.js';
 
 /** Deterministic string hash → unsigned int, for stable tiebreaks. */
@@ -219,7 +213,7 @@ function assignShiftDay({
  * @param {import('../data/models.js').HistoryRecord[]} args.history
  * @returns {Object} schedule
  */
-export function generateSchedule({ year, week, employees, config, history, surgePlan, shiftPlans }) {
+export function generateSchedule({ year, week, employees, config, history, surgePlan, shiftRotations }) {
   const wk = makeWeekKey(year, week);
   const useSurgePlan = !!config.useSurgePlan && !!surgePlan;
   const lookbackWeeks = config.lookbackWeeks || 4;
@@ -233,13 +227,7 @@ export function generateSchedule({ year, week, employees, config, history, surge
   const genWorkload = new Map();
   const genDuty = new Map();
 
-  // Group by the shift each person actually works this month (monthly rotation).
-  const monthKey = monthKeyOfWeek(year, week);
   const eligibleAll = employees.filter(isEligible);
-  const byShift = {
-    [SHIFTS.MORNING]: eligibleAll.filter((e) => effectiveShift(e, monthKey, shiftPlans) === SHIFTS.MORNING),
-    [SHIFTS.AFTERNOON]: eligibleAll.filter((e) => effectiveShift(e, monthKey, shiftPlans) === SHIFTS.AFTERNOON),
-  };
 
   const grid = {};
   const records = [];
@@ -258,6 +246,12 @@ export function generateSchedule({ year, week, employees, config, history, surge
       grid[wd.key] = dayCell;
       return;
     }
+
+    // Resolve each person's shift for THIS DATE (rotation can change mid-week).
+    const byShift = {
+      [SHIFTS.MORNING]: eligibleAll.filter((e) => effectiveShiftOn(e, dayCell.date, shiftRotations) === SHIFTS.MORNING),
+      [SHIFTS.AFTERNOON]: eligibleAll.filter((e) => effectiveShiftOn(e, dayCell.date, shiftRotations) === SHIFTS.AFTERNOON),
+    };
 
     for (const shift of [SHIFTS.MORNING, SHIFTS.AFTERNOON]) {
       const res = assignShiftDay({

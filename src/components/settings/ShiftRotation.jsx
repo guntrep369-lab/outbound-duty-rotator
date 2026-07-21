@@ -1,39 +1,42 @@
 import React, { useMemo, useState } from 'react';
-import { Repeat, ChevronLeft, ChevronRight, ArrowLeftRight, Copy, RotateCcw } from 'lucide-react';
+import { Repeat, Plus, Pencil, Trash2, ArrowLeftRight, CalendarClock } from 'lucide-react';
 import { useApp } from '../../context/useApp.js';
 import {
   SHIFTS,
   SHIFT_LIST,
   EMPLOYEE_STATUS,
   isSwapEligible,
-  effectiveShift,
+  effectiveShiftOn,
   getShift,
 } from '../../data/models.js';
+import { Modal } from '../ui/Modal.jsx';
 
 const pad = (n) => String(n).padStart(2, '0');
-const keyOf = (y, m) => `${y}-${pad(m + 1)}`;
+function todayYmd() {
+  const t = new Date();
+  return `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`;
+}
+function fmtThai(ymd) {
+  if (!ymd) return '—';
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('th-TH', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
 
 /**
- * Monthly shift rotation (สลับกะ): the supervisor sets which shift each
- * swap-eligible employee (inhouse + outsource ประจำ) works in a given month.
- * เสริม never swap.
+ * Date-based shift rotation (สลับกะ): the supervisor defines rotation "rounds",
+ * each effective from a chosen date (mid-week is fine). Only inhouse +
+ * outsource ประจำ swap; เสริม always keep their primary shift.
  */
 export function ShiftRotation() {
-  const { employees, shiftPlans, setShiftPlanFor, setShiftPlanMonth } = useApp();
-  const now = new Date();
-  const [ym, setYm] = useState({ y: now.getFullYear(), m: now.getMonth() });
+  const { employees, shiftRotations, addShiftRound, updateShiftRound, removeShiftRound } = useApp();
+  const [editor, setEditor] = useState(null); // { id?, effectiveFrom, shifts }
 
-  const monthKey = keyOf(ym.y, ym.m);
-  const prevKey = keyOf(ym.m === 0 ? ym.y - 1 : ym.y, ym.m === 0 ? 11 : ym.m - 1);
-  const monthLabel = new Date(ym.y, ym.m, 1).toLocaleDateString('th-TH', { month: 'long', year: 'numeric' });
-
-  const shiftMonth = (delta) =>
-    setYm(({ y, m }) => {
-      const d = new Date(y, m + delta, 1);
-      return { y: d.getFullYear(), m: d.getMonth() };
-    });
-
-  // Swap-eligible, active employees, sorted by name.
   const people = useMemo(
     () =>
       employees
@@ -42,113 +45,204 @@ export function ShiftRotation() {
     [employees]
   );
 
-  const shiftOf = (emp) => effectiveShift(emp, monthKey, shiftPlans);
-  const counts = SHIFT_LIST.map((s) => ({
-    ...s,
-    n: people.filter((e) => shiftOf(e) === s.id).length,
-  }));
-  const hasPrev = !!shiftPlans[prevKey] && Object.keys(shiftPlans[prevKey]).length > 0;
-  const hasThis = !!shiftPlans[monthKey] && Object.keys(shiftPlans[monthKey]).length > 0;
-
-  const swapAll = () => {
-    const map = {};
-    for (const e of people) {
-      map[e.id] = shiftOf(e) === SHIFTS.MORNING ? SHIFTS.AFTERNOON : SHIFTS.MORNING;
+  const today = todayYmd();
+  // The round in effect right now (latest with effectiveFrom <= today).
+  const currentRound = useMemo(() => {
+    let best = null;
+    for (const r of shiftRotations) {
+      if (r.effectiveFrom && r.effectiveFrom <= today && (!best || r.effectiveFrom > best.effectiveFrom)) best = r;
     }
-    setShiftPlanMonth(monthKey, map);
+    return best;
+  }, [shiftRotations, today]);
+
+  const countFor = (round) => {
+    const c = { morning: 0, afternoon: 0 };
+    for (const e of people) {
+      const s = round.shifts?.[e.id] || e.primaryShift;
+      c[s] = (c[s] || 0) + 1;
+    }
+    return c;
   };
-  const copyPrev = () => {
-    if (hasThis && !window.confirm(`เขียนทับแผนกะเดือน ${monthKey} ด้วยของ ${prevKey}?`)) return;
-    setShiftPlanMonth(monthKey, shiftPlans[prevKey]);
+
+  // Build the editor draft with a full snapshot for every swap-eligible person.
+  const openNew = () => {
+    const date = today;
+    const shifts = {};
+    for (const e of people) shifts[e.id] = effectiveShiftOn(e, date, shiftRotations);
+    setEditor({ effectiveFrom: date, shifts });
   };
-  const reset = () => {
-    if (window.confirm(`รีเซ็ตกลับใช้กะหลัก (primary) ทั้งหมดสำหรับ ${monthKey}?`)) setShiftPlanMonth(monthKey, null);
+  const openEdit = (round) => {
+    const shifts = {};
+    for (const e of people) shifts[e.id] = round.shifts?.[e.id] || e.primaryShift;
+    setEditor({ id: round.id, effectiveFrom: round.effectiveFrom, shifts });
   };
+
+  const setDraftShift = (empId, shift) =>
+    setEditor((d) => ({ ...d, shifts: { ...d.shifts, [empId]: shift } }));
+  const swapAllDraft = () =>
+    setEditor((d) => {
+      const shifts = {};
+      for (const e of people) {
+        const cur = d.shifts[e.id] || e.primaryShift;
+        shifts[e.id] = cur === SHIFTS.MORNING ? SHIFTS.AFTERNOON : SHIFTS.MORNING;
+      }
+      return { ...d, shifts };
+    });
+
+  const save = () => {
+    if (!editor.effectiveFrom) return;
+    if (editor.id) updateShiftRound(editor.id, { effectiveFrom: editor.effectiveFrom, shifts: editor.shifts });
+    else addShiftRound(editor.effectiveFrom, editor.shifts);
+    setEditor(null);
+  };
+
+  const draftCounts = editor
+    ? people.reduce(
+        (c, e) => {
+          const s = editor.shifts[e.id] || e.primaryShift;
+          c[s] += 1;
+          return c;
+        },
+        { morning: 0, afternoon: 0 }
+      )
+    : null;
 
   return (
     <section className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-slate-700">
           <Repeat className="h-5 w-5 text-indigo-600" />
-          <h2 className="text-lg font-semibold">สลับกะรายเดือน · Shift Rotation</h2>
+          <h2 className="text-lg font-semibold">สลับกะ · Shift Rotation</h2>
         </div>
-        <div className="flex items-center gap-2">
-          <button className="btn-secondary !px-2" onClick={() => shiftMonth(-1)} aria-label="เดือนก่อน">
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <span className="min-w-[9rem] text-center text-base font-semibold text-slate-800">{monthLabel}</span>
-          <button className="btn-secondary !px-2" onClick={() => shiftMonth(1)} aria-label="เดือนถัดไป">
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Shift counts */}
-      <div className="grid grid-cols-2 gap-2">
-        {counts.map((s) => (
-          <div key={s.id} className={`flex items-center justify-between rounded-xl border px-3.5 py-2.5 ${s.barBorder} ${s.barBg}`}>
-            <span className={`flex items-center gap-2 text-sm font-semibold ${s.text}`}>
-              <span className={`h-2.5 w-2.5 rounded-full ${s.dot}`} />
-              {s.label} · {s.labelTh}
-            </span>
-            <span className={`text-lg font-bold ${s.text}`}>{s.n}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* Bulk actions */}
-      <div className="flex flex-wrap gap-2">
-        <button className="btn-primary" onClick={swapAll} disabled={people.length === 0}>
-          <ArrowLeftRight className="h-4 w-4" /> สลับทั้งหมด (เช้า ↔ บ่าย)
-        </button>
-        <button className="btn-secondary" onClick={copyPrev} disabled={!hasPrev} title={hasPrev ? '' : `ไม่มีแผนของ ${prevKey}`}>
-          <Copy className="h-4 w-4" /> คัดลอกจากเดือนก่อน ({prevKey})
-        </button>
-        <button className="btn-ghost text-slate-500" onClick={reset} disabled={!hasThis}>
-          <RotateCcw className="h-4 w-4" /> รีเซ็ต (ใช้กะหลัก)
+        <button className="btn-primary" onClick={openNew} disabled={people.length === 0}>
+          <Plus className="h-4 w-4" /> เพิ่มรอบสลับกะ
         </button>
       </div>
 
       <p className="text-xs text-slate-400">
-        เฉพาะ inhouse และ outsource ประจำ เท่านั้นที่สลับกะได้ (outsource เสริม ใช้กะหลักเสมอ). แผนนี้จะถูกใช้ตอน generate
-        ตารางของสัปดาห์ที่อยู่ในเดือนนั้น.
+        กำหนด “รอบสลับกะ” โดยระบุ<b>วันที่เริ่มใช้กะใหม่</b> (เปลี่ยนกลางสัปดาห์ได้). ระบบจะใช้กะตามรอบล่าสุดที่มีผล ณ วันนั้น
+        เฉพาะ inhouse + outsource ประจำ (เสริมไม่สลับ).
       </p>
 
-      {/* Per-person */}
-      {people.length === 0 ? (
-        <div className="card py-10 text-center text-sm text-slate-400">ยังไม่มีพนักงาน inhouse / outsource ประจำ ที่ active</div>
+      {/* Rounds timeline */}
+      {shiftRotations.length === 0 ? (
+        <div className="card flex flex-col items-center gap-2 py-10 text-slate-400">
+          <CalendarClock className="h-8 w-8" />
+          <p className="text-sm">ยังไม่มีรอบสลับกะ — ทุกคนใช้กะหลัก (primary)</p>
+        </div>
       ) : (
-        <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
-          {people.map((emp) => {
-            const cur = shiftOf(emp);
-            const swapped = cur !== emp.primaryShift;
+        <ul className="space-y-2">
+          {shiftRotations.map((r) => {
+            const c = countFor(r);
+            const isCurrent = currentRound && currentRound.id === r.id;
+            const upcoming = r.effectiveFrom > today;
             return (
-              <li key={emp.id} className="card flex items-center gap-3 p-3">
+              <li key={r.id} className={`card flex flex-wrap items-center gap-3 p-3.5 ${isCurrent ? 'ring-2 ring-indigo-400' : ''}`}>
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">
+                  <CalendarClock className="h-5 w-5" />
+                </div>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-semibold text-slate-800">{emp.nickname || emp.name}</p>
-                  <p className="truncate text-xs text-slate-400">
-                    {emp.name} · กะหลัก {getShift(emp.primaryShift).labelTh}
-                    {swapped && <span className="ml-1 font-medium text-indigo-600">(สลับ)</span>}
+                  <p className="font-semibold text-slate-800">
+                    ตั้งแต่ {fmtThai(r.effectiveFrom)}
+                    {isCurrent && <span className="ml-2 rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">ใช้อยู่ตอนนี้</span>}
+                    {upcoming && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">กำลังจะถึง</span>}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    กะเช้า {c.morning} · กะบ่าย {c.afternoon}
                   </p>
                 </div>
-                <div className="flex overflow-hidden rounded-lg border border-slate-200">
-                  {SHIFT_LIST.map((s) => (
-                    <button
-                      key={s.id}
-                      onClick={() => setShiftPlanFor(monthKey, emp.id, s.id)}
-                      className={`px-3 py-1.5 text-xs font-semibold transition ${
-                        cur === s.id ? `${s.dot} text-white` : 'bg-white text-slate-500 hover:bg-slate-50'
-                      }`}
-                    >
-                      {s.labelTh}
-                    </button>
-                  ))}
+                <div className="flex gap-1">
+                  <button className="btn-ghost !p-1.5" title="แก้ไข" onClick={() => openEdit(r)}>
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                  <button
+                    className="btn-ghost !p-1.5 text-rose-500"
+                    title="ลบ"
+                    onClick={() => {
+                      if (window.confirm(`ลบรอบสลับกะที่เริ่ม ${r.effectiveFrom}?`)) removeShiftRound(r.id);
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                 </div>
               </li>
             );
           })}
         </ul>
       )}
+
+      {/* Editor modal */}
+      <Modal
+        open={!!editor}
+        onClose={() => setEditor(null)}
+        title={editor?.id ? 'แก้ไขรอบสลับกะ' : 'เพิ่มรอบสลับกะ'}
+        maxWidth="max-w-lg"
+        footer={
+          <>
+            <button className="btn-secondary" onClick={() => setEditor(null)}>
+              ยกเลิก
+            </button>
+            <button className="btn-primary" onClick={save} disabled={!editor?.effectiveFrom}>
+              บันทึก
+            </button>
+          </>
+        }
+      >
+        {editor && (
+          <div className="space-y-4">
+            <div>
+              <label className="label">วันที่เริ่มใช้กะนี้ (effective from)</label>
+              <input
+                type="date"
+                className="input"
+                value={editor.effectiveFrom}
+                onChange={(e) => setEditor((d) => ({ ...d, effectiveFrom: e.target.value }))}
+              />
+              <p className="mt-1 text-xs text-slate-400">กะชุดนี้จะมีผลตั้งแต่วันนี้เป็นต้นไป จนกว่าจะมีรอบใหม่</p>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-slate-500">
+                กะเช้า <b className="text-amber-700">{draftCounts.morning}</b> · กะบ่าย{' '}
+                <b className="text-indigo-700">{draftCounts.afternoon}</b>
+              </div>
+              <button className="btn-secondary !py-1.5 text-xs" onClick={swapAllDraft}>
+                <ArrowLeftRight className="h-3.5 w-3.5" /> สลับทั้งหมด
+              </button>
+            </div>
+
+            <div className="max-h-72 space-y-1.5 overflow-y-auto">
+              {people.map((emp) => {
+                const cur = editor.shifts[emp.id] || emp.primaryShift;
+                const swapped = cur !== emp.primaryShift;
+                return (
+                  <div key={emp.id} className="flex items-center gap-2 rounded-lg border border-slate-100 px-2.5 py-1.5">
+                    <div className="min-w-0 flex-1">
+                      <span className="font-medium text-slate-800">{emp.nickname || emp.name}</span>
+                      <span className="ml-1.5 text-xs text-slate-400">
+                        (กะหลัก {getShift(emp.primaryShift).labelTh}){swapped && <span className="ml-1 text-indigo-600">·สลับ</span>}
+                      </span>
+                    </div>
+                    <div className="flex overflow-hidden rounded-lg border border-slate-200">
+                      {SHIFT_LIST.map((s) => (
+                        <button
+                          key={s.id}
+                          onClick={() => setDraftShift(emp.id, s.id)}
+                          className={`px-3 py-1 text-xs font-semibold transition ${
+                            cur === s.id ? `${s.dot} text-white` : 'bg-white text-slate-500 hover:bg-slate-50'
+                          }`}
+                        >
+                          {s.labelTh}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </Modal>
     </section>
   );
 }

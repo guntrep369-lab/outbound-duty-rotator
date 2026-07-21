@@ -7,15 +7,10 @@ import {
   EMPLOYEE_STATUS,
   EMPLOYEE_TYPES,
   isAvailableOn,
-  effectiveShift,
+  effectiveShiftOn,
   holidayOn,
 } from '../../data/models.js';
-import {
-  datesOfISOWeek,
-  weekKey as makeWeekKey,
-  previousWeekKeys,
-  monthKeyOfWeek,
-} from '../../utils/dateUtils.js';
+import { datesOfISOWeek, weekKey as makeWeekKey, previousWeekKeys } from '../../utils/dateUtils.js';
 
 /**
  * Weekly "Surge Plan" grid (แผนกำลังเสริม): shows, per day and shift, the
@@ -23,11 +18,10 @@ import {
  * เสริม head-count. Optionally caps how many เสริม the generator schedules.
  */
 export function SurgePlanPanel({ year, week, schedule }) {
-  const { employees, config, plans, shiftPlans, getEmployee, setSurgePlanCount, setUseSurgePlan, setSurgePlanWeek } = useApp();
+  const { employees, config, plans, shiftRotations, getEmployee, setSurgePlanCount, setUseSurgePlan, setSurgePlanWeek } = useApp();
   const [open, setOpen] = useState(true);
 
   const wk = makeWeekKey(year, week);
-  const monthKey = monthKeyOfWeek(year, week);
   const days = useMemo(() => datesOfISOWeek(year, week), [year, week]);
   const weekPlan = plans[wk] || {};
   const workingSet = new Set(config.workingDays || []);
@@ -56,7 +50,7 @@ export function SurgePlanPanel({ year, week, schedule }) {
       (e) =>
         e.status === EMPLOYEE_STATUS.ACTIVE &&
         e.type === type &&
-        effectiveShift(e, monthKey, shiftPlans) === shiftId &&
+        effectiveShiftOn(e, ymd, shiftRotations) === shiftId &&
         isAvailableOn(e, ymd, iso)
     ).length;
   };

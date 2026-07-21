@@ -167,16 +167,42 @@ export function isSwapEligible(emp) {
 }
 
 /**
- * The shift an employee actually works in a given month, honouring the monthly
- * shift-rotation plan. เสริม (and anyone without an override) keep primaryShift.
- * @param {object} emp
- * @param {string} monthKey  "YYYY-MM"
- * @param {Object} shiftPlans  { [monthKey]: { [empId]: 'morning'|'afternoon' } }
+ * @typedef {Object} ShiftRound  A shift-rotation changeover effective from a date.
+ * @property {string} id
+ * @property {string} effectiveFrom  "YYYY-MM-DD" — the shifts below apply on/after this date
+ * @property {Object} shifts         { [empId]: 'morning'|'afternoon' }
  */
-export function effectiveShift(emp, monthKey, shiftPlans) {
+
+/** @returns {ShiftRound} */
+export function makeShiftRound(partial = {}) {
+  return {
+    id: partial.id || uid('rot'),
+    effectiveFrom: partial.effectiveFrom || '',
+    shifts: partial.shifts && typeof partial.shifts === 'object' ? { ...partial.shifts } : {},
+  };
+}
+
+/**
+ * The shift an employee actually works on a specific date, honouring the
+ * shift-rotation rounds (each has an effective date, so changeovers can happen
+ * any day — mid-week is fine). เสริม (and anyone without an override) keep
+ * primaryShift.
+ * @param {object} emp
+ * @param {string} ymd  "YYYY-MM-DD"
+ * @param {ShiftRound[]} shiftRotations
+ */
+export function effectiveShiftOn(emp, ymd, shiftRotations) {
   if (!emp) return SHIFTS.MORNING;
   if (!isSwapEligible(emp)) return emp.primaryShift;
-  const ov = shiftPlans?.[monthKey]?.[emp.id];
+  if (!Array.isArray(shiftRotations) || !shiftRotations.length) return emp.primaryShift;
+  // Latest round whose effectiveFrom is on or before this date.
+  let best = null;
+  for (const r of shiftRotations) {
+    if (r?.effectiveFrom && r.effectiveFrom <= ymd && (!best || r.effectiveFrom > best.effectiveFrom)) {
+      best = r;
+    }
+  }
+  const ov = best?.shifts?.[emp.id];
   return ov === SHIFTS.MORNING || ov === SHIFTS.AFTERNOON ? ov : emp.primaryShift;
 }
 

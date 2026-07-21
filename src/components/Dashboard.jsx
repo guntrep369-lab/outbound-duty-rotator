@@ -17,7 +17,7 @@ import {
   isAvailableOn,
   unavailabilityOn,
   getLeaveType,
-  effectiveShift,
+  effectiveShiftOn,
   holidayOn,
 } from '../data/models.js';
 import { getISOWeek, weekKey, formatShort } from '../utils/dateUtils.js';
@@ -103,12 +103,11 @@ function ShiftColumn({ shift, tasks, byDuty, standby, getEmployee, getTask }) {
 }
 
 export function Dashboard({ onNavigate }) {
-  const { employees, config, history, shiftPlans, getEmployee, getTask } = useApp();
+  const { employees, config, history, shiftRotations, getEmployee, getTask } = useApp();
 
   const today = new Date();
   const pad = (n) => String(n).padStart(2, '0');
   const todayYmd = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
-  const todayMonthKey = `${today.getFullYear()}-${pad(today.getMonth() + 1)}`;
   const { year, week } = getISOWeek(today);
   const todayIso = today.getDay() === 0 ? 7 : today.getDay();
   const todayName = WEEKDAYS.find((d) => d.iso === todayIso);
@@ -143,14 +142,14 @@ export function Dashboard({ onNavigate }) {
       res[s.id] = employees.filter(
         (e) =>
           e.status === EMPLOYEE_STATUS.ACTIVE &&
-          effectiveShift(e, todayMonthKey, shiftPlans) === s.id &&
+          effectiveShiftOn(e, todayYmd, shiftRotations) === s.id &&
           !assigned.has(e.id) &&
           // Not on a recurring day off or dated leave today.
           isAvailableOn(e, todayYmd, todayIso)
       );
     }
     return res;
-  }, [todaysRecords, employees, todayYmd, todayIso, todayMonthKey, shiftPlans]);
+  }, [todaysRecords, employees, todayYmd, todayIso, shiftRotations]);
 
   const todayHoliday = holidayOn(config.holidays, todayYmd);
 
