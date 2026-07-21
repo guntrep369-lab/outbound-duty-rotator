@@ -10,6 +10,7 @@ import {
   getShift,
 } from '../../data/models.js';
 import { Modal } from '../ui/Modal.jsx';
+import { ShiftPreview } from './ShiftPreview.jsx';
 
 const pad = (n) => String(n).padStart(2, '0');
 function todayYmd() {
@@ -170,6 +171,9 @@ export function ShiftRotation() {
           })}
         </ul>
       )}
+
+      {/* Forward-looking preview of the resulting shift schedule */}
+      <ShiftPreview />
 
       {/* Editor modal */}
       <Modal
