@@ -16,10 +16,11 @@ import { useApp } from '../context/useApp.js';
 import { generateSchedule } from '../engine/rotationEngine.js';
 import { reassignSlot, addToSlot, benchEmployee, refreshDerived } from '../utils/scheduleUtils.js';
 import { scheduleToCSV, scheduleToText, downloadFile, copyToClipboard } from '../utils/exportUtils.js';
-import { currentWeek } from '../utils/dateUtils.js';
+import { currentWeek, weekKey } from '../utils/dateUtils.js';
 import { EMPLOYEE_STATUS, getShift, getType, taskAllowsType } from '../data/models.js';
 import { WeekPicker } from './ui/WeekPicker.jsx';
 import { ScheduleGrid } from './schedule/ScheduleGrid.jsx';
+import { SurgePlanPanel } from './schedule/SurgePlanPanel.jsx';
 import { ShiftBadge } from './ui/Badge.jsx';
 import { Modal } from './ui/Modal.jsx';
 
@@ -106,7 +107,7 @@ function FairnessPanel({ schedule }) {
 
 export function ScheduleGenerator() {
   const app = useApp();
-  const { employees, config, history, getEmployee, getTask, notify, saveScheduleToHistory, savedWeeks } = app;
+  const { employees, config, history, plans, getEmployee, getTask, notify, saveScheduleToHistory, savedWeeks } = app;
 
   const now = currentWeek();
   const [year, setYear] = useState(now.year);
@@ -124,7 +125,7 @@ export function ScheduleGenerator() {
       notify('warning', 'Add and activate some employees first (Settings → Employees).', 5000);
       return;
     }
-    const sched = generateSchedule({ year, week, employees, config, history });
+    const sched = generateSchedule({ year, week, employees, config, history, surgePlan: plans[weekKey(year, week)] });
     setSchedule(sched);
     notify('success', `Generated roster for ${sched.weekKey}.`, 2500);
   };
@@ -220,6 +221,11 @@ export function ScheduleGenerator() {
           Outsource เสริม ถูกจัดงานเฉพาะเมื่อกำลังหลัก (inhouse + outsource ประจำ) ไม่พอ. Click any name in the grid to
           swap or bench.
         </p>
+      </div>
+
+      {/* Surge plan (แผนกำลังเสริม) for the selected week */}
+      <div className="no-print">
+        <SurgePlanPanel year={year} week={week} />
       </div>
 
       {/* Preview */}

@@ -85,11 +85,13 @@ function assignShiftDay({
   genWorkload,
   genDuty,
   extraRules,
+  surgeCap,
   seed,
 }) {
   const assignments = {}; // dutyId -> [empId]
   const understaffed = []; // { dutyId, needed, got }
   const assignedToday = new Set();
+  let extraAssigned = 0; // how many outsource เสริม placed today (for the surge cap)
 
   // Remove anyone unavailable on this calendar day (recurring day-off or on
   // leave). They are reported separately so the roster can explain the gap.
@@ -150,6 +152,8 @@ function assignShiftDay({
           taskAllowsType(duty, e.type) &&
           // Cap outsource เสริม at maxDays working days per week.
           !(isExtra(e) && maxDays != null && daysWorked(e.id) >= maxDays) &&
+          // Cap the number of เสริม used TODAY to the Surge Plan (if enabled).
+          !(isExtra(e) && surgeCap != null && extraAssigned >= surgeCap) &&
           // A "fixed" employee only ever works their pinned duty; a free
           // (unpinned) employee can work any duty.
           (!e.fixedDutyId || e.fixedDutyId === duty.id)
@@ -177,6 +181,7 @@ function assignShiftDay({
       const pick = pool[0];
       chosen.push(pick.id);
       assignedToday.add(pick.id);
+      if (isExtra(pick)) extraAssigned += 1;
       // Update live counters.
       genWorkload.set(pick.id, (genWorkload.get(pick.id) || 0) + 1);
       if (!genDuty.has(pick.id)) genDuty.set(pick.id, new Map());
@@ -206,8 +211,9 @@ function assignShiftDay({
  * @param {import('../data/models.js').HistoryRecord[]} args.history
  * @returns {Object} schedule
  */
-export function generateSchedule({ year, week, employees, config, history }) {
+export function generateSchedule({ year, week, employees, config, history, surgePlan }) {
   const wk = makeWeekKey(year, week);
+  const useSurgePlan = !!config.useSurgePlan && !!surgePlan;
   const lookbackWeeks = config.lookbackWeeks || 4;
   const hist = analyzeHistory(history, year, week, lookbackWeeks);
   const weekDates = datesOfISOWeek(year, week);
@@ -248,6 +254,7 @@ export function generateSchedule({ year, week, employees, config, history }) {
         genWorkload,
         genDuty,
         extraRules: config.extraRules,
+        surgeCap: useSurgePlan ? (surgePlan?.[shift]?.[iso] ?? null) : null,
         seed: `${wk}:${wd.key}`,
       });
       dayCell[shift] = res;

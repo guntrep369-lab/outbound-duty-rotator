@@ -54,6 +54,12 @@ otherwise sit on standby. Two policy controls refine this:
 gets first priority for that station. Unset = rotate normally. Restricted by `allowedTypes` too
 (you can't pin someone to a task their type isn't allowed to do — they'd be benched instead).
 
+**Surge Plan** (แผนกำลังเสริม): a per-week grid (on the Schedule tab) showing, per day and shift,
+the auto-computed inhouse / outsource-ประจำ availability (accounting for day-off & leave) and an
+editable planned เสริม head-count. It's a planning reference; with the **"ใช้แผนนี้คุมจำนวนเสริม"**
+toggle on (`config.useSurgePlan`), the generator schedules **at most** the planned number of เสริม
+each day. Stored per ISO week in `plans.json`.
+
 **Availability — day-off & leave**: each employee has `weeklyOffDays` (recurring days off, e.g.
 an inhouse person who is off every Sunday) and `leaves` (dated ranges: vacation / sick / personal).
 The engine checks availability **per calendar day** and skips anyone off or on leave that day; the
@@ -149,5 +155,6 @@ src/
 - **`duties.json`** — `{ tasks: [{ id, name, nameTh, color, req:{morning,afternoon}, active, allowedTypes[] }], workingDays, lookbackWeeks, extraRules:{ minDays, maxDays } }`
   (`allowedTypes`: empty = any type; `extraRules` applies to `outsource_extra` only)
 - **`history.json`** — array of `{ id, weekKey, year, week, dayKey, date, shift, dutyId, employeeId }`
+- **`plans.json`** — surge plan keyed by ISO week: `{ "2026-W30": { morning: { "1": 5, … }, afternoon: { … } } }` (numbers are planned เสริม head-count per ISO weekday)
 
 All three are plain JSON you can read, diff, and edit directly on GitHub.

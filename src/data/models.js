@@ -191,6 +191,8 @@ export function defaultDutyConfig() {
     // Weekly rules for outsource เสริม (surge staff):
     // minDays = guaranteed working days; maxDays = cap (null = unlimited).
     extraRules: { minDays: 0, maxDays: null },
+    // When true, the weekly Surge Plan caps how many เสริม are scheduled per day.
+    useSurgePlan: false,
   };
 }
 

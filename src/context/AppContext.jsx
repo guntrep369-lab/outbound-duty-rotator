@@ -16,14 +16,27 @@ import {
 import { describeGitHubError } from '../services/githubService.js';
 import { makeEmployee, makeTask, makeLeave, defaultDutyConfig, demoEmployees, EMPLOYEE_STATUS } from '../data/models.js';
 import { AppContext } from './useApp.js';
+import { currentWeek, weekKey as makeWeekKey } from '../utils/dateUtils.js';
 
 let toastSeq = 0;
+
+/** Sample surge plan (matches the user's spreadsheet) for the demo team. */
+function demoSurgePlanForCurrentWeek() {
+  const { year, week } = currentWeek();
+  return {
+    [makeWeekKey(year, week)]: {
+      morning: { 1: 5, 2: 5, 3: 5, 4: 5, 5: 5, 6: 10, 7: 7 },
+      afternoon: { 1: 1, 2: 1, 3: 2, 4: 1, 5: 2, 6: 6, 7: 3 },
+    },
+  };
+}
 
 export function AppProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [employees, setEmployees] = useState([]);
   const [config, setConfig] = useState(defaultDutyConfig());
   const [history, setHistory] = useState([]);
+  const [plans, setPlans] = useState({}); // surge plan keyed by weekKey
   const [settings, setSettings] = useState(loadSettings());
   const [source, setSource] = useState('local'); // 'github' | 'local'
   const [online, setOnline] = useState(false);
@@ -54,6 +67,7 @@ export function AppProvider({ children }) {
       setEmployees(res.employees);
       setConfig(res.config);
       setHistory(res.history);
+      setPlans(res.plans || {});
       setSource(res.source);
       setOnline(res.online);
       setSettings(loadSettings());
@@ -174,8 +188,12 @@ export function AppProvider({ children }) {
   const loadDemoTeam = useCallback(() => {
     const team = demoEmployees();
     commitEmployees([...employees, ...team], 'chore(employees): load sample team');
-    notify('success', `Loaded ${team.length} sample employees.`, 3000);
-  }, [employees, commitEmployees, notify]);
+    // Also seed a sample surge plan for the current week.
+    const demoPlan = { ...plans, ...demoSurgePlanForCurrentWeek() };
+    setPlans(demoPlan);
+    persist('plans', demoPlan, 'chore(plans): demo surge plan');
+    notify('success', `Loaded ${team.length} sample employees + surge plan.`, 3000);
+  }, [employees, commitEmployees, plans, persist, notify]);
 
   /* ------------------------------ duty config ---------------------------- */
   const commitConfig = useCallback(
@@ -228,6 +246,25 @@ export function AppProvider({ children }) {
         'chore(duties): outsource-เสริม rules'
       ),
     [config, commitConfig]
+  );
+
+  const setUseSurgePlan = useCallback(
+    (on) => commitConfig({ ...config, useSurgePlan: !!on }, 'chore(duties): surge-plan toggle'),
+    [config, commitConfig]
+  );
+
+  /* ------------------------------ surge plan ----------------------------- */
+  // plans = { [weekKey]: { morning: { [iso]: n }, afternoon: { [iso]: n } } }
+  const setSurgePlanCount = useCallback(
+    (weekKey, shift, iso, value) => {
+      const n = Math.max(0, Number(value) || 0);
+      const week = plans[weekKey] || {};
+      const shiftPlan = { ...(week[shift] || {}), [iso]: n };
+      const next = { ...plans, [weekKey]: { ...week, [shift]: shiftPlan } };
+      setPlans(next);
+      persist('plans', next, `chore(plans): surge ${weekKey} ${shift} d${iso}=${n}`);
+    },
+    [plans, persist]
   );
 
   /* -------------------------------- history ------------------------------ */
@@ -295,6 +332,7 @@ export function AppProvider({ children }) {
     employees,
     config,
     history,
+    plans,
     settings,
     source,
     online,
@@ -326,6 +364,8 @@ export function AppProvider({ children }) {
     setWorkingDays,
     setLookbackWeeks,
     setExtraRules,
+    setUseSurgePlan,
+    setSurgePlanCount,
     saveScheduleToHistory,
     deleteWeekFromHistory,
     clearHistory,
