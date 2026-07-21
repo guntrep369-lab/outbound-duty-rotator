@@ -17,6 +17,8 @@ import {
   isAvailableOn,
   unavailabilityOn,
   getLeaveType,
+  effectiveShift,
+  holidayOn,
 } from '../data/models.js';
 import { getISOWeek, weekKey, formatShort } from '../utils/dateUtils.js';
 import { TaskDot } from './ui/Badge.jsx';
@@ -101,11 +103,12 @@ function ShiftColumn({ shift, tasks, byDuty, standby, getEmployee, getTask }) {
 }
 
 export function Dashboard({ onNavigate }) {
-  const { employees, config, history, getEmployee, getTask } = useApp();
+  const { employees, config, history, shiftPlans, getEmployee, getTask } = useApp();
 
   const today = new Date();
   const pad = (n) => String(n).padStart(2, '0');
   const todayYmd = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+  const todayMonthKey = `${today.getFullYear()}-${pad(today.getMonth() + 1)}`;
   const { year, week } = getISOWeek(today);
   const todayIso = today.getDay() === 0 ? 7 : today.getDay();
   const todayName = WEEKDAYS.find((d) => d.iso === todayIso);
@@ -140,14 +143,16 @@ export function Dashboard({ onNavigate }) {
       res[s.id] = employees.filter(
         (e) =>
           e.status === EMPLOYEE_STATUS.ACTIVE &&
-          e.primaryShift === s.id &&
+          effectiveShift(e, todayMonthKey, shiftPlans) === s.id &&
           !assigned.has(e.id) &&
           // Not on a recurring day off or dated leave today.
           isAvailableOn(e, todayYmd, todayIso)
       );
     }
     return res;
-  }, [todaysRecords, employees, todayYmd, todayIso]);
+  }, [todaysRecords, employees, todayYmd, todayIso, todayMonthKey, shiftPlans]);
+
+  const todayHoliday = holidayOn(config.holidays, todayYmd);
 
   // Who is off / on leave today (across both shifts).
   const unavailableToday = useMemo(() => {
@@ -192,6 +197,17 @@ export function Dashboard({ onNavigate }) {
         <StatCard icon={ClipboardList} label="Active tasks" value={stats.tasks} tint="bg-indigo-100 text-indigo-600" />
         <StatCard icon={CalendarRange} label="Working days/wk" value={stats.working} tint="bg-sky-100 text-sky-600" />
       </div>
+
+      {/* Warehouse closed today */}
+      {todayHoliday && (
+        <div className="card flex items-center gap-3 border-rose-200 bg-rose-50 p-4">
+          <span className="text-2xl">🔒</span>
+          <div>
+            <p className="font-semibold text-rose-700">วันนี้คลังปิด — ไม่มีการจัดงาน</p>
+            <p className="text-sm text-rose-600/80">{todayHoliday.name || 'วันหยุด'}</p>
+          </div>
+        </div>
+      )}
 
       {/* Off / leave today */}
       {unavailableToday.length > 0 && (

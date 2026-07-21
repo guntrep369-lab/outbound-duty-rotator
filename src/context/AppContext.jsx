@@ -37,6 +37,7 @@ export function AppProvider({ children }) {
   const [config, setConfig] = useState(defaultDutyConfig());
   const [history, setHistory] = useState([]);
   const [plans, setPlans] = useState({}); // surge plan keyed by weekKey
+  const [shiftPlans, setShiftPlans] = useState({}); // monthly shift rotation keyed by "YYYY-MM"
   const [settings, setSettings] = useState(loadSettings());
   const [source, setSource] = useState('local'); // 'github' | 'local'
   const [online, setOnline] = useState(false);
@@ -68,6 +69,7 @@ export function AppProvider({ children }) {
       setConfig(res.config);
       setHistory(res.history);
       setPlans(res.plans || {});
+      setShiftPlans(res.shiftPlans || {});
       setSource(res.source);
       setOnline(res.online);
       setSettings(loadSettings());
@@ -253,6 +255,26 @@ export function AppProvider({ children }) {
     [config, commitConfig]
   );
 
+  /* -------------------------- holidays (closed days) --------------------- */
+  const addHoliday = useCallback(
+    (date, name) => {
+      const rest = (config.holidays || []).filter((h) => h.date !== date);
+      commitConfig({ ...config, holidays: [...rest, { date, name: name || '' }] }, `chore(duties): holiday ${date}`);
+      notify('success', `ตั้งวันหยุดคลัง ${date} แล้ว`, 2500);
+    },
+    [config, commitConfig, notify]
+  );
+  const removeHoliday = useCallback(
+    (date) => {
+      commitConfig(
+        { ...config, holidays: (config.holidays || []).filter((h) => h.date !== date) },
+        `chore(duties): remove holiday ${date}`
+      );
+      notify('info', `ยกเลิกวันหยุดคลัง ${date}`, 2000);
+    },
+    [config, commitConfig, notify]
+  );
+
   /* ------------------------------ surge plan ----------------------------- */
   // plans = { [weekKey]: { morning: { [iso]: n }, afternoon: { [iso]: n } } }
   const setSurgePlanCount = useCallback(
@@ -280,6 +302,29 @@ export function AppProvider({ children }) {
       persist('plans', next, `chore(plans): set week ${weekKey}`);
     },
     [plans, persist]
+  );
+
+  /* --------------------- monthly shift rotation (สลับกะ) ----------------- */
+  // shiftPlans = { [monthKey]: { [empId]: 'morning'|'afternoon' } }
+  const setShiftPlanFor = useCallback(
+    (monthKey, empId, shift) => {
+      const month = { ...(shiftPlans[monthKey] || {}), [empId]: shift };
+      const next = { ...shiftPlans, [monthKey]: month };
+      setShiftPlans(next);
+      persist('shiftPlans', next, `chore(shifts): ${monthKey} ${empId}=${shift}`);
+    },
+    [shiftPlans, persist]
+  );
+  // Replace (or clear) a whole month's shift map in one write.
+  const setShiftPlanMonth = useCallback(
+    (monthKey, map) => {
+      const next = { ...shiftPlans };
+      if (map && Object.keys(map).length) next[monthKey] = { ...map };
+      else delete next[monthKey];
+      setShiftPlans(next);
+      persist('shiftPlans', next, `chore(shifts): set month ${monthKey}`);
+    },
+    [shiftPlans, persist]
   );
 
   /* -------------------------------- history ------------------------------ */
@@ -348,6 +393,7 @@ export function AppProvider({ children }) {
     config,
     history,
     plans,
+    shiftPlans,
     settings,
     source,
     online,
@@ -382,6 +428,10 @@ export function AppProvider({ children }) {
     setUseSurgePlan,
     setSurgePlanCount,
     setSurgePlanWeek,
+    addHoliday,
+    removeHoliday,
+    setShiftPlanFor,
+    setShiftPlanMonth,
     saveScheduleToHistory,
     deleteWeekFromHistory,
     clearHistory,

@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { Users, ClipboardList, Github } from 'lucide-react';
+import { Users, ClipboardList, Github, Repeat } from 'lucide-react';
 import { EmployeeManager } from './settings/EmployeeManager.jsx';
 import { DutyManager } from './settings/DutyManager.jsx';
+import { ShiftRotation } from './settings/ShiftRotation.jsx';
 import { GitHubSync } from './settings/GitHubSync.jsx';
 
 const SUBTABS = [
   { id: 'employees', label: 'Employees', labelTh: 'พนักงาน', icon: Users },
   { id: 'duties', label: 'Duties & Shifts', labelTh: 'กะ & หน้าที่', icon: ClipboardList },
+  { id: 'shifts', label: 'Shift Rotation', labelTh: 'สลับกะ', icon: Repeat },
   { id: 'github', label: 'GitHub Sync', labelTh: 'ซิงก์', icon: Github },
 ];
 
@@ -35,6 +37,7 @@ export function Settings() {
 
       {sub === 'employees' && <EmployeeManager />}
       {sub === 'duties' && <DutyManager />}
+      {sub === 'shifts' && <ShiftRotation />}
       {sub === 'github' && <GitHubSync />}
     </div>
   );

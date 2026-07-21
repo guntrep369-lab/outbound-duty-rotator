@@ -14,6 +14,7 @@ const KEYS = {
   duties: 'odr:duties',
   history: 'odr:history',
   plans: 'odr:plans',
+  shiftPlans: 'odr:shiftPlans',
   sha: (file) => `odr:sha:${file}`,
 };
 
@@ -23,6 +24,7 @@ export const FILES = {
   duties: 'duties.json',
   history: 'history.json',
   plans: 'plans.json',
+  shiftPlans: 'shiftPlans.json',
 };
 
 /* ------------------------------- local layer ------------------------------ */
@@ -89,12 +91,16 @@ export function normalizeDutyDoc(doc) {
   const minDays = Math.max(0, Math.min(7, Number(rules.minDays) || 0));
   const rawMax = rules.maxDays;
   const maxDays = rawMax == null || rawMax === '' ? null : Math.max(0, Math.min(7, Number(rawMax) || 0));
+  const holidays = Array.isArray(doc.holidays)
+    ? doc.holidays.filter((h) => h && h.date).map((h) => ({ date: h.date, name: h.name || '' }))
+    : [];
   return {
     tasks,
     workingDays,
     lookbackWeeks,
     extraRules: { minDays, maxDays },
     useSurgePlan: !!doc.useSurgePlan,
+    holidays,
   };
 }
 
@@ -111,6 +117,7 @@ export async function loadAll() {
   let dutyDoc = localGet(KEYS.duties, defaultDutyConfig());
   let history = localGet(KEYS.history, []);
   let plans = localGet(KEYS.plans, {});
+  let shiftPlans = localGet(KEYS.shiftPlans, {});
   const warnings = [];
   let source = 'local';
   let online = false;
@@ -118,11 +125,12 @@ export async function loadAll() {
   const svc = settings.enabled ? buildService(settings) : null;
   if (svc) {
     try {
-      const [e, d, h, p] = await Promise.all([
+      const [e, d, h, p, sp] = await Promise.all([
         svc.getJson(FILES.employees),
         svc.getJson(FILES.duties),
         svc.getJson(FILES.history),
         svc.getJson(FILES.plans),
+        svc.getJson(FILES.shiftPlans),
       ]);
       online = true;
       source = 'github';
@@ -156,6 +164,12 @@ export async function loadAll() {
         localSet(KEYS.plans, plans);
       }
       localSet(KEYS.sha(FILES.plans), p.sha);
+
+      if (sp.data) {
+        shiftPlans = sp.data;
+        localSet(KEYS.shiftPlans, shiftPlans);
+      }
+      localSet(KEYS.sha(FILES.shiftPlans), sp.sha);
     } catch (err) {
       warnings.push(`GitHub load failed — using local data. (${describeGitHubError(err)})`);
       source = 'local';
@@ -169,6 +183,7 @@ export async function loadAll() {
     config: normalizeDutyDoc(dutyDoc),
     history: Array.isArray(history) ? history : [],
     plans: plans && typeof plans === 'object' ? plans : {},
+    shiftPlans: shiftPlans && typeof shiftPlans === 'object' ? shiftPlans : {},
     source,
     online,
     warnings,

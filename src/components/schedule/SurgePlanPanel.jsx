@@ -7,8 +7,15 @@ import {
   EMPLOYEE_STATUS,
   EMPLOYEE_TYPES,
   isAvailableOn,
+  effectiveShift,
+  holidayOn,
 } from '../../data/models.js';
-import { datesOfISOWeek, weekKey as makeWeekKey, previousWeekKeys } from '../../utils/dateUtils.js';
+import {
+  datesOfISOWeek,
+  weekKey as makeWeekKey,
+  previousWeekKeys,
+  monthKeyOfWeek,
+} from '../../utils/dateUtils.js';
 
 /**
  * Weekly "Surge Plan" grid (แผนกำลังเสริม): shows, per day and shift, the
@@ -16,10 +23,11 @@ import { datesOfISOWeek, weekKey as makeWeekKey, previousWeekKeys } from '../../
  * เสริม head-count. Optionally caps how many เสริม the generator schedules.
  */
 export function SurgePlanPanel({ year, week, schedule }) {
-  const { employees, config, plans, getEmployee, setSurgePlanCount, setUseSurgePlan, setSurgePlanWeek } = useApp();
+  const { employees, config, plans, shiftPlans, getEmployee, setSurgePlanCount, setUseSurgePlan, setSurgePlanWeek } = useApp();
   const [open, setOpen] = useState(true);
 
   const wk = makeWeekKey(year, week);
+  const monthKey = monthKeyOfWeek(year, week);
   const days = useMemo(() => datesOfISOWeek(year, week), [year, week]);
   const weekPlan = plans[wk] || {};
   const workingSet = new Set(config.workingDays || []);
@@ -41,14 +49,17 @@ export function SurgePlanPanel({ year, week, schedule }) {
   const showActual = !!schedule && schedule.weekKey === wk;
 
   // Count active employees of a type on a shift who are available on a given day.
-  const countAvail = (type, shiftId, ymd, iso) =>
-    employees.filter(
+  // Uses the effective (monthly-rotated) shift; a holiday closes the day → 0.
+  const countAvail = (type, shiftId, ymd, iso) => {
+    if (holidayOn(config.holidays, ymd)) return 0;
+    return employees.filter(
       (e) =>
         e.status === EMPLOYEE_STATUS.ACTIVE &&
         e.type === type &&
-        e.primaryShift === shiftId &&
+        effectiveShift(e, monthKey, shiftPlans) === shiftId &&
         isAvailableOn(e, ymd, iso)
     ).length;
+  };
 
   const planVal = (shiftId, iso) => weekPlan?.[shiftId]?.[iso] ?? 0;
 

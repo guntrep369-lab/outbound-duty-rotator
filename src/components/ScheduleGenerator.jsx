@@ -107,7 +107,7 @@ function FairnessPanel({ schedule }) {
 
 export function ScheduleGenerator() {
   const app = useApp();
-  const { employees, config, history, plans, getEmployee, getTask, notify, saveScheduleToHistory, savedWeeks } = app;
+  const { employees, config, history, plans, shiftPlans, getEmployee, getTask, notify, saveScheduleToHistory, savedWeeks } = app;
 
   const now = currentWeek();
   const [year, setYear] = useState(now.year);
@@ -125,7 +125,15 @@ export function ScheduleGenerator() {
       notify('warning', 'Add and activate some employees first (Settings → Employees).', 5000);
       return;
     }
-    const sched = generateSchedule({ year, week, employees, config, history, surgePlan: plans[weekKey(year, week)] });
+    const sched = generateSchedule({
+      year,
+      week,
+      employees,
+      config,
+      history,
+      surgePlan: plans[weekKey(year, week)],
+      shiftPlans,
+    });
     setSchedule(sched);
     notify('success', `Generated roster for ${sched.weekKey}.`, 2500);
   };

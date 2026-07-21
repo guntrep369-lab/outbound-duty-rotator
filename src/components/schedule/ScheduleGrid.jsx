@@ -41,6 +41,7 @@ export function ScheduleGrid({ schedule, editable = false, onSlotClick, onAddCli
   }
 
   const renderCell = (dayKey, cell, shiftId, task) => {
+    if (cell.closed) return <td key={dayKey} className="border border-slate-100 bg-slate-100/70" />;
     const res = cell[shiftId];
     const assigned = (res?.assignments?.[task.id]) || [];
     const need = Number(task.req?.[shiftId]) || 0;
@@ -82,6 +83,7 @@ export function ScheduleGrid({ schedule, editable = false, onSlotClick, onAddCli
   };
 
   const renderStandbyCell = (dayKey, cell, shiftId) => {
+    if (cell.closed) return <td key={dayKey} className="border border-slate-100 bg-slate-100/70" />;
     const res = cell[shiftId];
     const list = res?.standby || [];
     return (
@@ -105,6 +107,7 @@ export function ScheduleGrid({ schedule, editable = false, onSlotClick, onAddCli
   };
 
   const renderUnavailableCell = (dayKey, cell, shiftId) => {
+    if (cell.closed) return <td key={dayKey} className="border border-slate-100 bg-slate-100/70" />;
     const res = cell[shiftId];
     const list = res?.unavailable || [];
     const emp = (id) => getEmployee(id);
@@ -149,10 +152,14 @@ export function ScheduleGrid({ schedule, editable = false, onSlotClick, onAddCli
             {days.map((d) => (
               <th
                 key={d.key}
-                className="border border-slate-200 bg-slate-100 px-2 py-2 text-center text-xs font-semibold text-slate-600"
+                className={`border border-slate-200 px-2 py-2 text-center text-xs font-semibold ${
+                  d.cell.closed ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600'
+                }`}
+                title={d.cell.closed ? `ปิดคลัง${d.cell.holidayName ? ' · ' + d.cell.holidayName : ''}` : undefined}
               >
                 <div>{d.label}</div>
                 <div className="font-normal text-slate-400">{d.cell.date?.slice(5)}</div>
+                {d.cell.closed && <div className="mt-0.5 font-semibold text-rose-600">🔒 ปิด</div>}
               </th>
             ))}
           </tr>

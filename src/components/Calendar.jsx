@@ -7,6 +7,8 @@ import {
   Trash2,
   CalendarOff,
   Plane,
+  Lock,
+  LockOpen,
 } from 'lucide-react';
 import { useApp } from '../context/useApp.js';
 import {
@@ -16,6 +18,7 @@ import {
   WEEKDAYS,
   isDayOff,
   leaveOn,
+  holidayOn,
 } from '../data/models.js';
 import { Modal } from './ui/Modal.jsx';
 
@@ -120,10 +123,12 @@ function AddLeaveForm({ activeEmployees, defaultDate, onAdd }) {
 }
 
 export function CalendarView() {
-  const { employees, addLeave, removeLeave } = useApp();
+  const { employees, config, addLeave, removeLeave, addHoliday, removeHoliday } = useApp();
   const now = new Date();
   const [ym, setYm] = useState({ year: now.getFullYear(), month: now.getMonth() }); // month 0-based
   const [openYmd, setOpenYmd] = useState(null);
+  const [holidayName, setHolidayName] = useState('');
+  const holidays = config.holidays || [];
 
   const activeEmployees = useMemo(
     () =>
@@ -189,6 +194,7 @@ export function CalendarView() {
   // ISO weekday for the currently-open day.
   const openIso = openYmd ? isoOf(new Date(Number(openYmd.slice(0, 4)), Number(openYmd.slice(5, 7)) - 1, Number(openYmd.slice(8, 10)))) : null;
   const openInfo = openYmd ? dayInfo(openYmd, openIso) : null;
+  const openHoliday = openYmd ? holidayOn(holidays, openYmd) : null;
 
   return (
     <div className="space-y-5">
@@ -237,16 +243,31 @@ export function CalendarView() {
             const { leaves, off } = dayInfo(c.ymd, c.iso);
             const isToday = c.ymd === today;
             const isWeekend = c.iso >= 6;
+            const hol = holidayOn(holidays, c.ymd);
             return (
               <button
                 key={c.ymd}
                 onClick={() => setOpenYmd(c.ymd)}
                 className={`flex min-h-[68px] flex-col gap-1 rounded-lg border p-1.5 text-left transition hover:border-indigo-300 hover:bg-indigo-50/40 ${
-                  isToday ? 'border-indigo-400 bg-indigo-50/60' : isWeekend ? 'border-slate-100 bg-slate-50/50' : 'border-slate-100'
+                  hol
+                    ? 'border-rose-300 bg-rose-50'
+                    : isToday
+                    ? 'border-indigo-400 bg-indigo-50/60'
+                    : isWeekend
+                    ? 'border-slate-100 bg-slate-50/50'
+                    : 'border-slate-100'
                 }`}
               >
                 <span className={`text-xs font-semibold ${isToday ? 'text-indigo-700' : 'text-slate-500'}`}>{c.day}</span>
                 <div className="flex flex-wrap gap-0.5">
+                  {hol && (
+                    <span
+                      title={`ปิดคลัง${hol.name ? ' · ' + hol.name : ''}`}
+                      className="inline-block max-w-full truncate rounded bg-rose-200 px-1 text-[10px] font-semibold leading-4 text-rose-800"
+                    >
+                      🔒 {hol.name || 'ปิดคลัง'}
+                    </span>
+                  )}
                   {leaves.slice(0, 3).map(({ emp, leave }) => {
                     const lt = getLeaveType(leave.type);
                     return (
@@ -315,6 +336,41 @@ export function CalendarView() {
       <Modal open={!!openYmd} onClose={() => setOpenYmd(null)} title={openYmd ? fmtThai(openYmd) : ''} maxWidth="max-w-lg">
         {openYmd && openInfo && (
           <div className="space-y-4">
+            {/* Warehouse holiday (closed day) */}
+            <div className="rounded-xl border border-rose-200 bg-rose-50 p-3">
+              {openHoliday ? (
+                <div className="flex items-center gap-2">
+                  <Lock className="h-4 w-4 text-rose-600" />
+                  <span className="flex-1 text-sm font-semibold text-rose-700">
+                    วันนี้คลังปิด{openHoliday.name ? ` · ${openHoliday.name}` : ''}
+                  </span>
+                  <button className="btn-secondary !py-1.5 text-xs" onClick={() => removeHoliday(openYmd)}>
+                    <LockOpen className="h-3.5 w-3.5" /> เปิดคลัง (ยกเลิก)
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Lock className="h-4 w-4 text-rose-500" />
+                  <span className="text-sm font-medium text-slate-600">ตั้งเป็นวันหยุด (ปิดคลัง ไม่จัดงาน):</span>
+                  <input
+                    className="input h-8 flex-1 !py-1 text-sm"
+                    placeholder="ชื่อวันหยุด (เช่น วันแม่)"
+                    value={holidayName}
+                    onChange={(e) => setHolidayName(e.target.value)}
+                  />
+                  <button
+                    className="btn-danger !py-1.5 text-xs"
+                    onClick={() => {
+                      addHoliday(openYmd, holidayName.trim());
+                      setHolidayName('');
+                    }}
+                  >
+                    <Lock className="h-3.5 w-3.5" /> ปิดคลังวันนี้
+                  </button>
+                </div>
+              )}
+            </div>
+
             {/* Leaves that day */}
             <div>
               <p className="mb-1.5 flex items-center gap-1.5 text-sm font-semibold text-slate-600">

@@ -91,6 +91,16 @@ export function previousWeekKeys(year, week, count) {
   return keys;
 }
 
+/**
+ * The calendar month a given ISO week "belongs" to — using its Thursday, the
+ * day that defines the ISO week — as "YYYY-MM". Used to pick the monthly shift
+ * plan for a roster week.
+ */
+export function monthKeyOfWeek(year, week) {
+  const thu = datesOfISOWeek(year, week)[3].date; // index 3 = Thursday
+  return `${thu.getUTCFullYear()}-${pad2(thu.getUTCMonth() + 1)}`;
+}
+
 /** How many ISO weeks `key` is before the reference {year, week} (0 = same week). */
 export function weeksAgo(refYear, refWeek, key) {
   const parsed = parseWeekKey(key);

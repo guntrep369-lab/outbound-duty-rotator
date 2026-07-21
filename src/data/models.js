@@ -156,6 +156,36 @@ export function getLeaveType(id) {
   return LEAVE_TYPES.find((t) => t.id === id) || LEAVE_TYPES[0];
 }
 
+/** Only inhouse + outsource-ประจำ rotate between shifts; เสริม never swap. */
+export const SWAP_ELIGIBLE_TYPES = new Set([
+  EMPLOYEE_TYPES.INHOUSE,
+  EMPLOYEE_TYPES.OUTSOURCE_REGULAR,
+]);
+
+export function isSwapEligible(emp) {
+  return SWAP_ELIGIBLE_TYPES.has(emp?.type);
+}
+
+/**
+ * The shift an employee actually works in a given month, honouring the monthly
+ * shift-rotation plan. เสริม (and anyone without an override) keep primaryShift.
+ * @param {object} emp
+ * @param {string} monthKey  "YYYY-MM"
+ * @param {Object} shiftPlans  { [monthKey]: { [empId]: 'morning'|'afternoon' } }
+ */
+export function effectiveShift(emp, monthKey, shiftPlans) {
+  if (!emp) return SHIFTS.MORNING;
+  if (!isSwapEligible(emp)) return emp.primaryShift;
+  const ov = shiftPlans?.[monthKey]?.[emp.id];
+  return ov === SHIFTS.MORNING || ov === SHIFTS.AFTERNOON ? ov : emp.primaryShift;
+}
+
+/** The holiday record (warehouse closed) covering a date, or null. */
+export function holidayOn(holidays, ymd) {
+  if (!Array.isArray(holidays)) return null;
+  return holidays.find((h) => h && h.date === ymd) || null;
+}
+
 /** Special sentinel duty id used when an eligible employee is not assigned a task. */
 export const STANDBY = 'standby';
 
@@ -193,6 +223,8 @@ export function defaultDutyConfig() {
     extraRules: { minDays: 0, maxDays: null },
     // When true, the weekly Surge Plan caps how many เสริม are scheduled per day.
     useSurgePlan: false,
+    // Warehouse closed days (holidays): [{ date:'YYYY-MM-DD', name }].
+    holidays: [],
   };
 }
 
