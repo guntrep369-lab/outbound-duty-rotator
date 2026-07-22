@@ -9,6 +9,7 @@ import {
   isAvailableOn,
   effectiveShiftOn,
   holidayOn,
+  isExtraId,
 } from '../../data/models.js';
 import { datesOfISOWeek, weekKey as makeWeekKey, previousWeekKeys } from '../../utils/dateUtils.js';
 
@@ -38,7 +39,8 @@ export function SurgePlanPanel({ year, week, schedule }) {
     const res = schedule.grid?.[dayKey]?.[shiftId];
     if (!res) return null;
     const ids = Object.values(res.assignments || {}).flat();
-    return ids.filter((id) => getEmployee(id)?.type === EMPLOYEE_TYPES.OUTSOURCE_EXTRA).length;
+    // Named เสริม + anonymous เสริม placeholders.
+    return ids.filter((id) => isExtraId(id) || getEmployee(id)?.type === EMPLOYEE_TYPES.OUTSOURCE_EXTRA).length;
   };
   const showActual = !!schedule && schedule.weekKey === wk;
 
@@ -93,8 +95,10 @@ export function SurgePlanPanel({ year, week, schedule }) {
               <span className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition peer-checked:translate-x-4" />
             </span>
             <span className="text-sm text-slate-700">
-              ใช้แผนนี้คุมจำนวนเสริมตอน generate
-              <span className="ml-1 text-xs text-slate-400">(เปิด = จัดเสริมไม่เกินจำนวนที่วางไว้ต่อวัน)</span>
+              ใช้แผนกำหนดจำนวนเสริมตอน generate
+              <span className="ml-1 text-xs text-slate-400">
+                (เปิด = เติม “เสริม” นิรนามตามจำนวนที่วางไว้ ลงช่องที่กำลังหลักไม่พอ — ไม่ต้องสร้างรายชื่อ)
+              </span>
             </span>
           </label>
 

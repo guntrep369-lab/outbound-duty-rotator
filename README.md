@@ -57,10 +57,13 @@ gets first priority for that station. Unset = rotate normally. Restricted by `al
 **Surge Plan** (แผนกำลังเสริม): a per-week grid (on the Schedule tab) showing, per day and shift,
 the auto-computed inhouse / outsource-ประจำ availability (accounting for day-off & leave) and an
 editable planned เสริม head-count. It's a planning reference; with the **"ใช้แผนนี้คุมจำนวนเสริม"**
-toggle on (`config.useSurgePlan`), the generator schedules **at most** the planned number of เสริม
-each day. Stored per ISO week in `plans.json`. After generating, a **จริง (actual)** row compares
-the เสริม actually scheduled against the plan (green = on plan, amber = under, red = over), and a
-**copy-from-previous-week** button reuses last week's plan.
+toggle on (`config.useSurgePlan`), the generator fills any slots the core staff can't cover with
+**anonymous เสริม** (เสริมนิรนาม) up to the planned number — so you can plan surge head-count for
+promo periods (7.7, 8.8…) **without creating names in advance**. They render as dashed "เสริม" chips
+and are not tracked in history (they're placeholders). Named เสริม, if any, are placed first and
+count toward the plan. Stored per ISO week in `plans.json`. After generating, a **จริง (actual)** row
+compares the เสริม actually scheduled against the plan (green = on plan, amber = under, red = over),
+and a **copy-from-previous-week** button reuses last week's plan.
 
 **Warehouse holidays** (วันหยุดคลัง): mark any date as closed (`config.holidays`) from the Calendar
 tab. On a closed day the engine schedules nothing — the roster shows a **🔒 ปิด** column and the

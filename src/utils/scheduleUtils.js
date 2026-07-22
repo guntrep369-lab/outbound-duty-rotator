@@ -4,7 +4,7 @@
  * All functions return NEW objects (immutable-friendly for React state).
  */
 
-import { SHIFTS } from '../data/models.js';
+import { SHIFTS, EXTRA_ID } from '../data/models.js';
 import { buildSummary } from '../engine/rotationEngine.js';
 
 /** Deep-ish clone of a schedule grid (structure is plain JSON). */
@@ -106,6 +106,7 @@ export function refreshDerived(schedule, employees, config) {
       }
       for (const [dutyId, empIds] of Object.entries(res.assignments || {})) {
         for (const employeeId of empIds) {
+          if (employeeId === EXTRA_ID) continue; // anonymous เสริม not tracked in history
           records.push({
             id: `${schedule.weekKey}:${dayKey}:${shift}:${dutyId}:${employeeId}`,
             weekKey: schedule.weekKey,

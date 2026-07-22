@@ -1,12 +1,23 @@
 import React from 'react';
 import { Plus, AlertTriangle, Pin } from 'lucide-react';
 import { useApp } from '../../context/useApp.js';
-import { SHIFT_LIST, WEEKDAYS, SHIFTS, getLeaveType } from '../../data/models.js';
+import { SHIFT_LIST, WEEKDAYS, SHIFTS, getLeaveType, isExtraId } from '../../data/models.js';
 import { TaskDot } from '../ui/Badge.jsx';
+
+/** Chip for an anonymous surge worker (เสริมนิรนาม). */
+function ExtraChip() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md border border-dashed border-pink-300 bg-pink-50 px-1.5 py-0.5 text-xs font-medium text-pink-600">
+      <span className="h-1.5 w-1.5 rounded-full bg-pink-400" />
+      เสริม
+    </span>
+  );
+}
 
 /** Chip for one assigned employee. Clickable in edit mode to swap. */
 function EmpChip({ empId, color, editable, onClick }) {
   const { getEmployee } = useApp();
+  if (isExtraId(empId)) return <ExtraChip />;
   const emp = getEmployee(empId);
   const label = emp ? emp.nickname || emp.name : '—';
   const pinned = !!emp?.fixedDutyId;

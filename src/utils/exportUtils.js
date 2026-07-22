@@ -3,7 +3,7 @@
  * plus small browser helpers for downloading and copying.
  */
 
-import { SHIFTS, getShift, WEEKDAYS } from '../data/models.js';
+import { SHIFTS, getShift, WEEKDAYS, isExtraId } from '../data/models.js';
 
 const CSV_MIME = 'text/csv;charset=utf-8;';
 
@@ -15,6 +15,11 @@ function csvCell(value) {
 function empLabel(emp) {
   if (!emp) return '(unknown)';
   return emp.nickname ? `${emp.nickname}` : emp.name;
+}
+
+/** Resolve a chip id to a label, including anonymous เสริม placeholders. */
+function idLabel(id, getEmployee) {
+  return isExtraId(id) ? 'เสริม' : empLabel(getEmployee(id));
 }
 
 /** Ordered day cells that actually exist in the schedule grid. */
@@ -46,7 +51,7 @@ export function scheduleToCSV(schedule, { getEmployee, getTask }) {
           task ? task.name : dutyId,
           under ? under.needed : empIds.length,
           empIds.length,
-          empIds.map((id) => empLabel(getEmployee(id))).join(', '),
+          empIds.map((id) => idLabel(id, getEmployee)).join(', '),
         ]);
       }
       if ((res.standby || []).length) {
@@ -80,7 +85,7 @@ export function scheduleToText(schedule, { getEmployee, getTask }) {
         const task = getTask(dutyId);
         lines.push(
           `    • ${task ? task.name : dutyId}: ${empIds
-            .map((id) => empLabel(getEmployee(id)))
+            .map((id) => idLabel(id, getEmployee))
             .join(', ')}`
         );
       }

@@ -89,6 +89,14 @@ export const EMPLOYEE_TYPES = {
   OUTSOURCE_EXTRA: 'outsource_extra',
 };
 
+/**
+ * Sentinel employee id for an ANONYMOUS surge worker (เสริมนิรนาม). The Surge
+ * Plan fills understaffed slots with these instead of requiring named เสริม —
+ * useful for promo periods when you plan a head-count but don't know names.
+ */
+export const EXTRA_ID = '__extra__';
+export const isExtraId = (id) => id === EXTRA_ID;
+
 export const TYPE_LIST = [
   {
     id: EMPLOYEE_TYPES.INHOUSE,

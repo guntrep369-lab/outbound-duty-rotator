@@ -14,6 +14,7 @@ import {
   SHIFTS,
   EMPLOYEE_STATUS,
   EMPLOYEE_TYPES,
+  EXTRA_ID,
   STATUS_LIST,
   taskAllowsType,
   isAvailableOn,
@@ -196,6 +197,29 @@ function assignShiftDay({
     }
   }
 
+  // Second pass: fill remaining empty slots with ANONYMOUS เสริม (เสริมนิรนาม)
+  // up to the Surge Plan's planned head-count for the day. Lets you plan surge
+  // staff by number without creating names. Respects task type-restrictions.
+  if (surgeCap != null && surgeCap > extraAssigned) {
+    for (const duty of rotated) {
+      if (extraAssigned >= surgeCap) break;
+      if (!taskAllowsType(duty, EMPLOYEE_TYPES.OUTSOURCE_EXTRA)) continue;
+      const arr = assignments[duty.id];
+      const need = Number(duty.req[shift]) || 0;
+      while (arr.length < need && extraAssigned < surgeCap) {
+        arr.push(EXTRA_ID);
+        extraAssigned += 1;
+      }
+    }
+    // Recompute understaffed after the anonymous fill.
+    understaffed.length = 0;
+    for (const duty of rotated) {
+      const need = Number(duty.req[shift]) || 0;
+      const got = (assignments[duty.id] || []).length;
+      if (got < need) understaffed.push({ dutyId: duty.id, needed: need, got });
+    }
+  }
+
   // Whoever is present but not placed today rests (standby). Because busy
   // people sort last for duties, standby naturally rotates by workload.
   const standby = present.filter((e) => !assignedToday.has(e.id)).map((e) => e.id);
@@ -273,8 +297,10 @@ export function generateSchedule({ year, week, employees, config, history, surge
       dayCell[shift] = res;
 
       // Flatten real duty assignments into history records.
+      // Anonymous เสริม (EXTRA_ID) are placeholders — not tracked in history.
       for (const [dutyId, empIds] of Object.entries(res.assignments)) {
         for (const employeeId of empIds) {
+          if (employeeId === EXTRA_ID) continue;
           records.push({
             id: `${wk}:${wd.key}:${shift}:${dutyId}:${employeeId}`,
             weekKey: wk,
@@ -329,6 +355,7 @@ export function buildSummary({ grid, workingDays, employees, config }) {
       );
       for (const [dutyId, empIds] of Object.entries(res.assignments || {})) {
         for (const empId of empIds) {
+          if (empId === EXTRA_ID) continue; // anonymous เสริม aren't tracked per-person
           const rec = touch(empId);
           rec.total += 1;
           rec.byDuty[dutyId] = (rec.byDuty[dutyId] || 0) + 1;
