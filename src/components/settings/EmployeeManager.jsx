@@ -227,6 +227,7 @@ export function EmployeeManager() {
 
   const [filter, setFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [shiftFilter, setShiftFilter] = useState('all');
   const [query, setQuery] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -242,11 +243,12 @@ export function EmployeeManager() {
     return employees
       .filter((e) => (filter === 'all' ? true : e.status === filter))
       .filter((e) => (typeFilter === 'all' ? true : (e.type || EMPLOYEE_TYPES.INHOUSE) === typeFilter))
+      .filter((e) => (shiftFilter === 'all' ? true : e.primaryShift === shiftFilter))
       .filter((e) =>
         q ? `${e.name} ${e.nickname}`.toLowerCase().includes(q) : true
       )
       .sort((a, b) => a.name.localeCompare(b.name, 'th'));
-  }, [employees, filter, typeFilter, query]);
+  }, [employees, filter, typeFilter, shiftFilter, query]);
 
   const openAdd = () => {
     setEditing(null);
@@ -294,6 +296,19 @@ export function EmployeeManager() {
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
           <select
+            className="input sm:w-40"
+            value={shiftFilter}
+            onChange={(e) => setShiftFilter(e.target.value)}
+            aria-label="Filter by shift"
+          >
+            <option value="all">ทุกกะ (all shifts)</option>
+            {SHIFT_LIST.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.label} · {s.labelTh}
+              </option>
+            ))}
+          </select>
+          <select
             className="input sm:w-44"
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
@@ -306,7 +321,7 @@ export function EmployeeManager() {
               </option>
             ))}
           </select>
-          <div className="relative sm:w-64">
+          <div className="relative sm:w-56">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               className="input pl-9"
@@ -389,6 +404,16 @@ export function EmployeeManager() {
                       <Archive className="h-4 w-4" />
                     </button>
                   )}
+                  <button
+                    className="btn-ghost !p-1.5 text-rose-500"
+                    title="ลบถาวร (Delete)"
+                    onClick={() => {
+                      if (window.confirm(`ลบ "${emp.nickname || emp.name}" ถาวร? กู้คืนไม่ได้`))
+                        deleteEmployee(emp.id);
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                 </div>
                 {emp.status !== EMPLOYEE_STATUS.RESIGNED && (
                   <div className="flex gap-0.5">
@@ -408,17 +433,6 @@ export function EmployeeManager() {
                       </button>
                     )}
                   </div>
-                )}
-                {emp.status === EMPLOYEE_STATUS.RESIGNED && (
-                  <button
-                    className="btn-ghost !px-2 !py-1 text-xs text-rose-500"
-                    onClick={() => {
-                      if (window.confirm(`Permanently delete ${emp.nickname || emp.name}? This cannot be undone.`))
-                        deleteEmployee(emp.id);
-                    }}
-                  >
-                    <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
-                  </button>
                 )}
               </div>
             </li>
