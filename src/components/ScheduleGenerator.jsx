@@ -47,36 +47,38 @@ function FairnessPanel({ schedule }) {
     s.fairnessScore >= 85 ? 'text-emerald-600' : s.fairnessScore >= 65 ? 'text-amber-600' : 'text-rose-600';
 
   return (
-    <div className="card p-4">
-      <div className="grid grid-cols-3 gap-3 text-center">
-        <div>
-          <div className={`text-2xl font-bold ${scoreColor}`}>{s.fairnessScore}</div>
-          <div className="flex items-center justify-center gap-1 text-xs text-slate-500">
-            <Scale className="h-3.5 w-3.5" /> Fairness
+    <div className="card p-3">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+        <div className="flex items-center gap-2">
+          <Scale className={`h-5 w-5 ${scoreColor}`} />
+          <div>
+            <span className={`text-xl font-bold ${scoreColor}`}>{s.fairnessScore}</span>
+            <span className="ml-1 text-xs text-slate-500">ความยุติธรรม</span>
           </div>
         </div>
-        <div>
-          <div className="text-2xl font-bold text-slate-700">{s.employeeCount}</div>
-          <div className="flex items-center justify-center gap-1 text-xs text-slate-500">
-            <Users className="h-3.5 w-3.5" /> Rostered
+        <div className="flex items-center gap-2">
+          <Users className="h-5 w-5 text-slate-400" />
+          <div>
+            <span className="text-xl font-bold text-slate-700">{s.employeeCount}</span>
+            <span className="ml-1 text-xs text-slate-500">คนถูกจัดเวร</span>
           </div>
         </div>
-        <div>
-          <div className={`text-2xl font-bold ${s.understaffedCount ? 'text-rose-600' : 'text-emerald-600'}`}>
-            {s.understaffedCount}
-          </div>
-          <div className="flex items-center justify-center gap-1 text-xs text-slate-500">
-            <AlertTriangle className="h-3.5 w-3.5" /> Empty slots
+        <div className="flex items-center gap-2">
+          <AlertTriangle className={`h-5 w-5 ${s.understaffedCount ? 'text-rose-500' : 'text-emerald-500'}`} />
+          <div>
+            <span className={`text-xl font-bold ${s.understaffedCount ? 'text-rose-600' : 'text-emerald-600'}`}>
+              {s.understaffedCount}
+            </span>
+            <span className="ml-1 text-xs text-slate-500">ช่องว่าง</span>
           </div>
         </div>
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="ml-auto rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-200"
+        >
+          {open ? 'ซ่อน' : 'ดู'}ภาระงานรายคน
+        </button>
       </div>
-
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="mt-3 w-full rounded-lg bg-slate-50 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100"
-      >
-        {open ? 'Hide' : 'Show'} per-person workload
-      </button>
 
       {open && (
         <div className="mt-3 max-h-64 space-y-1.5 overflow-y-auto">
@@ -223,11 +225,12 @@ export function ScheduleGenerator() {
           )}
         </div>
 
-        <p className="flex items-center gap-1.5 text-xs text-slate-400">
-          <Scale className="h-3.5 w-3.5" />
-          Fair rotation looks back {config.lookbackWeeks} weeks and prioritises duties each person hasn't done recently.
-          Outsource เสริม ถูกจัดงานเฉพาะเมื่อกำลังหลัก (inhouse + outsource ประจำ) ไม่พอ. Click any name in the grid to
-          swap or bench.
+        <p className="flex items-start gap-1.5 text-xs text-slate-400">
+          <Scale className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>
+            อัลกอริทึมยุติธรรม: ดูประวัติย้อนหลัง {config.lookbackWeeks} สัปดาห์ แล้วเลี่ยงให้แต่ละคนได้งานที่เพิ่งทำไป ·
+            เสริมถูกจัดเมื่อกำลังหลักไม่พอ (เปิด “แผนกำลังเสริม” เพื่อเติมเสริมนิรนามได้) · คลิกชื่อในตารางเพื่อสลับ/พัก
+          </span>
         </p>
       </div>
 
@@ -245,27 +248,25 @@ export function ScheduleGenerator() {
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_260px]">
-            <div className="card overflow-hidden p-3 print-area">
-              <div className="mb-2 flex items-center justify-between px-1">
-                <h3 className="font-semibold text-slate-700">
-                  Roster · {schedule.weekKey}
-                  {isSaved && (
-                    <span className="ml-2 inline-flex items-center gap-1 text-xs font-medium text-emerald-600">
-                      <CheckCircle2 className="h-3.5 w-3.5" /> saved
-                    </span>
-                  )}
-                </h3>
-                <div className="hidden gap-2 sm:flex">
-                  <ShiftBadge shiftId="morning" showTh={false} />
-                  <ShiftBadge shiftId="afternoon" showTh={false} />
-                </div>
+          <div className="no-print">
+            <FairnessPanel schedule={schedule} />
+          </div>
+          <div className="card overflow-hidden p-3 print-area">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
+              <h3 className="font-semibold text-slate-700">
+                Roster · {schedule.weekKey}
+                {isSaved && (
+                  <span className="ml-2 inline-flex items-center gap-1 text-xs font-medium text-emerald-600">
+                    <CheckCircle2 className="h-3.5 w-3.5" /> saved
+                  </span>
+                )}
+              </h3>
+              <div className="hidden gap-2 sm:flex">
+                <ShiftBadge shiftId="morning" showTh={false} />
+                <ShiftBadge shiftId="afternoon" showTh={false} />
               </div>
-              <ScheduleGrid schedule={schedule} editable onSlotClick={onSlotClick} onAddClick={onAddClick} />
             </div>
-            <div className="no-print">
-              <FairnessPanel schedule={schedule} />
-            </div>
+            <ScheduleGrid schedule={schedule} editable onSlotClick={onSlotClick} onAddClick={onAddClick} />
           </div>
         </div>
       )}
