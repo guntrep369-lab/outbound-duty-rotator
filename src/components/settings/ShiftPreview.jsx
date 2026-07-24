@@ -1,7 +1,15 @@
 import React, { useMemo, useState } from 'react';
 import { CalendarRange } from 'lucide-react';
 import { useApp } from '../../context/useApp.js';
-import { SHIFT_LIST, EMPLOYEE_STATUS, isSwapEligible, effectiveShiftOn, getShift } from '../../data/models.js';
+import {
+  SHIFT_LIST,
+  EMPLOYEE_STATUS,
+  EMPLOYEE_TYPES,
+  isSwapEligible,
+  effectiveShiftOn,
+  getShift,
+  getType,
+} from '../../data/models.js';
 import { currentWeek, isoWeekMonday, getISOWeek, datesOfISOWeek, weekKey } from '../../utils/dateUtils.js';
 
 /**
@@ -47,6 +55,48 @@ export function ShiftPreview() {
     return { type: 'transition', from: shifts[0], to: shifts[shifts.length - 1] };
   };
 
+  // Group members by home shift (กะหลัก) then employment type.
+  const GROUP_TYPES = [EMPLOYEE_TYPES.INHOUSE, EMPLOYEE_TYPES.OUTSOURCE_REGULAR];
+  const groups = [];
+  for (const s of SHIFT_LIST) {
+    for (const t of GROUP_TYPES) {
+      const members = people.filter((e) => e.primaryShift === s.id && (e.type || 'inhouse') === t);
+      if (members.length) groups.push({ shift: s, type: getType(t), members });
+    }
+  }
+
+  const renderMemberRow = (emp) => (
+    <tr key={emp.id}>
+      <th className="sticky left-0 z-10 border border-slate-100 bg-white px-2 py-1 pl-4 text-left font-medium text-slate-700">
+        {emp.nickname || emp.name}
+      </th>
+      {weeks.map((w) => {
+        const c = cellFor(emp, w);
+        if (c.type === 'single') {
+          const s = getShift(c.shift);
+          return (
+            <td key={w.key} className={`border border-slate-100 px-1 py-1 text-center font-semibold ${s.badge}`}>
+              {s.labelTh}
+            </td>
+          );
+        }
+        const from = getShift(c.from);
+        const to = getShift(c.to);
+        return (
+          <td
+            key={w.key}
+            className="border border-slate-100 bg-white px-1 py-1 text-center"
+            title={`สลับกลางสัปดาห์: ${from.labelTh} → ${to.labelTh}`}
+          >
+            <span className={`rounded px-1 ${from.badge}`}>{from.labelTh}</span>
+            <span className="mx-0.5 text-slate-400">→</span>
+            <span className={`rounded px-1 ${to.badge}`}>{to.labelTh}</span>
+          </td>
+        );
+      })}
+    </tr>
+  );
+
   return (
     <div className="card p-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -83,36 +133,21 @@ export function ShiftPreview() {
             </tr>
           </thead>
           <tbody>
-            {people.map((emp) => (
-              <tr key={emp.id}>
-                <th className="sticky left-0 z-10 border border-slate-100 bg-white px-2 py-1 text-left font-medium text-slate-700">
-                  {emp.nickname || emp.name}
-                </th>
-                {weeks.map((w) => {
-                  const c = cellFor(emp, w);
-                  if (c.type === 'single') {
-                    const s = getShift(c.shift);
-                    return (
-                      <td key={w.key} className={`border border-slate-100 px-1 py-1 text-center font-semibold ${s.badge}`}>
-                        {s.labelTh}
-                      </td>
-                    );
-                  }
-                  const from = getShift(c.from);
-                  const to = getShift(c.to);
-                  return (
-                    <td
-                      key={w.key}
-                      className="border border-slate-100 bg-white px-1 py-1 text-center"
-                      title={`สลับกลางสัปดาห์: ${from.labelTh} → ${to.labelTh}`}
-                    >
-                      <span className={`rounded px-1 ${from.badge}`}>{from.labelTh}</span>
-                      <span className="mx-0.5 text-slate-400">→</span>
-                      <span className={`rounded px-1 ${to.badge}`}>{to.labelTh}</span>
-                    </td>
-                  );
-                })}
-              </tr>
+            {groups.map((g) => (
+              <React.Fragment key={`${g.shift.id}-${g.type.id}`}>
+                <tr>
+                  <td
+                    colSpan={weeks.length + 1}
+                    className={`sticky left-0 border border-slate-200 px-2 py-1 text-left text-[11px] font-bold ${g.shift.barBg} ${g.shift.text}`}
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className={`h-2 w-2 rounded-full ${g.shift.dot}`} />
+                      กะหลัก {g.shift.labelTh} · {g.type.label} ({g.members.length})
+                    </span>
+                  </td>
+                </tr>
+                {g.members.map((emp) => renderMemberRow(emp))}
+              </React.Fragment>
             ))}
           </tbody>
         </table>
