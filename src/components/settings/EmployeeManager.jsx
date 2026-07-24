@@ -21,6 +21,7 @@ import {
   SHIFTS,
   WEEKDAYS,
   taskAllowsType,
+  taskNeed,
   getType,
 } from '../../data/models.js';
 import { ShiftBadge, StatusBadge, TypeBadge } from '../ui/Badge.jsx';
@@ -56,7 +57,7 @@ function EmployeeForm({ initial, onSubmit, onCancel }) {
   const valid = form.name.trim().length > 0;
 
   // Tasks that actually need staff on the chosen shift.
-  const shiftTasks = config.tasks.filter((t) => t.active && Number(t.req?.[form.primaryShift]) > 0);
+  const shiftTasks = config.tasks.filter((t) => t.active && taskNeed(t, form.primaryShift) > 0);
   const fixedTask = config.tasks.find((t) => t.id === form.fixedDutyId) || null;
   // Warn if pinning to a task whose type-restriction excludes this employee.
   const fixedTypeConflict = fixedTask && !taskAllowsType(fixedTask, form.type);

@@ -1,19 +1,36 @@
 import React, { useMemo, useState } from 'react';
 import { Plus, Pencil, Trash2, ClipboardList, CalendarDays, Users2, AlertTriangle, Lock, UserCog } from 'lucide-react';
 import { useApp } from '../../context/useApp.js';
-import { SHIFT_LIST, SHIFTS, WEEKDAYS, TYPE_LIST, EMPLOYEE_STATUS, EMPLOYEE_TYPES, getType } from '../../data/models.js';
+import {
+  SHIFT_LIST,
+  SHIFTS,
+  WEEKDAYS,
+  TYPE_LIST,
+  EMPLOYEE_STATUS,
+  EMPLOYEE_TYPES,
+  getType,
+  taskNeedByType,
+} from '../../data/models.js';
 import { TaskDot } from '../ui/Badge.jsx';
 import { Modal } from '../ui/Modal.jsx';
 
 const PALETTE = ['#0ea5e9', '#8b5cf6', '#f43f5e', '#f59e0b', '#10b981', '#14b8a6', '#ec4899', '#64748b'];
 
 function TaskForm({ initial, onSubmit }) {
+  const rq = (shift, kind, dflt) => {
+    const v = initial?.req?.[shift];
+    if (v && typeof v === 'object') return v[kind] ?? 0;
+    if (typeof v === 'number') return kind === 'inhouse' ? v : 0; // legacy number = inhouse
+    return dflt;
+  };
   const [form, setForm] = useState({
     name: initial?.name || '',
     nameTh: initial?.nameTh || '',
     color: initial?.color || PALETTE[0],
-    morning: initial?.req?.morning ?? 1,
-    afternoon: initial?.req?.afternoon ?? 1,
+    mIn: rq('morning', 'inhouse', 1),
+    mOut: rq('morning', 'outsource', 0),
+    aIn: rq('afternoon', 'inhouse', 1),
+    aOut: rq('afternoon', 'outsource', 0),
     allowedTypes: Array.isArray(initial?.allowedTypes) ? initial.allowedTypes : [],
   });
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -31,11 +48,15 @@ function TaskForm({ initial, onSubmit }) {
       onSubmit={(e) => {
         e.preventDefault();
         if (!form.name.trim()) return;
+        const n = (v) => Math.max(0, Number(v) || 0);
         onSubmit({
           name: form.name.trim(),
           nameTh: form.nameTh.trim(),
           color: form.color,
-          req: { morning: Math.max(0, Number(form.morning) || 0), afternoon: Math.max(0, Number(form.afternoon) || 0) },
+          req: {
+            morning: { inhouse: n(form.mIn), outsource: n(form.mOut) },
+            afternoon: { inhouse: n(form.aIn), outsource: n(form.aOut) },
+          },
           allowedTypes: form.allowedTypes,
         });
       }}
@@ -70,26 +91,48 @@ function TaskForm({ initial, onSubmit }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        {SHIFT_LIST.map((s) => (
-          <div key={s.id}>
-            <label className="label">
-              {s.label} · {s.labelTh}
-            </label>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min="0"
-                className="input"
-                value={s.id === SHIFTS.MORNING ? form.morning : form.afternoon}
-                onChange={(e) => set(s.id === SHIFTS.MORNING ? 'morning' : 'afternoon', e.target.value)}
-              />
-              <span className="whitespace-nowrap text-sm text-slate-500">people</span>
-            </div>
-          </div>
-        ))}
+      <div>
+        <label className="label">จำนวนคนต่อกะ (แยกประเภท) · people per shift</label>
+        <div className="grid grid-cols-2 gap-3">
+          {SHIFT_LIST.map((s) => {
+            const inKey = s.id === SHIFTS.MORNING ? 'mIn' : 'aIn';
+            const outKey = s.id === SHIFTS.MORNING ? 'mOut' : 'aOut';
+            const total = (Number(form[inKey]) || 0) + (Number(form[outKey]) || 0);
+            return (
+              <div key={s.id} className={`rounded-xl border p-2.5 ${s.barBorder} ${s.barBg}`}>
+                <div className={`mb-1.5 text-xs font-semibold ${s.text}`}>
+                  {s.label} · {s.labelTh} <span className="font-normal opacity-70">(รวม {total})</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="block">
+                    <span className="mb-0.5 block text-[11px] font-medium text-sky-700">Inhouse</span>
+                    <input
+                      type="number"
+                      min="0"
+                      className="input !py-1.5 text-center"
+                      value={form[inKey]}
+                      onChange={(e) => set(inKey, e.target.value)}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-0.5 block text-[11px] font-medium text-violet-700">Outsource ประจำ</span>
+                    <input
+                      type="number"
+                      min="0"
+                      className="input !py-1.5 text-center"
+                      value={form[outKey]}
+                      onChange={(e) => set(outKey, e.target.value)}
+                    />
+                  </label>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <p className="mt-1.5 text-xs text-slate-400">
+          ใส่ 0 ทั้งคู่ = ปิดงานนี้ในกะนั้น · เสริมไม่ต้องใส่ตรงนี้ (เติมเพิ่มผ่าน “แผนกำลังเสริม” ตอนจัดตาราง)
+        </p>
       </div>
-      <p className="text-xs text-slate-400">Set a shift requirement to 0 to disable this task on that shift.</p>
 
       <div>
         <label className="label">Restrict to employment types · จำกัดประเภทพนักงาน</label>
@@ -123,28 +166,47 @@ function TaskForm({ initial, onSubmit }) {
 
 function CapacityBar({ shift }) {
   const { config, employees } = useApp();
-  const required = config.tasks
-    .filter((t) => t.active)
-    .reduce((sum, t) => sum + (Number(t.req?.[shift.id]) || 0), 0);
-  const available = employees.filter(
-    (e) => e.status === EMPLOYEE_STATUS.ACTIVE && e.primaryShift === shift.id
-  ).length;
-  const ok = available >= required;
+  const activeTasks = config.tasks.filter((t) => t.active);
+  const reqIn = activeTasks.reduce((s, t) => s + taskNeedByType(t, shift.id, EMPLOYEE_TYPES.INHOUSE), 0);
+  const reqOut = activeTasks.reduce((s, t) => s + taskNeedByType(t, shift.id, EMPLOYEE_TYPES.OUTSOURCE_REGULAR), 0);
+  const availOf = (type) =>
+    employees.filter((e) => e.status === EMPLOYEE_STATUS.ACTIVE && e.primaryShift === shift.id && e.type === type).length;
+  const availIn = availOf(EMPLOYEE_TYPES.INHOUSE);
+  const availOut = availOf(EMPLOYEE_TYPES.OUTSOURCE_REGULAR);
+  const okIn = availIn >= reqIn;
+  const okOut = availOut >= reqOut;
   return (
-    <div className={`flex items-center justify-between rounded-xl border px-3.5 py-2.5 ${shift.barBorder} ${shift.barBg}`}>
-      <div className="flex items-center gap-2">
+    <div className={`rounded-xl border px-3.5 py-2.5 ${shift.barBorder} ${shift.barBg}`}>
+      <div className="mb-1 flex items-center gap-2">
         <span className={`h-2.5 w-2.5 rounded-full ${shift.dot}`} />
         <span className={`text-sm font-semibold ${shift.text}`}>
           {shift.label} · {shift.labelTh}
         </span>
       </div>
-      <div className={`flex items-center gap-1.5 text-sm font-medium ${ok ? 'text-slate-600' : 'text-rose-600'}`}>
-        {!ok && <AlertTriangle className="h-4 w-4" />}
-        <span>
-          {available} avail / {required} needed per day
+      <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs">
+        <span className={`flex items-center gap-1 font-medium ${okIn ? 'text-slate-600' : 'text-rose-600'}`}>
+          {!okIn && <AlertTriangle className="h-3.5 w-3.5" />} Inhouse {availIn}/{reqIn}
         </span>
+        <span className={`flex items-center gap-1 font-medium ${okOut ? 'text-slate-600' : 'text-rose-600'}`}>
+          {!okOut && <AlertTriangle className="h-3.5 w-3.5" />} Outsource ประจำ {availOut}/{reqOut}
+        </span>
+        <span className="text-slate-400">(มี/ต้องการ ต่อวัน)</span>
       </div>
     </div>
+  );
+}
+
+/** Task requirement cell showing the inhouse / outsource-ประจำ split. */
+function ReqCell({ task, shift, tone }) {
+  const inh = taskNeedByType(task, shift, EMPLOYEE_TYPES.INHOUSE);
+  const out = taskNeedByType(task, shift, EMPLOYEE_TYPES.OUTSOURCE_REGULAR);
+  if (inh + out === 0) return <span className="text-slate-300">—</span>;
+  return (
+    <span className={`font-semibold ${tone}`}>
+      <span title="inhouse">{inh}</span>
+      <span className="text-slate-300"> / </span>
+      <span title="outsource ประจำ">{out}</span>
+    </span>
   );
 }
 
@@ -196,8 +258,8 @@ export function DutyManager() {
       <div className="card overflow-hidden">
         <div className="grid grid-cols-12 gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
           <div className="col-span-5">Task</div>
-          <div className="col-span-2 text-center">กะเช้า</div>
-          <div className="col-span-2 text-center">กะบ่าย</div>
+          <div className="col-span-2 text-center">กะเช้า (IH/OS)</div>
+          <div className="col-span-2 text-center">กะบ่าย (IH/OS)</div>
           <div className="col-span-3 text-right">Actions</div>
         </div>
         {config.tasks.length === 0 && (
@@ -227,11 +289,11 @@ export function DutyManager() {
                 )}
               </div>
             </div>
-            <div className="col-span-2 text-center text-sm font-semibold text-amber-700">
-              {t.req.morning || <span className="text-slate-300">—</span>}
+            <div className="col-span-2 text-center text-xs">
+              <ReqCell task={t} shift="morning" tone="text-amber-700" />
             </div>
-            <div className="col-span-2 text-center text-sm font-semibold text-indigo-700">
-              {t.req.afternoon || <span className="text-slate-300">—</span>}
+            <div className="col-span-2 text-center text-xs">
+              <ReqCell task={t} shift="afternoon" tone="text-indigo-700" />
             </div>
             <div className="col-span-3 flex items-center justify-end gap-1">
               <label className="mr-1 inline-flex cursor-pointer items-center" title="Active">

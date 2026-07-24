@@ -4,7 +4,7 @@
  * All functions return NEW objects (immutable-friendly for React state).
  */
 
-import { SHIFTS, EXTRA_ID } from '../data/models.js';
+import { SHIFTS, EXTRA_ID, taskNeed } from '../data/models.js';
 import { buildSummary } from '../engine/rotationEngine.js';
 
 /** Deep-ish clone of a schedule grid (structure is plain JSON). */
@@ -98,7 +98,7 @@ export function refreshDerived(schedule, employees, config) {
         res.understaffed = [];
         for (const task of config.tasks) {
           if (!task.active) continue;
-          const need = Number(task.req?.[shift]) || 0;
+          const need = taskNeed(task, shift);
           if (need <= 0) continue;
           const got = (res.assignments[task.id] || []).length;
           if (got < need) res.understaffed.push({ dutyId: task.id, needed: need, got });

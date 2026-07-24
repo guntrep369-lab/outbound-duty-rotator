@@ -17,6 +17,8 @@ import {
   EXTRA_ID,
   STATUS_LIST,
   taskAllowsType,
+  taskNeed,
+  taskNeedByType,
   isAvailableOn,
   unavailabilityOn,
   effectiveShiftOn,
@@ -104,11 +106,9 @@ function assignShiftDay({
   const present = eligible.filter((e) => isAvailableOn(e, ymd, iso));
 
   // Duties needing people on this shift. Fill TYPE-RESTRICTED tasks first so
-  // their scarce allowed-type staff aren't used up by open tasks (otherwise a
-  // restricted task like "QC → inhouse only" can be left understaffed even
-  // though inhouse people exist). Within each group, rotate the order by day so
-  // the "first pick" of scarce staff still rotates fairly across the week.
-  const active = tasks.filter((t) => t.active && Number(t.req?.[shift]) > 0);
+  // their scarce allowed-type staff aren't used up by open tasks. Within each
+  // group, rotate the order by day so the "first pick" rotates fairly.
+  const active = tasks.filter((t) => t.active && taskNeed(t, shift) > 0);
   const rotate = (arr) => (arr.length ? arr.map((_, i) => arr[(i + dayIndex) % arr.length]) : arr);
   const restricted = active.filter((t) => Array.isArray(t.allowedTypes) && t.allowedTypes.length > 0);
   const openTasks = active.filter((t) => !(Array.isArray(t.allowedTypes) && t.allowedTypes.length > 0));
@@ -118,110 +118,102 @@ function assignShiftDay({
   const dutyCost = (empId, dutyId) => {
     const weighted = hist.dutyWeighted.get(empId)?.get(dutyId) || 0;
     const genRepeat = genDuty.get(empId)?.get(dutyId) || 0;
-    // genRepeat dominates so nobody repeats the same duty all week;
-    // weighted history is the next strongest signal.
     return genRepeat * 1000 + weighted * 10;
   };
+  const workloadCost = (empId) => (genWorkload.get(empId) || 0) * 100 + (hist.workload.get(empId) || 0);
 
-  // Total workload signal. Lower = should receive work first.
-  const workloadCost = (empId) =>
-    (genWorkload.get(empId) || 0) * 100 + (hist.workload.get(empId) || 0);
-
-  // Weekly rules for outsource เสริม (surge staff).
-  const minDays = Math.max(0, Number(extraRules?.minDays) || 0);
   const maxDays = extraRules?.maxDays == null ? null : Math.max(0, Number(extraRules.maxDays) || 0);
-  const remaining = totalDays - dayIndex; // working days left, including today
   const isExtra = (emp) => emp.type === EMPLOYEE_TYPES.OUTSOURCE_EXTRA;
-  const daysWorked = (empId) => genWorkload.get(empId) || 0; // one duty/day → = days worked
+  const daysWorked = (empId) => genWorkload.get(empId) || 0;
 
-  // Policy priority. Lower = assigned first.
-  //  -1  outsource เสริม that MUST work today to still reach its weekly minDays
-  //   0  regulars (inhouse + outsource ประจำ)
-  //   1  outsource เสริม as ordinary surge (only when core staff run out)
-  const policyRank = (emp) => {
-    if (!isExtra(emp)) return 0;
-    const needMore = minDays - daysWorked(emp.id);
-    return needMore > 0 && needMore >= remaining ? -1 : 1;
+  // Pick the best candidate from a pool for a duty slot (pin → recency → workload).
+  const sortPool = (pool, dutyId, slot) =>
+    pool.sort((a, b) => {
+      const pin = (a.fixedDutyId === dutyId ? 0 : 1) - (b.fixedDutyId === dutyId ? 0 : 1);
+      if (pin !== 0) return pin;
+      const c = dutyCost(a.id, dutyId) - dutyCost(b.id, dutyId);
+      if (c !== 0) return c;
+      const w = workloadCost(a.id) - workloadCost(b.id);
+      if (w !== 0) return w;
+      return hashStr(`${seed}:${dutyId}:${slot}:${a.id}`) - hashStr(`${seed}:${dutyId}:${slot}:${b.id}`);
+    });
+
+  const place = (empId, dutyId) => {
+    assignedToday.add(empId);
+    genWorkload.set(empId, (genWorkload.get(empId) || 0) + 1);
+    if (!genDuty.has(empId)) genDuty.set(empId, new Map());
+    const gd = genDuty.get(empId);
+    gd.set(dutyId, (gd.get(dutyId) || 0) + 1);
   };
 
+  // ── Base fill: hard type quotas (inhouse + outsource ประจำ) ──────────────
   for (const duty of rotated) {
-    const need = Number(duty.req[shift]) || 0;
     const chosen = [];
-    for (let slot = 0; slot < need; slot++) {
+    for (const bt of [EMPLOYEE_TYPES.INHOUSE, EMPLOYEE_TYPES.OUTSOURCE_REGULAR]) {
+      const bneed = taskNeedByType(duty, shift, bt);
+      for (let slot = 0; slot < bneed; slot++) {
+        const pool = present.filter(
+          (e) =>
+            e.type === bt &&
+            !assignedToday.has(e.id) &&
+            taskAllowsType(duty, e.type) &&
+            (!e.fixedDutyId || e.fixedDutyId === duty.id)
+        );
+        if (pool.length === 0) break;
+        sortPool(pool, duty.id, slot);
+        chosen.push(pool[0].id);
+        place(pool[0].id, duty.id);
+      }
+    }
+    assignments[duty.id] = chosen;
+  }
+
+  // ── เสริม overflow: top up gaps up to taskNeed. Named เสริม first (surge —
+  //    fills whenever core is short; capped by the Surge Plan if enabled), then
+  //    ANONYMOUS เสริม (only when a Surge Plan number is set). ─────────────────
+  const underCap = () => surgeCap == null || extraAssigned < surgeCap;
+  // (a) named เสริม
+  for (const duty of rotated) {
+    if (!underCap()) break;
+    if (!taskAllowsType(duty, EMPLOYEE_TYPES.OUTSOURCE_EXTRA)) continue;
+    const need = taskNeed(duty, shift);
+    while (assignments[duty.id].length < need && underCap()) {
       const pool = present.filter(
         (e) =>
+          isExtra(e) &&
           !assignedToday.has(e.id) &&
-          // Task may be restricted to certain employment types.
           taskAllowsType(duty, e.type) &&
-          // Cap outsource เสริม at maxDays working days per week.
-          !(isExtra(e) && maxDays != null && daysWorked(e.id) >= maxDays) &&
-          // Cap the number of เสริม used TODAY to the Surge Plan (if enabled).
-          !(isExtra(e) && surgeCap != null && extraAssigned >= surgeCap) &&
-          // A "fixed" employee only ever works their pinned duty; a free
-          // (unpinned) employee can work any duty.
+          (maxDays == null || daysWorked(e.id) < maxDays) &&
           (!e.fixedDutyId || e.fixedDutyId === duty.id)
       );
       if (pool.length === 0) break;
-
-      pool.sort((a, b) => {
-        // Specialists pinned to THIS duty get their station first.
-        const pin = (a.fixedDutyId === duty.id ? 0 : 1) - (b.fixedDutyId === duty.id ? 0 : 1);
-        if (pin !== 0) return pin;
-        // Policy next (min-day forcing → regulars → surge เสริม).
-        const t = policyRank(a) - policyRank(b);
-        if (t !== 0) return t;
-        const c = dutyCost(a.id, duty.id) - dutyCost(b.id, duty.id);
-        if (c !== 0) return c;
-        const w = workloadCost(a.id) - workloadCost(b.id);
-        if (w !== 0) return w;
-        // Deterministic, well-mixed tiebreak (varies per week+day+duty+slot).
-        return (
-          hashStr(`${seed}:${duty.id}:${slot}:${a.id}`) -
-          hashStr(`${seed}:${duty.id}:${slot}:${b.id}`)
-        );
-      });
-
-      const pick = pool[0];
-      chosen.push(pick.id);
-      assignedToday.add(pick.id);
-      if (isExtra(pick)) extraAssigned += 1;
-      // Update live counters.
-      genWorkload.set(pick.id, (genWorkload.get(pick.id) || 0) + 1);
-      if (!genDuty.has(pick.id)) genDuty.set(pick.id, new Map());
-      const gd = genDuty.get(pick.id);
-      gd.set(duty.id, (gd.get(duty.id) || 0) + 1);
-    }
-    assignments[duty.id] = chosen;
-    if (chosen.length < need) {
-      understaffed.push({ dutyId: duty.id, needed: need, got: chosen.length });
+      sortPool(pool, duty.id, assignments[duty.id].length);
+      assignments[duty.id].push(pool[0].id);
+      place(pool[0].id, duty.id);
+      extraAssigned += 1;
     }
   }
-
-  // Second pass: fill remaining empty slots with ANONYMOUS เสริม (เสริมนิรนาม)
-  // up to the Surge Plan's planned head-count for the day. Lets you plan surge
-  // staff by number without creating names. Respects task type-restrictions.
-  if (surgeCap != null && surgeCap > extraAssigned) {
+  // (b) anonymous เสริม (needs a Surge Plan count to know how many to add)
+  if (surgeCap != null) {
     for (const duty of rotated) {
       if (extraAssigned >= surgeCap) break;
       if (!taskAllowsType(duty, EMPLOYEE_TYPES.OUTSOURCE_EXTRA)) continue;
-      const arr = assignments[duty.id];
-      const need = Number(duty.req[shift]) || 0;
-      while (arr.length < need && extraAssigned < surgeCap) {
-        arr.push(EXTRA_ID);
+      const need = taskNeed(duty, shift);
+      while (assignments[duty.id].length < need && extraAssigned < surgeCap) {
+        assignments[duty.id].push(EXTRA_ID);
         extraAssigned += 1;
       }
     }
-    // Recompute understaffed after the anonymous fill.
-    understaffed.length = 0;
-    for (const duty of rotated) {
-      const need = Number(duty.req[shift]) || 0;
-      const got = (assignments[duty.id] || []).length;
-      if (got < need) understaffed.push({ dutyId: duty.id, needed: need, got });
-    }
   }
 
-  // Whoever is present but not placed today rests (standby). Because busy
-  // people sort last for duties, standby naturally rotates by workload.
+  // Understaffed = slots still short of the total requirement.
+  for (const duty of rotated) {
+    const need = taskNeed(duty, shift);
+    const got = (assignments[duty.id] || []).length;
+    if (got < need) understaffed.push({ dutyId: duty.id, needed: need, got });
+  }
+
+  // Whoever is present but not placed today rests (standby).
   const standby = present.filter((e) => !assignedToday.has(e.id)).map((e) => e.id);
 
   return { assignments, standby, understaffed, unavailable };

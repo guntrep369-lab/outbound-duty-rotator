@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Plus, Pin } from 'lucide-react';
 import { useApp } from '../../context/useApp.js';
-import { SHIFT_LIST, WEEKDAYS, getLeaveType, isExtraId } from '../../data/models.js';
+import { SHIFT_LIST, WEEKDAYS, getLeaveType, isExtraId, taskNeed, taskNeedByType } from '../../data/models.js';
 import { datesOfISOWeek } from '../../utils/dateUtils.js';
 import { TaskDot } from '../ui/Badge.jsx';
 
@@ -92,7 +92,7 @@ export function ScheduleGrid({ schedule, editable = false, onSlotClick, onAddCli
     if (cell.closed) return <td key={day.key} className="border border-slate-100 bg-rose-50/50" />;
     const res = cell[shiftId];
     const assigned = res?.assignments?.[task.id] || [];
-    const need = Number(task.req?.[shiftId]) || 0;
+    const need = taskNeed(task, shiftId);
     const missing = Math.max(0, need - assigned.length);
     return (
       <td key={day.key} className={`border border-slate-100 p-1.5 align-top ${day.today ? 'bg-indigo-50/40' : ''}`}>
@@ -218,8 +218,8 @@ export function ScheduleGrid({ schedule, editable = false, onSlotClick, onAddCli
         </thead>
         <tbody>
           {SHIFT_LIST.map((shift) => {
-            const tasks = config.tasks.filter((t) => t.active && Number(t.req?.[shift.id]) > 0);
-            const needPerDay = tasks.reduce((s, t) => s + Number(t.req[shift.id] || 0), 0);
+            const tasks = config.tasks.filter((t) => t.active && taskNeed(t, shift.id) > 0);
+            const needPerDay = tasks.reduce((s, t) => s + taskNeed(t, shift.id), 0);
             return (
               <React.Fragment key={shift.id}>
                 <tr>
@@ -249,7 +249,8 @@ export function ScheduleGrid({ schedule, editable = false, onSlotClick, onAddCli
                         <div className="min-w-0">
                           <div className="truncate font-medium text-slate-700">{task.name}</div>
                           <div className="truncate text-[11px] text-slate-400">
-                            {task.nameTh} · {task.req[shift.id]} คน
+                            {task.nameTh} · IH {taskNeedByType(task, shift.id, 'inhouse')} / OS{' '}
+                            {taskNeedByType(task, shift.id, 'outsource_regular')}
                           </div>
                         </div>
                       </div>

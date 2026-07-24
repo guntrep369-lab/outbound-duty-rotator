@@ -228,11 +228,11 @@ export const STANDBY = 'standby';
  * Users can edit these, add more, or set a requirement to 0 to disable a task on a shift.
  */
 export const DEFAULT_TASKS = [
-  { id: 'pick_mattress', name: 'Pick Mattress', nameTh: 'Pick ที่นอน', color: '#0ea5e9', req: { morning: 2, afternoon: 2 }, active: true },
-  { id: 'pick_small', name: 'Pick Small', nameTh: 'Pick ชิ้นเล็ก', color: '#8b5cf6', req: { morning: 2, afternoon: 2 }, active: true },
-  { id: 'qc_mattress', name: 'QC Mattress', nameTh: 'QC ที่นอน', color: '#f43f5e', req: { morning: 1, afternoon: 1 }, active: true, allowedTypes: [EMPLOYEE_TYPES.INHOUSE] },
-  { id: 'pack_small', name: 'Pack Small', nameTh: 'Pack ชิ้นเล็ก', color: '#10b981', req: { morning: 2, afternoon: 2 }, active: true },
-  { id: 'pack_mattress', name: 'Pack Mattress', nameTh: 'Pack ที่นอน', color: '#f59e0b', req: { morning: 2, afternoon: 2 }, active: true },
+  { id: 'pick_mattress', name: 'Pick Mattress', nameTh: 'Pick ที่นอน', color: '#0ea5e9', req: { morning: { inhouse: 1, outsource: 1 }, afternoon: { inhouse: 1, outsource: 1 } }, active: true },
+  { id: 'pick_small', name: 'Pick Small', nameTh: 'Pick ชิ้นเล็ก', color: '#8b5cf6', req: { morning: { inhouse: 1, outsource: 1 }, afternoon: { inhouse: 1, outsource: 1 } }, active: true },
+  { id: 'qc_mattress', name: 'QC Mattress', nameTh: 'QC ที่นอน', color: '#f43f5e', req: { morning: { inhouse: 1, outsource: 0 }, afternoon: { inhouse: 1, outsource: 0 } }, active: true, allowedTypes: [EMPLOYEE_TYPES.INHOUSE] },
+  { id: 'pack_small', name: 'Pack Small', nameTh: 'Pack ชิ้นเล็ก', color: '#10b981', req: { morning: { inhouse: 1, outsource: 1 }, afternoon: { inhouse: 1, outsource: 1 } }, active: true },
+  { id: 'pack_mattress', name: 'Pack Mattress', nameTh: 'Pack ที่นอน', color: '#f59e0b', req: { morning: { inhouse: 1, outsource: 1 }, afternoon: { inhouse: 1, outsource: 1 } }, active: true },
 ];
 
 /** ISO weekday numbers (Mon=1 … Sun=7) with labels. */
@@ -355,17 +355,38 @@ export function unavailabilityOn(emp, ymd, iso) {
 }
 
 /**
+ * @typedef {Object} ShiftReq  Core head-count split by type for one shift.
+ * @property {number} inhouse   inhouse people needed
+ * @property {number} outsource outsource-ประจำ people needed
+ * (outsource เสริม are NOT part of the base requirement — they are surge,
+ *  added via the weekly Surge Plan.)
+ */
+
+/**
  * @typedef {Object} Task
  * @property {string} id
  * @property {string} name
  * @property {string} nameTh
  * @property {string} color
- * @property {{morning:number, afternoon:number}} req
+ * @property {{morning:ShiftReq, afternoon:ShiftReq}} req
  * @property {boolean} active
  * @property {string[]} allowedTypes  Employment types allowed; empty = all types.
  */
 
 const VALID_TYPE_IDS = new Set(Object.values(EMPLOYEE_TYPES));
+
+/** Normalise a shift requirement to { inhouse, outsource }. Accepts a legacy number. */
+function normReq(v, fallbackInhouse = 0) {
+  if (v && typeof v === 'object') {
+    return {
+      inhouse: Math.max(0, Number(v.inhouse) || 0),
+      outsource: Math.max(0, Number(v.outsource) || 0),
+    };
+  }
+  if (v == null) return { inhouse: fallbackInhouse, outsource: 0 };
+  // Legacy single number → treat as inhouse.
+  return { inhouse: Math.max(0, Number(v) || 0), outsource: 0 };
+}
 
 /** @returns {Task} */
 export function makeTask(partial = {}) {
@@ -378,14 +399,30 @@ export function makeTask(partial = {}) {
     nameTh: partial.nameTh || '',
     color: partial.color || '#64748b',
     req: {
-      morning: Number(partial.req?.morning ?? 1),
-      afternoon: Number(partial.req?.afternoon ?? 1),
+      morning: normReq(partial.req?.morning, 1),
+      afternoon: normReq(partial.req?.afternoon, 1),
     },
     active: partial.active !== false,
     // Empty array means "any employment type". A non-empty list restricts the
     // task to only those types (e.g. QC ที่นอน → inhouse only).
     allowedTypes: allowed,
   };
+}
+
+/** Total core people a task needs on a shift (inhouse + outsource ประจำ). */
+export function taskNeed(task, shift) {
+  const r = task?.req?.[shift];
+  if (!r) return 0;
+  return (Number(r.inhouse) || 0) + (Number(r.outsource) || 0);
+}
+
+/** Core people a task needs of a specific type on a shift. */
+export function taskNeedByType(task, shift, type) {
+  const r = task?.req?.[shift];
+  if (!r) return 0;
+  if (type === EMPLOYEE_TYPES.INHOUSE) return Number(r.inhouse) || 0;
+  if (type === EMPLOYEE_TYPES.OUTSOURCE_REGULAR) return Number(r.outsource) || 0;
+  return 0;
 }
 
 /** Does an employee's type satisfy a task's allowedTypes restriction? */
