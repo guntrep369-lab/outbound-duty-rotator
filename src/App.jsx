@@ -65,53 +65,62 @@ const MODULES = [
   { id: 'order', label: 'เทียบ Order', labelEn: 'Order Compare', icon: ClipboardCheck, href: './order-compare/' },
 ];
 
-/** Dark system chrome shared by every module (mirrored in order-compare). */
-function SystemBar({ active }) {
+/**
+ * Dark system chrome, mirrored in order-compare. Left sidebar on desktop,
+ * collapsing to a top bar on small screens.
+ */
+function SystemSidebar({ active }) {
   return (
-    <div className="no-print bg-slate-900 text-white">
-      <div className="mx-auto w-full max-w-6xl px-4">
-        {/* Brand row */}
-        <div className="flex items-center justify-between gap-3 py-2.5">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-500 shadow-sm">
-              <Warehouse className="h-4 w-4" />
-            </div>
-            <div className="min-w-0 leading-tight">
-              <div className="flex items-baseline gap-1.5">
-                <h1 className="truncate text-sm font-bold tracking-tight sm:text-base">WMS Management</h1>
-                <span className="shrink-0 text-[11px] font-medium text-indigo-300">by Gun</span>
-              </div>
-              <p className="hidden truncate text-[11px] text-slate-400 sm:block">
-                ระบบบริหารคลังสินค้า · Warehouse Management System
-              </p>
-            </div>
+    <aside className="no-print sticky top-0 z-40 shrink-0 bg-slate-900 text-white lg:h-screen lg:w-60">
+      {/* Brand */}
+      <div className="flex items-center justify-between gap-3 px-4 py-3 lg:block">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-500 shadow-sm">
+            <Warehouse className="h-4 w-4" />
           </div>
+          <div className="min-w-0 leading-tight">
+            <div className="flex items-baseline gap-1.5">
+              <h1 className="truncate text-sm font-bold tracking-tight sm:text-base">WMS Management</h1>
+              <span className="shrink-0 text-[11px] font-medium text-indigo-300">by Gun</span>
+            </div>
+            <p className="hidden truncate text-[11px] text-slate-400 lg:block">ระบบบริหารคลังสินค้า</p>
+          </div>
+        </div>
+        <div className="lg:hidden">
           <SyncStatus />
         </div>
-
-        {/* Module tabs */}
-        <nav className="flex gap-1 overflow-x-auto pb-1.5">
-          {MODULES.map((m) => {
-            const Icon = m.icon;
-            const on = m.id === active;
-            return (
-              <a
-                key={m.id}
-                href={on ? undefined : m.href}
-                aria-current={on ? 'page' : undefined}
-                className={`flex shrink-0 items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${
-                  on ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-                <span>{m.label}</span>
-                <span className="hidden text-[11px] opacity-70 sm:inline">{m.labelEn}</span>
-              </a>
-            );
-          })}
-        </nav>
       </div>
-    </div>
+
+      {/* Modules — horizontal on mobile, vertical on desktop */}
+      <nav className="flex gap-1 overflow-x-auto px-3 pb-2 lg:flex-col lg:overflow-visible lg:px-3">
+        <p className="hidden px-1 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500 lg:block">
+          โมดูล · Modules
+        </p>
+        {MODULES.map((m) => {
+          const Icon = m.icon;
+          const on = m.id === active;
+          return (
+            <a
+              key={m.id}
+              href={on ? undefined : m.href}
+              aria-current={on ? 'page' : undefined}
+              className={`flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors lg:w-full ${
+                on ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <Icon className="h-4 w-4 shrink-0" />
+              <span className="truncate">{m.label}</span>
+              <span className="hidden text-[11px] opacity-70 lg:inline">{m.labelEn}</span>
+            </a>
+          );
+        })}
+      </nav>
+
+      {/* Sync status pinned to the bottom on desktop */}
+      <div className="hidden px-4 lg:absolute lg:bottom-4 lg:left-0 lg:right-0 lg:block">
+        <SyncStatus />
+      </div>
+    </aside>
   );
 }
 
@@ -120,12 +129,11 @@ export default function App() {
   const [tab, setTab] = useState('dashboard');
 
   return (
-    <div className="flex min-h-screen w-full flex-col">
-      {/* System chrome */}
-      <div className="no-print sticky top-0 z-40">
-        <SystemBar active="roster" />
-      </div>
+    <div className="flex min-h-screen w-full flex-col lg:flex-row">
+      <SystemSidebar active="roster" />
 
+      {/* Module column */}
+      <div className="flex min-w-0 flex-1 flex-col">
       {/* Module header + sub-nav */}
       <header className="no-print border-b border-slate-200 bg-white/90 backdrop-blur">
         <div className="mx-auto w-full max-w-6xl px-4 pt-3">
@@ -186,6 +194,7 @@ export default function App() {
         WMS Management <span className="text-slate-500">by Gun</span> · จัดตารางงาน — หมุนเวียนงานยุติธรรมโดยดูประวัติ ·
         ข้อมูลเก็บใน GitHub หรือเบราว์เซอร์
       </footer>
+      </div>
 
       <Toasts />
     </div>
