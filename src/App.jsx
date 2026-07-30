@@ -11,7 +11,7 @@ import {
   HardDrive,
   Loader2,
   ClipboardCheck,
-  ExternalLink,
+  Warehouse,
 } from 'lucide-react';
 import { useApp } from './context/useApp.js';
 import { Toasts } from './components/ui/Toasts.jsx';
@@ -59,65 +59,113 @@ function SyncStatus() {
   );
 }
 
-export default function App() {
-  const { loading } = useApp();
-  const [tab, setTab] = useState('dashboard');
+/** Top-level modules of the WMS system. Each is its own page. */
+const MODULES = [
+  { id: 'roster', label: 'จัดตารางงาน', labelEn: 'Duty Roster', icon: CalendarRange, href: './' },
+  { id: 'order', label: 'เทียบ Order', labelEn: 'Order Compare', icon: ClipboardCheck, href: './order-compare/' },
+];
 
+/** Dark system chrome shared by every module (mirrored in order-compare). */
+function SystemBar({ active }) {
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col">
-      {/* Header */}
-      <header className="no-print sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="flex items-center justify-between gap-3 px-4 py-3">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm">
-              <PackageOpen className="h-5 w-5" />
+    <div className="no-print bg-slate-900 text-white">
+      <div className="mx-auto w-full max-w-6xl px-4">
+        {/* Brand row */}
+        <div className="flex items-center justify-between gap-3 py-2.5">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-500 shadow-sm">
+              <Warehouse className="h-4 w-4" />
             </div>
-            <div className="leading-tight">
-              <h1 className="text-sm font-bold text-slate-800 sm:text-base">Outbound Duty Rotator</h1>
-              <p className="hidden text-xs text-slate-500 sm:block">ระบบจัดตารางหมุนเวียนงานพนักงานคลังขาออก</p>
+            <div className="min-w-0 leading-tight">
+              <div className="flex items-baseline gap-1.5">
+                <h1 className="truncate text-sm font-bold tracking-tight sm:text-base">WMS Management</h1>
+                <span className="shrink-0 text-[11px] font-medium text-indigo-300">by Gun</span>
+              </div>
+              <p className="hidden truncate text-[11px] text-slate-400 sm:block">
+                ระบบบริหารคลังสินค้า · Warehouse Management System
+              </p>
             </div>
           </div>
           <SyncStatus />
         </div>
 
-        {/* Tabs */}
-        <nav className="flex gap-1 overflow-x-auto px-2 pb-1">
-          {NAV.map((item) => {
-            const Icon = item.icon;
-            const active = tab === item.id;
+        {/* Module tabs */}
+        <nav className="flex gap-1 overflow-x-auto pb-1.5">
+          {MODULES.map((m) => {
+            const Icon = m.icon;
+            const on = m.id === active;
             return (
-              <button
-                key={item.id}
-                onClick={() => setTab(item.id)}
-                className={`flex shrink-0 items-center gap-2 rounded-t-lg border-b-2 px-3.5 py-2.5 text-sm font-medium transition-colors ${
-                  active
-                    ? 'border-indigo-600 text-indigo-700'
-                    : 'border-transparent text-slate-500 hover:text-slate-800'
+              <a
+                key={m.id}
+                href={on ? undefined : m.href}
+                aria-current={on ? 'page' : undefined}
+                className={`flex shrink-0 items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${
+                  on ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                 }`}
               >
                 <Icon className="h-4 w-4" />
-                <span>{item.label}</span>
-                <span className="hidden text-xs text-slate-400 sm:inline">{item.labelTh}</span>
-              </button>
+                <span>{m.label}</span>
+                <span className="hidden text-[11px] opacity-70 sm:inline">{m.labelEn}</span>
+              </a>
             );
           })}
-
-          {/* Standalone tool served as a static page (public/order-compare) */}
-          <a
-            href="./order-compare/"
-            className="ml-auto flex shrink-0 items-center gap-2 rounded-t-lg border-b-2 border-transparent px-3.5 py-2.5 text-sm font-medium text-slate-500 transition-colors hover:text-slate-800"
-            title="ระบบเทียบ Order & สต๊อก (เปิดหน้าใหม่)"
-          >
-            <ClipboardCheck className="h-4 w-4" />
-            <span>Order Compare</span>
-            <span className="hidden text-xs text-slate-400 sm:inline">เทียบออเดอร์</span>
-            <ExternalLink className="h-3 w-3 opacity-60" />
-          </a>
         </nav>
+      </div>
+    </div>
+  );
+}
+
+export default function App() {
+  const { loading } = useApp();
+  const [tab, setTab] = useState('dashboard');
+
+  return (
+    <div className="flex min-h-screen w-full flex-col">
+      {/* System chrome */}
+      <div className="no-print sticky top-0 z-40">
+        <SystemBar active="roster" />
+      </div>
+
+      {/* Module header + sub-nav */}
+      <header className="no-print border-b border-slate-200 bg-white/90 backdrop-blur">
+        <div className="mx-auto w-full max-w-6xl px-4 pt-3">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+              <PackageOpen className="h-5 w-5" />
+            </div>
+            <div className="leading-tight">
+              <h2 className="text-sm font-bold text-slate-800 sm:text-base">จัดตารางงาน · Outbound Duty Roster</h2>
+              <p className="hidden text-xs text-slate-500 sm:block">ระบบจัดตารางหมุนเวียนงานพนักงานคลังขาออก</p>
+            </div>
+          </div>
+
+        {/* Tabs */}
+          <nav className="mt-2 flex gap-1 overflow-x-auto">
+            {NAV.map((item) => {
+              const Icon = item.icon;
+              const active = tab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setTab(item.id)}
+                  className={`flex shrink-0 items-center gap-2 rounded-t-lg border-b-2 px-3.5 py-2.5 text-sm font-medium transition-colors ${
+                    active
+                      ? 'border-indigo-600 text-indigo-700'
+                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                  <span>{item.label}</span>
+                  <span className="hidden text-xs text-slate-400 sm:inline">{item.labelTh}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </div>
       </header>
 
       {/* Main */}
-      <main className="flex-1 px-4 py-5">
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-5">
         {loading ? (
           <div className="flex h-64 flex-col items-center justify-center gap-3 text-slate-400">
             <Loader2 className="h-8 w-8 animate-spin" />
@@ -135,7 +183,8 @@ export default function App() {
       </main>
 
       <footer className="no-print border-t border-slate-200 px-4 py-3 text-center text-xs text-slate-400">
-        Outbound Duty Rotator · Fair history-aware rotation · Data stored in GitHub or your browser
+        WMS Management <span className="text-slate-500">by Gun</span> · จัดตารางงาน — หมุนเวียนงานยุติธรรมโดยดูประวัติ ·
+        ข้อมูลเก็บใน GitHub หรือเบราว์เซอร์
       </footer>
 
       <Toasts />
