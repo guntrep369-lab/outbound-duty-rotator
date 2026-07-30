@@ -75,17 +75,19 @@ function SystemSidebar({ active }) {
   return (
     <aside className="no-print sticky top-0 z-40 shrink-0 bg-slate-900 text-white lg:h-screen lg:w-60">
       {/* Brand */}
+      {/* Geometry mirrors .sysbar-brand in wms-theme.css / the static modules:
+          logo beside the text on mobile, stacked above it from lg up. */}
       <div className="flex items-center justify-between gap-3 px-4 py-3 lg:block">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-500 shadow-sm">
+        <div className="flex min-w-0 items-center gap-2.5 lg:block">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-500 shadow-sm lg:mb-2">
             <Warehouse className="h-4 w-4" />
           </div>
           <div className="min-w-0 leading-tight">
-            <div className="flex items-baseline gap-1.5">
-              <h1 className="truncate text-sm font-bold tracking-tight sm:text-base">WMS Management</h1>
-              <span className="shrink-0 text-[11px] font-medium text-indigo-300">by Gun</span>
+            <div className="tracking-[-0.01em]">
+              <h1 className="inline text-[15px] font-bold">WMS Management</h1>
+              <span className="ml-1 text-[11px] font-medium text-indigo-300">by Gun</span>
             </div>
-            <p className="hidden truncate text-[11px] text-slate-400 lg:block">ระบบบริหารคลังสินค้า</p>
+            <p className="hidden text-[11px] text-slate-400 lg:block">ระบบบริหารคลังสินค้า</p>
           </div>
         </div>
         <div className="lg:hidden">
