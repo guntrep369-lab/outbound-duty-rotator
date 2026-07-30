@@ -53,10 +53,11 @@ body {
 .mod-tab:hover{ color:var(--wms-text); }
 .mod-tab.active { color:var(--wms-primary-dark); border-bottom-color:var(--wms-primary); }
 
-/* ── Content padding for the static tools ───────────────────────────────── */
+/* ── Content fills the space left by the sidebar (no centred max-width,
+      otherwise wide monitors get large dead margins). ────────────────────── */
 .wms-main > .main,
 .wms-main > .app,
-.wms-main > .tab-pane > .main { max-width:1152px; margin:0 auto; width:100%; }
+.wms-main > .tab-pane > .main { max-width:none; margin:0; width:100%; }
 
 /* ═══════════════ MODULE: เทียบ Order (order-compare) ═══════════════
    Scoped with body[data-wms-module] so the two modules' generic class
@@ -102,7 +103,7 @@ body[data-wms-module="order"] .summary-strip > div { border:1px solid var(--wms-
 /* ═══════════════ MODULE: ทำใบงานขนส่ง (transport-docs) ═══════════════ */
 
 /* Shared: page shell + cards */
-body[data-wms-module="transport"] .app { max-width:1152px; padding:20px; }
+body[data-wms-module="transport"] .app { max-width:none; margin:0; padding:20px; }
 
 /* Tool tabs (ที่นอน / ของแถม) → segmented control like the React sub-tabs */
 body[data-wms-module="transport"] .tabs:has(.tab) { display:inline-flex; gap:2px; background:#E2E8F0; padding:3px; border-radius:12px; border:0; }

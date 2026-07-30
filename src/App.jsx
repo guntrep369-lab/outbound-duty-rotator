@@ -140,7 +140,7 @@ export default function App() {
       <div className="flex min-w-0 flex-1 flex-col">
       {/* Module header + sub-nav */}
       <header className="no-print border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto w-full max-w-6xl px-4 pt-3">
+        <div className="w-full px-5 pt-3">
           <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
               <PackageOpen className="h-5 w-5" />
@@ -177,7 +177,7 @@ export default function App() {
       </header>
 
       {/* Main */}
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-5">
+      <main className="w-full flex-1 px-5 py-5">
         {loading ? (
           <div className="flex h-64 flex-col items-center justify-center gap-3 text-slate-400">
             <Loader2 className="h-8 w-8 animate-spin" />
