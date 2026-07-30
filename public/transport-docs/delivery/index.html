@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>ใบนำส่งสินค้า - HRZ</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;color:#000}
+body{font-family:'Sarabun',Arial,sans-serif;background:#f0f0f0;min-height:100vh;font-size:13px}
+#upload-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:2rem}
+.up-card{background:#fff;border:1px solid #ccc;border-radius:8px;padding:40px 36px;max-width:500px;width:100%;text-align:center}
+.up-card h1{font-size:22px;font-weight:800;margin-bottom:4px}
+.up-card .sub{font-size:12px;color:#777;margin-bottom:24px}
+.drop-zone{border:2px dashed #bbb;border-radius:6px;padding:32px 20px;cursor:pointer;transition:all .15s;margin-bottom:14px}
+.drop-zone:hover,.drop-zone.drag{border-color:#000;background:#fafafa}
+.drop-zone .icon{font-size:36px;margin-bottom:8px}
+.drop-zone .dt{font-size:14px;font-weight:700;margin-bottom:3px}
+.drop-zone .ds{font-size:11px;color:#aaa}
+.logo-row{border:1px solid #ddd;border-radius:6px;padding:12px 16px;display:flex;align-items:center;gap:12px;margin-top:12px;text-align:left}
+#logoPreview{height:48px;width:80px;object-fit:contain;border-radius:4px;border:1px solid #ddd;display:none}
+.btn-sm{border:1px solid #999;background:#fff;border-radius:4px;padding:5px 12px;font-size:11px;cursor:pointer;font-weight:600;white-space:nowrap}
+.col-hint{border:1px solid #ddd;border-radius:6px;padding:12px 16px;text-align:left;margin-top:12px}
+.col-hint p{font-size:11px;font-weight:700;margin-bottom:6px}
+.col-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px 14px;font-size:10px;color:#555}
+.err{color:#c00;font-size:12px;margin-top:8px;font-weight:600}
+#doc-screen{display:none}
+.topbar{display:flex;align-items:center;gap:8px;padding:8px 20px;background:#fff;border-bottom:1.5px solid #000;position:sticky;top:0;z-index:10}
+.topbar .info{flex:1;font-size:12px;color:#444}
+.topbar .info b{color:#000}
+.topbar button{border:1px solid #999;background:#fff;border-radius:4px;padding:5px 14px;font-size:12px;cursor:pointer;color:#000;font-weight:500}
+.topbar button:hover{background:#f0f0f0}
+.topbar .btn-p{background:#000;color:#fff;border-color:#000;font-weight:700}
+.topbar .btn-p:hover{background:#333}
+.doc-wrap{background:#ccc;padding:20px 12px}
+.a4{width:794px;background:#fff;margin:0 auto 24px;padding:20px 28px}
+.dh{display:flex;border:2px solid #000;margin-bottom:14px}
+.dh-left{flex:1;border-right:2px solid #000}
+.dh-logo{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1.5px solid #000}
+.dh-logo img{height:80px;width:130px;object-fit:contain;flex-shrink:0}
+.co-name{font-size:12px;font-weight:800;line-height:1.4}
+.co-addr{font-size:9px;color:#444;line-height:1.6;margin-top:2px}
+.dh-meta{display:flex;align-items:center;justify-content:space-between;padding:6px 14px}
+.doc-title{font-size:16px;font-weight:900}
+.doc-sub{font-size:9px;color:#666;margin-top:1px}
+.doc-info{display:flex;gap:16px;font-size:15px;font-weight:700}
+.dh-right{background:#fff;color:#000;padding:12px 20px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:150px;border-left:1.5px solid #000}
+.tr-label{font-size:8px;color:#666;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px}
+.tr-name{font-size:22px;font-weight:900;color:#000;font-family:Arial,sans-serif;text-align:center;word-break:break-all}
+.stop{border:1px solid #bbb;margin-bottom:10px;page-break-inside:avoid;break-inside:avoid}
+.sh{display:flex;align-items:center;gap:8px;padding:5px 10px;border-bottom:1.5px solid #000;background:#f5f5f5}
+.sn{background:#fff;color:#000;border:1.5px solid #000;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;flex-shrink:0}
+.sc{font-size:13px;font-weight:900;flex:1}
+.st{font-size:22px;font-weight:900;letter-spacing:1px}
+.sa{display:flex;gap:16px;flex-wrap:wrap;padding:4px 10px;font-size:11px;font-weight:600;border-bottom:1px solid #ddd;background:#fafafa}
+table.it{width:100%;border-collapse:collapse;font-size:10.5px}
+table.it th{background:#fff;color:#000;border:0.5px solid #000;padding:4px 6px;text-align:left;font-weight:700;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+table.it td{padding:4px 6px;border-bottom:0.5px solid #e0e0e0;vertical-align:top}
+table.it tr:nth-child(even) td{background:#f9f9f9}
+.sf{display:flex;border-top:1px solid #ddd}
+.doc-foot{border-top:1.5px solid #000;padding-top:10px;margin-top:8px;display:flex;justify-content:flex-end;gap:40px}
+.sign-box{font-size:9px;color:#555}
+.sign-line{margin-top:20px;width:100px;border-top:0.5px solid #000}
+table.pod-tbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
+table.pod-tbl th{background:#fff;color:#000;border:0.5px solid #000;padding:7px 10px;text-align:left;font-weight:700;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+table.pod-tbl td{padding:12px 10px;border-bottom:0.5px solid #ddd;vertical-align:middle}
+table.pod-tbl tr:nth-child(even) td{background:#f9f9f9}
+.modal-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:100;align-items:center;justify-content:center}
+.modal-box{background:#fff;border-radius:8px;padding:28px 32px;max-width:480px;width:90%;box-shadow:0 4px 24px rgba(0,0,0,0.2)}
+.modal-title{font-size:16px;font-weight:800;margin-bottom:4px}
+.modal-sub{font-size:12px;color:#888;margin-bottom:16px}
+.modal-btns{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}
+.modal-btns button{border-radius:4px;padding:7px 18px;font-size:13px;cursor:pointer}
+.btn-cancel{border:1px solid #ccc;background:#fff}
+.btn-ok{border:none;background:#000;color:#fff;font-weight:700}
+.check-row{display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;padding:8px 12px;border:1px solid #ddd;border-radius:4px;margin-bottom:8px}
+.check-row input{width:16px;height:16px;cursor:pointer}
+@media print{
+  .topbar{display:none!important}
+  .doc-wrap{background:#fff!important;padding:0!important}
+  .a4{box-shadow:none!important;margin:0!important;width:100%!important;max-width:100%!important;padding:6mm!important;page-break-after:always;break-after:page}
+  .truck-break{page-break-before:always;break-before:page}
+  .stop{page-break-inside:avoid;break-inside:avoid}
+  *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+  @page{size:A4 portrait;margin:8mm 5mm}
+}
+
+/* ══ WMS system sidebar (ตรงกับ <SystemSidebar> ใน React) ══ */
+.wms-shell{display:flex;flex-direction:column;min-height:100vh}
+.wms-main{flex:1;min-width:0;display:flex;flex-direction:column}
+.sysbar{background:#0F172A;color:#fff;position:sticky;top:0;z-index:40;flex-shrink:0;font-family:Arial,'Sarabun',sans-serif}
+.sysbar *{color:inherit}
+.sysbar-brand{display:flex;align-items:center;gap:10px;padding:12px 16px}
+.sysbar-logo{width:32px;height:32px;border-radius:8px;background:#6366F1;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.sysbar-titles{min-width:0;line-height:1.25}
+.sysbar-title{font-size:15px;font-weight:700;letter-spacing:-.01em}
+.sysbar-by{font-size:11px;font-weight:500;color:#A5B4FC;margin-left:4px}
+.sysbar-sub{display:none;font-size:11px;color:#94A3B8}
+.sysbar-modlabel{display:none;font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#64748B;padding:8px 4px 4px}
+.sysbar-mods{display:flex;gap:4px;overflow-x:auto;padding:0 12px 8px}
+.sysmod{display:flex;align-items:center;gap:10px;flex-shrink:0;padding:8px 12px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:500;color:#CBD5E1;transition:background .15s,color .15s;cursor:pointer}
+.sysmod em{font-style:normal;font-size:11px;opacity:.7;display:none}
+.sysmod:hover:not(.active){background:#1E293B;color:#fff}
+.sysmod.active{background:#4F46E5;color:#fff;cursor:default;box-shadow:0 1px 2px rgba(0,0,0,.15)}
+/* module sub-nav */
+.mod-head{background:#fff;border-bottom:1px solid #E2E5EA;padding:10px 16px 0;flex-shrink:0;font-family:Arial,'Sarabun',sans-serif}
+.mod-title{display:flex;align-items:center;gap:10px;color:#1e293b}
+.mod-title .ic{width:36px;height:36px;border-radius:10px;background:#EEF2FF;color:#4F46E5;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.mod-title h2{font-size:15px;font-weight:700;margin:0;color:#1e293b}
+.mod-title p{font-size:11px;color:#64748B;margin:2px 0 0}
+.mod-subnav{display:flex;gap:4px;overflow-x:auto;margin-top:8px}
+.mod-tab{display:flex;align-items:center;gap:6px;flex-shrink:0;padding:9px 14px;border:0;border-bottom:2px solid transparent;background:none;text-decoration:none;font-size:14px;font-weight:500;color:#64748B;cursor:pointer;font-family:inherit}
+.mod-tab:hover{color:#1e293b}
+.mod-tab.active{color:#4338CA;border-bottom-color:#4F46E5}
+@media (min-width:1024px){
+  .wms-shell{flex-direction:row}
+  .sysbar{width:240px;flex-shrink:0;height:100vh}
+  .sysbar-brand{display:block}
+  .sysbar-brand .sysbar-logo{margin-bottom:8px}
+  .sysbar-sub,.sysbar-modlabel{display:block}
+  .sysmod em{display:inline}
+  .sysbar-mods{flex-direction:column;overflow:visible}
+  .sysmod{width:100%}
+}
+@media print{
+  .sysbar,.mod-head{display:none!important}
+  .wms-shell,.wms-main{display:block!important;min-height:0!important}
+}
+</style>
+</head>
+<body>
+
+<div class="wms-shell">
+<aside class="sysbar">
+  <div class="sysbar-brand">
+    <div class="sysbar-logo">🏭</div>
+    <div class="sysbar-titles">
+      <div class="sysbar-title">WMS Management <span class="sysbar-by">by Gun</span></div>
+      <div class="sysbar-sub">ระบบบริหารคลังสินค้า</div>
+    </div>
+  </div>
+  <nav class="sysbar-mods">
+    <p class="sysbar-modlabel">โมดูล · Modules</p>
+    <a class="sysmod" href="../../">📅 <span>จัดตารางงาน</span><em>Duty Roster</em></a>
+    <a class="sysmod" href="../../order-compare/">📋 <span>เทียบ Order</span><em>Order Compare</em></a>
+    <a class="sysmod active" aria-current="page">🚚 <span>ทำใบงานขนส่ง</span><em>Transport Docs</em></a>
+  </nav>
+</aside>
+<div class="wms-main">
+  <div class="mod-head">
+    <div class="mod-title">
+      <div class="ic">🚚</div>
+      <div>
+        <h2>ทำใบงานขนส่ง · Transport Documents</h2>
+        <p>สร้าง Picklist และใบนำส่งสินค้าจากไฟล์ Excel</p>
+      </div>
+    </div>
+    <nav class="mod-subnav">
+      <a class="mod-tab" href="../">🏷️ Picklist Label</a>
+      <span class="mod-tab active">📄 ใบนำส่งสินค้า</span>
+    </nav>
+  </div>
+
+
+<div id="upload-screen">
+  <div class="up-card">
+    <h1>ใบนำส่งสินค้า</h1>
+    <p class="sub">บริษัท ฮอริซอน กรุ๊ป (ประเทศไทย) จำกัด</p>
+    <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+      <div class="icon">📂</div>
+      <div class="dt">วางไฟล์ที่นี่ หรือคลิกเพื่อเลือก</div>
+      <div class="ds">.xlsx / .xls — รองรับหลายคันในไฟล์เดียว</div>
+    </div>
+    <input type="file" id="fileInput" accept=".xlsx,.xls" style="display:none">
+    <p id="errMsg" class="err"></p>
+    <div class="logo-row">
+      <img id="logoPreview">
+      <div style="flex:1"><div style="font-size:12px;font-weight:700;margin-bottom:2px">โลโก้บริษัท</div><div style="font-size:10px;color:#888">จะแสดงในหัวใบทุกหน้า (ไม่บังคับ)</div></div>
+      <button class="btn-sm" id="logoBtn">+ เพิ่มโลโก้</button>
+    </div>
+    <input type="file" id="logoInput" accept="image/*" style="display:none">
+    <div class="col-hint">
+      <p>คอลัมน์ที่รองรับ (แถวแรก = หัวตาราง)</p>
+      <div class="col-grid">
+        <span>A: ชื่อรถ</span><span>B: Date</span>
+        <span>C: Sup</span><span>D: เลขOrder</span>
+        <span>E: แบรนด์</span><span>F: ขนาด</span>
+        <span>G: จำนวน</span><span>H: ของแถม</span>
+        <span>I: จำนวน(แถม)</span><span>J: ชื่อลูกค้า</span>
+        <span>K: Phone 1</span><span>L: Phone 2</span>
+        <span>M: ที่อยู่</span><span>N: เวลานัด</span>
+        <span>O: การเงิน</span><span>P: หมายเหตุ</span>
+        <span>Q: Platform_Order</span><span>R: เครื่องรูดบัตร</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="doc-screen">
+  <div class="topbar">
+    <div class="info" id="topInfo"></div>
+    <button onclick="openExportModal()">📊 Export Excel</button>
+    <button onclick="resetApp()">⬆ อัปโหลดใหม่</button>
+    <button onclick="openPrintModal()" class="btn-p">🖨 Print / PDF</button>
+  </div>
+  <div class="doc-wrap" id="docWrap"></div>
+</div>
+
+<!-- Print Modal -->
+<div id="printModal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-title">เลือกเอกสารที่ต้องการพิมพ์</div>
+    <div class="modal-sub">เลือกประเภทและคันรถที่ต้องการ</div>
+    <div style="margin-bottom:14px">
+      <div style="font-size:12px;font-weight:700;margin-bottom:6px">ประเภทเอกสาร</div>
+      <label class="check-row">
+        <input type="checkbox" id="chkPOD" checked>
+        <div><div style="font-weight:700">ใบเซ็นรับสินค้า</div><div style="font-size:11px;color:#888">Proof of Delivery</div></div>
+      </label>
+      <label class="check-row">
+        <input type="checkbox" id="chkDO" checked>
+        <div><div style="font-weight:700">ใบนำส่งสินค้า</div><div style="font-size:11px;color:#888">Delivery Order</div></div>
+      </label>
+    </div>
+    <div>
+      <div style="font-size:12px;font-weight:700;margin-bottom:6px">คันรถ</div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <button onclick="selectAllPrint(true)" class="btn-sm">เลือกทั้งหมด</button>
+        <button onclick="selectAllPrint(false)" class="btn-sm">ยกเลิกทั้งหมด</button>
+      </div>
+      <div id="printTruckCheckboxes" style="max-height:180px;overflow-y:auto"></div>
+    </div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="document.getElementById('printModal').style.display='none'">ยกเลิก</button>
+      <button class="btn-ok" onclick="doPrint()">🖨 พิมพ์</button>
+    </div>
+  </div>
+</div>
+
+<!-- Export Modal -->
+<div id="exportModal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-title">Export Excel</div>
+    <div class="modal-sub">เลือกคันรถที่ต้องการ Export</div>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <button onclick="selectAllTrucks(true)" class="btn-sm">เลือกทั้งหมด</button>
+      <button onclick="selectAllTrucks(false)" class="btn-sm">ยกเลิกทั้งหมด</button>
+    </div>
+    <div id="truckCheckboxes" style="max-height:260px;overflow-y:auto"></div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="document.getElementById('exportModal').style.display='none'">ยกเลิก</button>
+      <button class="btn-ok" onclick="doExport()">⬇ Export</button>
+    </div>
+  </div>
+</div>
+
+<script>
+var C = {truck:0,date:1,sup:2,order:3,brand:4,size:5,qty:6,gift:7,giftQty:8,customer:9,phone1:10,phone2:11,address:12,time:13,payment:14,remark:15,platform:16,cardMachine:17};
+var LOGO_B64 = '';
+var ALL_GROUPS = [];
+
+var BANKS = {
+  'kbank':{label:'KBank (กสิกร)'},
+  'กสิกร':{label:'KBank (กสิกร)'},
+  'kasikorn':{label:'KBank (กสิกร)'},
+  'krungsri':{label:'Krungsri (กรุงศรี)'},
+  'กรุงศรี':{label:'Krungsri (กรุงศรี)'},
+  'ktb':{label:'KTB (กรุงไทย)'},
+  'กรุงไทย':{label:'KTB (กรุงไทย)'},
+  'bbl':{label:'BBL (กรุงเทพ)'},
+  'กรุงเทพ':{label:'BBL (กรุงเทพ)'},
+  'uob':{label:'UOB'},
+  'scb':{label:'SCB (ไทยพาณิชย์)'},
+  'ไทยพาณิชย์':{label:'SCB (ไทยพาณิชย์)'},
+  'ttb':{label:'TTB (ทหารไทย)'},
+  'ทหารไทย':{label:'TTB (ทหารไทย)'},
+  'aeon':{label:'AEON (อิออน)'},
+  'อิออน':{label:'AEON (อิออน)'}
+};
+
+function getBankStyle(name) {
+  if (!name) return null;
+  var key = name.trim().toLowerCase();
+  var keys = Object.keys(BANKS);
+  for (var i = 0; i < keys.length; i++) {
+    if (key.indexOf(keys[i]) !== -1 || keys[i].indexOf(key) !== -1) return BANKS[keys[i]];
+  }
+  return null;
+}
+
+function bankBadge(name, big) {
+  if (!name) return '';
+  var b = getBankStyle(name);
+  var sz = big ? '13px' : '10px';
+  var pad = big ? '5px 12px' : '2px 7px';
+  var label = b ? b.label : esc(name);
+  return '<span style="background:#f5f5f5;color:#111;font-size:' + sz + ';font-weight:700;border-radius:4px;padding:' + pad + ';display:inline-block;border:1px solid #ccc">🏧 ' + label + '</span>';
+}
+
+function parseDate(v) {
+  if (!v) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number') {
+    var d = new Date(Math.round((v - 25569) * 86400 * 1000));
+    return d.toLocaleDateString('th-TH', {day:'2-digit', month:'2-digit', year:'numeric'});
+  }
+  return String(v);
+}
+
+function parseDateExport(v) {
+  if (!v) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number') {
+    var d = new Date(Math.round((v - 25569) * 86400 * 1000));
+    var dd = String(d.getDate()).padStart(2,'0');
+    var mm = String(d.getMonth()+1).padStart(2,'0');
+    var yyyy = d.getFullYear();
+    return dd + '/' + mm + '/' + yyyy;
+  }
+  return String(v);
+}
+
+function splitNL(v) { return String(v||'').split(/\n|\r/).map(function(s){return s.trim();}).filter(Boolean); }
+
+function esc(v) { return String(v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function groupData(body) {
+  var tm = new Map();
+  body.forEach(function(r) {
+    var t = String(r[C.truck] || 'ไม่ระบุรถ');
+    if (!tm.has(t)) tm.set(t, new Map());
+    var cm = tm.get(t);
+    var k = r[C.customer] + '||' + r[C.address];
+    if (!cm.has(k)) cm.set(k, []);
+    cm.get(k).push(r);
+  });
+  return Array.from(tm.entries()).map(function(entry) {
+    return {truck: entry[0], stops: Array.from(entry[1].values())};
+  });
+}
+
+function buildHeader(truck, dateStr, nStops, titleTh, titleEn) {
+  var logoHtml = LOGO_B64
+    ? '<img src="' + LOGO_B64 + '" style="height:80px;width:130px;object-fit:contain;flex-shrink:0">'
+    : '<div style="width:80px;height:60px;border:1px dashed #ccc;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;color:#bbb;flex-shrink:0">LOGO</div>';
+  return '<div class="dh">'
+    + '<div class="dh-left">'
+    + '<div class="dh-logo">' + logoHtml
+    + '<div><div class="co-name">บริษัท ฮอริซอน กรุ๊ป (ประเทศไทย) จำกัด</div>'
+    + '<div class="co-addr">เลขที่ 540 อาคารเมอร์คิวรี่ ทาวเวอร์ ห้องเลขที่ 401 ชั้น 4 ถนนเพลินจิต แขวงลุมพินี เขตปทุมวัน กรุงเทพมหานคร 10330 | เลขผู้เสียภาษี 0105560110328</div>'
+    + '</div></div>'
+    + '<div class="dh-meta"><div><div class="doc-title">' + titleTh + '</div><div class="doc-sub">' + titleEn + '</div></div>'
+    + '<div class="doc-info"><span>📅 ' + esc(dateStr||'-') + '</span><span>📍 ' + nStops + ' จุดส่ง</span></div>'
+    + '</div></div>'
+    + '<div class="dh-right"><div class="tr-label">รถ / TRUCK</div><div class="tr-name">' + esc(truck) + '</div></div>'
+    + '</div>';
+}
+
+function render(body) {
+  var groups = groupData(body);
+  ALL_GROUPS = groups;
+  var totalStops = groups.reduce(function(s,g){return s+g.stops.length;}, 0);
+  document.getElementById('topInfo').innerHTML = '<b>' + groups.length + ' คัน</b> · <b>' + totalStops + ' จุดส่ง</b> · ' + body.length + ' รายการ';
+  var wrap = document.getElementById('docWrap');
+  wrap.innerHTML = '';
+
+  groups.forEach(function(tg, ti) {
+    var dateStr = parseDate(tg.stops[0][0] ? tg.stops[0][0][C.date] : '');
+    var brk = ti > 0 ? ' truck-break' : '';
+
+    // ใบ 1: เซ็นรับสินค้า
+    var p1 = document.createElement('div');
+    p1.className = 'a4 page-pod' + brk;
+    var h1 = buildHeader(tg.truck, dateStr, tg.stops.length, 'ใบเซ็นรับสินค้า', 'PROOF OF DELIVERY');
+    h1 += '<table class="pod-tbl"><thead><tr>'
+      + '<th style="width:30px;text-align:center">#</th>'
+      + '<th style="width:90px">Order</th>'
+      + '<th style="width:110px">Platform ID</th>'
+      + '<th>ชื่อลูกค้า</th>'
+      + '<th style="width:75px;text-align:center">เวลานัด</th>'
+      + '<th style="width:105px;text-align:center">เวลาจัดส่งจริง / ลายเซ็นส่ง</th>'
+      + '<th style="width:105px;text-align:center">ลายเซ็นผู้รับ</th>'
+      + '<th style="width:90px;text-align:center">หมายเหตุ</th>'
+      + '</tr></thead><tbody>';
+    tg.stops.forEach(function(grp, gi) {
+      var r0 = grp[0];
+      var orders = Array.from(new Set(grp.map(function(r){return r[C.order];}).filter(Boolean))).join(', ');
+      h1 += '<tr style="' + (gi%2===1 ? 'background:#f9f9f9' : '') + '">'
+        + '<td style="text-align:center;font-weight:800;font-size:13px">' + (gi+1) + '</td>'
+        + '<td style="font-size:11px;font-weight:600">' + esc(orders||'-') + '</td>'
+        + '<td style="font-size:11px;font-weight:600">' + esc(r0[C.platform]||'-') + '</td>'
+        + '<td style="font-weight:800;font-size:14px">' + esc(r0[C.customer]||'-') + '</td>'
+        + '<td style="text-align:center;border-left:0.5px solid #ddd;font-size:13px;font-weight:700">' + esc(r0[C.time]||'-') + '</td>'
+        + '<td style="text-align:center;border-left:0.5px solid #ddd"><div style="height:32px"></div><div style="border-top:0.5px solid #000;width:80%;margin:0 auto"></div></td>'
+        + '<td style="border-left:0.5px solid #ddd"><div style="height:32px"></div><div style="border-top:0.5px solid #000;width:80%;margin:0 auto"></div></td>'
+        + '<td style="border-left:0.5px solid #ddd;padding:8px 6px"></td>'
+        + '</tr>';
+    });
+    h1 += '</tbody></table>'
+      + '<div style="margin-top:12px;padding-top:8px;border-top:0.5px solid #ddd;font-size:8.5px;color:#888;line-height:1.6">'
+      + 'ข้าพเจ้ายินยอมให้ภาพถ่ายที่ทางบริษัทฯได้บันทึกไว้ เป็นลิขสิทธิ์ของทางบริษัทฯในการนำไปใช้ต่อใดๆก็ได้</div>';
+    p1.innerHTML = h1;
+    wrap.appendChild(p1);
+
+    // ใบ 2: ใบนำส่งสินค้า
+    var p2 = document.createElement('div');
+    p2.className = 'a4 page-do truck-break';
+    var cardSet = new Set();
+    tg.stops.forEach(function(grp) {
+      var v = String(grp[0][C.cardMachine]||'').trim();
+      if (v) cardSet.add(v);
+    });
+    var cardList = Array.from(cardSet);
+    var h2 = buildHeader(tg.truck, dateStr, tg.stops.length, 'ใบนำส่งสินค้า', 'DELIVERY ORDER');
+    if (cardList.length > 0) {
+      h2 += '<div style="border:1.5px solid #000;border-radius:4px;padding:8px 12px;margin-bottom:14px;background:#f9f9f9">'
+        + '<div style="font-size:11px;font-weight:800;margin-bottom:6px">🏧 เครื่องรูดบัตรที่ต้องเบิกสำหรับคันนี้</div>'
+        + '<div style="display:flex;flex-wrap:wrap;gap:8px">'
+        + cardList.map(function(m){return '<div>' + bankBadge(m, true) + '</div>';}).join('')
+        + '</div></div>';
+    }
+    tg.stops.forEach(function(grp, gi) {
+      var r0 = grp[0];
+      var pay = String(r0[C.payment]||'');
+      var rem = grp.filter(function(r){return r[C.remark];}).map(function(r){return esc(r[C.remark]);}).join(' / ');
+      var card = String(r0[C.cardMachine]||'').trim();
+      h2 += '<div class="stop">'
+        + '<div class="sh">'
+        + '<div class="sn">' + (gi+1) + '</div>'
+        + '<div class="sc">' + esc(r0[C.customer]||'-')
+        + (r0[C.platform] ? ' <span style="font-size:10px;font-weight:500;background:#eee;border-radius:3px;padding:1px 6px;margin-left:5px">🛒 ' + esc(r0[C.platform]) + '</span>' : '')
+        + (card ? ' ' + bankBadge(card, false) : '')
+        + '</div>'
+        + (r0[C.time] ? '<div class="st">🕐 ' + esc(r0[C.time]) + '</div>' : '')
+        + '</div>';
+      if (r0[C.address] || r0[C.phone1] || r0[C.phone2]) {
+        h2 += '<div class="sa">'
+          + (r0[C.address] ? '<span>📍 ' + esc(r0[C.address]) + '</span>' : '')
+          + (r0[C.phone1] ? '<span>📞 ' + esc(r0[C.phone1]) + '</span>' : '')
+          + (r0[C.phone2] ? '<span>📞 ' + esc(r0[C.phone2]) + '</span>' : '')
+          + '</div>';
+      }
+      h2 += '<table class="it"><thead><tr>'
+        + '<th style="width:20px">#</th><th style="width:40px">Sup</th>'
+        + '<th style="width:60px">Order</th><th style="width:160px">แบรนด์</th>'
+        + '<th style="width:54px">ขนาด</th><th style="width:44px;text-align:center">จำนวน</th>'
+        + '<th>ของแถม</th><th style="width:44px;text-align:center">จน.แถม</th>'
+        + '<th style="width:26px;text-align:center">✓</th>'
+        + '</tr></thead><tbody>'
+        + grp.map(function(r, ri) {
+          var gifts = splitNL(r[C.gift]);
+          var giftQtys = splitNL(r[C.giftQty]);
+          var maxRows = Math.max(gifts.length, giftQtys.length, 1);
+          // build inner table rows for gift+qty
+          var innerRows = '';
+          for (var g=0; g<maxRows; g++) {
+            innerRows += '<tr>'
+              + '<td style="padding:1px 0;border-bottom:' + (g<maxRows-1?'0.5px solid #eee':'none') + ';min-width:80px">' + esc(gifts[g]||'') + '</td>'
+              + '<td style="padding:1px 4px;border-bottom:' + (g<maxRows-1?'0.5px solid #eee':'none') + ';text-align:center;min-width:36px">' + esc(giftQtys[g]||'') + '</td>'
+              + '</tr>';
+          }
+          var innerTable = '<table style="border-collapse:collapse;width:100%">' + innerRows + '</table>';
+          return '<tr>'
+            + '<td style="color:#aaa;text-align:center">' + (ri+1) + '</td>'
+            + '<td>' + esc(r[C.sup]) + '</td>'
+            + '<td>' + esc(r[C.order]) + '</td>'
+            + '<td style="font-weight:700">' + esc(r[C.brand]) + '</td>'
+            + '<td>' + esc(r[C.size]) + '</td>'
+            + '<td style="text-align:center;font-weight:700">' + esc(r[C.qty]) + '</td>'
+            + '<td colspan="2" style="padding:0">' + innerTable + '</td>'
+            + '<td style="text-align:center"><span style="display:inline-block;width:12px;height:12px;border:1px solid #999;border-radius:2px"></span></td>'
+            + '</tr>';
+        }).join('')
+        + '</tbody></table>'
+        + '<div class="sf">'
+        + '<div style="flex:1;padding:6px 10px;font-size:12px;font-weight:700;color:#000">⚠️ ' + (rem || '<span style="color:#aaa;font-weight:400;font-size:11px">ไม่มีหมายเหตุ</span>') + '</div>'
+        + '<div style="padding:6px 10px;font-size:12px;font-weight:700;color:#000;border-left:1px solid #ddd;min-width:120px">💰 ' + (pay || '<span style="color:#aaa;font-weight:400">ไม่มีข้อมูล</span>') + '</div>'
+        + '</div></div>';
+    });
+
+    p2.innerHTML = h2;
+    wrap.appendChild(p2);
+  });
+
+  document.getElementById('upload-screen').style.display = 'none';
+  document.getElementById('doc-screen').style.display = 'block';
+}
+
+function selectAllPrint(checked) {
+  document.querySelectorAll('#printTruckCheckboxes input[type="checkbox"]').forEach(function(el){ el.checked = checked; });
+}
+
+function openPrintModal() {
+  var box = document.getElementById('printTruckCheckboxes');
+  box.innerHTML = ALL_GROUPS.map(function(tg, i) {
+    return '<label class="check-row" style="margin-bottom:8px">'
+      + '<input type="checkbox" value="' + i + '" checked>'
+      + '<span style="font-weight:700">' + esc(tg.truck) + '</span>'
+      + '<span style="color:#888;font-size:11px;margin-left:4px">' + tg.stops.length + ' จุดส่ง</span>'
+      + '</label>';
+  }).join('');
+  document.getElementById('printModal').style.display = 'flex';
+}
+
+function doPrint() {
+  var pod = document.getElementById('chkPOD').checked;
+  var doDoc = document.getElementById('chkDO').checked;
+  if (!pod && !doDoc) { alert('กรุณาเลือกประเภทเอกสารอย่างน้อย 1 รายการ'); return; }
+  var checkedTrucks = Array.from(document.querySelectorAll('#printTruckCheckboxes input:checked')).map(function(el){ return parseInt(el.value); });
+  if (!checkedTrucks.length) { alert('กรุณาเลือกคันรถอย่างน้อย 1 คัน'); return; }
+  document.getElementById('printModal').style.display = 'none';
+
+  // hide all first
+  document.querySelectorAll('.page-pod, .page-do').forEach(function(el){ el.style.display = 'none'; });
+
+  // show only selected trucks + selected doc types
+  checkedTrucks.forEach(function(idx) {
+    var truck = esc(ALL_GROUPS[idx].truck);
+    document.querySelectorAll('.page-pod, .page-do').forEach(function(el) {
+      var truckEl = el.querySelector('.tr-name');
+      if (truckEl && truckEl.textContent.trim() === ALL_GROUPS[idx].truck) {
+        if ((el.classList.contains('page-pod') && pod) || (el.classList.contains('page-do') && doDoc)) {
+          el.style.display = '';
+        }
+      }
+    });
+  });
+
+  setTimeout(function() {
+    window.print();
+    setTimeout(function() {
+      document.querySelectorAll('.page-pod, .page-do').forEach(function(el){ el.style.display = ''; });
+    }, 500);
+  }, 100);
+}
+
+function selectAllTrucks(checked) {
+  document.querySelectorAll('#truckCheckboxes input[type="checkbox"]').forEach(function(el){ el.checked = checked; });
+}
+
+function openExportModal() {
+  var box = document.getElementById('truckCheckboxes');
+  box.innerHTML = ALL_GROUPS.map(function(tg, i) {
+    return '<label class="check-row" style="margin-bottom:8px">'
+      + '<input type="checkbox" value="' + i + '" checked>'
+      + '<span style="font-weight:700">' + esc(tg.truck) + '</span>'
+      + '<span style="color:#888;font-size:11px;margin-left:4px">' + tg.stops.length + ' จุดส่ง</span>'
+      + '</label>';
+  }).join('');
+  document.getElementById('exportModal').style.display = 'flex';
+}
+
+function doExport() {
+  var checked = Array.from(document.querySelectorAll('#truckCheckboxes input:checked')).map(function(el){ return parseInt(el.value); });
+  if (!checked.length) { alert('กรุณาเลือกคันรถอย่างน้อย 1 คัน'); return; }
+  var rows = [['ชื่อรถ','วันที่จัดส่ง','ลำดับจุดส่ง','เลขOrder','ชื่อลูกค้า','ที่อยู่','การเงิน','หมายเหตุ']];
+  checked.forEach(function(idx) {
+    var tg = ALL_GROUPS[idx];
+    var dateStr = parseDateExport(tg.stops[0][0] ? tg.stops[0][0][C.date] : '');
+    tg.stops.forEach(function(grp, gi) {
+      var r0 = grp[0];
+      var orders = Array.from(new Set(grp.map(function(r){return r[C.order];}).filter(Boolean))).join(', ');
+      var remarks = Array.from(new Set(grp.map(function(r){return r[C.remark];}).filter(Boolean))).join(' / ');
+      rows.push([tg.truck, dateStr, gi+1, orders, r0[C.customer]||'', r0[C.address]||'', r0[C.payment]||'', remarks]);
+    });
+  });
+  var wb = XLSX.utils.book_new();
+  var ws = XLSX.utils.aoa_to_sheet(rows);
+  var colWidths = rows[0].map(function(_, ci) {
+    return {wch: Math.max.apply(null, rows.map(function(r){ return String(r[ci]||'').length; })) + 2};
+  });
+  ws['!cols'] = colWidths;
+  XLSX.utils.book_append_sheet(wb, ws, 'ใบนำส่งสินค้า');
+  XLSX.writeFile(wb, 'delivery_export.xlsx');
+  document.getElementById('exportModal').style.display = 'none';
+}
+
+function processFile(f) {
+  document.getElementById('errMsg').textContent = '';
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
+      var ws = wb.Sheets[wb.SheetNames[0]];
+      var data = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+      var body = data.slice(1).filter(function(r){ return r.some(function(c){ return c !== ''; }); });
+      if (!body.length) { document.getElementById('errMsg').textContent = 'ไม่พบข้อมูลในไฟล์'; return; }
+      render(body);
+    } catch(err) {
+      document.getElementById('errMsg').textContent = 'อ่านไฟล์ไม่ได้: ' + err.message;
+    }
+  };
+  reader.readAsArrayBuffer(f);
+}
+
+function resetApp() {
+  document.getElementById('upload-screen').style.display = 'flex';
+  document.getElementById('doc-screen').style.display = 'none';
+  document.getElementById('fileInput').value = '';
+}
+
+var dz = document.getElementById('dropZone');
+dz.addEventListener('dragover', function(e){ e.preventDefault(); dz.classList.add('drag'); });
+dz.addEventListener('dragleave', function(){ dz.classList.remove('drag'); });
+dz.addEventListener('drop', function(e){ e.preventDefault(); dz.classList.remove('drag'); if(e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]); });
+document.getElementById('fileInput').addEventListener('change', function(e){ if(e.target.files[0]) processFile(e.target.files[0]); });
+document.getElementById('logoBtn').addEventListener('click', function(){ document.getElementById('logoInput').click(); });
+document.getElementById('logoInput').addEventListener('change', function(e) {
+  if (!e.target.files[0]) return;
+  var r = new FileReader();
+  r.onload = function(ev) {
+    LOGO_B64 = ev.target.result;
+    var p = document.getElementById('logoPreview');
+    p.src = LOGO_B64; p.style.display = 'inline-block';
+    document.getElementById('logoBtn').textContent = 'เปลี่ยนโลโก้';
+  };
+  r.readAsDataURL(e.target.files[0]);
+});
+</script>
+</div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+</body>
+</html>

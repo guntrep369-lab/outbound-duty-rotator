@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>Picklist Label Printer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;background:#f4f4f4;color:#111;font-size:14px}
+.app{max-width:1100px;margin:0 auto;padding:1.25rem}
+.tabs{display:flex;gap:6px;margin-bottom:1.25rem}
+.tab{padding:8px 22px;border-radius:8px;border:1px solid #ccc;background:#fff;cursor:pointer;font-size:14px;font-weight:500;color:#666;transition:all .15s}
+.tab.active{background:#1a4fa8;color:#fff;border-color:#1a4fa8}
+.tab.gtab.active{background:#7c3aed;border-color:#7c3aed}
+.panel{display:none}.panel.active{display:block}
+.upload-zone{border:2px dashed #ccc;border-radius:12px;padding:2rem;text-align:center;cursor:pointer;background:#fff;margin-bottom:1.25rem}
+.upload-zone.drag{border-color:#1a4fa8;background:#eef3ff}
+.upload-zone input{display:none}
+.col-ref{display:inline-flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-top:8px}
+.col-tag{background:#f0f5ff;color:#1a4fa8;font-size:11px;padding:2px 8px;border-radius:4px;font-family:monospace;font-weight:700}
+.col-tag.gt{background:#f5f0ff;color:#7c3aed}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:7px 16px;border-radius:8px;border:1px solid #ccc;background:#fff;font-size:13px;cursor:pointer;font-family:inherit;color:#111;transition:background .15s}
+.btn:hover{background:#eee}
+.btn-blue{background:#1a4fa8;color:#fff;border-color:#1a4fa8}.btn-blue:hover{background:#153d87}
+.btn-purple{background:#7c3aed;color:#fff;border-color:#7c3aed}.btn-purple:hover{background:#6225cc}
+.btn-green{background:#15803d;color:#fff;border-color:#15803d;font-size:14px;padding:9px 22px}.btn-green:hover{background:#0f5f2d}
+.controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:1rem}
+.labels-wrap{display:grid;grid-template-columns:repeat(auto-fill,minmax(520px,1fr));gap:14px}
+.lcard{background:#fff;border:1.5px solid #ddd;border-radius:6px;cursor:pointer;transition:box-shadow .15s;overflow:hidden}
+.lcard:hover{box-shadow:0 2px 10px rgba(0,0,0,.1)}
+.lcard.sel{border-color:#1a4fa8;box-shadow:0 0 0 2px #1a4fa840}
+.lcard.sel-g{border-color:#333;box-shadow:0 0 0 2px #33333340}
+.sel-bar{display:flex;align-items:center;gap:8px;padding:5px 10px;background:#f0f5ff;border-bottom:1px solid #d0dcf5;font-size:12px;color:#1a4fa8}
+.sel-bar.gbar{background:#f0f0f0;border-bottom-color:#ccc;color:#111}
+.piece-badge{margin-left:auto;background:#fff;color:#000;border:2px solid #000;font-size:13px;font-weight:900;padding:2px 10px;border-radius:4px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:1rem}
+.scard{background:#f8f8f8;border-radius:8px;padding:.75rem;text-align:center}
+.snum{font-size:22px;font-weight:500}.slbl{font-size:11px;color:#888;margin-top:2px}
+.stitle{font-size:15px;font-weight:500;margin-bottom:.75rem}
+.info-note{font-size:11px;border-radius:6px;padding:6px 10px;margin-bottom:.75rem;border:1px solid}
+.note-yellow{background:#fefce8;color:#854d0e;border-color:#fde68a}
+.note-purple{background:#f5f0ff;color:#5b21b6;border-color:#ddd6fe}
+
+/* ─── LABEL ─── */
+.linner-bed,.linner-gift{
+  width:100%;font-family:Arial,sans-serif;
+  padding:8px 12px;display:flex;flex-direction:column;color:#000;
+}
+.bed-hdr,.gift-hdr{
+  display:flex;justify-content:space-between;align-items:flex-start;
+  border-bottom:2.5px solid #000;padding-bottom:5px;margin-bottom:6px;
+}
+.bed-hdr-left,.gift-hdr-left{flex:1;min-width:0}
+.bed-hdr-right,.gift-hdr-right{display:flex;align-items:flex-start;gap:8px;flex-shrink:0;margin-left:10px}
+.type-badge{font-size:11px;font-weight:900;padding:3px 10px;border-radius:3px;letter-spacing:1px;white-space:nowrap;background:#fff;color:#000;border:2.5px solid #000}
+.truck-name,.gift-truck{font-size:28px;font-weight:900;color:#000;text-transform:uppercase;line-height:1.05;word-break:break-word}
+.qr-box{width:60px;height:60px;flex-shrink:0}
+.qr-box canvas,.qr-box img{width:60px!important;height:60px!important}
+
+/* ── แถว Order + เวลาจัดส่ง: Order ซ้าย | เวลา กลาง-ขวา ── */
+.order-appt-row{
+  display:flex;
+  align-items:baseline;
+  margin-top:2px;
+  gap:0;
+}
+.order-num,.gift-order{
+  font-size:24px;font-weight:700;color:#000;line-height:1.1;
+  white-space:nowrap;flex-shrink:0;
+}
+.appt-spacer{flex:1;min-width:8px;}
+/* ★ เวลาจัดส่ง 40px ★ */
+.appt-val{
+  font-size:40px;font-weight:900;color:#000;line-height:1.0;
+  white-space:nowrap;flex-shrink:0;
+}
+
+.lsub,.gift-sub{font-size:10px;color:#000;margin-top:2px}
+.bed-info,.gift-info{display:flex;flex-direction:column;gap:1px;margin-bottom:5px}
+.lrow{display:flex;align-items:baseline;gap:4px;line-height:1.45}
+.lk{color:#000;min-width:68px;flex-shrink:0;font-size:11px}
+.lv{font-weight:700;color:#000;word-break:break-word;font-size:13px}
+.gift-info .lk{font-size:10px;min-width:60px}
+.gift-info .lv{font-size:12px}
+.bed-items,.gift-items{border-top:1.5px solid #000;padding-top:4px}
+.items-title{font-size:10px;text-transform:uppercase;color:#000;margin-bottom:3px;display:flex;align-items:center;gap:6px}
+.irow{display:flex;justify-content:space-between;align-items:center;padding:2px 0;border-bottom:.5px solid #aaa;gap:6px}
+.iname{font-weight:800;flex:1;min-width:0;word-break:break-word;font-size:15px;color:#000}
+.isize{font-size:12px;color:#000;font-weight:400}
+.iqty{font-weight:900;padding:2px 10px;border-radius:4px;font-size:15px;white-space:nowrap;flex-shrink:0;background:#fff;color:#000;border:2.5px solid #000}
+.irow-g{display:flex;justify-content:space-between;align-items:center;padding:1px 3px;border-bottom:.5px solid #bbb;gap:4px}
+.irow-g:nth-child(even){background:#f0f0f0}
+.iname-g{font-weight:600;flex:1;min-width:0;word-break:break-word;white-space:pre-line;font-size:11px;color:#000;line-height:1.3}
+.iqty-g{font-weight:900;padding:0 6px;border-radius:3px;font-size:11px;white-space:nowrap;flex-shrink:0;background:#fff;color:#000;border:2px solid #000;min-width:26px;text-align:center}
+.part-badge{font-size:13px;font-weight:900;background:#fff;color:#000;border:2.5px solid #000;padding:2px 10px;border-radius:4px;margin-left:6px;display:inline-block}
+.lfooter{margin-top:4px;border-top:1px solid #aaa;padding-top:3px;display:flex;justify-content:space-between;align-items:center}
+.bc{font-family:'Courier New',monospace;font-size:9px;color:#555;letter-spacing:1.5px}
+.lnum{font-size:10px;color:#555}
+
+/* ══ WMS system sidebar (ตรงกับ <SystemSidebar> ใน React) ══ */
+.wms-shell{display:flex;flex-direction:column;min-height:100vh}
+.wms-main{flex:1;min-width:0;display:flex;flex-direction:column}
+.sysbar{background:#0F172A;color:#fff;position:sticky;top:0;z-index:40;flex-shrink:0;font-family:Arial,'Sarabun',sans-serif}
+.sysbar *{color:inherit}
+.sysbar-brand{display:flex;align-items:center;gap:10px;padding:12px 16px}
+.sysbar-logo{width:32px;height:32px;border-radius:8px;background:#6366F1;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.sysbar-titles{min-width:0;line-height:1.25}
+.sysbar-title{font-size:15px;font-weight:700;letter-spacing:-.01em}
+.sysbar-by{font-size:11px;font-weight:500;color:#A5B4FC;margin-left:4px}
+.sysbar-sub{display:none;font-size:11px;color:#94A3B8}
+.sysbar-modlabel{display:none;font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#64748B;padding:8px 4px 4px}
+.sysbar-mods{display:flex;gap:4px;overflow-x:auto;padding:0 12px 8px}
+.sysmod{display:flex;align-items:center;gap:10px;flex-shrink:0;padding:8px 12px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:500;color:#CBD5E1;transition:background .15s,color .15s;cursor:pointer}
+.sysmod em{font-style:normal;font-size:11px;opacity:.7;display:none}
+.sysmod:hover:not(.active){background:#1E293B;color:#fff}
+.sysmod.active{background:#4F46E5;color:#fff;cursor:default;box-shadow:0 1px 2px rgba(0,0,0,.15)}
+/* module sub-nav */
+.mod-head{background:#fff;border-bottom:1px solid #E2E5EA;padding:10px 16px 0;flex-shrink:0;font-family:Arial,'Sarabun',sans-serif}
+.mod-title{display:flex;align-items:center;gap:10px;color:#1e293b}
+.mod-title .ic{width:36px;height:36px;border-radius:10px;background:#EEF2FF;color:#4F46E5;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.mod-title h2{font-size:15px;font-weight:700;margin:0;color:#1e293b}
+.mod-title p{font-size:11px;color:#64748B;margin:2px 0 0}
+.mod-subnav{display:flex;gap:4px;overflow-x:auto;margin-top:8px}
+.mod-tab{display:flex;align-items:center;gap:6px;flex-shrink:0;padding:9px 14px;border:0;border-bottom:2px solid transparent;background:none;text-decoration:none;font-size:14px;font-weight:500;color:#64748B;cursor:pointer;font-family:inherit}
+.mod-tab:hover{color:#1e293b}
+.mod-tab.active{color:#4338CA;border-bottom-color:#4F46E5}
+@media (min-width:1024px){
+  .wms-shell{flex-direction:row}
+  .sysbar{width:240px;flex-shrink:0;height:100vh}
+  .sysbar-brand{display:block}
+  .sysbar-brand .sysbar-logo{margin-bottom:8px}
+  .sysbar-sub,.sysbar-modlabel{display:block}
+  .sysmod em{display:inline}
+  .sysbar-mods{flex-direction:column;overflow:visible}
+  .sysmod{width:100%}
+}
+@media print{
+  .sysbar,.mod-head{display:none!important}
+  .wms-shell,.wms-main{display:block!important;min-height:0!important}
+}
+</style>
+</head>
+<body>
+
+<div class="wms-shell">
+<aside class="sysbar">
+  <div class="sysbar-brand">
+    <div class="sysbar-logo">🏭</div>
+    <div class="sysbar-titles">
+      <div class="sysbar-title">WMS Management <span class="sysbar-by">by Gun</span></div>
+      <div class="sysbar-sub">ระบบบริหารคลังสินค้า</div>
+    </div>
+  </div>
+  <nav class="sysbar-mods">
+    <p class="sysbar-modlabel">โมดูล · Modules</p>
+    <a class="sysmod" href="../">📅 <span>จัดตารางงาน</span><em>Duty Roster</em></a>
+    <a class="sysmod" href="../order-compare/">📋 <span>เทียบ Order</span><em>Order Compare</em></a>
+    <a class="sysmod active" aria-current="page">🚚 <span>ทำใบงานขนส่ง</span><em>Transport Docs</em></a>
+  </nav>
+</aside>
+<div class="wms-main">
+  <div class="mod-head">
+    <div class="mod-title">
+      <div class="ic">🚚</div>
+      <div>
+        <h2>ทำใบงานขนส่ง · Transport Documents</h2>
+        <p>สร้าง Picklist และใบนำส่งสินค้าจากไฟล์ Excel</p>
+      </div>
+    </div>
+    <nav class="mod-subnav">
+      <span class="mod-tab active">🏷️ Picklist Label</span>
+      <a class="mod-tab" href="./delivery/">📄 ใบนำส่งสินค้า</a>
+    </nav>
+  </div>
+
+<div class="app">
+<div class="tabs">
+  <button class="tab active" id="tab-bed" onclick="switchTab('bed')">🛏️ Picklist ที่นอน</button>
+  <button class="tab gtab" id="tab-gift" onclick="switchTab('gift')">🎁 Picklist ของแถม</button>
+</div>
+
+<div id="panel-bed" class="panel active">
+  <div class="upload-zone" id="drop-bed">
+    <input type="file" id="file-bed" accept=".xlsx,.xls,.csv">
+    <div style="font-size:2rem;margin-bottom:6px">📂</div>
+    <strong style="font-size:15px">อัปโหลดไฟล์ Excel — ที่นอน</strong>
+    <div class="col-ref">
+      <span class="col-tag">A ชื่อรถ</span><span class="col-tag">B Date</span><span class="col-tag">C Sup</span>
+      <span class="col-tag">D เลขOrder</span><span class="col-tag">E แบรนด์</span><span class="col-tag">F ขนาด</span>
+      <span class="col-tag">G จำนวน</span><span class="col-tag">J ลูกค้า</span><span class="col-tag">M ที่อยู่</span>
+      <span class="col-tag">N เวลานัด</span>
+    </div>
+    <p style="margin-top:8px;font-size:12px;color:#b45309">⚠️ ไม่มีแบรนด์(E)→ข้าม | Sup=JST→ข้าม | จำนวน&gt;1→แยกใบ</p>
+    <button class="btn btn-blue" style="margin-top:12px" onclick="document.getElementById('file-bed').click()">เลือกไฟล์</button>
+  </div>
+  <div id="main-bed" style="display:none">
+    <div class="stats" id="stats-bed"></div>
+    <div class="info-note note-yellow" id="note-bed" style="display:none"></div>
+    <div class="controls">
+      <label style="font-size:13px;cursor:pointer;display:flex;align-items:center;gap:5px">
+        <input type="checkbox" id="chk-all-bed" onchange="toggleAll('bed',this.checked)"> เลือกทั้งหมด
+      </label>
+      <button class="btn btn-green" onclick="printSelected()">🖨️ พิมพ์ที่เลือก</button>
+      <button class="btn" onclick="resetPanel('bed')">🔄 โหลดใหม่</button>
+    </div>
+    <div class="stitle">Label ที่นอน <span id="bed-count" style="font-weight:400;font-size:13px;color:#888"></span></div>
+    <div class="labels-wrap" id="grid-bed"></div>
+  </div>
+</div>
+
+<div id="panel-gift" class="panel">
+  <div class="upload-zone" id="drop-gift">
+    <input type="file" id="file-gift" accept=".xlsx,.xls,.csv">
+    <div style="font-size:2rem;margin-bottom:6px">🎁</div>
+    <strong style="font-size:15px">อัปโหลดไฟล์ Excel — ของแถม</strong>
+    <div class="col-ref">
+      <span class="col-tag gt">A ชื่อรถ</span><span class="col-tag gt">B Date</span><span class="col-tag gt">C Sup</span>
+      <span class="col-tag gt">D เลขOrder</span><span class="col-tag gt">H ของแถม</span><span class="col-tag gt">I จำนวน</span>
+      <span class="col-tag gt">J ลูกค้า</span><span class="col-tag gt">M ที่อยู่</span><span class="col-tag gt">N เวลานัด</span>
+    </div>
+    <p style="margin-top:8px;font-size:12px;color:#555">🔀 Order เดียวกันรวม | Sup=JST→ข้าม | ไม่มีของแถม→ข้าม | เกิน 7→แยก 1/2,2/2</p>
+    <button class="btn btn-purple" style="margin-top:12px" onclick="document.getElementById('file-gift').click()">เลือกไฟล์</button>
+  </div>
+  <div id="main-gift" style="display:none">
+    <div class="stats" id="stats-gift"></div>
+    <div class="info-note note-purple" id="note-gift"></div>
+    <div class="controls">
+      <label style="font-size:13px;cursor:pointer;display:flex;align-items:center;gap:5px">
+        <input type="checkbox" id="chk-all-gift" onchange="toggleAll('gift',this.checked)"> เลือกทั้งหมด
+      </label>
+      <button class="btn btn-green" onclick="printSelected()">🖨️ พิมพ์ที่เลือก</button>
+      <button class="btn" onclick="resetPanel('gift')">🔄 โหลดใหม่</button>
+    </div>
+    <div class="stitle">Label ของแถม <span id="gift-count" style="font-weight:400;font-size:13px;color:#888"></span></div>
+    <div class="labels-wrap" id="grid-gift"></div>
+  </div>
+</div>
+</div>
+
+<script>
+const ci=l=>l.toUpperCase().charCodeAt(0)-65;
+const COL={
+  bed:{truck:ci('A'),date:ci('B'),sup:ci('C'),order:ci('D'),brand:ci('E'),size:ci('F'),qty:ci('G'),customer:ci('J'),address:ci('M'),appt:ci('N')},
+  gift:{truck:ci('A'),date:ci('B'),sup:ci('C'),order:ci('D'),gift:ci('H'),qty:ci('I'),customer:ci('J'),address:ci('M'),appt:ci('N')}
+};
+const gv=(row,idx)=>{
+  if(idx==null||row[idx]==null)return '';
+  const v=row[idx];
+  // XLSX serial number (number) — convert to date with offset fix
+  if(typeof v==='number'&&v>40000&&v<60000){
+    const d=XLSX.SSF.parse_date_code(v);
+    if(d){
+      const dd=String(d.d).padStart(2,'0');
+      const mm=String(d.m).padStart(2,'0');
+      return dd+'/'+mm+'/'+d.y;
+    }
+  }
+  return String(v).trim();
+};
+const isJST=sup=>sup.replace(/\s/g,'').toUpperCase()==='JST';
+const MAX_GIFT=7;
+
+function switchTab(t){
+  document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById('panel-'+t).classList.add('active');
+  document.getElementById('tab-'+t).classList.add('active');
+}
+function setupDrop(type){
+  const dz=document.getElementById('drop-'+type),inp=document.getElementById('file-'+type);
+  inp.addEventListener('change',e=>loadFile(e.target.files[0],type));
+  dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag')});
+  dz.addEventListener('dragleave',()=>dz.classList.remove('drag'));
+  dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag');loadFile(e.dataTransfer.files[0],type)});
+}
+setupDrop('bed');setupDrop('gift');
+
+function loadFile(file,type){
+  if(!file)return;
+  const r=new FileReader();
+  r.onload=e=>{
+    try{
+      const wb=XLSX.read(e.target.result,{type:'binary',cellDates:false,cellNF:false});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+      if(data.length<2){alert('ไฟล์ไม่มีข้อมูล');return;}
+      const rows=data.slice(1).filter(r=>r.some(c=>String(c).trim()!==''));
+      type==='bed'?buildBed(rows):buildGift(rows);
+    }catch(err){alert('อ่านไฟล์ไม่ได้: '+err.message);}
+  };
+  r.readAsBinaryString(file);
+}
+
+function buildBed(rows){
+  const C=COL.bed;let skB=0,skJ=0,exp=0;const labels=[];
+  rows.forEach((row,i)=>{
+    const sup=gv(row,C.sup);if(isJST(sup)){skJ++;return;}
+    const brand=gv(row,C.brand);if(!brand){skB++;return;}
+    const qty=parseInt(gv(row,C.qty))||1;
+    const base={truck:gv(row,C.truck),date:gv(row,C.date),sup,order:gv(row,C.order)||('R'+(i+2)),brand,size:gv(row,C.size),customer:gv(row,C.customer),address:gv(row,C.address),appt:gv(row,C.appt),totalQty:qty};
+    if(qty>1)exp+=(qty-1);
+    for(let q=1;q<=qty;q++)labels.push({...base,pieceNum:q});
+  });
+  document.getElementById('drop-bed').style.display='none';
+  document.getElementById('main-bed').style.display='block';
+  document.getElementById('bed-count').textContent='('+labels.length+' Label)';
+  const pts=[];
+  if(skJ>0)pts.push('ข้าม JST '+skJ);if(skB>0)pts.push('ข้าม(ไม่มีแบรนด์) '+skB);if(exp>0)pts.push('แยกเพิ่ม '+exp+' ใบ');
+  const note=document.getElementById('note-bed');note.style.display=pts.length?'block':'none';note.textContent=pts.length?'⚠️ '+pts.join(' | '):'';
+  const trucks=[...new Set(labels.map(l=>l.truck).filter(Boolean))].length;
+  const orders=[...new Set(labels.map(l=>l.order))].length;
+  document.getElementById('stats-bed').innerHTML=`
+    <div class="scard"><div class="snum">${labels.length}</div><div class="slbl">Label</div></div>
+    <div class="scard"><div class="snum" style="color:#1a4fa8">${orders}</div><div class="slbl">ออเดอร์</div></div>
+    <div class="scard"><div class="snum" style="color:#15803d">${trucks}</div><div class="slbl">จำนวนรถ</div></div>
+    <div class="scard"><div class="snum" style="color:#dc2626">${skJ}</div><div class="slbl">ข้าม JST</div></div>`;
+  document.getElementById('grid-bed').innerHTML=labels.map((l,i)=>bedHTML(l,i)).join('');
+  labels.forEach((l,i)=>makeQR('qr-bed-'+i,l.order));
+}
+
+function bedHTML(l,i){
+  const bc=l.order.replace(/[^A-Z0-9]/gi,'').toUpperCase().padEnd(14,'0').substring(0,14);
+  const multi=l.totalQty>1;
+  return `<div class="lcard sel" id="lc-bed-${i}" onclick="toggle('bed',${i})">
+  <div class="sel-bar"><input type="checkbox" checked onclick="event.stopPropagation()" onchange="toggleCb('bed',${i},this)"> เลือกพิมพ์${multi?`<span class="piece-badge">${l.pieceNum}/${l.totalQty}</span>`:''}</div>
+  <div class="linner-bed">
+    <div class="bed-hdr">
+      <div class="bed-hdr-left">
+        <div style="font-size:10px;font-weight:700;color:#000;text-transform:uppercase;letter-spacing:1px">Picklist ที่นอน</div>
+        <div class="truck-name">${l.truck||'(ไม่ระบุรถ)'}</div>
+        <div class="order-appt-row">
+          <span class="order-num">Order: ${l.order}${multi?` <span class="part-badge">${l.pieceNum}/${l.totalQty}</span>`:''}</span>
+          <span class="appt-spacer"></span>
+          ${l.appt?`<span class="appt-val">${l.appt}</span>`:''}
+        </div>
+        <div class="lsub">${l.date||''}${l.sup?' | Sup: '+l.sup:''}</div>
+      </div>
+      <div class="bed-hdr-right">
+        <span class="type-badge">BED</span>
+        <div class="qr-box" id="qr-bed-${i}" data-qr="${l.order}"></div>
+      </div>
+    </div>
+    <div class="bed-info">
+      ${l.customer?`<div class="lrow"><span class="lk">ลูกค้า</span><span class="lv">${l.customer}</span></div>`:''}
+      ${l.address?`<div class="lrow"><span class="lk">ที่อยู่</span><span class="lv" style="font-size:12px;line-height:1.4">${l.address.substring(0,130)}</span></div>`:''}
+    </div>
+    <div class="bed-items">
+      <div class="items-title">รายการสินค้า</div>
+      <div class="irow"><span class="iname">${l.brand} <span class="isize">${l.size||''}</span></span><span class="iqty">×1</span></div>
+    </div>
+    <div class="lfooter"><div class="bc">||| ${bc} |||</div><div class="lnum">#${String(i+1).padStart(4,'0')}</div></div>
+  </div></div>`;
+}
+
+function buildGift(rows){
+  const C=COL.gift;const groups={};const orderList=[];let skJ=0,skG=0;
+  rows.forEach((row,i)=>{
+    const sup=gv(row,C.sup);if(isJST(sup)){skJ++;return;}
+    const rawGift=gv(row,C.gift);if(!rawGift){skG++;return;}
+    const oid=gv(row,C.order)||('R'+(i+2));
+    if(!groups[oid]){groups[oid]={order:oid,truck:gv(row,C.truck),date:gv(row,C.date),sup,customer:gv(row,C.customer),address:gv(row,C.address),appt:gv(row,C.appt),items:[]};orderList.push(oid);}
+    rawGift.split(/\r?\n/).forEach((gline,li)=>{
+      const gname=gline.trim();if(!gname)return;
+      const gqty=parseInt((gv(row,C.qty).split(/\r?\n/)[li]||'').trim())||1;
+      const ex=groups[oid].items.find(it=>it.name===gname);
+      if(ex)ex.qty+=gqty;else groups[oid].items.push({name:gname,qty:gqty});
+    });
+  });
+  const labels=[];let merged=0,split=0;
+  orderList.forEach(oid=>{
+    const g=groups[oid];const chunks=[];
+    for(let i=0;i<g.items.length;i+=MAX_GIFT)chunks.push(g.items.slice(i,i+MAX_GIFT));
+    if(!chunks.length)chunks.push([]);
+    if(chunks.length===1&&g.items.length>1)merged++;
+    if(chunks.length>1)split+=chunks.length;
+    chunks.forEach((ch,pi)=>labels.push({...g,items:ch,part:pi+1,total:chunks.length}));
+  });
+  document.getElementById('drop-gift').style.display='none';
+  document.getElementById('main-gift').style.display='block';
+  document.getElementById('gift-count').textContent='('+labels.length+' Label จาก '+orderList.length+' ออเดอร์)';
+  const pts2=[];
+  if(skJ>0)pts2.push('ข้าม JST '+skJ);if(skG>0)pts2.push('ข้าม(ไม่มีของแถม) '+skG);if(merged>0)pts2.push('รวมได้ '+merged);if(split>0)pts2.push('แยกใบ '+split);
+  document.getElementById('note-gift').textContent=pts2.length?'🔀 '+pts2.join(' | '):'';
+  const se=labels.length-orderList.length;
+  document.getElementById('stats-gift').innerHTML=`
+    <div class="scard"><div class="snum">${orderList.length}</div><div class="slbl">ออเดอร์</div></div>
+    <div class="scard"><div class="snum" style="color:#7c3aed">${labels.length}</div><div class="slbl">Label</div></div>
+    <div class="scard"><div class="snum" style="color:#15803d">${se>0?'+'+se:orderList.length-labels.length>=0?orderList.length-labels.length:0}</div><div class="slbl">${se>0?'แยกเพิ่ม':'รวมได้'}</div></div>
+    <div class="scard"><div class="snum" style="color:#dc2626">${skJ}</div><div class="slbl">ข้าม JST</div></div>`;
+  document.getElementById('grid-gift').innerHTML=labels.map((l,i)=>giftHTML(l,i)).join('');
+  labels.forEach((l,i)=>makeQR('qr-gift-'+i,l.order));
+}
+
+function giftHTML(l,i){
+  const bc=l.order.replace(/[^A-Z0-9]/gi,'').toUpperCase().padEnd(14,'0').substring(0,14);
+  const multi=l.total>1;
+  return `<div class="lcard sel-g" id="lc-gift-${i}" onclick="toggle('gift',${i})">
+  <div class="sel-bar gbar"><input type="checkbox" checked onclick="event.stopPropagation()" onchange="toggleCb('gift',${i},this)"> เลือกพิมพ์${multi?`<span class="piece-badge">${l.part}/${l.total}</span>`:''}</div>
+  <div class="linner-gift">
+    <div class="gift-hdr">
+      <div class="gift-hdr-left">
+        <div style="font-size:10px;font-weight:700;color:#000;text-transform:uppercase;letter-spacing:1px;display:flex;align-items:center;gap:5px">Picklist ของแถม${multi?`<span class="part-badge">${l.part}/${l.total}</span>`:''}</div>
+        <div class="gift-truck">${l.truck||'(ไม่ระบุรถ)'}</div>
+        <div class="order-appt-row">
+          <span class="gift-order">Order: ${l.order}</span>
+          <span class="appt-spacer"></span>
+          ${l.appt?`<span class="appt-val">${l.appt}</span>`:''}
+        </div>
+        <div class="gift-sub">${l.date||''}${l.sup?' | Sup: '+l.sup:''}</div>
+      </div>
+      <div class="gift-hdr-right">
+        <span class="type-badge">GIFT</span>
+        <div class="qr-box" id="qr-gift-${i}" data-qr="${l.order}"></div>
+      </div>
+    </div>
+    <div class="gift-info">
+      ${l.customer?`<div class="lrow"><span class="lk">ลูกค้า</span><span class="lv">${l.customer}</span></div>`:''}
+      ${l.address?`<div class="lrow"><span class="lk">ที่อยู่</span><span class="lv" style="font-size:11px;line-height:1.3">${l.address.substring(0,130)}</span></div>`:''}
+    </div>
+    <div class="gift-items">
+      <div class="items-title">ของแถม${multi?`<span class="part-badge" style="font-size:10px;padding:1px 6px">${l.part}/${l.total}</span>`:''}</div>
+      <table style="width:100%;border-collapse:collapse">
+        ${l.items.length>0?l.items.map((it,idx)=>`<tr class="irow-g" style="${idx%2===1?'background:#f0f0f0':''}"><td class="iname-g">${it.name}</td><td style="text-align:right;padding-left:3px"><span class="iqty-g">×${it.qty}</span></td></tr>`).join(''):`<tr><td style="font-size:11px;color:#888;text-align:center;padding:3px">ไม่มีรายการ</td></tr>`}
+      </table>
+    </div>
+    <div class="lfooter"><div class="bc">||| ${bc} |||</div><div class="lnum">#${String(i+1).padStart(4,'0')}</div></div>
+  </div></div>`;
+}
+
+const PCSS=`
+*{box-sizing:border-box;margin:0;padding:0}html,body{background:#fff;color:#000}
+.page{page-break-after:always;break-after:page;overflow:hidden}
+.pb,.pg{width:150mm;height:100mm}
+.linner-bed,.linner-gift{width:150mm;height:100mm;padding:4mm 6mm;font-family:Arial,sans-serif;display:flex;flex-direction:column;overflow:hidden;color:#000}
+.bed-hdr,.gift-hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2.5px solid #000;padding-bottom:4px;margin-bottom:5px}
+.bed-hdr-left,.gift-hdr-left{flex:1;min-width:0}
+.bed-hdr-right,.gift-hdr-right{display:flex;align-items:flex-start;gap:7px;flex-shrink:0;margin-left:10px}
+.type-badge{font-size:10px;font-weight:900;padding:3px 8px;border-radius:3px;letter-spacing:1px;background:#fff;color:#000;border:2.5px solid #000}
+.truck-name,.gift-truck{font-size:28px;font-weight:900;color:#000;text-transform:uppercase;line-height:1.05;word-break:break-word}
+.qr-box{width:55px;height:55px;flex-shrink:0}
+.qr-box canvas,.qr-box img{width:55px!important;height:55px!important}
+.order-appt-row{display:flex;align-items:baseline;margin-top:1px;gap:0}
+.order-num,.gift-order{font-size:24px;font-weight:700;color:#000;line-height:1.1;white-space:nowrap;flex-shrink:0}
+.appt-spacer{flex:1;min-width:8px}
+.appt-val{font-size:40px;font-weight:900;color:#000;line-height:1.0;white-space:nowrap;flex-shrink:0}
+.lsub,.gift-sub{font-size:8px;color:#000;margin-top:1px}
+.bed-info,.gift-info{display:flex;flex-direction:column;gap:1px;margin-bottom:3px}
+.lrow{display:flex;align-items:baseline;gap:4px;line-height:1.4}
+.lk{color:#000;min-width:55px;flex-shrink:0;font-size:10px}
+.lv{font-weight:700;color:#000;word-break:break-word;font-size:12px}
+.bed-items,.gift-items{border-top:1.5px solid #000;padding-top:3px}
+.items-title{font-size:9px;text-transform:uppercase;color:#000;margin-bottom:2px;display:flex;align-items:center;gap:5px}
+.irow{display:flex;justify-content:space-between;align-items:center;padding:2px 0;border-bottom:.5px solid #aaa;gap:5px}
+.iname{font-weight:800;flex:1;font-size:13px;color:#000;word-break:break-word}
+.isize{font-size:10px;color:#000;font-weight:400}
+.iqty{font-weight:900;padding:2px 8px;border-radius:4px;font-size:13px;background:#fff;color:#000;border:2.5px solid #000}
+.irow-g{display:flex;justify-content:space-between;align-items:center;padding:1px 2px;border-bottom:.5px solid #ccc;gap:3px}
+.irow-g:nth-child(even){background:#f0f0f0}
+.iname-g{font-weight:600;flex:1;word-break:break-word;white-space:pre-line;font-size:10px;color:#000;line-height:1.3}
+.iqty-g{font-weight:900;padding:0 5px;border-radius:3px;font-size:10px;background:#fff;color:#000;border:2px solid #000;min-width:24px;text-align:center}
+.part-badge{font-size:12px;font-weight:900;background:#fff;color:#000;border:2.5px solid #000;padding:2px 8px;border-radius:4px;margin-left:5px;display:inline-block}
+.lfooter{margin-top:3px;border-top:1px solid #aaa;padding-top:2px;display:flex;justify-content:space-between}
+.bc{font-family:'Courier New',monospace;font-size:8px;color:#555;letter-spacing:1.5px}
+.lnum{font-size:9px;color:#555}
+.sel-bar,.piece-badge{display:none!important}
+@page{size:150mm 100mm;margin:0}
+@media print{.page{page-break-after:always;break-after:page}}`;
+
+function printSelected(){
+  const sel=document.querySelectorAll('.lcard.sel,.lcard.sel-g');
+  if(!sel.length){alert('กรุณาเลือก Label ก่อนพิมพ์');return;}
+  const win=window.open('','_blank','width=950,height=750');
+  const html=[...sel].map(card=>{
+    const inner=card.querySelector('.linner-bed,.linner-gift');
+    const isBed=inner&&inner.classList.contains('linner-bed');
+    return `<div class="page ${isBed?'pb':'pg'}">${inner?inner.outerHTML:''}</div>`;
+  }).join('');
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Print</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script>
+<style>${PCSS}<\/style></head><body>${html}
+<script>
+document.querySelectorAll('.qr-box').forEach(function(el){var t=el.dataset.qr;if(!t)return;el.innerHTML='';try{new QRCode(el,{text:t,width:55,height:55,correctLevel:QRCode.CorrectLevel.M});}catch(e){}});
+setTimeout(function(){window.print();},900);
+<\/script></div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+</body></html>`);
+  win.document.close();
+}
+
+function makeQR(id,text){const el=document.getElementById(id);if(!el||!text)return;try{new QRCode(el,{text:String(text),width:60,height:60,correctLevel:QRCode.CorrectLevel.M});}catch(e){}}
+function toggle(type,i){const el=document.getElementById('lc-'+type+'-'+i);const cls=type==='bed'?'sel':'sel-g';el.classList.toggle(cls);const cb=el.querySelector('input[type=checkbox]');if(cb)cb.checked=el.classList.contains(cls);syncAll(type);}
+function toggleCb(type,i,cb){const el=document.getElementById('lc-'+type+'-'+i);const cls=type==='bed'?'sel':'sel-g';if(cb.checked)el.classList.add(cls);else el.classList.remove(cls);syncAll(type);}
+function toggleAll(type,checked){const cls=type==='bed'?'sel':'sel-g';document.querySelectorAll('[id^="lc-'+type+'-"]').forEach(el=>{if(checked)el.classList.add(cls);else el.classList.remove(cls);const cb=el.querySelector('input[type=checkbox]');if(cb)cb.checked=checked;});}
+function syncAll(type){const all=document.querySelectorAll('[id^="lc-'+type+'-"]');const cls=type==='bed'?'sel':'sel-g';const n=[...all].filter(e=>e.classList.contains(cls)).length;const cb=document.getElementById('chk-all-'+type);if(cb)cb.checked=all.length>0&&all.length===n;}
+function resetPanel(type){document.getElementById('file-'+type).value='';document.getElementById('drop-'+type).style.display='block';document.getElementById('main-'+type).style.display='none';}
+</script>
+</body>
+</html>

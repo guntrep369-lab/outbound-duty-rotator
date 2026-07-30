@@ -12,6 +12,7 @@ import {
   Loader2,
   ClipboardCheck,
   Warehouse,
+  Truck,
 } from 'lucide-react';
 import { useApp } from './context/useApp.js';
 import { Toasts } from './components/ui/Toasts.jsx';
@@ -63,6 +64,7 @@ function SyncStatus() {
 const MODULES = [
   { id: 'roster', label: 'จัดตารางงาน', labelEn: 'Duty Roster', icon: CalendarRange, href: './' },
   { id: 'order', label: 'เทียบ Order', labelEn: 'Order Compare', icon: ClipboardCheck, href: './order-compare/' },
+  { id: 'transport', label: 'ทำใบงานขนส่ง', labelEn: 'Transport Docs', icon: Truck, href: './transport-docs/' },
 ];
 
 /**
