@@ -10,6 +10,8 @@ import {
   CloudOff,
   HardDrive,
   Loader2,
+  ClipboardCheck,
+  ExternalLink,
 } from 'lucide-react';
 import { useApp } from './context/useApp.js';
 import { Toasts } from './components/ui/Toasts.jsx';
@@ -99,6 +101,18 @@ export default function App() {
               </button>
             );
           })}
+
+          {/* Standalone tool served as a static page (public/order-compare) */}
+          <a
+            href="./order-compare/"
+            className="ml-auto flex shrink-0 items-center gap-2 rounded-t-lg border-b-2 border-transparent px-3.5 py-2.5 text-sm font-medium text-slate-500 transition-colors hover:text-slate-800"
+            title="ระบบเทียบ Order & สต๊อก (เปิดหน้าใหม่)"
+          >
+            <ClipboardCheck className="h-4 w-4" />
+            <span>Order Compare</span>
+            <span className="hidden text-xs text-slate-400 sm:inline">เทียบออเดอร์</span>
+            <ExternalLink className="h-3 w-3 opacity-60" />
+          </a>
         </nav>
       </header>
 

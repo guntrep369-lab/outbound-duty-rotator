@@ -1,0 +1,2367 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Order & สต๊อก</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+:root {
+  --bg:#F0F2F5; --surface:#fff; --surface2:#F7F8FA; --border:#E2E5EA;
+  --primary:#1A56DB; --primary-light:#EBF0FF;
+  --added:#0A6640; --added-bg:#D4EDDA;
+  --removed:#A50E0E; --removed-bg:#FDDEDE;
+  --changed:#7A4F00; --changed-bg:#FFF3CD;
+  --neutral:#374151; --muted:#6B7280; --text:#111827;
+  --mono:'IBM Plex Mono',monospace; --sans:'IBM Plex Sans Thai',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:100vh}
+
+/* ── Header ── */
+header{background:var(--surface);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:100;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+header h1{font-size:17px;font-weight:600;letter-spacing:-.3px}
+header .sub{font-size:12px;color:var(--muted);margin-top:2px}
+
+/* ── Tabs ── */
+.tabs{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:0;background:var(--surface);padding:0 24px}
+.tab-btn{padding:12px 20px;font-size:14px;font-weight:500;border:none;background:none;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-2px;font-family:var(--sans);transition:all .15s;display:flex;align-items:center;gap:6px}
+.tab-btn.active{color:var(--primary);border-bottom-color:var(--primary)}
+.tab-btn:hover:not(.active){color:var(--neutral)}
+.tab-pane{display:none}.tab-pane.active{display:block}
+
+/* ── Main layout ── */
+.main{max-width:1400px;margin:0 auto;padding:20px 24px}
+
+/* ── Upload cards ── */
+.upload-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.upload-card{background:var(--surface);border:2px dashed var(--border);border-radius:12px;padding:20px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;display:block}
+.upload-card:hover,.upload-card.has-file{border-color:var(--primary);background:var(--primary-light)}
+.upload-card input{display:none}
+.upload-card .round-tag{display:inline-block;background:var(--primary);color:#fff;font-size:11px;font-weight:600;padding:2px 10px;border-radius:20px;margin-bottom:8px;letter-spacing:.5px}
+.upload-card h3{font-size:14px;font-weight:500;margin-bottom:4px}
+.upload-card p{font-size:12px;color:var(--muted)}
+.upload-card .fname{font-size:12px;color:var(--primary);margin-top:6px;font-weight:500}
+
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 18px;border-radius:8px;font-size:13px;font-weight:500;border:none;cursor:pointer;transition:opacity .15s,transform .1s;font-family:var(--sans)}
+.btn:active{transform:scale(.97)}.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-primary{background:var(--primary);color:#fff}.btn-primary:hover:not(:disabled){opacity:.88}
+.btn-secondary{background:var(--surface);color:var(--neutral);border:1px solid var(--border)}.btn-secondary:hover{background:var(--surface2)}
+.btn-sm{padding:5px 12px;font-size:12px}
+
+/* ── Action bar ── */
+.action-bar{display:flex;align-items:center;gap:10px;margin-bottom:18px;flex-wrap:wrap}
+.status-text{font-size:12px;color:var(--muted)}
+
+/* ── Summary strip ── */
+.summary-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:18px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;display:flex;align-items:center;gap:10px}
+.stat-icon{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.stat-card h4{font-size:20px;font-weight:600;line-height:1}
+.stat-card p{font-size:11px;color:var(--muted);margin-top:2px}
+
+/* ── Filter bar ── */
+.filter-bar{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+.filter-tab{padding:5px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);font-size:12px;font-weight:500;cursor:pointer;font-family:var(--sans);color:var(--neutral);display:flex;align-items:center;gap:5px;transition:all .15s}
+.filter-tab.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+.cnt{background:rgba(255,255,255,.25);border-radius:10px;padding:1px 5px;font-size:11px}
+.filter-tab:not(.active) .cnt{background:var(--border);color:var(--muted)}
+.search-box{margin-left:auto;position:relative}
+.search-box input{padding:6px 10px 6px 30px;border:1px solid var(--border);border-radius:8px;font-size:12px;font-family:var(--sans);width:200px;background:var(--surface);color:var(--text)}
+.search-box input:focus{outline:none;border-color:var(--primary)}
+.search-icon{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;pointer-events:none}
+
+/* ── Table ── */
+.table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead tr{background:var(--surface2);border-bottom:1px solid var(--border)}
+th{padding:9px 12px;text-align:left;font-weight:600;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;white-space:nowrap}
+tbody tr{border-bottom:1px solid var(--border);transition:background .1s}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover{background:var(--surface2)}
+td{padding:9px 12px;vertical-align:middle}
+.order-id{font-family:var(--mono);font-size:12px;font-weight:500;color:var(--primary)}
+
+/* ── Badges ── */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;white-space:nowrap}
+.badge-added{background:var(--added-bg);color:var(--added)}
+.badge-removed{background:var(--removed-bg);color:var(--removed)}
+.badge-changed{background:var(--changed-bg);color:var(--changed)}
+.badge-same{background:#E5E7EB;color:var(--muted)}
+.stock-ok{background:#D4EDDA;color:#0A6640}
+.stock-low{background:#FFF3CD;color:#7A4F00}
+.stock-out{background:#FDDEDE;color:#A50E0E}
+.stock-na{background:#E5E7EB;color:#6B7280}
+
+/* diff inline */
+.diff-old{background:var(--removed-bg);color:var(--removed);padding:1px 5px;border-radius:4px;font-size:11px;text-decoration:line-through;display:inline-block}
+.diff-new{background:var(--added-bg);color:var(--added);padding:1px 5px;border-radius:4px;font-size:11px;display:inline-block}
+.gift-item{font-size:12px;padding:3px 0;border-bottom:1px dashed var(--border);display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.gift-item:last-child{border-bottom:none}
+.gift-qty{color:var(--primary);font-weight:600;white-space:nowrap}
+
+/* ── Expand row ── */
+.expand-btn{background:none;border:none;cursor:pointer;color:var(--primary);font-size:13px;padding:2px 4px;border-radius:4px;transition:background .1s}
+.expand-btn:hover{background:var(--primary-light)}
+.detail-row{display:none}.detail-row.open{display:table-row}
+.detail-cell{padding:0 12px 12px;background:var(--surface2)}
+.detail-inner{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:8px}
+.detail-inner h5{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:8px}
+.no-data{color:var(--muted);font-size:12px;font-style:italic}
+
+/* row colors */
+.row-added{background:#F0FFF4!important}.row-added:hover{background:#E6FFED!important}
+.row-removed{background:#FFF5F5!important}.row-removed:hover{background:#FFEBEB!important}
+.row-changed{background:#FFFBEB!important}.row-changed:hover{background:#FFF7D6!important}
+
+/* ── Stock panel ── */
+.stock-panel{margin-top:10px;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.stock-panel-hdr{background:var(--surface2);padding:6px 12px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.stock-col-hdr,.stock-row{display:grid;grid-template-columns:1fr 70px 70px 90px 70px;gap:8px;padding:6px 12px;font-size:12px;align-items:center;border-top:1px solid var(--border)}
+.stock-col-hdr{font-size:11px;color:var(--muted);font-weight:600}
+.stock-row:hover{background:var(--surface2)}
+.sku-code{font-family:var(--mono);font-size:11px;color:var(--muted)}
+
+/* ── Stock tab ── */
+.stock-upload-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.demand-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px}
+.empty-state{text-align:center;padding:48px 24px;color:var(--muted)}
+.empty-state .icon{font-size:40px;margin-bottom:10px}
+.empty-state h3{font-size:15px;color:var(--neutral);margin-bottom:5px}
+.empty-state p{font-size:13px}
+
+/* ── GS file input row ── */
+.gs-row{display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
+.gs-row label.btn{cursor:pointer;margin:0}
+.gs-status{font-size:12px;color:var(--muted)}
+
+/* ── Stock timestamp bar ── */
+.stock-ts-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--added);
+  flex-wrap: wrap;
+}
+.stock-ts-bar .ts-text { flex: 1; }
+.refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid #059669;
+  background: none;
+  color: #059669;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--sans);
+  transition: background .15s;
+}
+.refresh-btn:hover { background: #F0FFF8; }
+.refresh-btn.spinning { opacity: .6; cursor: not-allowed; }
+
+/* ── Duplicate order warning ── */
+.dup-section {
+  background: var(--surface);
+  border: 1.5px solid var(--removed);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.dup-section-header {
+  background: var(--removed-bg);
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--removed);
+}
+.dup-section-header .dup-count {
+  background: var(--removed);
+  color: #fff;
+  border-radius: 20px;
+  padding: 1px 8px;
+  font-size: 11px;
+}
+.dup-item {
+  border-top: 1px solid var(--border);
+  padding: 10px 16px;
+}
+.dup-item-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.dup-order-id {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--removed);
+}
+.dup-row {
+  display: grid;
+  grid-template-columns: 160px 1fr 140px 140px;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 12px;
+  border-bottom: 1px dashed var(--border);
+}
+.dup-row:last-child { border-bottom: none; }
+.dup-col-hdr {
+  display: grid;
+  grid-template-columns: 160px 1fr 140px 140px;
+  gap: 8px;
+  padding: 4px 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .4px;
+}
+
+/* ── Date mismatch warning ── */
+.date-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  background: #FFF5F5;
+  border: 1.5px solid var(--removed);
+  border-radius: 10px;
+  color: var(--removed);
+  margin-bottom: 16px;
+}
+
+/* ── Stock connect card ── */
+.stock-connect-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+}
+.stock-connect-card.has-file {
+  border-color: #059669;
+  background: #F0FFF8;
+}
+
+/* ── Order detail modal ── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal-box{background:var(--surface);border-radius:14px;width:min(560px,94vw);max-height:80vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.18)}
+.modal-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.modal-header h3{font-size:15px;font-weight:600;line-height:1.3}
+.modal-header p{font-size:12px;color:var(--muted);margin-top:3px}
+.modal-close{background:none;border:none;cursor:pointer;font-size:18px;color:var(--muted);padding:2px 6px;border-radius:4px;line-height:1;flex-shrink:0}
+.modal-close:hover{background:var(--surface2)}
+.modal-body{overflow-y:auto;padding:16px 20px}
+.modal-order-row{display:grid;grid-template-columns:1fr 1fr 60px;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;align-items:center}
+.modal-order-row:last-child{border-bottom:none}
+.modal-order-id{font-family:var(--mono);font-size:12px;font-weight:500;color:var(--primary)}
+.modal-sup{font-size:12px;color:var(--muted)}
+.modal-qty{font-size:12px;font-weight:600;text-align:right}
+.modal-col-hdr{display:grid;grid-template-columns:1fr 1fr 60px;gap:8px;padding:6px 0 8px;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;border-bottom:2px solid var(--border)}
+.orders-link{cursor:pointer;color:var(--primary);font-weight:600;text-decoration:underline;text-underline-offset:2px;font-size:13px}
+.orders-link:hover{opacity:.75}
+
+@media(max-width:768px){
+  .upload-row,.stock-upload-row,.detail-inner{grid-template-columns:1fr}
+  .summary-strip{grid-template-columns:1fr 1fr}
+  .search-box{margin-left:0}.search-box input{width:100%}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>📋 Order & สต๊อก</h1>
+    <div class="sub">เปรียบเทียบ Order · ตรวจสต๊อกก่อนส่ง</div>
+  </div>
+</header>
+
+<!-- ── Tabs ── -->
+<div class="tabs">
+  <button class="tab-btn active" onclick="switchTab('compare',this)">🔄 เทียบ Order</button>
+  <button class="tab-btn" onclick="switchTab('stock',this)">📦 เช็คสต๊อก</button>
+  <button class="tab-btn" onclick="switchTab('customer',this)">👤 เทียบข้อมูลลูกค้า</button>
+  <button class="tab-btn" onclick="switchTab('dupcheck',this)">🔍 ตรวจ Order ซ้ำ</button>
+  <button class="tab-btn" onclick="switchTab('consigncheck',this)">📦 ตรวจเลข Consign</button>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     TAB 1: เทียบ Order
+══════════════════════════════════════════════════════════════ -->
+<div class="tab-pane active" id="tab-compare">
+<div class="main">
+
+  <!-- Upload -->
+  <div class="upload-row">
+    <div class="stock-connect-card" id="card-single">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <div style="font-size:24px">📋</div>
+        <div>
+          <div style="font-weight:600;font-size:14px">ไฟล์ออเดอร์</div>
+          <div style="font-size:12px;color:var(--muted)">Sheet เช้า vs Sheet เย็น</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Apps Script URL (Google Sheet)</div>
+        <div style="display:flex;gap:6px">
+          <input id="orderGasUrl" type="text" placeholder="https://script.google.com/macros/s/..." style="flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-family:var(--sans);background:var(--surface);color:var(--text)" oninput="saveOrderGasUrl(this.value)">
+          <button class="btn btn-primary btn-sm" onclick="loadOrderFromGAS()">ดึงข้อมูล</button>
+          <button class="btn btn-secondary btn-sm" onclick="clearOrderGasUrl()" title="ล้าง URL">✕</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin:2px 0">
+          <div style="flex:1;height:1px;background:var(--border)"></div>
+          <span style="font-size:11px;color:var(--muted)">หรือ</span>
+          <div style="flex:1;height:1px;background:var(--border)"></div>
+        </div>
+        <label class="btn btn-secondary btn-sm" style="cursor:pointer;justify-content:center;width:100%">
+          📁 อัปโหลดไฟล์ Excel (2 Sheet)
+          <input type="file" id="file-single" accept=".xlsx,.xls" style="display:none">
+        </label>
+      </div>
+      <div class="fname" id="file-single-name" style="margin-top:8px"></div>
+      <div id="sheet-status" style="font-size:11px;margin-top:4px;color:var(--muted)"></div>
+    </div>
+
+    <!-- Stock file (shared with tab2) -->
+    <div class="stock-connect-card" id="stock-card-1">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <div style="font-size:24px">📦</div>
+        <div>
+          <div style="font-weight:600;font-size:14px">สต๊อกสินค้า</div>
+          <div style="font-size:12px;color:var(--muted)">เชื่อมจาก Google Sheet หรืออัปโหลดไฟล์</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Apps Script URL</div>
+        <div style="display:flex;gap:6px">
+          <input id="gasUrl1" type="text" placeholder="https://script.google.com/macros/s/..." style="flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-family:var(--sans);background:var(--surface);color:var(--text)" onclick="event.stopPropagation()" oninput="saveGasUrl(this.value)">
+          <button class="btn btn-primary btn-sm" onclick="loadStockFromGAS('gasUrl1')">ดึงข้อมูล</button>
+          <button class="btn btn-secondary btn-sm" onclick="clearSavedGasUrl()" title="ล้าง URL ที่บันทึกไว้">✕</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin:2px 0">
+          <div style="flex:1;height:1px;background:var(--border)"></div>
+          <span style="font-size:11px;color:var(--muted)">หรือ</span>
+          <div style="flex:1;height:1px;background:var(--border)"></div>
+        </div>
+        <label class="btn btn-secondary btn-sm" style="cursor:pointer;justify-content:center;width:100%">
+          📁 อัปโหลดไฟล์ (.xlsx / .csv)
+          <input type="file" id="stockFile1" accept=".xlsx,.xls,.csv" style="display:none" onchange="loadStockFile(event)">
+        </label>
+      </div>
+      <div class="fname" id="stock-fname" style="margin-top:8px"></div>
+    </div>
+  </div>
+
+  <!-- Date mismatch warning -->
+  <div id="dateWarningWrap" style="display:none"></div>
+
+  <div class="action-bar">
+    <button class="btn btn-primary" id="compareBtn" disabled onclick="runCompare()">🔍 เปรียบเทียบ</button>
+    <button class="btn btn-secondary" onclick="clearCompare()">↺ เริ่มใหม่</button>
+    <span class="status-text" id="status-text"></span>
+  </div>
+
+  <!-- Summary -->
+  <div class="summary-strip" id="summaryStrip" style="display:none">
+    <div class="stat-card">
+      <div class="stat-icon" style="background:#FFF3CD">📦</div>
+      <div><h4 id="totalOrders">0</h4><p>Orders ทั้งหมด</p></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon" style="background:var(--changed-bg)">✏️</div>
+      <div><h4 id="changedCount" style="color:var(--changed)">0</h4><p>มีการแก้ไข</p></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon" style="background:var(--added-bg)">➕</div>
+      <div><h4 id="addedCount" style="color:var(--added)">0</h4><p>Order ใหม่</p></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon" style="background:var(--removed-bg)">➖</div>
+      <div><h4 id="removedCount" style="color:var(--removed)">0</h4><p>Order หายไป</p></div>
+    </div>
+    <div class="stat-card" id="stockWarnCard" style="display:none">
+      <div class="stat-icon" style="background:#FFF3CD">⚠️</div>
+      <div><h4 id="stockWarnCount" style="color:var(--changed)">0</h4><p>สต๊อกไม่พอ</p></div>
+    </div>
+  </div>
+
+  <!-- Filter bar -->
+  <div class="filter-bar" id="filterBar" style="display:none">
+    <button class="filter-tab active" data-filter="all" onclick="setFilter('all',this)">ทั้งหมด <span class="cnt" id="cnt-all">0</span></button>
+    <button class="filter-tab" data-filter="changed" onclick="setFilter('changed',this)">✏️ แก้ไข <span class="cnt" id="cnt-changed">0</span></button>
+    <button class="filter-tab" data-filter="added" onclick="setFilter('added',this)">➕ ใหม่ <span class="cnt" id="cnt-added">0</span></button>
+    <button class="filter-tab" data-filter="removed" onclick="setFilter('removed',this)">➖ หายไป <span class="cnt" id="cnt-removed">0</span></button>
+    <button class="filter-tab" data-filter="same" onclick="setFilter('same',this)">✓ ไม่เปลี่ยน <span class="cnt" id="cnt-same">0</span></button>
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="searchInput" placeholder="ค้นหา Order / ลูกค้า..." oninput="renderTable()">
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="table-wrap" id="tableWrap">
+    <div class="empty-state">
+      <div class="icon">📂</div>
+      <h3>ยังไม่มีข้อมูล</h3>
+      <p>อัปโหลดไฟล์ Excel แล้วกด "เปรียบเทียบ"</p>
+    </div>
+  </div>
+
+</div><!-- /main -->
+</div><!-- /tab-compare -->
+
+<!-- ══════════════════════════════════════════════════════════════
+     TAB 2: เช็คสต๊อก
+══════════════════════════════════════════════════════════════ -->
+<div class="tab-pane" id="tab-stock">
+<div class="main">
+
+  <div class="stock-upload-row">
+    <div class="stock-connect-card" id="order-card-2">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <div style="font-size:24px">📋</div>
+        <div>
+          <div style="font-weight:600;font-size:14px">ไฟล์ออเดอร์</div>
+          <div style="font-size:12px;color:var(--muted)">ใช้ Sheet Sheet Daily CRM คำนวณความต้องการ</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Apps Script URL (Google Sheet)</div>
+        <div style="display:flex;gap:6px">
+          <input id="orderGasUrl2" type="text" placeholder="https://script.google.com/macros/s/..." style="flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-family:var(--sans);background:var(--surface);color:var(--text)" oninput="saveOrderGasUrl(this.value)">
+          <button class="btn btn-primary btn-sm" onclick="loadOrderFromGAS()">ดึงข้อมูล</button>
+          <button class="btn btn-secondary btn-sm" onclick="clearOrderGasUrl()" title="ล้าง URL">✕</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin:2px 0">
+          <div style="flex:1;height:1px;background:var(--border)"></div>
+          <span style="font-size:11px;color:var(--muted)">หรือ</span>
+          <div style="flex:1;height:1px;background:var(--border)"></div>
+        </div>
+        <label class="btn btn-secondary btn-sm" style="cursor:pointer;justify-content:center;width:100%">
+          📁 อัปโหลดไฟล์ Excel
+          <input type="file" id="orderFile2" accept=".xlsx,.xls" style="display:none" onchange="loadOrderForStock(event)">
+        </label>
+      </div>
+      <div class="fname" id="order2-fname" style="margin-top:8px"></div>
+    </div>
+
+    <div class="stock-connect-card" id="stock-card-2">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <div style="font-size:24px">📦</div>
+        <div>
+          <div style="font-weight:600;font-size:14px">สต๊อกสินค้า</div>
+          <div style="font-size:12px;color:var(--muted)">เชื่อมจาก Google Sheet หรืออัปโหลดไฟล์</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Apps Script URL</div>
+        <div style="display:flex;gap:6px">
+          <input id="gasUrl2" type="text" placeholder="https://script.google.com/macros/s/..." style="flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-family:var(--sans);background:var(--surface);color:var(--text)" onclick="event.stopPropagation()" oninput="saveGasUrl(this.value)">
+          <button class="btn btn-primary btn-sm" onclick="loadStockFromGAS('gasUrl2')">ดึงข้อมูล</button>
+          <button class="btn btn-secondary btn-sm" onclick="clearSavedGasUrl()" title="ล้าง URL ที่บันทึกไว้">✕</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin:2px 0">
+          <div style="flex:1;height:1px;background:var(--border)"></div>
+          <span style="font-size:11px;color:var(--muted)">หรือ</span>
+          <div style="flex:1;height:1px;background:var(--border)"></div>
+        </div>
+        <label class="btn btn-secondary btn-sm" style="cursor:pointer;justify-content:center;width:100%">
+          📁 อัปโหลดไฟล์ (.xlsx / .csv)
+          <input type="file" id="stockFile2" accept=".xlsx,.xls,.csv" style="display:none" onchange="loadStockFile(event)">
+        </label>
+      </div>
+      <div class="fname" id="stock-fname2" style="margin-top:8px"></div>
+    </div>
+  </div>
+
+  <div class="action-bar">
+    <button class="btn btn-primary" id="checkStockBtn" onclick="runStockCheck()">📊 เช็คสต๊อก</button>
+    <span class="status-text" id="stock-status"></span>
+  </div>
+
+  <!-- Stock summary -->
+  <div class="summary-strip" id="stockSummaryStrip" style="display:none">
+    <div class="stat-card">
+      <div class="stat-icon" style="background:#EBF0FF">🔢</div>
+      <div><h4 id="totalSKUs">0</h4><p>SKU ทั้งหมด</p></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon" style="background:var(--added-bg)">✅</div>
+      <div><h4 id="okSKUs" style="color:var(--added)">0</h4><p>สต๊อกพอ</p></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon" style="background:var(--changed-bg)">⚠️</div>
+      <div><h4 id="lowSKUs" style="color:var(--changed)">0</h4><p>เหลือน้อย</p></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon" style="background:var(--removed-bg)">🚫</div>
+      <div><h4 id="outSKUs" style="color:var(--removed)">0</h4><p>สต๊อกไม่พอ/หมด</p></div>
+    </div>
+  </div>
+
+  <!-- Filter for stock tab -->
+  <div class="filter-bar" id="stockFilterBar" style="display:none">
+    <button class="filter-tab active" data-sfilter="all" onclick="setStockFilter('all',this)">ทั้งหมด <span class="cnt" id="scnt-all">0</span></button>
+    <button class="filter-tab" data-sfilter="out" onclick="setStockFilter('out',this)">🚫 ไม่พอ/หมด <span class="cnt" id="scnt-out">0</span></button>
+    <button class="filter-tab" data-sfilter="low" onclick="setStockFilter('low',this)">⚠️ เหลือน้อย <span class="cnt" id="scnt-low">0</span></button>
+    <button class="filter-tab" data-sfilter="ok" onclick="setStockFilter('ok',this)">✅ พอ <span class="cnt" id="scnt-ok">0</span></button>
+    <button class="filter-tab" data-sfilter="na" onclick="setStockFilter('na',this)">— ไม่มีในสต๊อก <span class="cnt" id="scnt-na">0</span></button>
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="stockSearch" placeholder="ค้นหา SKU / ชื่อสินค้า..." oninput="renderStockTable()">
+    </div>
+  </div>
+
+  <div class="table-wrap" id="stockTableWrap">
+    <div class="empty-state">
+      <div class="icon">📦</div>
+      <h3>ยังไม่มีข้อมูล</h3>
+      <p>อัปโหลดไฟล์ออเดอร์ + ไฟล์สต๊อก แล้วกด "เช็คสต๊อก"</p>
+    </div>
+  </div>
+
+</div>
+</div><!-- /tab-stock -->
+
+<!-- ══════════════════════════════════════════════════════════════
+     TAB 3: เทียบข้อมูลลูกค้า
+══════════════════════════════════════════════════════════════ -->
+<div class="tab-pane" id="tab-customer">
+<div class="main">
+
+  <!-- Carrier selector for Tab 3 -->
+  <div id="custCarrierWrap" style="display:none;margin-bottom:14px;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px">
+    <span style="font-size:12px;font-weight:600;color:var(--muted);margin-right:8px">🚚 เลือกขนส่ง:</span>
+    <span id="custCarrierBtns"></span>
+  </div>
+
+  <div class="action-bar" style="margin-bottom:16px">
+    <button class="btn btn-primary" id="customerCompareBtn" onclick="runCustomerCompare()">👤 เทียบข้อมูลลูกค้า</button>
+    <span class="status-text" id="customer-status" style="font-size:13px;color:var(--muted)"></span>
+  </div>
+
+  <!-- Summary -->
+  <div class="summary-strip" id="custSummaryStrip" style="display:none">
+    <div class="stat-card">
+      <div class="stat-icon" style="background:#EBF0FF">👥</div>
+      <div><h4 id="custTotal">0</h4><p>Orders ทั้งหมด</p></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon" style="background:var(--changed-bg)">✏️</div>
+      <div><h4 id="custChanged" style="color:var(--changed)">0</h4><p>ข้อมูลเปลี่ยน</p></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon" style="background:var(--added-bg)">➕</div>
+      <div><h4 id="custAdded" style="color:var(--added)">0</h4><p>Order ใหม่</p></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon" style="background:var(--removed-bg)">➖</div>
+      <div><h4 id="custRemoved" style="color:var(--removed)">0</h4><p>Order หายไป</p></div>
+    </div>
+  </div>
+
+  <!-- Filter + Search -->
+  <div class="filter-bar" id="custFilterBar" style="display:none">
+    <button class="filter-tab active" onclick="setCustFilter('all',this)">ทั้งหมด <span class="cnt" id="ccnt-all">0</span></button>
+    <button class="filter-tab" onclick="setCustFilter('changed',this)">✏️ เปลี่ยน <span class="cnt" id="ccnt-changed">0</span></button>
+    <button class="filter-tab" onclick="setCustFilter('added',this)">➕ ใหม่ <span class="cnt" id="ccnt-added">0</span></button>
+    <button class="filter-tab" onclick="setCustFilter('removed',this)">➖ หายไป <span class="cnt" id="ccnt-removed">0</span></button>
+    <button class="filter-tab" onclick="setCustFilter('same',this)">✓ ไม่เปลี่ยน <span class="cnt" id="ccnt-same">0</span></button>
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="custSearch" placeholder="ค้นหา Order / ชื่อลูกค้า..." oninput="renderCustomerTable()">
+    </div>
+  </div>
+
+  <div class="table-wrap" id="custTableWrap">
+    <div class="empty-state">
+      <div class="icon">👤</div>
+      <h3>ยังไม่มีข้อมูล</h3>
+      <p>ดึงข้อมูลออเดอร์ใน Tab "เทียบ Order" ก่อน แล้วกลับมากด "เทียบข้อมูลลูกค้า"</p>
+    </div>
+  </div>
+
+</div>
+</div><!-- /tab-customer -->
+
+<!-- ══════════════════════════════════════════════════════════════
+     TAB 4: ตรวจ Order ซ้ำ
+══════════════════════════════════════════════════════════════ -->
+<div class="tab-pane" id="tab-dupcheck">
+<div class="main">
+
+  <div class="action-bar" style="margin-bottom:16px">
+    <button class="btn btn-primary" onclick="runDuplicateCheck()">🔍 ตรวจ Order ซ้ำ</button>
+    <span class="status-text" id="dup-status" style="font-size:13px;color:var(--muted)"></span>
+  </div>
+  <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
+    ตรวจหา Order ID ที่มีลูกค้าต่างกันมากกว่า 1 คน — ซ้าย: Sheet Daily Logis | ขวา: Sheet Daily CRM
+  </p>
+
+  <div id="dupWrap">
+    <div class="empty-state">
+      <div class="icon">🔍</div>
+      <h3>ยังไม่ได้ตรวจ</h3>
+      <p>ดึงข้อมูลออเดอร์ใน Tab เทียบ Order ก่อน แล้วกด "ตรวจ Order ซ้ำ"</p>
+    </div>
+  </div>
+
+</div>
+</div><!-- /tab-dupcheck -->
+
+<!-- ══════════════════════════════════════════════════════════════
+     TAB 5: ตรวจเลข Consign
+══════════════════════════════════════════════════════════════ -->
+<div class="tab-pane" id="tab-consigncheck">
+<div class="main">
+
+  <div class="action-bar" style="margin-bottom:16px">
+    <button class="btn btn-primary" onclick="runConsignCheck()">📦 ตรวจเลข Consign</button>
+    <span class="status-text" id="consign-status" style="font-size:13px;color:var(--muted)"></span>
+  </div>
+  <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
+    ตรวจหาเลข Consign ที่ถูกใช้กับลูกค้ามากกว่า 1 คน — เช็คเฉพาะ <strong>Sheet Daily Logis</strong>
+  </p>
+
+  <div id="consignWrap">
+    <div class="empty-state">
+      <div class="icon">📦</div>
+      <h3>ยังไม่ได้ตรวจ</h3>
+      <p>ดึงข้อมูลออเดอร์ใน Tab เทียบ Order ก่อน แล้วกด "ตรวจเลข Consign"</p>
+    </div>
+  </div>
+
+</div>
+</div><!-- /tab-consigncheck -->
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+// ══════════════════════════════════════════════════════
+// GLOBAL STATE
+// ══════════════════════════════════════════════════════
+let data1 = [], data2 = [], data2raw = []; // data2raw = raw rows for stock tab
+let stockMap = {};   // sku -> {sku, description, qa, newwh, total}
+let diffResults = [];
+let skuDemand = {};  // sku -> {qty, name, orders:[]}
+let stockResults = []; // [{sku, name, need, qa, newwh, total, status}]
+let currentFilter = 'all';
+let currentStockFilter = 'all';
+
+// ══════════════════════════════════════════════════════
+// TAB SWITCH
+// ══════════════════════════════════════════════════════
+function switchTab(tab, btn) {
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  btn.classList.add('active');
+}
+
+// ══════════════════════════════════════════════════════
+// FILE LOADERS — ORDER
+// ══════════════════════════════════════════════════════
+function sheetToRows(ws) {
+  const raw = XLSX.utils.sheet_to_json(ws, { defval: null });
+  return raw
+    .filter(r => r['Order ID'] != null && String(r['Order ID']).trim() !== '')
+    .map(r => {
+      const keys = Object.keys(r);
+      const qtyKeys = keys.filter(k => k.startsWith('จำนวน'));
+      const qty1Key = qtyKeys[0] || 'จำนวน';
+      const qty2Key = qtyKeys[1] || 'จำนวน_1';
+      // normalize date: Excel serial / Date object / string → "YYYY-MM-DD"
+      const rawDate = r['Date'] || r['date'] || '';
+      let dateStr = '';
+      if (rawDate) {
+        if (typeof rawDate === 'number') {
+          // Excel serial date
+          const d = new Date(Math.round((rawDate - 25569) * 86400 * 1000));
+          dateStr = d.toISOString().slice(0,10);
+        } else {
+          const d = new Date(rawDate);
+          dateStr = isNaN(d) ? String(rawDate).slice(0,10) : d.toISOString().slice(0,10);
+        }
+      }
+      return {
+        orderID:  String(r['Order ID']   || '').trim(),
+        consign:  String(r['เลข consign'] || r['เลขconsign'] || r['Consign'] || '').trim(),
+        sup:      String(r['Sup']        || '').trim(),
+        brand:    String(r['แบรนด์']     || '').trim(),
+        size:     String(r['ขนาด']       || '').trim(),
+        qty1:     r[qty1Key] != null ? r[qty1Key] : 1,
+        giftRaw:  String(r['ของแถม']    || '').trim(),
+        qtyRaw:   r[qty2Key] != null ? String(r[qty2Key]).trim() : '',
+        customer: String(r['ชื่อลูกค้า'] || '').trim(),
+        address:  String(r['ที่อยู่']     || '').trim(),
+        phone1:   String(r['Phone 1']    || '').trim(),
+        phone2:   String(r['Phone 2']    || '').trim(),
+        payment:  String(r['การเงิน']    || '').trim(),
+        remark:   String(r['หมายเหตุ']   || '').trim(),
+        date:     dateStr,
+      };
+    });
+}
+
+document.getElementById('file-single').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  document.getElementById('file-single-name').textContent = '📄 ' + file.name;
+  document.getElementById('card-single').classList.add('has-file');
+  document.getElementById('sheet-status').textContent = 'กำลังอ่านไฟล์...';
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const wb = XLSX.read(ev.target.result, { type: 'array' });
+    if (wb.SheetNames.length < 2) {
+      document.getElementById('sheet-status').textContent = '⚠️ ต้องมี 2 sheet';
+      return;
+    }
+    data1 = sheetToRows(wb.Sheets[wb.SheetNames[0]]);
+    data2 = sheetToRows(wb.Sheets[wb.SheetNames[1]]);
+    data2raw = data2;
+    document.getElementById('sheet-status').textContent =
+      `✓ "${wb.SheetNames[0]}" ${data1.length} แถว | "${wb.SheetNames[1]}" ${data2.length} แถว`;
+    updateCompareBtn();
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+document.getElementById('orderFile2').addEventListener('change', function(e){});
+function loadOrderForStock(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const wb = XLSX.read(ev.target.result, { type: 'array' });
+    const sheetIdx = wb.SheetNames.length >= 2 ? 1 : 0;
+    data2raw = sheetToRows(wb.Sheets[wb.SheetNames[sheetIdx]]);
+    const card = document.getElementById('order-card-2');
+    card.classList.add('has-file');
+    document.getElementById('order2-fname').textContent = `📄 ${file.name} (Sheet: ${wb.SheetNames[sheetIdx]}, ${data2raw.length} แถว)`;
+    document.getElementById('stock-status').textContent = '';
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function updateCompareBtn() {
+  document.getElementById('compareBtn').disabled = !(data1.length && data2.length);
+  if (data1.length && data2.length)
+    document.getElementById('status-text').textContent = '✓ พร้อมเปรียบเทียบ';
+}
+
+// ══════════════════════════════════════════════════════
+// FILE LOADER — STOCK (shared between both tabs)
+// ══════════════════════════════════════════════════════
+function loadStockFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const wb = XLSX.read(ev.target.result, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      if (!rows.length) throw new Error('ไม่พบข้อมูล');
+      const map = {};
+      let count = 0;
+      rows.forEach(r => {
+        const keys = Object.keys(r);
+        const skuKey  = keys.find(k => /^sku$/i.test(k.trim()));
+        const descKey = keys.find(k => /desc/i.test(k));
+        const qaKey   = keys.find(k => /\bqa\b/i.test(k));
+        const nwKey   = keys.find(k => /new.*wh|คลัง new/i.test(k));
+        const totKey  = keys.find(k => /total/i.test(k));
+        if (!skuKey) return;
+        const sku = String(r[skuKey] || '').trim();
+        if (!sku || sku.toLowerCase() === 'sku') return;
+        map[sku] = {
+          sku,
+          description: descKey ? String(r[descKey] || '') : '',
+          qa:    parseFloat(r[qaKey]  || 0) || 0,
+          newwh: parseFloat(r[nwKey]  || 0) || 0,
+          total: parseFloat(r[totKey] || 0) || 0,
+        };
+        count++;
+      });
+      if (!count) throw new Error('ไม่พบคอลัมน์ SKU');
+      stockMap = map;
+      setStockStatus('', { source:'file', filename: file.name, count });
+      ['stock-card-1','stock-card-2'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('has-file');
+      });
+      if (diffResults.length) renderTable();
+    } catch (err) {
+      alert('❌ อ่านไฟล์สต๊อกไม่ได้: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ══════════════════════════════════════════════════════
+// CORE PARSING (SKU-based)
+// ══════════════════════════════════════════════════════
+// ── SKU-based parsing ──────────────────────────────────────────────────────
+// หลักการ:
+// ROW TYPE A (มีแบรนด์ col[3]):
+//   - สินค้าหลัก = SKU จาก col[3]
+//   - ของแถม     = แต่ละ line ใน col[6] zip กับ col[7] ตาม raw index
+// ROW TYPE B (ไม่มีแบรนด์):
+//   - 1 row = 1 สินค้า/ของแถม อ่านจาก col[6] + col[7] ตรงๆ
+// จำแนก products vs gifts ด้วย SKU prefix: FRE = ของแถม / ที่เหลือ = สินค้าหลัก
+// ── ────────────────────────────────────────────────────────────────────────
+
+const SKU_RE = /\(([A-Z]{2,}\d{5,})\)/;
+
+function extractSKU(text) {
+  const m = SKU_RE.exec(text || '');
+  return m ? m[1] : null;
+}
+
+function normalizeOrder(rows) {
+  const products = {};   // sku -> { sku, name, size, qty }
+  const gifts    = {};   // sku -> { sku, name, qty }
+
+  function addGift(sku, name, qty) {
+    const n = parseFloat(qty) || 1;
+    if (gifts[sku]) gifts[sku].qty += n;
+    else gifts[sku] = { sku, name: name.replace(/[\u200b\u200c\u200d\ufeff]/g,'').trim(), qty: n };
+  }
+
+  rows.forEach(row => {
+    // row มี keys: orderID, sup, brand, size, qty1, giftRaw, qtyRaw, customer
+    const brand    = (row.brand   || '').toString().trim();
+    const size     = (row.size    || '').toString().trim();
+    const qty1     = parseFloat(row.qty1 || 1) || 1;
+    const giftRaw  = (row.giftRaw || '').toString().trim();
+    const qtyRaw   = (row.qtyRaw  || '').toString().trim();
+
+    if (brand) {
+      // ── TYPE A: แถวมีแบรนด์ ──────────────────────────────────────────
+      const sku = extractSKU(brand);
+      if (sku) products[sku] = { sku, name: brand, size, qty: qty1 };
+
+      // ของแถมในแถวเดียวกัน: zip ตาม raw line index (ไม่กรอง blank ก่อน)
+      if (giftRaw) {
+        const gLines = giftRaw.split('\n');
+        const qLines = qtyRaw.split('\n');
+        gLines.forEach((g, i) => {
+          const name = g.replace(/[\u200b\u200c\u200d\ufeff]/g,'').trim();
+          if (!name) return;
+          const q    = (qLines[i] || '').trim() || '1';
+          const gsku = extractSKU(name);
+          if (gsku) addGift(gsku, name, q);
+        });
+      }
+
+    } else {
+      // ── TYPE B: แถวไม่มีแบรนด์ → 1 row = 1 สินค้า ──────────────────
+      if (!giftRaw) return;
+
+      const gLines = giftRaw.split('\n');
+      // col[7] อาจเป็น int หรือ string multiline
+      const qLines = qtyRaw.includes('\n')
+        ? qtyRaw.split('\n')
+        : Array(gLines.length).fill(qtyRaw || '1');
+
+      gLines.forEach((g, i) => {
+        const name = g.replace(/[\u200b\u200c\u200d\ufeff]/g,'').trim();
+        if (!name) return;
+        const q    = (qLines[i] || '').trim() || '1';
+        const sku  = extractSKU(name);
+        if (!sku) return;
+
+        // FRE prefix = ของแถม, ที่เหลือ = สินค้าหลัก
+        if (sku.startsWith('FRE')) {
+          addGift(sku, name, q);
+        } else {
+          products[sku] = { sku, name, size: '', qty: parseFloat(q) || 1 };
+        }
+      });
+    }
+  });
+
+  return {
+    products: Object.values(products).sort((a,b) => a.sku.localeCompare(b.sku)),
+    gifts:    Object.values(gifts).sort((a,b) => a.sku.localeCompare(b.sku))
+  };
+}
+
+// Deep compare two normalized orders — keyed by SKU
+function diffOrders(n1, n2) {
+  const diffs = [];
+
+  // Products: compare by SKU map
+  const p1map = Object.fromEntries(n1.products.map(p => [p.sku, p]));
+  const p2map = Object.fromEntries(n2.products.map(p => [p.sku, p]));
+  const allProdSKU = new Set([...Object.keys(p1map), ...Object.keys(p2map)]);
+  allProdSKU.forEach(sku => {
+    const p1 = p1map[sku], p2 = p2map[sku];
+    if (!p1) diffs.push({ type: 'product_added',   item: p2 });
+    else if (!p2) diffs.push({ type: 'product_removed', item: p1 });
+    else if (p1.size !== p2.size || String(p1.qty) !== String(p2.qty))
+      diffs.push({ type: 'product_changed', old: p1, new: p2 });
+  });
+
+  // Gifts: compare by SKU map
+  const g1map = Object.fromEntries(n1.gifts.map(g => [g.sku, g]));
+  const g2map = Object.fromEntries(n2.gifts.map(g => [g.sku, g]));
+  const allGiftSKU = new Set([...Object.keys(g1map), ...Object.keys(g2map)]);
+  allGiftSKU.forEach(sku => {
+    const g1 = g1map[sku], g2 = g2map[sku];
+    if (!g1) diffs.push({ type: 'gift_added',   name: g2.name, sku, qty: g2.qty });
+    else if (!g2) diffs.push({ type: 'gift_removed', name: g1.name, sku, qty: g1.qty });
+    else if (g1.qty !== g2.qty) diffs.push({ type: 'gift_qty_changed', name: g1.name, sku, oldQty: g1.qty, newQty: g2.qty });
+  });
+
+  return diffs;
+}
+
+
+
+// ══════════════════════════════════════════════════════
+// TAB 1 — COMPARE LOGIC
+// ══════════════════════════════════════════════════════
+function getOrderKey(row) { return row.orderID || ''; }
+function getCustomer(row) { return row.customer || ''; }
+function getSup(row)      { return row.sup || ''; }
+function groupByOrder(rows) {
+  const map = {};
+  rows.forEach(row => {
+    const key = getOrderKey(row);
+    if (!key) return;
+    if (!map[key]) map[key] = [];
+    map[key].push(row);
+  });
+  return map;
+}
+
+function getSheetDate(rows) {
+  // หา date ที่พบมากที่สุดใน sheet (majority vote)
+  const freq = {};
+  rows.forEach(r => { if (r.date) freq[r.date] = (freq[r.date] || 0) + 1; });
+  if (!Object.keys(freq).length) return null;
+  return Object.entries(freq).sort((a,b) => b[1]-a[1])[0][0]; // most frequent
+}
+
+function formatDateDisplay(d) {
+  if (!d) return '(ไม่ระบุ)';
+  const dt = new Date(d);
+  return isNaN(dt) ? d : dt.toLocaleDateString('th-TH', { year:'numeric', month:'short', day:'numeric' });
+}
+
+function runCompare() {
+  // ── Date validation ──────────────────────────────────────────────────
+  const dateWrap = document.getElementById('dateWarningWrap');
+  dateWrap.innerHTML = '';
+  dateWrap.style.display = 'none';
+
+  const date1 = getSheetDate(data1);
+  const date2 = getSheetDate(data2);
+
+  if (date1 && date2 && date1 !== date2) {
+    dateWrap.style.display = 'block';
+    dateWrap.innerHTML = `
+      <div class="date-warning">
+        <span style="font-size:18px">⚠️</span>
+        <div>
+          <div style="font-weight:600;margin-bottom:2px">วันที่ไม่ตรงกัน — ไม่สามารถเปรียบเทียบได้</div>
+          <div style="font-size:12px">
+            Sheet Daily Logis: <strong>${formatDateDisplay(date1)}</strong>
+            &nbsp;≠&nbsp;
+            Sheet Daily CRM: <strong>${formatDateDisplay(date2)}</strong>
+          </div>
+        </div>
+      </div>`;
+    return; // หยุดทันที
+  }
+  // ── End date validation ──────────────────────────────────────────────
+
+  const g1 = groupByOrder(data1);
+  const g2 = groupByOrder(data2);
+  const allKeys = new Set([...Object.keys(g1), ...Object.keys(g2)]);
+
+  diffResults = [];
+
+  allKeys.forEach(key => {
+    const rows1 = g1[key];
+    const rows2 = g2[key];
+
+    if (rows1 && !rows2) {
+      const sup1r = rows1.map(r => r.sup).find(s => s) || '';
+      diffResults.push({ orderId: key, status: 'removed', rows1, rows2: null,
+        norm1: normalizeOrder(rows1), norm2: null, diffs: [],
+        customer: getCustomer(rows1[0]), sup: sup1r });
+    } else if (!rows1 && rows2) {
+      const sup2 = rows2.map(r => r.sup).find(s => s) || '';
+      diffResults.push({ orderId: key, status: 'added', rows1: null, rows2,
+        norm1: null, norm2: normalizeOrder(rows2), diffs: [],
+        customer: getCustomer(rows2[0]), sup: sup2 });
+    } else {
+      const norm1 = normalizeOrder(rows1);
+      const norm2 = normalizeOrder(rows2);
+      const diffs = diffOrders(norm1, norm2);
+      const status = diffs.length === 0 ? 'same' : 'changed';
+      const sup1 = rows1.map(r => r.sup).find(s => s) || '';
+      diffResults.push({ orderId: key, status, rows1, rows2, norm1, norm2, diffs,
+        customer: getCustomer(rows1[0]), sup: sup1 });
+    }
+  });
+
+  // Sort: changed > added > removed > same
+  const priority = { changed: 0, added: 1, removed: 2, same: 3 };
+  diffResults.sort((a, b) => priority[a.status] - priority[b.status] || a.orderId.localeCompare(b.orderId));
+
+  // Update summary
+  const counts = { changed: 0, added: 0, removed: 0, same: 0 };
+  diffResults.forEach(r => counts[r.status]++);
+
+  document.getElementById('totalOrders').textContent = diffResults.length;
+  document.getElementById('changedCount').textContent = counts.changed;
+  document.getElementById('addedCount').textContent = counts.added;
+  document.getElementById('removedCount').textContent = counts.removed;
+
+  // Stock warning count
+  if (Object.keys(stockMap).length) {
+    const warnCount = diffResults.filter(r => {
+      const n = r.norm2 || r.norm1;
+      return n && hasStockWarning(n);
+    }).length;
+    document.getElementById('stockWarnCount').textContent = warnCount;
+    document.getElementById('stockWarnCard').style.display = warnCount > 0 ? 'flex' : 'none';
+  }
+
+  document.getElementById('cnt-all').textContent = diffResults.length;
+  document.getElementById('cnt-changed').textContent = counts.changed;
+  document.getElementById('cnt-added').textContent = counts.added;
+  document.getElementById('cnt-removed').textContent = counts.removed;
+  document.getElementById('cnt-same').textContent = counts.same;
+
+  document.getElementById('summaryStrip').style.display = 'grid';
+  document.getElementById('filterBar').style.display = 'flex';
+
+  renderTable();
+}
+
+
+
+function setFilter(f, el) {
+  currentFilter = f;
+  document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  renderTable();
+}
+
+function renderTable() {
+  const search = document.getElementById('searchInput').value.toLowerCase();
+  let rows = diffResults;
+
+  if (currentFilter !== 'all') rows = rows.filter(r => r.status === currentFilter);
+  if (search) rows = rows.filter(r =>
+    r.orderId.toLowerCase().includes(search) ||
+    r.customer.toLowerCase().includes(search)
+  );
+
+  if (!rows.length) {
+    document.getElementById('tableWrap').innerHTML = `
+      <div class="empty-state">
+        <div class="icon">🔍</div>
+        <h3>ไม่พบข้อมูล</h3>
+        <p>ลองปรับตัวกรองหรือคำค้นหา</p>
+      </div>`;
+    return;
+  }
+
+  const statusLabel = { changed: '✏️ แก้ไข', added: '➕ ใหม่', removed: '➖ หายไป', same: '✓ ไม่เปลี่ยน' };
+  const rowClass = { changed: 'row-changed', added: 'row-added', removed: 'row-removed', same: '' };
+  const badgeMap = { changed: 'badge-changed', added: 'badge-added', removed: 'badge-removed', same: 'badge-same' };
+
+  let html = `<table>
+    <thead><tr>
+      <th style="width:32px"></th>
+      <th>Order ID</th>
+      <th>ลูกค้า</th>
+      <th>ขนส่ง (Sup)</th>
+      <th>สิ่งที่เปลี่ยนแปลง</th>
+      <th>สต๊อก</th>
+      <th>สถานะ</th>
+    </tr></thead>
+    <tbody>`;
+
+  rows.forEach((r, i) => {
+    const rid = `row-${i}`;
+
+    // Build inline diff summary shown directly in the row
+    let changeSummary = '';
+    if (r.status === 'changed' && r.diffs.length) {
+      changeSummary = r.diffs.map(d => {
+        if (d.type === 'gift_added')
+          return `<div style="font-size:12px;"><span class="diff-new">➕ ${d.name}</span> <span class="gift-qty" style="color:var(--added)">×${d.qty}</span></div>`;
+        if (d.type === 'gift_removed')
+          return `<div style="font-size:12px;"><span class="diff-old">➖ ${d.name}</span> <span class="gift-qty" style="color:var(--removed)">×${d.qty}</span></div>`;
+        if (d.type === 'gift_qty_changed')
+          return `<div style="font-size:12px;">✏️ ${d.name} <span class="diff-old">×${d.oldQty}</span>→<span class="diff-new">×${d.newQty}</span></div>`;
+        if (d.type === 'product_changed') {
+          const parts = [];
+          if (d.old.size !== d.new.size) parts.push(`ขนาด <span class="diff-old">${d.old.size||'—'}</span>→<span class="diff-new">${d.new.size||'—'}</span>`);
+          if (String(d.old.qty) !== String(d.new.qty)) parts.push(`จำนวน <span class="diff-old">×${d.old.qty}</span>→<span class="diff-new">×${d.new.qty}</span>`);
+          return `<div style="font-size:12px;">✏️ ${d.old.name||d.old.sku}: ${parts.join(' ')}</div>`;
+        }
+        if (d.type === 'product_added')
+          return `<div style="font-size:12px;"><span class="diff-new">➕ ${d.item.name||d.item.sku}</span></div>`;
+        if (d.type === 'product_removed')
+          return `<div style="font-size:12px;"><span class="diff-old">➖ ${d.item.name||d.item.sku}</span></div>`;
+        return '';
+      }).join('');
+    } else if (r.status === 'added') {
+      const norm = r.norm2;
+      const items = [...(norm.products||[]).map(p=>`${p.name}${p.size?` (${p.size})`:''}`),
+                     ...(norm.gifts||[]).map(g=>g.name)];
+      changeSummary = items.map(n=>`<div style="font-size:12px; color:var(--added)">➕ ${n}</div>`).join('');
+    } else if (r.status === 'removed') {
+      const norm = r.norm1;
+      const items = [...(norm.products||[]).map(p=>`${p.name}${p.size?` (${p.size})`:''}`),
+                     ...(norm.gifts||[]).map(g=>g.name)];
+      changeSummary = items.map(n=>`<div style="font-size:12px; color:var(--removed)">➖ ${n}</div>`).join('');
+    } else {
+      changeSummary = '<span style="color:var(--muted); font-size:12px;">ไม่มีการเปลี่ยนแปลง</span>';
+    }
+
+    // stock warning badge for this order
+    const normForStock = r.norm2 || r.norm1;
+    let stockCell = '<span style="color:var(--muted); font-size:12px;">—</span>';
+    if (Object.keys(stockMap).length && normForStock) {
+      const warn = hasStockWarning(normForStock);
+      stockCell = warn
+        ? '<span class="stock-badge stock-low">⚠️ เหลือน้อย</span>'
+        : '<span class="stock-badge stock-ok">✓ พอ</span>';
+    }
+
+    html += `
+    <tr class="${rowClass[r.status]}">
+      <td><button class="expand-btn" onclick="toggleDetail('${rid}', this)">▶</button></td>
+      <td><span class="order-id">${r.orderId}</span></td>
+      <td class="customer-name">${r.customer || '—'}</td>
+      <td><span style="font-size:12px; color:var(--muted)">${r.sup || '—'}</span></td>
+      <td>${changeSummary}</td>
+      <td>${stockCell}</td>
+      <td><span class="badge ${badgeMap[r.status]}">${statusLabel[r.status]}</span></td>
+    </tr>
+    <tr class="detail-row" id="${rid}">
+      <td colspan="7" class="detail-cell">
+        ${buildDetailHTML(r)}
+      </td>
+    </tr>`;
+  });
+
+  html += '</tbody></table>';
+  document.getElementById('tableWrap').innerHTML = html;
+}
+
+function renderNorm(norm) {
+  if (!norm) return '<div class="no-data">ไม่มีข้อมูล</div>';
+  let html = '';
+  if (norm.products.length) {
+    norm.products.forEach(p => {
+      const label = p.name || p.sku || '—';
+      html += `<div style="margin-bottom:6px; font-size:12px;"><strong>${label}</strong>${p.size ? ` (${p.size})` : ''} × ${p.qty ?? '—'}</div>`;
+    });
+  }
+  if (norm.gifts.length) {
+    html += `<div style="font-size:11px; color:var(--muted); margin:6px 0 4px;">ของแถม:</div>`;
+    norm.gifts.forEach(g => {
+      html += `<div class="gift-item"><span title="${g.sku}">${g.name}</span><span class="gift-qty">×${g.qty}</span></div>`;
+    });
+  }
+  if (!norm.products.length && !norm.gifts.length) html = '<div class="no-data">—</div>';
+  return html;
+}
+
+function buildDetailHTML(r) {
+  if (r.status === 'same') {
+    return `<div class="detail-inner" style="grid-template-columns:1fr">
+      <div><h5>รายละเอียด</h5>${renderNorm(r.norm1)}</div>
+    </div>${renderStockPanel(r.norm1)}`;
+  }
+  if (r.status === 'added') {
+    return `<div class="detail-inner" style="grid-template-columns:1fr">
+      <div><h5 style="color:var(--added)">➕ Order ใหม่ (Sheet Daily CRM)</h5>${renderNorm(r.norm2)}</div>
+    </div>${renderStockPanel(r.norm2)}`;
+  }
+  if (r.status === 'removed') {
+    return `<div class="detail-inner" style="grid-template-columns:1fr">
+      <div><h5 style="color:var(--removed)">➖ Order หายไป (มีแต่Sheet Daily Logis)</h5>${renderNorm(r.norm1)}</div>
+    </div>${renderStockPanel(r.norm1)}`;
+  }
+
+  const diffLines = r.diffs.map(d => {
+    if (d.type === 'product_changed') {
+      const fields = [];
+      if (d.old.size !== d.new.size) fields.push(`ขนาด: <span class="diff-old">${d.old.size||'—'}</span> → <span class="diff-new">${d.new.size||'—'}</span>`);
+      if (String(d.old.qty) !== String(d.new.qty)) fields.push(`จำนวน: <span class="diff-old">×${d.old.qty}</span> → <span class="diff-new">×${d.new.qty}</span>`);
+      const label = d.old.name || d.old.sku;
+      return `<div style="margin-bottom:6px; font-size:12px;">✏️ <strong>${label}</strong>: ${fields.join(' | ')}</div>`;
+    }
+    if (d.type === 'product_added')    return `<div style="font-size:12px; margin-bottom:4px;"><span class="diff-new">➕ สินค้าใหม่: ${d.item.name||d.item.sku}${d.item.size ? ` (${d.item.size})` : ''} ×${d.item.qty}</span></div>`;
+    if (d.type === 'product_removed')  return `<div style="font-size:12px; margin-bottom:4px;"><span class="diff-old">➖ สินค้าหาย: ${d.item.name||d.item.sku}${d.item.size ? ` (${d.item.size})` : ''} ×${d.item.qty}</span></div>`;
+    if (d.type === 'gift_added')       return `<div class="gift-item"><span><span class="diff-new">➕ ${d.name}</span></span><span class="gift-qty" style="color:var(--added)">×${d.qty}</span></div>`;
+    if (d.type === 'gift_removed')     return `<div class="gift-item"><span><span class="diff-old">➖ ${d.name}</span></span><span class="gift-qty" style="color:var(--removed)">×${d.qty}</span></div>`;
+    if (d.type === 'gift_qty_changed') return `<div class="gift-item"><span>✏️ ${d.name}</span><span class="gift-qty"><span class="diff-old">×${d.oldQty}</span> → <span class="diff-new">×${d.newQty}</span></span></div>`;
+    return '';
+  }).join('');
+
+  return `<div class="detail-inner">
+    <div><h5 style="color:var(--primary)">🌅 Sheet Daily Logis (เดิม)</h5>${renderNorm(r.norm1)}</div>
+    <div><h5 style="color:#7C3AED">🌆 Sheet Daily CRM (ใหม่)</h5>${renderNorm(r.norm2)}</div>
+  </div>
+  <div style="margin-top:10px; padding:10px; background:var(--changed-bg); border-radius:8px; border:1px solid #FDE68A;">
+    <div style="font-size:11px; font-weight:600; color:var(--changed); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.4px;">สรุปสิ่งที่เปลี่ยนแปลง</div>
+    ${diffLines}
+  </div>
+  ${renderStockPanel(r.norm2 || r.norm1)}`;
+}
+
+function toggleDetail(id, btn) {
+  const row = document.getElementById(id);
+  const open = row.classList.toggle('open');
+  btn.textContent = open ? '▼' : '▶';
+}
+
+
+
+function toggleDetail(id, btn) {
+  const row = document.getElementById(id);
+  const open = row.classList.toggle('open');
+  btn.textContent = open ? '▼' : '▶';
+}
+
+function clearCompare() {
+  data1 = []; data2 = []; diffResults = [];
+  document.getElementById('file-single').value = '';
+  document.getElementById('file-single-name').textContent = '';
+  document.getElementById('sheet-status').textContent = '';
+  document.getElementById('card-single').classList.remove('has-file');
+  document.getElementById('compareBtn').disabled = true;
+  document.getElementById('status-text').textContent = '';
+  document.getElementById('summaryStrip').style.display = 'none';
+  document.getElementById('filterBar').style.display = 'none';
+  const dw = document.getElementById('dateWarningWrap');
+  if (dw) { dw.innerHTML = ''; dw.style.display = 'none'; }
+  document.getElementById('searchInput').value = '';
+  currentFilter = 'all';
+  document.querySelectorAll('#tab-compare .filter-tab').forEach((t,i) => t.classList.toggle('active', i===0));
+  document.getElementById('tableWrap').innerHTML = `<div class="empty-state"><div class="icon">📂</div><h3>ยังไม่มีข้อมูล</h3><p>อัปโหลดไฟล์ Excel แล้วกด "เปรียบเทียบ"</p></div>`;
+}
+
+// helpers for compare tab stock display
+function hasStockWarning(norm) {
+  if (!Object.keys(stockMap).length) return false;
+  return [...(norm.products||[]), ...(norm.gifts||[])].some(item => {
+    const s = stockMap[item.sku];
+    return s && s.total < item.qty;
+  });
+}
+function renderStockPanel(norm) {
+  if (!Object.keys(stockMap).length || !norm) return '';
+  const items = [...(norm.products||[]).map(p=>({sku:p.sku,name:p.name,qty:p.qty})),
+                 ...(norm.gifts||[]).map(g=>({sku:g.sku,name:g.name,qty:g.qty}))];
+  if (!items.length) return '';
+  const rowsHtml = items.map(item => {
+    const s = stockMap[item.sku];
+    if (!s) return `<div class="stock-row"><span title="${item.sku}">${item.name}</span><span>—</span><span>—</span><span>—</span><span class="badge stock-na">ไม่มีข้อมูล</span></div>`;
+    const badge = s.total <= 0 ? `<span class="badge stock-out">หมด (${s.total})</span>`
+      : s.total < item.qty ? `<span class="badge stock-out">ไม่พอ (${s.total}/${item.qty})</span>`
+      : s.total < item.qty * 2 ? `<span class="badge stock-low">เหลือน้อย (${s.total})</span>`
+      : `<span class="badge stock-ok">พอ (${s.total})</span>`;
+    return `<div class="stock-row"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${item.sku}">${item.name}</span><span style="text-align:center">${s.qa}</span><span style="text-align:center">${s.newwh}</span><span style="text-align:center;font-weight:600">${s.total}</span>${badge}</div>`;
+  }).join('');
+  return `<div class="stock-panel"><div class="stock-panel-hdr">📦 สต๊อกสินค้า</div><div class="stock-col-hdr"><span>สินค้า</span><span style="text-align:center">QA</span><span style="text-align:center">NEW WH</span><span style="text-align:center">Total</span><span>สถานะ</span></div>${rowsHtml}</div>`;
+}
+
+// ══════════════════════════════════════════════════════
+// TAB 2 — STOCK CHECK LOGIC
+// ══════════════════════════════════════════════════════
+function aggregateSKUDemand(rows) {
+  const demand = {};
+  // Build lookup: orderId -> {sup, customer}
+  const orderMeta = {};
+  rows.forEach(row => {
+    if (row.orderID && !orderMeta[row.orderID]) {
+      orderMeta[row.orderID] = { sup: row.sup || '—', customer: row.customer || '—' };
+    }
+  });
+
+  function addDemand(sku, name, qty, orderId) {
+    if (!demand[sku]) demand[sku] = { sku, name, qty: 0, orderMap: {} };
+    demand[sku].qty += qty;
+    // orderMap: orderId -> { sup, customer, qty }
+    if (!demand[sku].orderMap[orderId]) {
+      const m = orderMeta[orderId] || { sup: '—', customer: '—' };
+      demand[sku].orderMap[orderId] = { orderId, sup: m.sup, customer: m.customer, qty: 0 };
+    }
+    demand[sku].orderMap[orderId].qty += qty;
+  }
+
+  rows.forEach(row => {
+    const orderId = row.orderID;
+    const brand   = row.brand;
+    const qty1    = parseFloat(row.qty1 || 1) || 1;
+    const giftRaw = row.giftRaw || '';
+    const qtyRaw  = row.qtyRaw  || '';
+
+    if (brand) {
+      const sku = extractSKU(brand);
+      if (sku) addDemand(sku, brand, qty1, orderId);
+      if (giftRaw) {
+        const gLines = giftRaw.split('\n');
+        const qLines = qtyRaw.split('\n');
+        gLines.forEach((g, i) => {
+          const name = g.replace(/[\u200b\u200c\u200d\ufeff]/g,'').trim();
+          if (!name) return;
+          const q = parseFloat((qLines[i]||'').trim()) || 1;
+          const gsku = extractSKU(name);
+          if (gsku) addDemand(gsku, name, q, orderId);
+        });
+      }
+    } else if (giftRaw) {
+      const gLines = giftRaw.split('\n');
+      const qLines = qtyRaw.split('\n');
+      gLines.forEach((g, i) => {
+        const name = g.replace(/[\u200b\u200c\u200d\ufeff]/g,'').trim();
+        if (!name) return;
+        const q = parseFloat((qLines[i]||'').trim()) || 1;
+        const sku = extractSKU(name);
+        if (sku) addDemand(sku, name, q, orderId);
+      });
+    }
+  });
+  return demand;
+}
+
+function runStockCheck() {
+  // รวมทุก carrier (sheet Sheet Daily CRM) — ถ้าไม่มี carriersData ใช้ data2raw
+  let rows = [];
+  if (carriersData.length > 0) {
+    carriersData.forEach(car => { rows = rows.concat(car.data2); });
+  } else {
+    rows = data2raw.length ? data2raw : data2;
+  }
+
+  if (!rows.length) {
+    document.getElementById('stock-status').textContent = '⚠️ กรุณาดึงข้อมูลออเดอร์ก่อน (Tab เทียบ Order)';
+    return;
+  }
+  if (!Object.keys(stockMap).length) {
+    document.getElementById('stock-status').textContent = '⚠️ กรุณาอัปโหลดไฟล์สต๊อกก่อน';
+    return;
+  }
+
+  skuDemand = aggregateSKUDemand(rows);
+
+  // Build results
+  stockResults = Object.values(skuDemand).map(d => {
+    const s = stockMap[d.sku];
+    const need = Math.ceil(d.qty);
+    let status = 'na';
+    let qa = '—', newwh = '—', total = '—';
+    if (s) {
+      qa = s.qa; newwh = s.newwh; total = s.total;
+      if (s.total <= 0 || s.total < need) status = 'out';
+      else if (s.total < need * 1.5)      status = 'low';
+      else                                 status = 'ok';
+    }
+    const orderList = Object.values(d.orderMap).sort((a,b) => a.orderId.localeCompare(b.orderId));
+    return { sku: d.sku, name: d.name, need, qa, newwh, total, status, orders: orderList.length, orderList };
+  });
+
+  // Sort: out > low > na > ok
+  const pri = { out:0, low:1, na:2, ok:3 };
+  stockResults.sort((a,b) => pri[a.status]-pri[b.status] || b.need-a.need);
+
+  // Update summary
+  const counts = { ok:0, low:0, out:0, na:0 };
+  stockResults.forEach(r => counts[r.status]++);
+  document.getElementById('totalSKUs').textContent = stockResults.length;
+  document.getElementById('okSKUs').textContent    = counts.ok;
+  document.getElementById('lowSKUs').textContent   = counts.low;
+  document.getElementById('outSKUs').textContent   = counts.out + counts.na;
+  document.getElementById('scnt-all').textContent  = stockResults.length;
+  document.getElementById('scnt-out').textContent  = counts.out + counts.na;
+  document.getElementById('scnt-low').textContent  = counts.low;
+  document.getElementById('scnt-ok').textContent   = counts.ok;
+  document.getElementById('scnt-na').textContent   = counts.na;
+  document.getElementById('stockSummaryStrip').style.display = 'grid';
+  document.getElementById('stockFilterBar').style.display = 'flex';
+  const carrierSummary = carriersData.length > 0
+    ? `${carriersData.length} ขนส่ง (${carriersData.map(car=>car.key).join(', ')}) — รวม ${rows.length} แถว`
+    : `${rows.length} แถว`;
+  document.getElementById('stock-status').textContent = `✓ คำนวณจาก ${carrierSummary}`;
+
+  renderStockTable();
+}
+
+let currentStockFilter2 = 'all';
+function setStockFilter(f, btn) {
+  currentStockFilter2 = f;
+  document.querySelectorAll('#tab-stock .filter-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  renderStockTable();
+}
+
+function renderStockTable() {
+  const search = document.getElementById('stockSearch').value.toLowerCase();
+  let rows = stockResults;
+  if (currentStockFilter2 !== 'all') {
+    if (currentStockFilter2 === 'out') rows = rows.filter(r => r.status === 'out' || r.status === 'na');
+    else rows = rows.filter(r => r.status === currentStockFilter2);
+  }
+  if (search) rows = rows.filter(r => r.sku.toLowerCase().includes(search) || r.name.toLowerCase().includes(search));
+
+  if (!rows.length) {
+    document.getElementById('stockTableWrap').innerHTML = `<div class="empty-state"><div class="icon">🔍</div><h3>ไม่พบข้อมูล</h3><p>ลองปรับตัวกรอง</p></div>`;
+    return;
+  }
+
+  const statusLabel = { ok:'✅ พอ', low:'⚠️ เหลือน้อย', out:'🚫 ไม่พอ', na:'— ไม่มีในสต๊อก' };
+  const statusClass = { ok:'stock-ok', low:'stock-low', out:'stock-out', na:'stock-na' };
+
+  let html = `<table><thead><tr>
+    <th>SKU</th><th>ชื่อสินค้า</th>
+    <th style="text-align:center">ต้องการ</th>
+    <th style="text-align:center">คลัง QA</th>
+    <th style="text-align:center">NEW WH</th>
+    <th style="text-align:center">Total</th>
+    <th style="text-align:center">ส่วนต่าง</th>
+    <th>สถานะ</th>
+    <th style="text-align:center">Orders</th>
+  </tr></thead><tbody>`;
+
+  rows.forEach(r => {
+    const diff = r.total !== '—' ? r.total - r.need : '—';
+    const diffHtml = diff === '—' ? '<span style="color:var(--muted)">—</span>'
+      : diff < 0  ? `<span style="color:var(--removed);font-weight:600">${diff}</span>`
+      : diff === 0? `<span style="color:var(--changed);font-weight:600">0</span>`
+      : `<span style="color:var(--added)">+${diff}</span>`;
+
+    const rowBg = r.status==='out' ? 'row-removed' : r.status==='low' ? 'row-changed' : '';
+
+    const idx = stockResults.indexOf(r);
+    html += `<tr class="${rowBg}">
+      <td><span class="order-id">${r.sku}</span></td>
+      <td style="font-size:12px;max-width:280px">${r.name}</td>
+      <td style="text-align:center;font-weight:600">${r.need}</td>
+      <td style="text-align:center">${r.qa}</td>
+      <td style="text-align:center">${r.newwh}</td>
+      <td style="text-align:center;font-weight:600">${r.total}</td>
+      <td style="text-align:center">${diffHtml}</td>
+      <td><span class="badge ${statusClass[r.status]}">${statusLabel[r.status]}</span></td>
+      <td style="text-align:center">
+        <span class="orders-link" onclick="showOrderModal(${idx})">
+          ${r.orders} order${r.orders > 1 ? 's' : ''}
+        </span>
+      </td>
+    </tr>`;
+  });
+
+  html += '</tbody></table>';
+  document.getElementById('stockTableWrap').innerHTML = html;
+}
+
+// ── Load stock from Google Apps Script (bypasses CORS) ─────────────────────
+async function loadStockFromGAS(inputId, directUrl) {
+  const url = directUrl || (document.getElementById(inputId)?.value || '').trim();
+  if (!url) { alert('กรุณาใส่ Apps Script URL'); return; }
+
+  setStockStatus('⏳ กำลังดึงข้อมูล...');
+
+  try {
+    // Apps Script ต้อง redirect-follow + no-cors workaround
+    const resp = await fetch(url, { redirect: 'follow' });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status} — ตรวจสอบว่า Deploy แบบ "Anyone" แล้ว`);
+
+    const text = await resp.text();
+
+    // Try parse JSON
+    let json;
+    try { json = JSON.parse(text); }
+    catch(e) {
+      // Show raw for debugging
+      throw new Error(`ข้อมูลที่ได้ไม่ใช่ JSON: "${text.slice(0,120)}..."`);
+    }
+
+    // Support 3 formats:
+    // A: { headers:[...], rows:[[...]] }        ← our Apps Script format
+    // B: [ { SKU:'', Description:'', ... } ]    ← array of objects
+    // C: { error: '...' }                        ← error from script
+
+    if (json.error) throw new Error(`Apps Script error: ${json.error}`);
+
+    let map = {};
+    let count = 0;
+
+    if (Array.isArray(json)) {
+      // Format B: array of objects
+      json.forEach(r => {
+        const keys = Object.keys(r);
+        const skuKey  = keys.find(k => /^sku$/i.test(k.trim()));
+        const descKey = keys.find(k => /desc/i.test(k));
+        const qaKey   = keys.find(k => /\bqa\b/i.test(k));
+        const nwKey   = keys.find(k => /new.*wh|คลัง\s*new/i.test(k));
+        const totKey  = keys.find(k => /total/i.test(k));
+        if (!skuKey) return;
+        const sku = String(r[skuKey] || '').trim();
+        if (!sku) return;
+        map[sku] = {
+          sku,
+          description: descKey ? String(r[descKey] || '') : '',
+          qa:    parseFloat(r[qaKey]  || 0) || 0,
+          newwh: parseFloat(r[nwKey]  || 0) || 0,
+          total: parseFloat(r[totKey] || 0) || 0,
+        };
+        count++;
+      });
+    } else if (json.headers && json.rows) {
+      // Format A: { headers, rows }
+      const h = json.headers.map(x => String(x).toLowerCase().replace(/\s/g,''));
+      const iSku  = h.findIndex(x => /^sku$/.test(x));
+      const iDesc = h.findIndex(x => x.includes('desc'));
+      const iQA   = h.findIndex(x => /\bqa\b/.test(x));
+      const iNW   = h.findIndex(x => x.includes('new') || (x.includes('wh') && !/qa/.test(x)));
+      const iTot  = h.findIndex(x => x.includes('total'));
+      if (iSku < 0) throw new Error(`ไม่พบคอลัมน์ SKU ใน headers: [${json.headers.join(', ')}]`);
+      json.rows.forEach(row => {
+        const sku = String(row[iSku] || '').trim();
+        if (!sku) return;
+        map[sku] = {
+          sku,
+          description: iDesc >= 0 ? String(row[iDesc] || '') : '',
+          qa:    parseFloat(row[iQA]  || 0) || 0,
+          newwh: parseFloat(row[iNW]  || 0) || 0,
+          total: parseFloat(row[iTot] || 0) || 0,
+        };
+        count++;
+      });
+    } else {
+      // Unknown format — show keys for debugging
+      throw new Error(`รูปแบบไม่รองรับ — keys ที่ได้: [${Object.keys(json).join(', ')}]`);
+    }
+
+    if (!count) throw new Error('ไม่พบข้อมูล SKU ใน response');
+
+    stockMap = map;
+    setStockStatus('', { source:'gas', url, count });
+    ['stock-card-1','stock-card-2'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.classList.add('has-file');
+    });
+    ['gasUrl1','gasUrl2'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = url;
+    });
+    saveGasUrl(url);
+    if (diffResults.length) renderTable();
+
+  } catch (err) {
+    setStockStatus('❌ ' + err.message);
+  }
+}
+
+// ── localStorage: save/restore Apps Script URL ─────────────────────────────
+const ORDER_GAS_URL_KEY = 'orderapp_order_gas_url';
+
+function saveOrderGasUrl(url) {
+  if (url.trim()) localStorage.setItem(ORDER_GAS_URL_KEY, url.trim());
+}
+function clearOrderGasUrl() {
+  localStorage.removeItem(ORDER_GAS_URL_KEY);
+  ['orderGasUrl','orderGasUrl2'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('sheet-status').textContent = '';
+  document.getElementById('file-single-name').textContent = '';
+}
+function loadSavedOrderGasUrl() {
+  const saved = localStorage.getItem(ORDER_GAS_URL_KEY);
+  if (!saved) return;
+  ['orderGasUrl','orderGasUrl2'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = saved;
+  });
+  document.getElementById('sheet-status').textContent = '🔗 มี URL ออเดอร์บันทึกไว้ — กด "ดึงข้อมูล" เพื่อโหลด';
+}
+
+// แปลง array of objects จาก GAS → row format ที่ระบบใช้
+function convertGASRows(rows) {
+  return rows
+    .filter(r => r['Order ID'] != null && String(r['Order ID']).trim() !== '')
+    .map(r => {
+      const keys = Object.keys(r);
+      const qtyKeys = keys.filter(k => k.startsWith('จำนวน'));
+      const qty1Key = qtyKeys[0] || 'จำนวน';
+      const qty2Key = qtyKeys[1] || 'จำนวน_1';
+      const rawD = r['Date'] || r['date'] || '';
+      let dateStr = '';
+      if (rawD) {
+        const d = new Date(rawD);
+        dateStr = isNaN(d) ? String(rawD).slice(0,10) : d.toISOString().slice(0,10);
+      }
+      return {
+        orderID:  String(r['Order ID']   || '').trim(),
+        consign:  String(r['เลข consign'] || r['เลขconsign'] || r['Consign'] || '').trim(),
+        sup:      String(r['Sup']        || '').trim(),
+        brand:    String(r['แบรนด์']     || '').trim(),
+        size:     String(r['ขนาด']       || '').trim(),
+        qty1:     r[qty1Key] != null ? r[qty1Key] : 1,
+        giftRaw:  String(r['ของแถม']    || '').trim(),
+        qtyRaw:   r[qty2Key] != null ? String(r[qty2Key]).trim() : '',
+        customer: String(r['ชื่อลูกค้า'] || '').trim(),
+        address:  String(r['ที่อยู่']     || '').trim(),
+        phone1:   String(r['Phone 1']    || '').trim(),
+        phone2:   String(r['Phone 2']    || '').trim(),
+        payment:  String(r['การเงิน']    || '').trim(),
+        remark:   String(r['หมายเหตุ']   || '').trim(),
+        date:     dateStr,
+      };
+    });
+}
+
+// ── Multi-carrier order loader ─────────────────────────────────────────────
+// GAS ส่งมาเป็น { carriers: [ { key, sheet1:[...], sheet2:[...] }, ... ] }
+
+let carriersData = [];   // [ { key, data1:[], data2:[] } ]
+let activeCarrier = 0;   // index ของ carrier ที่เลือกอยู่ใน tab
+
+async function loadOrderFromGAS() {
+  const url = (document.getElementById('orderGasUrl')?.value ||
+               document.getElementById('orderGasUrl2')?.value || '').trim();
+  if (!url) { alert('กรุณาใส่ Apps Script URL'); return; }
+
+  document.getElementById('sheet-status').textContent = '⏳ กำลังดึงข้อมูล...';
+  document.getElementById('file-single-name').textContent = '';
+
+  try {
+    const resp = await fetch(url, { redirect: 'follow' });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const text = await resp.text();
+    let json;
+    try { json = JSON.parse(text); } catch(e) { throw new Error('ข้อมูลไม่ใช่ JSON: ' + text.slice(0,120)); }
+    if (json.error) throw new Error(json.error);
+
+    // ── Format A: { carriers: [...] }  (multi-carrier) ──
+    if (json.carriers && Array.isArray(json.carriers)) {
+      carriersData = json.carriers.map(car => ({
+        key:   car.key,
+        data1: convertGASRows(car.sheet1 || []),
+        data2: convertGASRows(car.sheet2 || []),
+        error1: car.error1 || null,
+        error2: car.error2 || null,
+      }));
+    }
+    // ── Format B: { sheet1, sheet2 }  (single, backward compat) ──
+    else if (json.sheet1 || json.sheet2) {
+      carriersData = [{
+        key:   'ออเดอร์',
+        data1: convertGASRows(json.sheet1 || []),
+        data2: convertGASRows(json.sheet2 || []),
+      }];
+    } else {
+      throw new Error(`รูปแบบไม่รองรับ — keys: [${Object.keys(json).join(', ')}]`);
+    }
+
+    if (!carriersData.length) throw new Error('ไม่พบข้อมูลขนส่ง');
+
+    saveOrderGasUrl(url);
+    ['orderGasUrl','orderGasUrl2'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = url;
+    });
+
+    // Set active carrier = first one
+    activeCarrier = 0;
+    applyCarrier(0);
+
+    // Build carrier tabs UI
+    renderCarrierTabs();
+
+    const totalRows = carriersData.reduce((s, c) => s + c.data2.length, 0);
+    document.getElementById('file-single-name').textContent =
+      `✅ ${carriersData.length} ขนส่ง — รวม ${totalRows} แถว (Sheet Daily CRM)`;
+    document.getElementById('sheet-status').textContent = '';
+    document.getElementById('card-single').classList.add('has-file');
+    document.getElementById('order-card-2').classList.add('has-file');
+    document.getElementById('order2-fname').textContent =
+      carriersData.map(c => `${c.key}: ${c.data2.length} แถว`).join(' | ');
+    updateCompareBtn();
+
+  } catch(err) {
+    document.getElementById('sheet-status').textContent = '❌ ' + err.message;
+  }
+}
+
+// Apply carrier data to global data1/data2 (used by compare logic)
+function applyCarrier(idx) {
+  if (!carriersData[idx]) return;
+  activeCarrier = idx;
+  data1    = carriersData[idx].data1;
+  data2    = carriersData[idx].data2;
+  data2raw = carriersData[idx].data2;
+  // Reset compare results
+  diffResults = [];
+  document.getElementById('summaryStrip').style.display = 'none';
+  document.getElementById('filterBar').style.display = 'none';
+  document.getElementById('tableWrap').innerHTML =
+    `<div class="empty-state"><div class="icon">🔄</div>
+     <h3>เลือกขนส่ง: ${carriersData[idx].key}</h3>
+     <p>${data1.length} แถว (เช้า) | ${data2.length} แถว (เย็น) — กด "เปรียบเทียบ"</p></div>`;
+  updateCompareBtn();
+}
+
+// Build carrier selector tabs above the compare table
+function renderCarrierTabs() {
+  let wrap = document.getElementById('carrierTabsWrap');
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.id = 'carrierTabsWrap';
+    wrap.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;align-items:center';
+    const filterBar = document.getElementById('tableWrap');
+    filterBar.parentNode.insertBefore(wrap, filterBar);
+  }
+
+  const allTotal = carriersData.reduce((s,c) => s + c.data1.length + c.data2.length, 0);
+  wrap.innerHTML = `<span style="font-size:12px;font-weight:600;color:var(--muted);margin-right:4px">🚚 ขนส่ง:</span>` +
+    carriersData.map((car, i) => `
+      <button onclick="selectCarrier(${i})" id="ctab-${i}"
+        style="padding:5px 14px;border-radius:20px;border:1px solid var(--border);
+               background:${i===activeCarrier?'var(--primary)':'var(--surface)'};
+               color:${i===activeCarrier?'#fff':'var(--neutral)'};
+               font-size:12px;font-weight:500;cursor:pointer;font-family:var(--sans);transition:all .15s">
+        ${car.key}
+        <span style="opacity:.75;font-size:11px">(${car.data2.length})</span>
+      </button>`).join('');
+}
+
+function selectCarrier(idx) {
+  applyCarrier(idx);
+  renderCarrierTabs(); // re-render to update active style
+}
+
+
+const GAS_URL_KEY = 'orderapp_gas_url';
+
+function saveGasUrl(url) {
+  if (url.trim()) {
+    localStorage.setItem(GAS_URL_KEY, url.trim());
+  }
+}
+
+function loadSavedGasUrl() {
+  const saved = localStorage.getItem(GAS_URL_KEY);
+  if (!saved) return;
+  // Populate both inputs
+  ['gasUrl1','gasUrl2'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = saved;
+  });
+  setStockStatus('🔗 มี URL บันทึกไว้ — กด "ดึงข้อมูล" เพื่อโหลดสต๊อก');
+}
+
+function clearSavedGasUrl() {
+  localStorage.removeItem(GAS_URL_KEY);
+  ['gasUrl1','gasUrl2'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  setStockStatus('');
+}
+
+let lastStockSource = null;   // 'gas' | 'file'
+let lastStockGasUrl  = null;
+let lastStockFile    = null;
+
+function setStockStatus(msg, opts) {
+  // opts: { source:'gas'|'file', url, filename, count }
+  if (opts) {
+    lastStockSource  = opts.source;
+    lastStockGasUrl  = opts.url    || null;
+    lastStockFile    = opts.filename || null;
+  }
+  ['stock-fname','stock-fname2'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (!opts) { el.textContent = msg; return; }
+
+    const now = new Date();
+    const ts  = now.toLocaleTimeString('th-TH', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+    const refreshBtn = opts.source === 'gas'
+      ? `<button class="refresh-btn" id="refreshStockBtn" onclick="refreshStock()">🔄 รีเฟรช</button>`
+      : '';
+
+    el.innerHTML = `<div class="stock-ts-bar">
+      <span class="ts-text">✅ ${opts.count} SKU &nbsp;·&nbsp; อัปเดต <strong>${ts}</strong></span>
+      ${refreshBtn}
+    </div>`;
+  });
+}
+
+async function refreshStock() {
+  if (lastStockSource !== 'gas' || !lastStockGasUrl) return;
+  // Spin the button
+  document.querySelectorAll('#refreshStockBtn').forEach(b => {
+    b.textContent = '⏳ กำลังโหลด...';
+    b.classList.add('spinning');
+    b.disabled = true;
+  });
+  await loadStockFromGAS(null, lastStockGasUrl);
+}
+
+// ── Order detail modal ──────────────────────────────────────────────────────
+function showOrderModal(idx) {
+  const r = stockResults[idx];
+  if (!r) return;
+  const statusLabel = { ok:'✅ สต๊อกพอ', low:'⚠️ เหลือน้อย', out:'🚫 สต๊อกไม่พอ', na:'— ไม่มีในสต๊อก' };
+  document.getElementById('modalTitle').textContent = r.name.length > 60 ? r.name.slice(0,60)+'\u2026' : r.name;
+  document.getElementById('modalSubtitle').textContent =
+    `SKU: ${r.sku}  \u00b7  ต้องการ: ${r.need} ชิ้น  \u00b7  สต๊อก: ${r.total}  \u00b7  ${statusLabel[r.status]}`;
+  const list = r.orderList || [];
+  document.getElementById('modalOrderList').innerHTML = !list.length
+    ? '<p style="color:var(--muted);font-size:13px;padding:12px 0">ไม่พบข้อมูล Order</p>'
+    : list.map(o => `
+      <div class="modal-order-row">
+        <span class="modal-order-id">${o.orderId}</span>
+        <span class="modal-sup">${o.sup || '\u2014'}</span>
+        <span class="modal-qty">\u00d7${o.qty}</span>
+      </div>`).join('');
+  document.getElementById('orderModal').classList.add('open');
+}
+
+function closeModal(e) {
+  if (e.target === document.getElementById('orderModal'))
+    document.getElementById('orderModal').classList.remove('open');
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') document.getElementById('orderModal').classList.remove('open');
+});
+
+// ══════════════════════════════════════════════════════
+// DUPLICATE ORDER CHECK
+// ══════════════════════════════════════════════════════
+
+// ── normKey: normalize สำหรับเปรียบเทียบ ──────────────────────────────────
+// ตัด prefix คำนำหน้า, เครื่องหมาย, ช่องว่าง, lowercase
+function normKey(s) {
+  return normText(s)
+    .replace(/^(คุณ|นาย|นาง|นางสาว|ด\.ร\.|ดร\.|mr\.?|mrs\.?|ms\.?)\s*/i, '')
+    .replace(/[^฀-๿a-z0-9]/gi, '') // เหลือแค่ตัวอักษรไทย+อังกฤษ+ตัวเลข
+    .toLowerCase();
+}
+
+// ── normAddr: ตัดแค่ตัวเลขและคำหลักออกมาเปรียบเทียบ ─────────────────────
+// เช่น "644/82 ถนนเจริญกรุง ซอย 109" → "644/82 109"
+function normAddr(s) {
+  if (!s) return '';
+  return normText(s)
+    .replace(/[^฀-๿a-z0-9\/\-\s]/gi, '')
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
+    .trim();
+}
+
+// เทียบชื่อ: ใช้ normKey — ตัด prefix และ special chars
+// เทียบที่อยู่: ถ้าว่างทั้งคู่ = เหมือนกัน, ถ้าไม่ว่างใช้ normAddr
+function isSamePerson(a, b) {
+  const nc_a = normKey(a.customer);
+  const nc_b = normKey(b.customer);
+  if (nc_a !== nc_b) return false;           // ชื่อต่างกัน = คนละคน
+
+  const na_a = normAddr(a.address);
+  const na_b = normAddr(b.address);
+  if (!na_a && !na_b) return true;           // ที่อยู่ว่างทั้งคู่ = เหมือนกัน
+  if (!na_a || !na_b) return true;           // มีฝั่งเดียวว่าง = ไม่ตัดสิน ถือว่าเหมือน
+  return na_a === na_b;                      // ที่อยู่ตรงกันทั้งหมด
+}
+
+function findDuplicateOrders(rows) {
+  // group by orderID
+  const orderMap = {};
+  rows.forEach(r => {
+    if (!r.orderID) return;
+    if (!orderMap[r.orderID]) orderMap[r.orderID] = [];
+
+    const entry = {
+      customer: r.customer || '',
+      address:  r.address  || '',
+      phone1:   r.phone1   || '',
+      sup:      r.sup      || '',
+    };
+
+    // ถ้ายังไม่มีเลย → เพิ่มทันที
+    if (!orderMap[r.orderID].length) {
+      orderMap[r.orderID].push(entry);
+      return;
+    }
+
+    // ถ้ามีคนที่ "เหมือนกัน" อยู่แล้ว → ข้ามไป (หลายแถวต่อ order ปกติ)
+    const alreadySame = orderMap[r.orderID].some(e => isSamePerson(e, entry));
+    if (!alreadySame) {
+      orderMap[r.orderID].push(entry);
+    }
+  });
+
+  // เอาเฉพาะ order ที่มีมากกว่า 1 คน
+  return Object.entries(orderMap)
+    .filter(([, list]) => list.length > 1)
+    .map(([orderId, list]) => ({
+      orderId,
+      customers: list.map(e => ({
+        customer: e.customer || '—',
+        address:  e.address  || '—',
+        phone1:   e.phone1   || '—',
+        sup:      e.sup      || '—',
+      })),
+    }))
+    .sort((a, b) => a.orderId.localeCompare(b.orderId));
+}
+
+
+
+function runDuplicateCheck() {
+  const wrap = document.getElementById('dupWrap');
+  const statusEl = document.getElementById('dup-status');
+
+  // รวมทุก carrier
+  let rows1 = [], rows2 = [];
+  if (carriersData.length > 0) {
+    carriersData.forEach(car => {
+      rows1 = rows1.concat(car.data1);
+      rows2 = rows2.concat(car.data2);
+    });
+  } else {
+    rows1 = data1;
+    rows2 = data2;
+  }
+
+  if (!rows1.length && !rows2.length) {
+    wrap.innerHTML = `<div class="date-warning">⚠️ กรุณาดึงข้อมูลออเดอร์ก่อน (Tab เทียบ Order)</div>`;
+    return;
+  }
+
+  const dups1 = findDuplicateOrders(rows1);
+  const dups2 = findDuplicateOrders(rows2);
+  const totalDup = dups1.length + dups2.length;
+
+  // Left-right layout
+  wrap.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <span style="font-size:14px;font-weight:600;color:var(--primary)">🌅 Sheet Daily Logis</span>
+          ${dups1.length
+            ? `<span class="badge badge-removed">${dups1.length} Order ซ้ำ</span>`
+            : `<span class="badge badge-same">✓ ไม่มีซ้ำ</span>`}
+        </div>
+        ${renderDupPanel(dups1)}
+      </div>
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <span style="font-size:14px;font-weight:600;color:#7C3AED">🌆 Sheet Daily CRM</span>
+          ${dups2.length
+            ? `<span class="badge badge-removed">${dups2.length} Order ซ้ำ</span>`
+            : `<span class="badge badge-same">✓ ไม่มีซ้ำ</span>`}
+        </div>
+        ${renderDupPanel(dups2)}
+      </div>
+    </div>`;
+
+  if (statusEl) statusEl.textContent =
+    totalDup ? `⚠️ พบทั้งหมด ${totalDup} Order ที่มีปัญหา` : '✅ ไม่พบ Order ซ้ำ';
+}
+
+function renderDupPanel(dups) {
+  if (!dups.length) return `
+    <div style="padding:20px;text-align:center;background:var(--surface);
+                border:1px solid #A7F3D0;border-radius:8px;
+                color:var(--added);font-size:13px">
+      ✅ ไม่พบ Order ที่ส่งให้ลูกค้าต่างกัน
+    </div>`;
+
+  return dups.map(d => `
+    <div class="dup-section" style="margin-bottom:10px">
+      <div class="dup-section-header">
+        <span class="order-id" style="color:inherit">${d.orderId}</span>
+        <span class="dup-count">${d.customers.length} ลูกค้า</span>
+      </div>
+      <div style="padding:8px 14px">
+        <div class="dup-col-hdr" style="grid-template-columns:1fr 1fr 110px">
+          <span>ชื่อลูกค้า</span><span>ที่อยู่</span><span>Phone 1</span>
+        </div>
+        ${d.customers.map((cust, i) => `
+          <div style="display:grid;grid-template-columns:1fr 1fr 110px;gap:8px;
+                      padding:6px 0;font-size:12px;border-top:1px dashed var(--border);
+                      background:${i % 2 === 0 ? 'transparent' : 'var(--surface2)'}">
+            <span style="font-weight:500">${cust.customer}</span>
+            <span style="color:var(--neutral)">${cust.address || '—'}</span>
+            <span style="color:var(--muted)">${cust.phone1 || '—'}</span>
+          </div>`).join('')}
+      </div>
+    </div>`).join('');
+}
+
+// ══════════════════════════════════════════════════════
+// TAB 3 — เทียบข้อมูลลูกค้า
+// ══════════════════════════════════════════════════════
+// Normalize text ก่อนเทียบ — ตัด invisible chars, normalize whitespace, lowercase
+function normText(s) {
+  return String(s || '')
+    .replace(/[​‌‍‎‏﻿           ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const CUST_FIELDS = [
+  { key: 'customer', label: 'ชื่อลูกค้า' },
+  { key: 'address',  label: 'ที่อยู่'     },
+  { key: 'phone1',   label: 'Phone 1'    },
+  { key: 'phone2',   label: 'Phone 2'    },
+  { key: 'payment',  label: 'การเงิน'    },
+  { key: 'remark',   label: 'หมายเหตุ'   },
+];
+
+let custResults    = [];
+let custFilter     = 'all';
+
+let custActiveCarrier = 0;  // index ของ carrier ที่เลือกอยู่ใน Tab 3
+
+function renderCustCarrierTabs() {
+  const wrap = document.getElementById('custCarrierWrap');
+  const btns = document.getElementById('custCarrierBtns');
+  if (!carriersData.length) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block';
+  btns.innerHTML = carriersData.map((car, i) =>
+    `<button onclick="selectCustCarrier(${i})" id="cctab-${i}"
+      style="padding:4px 14px;border-radius:20px;border:1px solid var(--border);
+             background:${i===custActiveCarrier?'var(--primary)':'var(--surface)'};
+             color:${i===custActiveCarrier?'#fff':'var(--neutral)'};
+             font-size:12px;font-weight:500;cursor:pointer;font-family:var(--sans);
+             margin-right:6px;margin-bottom:4px;transition:all .15s">
+      ${car.key} <span style="opacity:.75;font-size:11px">(${car.data2.length})</span>
+    </button>`
+  ).join('');
+}
+
+function selectCustCarrier(idx) {
+  custActiveCarrier = idx;
+  renderCustCarrierTabs();
+  // run compare with selected carrier's data
+  const car = carriersData[idx];
+  if (car) runCustomerCompareWith(car.data1, car.data2, car.key);
+}
+
+function runCustomerCompare() {
+  // ถ้ามีข้อมูล multi-carrier → แสดง carrier tabs และเทียบ carrier แรก
+  if (carriersData.length > 0) {
+    custActiveCarrier = 0;
+    renderCustCarrierTabs();
+    const car = carriersData[0];
+    runCustomerCompareWith(car.data1, car.data2, car.key);
+    return;
+  }
+  // fallback: ใช้ data1/data2 ตรงๆ
+  if (!data1.length || !data2.length) {
+    document.getElementById('customer-status').textContent = '⚠️ กรุณาดึงข้อมูลออเดอร์ก่อน (Tab เทียบ Order)';
+    return;
+  }
+  document.getElementById('custCarrierWrap').style.display = 'none';
+  runCustomerCompareWith(data1, data2, '');
+}
+
+function runCustomerCompareWith(d1, d2, carrierName) {
+  const g1 = {}, g2 = {};
+  d1.forEach(r => { if (!g1[r.orderID]) g1[r.orderID] = r; });
+  d2.forEach(r => { if (!g2[r.orderID]) g2[r.orderID] = r; });
+
+  const allKeys = new Set([...Object.keys(g1), ...Object.keys(g2)]);
+  custResults = [];
+
+  allKeys.forEach(key => {
+    const r1 = g1[key], r2 = g2[key];
+    if (!r1) { custResults.push({ orderId: key, status: 'added',   r1: null, r2, diffs: [] }); return; }
+    if (!r2) { custResults.push({ orderId: key, status: 'removed', r1, r2: null, diffs: [] }); return; }
+    const diffs = CUST_FIELDS
+      .filter(f => normText(r1[f.key]) !== normText(r2[f.key]))
+      .map(f => ({ label: f.label, old: r1[f.key]||'', new: r2[f.key]||'' }));
+    custResults.push({ orderId: key, status: diffs.length ? 'changed' : 'same', r1, r2, diffs });
+  });
+
+  const pri = { changed:0, added:1, removed:2, same:3 };
+  custResults.sort((a,b) => pri[a.status]-pri[b.status] || a.orderId.localeCompare(b.orderId));
+
+  const cnt = { changed:0, added:0, removed:0, same:0 };
+  custResults.forEach(r => cnt[r.status]++);
+  document.getElementById('custTotal').textContent    = custResults.length;
+  document.getElementById('custChanged').textContent  = cnt.changed;
+  document.getElementById('custAdded').textContent    = cnt.added;
+  document.getElementById('custRemoved').textContent  = cnt.removed;
+  document.getElementById('ccnt-all').textContent     = custResults.length;
+  document.getElementById('ccnt-changed').textContent = cnt.changed;
+  document.getElementById('ccnt-added').textContent   = cnt.added;
+  document.getElementById('ccnt-removed').textContent = cnt.removed;
+  document.getElementById('ccnt-same').textContent    = cnt.same;
+
+  document.getElementById('custSummaryStrip').style.display = 'grid';
+  document.getElementById('custFilterBar').style.display    = 'flex';
+  document.getElementById('customer-status').textContent    =
+    carrierName ? `ขนส่ง: ${carrierName}` : '';
+  custFilter = 'all';
+  document.querySelectorAll('#tab-customer .filter-tab').forEach((t,i) => t.classList.toggle('active', i===0));
+  document.getElementById('custSearch').value = '';
+  renderCustomerTable();
+}
+
+function setCustFilter(f, btn) {
+  custFilter = f;
+  document.querySelectorAll('#tab-customer .filter-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  renderCustomerTable();
+}
+
+function renderCustomerTable() {
+  const search = (document.getElementById('custSearch').value || '').toLowerCase();
+  let rows = custResults;
+  if (custFilter !== 'all') rows = rows.filter(r => r.status === custFilter);
+  if (search) rows = rows.filter(r =>
+    r.orderId.toLowerCase().includes(search) ||
+    (r.r1?.customer || r.r2?.customer || '').toLowerCase().includes(search)
+  );
+
+  if (!rows.length) {
+    document.getElementById('custTableWrap').innerHTML =
+      `<div class="empty-state"><div class="icon">🔍</div><h3>ไม่พบข้อมูล</h3><p>ลองปรับตัวกรอง</p></div>`;
+    return;
+  }
+
+  const statusLabel = { changed:'✏️ เปลี่ยน', added:'➕ ใหม่', removed:'➖ หายไป', same:'✓ ไม่เปลี่ยน' };
+  const badgeMap    = { changed:'badge-changed', added:'badge-added', removed:'badge-removed', same:'badge-same' };
+  const rowClass    = { changed:'row-changed', added:'row-added', removed:'row-removed', same:'' };
+
+  let html = `<table><thead><tr>
+    <th style="width:32px"></th>
+    <th>Order ID</th>
+    <th>ขนส่ง</th>
+    <th>ชื่อลูกค้า</th>
+    <th>สิ่งที่เปลี่ยน</th>
+    <th>สถานะ</th>
+  </tr></thead><tbody>`;
+
+  rows.forEach((r, i) => {
+    const rid      = `crow-${i}`;
+    const mainRow  = r.r2 || r.r1;
+    const custName = mainRow?.customer || '—';
+    const sup      = mainRow?.sup      || '—';
+
+    let changeSummary = '';
+    if (r.status === 'changed') {
+      changeSummary = r.diffs.map(d =>
+        `<div style="font-size:12px"><strong>${d.label}:</strong>
+         <span class="diff-old">${d.old || '(ว่าง)'}</span>
+         → <span class="diff-new">${d.new || '(ว่าง)'}</span></div>`
+      ).join('');
+    } else if (r.status === 'same') {
+      changeSummary = '<span style="color:var(--muted);font-size:12px">ไม่มีการเปลี่ยนแปลง</span>';
+    }
+
+    html += `<tr class="${rowClass[r.status]}">
+      <td><button class="expand-btn" onclick="toggleDetail('${rid}',this)">▶</button></td>
+      <td><span class="order-id">${r.orderId}</span></td>
+      <td style="font-size:12px;color:var(--muted)">${sup}</td>
+      <td style="font-weight:500">${custName}</td>
+      <td>${changeSummary}</td>
+      <td><span class="badge ${badgeMap[r.status]}">${statusLabel[r.status]}</span></td>
+    </tr>
+    <tr class="detail-row" id="${rid}">
+      <td colspan="6" class="detail-cell">${buildCustDetail(r)}</td>
+    </tr>`;
+  });
+
+  html += '</tbody></table>';
+  document.getElementById('custTableWrap').innerHTML = html;
+}
+
+function buildCustDetail(r) {
+  if (r.status === 'added') {
+    return `<div class="detail-inner" style="grid-template-columns:1fr">${renderCustCard(r.r2, '➕ Sheet Daily CRM (ใหม่)', 'var(--added)')}</div>`;
+  }
+  if (r.status === 'removed') {
+    return `<div class="detail-inner" style="grid-template-columns:1fr">${renderCustCard(r.r1, '➖ Sheet Daily Logis (หายไป)', 'var(--removed)')}</div>`;
+  }
+  if (r.status === 'same') {
+    return `<div class="detail-inner" style="grid-template-columns:1fr">${renderCustCard(r.r1, 'ข้อมูลลูกค้า', 'var(--muted)')}</div>`;
+  }
+
+  // changed — side by side
+  return `<div class="detail-inner">
+    <div>${renderCustCard(r.r1, '🌅 Sheet Daily Logis (เดิม)', 'var(--primary)')}</div>
+    <div>${renderCustCard(r.r2, '🌆 Sheet Daily CRM (ใหม่)', '#7C3AED')}</div>
+  </div>`;
+}
+
+function renderCustCard(row, title, color) {
+  if (!row) return '<div class="no-data">ไม่มีข้อมูล</div>';
+  return `
+    <h5 style="color:${color}">${title}</h5>
+    ${CUST_FIELDS.map(f => `
+      <div style="display:grid;grid-template-columns:90px 1fr;gap:4px;padding:4px 0;border-bottom:1px dashed var(--border);font-size:12px">
+        <span style="color:var(--muted);font-weight:600">${f.label}</span>
+        <span>${row[f.key] || '<span style="color:var(--muted)">—</span>'}</span>
+      </div>`).join('')}`;
+}
+
+// ══════════════════════════════════════════════════════
+// TAB 5 — ตรวจเลข Consign
+// ══════════════════════════════════════════════════════
+
+function findDuplicateConsign(rows) {
+  // group by consign → เก็บ unique person (ชื่อ+ที่อยู่) ต่อเลข consign
+  const consignMap = {};
+
+  rows.forEach(r => {
+    const consign = (r.consign || '').trim();
+    if (!consign) return;  // ข้ามแถวที่ไม่มีเลข consign
+
+    if (!consignMap[consign]) consignMap[consign] = { orders: new Set(), persons: [] };
+
+    consignMap[consign].orders.add(r.orderID);
+
+    const entry = {
+      customer: r.customer || '',
+      address:  r.address  || '',
+      phone1:   r.phone1   || '',
+      orderID:  r.orderID  || '',
+      sup:      r.sup      || '',
+    };
+
+    const alreadySame = consignMap[consign].persons.some(e => isSamePerson(e, entry));
+    if (!alreadySame) {
+      consignMap[consign].persons.push(entry);
+    }
+  });
+
+  // เอาเฉพาะ consign ที่มีลูกค้ามากกว่า 1 คน
+  return Object.entries(consignMap)
+    .filter(([, v]) => v.persons.length > 1)
+    .map(([consign, v]) => ({
+      consign,
+      orderCount: v.orders.size,
+      persons: v.persons.map(e => ({
+        customer: e.customer || '—',
+        address:  e.address  || '—',
+        phone1:   e.phone1   || '—',
+        orderID:  e.orderID  || '—',
+      })),
+    }))
+    .sort((a, b) => a.consign.localeCompare(b.consign));
+}
+
+function runConsignCheck() {
+  const wrap     = document.getElementById('consignWrap');
+  const statusEl = document.getElementById('consign-status');
+
+  // รวมทุก carrier Sheet Daily Logis (data1)
+  let rows1 = [];
+  if (carriersData.length > 0) {
+    carriersData.forEach(car => { rows1 = rows1.concat(car.data1); });
+  } else {
+    rows1 = data1;
+  }
+
+  if (!rows1.length) {
+    wrap.innerHTML = `<div class="date-warning">⚠️ กรุณาดึงข้อมูลออเดอร์ก่อน (Tab เทียบ Order)</div>`;
+    return;
+  }
+
+  const dups = findDuplicateConsign(rows1);
+
+  if (!dups.length) {
+    wrap.innerHTML = `
+      <div style="padding:20px;text-align:center;background:var(--surface);
+                  border:1px solid #A7F3D0;border-radius:10px;
+                  color:var(--added);font-size:14px">
+        ✅ ไม่พบเลข Consign ที่ใช้กับลูกค้ามากกว่า 1 คน
+      </div>`;
+    statusEl.textContent = '✅ ไม่พบปัญหา';
+    return;
+  }
+
+  const items = dups.map(d => `
+    <div class="dup-section" style="margin-bottom:10px">
+      <div class="dup-section-header">
+        <span style="font-family:var(--mono);font-size:13px">${d.consign}</span>
+        <span class="dup-count">${d.persons.length} ลูกค้า</span>
+        <span style="font-size:11px;opacity:.8;margin-left:4px">${d.orderCount} Order</span>
+      </div>
+      <div style="padding:8px 14px">
+        <div style="display:grid;grid-template-columns:130px 1fr 1fr 110px;gap:8px;
+                    padding:4px 0 6px;font-size:11px;font-weight:600;color:var(--muted);
+                    text-transform:uppercase;letter-spacing:.4px;border-bottom:2px solid var(--border)">
+          <span>Order ID</span><span>ชื่อลูกค้า</span><span>ที่อยู่</span><span>Phone 1</span>
+        </div>
+        ${d.persons.map((p, i) => `
+          <div style="display:grid;grid-template-columns:130px 1fr 1fr 110px;gap:8px;
+                      padding:6px 0;font-size:12px;border-top:1px dashed var(--border);
+                      background:${i % 2 === 0 ? 'transparent' : 'var(--surface2)'}">
+            <span class="order-id">${p.orderID}</span>
+            <span style="font-weight:500">${p.customer}</span>
+            <span style="color:var(--neutral)">${p.address || '—'}</span>
+            <span style="color:var(--muted)">${p.phone1 || '—'}</span>
+          </div>`).join('')}
+      </div>
+    </div>`).join('');
+
+  wrap.innerHTML = `
+    <div style="font-size:13px;font-weight:600;margin-bottom:12px;color:var(--neutral)">
+      📦 ตรวจSheet Daily Logis — พบ Consign ที่มีปัญหา
+      <span class="badge badge-removed" style="margin-left:8px">${dups.length} รายการ</span>
+    </div>
+    ${items}`;
+
+  statusEl.textContent = `⚠️ พบ ${dups.length} เลข Consign ที่ใช้กับลูกค้ามากกว่า 1 คน`;
+}
+
+// ── On page load: restore saved Apps Script URL ─────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  loadSavedGasUrl();
+  loadSavedOrderGasUrl();
+});
+
+</script>
+<!-- Order detail modal -->
+<div class="modal-overlay" id="orderModal" onclick="closeModal(event)">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div>
+        <h3 id="modalTitle">รายการ Order</h3>
+        <p id="modalSubtitle"></p>
+      </div>
+      <button class="modal-close" onclick="document.getElementById('orderModal').classList.remove('open')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-col-hdr">
+        <span>Order ID</span><span>ขนส่ง (Sup)</span><span style="text-align:right">จำนวน</span>
+      </div>
+      <div id="modalOrderList"></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

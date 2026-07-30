@@ -150,6 +150,19 @@ This repo ships a workflow at [`.github/workflows/deploy.yml`](.github/workflows
 
 ---
 
+## 📋 Order Compare (`/order-compare`)
+
+A separate, self-contained tool for the Logistics team lives at
+[`public/order-compare/index.html`](public/order-compare/index.html) and is served as a static page
+at **`<site>/order-compare/`** (linked from the main nav). It is plain HTML/CSS/JS — no build step,
+no React — so it is copied to `dist/` verbatim by Vite.
+
+It compares the Daily Logis vs CRM order sheets, checks stock, compares customer details and finds
+duplicate Order IDs / consignment numbers, reading from Google Sheets via a Google Apps Script web
+app (or an uploaded `.xlsx`). **The Apps Script URL is entered by the user and kept in
+localStorage — it is not stored in this repo.** See `HANDOFF.md` (kept with that tool) for its
+internals.
+
 ## 🗂️ Project structure
 
 ```
