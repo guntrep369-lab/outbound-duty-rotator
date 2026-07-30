@@ -136,6 +136,23 @@ td{padding:9px 12px;vertical-align:middle}
 .gs-row label.btn{cursor:pointer;margin:0}
 .gs-status{font-size:12px;color:var(--muted)}
 
+/* ── Export button (ในแถบ filter) ── */
+.export-btn {
+  margin-left: auto;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--neutral);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: var(--sans);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all .15s;
+}
+.export-btn:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+
 /* ── Stock timestamp bar ── */
 .stock-ts-bar {
   display: flex;
@@ -407,6 +424,7 @@ td{padding:9px 12px;vertical-align:middle}
       <span class="search-icon">🔍</span>
       <input type="text" id="searchInput" placeholder="ค้นหา Order / ลูกค้า..." oninput="renderTable()">
     </div>
+    <button class="export-btn" onclick="exportCompareCSV()" title="ดาวน์โหลดผลเทียบเป็น CSV">⬇️ Export CSV</button>
   </div>
 
   <!-- Table -->
@@ -521,6 +539,7 @@ td{padding:9px 12px;vertical-align:middle}
       <span class="search-icon">🔍</span>
       <input type="text" id="stockSearch" placeholder="ค้นหา SKU / ชื่อสินค้า..." oninput="renderStockTable()">
     </div>
+    <button class="export-btn" onclick="exportStockCSV()" title="ดาวน์โหลดผลเช็คสต๊อกเป็น CSV">⬇️ Export CSV</button>
   </div>
 
   <div class="table-wrap" id="stockTableWrap">
@@ -582,6 +601,7 @@ td{padding:9px 12px;vertical-align:middle}
       <span class="search-icon">🔍</span>
       <input type="text" id="custSearch" placeholder="ค้นหา Order / ชื่อลูกค้า..." oninput="renderCustomerTable()">
     </div>
+    <button class="export-btn" onclick="exportCustomerCSV()" title="ดาวน์โหลดผลเทียบลูกค้าเป็น CSV">⬇️ Export CSV</button>
   </div>
 
   <div class="table-wrap" id="custTableWrap">
@@ -655,6 +675,7 @@ let stockMap = {};   // sku -> {sku, description, qa, newwh, total}
 let diffResults = [];
 let skuDemand = {};  // sku -> {qty, name, orders:[]}
 let stockResults = []; // [{sku, name, need, qa, newwh, total, status}]
+let lastOrderGasUrl = null;  // จำ URL ล่าสุดไว้ให้ปุ่มรีเฟรช
 let currentFilter = 'all';
 let currentStockFilter = 'all';
 
@@ -1478,6 +1499,82 @@ function renderStockTable() {
 }
 
 // ── Load stock from Google Apps Script (bypasses CORS) ─────────────────────
+/* ── Fetch helper: timeout + auto-retry (GAS ชอบ timeout/หลุดเป็นครั้งคราว) ── */
+async function fetchWithRetry(url, { retries = 2, timeoutMs = 30000, onRetry } = {}) {
+  let lastErr;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const resp = await fetch(url, { redirect: 'follow', signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      return resp;
+    } catch (err) {
+      clearTimeout(timer);
+      lastErr = err.name === 'AbortError'
+        ? new Error(`หมดเวลา (${timeoutMs / 1000}s)`)
+        : err;
+      if (attempt < retries) {
+        if (onRetry) onRetry(attempt + 1, retries, lastErr);
+        await new Promise(r => setTimeout(r, 1200 * (attempt + 1))); // backoff
+      }
+    }
+  }
+  throw new Error(`${lastErr.message} — ลองใหม่ ${retries} ครั้งแล้วไม่สำเร็จ`);
+}
+
+/* ── CSV export ────────────────────────────────────────────────────────────── */
+function toCSV(rows) {
+  return rows.map(r => r.map(cell => {
+    const s = String(cell ?? '').replace(/\r?\n/g, ' ');
+    return /[",]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  }).join(',')).join('\r\n');
+}
+function downloadCSV(filename, rows) {
+  if (!rows || rows.length < 2) { alert('ยังไม่มีข้อมูลให้ Export'); return; }
+  // BOM → Excel อ่านภาษาไทยถูก
+  const blob = new Blob(['﻿' + toCSV(rows)], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+}
+function stamp() {
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+}
+
+function exportCompareCSV() {
+  const carrier = carriersData[activeCarrier]?.key || '';
+  const rows = [['ขนส่ง','Order ID','สถานะ','รายละเอียด']];
+  const LABEL = { added:'เพิ่มใหม่', removed:'หายไป', changed:'เปลี่ยนแปลง', same:'เหมือนกัน' };
+  diffResults.forEach(r => {
+    const detail = (r.diffs || []).map(d => `${d.label||d.sku||''}: ${d.old??''}→${d.new??''}`).join(' | ');
+    rows.push([carrier, r.orderId, LABEL[r.status] || r.status, detail]);
+  });
+  downloadCSV(`compare-${carrier || 'order'}-${stamp()}.csv`, rows);
+}
+function exportStockCSV() {
+  const rows = [['SKU','ชื่อสินค้า','ต้องใช้','คลัง QA','คลัง NEW WH','รวมสต๊อก','สถานะ']];
+  stockResults.forEach(s => rows.push([s.sku, s.name, s.need, s.qa, s.newwh, s.total, s.status]));
+  downloadCSV(`stock-${stamp()}.csv`, rows);
+}
+function exportCustomerCSV() {
+  const rows = [['ขนส่ง','Order ID','สถานะ','ฟิลด์ที่ต่าง','ค่าเดิม (Logis)','ค่าใหม่ (CRM)']];
+  const LABEL = { added:'เพิ่มใหม่', removed:'หายไป', changed:'เปลี่ยนแปลง', same:'เหมือนกัน' };
+  custResults.forEach(r => {
+    const carrier = r.carrier || carriersData[custActiveCarrier]?.key || '';
+    if (r.diffs && r.diffs.length) {
+      r.diffs.forEach(d => rows.push([carrier, r.orderId, LABEL[r.status], d.label, d.old, d.new]));
+    } else {
+      rows.push([carrier, r.orderId, LABEL[r.status] || r.status, '', '', '']);
+    }
+  });
+  downloadCSV(`customer-${stamp()}.csv`, rows);
+}
+
 async function loadStockFromGAS(inputId, directUrl) {
   const url = directUrl || (document.getElementById(inputId)?.value || '').trim();
   if (!url) { alert('กรุณาใส่ Apps Script URL'); return; }
@@ -1485,9 +1582,10 @@ async function loadStockFromGAS(inputId, directUrl) {
   setStockStatus('⏳ กำลังดึงข้อมูล...');
 
   try {
-    // Apps Script ต้อง redirect-follow + no-cors workaround
-    const resp = await fetch(url, { redirect: 'follow' });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status} — ตรวจสอบว่า Deploy แบบ "Anyone" แล้ว`);
+    // Apps Script ต้อง redirect-follow + retry เมื่อ timeout
+    const resp = await fetchWithRetry(url, {
+      onRetry: (n, max) => setStockStatus(`⏳ ไม่สำเร็จ — ลองใหม่ครั้งที่ ${n}/${max}...`),
+    });
 
     const text = await resp.text();
 
@@ -1651,8 +1749,12 @@ async function loadOrderFromGAS() {
   document.getElementById('file-single-name').textContent = '';
 
   try {
-    const resp = await fetch(url, { redirect: 'follow' });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const resp = await fetchWithRetry(url, {
+      onRetry: (n, max) => {
+        document.getElementById('sheet-status').textContent =
+          `⏳ ไม่สำเร็จ — ลองใหม่ครั้งที่ ${n}/${max}...`;
+      },
+    });
     const text = await resp.text();
     let json;
     try { json = JSON.parse(text); } catch(e) { throw new Error('ข้อมูลไม่ใช่ JSON: ' + text.slice(0,120)); }
@@ -1695,8 +1797,13 @@ async function loadOrderFromGAS() {
     renderCarrierTabs();
 
     const totalRows = carriersData.reduce((s, c) => s + c.data2.length, 0);
-    document.getElementById('file-single-name').textContent =
-      `✅ ${carriersData.length} ขนส่ง — รวม ${totalRows} แถว (Sheet Daily CRM)`;
+    lastOrderGasUrl = url;
+    const ts = new Date().toLocaleTimeString('th-TH', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+    document.getElementById('file-single-name').innerHTML =
+      `<div class="stock-ts-bar">
+         <span class="ts-text">✅ ${carriersData.length} ขนส่ง — รวม ${totalRows} แถว &nbsp;·&nbsp; อัปเดต <strong>${ts}</strong></span>
+         <button class="refresh-btn" id="refreshOrderBtn" onclick="refreshOrder()">🔄 รีเฟรช</button>
+       </div>`;
     document.getElementById('sheet-status').textContent = '';
     document.getElementById('card-single').classList.add('has-file');
     document.getElementById('order-card-2').classList.add('has-file');
@@ -1704,9 +1811,35 @@ async function loadOrderFromGAS() {
       carriersData.map(c => `${c.key}: ${c.data2.length} แถว`).join(' | ');
     updateCompareBtn();
 
+    // Auto-run ทุก Tab ทันทีหลังดึงข้อมูล (ไม่ต้องกดเองทีละ Tab)
+    autoRunAll();
+
   } catch(err) {
     document.getElementById('sheet-status').textContent = '❌ ' + err.message;
   }
+}
+
+// รีเฟรชออเดอร์จาก GAS เดิม
+async function refreshOrder() {
+  if (!lastOrderGasUrl) return;
+  const b = document.getElementById('refreshOrderBtn');
+  if (b) { b.textContent = '⏳ กำลังโหลด...'; b.classList.add('spinning'); b.disabled = true; }
+  ['orderGasUrl','orderGasUrl2'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = lastOrderGasUrl;
+  });
+  await loadOrderFromGAS();
+}
+
+/* ── Auto-run: คำนวณทุก Tab ให้เลย ────────────────────────────────────────── */
+function autoRunAll() {
+  const safe = (label, fn) => { try { fn(); } catch (e) { console.warn('autoRun ' + label, e); } };
+  safe('compare',      () => runCompare());
+  safe('customer',     () => runCustomerCompare());
+  safe('dupcheck',     () => runDuplicateCheck());
+  safe('consigncheck', () => runConsignCheck());
+  // สต๊อกต้องมีข้อมูลสต๊อกก่อนถึงจะคำนวณได้
+  if (Object.keys(stockMap || {}).length) safe('stock', () => runStockCheck());
 }
 
 // Apply carrier data to global data1/data2 (used by compare logic)
@@ -2048,33 +2181,38 @@ function renderCustCarrierTabs() {
   const btns = document.getElementById('custCarrierBtns');
   if (!carriersData.length) { wrap.style.display = 'none'; return; }
   wrap.style.display = 'block';
-  btns.innerHTML = carriersData.map((car, i) =>
-    `<button onclick="selectCustCarrier(${i})" id="cctab-${i}"
-      style="padding:4px 14px;border-radius:20px;border:1px solid var(--border);
-             background:${i===custActiveCarrier?'var(--primary)':'var(--surface)'};
-             color:${i===custActiveCarrier?'#fff':'var(--neutral)'};
-             font-size:12px;font-weight:500;cursor:pointer;font-family:var(--sans);
-             margin-right:6px;margin-bottom:4px;transition:all .15s">
-      ${car.key} <span style="opacity:.75;font-size:11px">(${car.data2.length})</span>
-    </button>`
-  ).join('');
+  const btnStyle = (on) =>
+    `padding:4px 14px;border-radius:20px;border:1px solid ${on?'var(--primary)':'var(--border)'};
+     background:${on?'var(--primary)':'var(--surface)'};color:${on?'#fff':'var(--neutral)'};
+     font-size:12px;font-weight:500;cursor:pointer;font-family:var(--sans);
+     margin-right:6px;margin-bottom:4px;transition:all .15s`;
+  const totalRows = carriersData.reduce((s, c) => s + (c.data2?.length || 0), 0);
+  // ปุ่ม "ทั้งหมด" (index -1) + ปุ่มรายขนส่ง
+  btns.innerHTML =
+    `<button onclick="selectCustCarrier(-1)" id="cctab-all" style="${btnStyle(custActiveCarrier === -1)}">
+       ⭐ ทั้งหมด <span style="opacity:.75;font-size:11px">(${totalRows})</span>
+     </button>` +
+    carriersData.map((car, i) =>
+      `<button onclick="selectCustCarrier(${i})" id="cctab-${i}" style="${btnStyle(i === custActiveCarrier)}">
+        ${car.key} <span style="opacity:.75;font-size:11px">(${car.data2.length})</span>
+      </button>`
+    ).join('');
 }
 
 function selectCustCarrier(idx) {
   custActiveCarrier = idx;
   renderCustCarrierTabs();
-  // run compare with selected carrier's data
+  if (idx === -1) { runCustomerCompareAll(); return; }   // ทั้งหมด
   const car = carriersData[idx];
   if (car) runCustomerCompareWith(car.data1, car.data2, car.key);
 }
 
 function runCustomerCompare() {
-  // ถ้ามีข้อมูล multi-carrier → แสดง carrier tabs และเทียบ carrier แรก
+  // ถ้ามีข้อมูล multi-carrier → แสดง carrier tabs และเทียบ "ทั้งหมด" เป็นค่าเริ่มต้น
   if (carriersData.length > 0) {
-    custActiveCarrier = 0;
+    custActiveCarrier = -1;   // -1 = ทั้งหมด
     renderCustCarrierTabs();
-    const car = carriersData[0];
-    runCustomerCompareWith(car.data1, car.data2, car.key);
+    runCustomerCompareAll();
     return;
   }
   // fallback: ใช้ data1/data2 ตรงๆ
@@ -2101,9 +2239,35 @@ function runCustomerCompareWith(d1, d2, carrierName) {
     const diffs = CUST_FIELDS
       .filter(f => normText(r1[f.key]) !== normText(r2[f.key]))
       .map(f => ({ label: f.label, old: r1[f.key]||'', new: r2[f.key]||'' }));
-    custResults.push({ orderId: key, status: diffs.length ? 'changed' : 'same', r1, r2, diffs });
+    custResults.push({ orderId: key, status: diffs.length ? 'changed' : 'same', r1, r2, diffs, carrier: carrierName });
   });
 
+  renderCustomerResults(carrierName ? `ขนส่ง: ${carrierName}` : '');
+}
+
+/** เทียบข้อมูลลูกค้า "ทุกขนส่ง" รวดเดียว */
+function runCustomerCompareAll() {
+  if (!carriersData.length) return;
+  custResults = [];
+  carriersData.forEach(car => {
+    const g1 = {}, g2 = {};
+    (car.data1 || []).forEach(r => { if (!g1[r.orderID]) g1[r.orderID] = r; });
+    (car.data2 || []).forEach(r => { if (!g2[r.orderID]) g2[r.orderID] = r; });
+    new Set([...Object.keys(g1), ...Object.keys(g2)]).forEach(key => {
+      const r1 = g1[key], r2 = g2[key];
+      if (!r1) { custResults.push({ orderId: key, status: 'added',   r1: null, r2, diffs: [], carrier: car.key }); return; }
+      if (!r2) { custResults.push({ orderId: key, status: 'removed', r1, r2: null, diffs: [], carrier: car.key }); return; }
+      const diffs = CUST_FIELDS
+        .filter(f => normText(r1[f.key]) !== normText(r2[f.key]))
+        .map(f => ({ label: f.label, old: r1[f.key]||'', new: r2[f.key]||'' }));
+      custResults.push({ orderId: key, status: diffs.length ? 'changed' : 'same', r1, r2, diffs, carrier: car.key });
+    });
+  });
+  renderCustomerResults(`ทุกขนส่ง (${carriersData.length} ราย)`);
+}
+
+/** สรุป + วาดตารางผลลัพธ์ของ Tab ลูกค้า (ใช้ร่วมกันทั้งแบบรายขนส่งและทั้งหมด) */
+function renderCustomerResults(statusLabel) {
   const pri = { changed:0, added:1, removed:2, same:3 };
   custResults.sort((a,b) => pri[a.status]-pri[b.status] || a.orderId.localeCompare(b.orderId));
 
@@ -2121,8 +2285,7 @@ function runCustomerCompareWith(d1, d2, carrierName) {
 
   document.getElementById('custSummaryStrip').style.display = 'grid';
   document.getElementById('custFilterBar').style.display    = 'flex';
-  document.getElementById('customer-status').textContent    =
-    carrierName ? `ขนส่ง: ${carrierName}` : '';
+  document.getElementById('customer-status').textContent    = statusLabel || '';
   custFilter = 'all';
   document.querySelectorAll('#tab-customer .filter-tab').forEach((t,i) => t.classList.toggle('active', i===0));
   document.getElementById('custSearch').value = '';
