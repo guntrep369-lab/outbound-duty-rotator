@@ -1,0 +1,182 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   WMS Management — shared visual theme for the static modules.
+   Matches the React module (Tailwind: slate + indigo, rounded-2xl cards).
+   Loaded AFTER each page's own <style>, so equal-specificity rules win.
+
+   RULE: only restyle app *chrome* (cards, buttons, tabs, inputs).
+   Never touch printed document/label content — .linner-*, .a4, .dh, .stop,
+   table.it, .pod-tbl keep their exact print geometry.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap');
+
+:root {
+  --wms-bg:#F1F5F9;          /* slate-100  */
+  --wms-surface:#FFFFFF;
+  --wms-surface2:#F8FAFC;    /* slate-50   */
+  --wms-border:#E2E8F0;      /* slate-200  */
+  --wms-border2:#CBD5E1;     /* slate-300  */
+  --wms-primary:#4F46E5;     /* indigo-600 */
+  --wms-primary-dark:#4338CA;/* indigo-700 */
+  --wms-primary-light:#EEF2FF;
+  --wms-text:#1E293B;        /* slate-800  */
+  --wms-muted:#64748B;       /* slate-500  */
+  --wms-faint:#94A3B8;       /* slate-400  */
+  --wms-success:#059669;
+  --wms-danger:#E11D48;
+  --wms-font:'Inter','Noto Sans Thai',system-ui,sans-serif;
+  --wms-radius:16px;
+  --wms-radius-sm:10px;
+  --wms-shadow:0 1px 2px rgba(15,23,42,.04),0 1px 3px rgba(15,23,42,.06);
+}
+
+body {
+  font-family: var(--wms-font);
+  background: var(--wms-bg);
+  color: var(--wms-text);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Module header (icon tile + title + sub-nav) ─────────────────────────── */
+.mod-head { background:var(--wms-surface); border-bottom:1px solid var(--wms-border); padding:14px 20px 0; font-family:var(--wms-font); }
+.mod-title .ic { width:38px; height:38px; border-radius:12px; background:var(--wms-primary-light); color:var(--wms-primary); font-size:19px; }
+.mod-title h2 { font-size:16px; font-weight:700; color:var(--wms-text); }
+.mod-title p  { font-size:12px; color:var(--wms-muted); }
+.mod-subnav   { margin-top:10px; gap:2px; }
+.mod-tab      { padding:10px 14px; font-size:14px; font-weight:500; color:var(--wms-muted); border-bottom:2px solid transparent; font-family:var(--wms-font); }
+.mod-tab:hover{ color:var(--wms-text); }
+.mod-tab.active { color:var(--wms-primary-dark); border-bottom-color:var(--wms-primary); }
+
+/* ── Content padding for the static tools ───────────────────────────────── */
+.wms-main > .main,
+.wms-main > .app,
+.wms-main > .tab-pane > .main { max-width:1152px; margin:0 auto; width:100%; }
+
+/* ═══════════════ MODULE: เทียบ Order (order-compare) ═══════════════
+   Scoped with body[data-wms-module] so the two modules' generic class
+   names (.btn, .tabs, .upload-*) can never clobber each other.        */
+:root {
+  --bg:var(--wms-bg); --surface:var(--wms-surface); --surface2:var(--wms-surface2);
+  --border:var(--wms-border);
+  --primary:var(--wms-primary); --primary-light:var(--wms-primary-light);
+  --neutral:#334155; --muted:var(--wms-muted); --text:var(--wms-text);
+  --sans:var(--wms-font);
+}
+/* … then refine the pieces that had baked-in geometry. */
+
+body[data-wms-module="order"] header { background:var(--wms-surface); border-bottom:1px solid var(--wms-border); padding:14px 20px 12px; }
+body[data-wms-module="order"] header h1 { font-size:16px; font-weight:700; color:var(--wms-text); }
+body[data-wms-module="order"] header .sub { font-size:12px; color:var(--wms-muted); margin-top:2px; }
+body[data-wms-module="order"] .tabs { padding:0 20px; border-bottom:1px solid var(--wms-border); }
+body[data-wms-module="order"] .tab-btn { padding:10px 14px; font-weight:500; border-radius:0; }
+body[data-wms-module="order"] .tab-btn.active { color:var(--wms-primary-dark); border-bottom-color:var(--wms-primary); }
+body[data-wms-module="order"] .main { padding:20px; }
+body[data-wms-module="order"] .upload-card,
+body[data-wms-module="order"] .stock-connect-card,
+body[data-wms-module="order"] .table-wrap,
+body[data-wms-module="order"] .summary-strip > div,
+body[data-wms-module="order"] .dup-section,
+body[data-wms-module="order"] .stock-panel,
+body[data-wms-module="order"] .card { border-radius:var(--wms-radius); }
+body[data-wms-module="order"] .upload-card { border:1.5px dashed var(--wms-border2); box-shadow:var(--wms-shadow); }
+body[data-wms-module="order"] .upload-card:hover, body[data-wms-module="order"] .upload-card.has-file { border-color:var(--wms-primary); }
+body[data-wms-module="order"] .table-wrap, body[data-wms-module="order"] .dup-section, body[data-wms-module="order"] .stock-panel { border:1px solid var(--wms-border); box-shadow:var(--wms-shadow); }
+body[data-wms-module="order"] .btn { border-radius:var(--wms-radius-sm); font-weight:500; padding:8px 14px; }
+body[data-wms-module="order"] .btn-primary { background:var(--wms-primary); }
+body[data-wms-module="order"] .btn-primary:hover:not(:disabled) { background:var(--wms-primary-dark); }
+body[data-wms-module="order"] .btn-secondary { background:var(--wms-surface); border:1px solid var(--wms-border2); color:#334155; }
+body[data-wms-module="order"] .btn-secondary:hover { background:var(--wms-surface2); }
+body[data-wms-module="order"] .filter-bar { background:var(--wms-surface); border:1px solid var(--wms-border); border-radius:var(--wms-radius); padding:8px 10px; box-shadow:var(--wms-shadow); }
+body[data-wms-module="order"] .filter-tab { border-radius:999px; font-weight:500; }
+body[data-wms-module="order"] .filter-tab.active { background:var(--wms-primary); color:#fff; }
+body[data-wms-module="order"] .export-btn { border-radius:var(--wms-radius-sm); border:1px solid var(--wms-border2); }
+body[data-wms-module="order"] .empty-state { border-radius:var(--wms-radius); }
+body[data-wms-module="order"] .summary-strip > div { border:1px solid var(--wms-border); box-shadow:var(--wms-shadow); }
+
+/* ═══════════════ MODULE: ทำใบงานขนส่ง (transport-docs) ═══════════════ */
+
+/* Shared: page shell + cards */
+body[data-wms-module="transport"] .app { max-width:1152px; padding:20px; }
+
+/* Tool tabs (ที่นอน / ของแถม) → segmented control like the React sub-tabs */
+body[data-wms-module="transport"] .tabs:has(.tab) { display:inline-flex; gap:2px; background:#E2E8F0; padding:3px; border-radius:12px; border:0; }
+body[data-wms-module="transport"] .tab { padding:7px 16px; border:0; background:transparent; border-radius:9px;
+       font-family:var(--wms-font); font-size:13px; font-weight:500; color:var(--wms-muted); }
+body[data-wms-module="transport"] .tab:hover:not(.active) { color:var(--wms-text); }
+body[data-wms-module="transport"] .tab.active, body[data-wms-module="transport"] .tab.gtab.active { background:var(--wms-surface); color:var(--wms-primary-dark);
+       border:0; box-shadow:var(--wms-shadow); }
+
+/* Upload zones */
+body[data-wms-module="transport"] .upload-zone, body[data-wms-module="transport"] .drop-zone {
+  background:var(--wms-surface); border:1.5px dashed var(--wms-border2);
+  border-radius:var(--wms-radius); box-shadow:var(--wms-shadow);
+}
+body[data-wms-module="transport"] .upload-zone.drag, body[data-wms-module="transport"] .drop-zone:hover, body[data-wms-module="transport"] .drop-zone.drag {
+  border-color:var(--wms-primary); background:var(--wms-primary-light);
+}
+body[data-wms-module="transport"] .col-tag { background:var(--wms-primary-light); color:var(--wms-primary-dark); border-radius:6px; font-weight:600; }
+body[data-wms-module="transport"] .col-tag.gt { background:#F5F3FF; color:#6D28D9; }
+
+/* Buttons */
+body[data-wms-module="transport"] .btn, body[data-wms-module="transport"] .btn-sm { border-radius:var(--wms-radius-sm); font-family:var(--wms-font); font-weight:500;
+  border:1px solid var(--wms-border2); background:var(--wms-surface); color:#334155; }
+body[data-wms-module="transport"] .btn:hover, body[data-wms-module="transport"] .btn-sm:hover { background:var(--wms-surface2); }
+body[data-wms-module="transport"] .btn-blue, body[data-wms-module="transport"] .btn-purple { background:var(--wms-primary); color:#fff; border-color:var(--wms-primary); }
+body[data-wms-module="transport"] .btn-blue:hover, body[data-wms-module="transport"] .btn-purple:hover { background:var(--wms-primary-dark); border-color:var(--wms-primary-dark); }
+body[data-wms-module="transport"] .btn-green { background:var(--wms-success); color:#fff; border-color:var(--wms-success); }
+body[data-wms-module="transport"] .btn-green:hover { background:#047857; border-color:#047857; }
+body[data-wms-module="transport"] .topbar .btn-p { background:var(--wms-primary); border-color:var(--wms-primary); }
+body[data-wms-module="transport"] .topbar .btn-p:hover { background:var(--wms-primary-dark); }
+
+/* Stat cards */
+body[data-wms-module="transport"] .stats { gap:12px; }
+body[data-wms-module="transport"] .scard { background:var(--wms-surface); border:1px solid var(--wms-border);
+  border-radius:var(--wms-radius); box-shadow:var(--wms-shadow); padding:14px; }
+body[data-wms-module="transport"] .snum { font-weight:700; color:var(--wms-text); }
+body[data-wms-module="transport"] .slbl { color:var(--wms-muted); }
+body[data-wms-module="transport"] .stitle { font-size:14px; font-weight:600; color:var(--wms-text); }
+body[data-wms-module="transport"] .info-note { border-radius:var(--wms-radius-sm); }
+
+/* Label preview cards — outer chrome only; .linner-* stays print-exact */
+body[data-wms-module="transport"] .lcard { border:1px solid var(--wms-border); border-radius:var(--wms-radius); box-shadow:var(--wms-shadow); }
+body[data-wms-module="transport"] .lcard.sel { border-color:var(--wms-primary); box-shadow:0 0 0 2px rgba(79,70,229,.18); }
+body[data-wms-module="transport"] .lcard.sel-g { border-color:#334155; box-shadow:0 0 0 2px rgba(51,65,85,.18); }
+body[data-wms-module="transport"] .sel-bar { background:var(--wms-primary-light); border-bottom:1px solid var(--wms-border); color:var(--wms-primary-dark); }
+body[data-wms-module="transport"] .sel-bar.gbar { background:var(--wms-surface2); color:#334155; }
+
+/* Delivery: upload card, topbar, modals, A4 preview */
+body[data-wms-module="transport"] .up-card { background:var(--wms-surface); border:1px solid var(--wms-border);
+  border-radius:var(--wms-radius); box-shadow:0 4px 16px rgba(15,23,42,.06); }
+body[data-wms-module="transport"] .up-card h1 { font-size:20px; font-weight:700; color:var(--wms-text); }
+body[data-wms-module="transport"] .up-card .sub { color:var(--wms-muted); }
+body[data-wms-module="transport"] .logo-row, body[data-wms-module="transport"] .col-hint { border:1px solid var(--wms-border); border-radius:var(--wms-radius-sm); background:var(--wms-surface2); }
+body[data-wms-module="transport"] .topbar { background:var(--wms-surface); border-bottom:1px solid var(--wms-border); padding:10px 20px; }
+body[data-wms-module="transport"] .topbar button { border-radius:var(--wms-radius-sm); border:1px solid var(--wms-border2); font-family:var(--wms-font); }
+body[data-wms-module="transport"] .doc-wrap { background:#E2E8F0; }
+body[data-wms-module="transport"] .a4 { border-radius:8px; box-shadow:0 2px 12px rgba(15,23,42,.10); }
+body[data-wms-module="transport"] .modal-box { border-radius:var(--wms-radius); }
+body[data-wms-module="transport"] .modal-title { color:var(--wms-text); }
+body[data-wms-module="transport"] .check-row { border:1px solid var(--wms-border); border-radius:var(--wms-radius-sm); }
+body[data-wms-module="transport"] .check-row:hover { background:var(--wms-surface2); }
+body[data-wms-module="transport"] .btn-ok { background:var(--wms-primary); border-radius:var(--wms-radius-sm); }
+body[data-wms-module="transport"] .btn-cancel { border:1px solid var(--wms-border2); border-radius:var(--wms-radius-sm); }
+
+/* ── Keep printed documents on their ORIGINAL font stacks ────────────────
+   The theme restyles app chrome only. Labels and the A4 delivery note must
+   keep the typography they were designed/measured with, or line breaks and
+   page fitting can shift.                                                  */
+body[data-wms-module="transport"] .a4,
+body[data-wms-module="transport"] .a4 * { font-family:'Sarabun',Arial,sans-serif; }
+body[data-wms-module="transport"] .linner-bed,
+body[data-wms-module="transport"] .linner-gift,
+body[data-wms-module="transport"] .linner-bed *,
+body[data-wms-module="transport"] .linner-gift * { font-family:Arial,sans-serif; }
+body[data-wms-module="transport"] .bc { font-family:'Courier New',monospace; }
+
+/* ── Print: theme must not leak into printed documents ──────────────────── */
+@media print {
+  body { background:#fff !important; font-size:inherit; }
+  .a4 { border-radius:0 !important; box-shadow:none !important; }
+  .lcard { border:0 !important; box-shadow:none !important; }
+}
