@@ -21,6 +21,7 @@ import { EMPLOYEE_STATUS, getShift, getType, taskAllowsType } from '../data/mode
 import { WeekPicker } from './ui/WeekPicker.jsx';
 import { ScheduleGrid } from './schedule/ScheduleGrid.jsx';
 import { SurgePlanPanel } from './schedule/SurgePlanPanel.jsx';
+import { DailyReqPanel } from './schedule/DailyReqPanel.jsx';
 import { ShiftBadge } from './ui/Badge.jsx';
 import { Modal } from './ui/Modal.jsx';
 
@@ -109,7 +110,19 @@ function FairnessPanel({ schedule }) {
 
 export function ScheduleGenerator() {
   const app = useApp();
-  const { employees, config, history, plans, shiftRotations, getEmployee, getTask, notify, saveScheduleToHistory, savedWeeks } = app;
+  const {
+    employees,
+    config,
+    history,
+    plans,
+    shiftRotations,
+    reqOverrides,
+    getEmployee,
+    getTask,
+    notify,
+    saveScheduleToHistory,
+    savedWeeks,
+  } = app;
 
   const now = currentWeek();
   const [year, setYear] = useState(now.year);
@@ -135,6 +148,7 @@ export function ScheduleGenerator() {
       history,
       surgePlan: plans[weekKey(year, week)],
       shiftRotations,
+      weekReq: reqOverrides[weekKey(year, week)],
     });
     setSchedule(sched);
     notify('success', `Generated roster for ${sched.weekKey}.`, 2500);
@@ -234,8 +248,9 @@ export function ScheduleGenerator() {
         </p>
       </div>
 
-      {/* Surge plan (แผนกำลังเสริม) for the selected week */}
-      <div className="no-print">
+      {/* Per-week planning: daily head-count + surge plan */}
+      <div className="no-print space-y-3">
+        <DailyReqPanel year={year} week={week} />
         <SurgePlanPanel year={year} week={week} schedule={schedule} />
       </div>
 

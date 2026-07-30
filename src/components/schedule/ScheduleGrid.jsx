@@ -92,7 +92,7 @@ export function ScheduleGrid({ schedule, editable = false, onSlotClick, onAddCli
     if (cell.closed) return <td key={day.key} className="border border-slate-100 bg-rose-50/50" />;
     const res = cell[shiftId];
     const assigned = res?.assignments?.[task.id] || [];
-    const need = taskNeed(task, shiftId);
+    const need = res?.needs?.[task.id]?.total ?? taskNeed(task, shiftId);
     const missing = Math.max(0, need - assigned.length);
     return (
       <td key={day.key} className={`border border-slate-100 p-1.5 align-top ${day.today ? 'bg-indigo-50/40' : ''}`}>
@@ -218,8 +218,14 @@ export function ScheduleGrid({ schedule, editable = false, onSlotClick, onAddCli
         </thead>
         <tbody>
           {SHIFT_LIST.map((shift) => {
-            const tasks = config.tasks.filter((t) => t.active && taskNeed(t, shift.id) > 0);
-            const needPerDay = tasks.reduce((s, t) => s + taskNeed(t, shift.id), 0);
+            // Need for one task on one day (per-week overrides already resolved
+            // into the schedule when it was generated).
+            const dayNeed = (day, t) => day.cell?.[shift.id]?.needs?.[t.id]?.total ?? taskNeed(t, shift.id);
+            // Show a row for any task needed on at least one day this week.
+            const tasks = config.tasks.filter(
+              (t) => t.active && (taskNeed(t, shift.id) > 0 || days.some((d) => d.working && dayNeed(d, t) > 0))
+            );
+            const needOnDay = (day) => tasks.reduce((s, t) => s + dayNeed(day, t), 0);
             return (
               <React.Fragment key={shift.id}>
                 <tr>
@@ -230,7 +236,16 @@ export function ScheduleGrid({ schedule, editable = false, onSlotClick, onAddCli
                     <span className="inline-flex items-center gap-1.5">
                       <span className={`h-2 w-2 rounded-full ${shift.dot}`} />
                       {shift.label} · {shift.labelTh}
-                      <span className="font-normal opacity-70">· ต้องการ {needPerDay} คน/วัน</span>
+                      <span className="font-normal opacity-70">
+                        · ต้องการ {(() => {
+                          const ns = days.filter((d) => d.working && !d.cell?.closed).map(needOnDay);
+                          if (!ns.length) return 0;
+                          const lo = Math.min(...ns);
+                          const hi = Math.max(...ns);
+                          return lo === hi ? lo : `${lo}–${hi}`;
+                        })()}{' '}
+                        คน/วัน
+                      </span>
                     </span>
                   </td>
                 </tr>
@@ -283,16 +298,17 @@ export function ScheduleGrid({ schedule, editable = false, onSlotClick, onAddCli
                     if (!d.working || d.cell?.closed)
                       return <td key={d.key} className="border border-slate-100 bg-slate-50 text-center text-slate-300">—</td>;
                     const got = headcount(d.cell, shift.id);
-                    const enough = got >= needPerDay;
+                    const need = needOnDay(d);
+                    const enough = got >= need;
                     return (
                       <td
                         key={d.key}
                         className={`border border-slate-200 px-1 py-1 text-center text-xs font-bold ${
                           enough ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
                         }`}
-                        title={`จัดได้ ${got} / ต้องการ ${needPerDay}`}
+                        title={`จัดได้ ${got} / ต้องการ ${need}`}
                       >
-                        {got}/{needPerDay}
+                        {got}/{need}
                       </td>
                     );
                   })}

@@ -46,6 +46,7 @@ export function AppProvider({ children }) {
   const [history, setHistory] = useState([]);
   const [plans, setPlans] = useState({}); // surge plan keyed by weekKey
   const [shiftRotations, setShiftRotations] = useState([]); // date-based shift rotation rounds
+  const [reqOverrides, setReqOverrides] = useState({}); // per-week, per-day head-count overrides
   const [settings, setSettings] = useState(loadSettings());
   const [source, setSource] = useState('local'); // 'github' | 'local'
   const [online, setOnline] = useState(false);
@@ -78,6 +79,7 @@ export function AppProvider({ children }) {
       setHistory(res.history);
       setPlans(res.plans || {});
       setShiftRotations(res.shiftRotations || []);
+      setReqOverrides(res.reqOverrides || {});
       setSource(res.source);
       setOnline(res.online);
       setSettings(loadSettings());
@@ -312,6 +314,52 @@ export function AppProvider({ children }) {
     [plans, persist]
   );
 
+  /* ------------- per-week / per-day requirement overrides ---------------- */
+  // reqOverrides = { [weekKey]: { [taskId]: { morning: { [iso]: {inhouse,outsource} }, afternoon: {…} } } }
+  const setReqOverride = useCallback(
+    (weekKey, taskId, shift, iso, patch) => {
+      const week = reqOverrides[weekKey] || {};
+      const task = week[taskId] || {};
+      const byShift = task[shift] || {};
+      const nextCell = { ...(byShift[iso] || {}), ...patch };
+      // Drop blank keys so they fall back to the base requirement.
+      for (const k of ['inhouse', 'outsource']) {
+        if (nextCell[k] == null || nextCell[k] === '') delete nextCell[k];
+      }
+      const nextByShift = { ...byShift };
+      if (Object.keys(nextCell).length) nextByShift[iso] = nextCell;
+      else delete nextByShift[iso];
+
+      const nextTask = { ...task };
+      if (Object.keys(nextByShift).length) nextTask[shift] = nextByShift;
+      else delete nextTask[shift];
+
+      const nextWeek = { ...week };
+      if (Object.keys(nextTask).length) nextWeek[taskId] = nextTask;
+      else delete nextWeek[taskId];
+
+      const next = { ...reqOverrides };
+      if (Object.keys(nextWeek).length) next[weekKey] = nextWeek;
+      else delete next[weekKey];
+
+      setReqOverrides(next);
+      persist('reqOverrides', next, `chore(req): ${weekKey} ${taskId} ${shift} d${iso}`);
+    },
+    [reqOverrides, persist]
+  );
+
+  /** Replace (or clear) a whole week's overrides in one write — copy / clear. */
+  const setReqOverrideWeek = useCallback(
+    (weekKey, weekObj) => {
+      const next = { ...reqOverrides };
+      if (weekObj && Object.keys(weekObj).length) next[weekKey] = JSON.parse(JSON.stringify(weekObj));
+      else delete next[weekKey];
+      setReqOverrides(next);
+      persist('reqOverrides', next, `chore(req): set week ${weekKey}`);
+    },
+    [reqOverrides, persist]
+  );
+
   /* ---------------- date-based shift rotation rounds (สลับกะ) ------------ */
   // shiftRotations = [{ id, effectiveFrom:'YYYY-MM-DD', shifts:{ [empId]: shift } }]
   const commitRotations = useCallback(
@@ -416,6 +464,7 @@ export function AppProvider({ children }) {
     history,
     plans,
     shiftRotations,
+    reqOverrides,
     settings,
     source,
     online,
@@ -455,6 +504,8 @@ export function AppProvider({ children }) {
     addShiftRound,
     updateShiftRound,
     removeShiftRound,
+    setReqOverride,
+    setReqOverrideWeek,
     saveScheduleToHistory,
     deleteWeekFromHistory,
     clearHistory,

@@ -17,8 +17,8 @@ import {
   EXTRA_ID,
   STATUS_LIST,
   taskAllowsType,
-  taskNeed,
-  taskNeedByType,
+  resolveTaskReq,
+  reqTotal,
   isAvailableOn,
   unavailabilityOn,
   effectiveShiftOn,
@@ -91,9 +91,11 @@ function assignShiftDay({
   genDuty,
   extraRules,
   surgeCap,
+  weekReq,
   seed,
 }) {
   const assignments = {}; // dutyId -> [empId]
+  const needs = {}; // dutyId -> { inhouse, outsource, total } resolved for THIS day
   const understaffed = []; // { dutyId, needed, got }
   const assignedToday = new Set();
   let extraAssigned = 0; // how many outsource เสริม placed today (for the surge cap)
@@ -108,7 +110,15 @@ function assignShiftDay({
   // Duties needing people on this shift. Fill TYPE-RESTRICTED tasks first so
   // their scarce allowed-type staff aren't used up by open tasks. Within each
   // group, rotate the order by day so the "first pick" rotates fairly.
-  const active = tasks.filter((t) => t.active && taskNeed(t, shift) > 0);
+  // Requirement for THIS calendar day (week overrides beat the base config).
+  const needOf = (t) => {
+    if (!needs[t.id]) {
+      const r = resolveTaskReq(t, shift, iso, weekReq);
+      needs[t.id] = { ...r, total: reqTotal(r) };
+    }
+    return needs[t.id];
+  };
+  const active = tasks.filter((t) => t.active && needOf(t).total > 0);
   const rotate = (arr) => (arr.length ? arr.map((_, i) => arr[(i + dayIndex) % arr.length]) : arr);
   const restricted = active.filter((t) => Array.isArray(t.allowedTypes) && t.allowedTypes.length > 0);
   const openTasks = active.filter((t) => !(Array.isArray(t.allowedTypes) && t.allowedTypes.length > 0));
@@ -149,8 +159,9 @@ function assignShiftDay({
   // ── Base fill: hard type quotas (inhouse + outsource ประจำ) ──────────────
   for (const duty of rotated) {
     const chosen = [];
+    const dutyNeed = needOf(duty);
     for (const bt of [EMPLOYEE_TYPES.INHOUSE, EMPLOYEE_TYPES.OUTSOURCE_REGULAR]) {
-      const bneed = taskNeedByType(duty, shift, bt);
+      const bneed = bt === EMPLOYEE_TYPES.INHOUSE ? dutyNeed.inhouse : dutyNeed.outsource;
       for (let slot = 0; slot < bneed; slot++) {
         const pool = present.filter(
           (e) =>
@@ -176,7 +187,7 @@ function assignShiftDay({
   for (const duty of rotated) {
     if (!underCap()) break;
     if (!taskAllowsType(duty, EMPLOYEE_TYPES.OUTSOURCE_EXTRA)) continue;
-    const need = taskNeed(duty, shift);
+    const need = needOf(duty).total;
     while (assignments[duty.id].length < need && underCap()) {
       const pool = present.filter(
         (e) =>
@@ -198,7 +209,7 @@ function assignShiftDay({
     for (const duty of rotated) {
       if (extraAssigned >= surgeCap) break;
       if (!taskAllowsType(duty, EMPLOYEE_TYPES.OUTSOURCE_EXTRA)) continue;
-      const need = taskNeed(duty, shift);
+      const need = needOf(duty).total;
       while (assignments[duty.id].length < need && extraAssigned < surgeCap) {
         assignments[duty.id].push(EXTRA_ID);
         extraAssigned += 1;
@@ -208,7 +219,7 @@ function assignShiftDay({
 
   // Understaffed = slots still short of the total requirement.
   for (const duty of rotated) {
-    const need = taskNeed(duty, shift);
+    const need = needOf(duty).total;
     const got = (assignments[duty.id] || []).length;
     if (got < need) understaffed.push({ dutyId: duty.id, needed: need, got });
   }
@@ -216,7 +227,9 @@ function assignShiftDay({
   // Whoever is present but not placed today rests (standby).
   const standby = present.filter((e) => !assignedToday.has(e.id)).map((e) => e.id);
 
-  return { assignments, standby, understaffed, unavailable };
+  // `needs` is persisted so the UI (and manual edits) know this day's targets
+  // without having to re-resolve overrides.
+  return { assignments, needs, standby, understaffed, unavailable };
 }
 
 /**
@@ -229,7 +242,7 @@ function assignShiftDay({
  * @param {import('../data/models.js').HistoryRecord[]} args.history
  * @returns {Object} schedule
  */
-export function generateSchedule({ year, week, employees, config, history, surgePlan, shiftRotations }) {
+export function generateSchedule({ year, week, employees, config, history, surgePlan, shiftRotations, weekReq }) {
   const wk = makeWeekKey(year, week);
   const useSurgePlan = !!config.useSurgePlan && !!surgePlan;
   const lookbackWeeks = config.lookbackWeeks || 4;
@@ -284,6 +297,7 @@ export function generateSchedule({ year, week, employees, config, history, surge
         genDuty,
         extraRules: config.extraRules,
         surgeCap: useSurgePlan ? (surgePlan?.[shift]?.[iso] ?? null) : null,
+        weekReq,
         seed: `${wk}:${wd.key}`,
       });
       dayCell[shift] = res;

@@ -409,6 +409,38 @@ export function makeTask(partial = {}) {
   };
 }
 
+/**
+ * Resolve a task's requirement for ONE specific day, applying the week's
+ * per-day overrides (used for promo weeks where each day differs).
+ * @param {Task} task
+ * @param {'morning'|'afternoon'} shift
+ * @param {number} iso   ISO weekday 1-7
+ * @param {Object} [weekReq]  { [taskId]: { morning: { [iso]: {inhouse,outsource} }, afternoon: {…} } }
+ * @returns {ShiftReq}
+ */
+export function resolveTaskReq(task, shift, iso, weekReq) {
+  const base = task?.req?.[shift] || { inhouse: 0, outsource: 0 };
+  const baseIn = Number(base.inhouse) || 0;
+  const baseOut = Number(base.outsource) || 0;
+  const ov = weekReq?.[task?.id]?.[shift]?.[iso];
+  if (!ov) return { inhouse: baseIn, outsource: baseOut };
+  return {
+    inhouse: ov.inhouse == null || ov.inhouse === '' ? baseIn : Math.max(0, Number(ov.inhouse) || 0),
+    outsource: ov.outsource == null || ov.outsource === '' ? baseOut : Math.max(0, Number(ov.outsource) || 0),
+  };
+}
+
+/** Total head-count of a ShiftReq. */
+export function reqTotal(r) {
+  return (Number(r?.inhouse) || 0) + (Number(r?.outsource) || 0);
+}
+
+/** Is there a per-day override for this task/shift/day? */
+export function hasReqOverride(taskId, shift, iso, weekReq) {
+  const ov = weekReq?.[taskId]?.[shift]?.[iso];
+  return !!ov && (ov.inhouse != null || ov.outsource != null);
+}
+
 /** Total core people a task needs on a shift (inhouse + outsource ประจำ). */
 export function taskNeed(task, shift) {
   const r = task?.req?.[shift];

@@ -54,6 +54,17 @@ otherwise sit on standby. Two policy controls refine this:
 gets first priority for that station. Unset = rotate normally. Restricted by `allowedTypes` too
 (you can't pin someone to a task their type isn't allowed to do — they'd be benched instead).
 
+**Task requirements by type**: each task's per-shift requirement is `{ inhouse, outsource }` —
+how many **inhouse** and how many **outsource ประจำ** that duty needs. The engine fills each type's
+quota from its own pool. เสริม are not part of the base requirement; they top up gaps as surge.
+
+**Daily head-count overrides** (ปรับจำนวนคนรายวัน): for a specific week you can override any
+task's requirement **per day** (Schedule tab → "ปรับจำนวนคนรายวัน") — for promo weeks like 7.7 / 8.8
+where each day differs. Blank cells fall back to the base; overridden cells are highlighted. Stored
+per ISO week in `reqOverrides.json`, with copy-from-previous-week and clear-week actions. The
+generator resolves the requirement per calendar day, so a single week can ramp up midweek and drop
+a duty entirely on another day.
+
 **Surge Plan** (แผนกำลังเสริม): a per-week grid (on the Schedule tab) showing, per day and shift,
 the auto-computed inhouse / outsource-ประจำ availability (accounting for day-off & leave) and an
 editable planned เสริม head-count. It's a planning reference; with the **"ใช้แผนนี้คุมจำนวนเสริม"**
@@ -169,7 +180,8 @@ src/
   `fixedDutyId`: a task id to pin the person to, or `null` to rotate.
   `weeklyOffDays`: ISO weekday numbers (Mon=1…Sun=7).
   `leaves`: `[{ id, start, end, type: vacation|sick|personal, note }]`)
-- **`duties.json`** — `{ tasks: [{ id, name, nameTh, color, req:{morning,afternoon}, active, allowedTypes[] }], workingDays, lookbackWeeks, extraRules:{ minDays, maxDays } }`
+- **`duties.json`** — `{ tasks: [{ id, name, nameTh, color, req:{ morning:{inhouse,outsource}, afternoon:{…} }, active, allowedTypes[] }], workingDays, lookbackWeeks, extraRules:{ minDays, maxDays } }`
+- **`reqOverrides.json`** — per-week, per-day requirement overrides: `{ "2026-W31": { "<taskId>": { morning: { "3": { inhouse: 4 } } } } }` (ISO weekday keys; missing values fall back to the base task requirement)
   (`allowedTypes`: empty = any type; `extraRules` applies to `outsource_extra` only)
 - **`history.json`** — array of `{ id, weekKey, year, week, dayKey, date, shift, dutyId, employeeId }`
 - **`plans.json`** — surge plan keyed by ISO week: `{ "2026-W30": { morning: { "1": 5, … }, afternoon: { … } } }` (numbers are planned เสริม head-count per ISO weekday)

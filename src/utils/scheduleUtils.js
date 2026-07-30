@@ -98,7 +98,9 @@ export function refreshDerived(schedule, employees, config) {
         res.understaffed = [];
         for (const task of config.tasks) {
           if (!task.active) continue;
-          const need = taskNeed(task, shift);
+          // Prefer the day's resolved need (honours per-week/day overrides);
+          // fall back to the base config for older saved schedules.
+          const need = res.needs?.[task.id]?.total ?? taskNeed(task, shift);
           if (need <= 0) continue;
           const got = (res.assignments[task.id] || []).length;
           if (got < need) res.understaffed.push({ dutyId: task.id, needed: need, got });

@@ -15,6 +15,7 @@ const KEYS = {
   history: 'odr:history',
   plans: 'odr:plans',
   shiftRotations: 'odr:shiftRotations',
+  reqOverrides: 'odr:reqOverrides',
   sha: (file) => `odr:sha:${file}`,
 };
 
@@ -25,6 +26,7 @@ export const FILES = {
   history: 'history.json',
   plans: 'plans.json',
   shiftRotations: 'shiftRotations.json',
+  reqOverrides: 'reqOverrides.json',
 };
 
 /* ------------------------------- local layer ------------------------------ */
@@ -118,6 +120,7 @@ export async function loadAll() {
   let history = localGet(KEYS.history, []);
   let plans = localGet(KEYS.plans, {});
   let shiftRotations = localGet(KEYS.shiftRotations, []);
+  let reqOverrides = localGet(KEYS.reqOverrides, {});
   const warnings = [];
   let source = 'local';
   let online = false;
@@ -125,12 +128,13 @@ export async function loadAll() {
   const svc = settings.enabled ? buildService(settings) : null;
   if (svc) {
     try {
-      const [e, d, h, p, sp] = await Promise.all([
+      const [e, d, h, p, sp, ro] = await Promise.all([
         svc.getJson(FILES.employees),
         svc.getJson(FILES.duties),
         svc.getJson(FILES.history),
         svc.getJson(FILES.plans),
         svc.getJson(FILES.shiftRotations),
+        svc.getJson(FILES.reqOverrides),
       ]);
       online = true;
       source = 'github';
@@ -170,6 +174,12 @@ export async function loadAll() {
         localSet(KEYS.shiftRotations, shiftRotations);
       }
       localSet(KEYS.sha(FILES.shiftRotations), sp.sha);
+
+      if (ro.data) {
+        reqOverrides = ro.data;
+        localSet(KEYS.reqOverrides, reqOverrides);
+      }
+      localSet(KEYS.sha(FILES.reqOverrides), ro.sha);
     } catch (err) {
       warnings.push(`GitHub load failed — using local data. (${describeGitHubError(err)})`);
       source = 'local';
@@ -184,6 +194,7 @@ export async function loadAll() {
     history: Array.isArray(history) ? history : [],
     plans: plans && typeof plans === 'object' ? plans : {},
     shiftRotations: Array.isArray(shiftRotations) ? shiftRotations : [],
+    reqOverrides: reqOverrides && typeof reqOverrides === 'object' ? reqOverrides : {},
     source,
     online,
     warnings,
