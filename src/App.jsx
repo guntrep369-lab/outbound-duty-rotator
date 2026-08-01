@@ -128,6 +128,26 @@ function SystemSidebar({ active }) {
   );
 }
 
+/** Sticky banner shown when a save was rejected because someone else saved first. */
+function ConflictBanner() {
+  const { conflict, reload, syncing } = useApp();
+  if (!conflict) return null;
+  return (
+    <div className="no-print border-b border-rose-200 bg-rose-50 px-5 py-2.5">
+      <div className="flex flex-wrap items-center gap-3 text-sm text-rose-800">
+        <span className="font-semibold">⚠️ การบันทึกล่าสุดถูกยกเลิก</span>
+        <span className="text-rose-700">
+          มีคนอื่นแก้ <code className="rounded bg-rose-100 px-1">{conflict.file}</code> ก่อนหน้า —
+          ข้อมูลที่เห็นบนจอตอนนี้ <b>ยังไม่ถูกบันทึก</b>
+        </span>
+        <button className="btn-danger !py-1.5 text-xs" onClick={reload} disabled={syncing}>
+          โหลดข้อมูลล่าสุด
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const { loading } = useApp();
   const [tab, setTab] = useState('dashboard');
@@ -138,6 +158,7 @@ export default function App() {
 
       {/* Module column */}
       <div className="flex min-w-0 flex-1 flex-col">
+      <ConflictBanner />
       {/* Module header + sub-nav */}
       <header className="no-print border-b border-slate-200 bg-white/90 backdrop-blur">
         <div className="w-full px-5 pt-3">

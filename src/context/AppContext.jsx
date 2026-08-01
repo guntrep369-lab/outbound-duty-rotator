@@ -51,6 +51,7 @@ export function AppProvider({ children }) {
   const [source, setSource] = useState('local'); // 'github' | 'local'
   const [online, setOnline] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [conflict, setConflict] = useState(null); // set when a save was rejected
   const [toasts, setToasts] = useState([]);
   const mounted = useRef(false);
 
@@ -83,6 +84,7 @@ export function AppProvider({ children }) {
       setSource(res.source);
       setOnline(res.online);
       setSettings(loadSettings());
+      setConflict(null); // we are back in sync with remote
       res.warnings.forEach((w) => notify('warning', w, 6000));
       if (res.source === 'github') notify('success', 'Loaded data from GitHub.', 3000);
     } catch (err) {
@@ -107,11 +109,18 @@ export function AppProvider({ children }) {
         const { savedTo } = await saveCollection(name, data, message);
         if (savedTo === 'github') setOnline(true);
       } catch (err) {
-        notify(
-          'error',
-          `Saved locally, but GitHub sync failed: ${describeGitHubError(err)}`,
-          7000
-        );
+        if (err.code === 'CONFLICT') {
+          // Someone else saved first. Our change was NOT written, so make that
+          // impossible to miss — a sticky toast, and flag the app as stale.
+          setConflict({ file: err.file, at: Date.now() });
+          notify(
+            'error',
+            `⚠️ ${err.message} — กด “โหลดข้อมูลล่าสุด” แล้วทำรายการใหม่อีกครั้ง`,
+            0 // sticky: must be dismissed deliberately
+          );
+        } else {
+          notify('error', `บันทึกลงเครื่องแล้ว แต่ sync ขึ้น GitHub ไม่สำเร็จ: ${describeGitHubError(err)}`, 7000);
+        }
         setOnline(false);
       } finally {
         setSyncing(false);
@@ -469,6 +478,7 @@ export function AppProvider({ children }) {
     source,
     online,
     syncing,
+    conflict,
     configured: isConfigured(settings),
     toasts,
     // derived

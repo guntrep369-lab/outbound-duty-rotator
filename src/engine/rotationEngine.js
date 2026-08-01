@@ -133,8 +133,23 @@ function assignShiftDay({
   const workloadCost = (empId) => (genWorkload.get(empId) || 0) * 100 + (hist.workload.get(empId) || 0);
 
   const maxDays = extraRules?.maxDays == null ? null : Math.max(0, Number(extraRules.maxDays) || 0);
+  const minDays = Math.max(0, Number(extraRules?.minDays) || 0);
   const isExtra = (emp) => emp.type === EMPLOYEE_TYPES.OUTSOURCE_EXTRA;
   const daysWorked = (empId) => genWorkload.get(empId) || 0;
+
+  /**
+   * An outsource-เสริม who can no longer reach their weekly minimum unless they
+   * work today (days still needed >= working days left, incl. today). These are
+   * placed BEFORE the core quota, so the guarantee holds even on days when
+   * inhouse + outsource-ประจำ could have covered every slot on their own.
+   */
+  const remainingDays = totalDays - dayIndex;
+  const mustWorkToday = (e) => {
+    if (!isExtra(e) || minDays <= 0) return false;
+    if (maxDays != null && daysWorked(e.id) >= maxDays) return false;
+    const needMore = minDays - daysWorked(e.id);
+    return needMore > 0 && needMore >= remainingDays;
+  };
 
   // Pick the best candidate from a pool for a duty slot (pin → recency → workload).
   const sortPool = (pool, dutyId, slot) =>
@@ -156,13 +171,32 @@ function assignShiftDay({
     gd.set(dutyId, (gd.get(dutyId) || 0) + 1);
   };
 
+  for (const duty of rotated) assignments[duty.id] = [];
+  const roomLeft = (duty) => needOf(duty).total - assignments[duty.id].length;
+
+  // ── Guaranteed minimum for เสริม (runs first — may take a slot the core
+  //    staff would otherwise have filled; that is what "ขั้นต่ำ" means). ─────
+  for (const e of present.filter(mustWorkToday)) {
+    if (surgeCap != null && extraAssigned >= surgeCap) break;
+    const duty = rotated.find(
+      (d) =>
+        roomLeft(d) > 0 &&
+        taskAllowsType(d, EMPLOYEE_TYPES.OUTSOURCE_EXTRA) &&
+        (!e.fixedDutyId || e.fixedDutyId === d.id)
+    );
+    if (!duty) break; // no room anywhere today
+    assignments[duty.id].push(e.id);
+    place(e.id, duty.id);
+    extraAssigned += 1;
+  }
+
   // ── Base fill: hard type quotas (inhouse + outsource ประจำ) ──────────────
   for (const duty of rotated) {
-    const chosen = [];
     const dutyNeed = needOf(duty);
     for (const bt of [EMPLOYEE_TYPES.INHOUSE, EMPLOYEE_TYPES.OUTSOURCE_REGULAR]) {
       const bneed = bt === EMPLOYEE_TYPES.INHOUSE ? dutyNeed.inhouse : dutyNeed.outsource;
       for (let slot = 0; slot < bneed; slot++) {
+        if (roomLeft(duty) <= 0) break; // a must-work เสริม already took the slot
         const pool = present.filter(
           (e) =>
             e.type === bt &&
@@ -172,11 +206,10 @@ function assignShiftDay({
         );
         if (pool.length === 0) break;
         sortPool(pool, duty.id, slot);
-        chosen.push(pool[0].id);
+        assignments[duty.id].push(pool[0].id);
         place(pool[0].id, duty.id);
       }
     }
-    assignments[duty.id] = chosen;
   }
 
   // ── เสริม overflow: top up gaps up to taskNeed. Named เสริม first (surge —

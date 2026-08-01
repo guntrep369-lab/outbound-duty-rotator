@@ -729,6 +729,14 @@ td{padding:9px 12px;vertical-align:middle}
 // ══════════════════════════════════════════════════════
 // GLOBAL STATE
 // ══════════════════════════════════════════════════════
+/* Escape sheet/file values before they reach innerHTML. Rows come from an
+   uploaded Excel or a Google Apps Script response, so an unescaped
+   "<img onerror=…>" would execute — and this page shares an origin with the
+   roster module, whose GitHub token lives in localStorage. */
+const esc = v => String(v ?? '')
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
 let data1 = [], data2 = [], data2raw = []; // data2raw = raw rows for stock tab
 let stockMap = {};   // sku -> {sku, description, qa, newwh, total}
 let diffResults = [];
@@ -1186,31 +1194,31 @@ function renderTable() {
     if (r.status === 'changed' && r.diffs.length) {
       changeSummary = r.diffs.map(d => {
         if (d.type === 'gift_added')
-          return `<div style="font-size:12px;"><span class="diff-new">➕ ${d.name}</span> <span class="gift-qty" style="color:var(--added)">×${d.qty}</span></div>`;
+          return `<div style="font-size:12px;"><span class="diff-new">➕ ${esc(d.name)}</span> <span class="gift-qty" style="color:var(--added)">×${d.qty}</span></div>`;
         if (d.type === 'gift_removed')
-          return `<div style="font-size:12px;"><span class="diff-old">➖ ${d.name}</span> <span class="gift-qty" style="color:var(--removed)">×${d.qty}</span></div>`;
+          return `<div style="font-size:12px;"><span class="diff-old">➖ ${esc(d.name)}</span> <span class="gift-qty" style="color:var(--removed)">×${d.qty}</span></div>`;
         if (d.type === 'gift_qty_changed')
-          return `<div style="font-size:12px;">✏️ ${d.name} <span class="diff-old">×${d.oldQty}</span>→<span class="diff-new">×${d.newQty}</span></div>`;
+          return `<div style="font-size:12px;">✏️ ${esc(d.name)} <span class="diff-old">×${d.oldQty}</span>→<span class="diff-new">×${d.newQty}</span></div>`;
         if (d.type === 'product_changed') {
           const parts = [];
-          if (d.old.size !== d.new.size) parts.push(`ขนาด <span class="diff-old">${d.old.size||'—'}</span>→<span class="diff-new">${d.new.size||'—'}</span>`);
+          if (d.old.size !== d.new.size) parts.push(`ขนาด <span class="diff-old">${esc(d.old.size)||'—'}</span>→<span class="diff-new">${esc(d.new.size)||'—'}</span>`);
           if (String(d.old.qty) !== String(d.new.qty)) parts.push(`จำนวน <span class="diff-old">×${d.old.qty}</span>→<span class="diff-new">×${d.new.qty}</span>`);
-          return `<div style="font-size:12px;">✏️ ${d.old.name||d.old.sku}: ${parts.join(' ')}</div>`;
+          return `<div style="font-size:12px;">✏️ ${esc(d.old.name||d.old.sku)}: ${parts.join(' ')}</div>`;
         }
         if (d.type === 'product_added')
-          return `<div style="font-size:12px;"><span class="diff-new">➕ ${d.item.name||d.item.sku}</span></div>`;
+          return `<div style="font-size:12px;"><span class="diff-new">➕ ${esc(d.item.name||d.item.sku)}</span></div>`;
         if (d.type === 'product_removed')
-          return `<div style="font-size:12px;"><span class="diff-old">➖ ${d.item.name||d.item.sku}</span></div>`;
+          return `<div style="font-size:12px;"><span class="diff-old">➖ ${esc(d.item.name||d.item.sku)}</span></div>`;
         return '';
       }).join('');
     } else if (r.status === 'added') {
       const norm = r.norm2;
-      const items = [...(norm.products||[]).map(p=>`${p.name}${p.size?` (${p.size})`:''}`),
+      const items = [...(norm.products||[]).map(p=>`${p.name}${p.size?` (${esc(p.size)})`:''}`),
                      ...(norm.gifts||[]).map(g=>g.name)];
       changeSummary = items.map(n=>`<div style="font-size:12px; color:var(--added)">➕ ${n}</div>`).join('');
     } else if (r.status === 'removed') {
       const norm = r.norm1;
-      const items = [...(norm.products||[]).map(p=>`${p.name}${p.size?` (${p.size})`:''}`),
+      const items = [...(norm.products||[]).map(p=>`${p.name}${p.size?` (${esc(p.size)})`:''}`),
                      ...(norm.gifts||[]).map(g=>g.name)];
       changeSummary = items.map(n=>`<div style="font-size:12px; color:var(--removed)">➖ ${n}</div>`).join('');
     } else {
@@ -1229,15 +1237,15 @@ function renderTable() {
 
     html += `
     <tr class="${rowClass[r.status]}">
-      <td><button class="expand-btn" onclick="toggleDetail('${rid}', this)">▶</button></td>
-      <td><span class="order-id">${r.orderId}</span></td>
-      <td class="customer-name">${r.customer || '—'}</td>
-      <td><span style="font-size:12px; color:var(--muted)">${r.sup || '—'}</span></td>
+      <td><button class="expand-btn" onclick="toggleDetail('${esc(rid)}', this)">▶</button></td>
+      <td><span class="order-id">${esc(r.orderId)}</span></td>
+      <td class="customer-name">${esc(r.customer) || '—'}</td>
+      <td><span style="font-size:12px; color:var(--muted)">${esc(r.sup) || '—'}</span></td>
       <td>${changeSummary}</td>
       <td>${stockCell}</td>
       <td><span class="badge ${badgeMap[r.status]}">${statusLabel[r.status]}</span></td>
     </tr>
-    <tr class="detail-row" id="${rid}">
+    <tr class="detail-row" id="${esc(rid)}">
       <td colspan="7" class="detail-cell">
         ${buildDetailHTML(r)}
       </td>
@@ -1254,7 +1262,7 @@ function renderNorm(norm) {
   if (norm.products.length) {
     norm.products.forEach(p => {
       const label = p.name || p.sku || '—';
-      html += `<div style="margin-bottom:6px; font-size:12px;"><strong>${label}</strong>${p.size ? ` (${p.size})` : ''} × ${p.qty ?? '—'}</div>`;
+      html += `<div style="margin-bottom:6px; font-size:12px;"><strong>${label}</strong>${p.size ? ` (${esc(p.size)})` : ''} × ${p.qty ?? '—'}</div>`;
     });
   }
   if (norm.gifts.length) {
@@ -1287,16 +1295,16 @@ function buildDetailHTML(r) {
   const diffLines = r.diffs.map(d => {
     if (d.type === 'product_changed') {
       const fields = [];
-      if (d.old.size !== d.new.size) fields.push(`ขนาด: <span class="diff-old">${d.old.size||'—'}</span> → <span class="diff-new">${d.new.size||'—'}</span>`);
+      if (d.old.size !== d.new.size) fields.push(`ขนาด: <span class="diff-old">${esc(d.old.size)||'—'}</span> → <span class="diff-new">${esc(d.new.size)||'—'}</span>`);
       if (String(d.old.qty) !== String(d.new.qty)) fields.push(`จำนวน: <span class="diff-old">×${d.old.qty}</span> → <span class="diff-new">×${d.new.qty}</span>`);
       const label = d.old.name || d.old.sku;
       return `<div style="margin-bottom:6px; font-size:12px;">✏️ <strong>${label}</strong>: ${fields.join(' | ')}</div>`;
     }
-    if (d.type === 'product_added')    return `<div style="font-size:12px; margin-bottom:4px;"><span class="diff-new">➕ สินค้าใหม่: ${d.item.name||d.item.sku}${d.item.size ? ` (${d.item.size})` : ''} ×${d.item.qty}</span></div>`;
-    if (d.type === 'product_removed')  return `<div style="font-size:12px; margin-bottom:4px;"><span class="diff-old">➖ สินค้าหาย: ${d.item.name||d.item.sku}${d.item.size ? ` (${d.item.size})` : ''} ×${d.item.qty}</span></div>`;
-    if (d.type === 'gift_added')       return `<div class="gift-item"><span><span class="diff-new">➕ ${d.name}</span></span><span class="gift-qty" style="color:var(--added)">×${d.qty}</span></div>`;
-    if (d.type === 'gift_removed')     return `<div class="gift-item"><span><span class="diff-old">➖ ${d.name}</span></span><span class="gift-qty" style="color:var(--removed)">×${d.qty}</span></div>`;
-    if (d.type === 'gift_qty_changed') return `<div class="gift-item"><span>✏️ ${d.name}</span><span class="gift-qty"><span class="diff-old">×${d.oldQty}</span> → <span class="diff-new">×${d.newQty}</span></span></div>`;
+    if (d.type === 'product_added')    return `<div style="font-size:12px; margin-bottom:4px;"><span class="diff-new">➕ สินค้าใหม่: ${esc(d.item.name||d.item.sku)}${d.item.size ? ` (${esc(d.item.size)})` : ''} ×${d.item.qty}</span></div>`;
+    if (d.type === 'product_removed')  return `<div style="font-size:12px; margin-bottom:4px;"><span class="diff-old">➖ สินค้าหาย: ${esc(d.item.name||d.item.sku)}${d.item.size ? ` (${esc(d.item.size)})` : ''} ×${d.item.qty}</span></div>`;
+    if (d.type === 'gift_added')       return `<div class="gift-item"><span><span class="diff-new">➕ ${esc(d.name)}</span></span><span class="gift-qty" style="color:var(--added)">×${d.qty}</span></div>`;
+    if (d.type === 'gift_removed')     return `<div class="gift-item"><span><span class="diff-old">➖ ${esc(d.name)}</span></span><span class="gift-qty" style="color:var(--removed)">×${d.qty}</span></div>`;
+    if (d.type === 'gift_qty_changed') return `<div class="gift-item"><span>✏️ ${esc(d.name)}</span><span class="gift-qty"><span class="diff-old">×${d.oldQty}</span> → <span class="diff-new">×${d.newQty}</span></span></div>`;
     return '';
   }).join('');
 
@@ -1537,8 +1545,8 @@ function renderStockTable() {
 
     const idx = stockResults.indexOf(r);
     html += `<tr class="${rowBg}">
-      <td><span class="order-id">${r.sku}</span></td>
-      <td style="font-size:12px;max-width:280px">${r.name}</td>
+      <td><span class="order-id">${esc(r.sku)}</span></td>
+      <td style="font-size:12px;max-width:280px">${esc(r.name)}</td>
       <td style="text-align:center;font-weight:600">${r.need}</td>
       <td style="text-align:center">${r.qa}</td>
       <td style="text-align:center">${r.newwh}</td>
@@ -1914,7 +1922,7 @@ function applyCarrier(idx) {
   document.getElementById('filterBar').style.display = 'none';
   document.getElementById('tableWrap').innerHTML =
     `<div class="empty-state"><div class="icon">🔄</div>
-     <h3>เลือกขนส่ง: ${carriersData[idx].key}</h3>
+     <h3>เลือกขนส่ง: ${esc(carriersData[idx].key)}</h3>
      <p>${data1.length} แถว (เช้า) | ${data2.length} แถว (เย็น) — กด "เปรียบเทียบ"</p></div>`;
   updateCompareBtn();
 }
@@ -1938,7 +1946,7 @@ function renderCarrierTabs() {
                background:${i===activeCarrier?'var(--primary)':'var(--surface)'};
                color:${i===activeCarrier?'#fff':'var(--neutral)'};
                font-size:12px;font-weight:500;cursor:pointer;font-family:var(--sans);transition:all .15s">
-        ${car.key}
+        ${esc(car.key)}
         <span style="opacity:.75;font-size:11px">(${car.data2.length})</span>
       </button>`).join('');
 }
@@ -2024,7 +2032,7 @@ function showOrderModal(idx) {
   const statusLabel = { ok:'✅ สต๊อกพอ', low:'⚠️ เหลือน้อย', out:'🚫 สต๊อกไม่พอ', na:'— ไม่มีในสต๊อก' };
   document.getElementById('modalTitle').textContent = r.name.length > 60 ? r.name.slice(0,60)+'\u2026' : r.name;
   document.getElementById('modalSubtitle').textContent =
-    `SKU: ${r.sku}  \u00b7  ต้องการ: ${r.need} ชิ้น  \u00b7  สต๊อก: ${r.total}  \u00b7  ${statusLabel[r.status]}`;
+    `SKU: ${esc(r.sku)}  \u00b7  ต้องการ: ${r.need} ชิ้น  \u00b7  สต๊อก: ${r.total}  \u00b7  ${statusLabel[r.status]}`;
   const list = r.orderList || [];
   document.getElementById('modalOrderList').innerHTML = !list.length
     ? '<p style="color:var(--muted);font-size:13px;padding:12px 0">ไม่พบข้อมูล Order</p>'
@@ -2191,7 +2199,7 @@ function renderDupPanel(dups) {
   return dups.map(d => `
     <div class="dup-section" style="margin-bottom:10px">
       <div class="dup-section-header">
-        <span class="order-id" style="color:inherit">${d.orderId}</span>
+        <span class="order-id" style="color:inherit">${esc(d.orderId)}</span>
         <span class="dup-count">${d.customers.length} ลูกค้า</span>
       </div>
       <div style="padding:8px 14px">
@@ -2202,9 +2210,9 @@ function renderDupPanel(dups) {
           <div style="display:grid;grid-template-columns:1fr 1fr 110px;gap:8px;
                       padding:6px 0;font-size:12px;border-top:1px dashed var(--border);
                       background:${i % 2 === 0 ? 'transparent' : 'var(--surface2)'}">
-            <span style="font-weight:500">${cust.customer}</span>
-            <span style="color:var(--neutral)">${cust.address || '—'}</span>
-            <span style="color:var(--muted)">${cust.phone1 || '—'}</span>
+            <span style="font-weight:500">${esc(cust.customer)}</span>
+            <span style="color:var(--neutral)">${esc(cust.address) || '—'}</span>
+            <span style="color:var(--muted)">${esc(cust.phone1) || '—'}</span>
           </div>`).join('')}
       </div>
     </div>`).join('');
@@ -2253,7 +2261,7 @@ function renderCustCarrierTabs() {
      </button>` +
     carriersData.map((car, i) =>
       `<button onclick="selectCustCarrier(${i})" id="cctab-${i}" style="${btnStyle(i === custActiveCarrier)}">
-        ${car.key} <span style="opacity:.75;font-size:11px">(${car.data2.length})</span>
+        ${esc(car.key)} <span style="opacity:.75;font-size:11px">(${car.data2.length})</span>
       </button>`
     ).join('');
 }
@@ -2395,23 +2403,23 @@ function renderCustomerTable() {
     let changeSummary = '';
     if (r.status === 'changed') {
       changeSummary = r.diffs.map(d =>
-        `<div style="font-size:12px"><strong>${d.label}:</strong>
-         <span class="diff-old">${d.old || '(ว่าง)'}</span>
-         → <span class="diff-new">${d.new || '(ว่าง)'}</span></div>`
+        `<div style="font-size:12px"><strong>${esc(d.label)}:</strong>
+         <span class="diff-old">${esc(d.old) || '(ว่าง)'}</span>
+         → <span class="diff-new">${esc(d.new) || '(ว่าง)'}</span></div>`
       ).join('');
     } else if (r.status === 'same') {
       changeSummary = '<span style="color:var(--muted);font-size:12px">ไม่มีการเปลี่ยนแปลง</span>';
     }
 
     html += `<tr class="${rowClass[r.status]}">
-      <td><button class="expand-btn" onclick="toggleDetail('${rid}',this)">▶</button></td>
-      <td><span class="order-id">${r.orderId}</span></td>
-      <td style="font-size:12px;color:var(--muted)">${sup}</td>
-      <td style="font-weight:500">${custName}</td>
+      <td><button class="expand-btn" onclick="toggleDetail('${esc(rid)}',this)">▶</button></td>
+      <td><span class="order-id">${esc(r.orderId)}</span></td>
+      <td style="font-size:12px;color:var(--muted)">${esc(sup)}</td>
+      <td style="font-weight:500">${esc(custName)}</td>
       <td>${changeSummary}</td>
       <td><span class="badge ${badgeMap[r.status]}">${statusLabel[r.status]}</span></td>
     </tr>
-    <tr class="detail-row" id="${rid}">
+    <tr class="detail-row" id="${esc(rid)}">
       <td colspan="6" class="detail-cell">${buildCustDetail(r)}</td>
     </tr>`;
   });
@@ -2445,7 +2453,7 @@ function renderCustCard(row, title, color) {
     ${CUST_FIELDS.map(f => `
       <div style="display:grid;grid-template-columns:90px 1fr;gap:4px;padding:4px 0;border-bottom:1px dashed var(--border);font-size:12px">
         <span style="color:var(--muted);font-weight:600">${f.label}</span>
-        <span>${row[f.key] || '<span style="color:var(--muted)">—</span>'}</span>
+        <span>${esc(row[f.key]) || '<span style="color:var(--muted)">—</span>'}</span>
       </div>`).join('')}`;
 }
 
@@ -2528,7 +2536,7 @@ function runConsignCheck() {
   const items = dups.map(d => `
     <div class="dup-section" style="margin-bottom:10px">
       <div class="dup-section-header">
-        <span style="font-family:var(--mono);font-size:13px">${d.consign}</span>
+        <span style="font-family:var(--mono);font-size:13px">${esc(d.consign)}</span>
         <span class="dup-count">${d.persons.length} ลูกค้า</span>
         <span style="font-size:11px;opacity:.8;margin-left:4px">${d.orderCount} Order</span>
       </div>
@@ -2542,10 +2550,10 @@ function runConsignCheck() {
           <div style="display:grid;grid-template-columns:130px 1fr 1fr 110px;gap:8px;
                       padding:6px 0;font-size:12px;border-top:1px dashed var(--border);
                       background:${i % 2 === 0 ? 'transparent' : 'var(--surface2)'}">
-            <span class="order-id">${p.orderID}</span>
-            <span style="font-weight:500">${p.customer}</span>
-            <span style="color:var(--neutral)">${p.address || '—'}</span>
-            <span style="color:var(--muted)">${p.phone1 || '—'}</span>
+            <span class="order-id">${esc(p.orderID)}</span>
+            <span style="font-weight:500">${esc(p.customer)}</span>
+            <span style="color:var(--neutral)">${esc(p.address) || '—'}</span>
+            <span style="color:var(--muted)">${esc(p.phone1) || '—'}</span>
           </div>`).join('')}
       </div>
     </div>`).join('');

@@ -202,9 +202,24 @@ export async function loadAll() {
 }
 
 /**
+ * Raised when GitHub already has a newer version of the file than the one this
+ * browser started from. The save is abandoned rather than overwritten, so the
+ * other person's work is never lost.
+ */
+export class SyncConflictError extends Error {
+  constructor(file) {
+    super(`มีผู้ใช้อื่นแก้ไข ${file} ไปแล้ว — ยกเลิกการบันทึกครั้งนี้เพื่อไม่ให้ข้อมูลของอีกฝ่ายหาย`);
+    this.name = 'SyncConflictError';
+    this.code = 'CONFLICT';
+    this.file = file;
+  }
+}
+
+/**
  * Persist one collection. Always writes the local mirror; also writes GitHub
- * when sync is enabled. Retries once on a 409 (stale SHA).
- * @param {'employees'|'duties'|'history'} name
+ * when sync is enabled. Throws {@link SyncConflictError} instead of clobbering
+ * a concurrent edit.
+ * @param {'employees'|'duties'|'history'|'plans'|'shiftRotations'|'reqOverrides'} name
  * @returns {Promise<{savedTo:'github'|'local'}>}
  */
 export async function saveCollection(name, data, message) {
@@ -216,18 +231,27 @@ export async function saveCollection(name, data, message) {
 
   const file = FILES[name];
   const shaKey = KEYS.sha(file);
-  let sha = localGet(shaKey, null);
+  const sha = localGet(shaKey, null);
   try {
     const res = await svc.putJson(file, data, sha, message);
     localSet(shaKey, res.sha);
     return { savedTo: 'github' };
   } catch (err) {
+    // 409 = the file changed on GitHub since we loaded it.
+    // 422 = we had no SHA but the file already exists.
+    // In BOTH cases writing anyway would silently destroy whatever the other
+    // person saved, so we refuse and hand the conflict to the caller.
     if (err.status === 409 || err.status === 422) {
-      // SHA went stale — refetch and retry once.
-      const cur = await svc.getJson(file);
-      const res = await svc.putJson(file, data, cur.sha, message);
-      localSet(shaKey, res.sha);
-      return { savedTo: 'github' };
+      try {
+        const cur = await svc.getJson(file);
+        localSet(shaKey, cur.sha);
+        // Re-point the local mirror at remote so a page refresh shows the
+        // other person's data rather than our rejected edit.
+        if (cur.data != null) localSet(KEYS[name], cur.data);
+      } catch {
+        /* refresh failed — the conflict itself is what the caller must know */
+      }
+      throw new SyncConflictError(file);
     }
     throw err;
   }

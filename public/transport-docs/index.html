@@ -240,6 +240,13 @@ body{font-family:Arial,sans-serif;background:#f4f4f4;color:#111;font-size:14px}
 </div>
 
 <script>
+/* Escape spreadsheet values before they go into innerHTML. Cells come from an
+   uploaded file, so an unescaped "<img onerror=…>" would run as script — and
+   this page shares an origin with the roster module's stored GitHub token. */
+const esc=v=>String(v??'')
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+
 const ci=l=>l.toUpperCase().charCodeAt(0)-65;
 const COL={
   bed:{truck:ci('A'),date:ci('B'),sup:ci('C'),order:ci('D'),brand:ci('E'),size:ci('F'),qty:ci('G'),customer:ci('J'),address:ci('M'),appt:ci('N')},
@@ -329,26 +336,26 @@ function bedHTML(l,i){
     <div class="bed-hdr">
       <div class="bed-hdr-left">
         <div style="font-size:10px;font-weight:700;color:#000;text-transform:uppercase;letter-spacing:1px">Picklist ที่นอน</div>
-        <div class="truck-name">${l.truck||'(ไม่ระบุรถ)'}</div>
+        <div class="truck-name">${esc(l.truck)||'(ไม่ระบุรถ)'}</div>
         <div class="order-appt-row">
-          <span class="order-num">Order: ${l.order}${multi?` <span class="part-badge">${l.pieceNum}/${l.totalQty}</span>`:''}</span>
+          <span class="order-num">Order: ${esc(l.order)}${multi?` <span class="part-badge">${l.pieceNum}/${l.totalQty}</span>`:''}</span>
           <span class="appt-spacer"></span>
-          ${l.appt?`<span class="appt-val">${l.appt}</span>`:''}
+          ${l.appt?`<span class="appt-val">${esc(l.appt)}</span>`:''}
         </div>
-        <div class="lsub">${l.date||''}${l.sup?' | Sup: '+l.sup:''}</div>
+        <div class="lsub">${esc(l.date)}${l.sup?' | Sup: '+esc(l.sup):''}</div>
       </div>
       <div class="bed-hdr-right">
         <span class="type-badge">BED</span>
-        <div class="qr-box" id="qr-bed-${i}" data-qr="${l.order}"></div>
+        <div class="qr-box" id="qr-bed-${i}" data-qr="${esc(l.order)}"></div>
       </div>
     </div>
     <div class="bed-info">
-      ${l.customer?`<div class="lrow"><span class="lk">ลูกค้า</span><span class="lv">${l.customer}</span></div>`:''}
-      ${l.address?`<div class="lrow"><span class="lk">ที่อยู่</span><span class="lv" style="font-size:12px;line-height:1.4">${l.address.substring(0,130)}</span></div>`:''}
+      ${l.customer?`<div class="lrow"><span class="lk">ลูกค้า</span><span class="lv">${esc(l.customer)}</span></div>`:''}
+      ${l.address?`<div class="lrow"><span class="lk">ที่อยู่</span><span class="lv" style="font-size:12px;line-height:1.4">${esc(l.address.substring(0,130))}</span></div>`:''}
     </div>
     <div class="bed-items">
       <div class="items-title">รายการสินค้า</div>
-      <div class="irow"><span class="iname">${l.brand} <span class="isize">${l.size||''}</span></span><span class="iqty">×1</span></div>
+      <div class="irow"><span class="iname">${esc(l.brand)} <span class="isize">${esc(l.size)}</span></span><span class="iqty">×1</span></div>
     </div>
     <div class="lfooter"><div class="bc">||| ${bc} |||</div><div class="lnum">#${String(i+1).padStart(4,'0')}</div></div>
   </div></div>`;
@@ -402,27 +409,27 @@ function giftHTML(l,i){
     <div class="gift-hdr">
       <div class="gift-hdr-left">
         <div style="font-size:10px;font-weight:700;color:#000;text-transform:uppercase;letter-spacing:1px;display:flex;align-items:center;gap:5px">Picklist ของแถม${multi?`<span class="part-badge">${l.part}/${l.total}</span>`:''}</div>
-        <div class="gift-truck">${l.truck||'(ไม่ระบุรถ)'}</div>
+        <div class="gift-truck">${esc(l.truck)||'(ไม่ระบุรถ)'}</div>
         <div class="order-appt-row">
-          <span class="gift-order">Order: ${l.order}</span>
+          <span class="gift-order">Order: ${esc(l.order)}</span>
           <span class="appt-spacer"></span>
-          ${l.appt?`<span class="appt-val">${l.appt}</span>`:''}
+          ${l.appt?`<span class="appt-val">${esc(l.appt)}</span>`:''}
         </div>
-        <div class="gift-sub">${l.date||''}${l.sup?' | Sup: '+l.sup:''}</div>
+        <div class="gift-sub">${esc(l.date)}${l.sup?' | Sup: '+esc(l.sup):''}</div>
       </div>
       <div class="gift-hdr-right">
         <span class="type-badge">GIFT</span>
-        <div class="qr-box" id="qr-gift-${i}" data-qr="${l.order}"></div>
+        <div class="qr-box" id="qr-gift-${i}" data-qr="${esc(l.order)}"></div>
       </div>
     </div>
     <div class="gift-info">
-      ${l.customer?`<div class="lrow"><span class="lk">ลูกค้า</span><span class="lv">${l.customer}</span></div>`:''}
-      ${l.address?`<div class="lrow"><span class="lk">ที่อยู่</span><span class="lv" style="font-size:11px;line-height:1.3">${l.address.substring(0,130)}</span></div>`:''}
+      ${l.customer?`<div class="lrow"><span class="lk">ลูกค้า</span><span class="lv">${esc(l.customer)}</span></div>`:''}
+      ${l.address?`<div class="lrow"><span class="lk">ที่อยู่</span><span class="lv" style="font-size:11px;line-height:1.3">${esc(l.address.substring(0,130))}</span></div>`:''}
     </div>
     <div class="gift-items">
       <div class="items-title">ของแถม${multi?`<span class="part-badge" style="font-size:10px;padding:1px 6px">${l.part}/${l.total}</span>`:''}</div>
       <table style="width:100%;border-collapse:collapse">
-        ${l.items.length>0?l.items.map((it,idx)=>`<tr class="irow-g" style="${idx%2===1?'background:#f0f0f0':''}"><td class="iname-g">${it.name}</td><td style="text-align:right;padding-left:3px"><span class="iqty-g">×${it.qty}</span></td></tr>`).join(''):`<tr><td style="font-size:11px;color:#888;text-align:center;padding:3px">ไม่มีรายการ</td></tr>`}
+        ${l.items.length>0?l.items.map((it,idx)=>`<tr class="irow-g" style="${idx%2===1?'background:#f0f0f0':''}"><td class="iname-g">${esc(it.name)}</td><td style="text-align:right;padding-left:3px"><span class="iqty-g">×${esc(it.qty)}</span></td></tr>`).join(''):`<tr><td style="font-size:11px;color:#888;text-align:center;padding:3px">ไม่มีรายการ</td></tr>`}
       </table>
     </div>
     <div class="lfooter"><div class="bc">||| ${bc} |||</div><div class="lnum">#${String(i+1).padStart(4,'0')}</div></div>
