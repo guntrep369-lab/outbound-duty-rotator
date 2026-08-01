@@ -232,6 +232,93 @@ body[data-wms-module="transport"] .check-row:hover { background:var(--wms-surfac
 body[data-wms-module="transport"] .btn-ok { background:var(--wms-primary); border-radius:var(--wms-radius-sm); }
 body[data-wms-module="transport"] .btn-cancel { border:1px solid var(--wms-border2); border-radius:var(--wms-radius-sm); }
 
+/* ── Upload screen — shared by Picklist Label and ใบนำส่งสินค้า ───────────
+   Both pages open on "give me a file". They used to look unrelated: the
+   picklist's dashed box stretched the full window width, while the delivery
+   card was pinned to 500px and vertically centred in a 100vh block, so each
+   wasted space in the opposite direction. One card shape now serves both.
+   `.upload-zone` (picklist) and `.up-card` (delivery) are the SAME thing —
+   the outer card — even though the drop target differs: the picklist listens
+   on the whole card, delivery on its inner .drop-zone.                      */
+
+body[data-wms-module="transport"] #upload-screen {
+  display: block; min-height: 0; padding: 28px 20px;   /* was flex + 100vh */
+}
+body[data-wms-module="transport"] .upload-zone,
+body[data-wms-module="transport"] .up-card {
+  max-width: 760px; margin: 28px auto 0; width: 100%;
+  background: var(--wms-surface); border: 1px solid var(--wms-border);
+  border-radius: var(--wms-radius); box-shadow: var(--wms-shadow);
+  padding: 28px; text-align: center;
+}
+body[data-wms-module="transport"] #upload-screen .up-card { margin-top: 0; }
+
+/* Card heading */
+body[data-wms-module="transport"] .uz-title,
+body[data-wms-module="transport"] .up-card h1 {
+  font-size: 18px; font-weight: 700; color: var(--wms-text); margin: 0 0 2px;
+}
+body[data-wms-module="transport"] .uz-sub,
+body[data-wms-module="transport"] .up-card .sub {
+  font-size: 13px; color: var(--wms-muted); margin: 0 0 18px;
+}
+
+/* The dashed drop target */
+body[data-wms-module="transport"] .uz-inner,
+body[data-wms-module="transport"] .drop-zone {
+  border: 2px dashed var(--wms-border2); border-radius: var(--wms-radius-sm);
+  background: var(--wms-surface2); padding: 30px 20px; cursor: pointer;
+  transition: border-color .15s, background .15s; margin-bottom: 14px;
+}
+body[data-wms-module="transport"] .upload-zone.drag .uz-inner,
+body[data-wms-module="transport"] .uz-inner:hover,
+body[data-wms-module="transport"] .drop-zone:hover,
+body[data-wms-module="transport"] .drop-zone.drag {
+  border-color: var(--wms-primary); background: var(--wms-primary-light);
+}
+body[data-wms-module="transport"] .uz-icon,
+body[data-wms-module="transport"] .drop-zone .icon { font-size: 34px; margin-bottom: 8px; line-height: 1; }
+body[data-wms-module="transport"] .uz-drop-t,
+body[data-wms-module="transport"] .drop-zone .dt { font-size: 14px; font-weight: 600; color: var(--wms-text); }
+body[data-wms-module="transport"] .uz-drop-s,
+body[data-wms-module="transport"] .drop-zone .ds { font-size: 12px; color: var(--wms-muted); margin-top: 3px; }
+
+/* Reference panels below the drop area — left-aligned, quiet, scannable */
+body[data-wms-module="transport"] .uz-panel,
+body[data-wms-module="transport"] .col-hint,
+body[data-wms-module="transport"] .logo-row {
+  background: var(--wms-surface2); border: 1px solid var(--wms-border);
+  border-radius: var(--wms-radius-sm); padding: 12px 14px;
+  text-align: left; margin-top: 10px;
+}
+body[data-wms-module="transport"] .uz-panel-h,
+body[data-wms-module="transport"] .col-hint p {
+  font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--wms-faint); margin: 0 0 8px;
+}
+body[data-wms-module="transport"] .col-ref,
+body[data-wms-module="transport"] .col-grid { display: flex; flex-wrap: wrap; gap: 5px; }
+body[data-wms-module="transport"] .col-tag,
+body[data-wms-module="transport"] .col-grid span {
+  background: var(--wms-primary-light); color: var(--wms-primary-dark);
+  font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 6px;
+  font-family: var(--wms-font); white-space: nowrap;
+}
+body[data-wms-module="transport"] .col-tag.gt { background: #F5F3FF; color: #6D28D9; }
+
+/* Processing rules — one per line beats a run-on separated by pipes */
+body[data-wms-module="transport"] .uz-rules { list-style: none; margin: 0; padding: 0; }
+body[data-wms-module="transport"] .uz-rules li {
+  font-size: 12px; color: #92400E; padding: 3px 0 3px 18px; position: relative;
+}
+body[data-wms-module="transport"] .uz-rules li::before {
+  content: '•'; position: absolute; left: 6px; color: #D97706; font-weight: 700;
+}
+body[data-wms-module="transport"] .uz-panel.warn { background: #FFFBEB; border-color: #FDE68A; }
+body[data-wms-module="transport"] .uz-panel.warn .uz-panel-h { color: #B45309; }
+
+body[data-wms-module="transport"] .uz-btn { margin-top: 2px; }
+
 /* ── Keep printed documents on their ORIGINAL font stacks ────────────────
    The theme restyles app chrome only. Labels and the A4 delivery note must
    keep the typography they were designed/measured with, or line breaks and

@@ -126,16 +126,22 @@ body{font-family:Arial,sans-serif;background:#f4f4f4;color:#111;font-size:14px}
 <div id="panel-bed" class="panel active">
   <div class="upload-zone" id="drop-bed">
     <input type="file" id="file-bed" accept=".xlsx,.xls,.csv">
-    <div style="font-size:2rem;margin-bottom:6px">📂</div>
-    <strong style="font-size:15px">อัปโหลดไฟล์ Excel — ที่นอน</strong>
-    <div class="col-ref">
-      <span class="col-tag">A ชื่อรถ</span><span class="col-tag">B Date</span><span class="col-tag">C Sup</span>
-      <span class="col-tag">D เลขOrder</span><span class="col-tag">E แบรนด์</span><span class="col-tag">F ขนาด</span>
-      <span class="col-tag">G จำนวน</span><span class="col-tag">J ลูกค้า</span><span class="col-tag">M ที่อยู่</span>
-      <span class="col-tag">N เวลานัด</span>
+    <div class="uz-title">อัปโหลดไฟล์ Excel — ที่นอน</div>
+    <div class="uz-sub">สร้าง Label ขนาด 150 × 100 มม. จากไฟล์ Excel</div>
+    <div class="uz-inner" onclick="document.getElementById('file-bed').click()">
+      <div class="uz-icon">📂</div>
+      <div class="uz-drop-t">ลากไฟล์มาวางที่นี่ หรือคลิกเพื่อเลือก</div>
+      <div class="uz-drop-s">.xlsx / .xls / .csv</div>
     </div>
-    <p style="margin-top:8px;font-size:12px;color:#b45309">⚠️ ไม่มีแบรนด์(E)→ข้าม | Sup=JST→ข้าม | จำนวน&gt;1→แยกใบ</p>
-    <button class="btn btn-blue" style="margin-top:12px" onclick="document.getElementById('file-bed').click()">เลือกไฟล์</button>
+    <button class="btn btn-blue uz-btn" onclick="document.getElementById('file-bed').click()">เลือกไฟล์</button>
+    <div class="uz-panel">
+      <div class="uz-panel-h">คอลัมน์ที่ใช้</div>
+      <div class="col-ref"><span class="col-tag">A ชื่อรถ</span><span class="col-tag">B Date</span><span class="col-tag">C Sup</span><span class="col-tag">D เลขOrder</span><span class="col-tag">E แบรนด์</span><span class="col-tag">F ขนาด</span><span class="col-tag">G จำนวน</span><span class="col-tag">J ลูกค้า</span><span class="col-tag">M ที่อยู่</span><span class="col-tag">N เวลานัด</span></div>
+    </div>
+    <div class="uz-panel warn">
+      <div class="uz-panel-h">⚠️ กติกาการอ่านไฟล์</div>
+      <ul class="uz-rules"><li>ไม่มีแบรนด์ (คอลัมน์ E) → ข้ามแถวนั้น</li><li>Sup = JST → ข้ามแถวนั้น</li><li>จำนวน มากกว่า 1 → แยกเป็นหลายใบ</li></ul>
+    </div>
   </div>
   <div id="main-bed" style="display:none">
     <div class="stats" id="stats-bed"></div>
@@ -155,15 +161,22 @@ body{font-family:Arial,sans-serif;background:#f4f4f4;color:#111;font-size:14px}
 <div id="panel-gift" class="panel">
   <div class="upload-zone" id="drop-gift">
     <input type="file" id="file-gift" accept=".xlsx,.xls,.csv">
-    <div style="font-size:2rem;margin-bottom:6px">🎁</div>
-    <strong style="font-size:15px">อัปโหลดไฟล์ Excel — ของแถม</strong>
-    <div class="col-ref">
-      <span class="col-tag gt">A ชื่อรถ</span><span class="col-tag gt">B Date</span><span class="col-tag gt">C Sup</span>
-      <span class="col-tag gt">D เลขOrder</span><span class="col-tag gt">H ของแถม</span><span class="col-tag gt">I จำนวน</span>
-      <span class="col-tag gt">J ลูกค้า</span><span class="col-tag gt">M ที่อยู่</span><span class="col-tag gt">N เวลานัด</span>
+    <div class="uz-title">อัปโหลดไฟล์ Excel — ของแถม</div>
+    <div class="uz-sub">สร้าง Label ขนาด 150 × 100 มม. จากไฟล์ Excel</div>
+    <div class="uz-inner" onclick="document.getElementById('file-gift').click()">
+      <div class="uz-icon">🎁</div>
+      <div class="uz-drop-t">ลากไฟล์มาวางที่นี่ หรือคลิกเพื่อเลือก</div>
+      <div class="uz-drop-s">.xlsx / .xls / .csv</div>
     </div>
-    <p style="margin-top:8px;font-size:12px;color:#555">🔀 Order เดียวกันรวม | Sup=JST→ข้าม | ไม่มีของแถม→ข้าม | เกิน 7→แยก 1/2,2/2</p>
-    <button class="btn btn-purple" style="margin-top:12px" onclick="document.getElementById('file-gift').click()">เลือกไฟล์</button>
+    <button class="btn btn-purple uz-btn" onclick="document.getElementById('file-gift').click()">เลือกไฟล์</button>
+    <div class="uz-panel">
+      <div class="uz-panel-h">คอลัมน์ที่ใช้</div>
+      <div class="col-ref"><span class="col-tag gt">A ชื่อรถ</span><span class="col-tag gt">B Date</span><span class="col-tag gt">C Sup</span><span class="col-tag gt">D เลขOrder</span><span class="col-tag gt">H ของแถม</span><span class="col-tag gt">I จำนวน</span><span class="col-tag gt">J ลูกค้า</span><span class="col-tag gt">M ที่อยู่</span><span class="col-tag gt">N เวลานัด</span></div>
+    </div>
+    <div class="uz-panel warn">
+      <div class="uz-panel-h">⚠️ กติกาการอ่านไฟล์</div>
+      <ul class="uz-rules"><li>Order เดียวกัน → รวมเป็นใบเดียว</li><li>Sup = JST → ข้ามแถวนั้น</li><li>ไม่มีของแถม → ข้ามแถวนั้น</li><li>เกิน 7 รายการ → แยกเป็น 1/2, 2/2</li></ul>
+    </div>
   </div>
   <div id="main-gift" style="display:none">
     <div class="stats" id="stats-gift"></div>

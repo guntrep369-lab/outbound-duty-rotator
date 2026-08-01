@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { FIELDS, findHeaderRow, score, autoMap, resolveMapping, parseCod } from './carrier-label.js';
+/**
+ * Tests for public/transport-docs/carrier-label.js.
+ *
+ * The module lives under public/ because the static carrier pages load it
+ * directly over HTTP; the test lives here because Vite copies public/ verbatim
+ * into dist/, so a colocated test would ship to the live site and be collected
+ * twice (once from source, once from the build).
+ */
+import { FIELDS, findHeaderRow, score, autoMap, resolveMapping, parseCod } from '../../public/transport-docs/carrier-label.js';
 
 const field = (key) => FIELDS.find((f) => f.key === key);
 

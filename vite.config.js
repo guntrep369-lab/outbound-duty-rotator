@@ -6,4 +6,10 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   base: './',
+  test: {
+    // dist/ holds a verbatim copy of public/, so without this a test placed
+    // there would run twice — and a stale built copy could pass while the
+    // source it was built from is broken.
+    exclude: ['**/node_modules/**', '**/dist/**'],
+  },
 });
