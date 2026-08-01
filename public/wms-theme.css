@@ -53,6 +53,25 @@ body {
 .mod-tab:hover{ color:var(--wms-text); }
 .mod-tab.active { color:var(--wms-primary-dark); border-bottom-color:var(--wms-primary); }
 
+/* ── Carrier row (ทำใบงานขนส่ง) — the level ABOVE the document tabs, so it
+      uses pills rather than the underline used by .mod-tab. ───────────────── */
+.carrier-nav { display:flex; gap:6px; overflow-x:auto; margin-top:10px; padding-bottom:2px; }
+.carrier-tab {
+  display:inline-flex; align-items:center; gap:6px; flex-shrink:0;
+  padding:6px 14px; border-radius:999px; border:1px solid var(--wms-border);
+  background:var(--wms-surface); color:var(--wms-muted);
+  font-family:var(--wms-font); font-size:13px; font-weight:500;
+  text-decoration:none; white-space:nowrap; cursor:pointer; transition:all .15s;
+}
+.carrier-tab:hover:not(.active) { border-color:var(--wms-border2); color:var(--wms-text); }
+.carrier-tab.active { background:var(--wms-primary); border-color:var(--wms-primary); color:#fff; cursor:default; }
+.carrier-tab.soon { opacity:.8; }
+.soon-badge {
+  font-size:10px; font-weight:600; padding:1px 6px; border-radius:999px;
+  background:var(--wms-surface2); color:var(--wms-faint); border:1px solid var(--wms-border);
+}
+.carrier-tab.active .soon-badge { background:rgba(255,255,255,.2); color:#fff; border-color:transparent; }
+
 /* ── Content fills the space left by the sidebar (no centred max-width,
       otherwise wide monitors get large dead margins). ────────────────────── */
 .wms-main > .main,
