@@ -46,8 +46,10 @@ export function reassignSlot(schedule, dayKey, shift, dutyId, index, newEmpId) {
   slotArr[index] = newEmpId;
 
   if (!from) {
-    // New employee was not on this shift at all: displaced person goes standby.
-    res.standby = [...(res.standby || []), currentEmp];
+    // New employee was not on this shift at all: the displaced person goes to
+    // standby — unless the slot held an anonymous เสริม placeholder, which is a
+    // head-count marker rather than a person and simply disappears.
+    if (currentEmp !== EXTRA_ID) res.standby = [...(res.standby || []), currentEmp];
   } else if (from.type === 'duty') {
     res.assignments[from.dutyId][from.index] = currentEmp; // swap
   } else {
@@ -82,7 +84,9 @@ export function benchEmployee(schedule, dayKey, shift, dutyId, index) {
   const arr = res.assignments[dutyId];
   if (!arr || index < 0 || index >= arr.length) return next;
   const [empId] = arr.splice(index, 1);
-  res.standby = [...(res.standby || []), empId];
+  // An anonymous เสริม placeholder is not a person — removing it just frees the
+  // slot; it must never appear in the standby list.
+  if (empId !== EXTRA_ID) res.standby = [...(res.standby || []), empId];
   return next;
 }
 

@@ -17,7 +17,7 @@ import { generateSchedule } from '../engine/rotationEngine.js';
 import { reassignSlot, addToSlot, benchEmployee, refreshDerived } from '../utils/scheduleUtils.js';
 import { scheduleToCSV, scheduleToText, downloadFile, copyToClipboard } from '../utils/exportUtils.js';
 import { currentWeek, weekKey } from '../utils/dateUtils.js';
-import { EMPLOYEE_STATUS, getShift, getType, taskAllowsType } from '../data/models.js';
+import { EMPLOYEE_STATUS, getShift, getType, taskAllowsType, isExtraId } from '../data/models.js';
 import { WeekPicker } from './ui/WeekPicker.jsx';
 import { ScheduleGrid } from './schedule/ScheduleGrid.jsx';
 import { SurgePlanPanel } from './schedule/SurgePlanPanel.jsx';
@@ -304,8 +304,12 @@ export function ScheduleGenerator() {
                 {schedule.grid[edit.dayKey]?.label} · {schedule.grid[edit.dayKey]?.date}
                 {edit.currentEmpId && (
                   <>
-                    {' '}· currently{' '}
-                    <b>{getEmployee(edit.currentEmpId)?.nickname || getEmployee(edit.currentEmpId)?.name}</b>
+                    {' '}· ปัจจุบัน{' '}
+                    <b>
+                      {isExtraId(edit.currentEmpId)
+                        ? 'เสริม (ยังไม่ระบุชื่อ)'
+                        : getEmployee(edit.currentEmpId)?.nickname || getEmployee(edit.currentEmpId)?.name}
+                    </b>
                   </>
                 )}
               </p>

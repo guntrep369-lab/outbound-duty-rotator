@@ -5,20 +5,31 @@ import { SHIFT_LIST, WEEKDAYS, getLeaveType, isExtraId, taskNeed, taskNeedByType
 import { datesOfISOWeek } from '../../utils/dateUtils.js';
 import { TaskDot } from '../ui/Badge.jsx';
 
-/** Chip for an anonymous surge worker (เสริมนิรนาม). */
-function ExtraChip() {
+/**
+ * Chip for an anonymous surge worker (เสริมนิรนาม). Clickable in edit mode so a
+ * real name can be dropped in once you know who actually turned up.
+ */
+function ExtraChip({ editable, onClick }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-md border border-dashed border-pink-300 bg-pink-50 px-1.5 py-0.5 text-xs font-medium text-pink-600">
+    <button
+      type="button"
+      disabled={!editable}
+      onClick={onClick}
+      title={editable ? 'เสริม (ยังไม่ระบุชื่อ) — คลิกเพื่อใส่ชื่อคนจริง' : 'เสริม (ยังไม่ระบุชื่อ)'}
+      className={`inline-flex items-center gap-1 rounded-md border border-dashed border-pink-300 bg-pink-50 px-1.5 py-0.5 text-xs font-medium text-pink-600 ${
+        editable ? 'cursor-pointer hover:ring-2 hover:ring-pink-300' : 'cursor-default'
+      }`}
+    >
       <span className="h-1.5 w-1.5 rounded-full bg-pink-400" />
       เสริม
-    </span>
+    </button>
   );
 }
 
 /** Chip for one assigned employee. Clickable in edit mode to swap. */
 function EmpChip({ empId, color, editable, onClick }) {
   const { getEmployee } = useApp();
-  if (isExtraId(empId)) return <ExtraChip />;
+  if (isExtraId(empId)) return <ExtraChip editable={editable} onClick={onClick} />;
   const emp = getEmployee(empId);
   const label = emp ? emp.nickname || emp.name : '—';
   const pinned = !!emp?.fixedDutyId;

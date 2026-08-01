@@ -36,7 +36,7 @@ const FILTERS = [
 ];
 
 function EmployeeForm({ initial, onSubmit, onCancel }) {
-  const { config } = useApp();
+  const { config, employees } = useApp();
   const [form, setForm] = useState({
     name: initial?.name || '',
     nickname: initial?.nickname || '',
@@ -55,6 +55,13 @@ function EmployeeForm({ initial, onSubmit, onCancel }) {
         : [...f.weeklyOffDays, iso].sort((a, b) => a - b),
     }));
   const valid = form.name.trim().length > 0;
+
+  // Warn (don't block — real teams do have namesakes) when the name or
+  // nickname already belongs to someone else.
+  const norm = (s) => String(s || '').trim().toLowerCase();
+  const others = employees.filter((e) => e.id !== initial?.id);
+  const dupName = norm(form.name) && others.some((e) => norm(e.name) === norm(form.name));
+  const dupNick = norm(form.nickname) && others.some((e) => norm(e.nickname) === norm(form.nickname));
 
   // Tasks that actually need staff on the chosen shift.
   const shiftTasks = config.tasks.filter((t) => t.active && taskNeed(t, form.primaryShift) > 0);
@@ -81,6 +88,7 @@ function EmployeeForm({ initial, onSubmit, onCancel }) {
             placeholder="e.g. สมชาย ใจดี"
             autoFocus
           />
+          {dupName && <p className="mt-1 text-xs text-amber-600">⚠️ มีชื่อนี้อยู่แล้ว — เพิ่มได้ แต่โปรดตรวจว่าไม่ซ้ำคนเดิม</p>}
         </div>
         <div>
           <label className="label">Nickname · ชื่อเล่น</label>
@@ -90,6 +98,7 @@ function EmployeeForm({ initial, onSubmit, onCancel }) {
             onChange={(e) => set('nickname', e.target.value)}
             placeholder="e.g. ชาย"
           />
+          {dupNick && <p className="mt-1 text-xs text-amber-600">⚠️ ชื่อเล่นซ้ำ — ในตารางเวรจะแยกกันยาก</p>}
         </div>
       </div>
 

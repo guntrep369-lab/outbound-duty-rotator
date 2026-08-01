@@ -16,6 +16,7 @@ import {
   WEEKDAYS,
   isAvailableOn,
   unavailabilityOn,
+  leaveOn,
   getLeaveType,
   effectiveShiftOn,
   holidayOn,
@@ -114,14 +115,28 @@ export function Dashboard({ onNavigate }) {
 
   const stats = useMemo(() => {
     const activeEmps = employees.filter((e) => e.status === EMPLOYEE_STATUS.ACTIVE);
-    const onLeave = employees.filter((e) => e.status === EMPLOYEE_STATUS.ON_LEAVE).length;
+    // "หยุดวันนี้" = ลาแบบยาว (status) + ลาตามวันที่ + วันหยุดประจำ, ให้ตรงกับ
+    // แถบ "หยุด/ลาวันนี้" ด้านล่าง (เดิมนับแต่ status จึงขึ้น 0 ทั้งที่มีคนลา)
+    const statusLeave = employees.filter((e) => e.status === EMPLOYEE_STATUS.ON_LEAVE);
+    const awayToday = activeEmps.filter((e) => !isAvailableOn(e, todayYmd, todayIso));
+    const onLeave = statusLeave.length + awayToday.length;
+    const leaveSub =
+      onLeave === 0
+        ? 'มาครบทุกคน'
+        : [
+            awayToday.filter((e) => leaveOn(e, todayYmd)).length && `ลา ${awayToday.filter((e) => leaveOn(e, todayYmd)).length}`,
+            awayToday.filter((e) => !leaveOn(e, todayYmd)).length && `หยุดประจำ ${awayToday.filter((e) => !leaveOn(e, todayYmd)).length}`,
+            statusLeave.length && `พักงาน ${statusLeave.length}`,
+          ]
+            .filter(Boolean)
+            .join(' · ');
     const tasks = config.tasks.filter((t) => t.active).length;
     // Breakdown of active staff by employment type (legacy records = inhouse).
     const byType = { inhouse: 0, outsource_regular: 0, outsource_extra: 0 };
     for (const e of activeEmps) byType[e.type || 'inhouse'] = (byType[e.type || 'inhouse'] || 0) + 1;
     const typeSub = `${byType.inhouse} inhouse · ${byType.outsource_regular} OS ประจำ · ${byType.outsource_extra} OS เสริม`;
-    return { active: activeEmps.length, onLeave, tasks, working: config.workingDays.length, typeSub };
-  }, [employees, config]);
+    return { active: activeEmps.length, onLeave, leaveSub, tasks, working: config.workingDays.length, typeSub };
+  }, [employees, config, todayYmd, todayIso]);
 
   const todaysRecords = useMemo(() => history.filter((r) => r.date === todayYmd), [history, todayYmd]);
 
@@ -192,7 +207,13 @@ export function Dashboard({ onNavigate }) {
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard icon={Users} label="Active staff" value={stats.active} sub={stats.typeSub} tint="bg-emerald-100 text-emerald-600" />
-        <StatCard icon={Coffee} label="On leave" value={stats.onLeave} tint="bg-amber-100 text-amber-600" />
+        <StatCard
+          icon={Coffee}
+          label="หยุด/ลาวันนี้"
+          value={stats.onLeave}
+          sub={stats.leaveSub}
+          tint="bg-amber-100 text-amber-600"
+        />
         <StatCard icon={ClipboardList} label="Active tasks" value={stats.tasks} tint="bg-indigo-100 text-indigo-600" />
         <StatCard icon={CalendarRange} label="Working days/wk" value={stats.working} tint="bg-sky-100 text-sky-600" />
       </div>

@@ -207,6 +207,11 @@ export function AppProvider({ children }) {
   );
 
   const loadDemoTeam = useCallback(() => {
+    // Guard against a double click / re-click adding the sample team twice.
+    if (employees.length > 0) {
+      notify('warning', 'มีพนักงานอยู่แล้ว — ล้างรายชื่อก่อนถ้าต้องการโหลดชุดตัวอย่างใหม่', 4000);
+      return;
+    }
     const team = demoEmployees();
     commitEmployees([...employees, ...team], 'chore(employees): load sample team');
     // Also seed a sample surge plan for the current week.
