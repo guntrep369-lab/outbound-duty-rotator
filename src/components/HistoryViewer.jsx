@@ -1,9 +1,10 @@
 import React, { useMemo, useState } from 'react';
-import { History as HistoryIcon, Trash2, FileDown, BarChart3, CalendarX2, Layers } from 'lucide-react';
+import { History as HistoryIcon, Trash2, FileDown, BarChart3, CalendarX2, Layers, Archive } from 'lucide-react';
 import { useApp } from '../context/useApp.js';
 import { WEEKDAYS } from '../data/models.js';
 import { parseWeekKey } from '../utils/dateUtils.js';
-import { scheduleToCSV, downloadFile } from '../utils/exportUtils.js';
+import { scheduleToCSV, downloadFile, downloadJSON } from '../utils/exportUtils.js';
+import { HISTORY_KEEP_WEEKS, historyBytes, historyHealth, formatBytes } from '../utils/historyUtils.js';
 import { ScheduleGrid } from './schedule/ScheduleGrid.jsx';
 import { TaskDot } from './ui/Badge.jsx';
 
@@ -119,7 +120,13 @@ function DistributionTable({ scopeRecords }) {
 }
 
 export function HistoryViewer() {
-  const { history, getEmployee, getTask, deleteWeekFromHistory, clearHistory, notify } = useApp();
+  const { history, config, getEmployee, getTask, deleteWeekFromHistory, clearHistory, notify } = useApp();
+
+  // File-size health: history.json is rewritten whole on every save, and the
+  // GitHub Contents API stops inlining above 1 MB.
+  const keepWeeks = config.historyKeepWeeks ?? HISTORY_KEEP_WEEKS;
+  const bytes = useMemo(() => historyBytes(history), [history]);
+  const health = historyHealth(bytes);
 
   const weeks = useMemo(() => {
     const set = [...new Set(history.map((r) => r.weekKey))];
@@ -164,6 +171,12 @@ export function HistoryViewer() {
     notify('success', 'CSV downloaded.', 2000);
   };
 
+  /** Full backup, so ageing weeks out is never an irreversible loss. */
+  const backupAll = () => {
+    downloadJSON(`history-backup-${new Date().toISOString().slice(0, 10)}.json`, history);
+    notify('success', `สำรองประวัติ ${weeks.length} สัปดาห์แล้ว`, 2500);
+  };
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -173,7 +186,18 @@ export function HistoryViewer() {
         </div>
         <div className="flex items-center gap-2 text-xs text-slate-500">
           <Layers className="h-4 w-4" />
-          {weeks.length} week{weeks.length === 1 ? '' : 's'} · {history.length} assignments
+          {weeks.length}/{keepWeeks} week{weeks.length === 1 ? '' : 's'} · {history.length} assignments ·{' '}
+          <span
+            className={
+              health === 'ok' ? 'text-slate-500' : health === 'warn' ? 'font-medium text-amber-600' : 'font-medium text-rose-600'
+            }
+            title="ขนาดไฟล์ history.json — GitHub อ่านไฟล์เกิน 1 MB ผ่าน API ปกติไม่ได้"
+          >
+            {formatBytes(bytes)}
+          </span>
+          <button className="btn-ghost !px-2 !py-1 text-xs" onClick={backupAll} title="ดาวน์โหลดประวัติทั้งหมดเป็น JSON">
+            <Archive className="h-3.5 w-3.5" /> Backup
+          </button>
           <button
             className="btn-ghost !px-2 !py-1 text-xs text-rose-500"
             onClick={() => {
@@ -184,6 +208,16 @@ export function HistoryViewer() {
           </button>
         </div>
       </div>
+
+      {/* Retention notice — the oldest week ages out on the next save, either
+          because the week window is full or because the file hit its budget. */}
+      {(weeks.length >= keepWeeks || health !== 'ok') && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          ประวัติเต็มเพดานแล้ว ({weeks.length >= keepWeeks ? `${keepWeeks} สัปดาห์` : `ขนาดไฟล์ ${formatBytes(bytes)}`})
+          — บันทึกสัปดาห์ใหม่ครั้งต่อไป สัปดาห์เก่าสุด ({weeks.at(-1)}) จะถูกตัดออก เพื่อให้ GitHub ยังอ่านไฟล์กลับมาได้
+          กด <span className="font-medium">Backup</span> เพื่อเก็บไฟล์เต็มไว้ก่อน
+        </p>
+      )}
 
       {/* Week selector */}
       <div className="flex flex-wrap gap-1.5">

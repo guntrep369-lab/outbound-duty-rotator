@@ -25,6 +25,7 @@ import {
 } from '../data/models.js';
 import { AppContext } from './useApp.js';
 import { currentWeek, weekKey as makeWeekKey } from '../utils/dateUtils.js';
+import { pruneHistory, HISTORY_KEEP_WEEKS } from '../utils/historyUtils.js';
 
 let toastSeq = 0;
 
@@ -415,12 +416,27 @@ export function AppProvider({ children }) {
   const saveScheduleToHistory = useCallback(
     (schedule) => {
       const filtered = history.filter((r) => r.weekKey !== schedule.weekKey);
-      const next = [...filtered, ...schedule.records];
-      setHistory(next);
-      persist('history', next, `chore(history): save schedule ${schedule.weekKey}`);
+      // Bound the file — see utils/historyUtils.js for why.
+      const { kept, droppedWeeks } = pruneHistory(
+        [...filtered, ...schedule.records],
+        config.historyKeepWeeks
+      );
+      setHistory(kept);
+      persist('history', kept, `chore(history): save schedule ${schedule.weekKey}`);
       notify('success', `Saved schedule for ${schedule.weekKey} to history.`, 3000);
+      // Ageing weeks out is data loss, so never do it silently.
+      if (droppedWeeks.length) {
+        const range =
+          droppedWeeks.length === 1 ? droppedWeeks[0] : `${droppedWeeks[0]}–${droppedWeeks.at(-1)}`;
+        notify(
+          'info',
+          `ตัดประวัติเก่าออก ${droppedWeeks.length} สัปดาห์ (${range}) เพื่อให้ history.json ` +
+            `เล็กพอที่ GitHub อ่านกลับมาได้ · กด Backup ในแท็บ History เพื่อเก็บไฟล์เต็มไว้ก่อน`,
+          9000
+        );
+      }
     },
-    [history, persist, notify]
+    [history, config.historyKeepWeeks, persist, notify]
   );
 
   const deleteWeekFromHistory = useCallback(

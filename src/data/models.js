@@ -3,6 +3,8 @@
  * Plain JavaScript with JSDoc typedefs for editor intellisense without a build step.
  */
 
+import { HISTORY_KEEP_WEEKS } from '../utils/historyUtils.js';
+
 /** Shift identifiers. */
 export const SHIFTS = {
   MORNING: 'morning',
@@ -252,6 +254,9 @@ export function defaultDutyConfig() {
     tasks: DEFAULT_TASKS.map((t) => makeTask(t)),
     workingDays: [1, 2, 3, 4, 5], // Mon–Fri
     lookbackWeeks: 4,
+    // Weeks of roster history kept in history.json (see utils/historyUtils.js).
+    // The engine only reads `lookbackWeeks`; the rest is for browsing.
+    historyKeepWeeks: HISTORY_KEEP_WEEKS,
     // Weekly rules for outsource เสริม (surge staff):
     // minDays = guaranteed working days; maxDays = cap (null = unlimited).
     extraRules: { minDays: 0, maxDays: null },

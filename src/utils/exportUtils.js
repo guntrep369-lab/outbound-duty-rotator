@@ -113,6 +113,22 @@ export function downloadFile(filename, content, mime = CSV_MIME) {
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Download a JSON backup. Deliberately NOT downloadFile(): that prepends a BOM
+ * for Excel, which makes the file fail JSON.parse on the way back in.
+ */
+export function downloadJSON(filename, data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 /** Copy text to clipboard with a legacy fallback. Returns a promise<boolean>. */
 export async function copyToClipboard(text) {
   try {

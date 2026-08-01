@@ -83,26 +83,7 @@ table.pod-tbl tr:nth-child(even) td{background:#f9f9f9}
   .stop{page-break-inside:avoid;break-inside:avoid}
   *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
   @page{size:A4 portrait;margin:8mm 5mm}
-}
-
-/* ══ WMS system sidebar (ตรงกับ <SystemSidebar> ใน React) ══ */
-.wms-shell{display:flex;flex-direction:column;min-height:100vh}
-.wms-main{flex:1;min-width:0;display:flex;flex-direction:column}
-.sysbar{background:#0F172A;color:#fff;position:sticky;top:0;z-index:40;flex-shrink:0;font-family:Arial,'Sarabun',sans-serif}
-.sysbar *{color:inherit}
-.sysbar-brand{display:flex;align-items:center;gap:10px;padding:12px 16px}
-.sysbar-logo{width:32px;height:32px;border-radius:8px;background:#6366F1;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
-.sysbar-titles{min-width:0;line-height:1.25}
-.sysbar-title{font-size:15px;font-weight:700;letter-spacing:-.01em}
-.sysbar-by{font-size:11px;font-weight:500;color:#A5B4FC;margin-left:4px}
-.sysbar-sub{display:none;font-size:11px;color:#94A3B8}
-.sysbar-modlabel{display:none;font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#64748B;padding:8px 4px 4px}
-.sysbar-mods{display:flex;gap:4px;overflow-x:auto;padding:0 12px 8px}
-.sysmod{display:flex;align-items:center;gap:10px;flex-shrink:0;padding:8px 12px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:500;color:#CBD5E1;transition:background .15s,color .15s;cursor:pointer}
-.sysmod em{font-style:normal;font-size:11px;opacity:.7;display:none}
-.sysmod:hover:not(.active){background:#1E293B;color:#fff}
-.sysmod.active{background:#4F46E5;color:#fff;cursor:default;box-shadow:0 1px 2px rgba(0,0,0,.15)}
-/* module sub-nav */
+}/* module sub-nav */
 .mod-head{background:#fff;border-bottom:1px solid #E2E5EA;padding:10px 16px 0;flex-shrink:0;font-family:Arial,'Sarabun',sans-serif}
 .mod-title{display:flex;align-items:center;gap:10px;color:#1e293b}
 .mod-title .ic{width:36px;height:36px;border-radius:10px;background:#EEF2FF;color:#4F46E5;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
@@ -112,41 +93,14 @@ table.pod-tbl tr:nth-child(even) td{background:#f9f9f9}
 .mod-tab{display:flex;align-items:center;gap:6px;flex-shrink:0;padding:9px 14px;border:0;border-bottom:2px solid transparent;background:none;text-decoration:none;font-size:14px;font-weight:500;color:#64748B;cursor:pointer;font-family:inherit}
 .mod-tab:hover{color:#1e293b}
 .mod-tab.active{color:#4338CA;border-bottom-color:#4F46E5}
-@media (min-width:1024px){
-  .wms-shell{flex-direction:row}
-  .sysbar{width:240px;flex-shrink:0;height:100vh}
-  .sysbar-brand{display:block}
-  .sysbar-brand .sysbar-logo{margin-bottom:8px}
-  .sysbar-sub,.sysbar-modlabel{display:block}
-  .sysmod em{display:inline}
-  .sysbar-mods{flex-direction:column;overflow:visible}
-  .sysmod{width:100%}
-}
-@media print{
-  .sysbar,.mod-head{display:none!important}
-  .wms-shell,.wms-main{display:block!important;min-height:0!important}
-}
+
 </style>
 <link rel="stylesheet" href="../../wms-theme.css">
 </head>
 <body data-wms-module="transport">
 
 <div class="wms-shell">
-<aside class="sysbar">
-  <div class="sysbar-brand">
-    <div class="sysbar-logo"><svg class="sysbar-logo-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 8.35V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8.35A2 2 0 0 1 3.26 6.5l8-3.2a2 2 0 0 1 1.48 0l8 3.2A2 2 0 0 1 22 8.35Z"/><path d="M6 18h12"/><path d="M6 14h12"/><rect width="12" height="12" x="6" y="10"/></svg></div>
-    <div class="sysbar-titles">
-      <div class="sysbar-title">WMS Management <span class="sysbar-by">by Gun</span></div>
-      <div class="sysbar-sub">ระบบบริหารคลังสินค้า</div>
-    </div>
-  </div>
-  <nav class="sysbar-mods">
-    <p class="sysbar-modlabel">โมดูล · Modules</p>
-    <a class="sysmod" href="../../"><svg class="sysmod-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M3 10h18"/><path d="M8 2v4"/><path d="M17 14h-6"/><path d="M13 18H7"/><path d="M7 14h.01"/><path d="M17 18h.01"/></svg><span>จัดตารางงาน</span><em>Duty Roster</em></a>
-    <a class="sysmod" href="../../order-compare/"><svg class="sysmod-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></svg><span>เทียบ Order</span><em>Order Compare</em></a>
-    <a class="sysmod active" aria-current="page"><svg class="sysmod-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg><span>ทำใบงานขนส่ง</span><em>Transport Docs</em></a>
-  </nav>
-</aside>
+<div data-wms-shell="transport" data-root="../../"></div>
 <div class="wms-main">
   <div class="mod-head">
     <div class="mod-title">
@@ -626,5 +580,6 @@ document.getElementById('logoInput').addEventListener('change', function(e) {
 </script>
 </div><!-- /.wms-main -->
 </div><!-- /.wms-shell -->
+<script type="module" src="../../wms-shell.js"></script>
 </body>
 </html>

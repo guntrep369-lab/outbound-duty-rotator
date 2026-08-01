@@ -14,6 +14,7 @@ import {
   Warehouse,
   Truck,
 } from 'lucide-react';
+import { MODULES, BRAND } from '../public/wms-modules.js';
 import { useApp } from './context/useApp.js';
 import { Toasts } from './components/ui/Toasts.jsx';
 import { Dashboard } from './components/Dashboard.jsx';
@@ -60,18 +61,16 @@ function SyncStatus() {
   );
 }
 
-/** Top-level modules of the WMS system. Each is its own page. */
-const MODULES = [
-  { id: 'roster', label: 'จัดตารางงาน', labelEn: 'Duty Roster', icon: CalendarRange, href: './' },
-  { id: 'order', label: 'เทียบ Order', labelEn: 'Order Compare', icon: ClipboardCheck, href: './order-compare/' },
-  { id: 'transport', label: 'ทำใบงานขนส่ง', labelEn: 'Transport Docs', icon: Truck, href: './transport-docs/' },
-];
+/** Icon name (from wms-modules.js) → the lucide component that draws it. */
+const MODULE_ICONS = { calendar: CalendarRange, clipboard: ClipboardCheck, truck: Truck, warehouse: Warehouse };
 
 /**
- * Dark system chrome, mirrored in order-compare. Left sidebar on desktop,
- * collapsing to a top bar on small screens.
+ * Dark system chrome. Left sidebar on desktop, collapsing to a top bar on small
+ * screens. The static modules render the same thing from the same MODULES list
+ * via public/wms-shell.js — keep the two in visual sync.
  */
 function SystemSidebar({ active }) {
+  const LogoIcon = MODULE_ICONS[BRAND.logo];
   return (
     <aside className="no-print sticky top-0 z-40 shrink-0 bg-slate-900 text-white lg:h-screen lg:w-60">
       {/* Brand */}
@@ -80,14 +79,14 @@ function SystemSidebar({ active }) {
       <div className="flex items-center justify-between gap-3 px-4 py-3 lg:block">
         <div className="flex min-w-0 items-center gap-2.5 lg:block">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-500 shadow-sm lg:mb-2">
-            <Warehouse className="h-4 w-4" />
+            <LogoIcon className="h-4 w-4" />
           </div>
           <div className="min-w-0 leading-tight">
             <div className="tracking-[-0.01em]">
-              <h1 className="inline text-[15px] font-bold">WMS Management</h1>
-              <span className="ml-1 text-[11px] font-medium text-indigo-300">by Gun</span>
+              <h1 className="inline text-[15px] font-bold">{BRAND.name}</h1>
+              <span className="ml-1 text-[11px] font-medium text-indigo-300">{BRAND.by}</span>
             </div>
-            <p className="hidden text-[11px] text-slate-400 lg:block">ระบบบริหารคลังสินค้า</p>
+            <p className="hidden text-[11px] text-slate-400 lg:block">{BRAND.sub}</p>
           </div>
         </div>
         <div className="lg:hidden">
@@ -101,12 +100,13 @@ function SystemSidebar({ active }) {
           โมดูล · Modules
         </p>
         {MODULES.map((m) => {
-          const Icon = m.icon;
+          const Icon = MODULE_ICONS[m.icon];
           const on = m.id === active;
           return (
             <a
               key={m.id}
-              href={on ? undefined : m.href}
+              // This module IS the site root, so a module path is already relative to it.
+              href={on ? undefined : `./${m.path}`}
               aria-current={on ? 'page' : undefined}
               className={`flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors lg:w-full ${
                 on ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
