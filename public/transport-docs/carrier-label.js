@@ -16,7 +16,7 @@
  */
 
 /* ── Fields a label can show, and the header names that map onto them ─────── */
-const FIELDS = [
+export const FIELDS = [
   { key: 'tracking', label: 'เลขพัสดุ / Tracking', required: true,
     aliases: ['เลขพัสดุ', 'หมายเลขพัสดุ', 'เลขที่พัสดุ', 'เลขติดตาม', 'เลขconsign', 'consign', 'consignmentno', 'tracking', 'trackingno', 'trackingnumber', 'awb', 'waybill', 'barcode', 'parcelno'] },
   { key: 'customer', label: 'ชื่อผู้รับ', required: true,
@@ -67,7 +67,7 @@ const SIZE_STORE_KEY = 'wms:clabel:size';
  * The header row is the first row carrying at least three non-empty cells —
  * carrier exports often start with a title or a blank line or two.
  */
-function findHeaderRow(matrix) {
+export function findHeaderRow(matrix) {
   for (let i = 0; i < Math.min(matrix.length, 20); i++) {
     const filled = (matrix[i] || []).filter((c) => String(c ?? '').trim() !== '').length;
     if (filled >= 3) return i;
@@ -82,7 +82,7 @@ function findHeaderRow(matrix) {
  * "Consignee Name" contains both `consignee` (ผู้รับ) and `consign` (เลขพัสดุ),
  * and it is the recipient — the longer alias is the right answer.
  */
-function score(header, field) {
+export function score(header, field) {
   const h = norm(header);
   if (!h) return 0;
   let best = 0;
@@ -101,7 +101,7 @@ function score(header, field) {
  * best-first — so the result does not depend on the order FIELDS happens to be
  * declared in, and an exact match always beats a partial one elsewhere.
  */
-function autoMap(hdrs) {
+export function autoMap(hdrs) {
   const pairs = [];
   for (const f of FIELDS) {
     for (const h of hdrs) {
@@ -119,6 +119,35 @@ function autoMap(hdrs) {
     takenHeaders.add(p.header);
   }
   return guess;
+}
+
+/**
+ * Decide the final mapping for a file: a saved choice wins, otherwise the guess.
+ *
+ * @param {string[]} hdrs    headers present in THIS file
+ * @param {Object} saved     previously stored mapping (field -> header text)
+ * @returns {{mapping:Object, autoMapped:Set<string>}} autoMapped = fields the
+ *          guesser filled, which the UI highlights as "please check me".
+ */
+export function resolveMapping(hdrs, saved = {}) {
+  const guess = autoMap(hdrs);
+  const mapping = {};
+  const auto = new Set();
+
+  for (const f of FIELDS) {
+    // An empty saved value means "the user turned this field OFF" — that is a
+    // decision, not a gap, so the guesser must not quietly fill it back in.
+    // Only fall back to the guess when there is no saved choice at all, or when
+    // the saved column is missing from this particular file.
+    const chosen = Object.prototype.hasOwnProperty.call(saved, f.key);
+    if (chosen && (saved[f.key] === '' || hdrs.includes(saved[f.key]))) {
+      mapping[f.key] = saved[f.key];
+    } else if (guess[f.key]) {
+      mapping[f.key] = guess[f.key];
+      auto.add(f.key);
+    } else mapping[f.key] = '';
+  }
+  return { mapping, autoMapped: auto };
 }
 
 function readWorkbook(file) {
@@ -149,22 +178,7 @@ function readWorkbook(file) {
     } catch {
       saved = {};
     }
-    const guess = autoMap(headers);
-    mapping = {};
-    autoMapped = new Set();
-    for (const f of FIELDS) {
-      // An empty saved value means "the user turned this field OFF" — that is a
-      // decision, not a gap, so the guesser must not quietly fill it back in.
-      // Only fall back to the guess when there is no saved choice at all, or
-      // when the saved column is missing from this particular file.
-      const chosen = Object.prototype.hasOwnProperty.call(saved, f.key);
-      if (chosen && (saved[f.key] === '' || headers.includes(saved[f.key]))) {
-        mapping[f.key] = saved[f.key];
-      } else if (guess[f.key]) {
-        mapping[f.key] = guess[f.key];
-        autoMapped.add(f.key);
-      } else mapping[f.key] = '';
-    }
+    ({ mapping, autoMapped } = resolveMapping(headers, saved));
 
     selected = new Set(rows.map((_, i) => i)); // start with everything selected
     render();
@@ -180,12 +194,21 @@ function valueOf(row, key) {
   return i === -1 ? '' : String(row[i] ?? '').trim();
 }
 
-/** COD only prints when there is an amount > 0 — a "0" box confuses drivers. */
-function codOf(row) {
-  const raw = valueOf(row, 'cod').replace(/[,\s฿]/g, '');
-  const n = Number(raw);
+/**
+ * COD amount, or null when there is nothing to collect.
+ *
+ * Returning null for 0/blank/garbage is deliberate: the label only draws the
+ * COD box when this is non-null, and a "฿0.00" box on a prepaid parcel invites
+ * a driver to collect money they shouldn't.
+ */
+export function parseCod(raw) {
+  const cleaned = String(raw ?? '').replace(/[,\s฿]/g, '');
+  if (cleaned === '') return null;
+  const n = Number(cleaned);
   return Number.isFinite(n) && n > 0 ? n : null;
 }
+
+const codOf = (row) => parseCod(valueOf(row, 'cod'));
 
 /* ── Label markup ────────────────────────────────────────────────────────── */
 function labelHTML(row, i) {
