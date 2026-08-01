@@ -138,7 +138,14 @@ export function Dashboard({ onNavigate }) {
     return { active: activeEmps.length, onLeave, leaveSub, tasks, working: config.workingDays.length, typeSub };
   }, [employees, config, todayYmd, todayIso]);
 
-  const todaysRecords = useMemo(() => history.filter((r) => r.date === todayYmd), [history, todayYmd]);
+  // Match on week + weekday rather than a stored date: history rows no longer
+  // carry one, and this is a plain string compare instead of per-row date maths.
+  const todayWeekKey = weekKey(year, week);
+  const todayDayKey = todayName?.key;
+  const todaysRecords = useMemo(
+    () => history.filter((r) => r.weekKey === todayWeekKey && r.dayKey === todayDayKey),
+    [history, todayWeekKey, todayDayKey]
+  );
 
   const perShift = useMemo(() => {
     const map = {};

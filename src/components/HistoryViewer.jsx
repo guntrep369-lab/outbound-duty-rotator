@@ -4,7 +4,7 @@ import { useApp } from '../context/useApp.js';
 import { WEEKDAYS } from '../data/models.js';
 import { parseWeekKey } from '../utils/dateUtils.js';
 import { scheduleToCSV, downloadFile, downloadJSON } from '../utils/exportUtils.js';
-import { HISTORY_KEEP_WEEKS, historyBytes, historyHealth, formatBytes } from '../utils/historyUtils.js';
+import { HISTORY_KEEP_WEEKS, historyBytes, historyHealth, formatBytes, recordYmd } from '../utils/historyUtils.js';
 import { ScheduleGrid } from './schedule/ScheduleGrid.jsx';
 import { TaskDot } from './ui/Badge.jsx';
 
@@ -17,7 +17,7 @@ function scheduleFromRecords(wk, recs) {
     if (!grid[r.dayKey]) {
       grid[r.dayKey] = {
         iso: wd?.iso,
-        date: r.date,
+        date: recordYmd(r),
         label: wd?.label,
         labelTh: wd?.labelTh,
         morning: { assignments: {}, standby: [], understaffed: [] },

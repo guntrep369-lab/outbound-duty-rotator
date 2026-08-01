@@ -25,7 +25,7 @@ import {
 } from '../data/models.js';
 import { AppContext } from './useApp.js';
 import { currentWeek, weekKey as makeWeekKey } from '../utils/dateUtils.js';
-import { pruneHistory, HISTORY_KEEP_WEEKS } from '../utils/historyUtils.js';
+import { pruneHistory, slimHistory } from '../utils/historyUtils.js';
 
 let toastSeq = 0;
 
@@ -416,9 +416,10 @@ export function AppProvider({ children }) {
   const saveScheduleToHistory = useCallback(
     (schedule) => {
       const filtered = history.filter((r) => r.weekKey !== schedule.weekKey);
-      // Bound the file — see utils/historyUtils.js for why.
+      // Bound the file, and drop derivable fields from any legacy rows while
+      // we're rewriting it anyway — see utils/historyUtils.js for both.
       const { kept, droppedWeeks } = pruneHistory(
-        [...filtered, ...schedule.records],
+        slimHistory([...filtered, ...schedule.records]),
         config.historyKeepWeeks
       );
       setHistory(kept);

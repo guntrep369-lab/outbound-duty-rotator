@@ -8,7 +8,13 @@ import {
   HISTORY_BUDGET_BYTES,
   HISTORY_WARN_BYTES,
   HISTORY_MAX_BYTES,
+  RECORD_FIELDS,
+  DAY_KEYS,
+  slimRecord,
+  slimHistory,
+  recordYmd,
 } from './historyUtils.js';
+import { WEEKDAYS } from '../data/models.js';
 
 /** n records for one week, shaped like the real ones. */
 const week = (weekKey, n = 3) =>
@@ -97,6 +103,85 @@ describe('pruneHistory', () => {
     const { kept, dropped } = pruneHistory(recs, HISTORY_KEEP_WEEKS);
     expect(kept.length + dropped.length).toBe(recs.length);
     expect(new Set(kept.map((r) => r.weekKey)).size).toBe(HISTORY_KEEP_WEEKS);
+  });
+});
+
+describe('record shape', () => {
+  const fat = {
+    id: '2026-W02:wed:morning:qc-bed:emp-7',
+    weekKey: '2026-W02',
+    year: 2026,
+    week: 2,
+    dayKey: 'wed',
+    date: '2026-01-07',
+    shift: 'morning',
+    dutyId: 'qc-bed',
+    employeeId: 'emp-7',
+  };
+
+  it('stores only what cannot be recomputed', () => {
+    expect(Object.keys(slimRecord(fat)).sort()).toEqual([...RECORD_FIELDS].sort());
+  });
+
+  it('keeps every stored value intact', () => {
+    for (const f of RECORD_FIELDS) expect(slimRecord(fat)[f]).toBe(fat[f]);
+  });
+
+  it('is idempotent — slimming a slim row changes nothing', () => {
+    expect(slimRecord(slimRecord(fat))).toEqual(slimRecord(fat));
+  });
+
+  it('recomputes the date the dropped field used to hold', () => {
+    expect(recordYmd(slimRecord(fat))).toBe(fat.date);
+  });
+
+  it('derives the right date for every weekday of a week', () => {
+    // 2026-W02 runs Mon 2026-01-05 … Sun 2026-01-11.
+    const got = DAY_KEYS.map((dayKey) => recordYmd({ weekKey: '2026-W02', dayKey }));
+    expect(got).toEqual([
+      '2026-01-05',
+      '2026-01-06',
+      '2026-01-07',
+      '2026-01-08',
+      '2026-01-09',
+      '2026-01-10',
+      '2026-01-11',
+    ]);
+  });
+
+  it('handles the year boundary, where weekKey and calendar year differ', () => {
+    // ISO week 1 of 2026 starts Mon 2025-12-29.
+    expect(recordYmd({ weekKey: '2026-W01', dayKey: 'mon' })).toBe('2025-12-29');
+    expect(recordYmd({ weekKey: '2026-W01', dayKey: 'sun' })).toBe('2026-01-04');
+  });
+
+  it('falls back to a legacy row’s stored date if the key is unparseable', () => {
+    expect(recordYmd({ weekKey: 'garbage', dayKey: 'mon', date: '2026-01-05' })).toBe('2026-01-05');
+    expect(recordYmd({ weekKey: 'garbage', dayKey: 'mon' })).toBeNull();
+  });
+
+  it('DAY_KEYS matches WEEKDAYS in data/models.js', () => {
+    // The two are duplicated to avoid a circular import; this keeps them honest.
+    expect(DAY_KEYS).toEqual(WEEKDAYS.map((d) => d.key));
+    expect(WEEKDAYS.map((d) => d.iso)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+  });
+
+  it('cuts the file down by roughly half', () => {
+    const fatWeek = Array.from({ length: 140 }, () => fat);
+    const saved = 1 - historyBytes(slimHistory(fatWeek)) / historyBytes(fatWeek);
+    expect(saved).toBeGreaterThan(0.4);
+  });
+
+  it('lets a full year survive — the byte budget no longer has to bite', () => {
+    // Same load that forced pruning down to 27 weeks with the old fat rows.
+    const recs = Array.from({ length: HISTORY_KEEP_WEEKS }, (_, i) =>
+      Array.from({ length: 140 }, (_, j) => slimRecord({ ...fat, weekKey: key(2026, i + 1), employeeId: `emp-${j}` }))
+    ).flat();
+    const { kept, droppedWeeks } = pruneHistory(recs);
+    expect(droppedWeeks).toEqual([]); // all 52 weeks kept
+    expect(historyBytes(kept)).toBeLessThanOrEqual(HISTORY_BUDGET_BYTES);
+    // Still reads as "warn": a year IS the ceiling, and week 53 will age one out.
+    expect(historyHealth(historyBytes(kept))).toBe('warn');
   });
 });
 

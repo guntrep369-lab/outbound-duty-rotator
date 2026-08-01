@@ -113,17 +113,8 @@ export function refreshDerived(schedule, employees, config) {
       for (const [dutyId, empIds] of Object.entries(res.assignments || {})) {
         for (const employeeId of empIds) {
           if (employeeId === EXTRA_ID) continue; // anonymous เสริม not tracked in history
-          records.push({
-            id: `${schedule.weekKey}:${dayKey}:${shift}:${dutyId}:${employeeId}`,
-            weekKey: schedule.weekKey,
-            year: schedule.year,
-            week: schedule.week,
-            dayKey,
-            date: cell.date,
-            shift,
-            dutyId,
-            employeeId,
-          });
+          // Only non-derivable fields — see makeRecord() in utils/historyUtils.js.
+          records.push({ weekKey: schedule.weekKey, dayKey, shift, dutyId, employeeId });
         }
       }
     }
