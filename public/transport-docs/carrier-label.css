@@ -1,0 +1,91 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   carrier-label.css — box labels for third-party carriers (Kex / Best / BI).
+
+   Two layers, kept apart on purpose:
+     • app chrome (.cl-*)     — themed, may change freely
+     • the label (.clabel*)   — PRINT GEOMETRY. Sizes are in mm and must not be
+       "tidied" into rem/px: they are measured against the sticker roll.
+
+   Loaded after wms-theme.css, so equal-specificity rules here win.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── App chrome ──────────────────────────────────────────────────────────── */
+.cl-wrap { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+
+.cl-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.cl-bar .spacer { flex: 1; }
+.cl-count { font-size: 13px; color: var(--wms-muted); }
+.cl-count b { color: var(--wms-text); }
+
+/* Column mapping panel */
+.cl-map { background: var(--wms-surface); border: 1px solid var(--wms-border); border-radius: var(--wms-radius);
+          box-shadow: var(--wms-shadow); padding: 14px 16px; }
+.cl-map h3 { font-size: 14px; font-weight: 600; color: var(--wms-text); margin: 0 0 2px; }
+.cl-map .hint { font-size: 12px; color: var(--wms-muted); margin: 0 0 12px; }
+.cl-map-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
+.cl-field label { display: block; font-size: 11px; font-weight: 600; color: var(--wms-muted); margin-bottom: 3px; }
+.cl-field label .req { color: var(--wms-danger); }
+.cl-field select { width: 100%; padding: 7px 9px; border: 1px solid var(--wms-border2); border-radius: 8px;
+                   font-family: var(--wms-font); font-size: 13px; background: var(--wms-surface); color: var(--wms-text); }
+.cl-field select:focus { outline: 2px solid var(--wms-primary); outline-offset: -1px; }
+.cl-field.auto select { border-color: var(--wms-primary); background: var(--wms-primary-light); }
+.cl-auto-note { font-size: 11px; color: var(--wms-primary-dark); margin-top: 10px; }
+
+/* Label size picker */
+.cl-sizes { display: inline-flex; gap: 2px; background: #E2E8F0; padding: 3px; border-radius: 12px; }
+.cl-size { padding: 6px 12px; border: 0; background: transparent; border-radius: 9px; cursor: pointer;
+           font-family: var(--wms-font); font-size: 12px; font-weight: 500; color: var(--wms-muted); }
+.cl-size.active { background: var(--wms-surface); color: var(--wms-primary-dark); box-shadow: var(--wms-shadow); }
+
+/* Preview grid */
+.cl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.cl-card { background: var(--wms-surface); border: 1px solid var(--wms-border); border-radius: var(--wms-radius);
+           box-shadow: var(--wms-shadow); overflow: hidden; cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+.cl-card.sel { border-color: var(--wms-primary); box-shadow: 0 0 0 2px rgba(79, 70, 229, .18); }
+.cl-selbar { display: flex; align-items: center; gap: 8px; padding: 7px 12px; font-size: 12px; font-weight: 500;
+             background: var(--wms-surface2); border-bottom: 1px solid var(--wms-border); color: var(--wms-muted); }
+.cl-card.sel .cl-selbar { background: var(--wms-primary-light); color: var(--wms-primary-dark); }
+
+.cl-empty { text-align: center; padding: 48px 20px; color: var(--wms-faint); font-size: 13px; }
+
+/* ── The label itself — PRINT GEOMETRY, do not restyle ───────────────────── */
+.clabel {
+  width: 100%;
+  font-family: Arial, 'Sarabun', sans-serif;   /* matches the other printed docs */
+  color: #000; background: #fff;
+  padding: 4mm 5mm;
+  display: flex; flex-direction: column; gap: 2mm;
+  box-sizing: border-box;
+}
+.clabel * { box-sizing: border-box; }
+
+.clabel-hdr { display: flex; justify-content: space-between; align-items: flex-start;
+              border-bottom: 2.5px solid #000; padding-bottom: 2mm; }
+.clabel-carrier { font-size: 15pt; font-weight: 900; letter-spacing: .5px; text-transform: uppercase; line-height: 1.05; }
+.clabel-from { font-size: 7pt; line-height: 1.3; text-align: right; max-width: 45%; }
+.clabel-from b { font-size: 8pt; }
+
+.clabel-to-lbl { font-size: 7pt; font-weight: 700; letter-spacing: 1px; }
+.clabel-name { font-size: 13pt; font-weight: 900; line-height: 1.15; word-break: break-word; }
+.clabel-phone { font-size: 11pt; font-weight: 700; }
+.clabel-addr { font-size: 9pt; line-height: 1.35; word-break: break-word; }
+
+.clabel-cod { border: 2.5px solid #000; padding: 1.5mm 3mm; text-align: center; }
+.clabel-cod .k { font-size: 7pt; font-weight: 700; letter-spacing: 1px; }
+.clabel-cod .v { font-size: 15pt; font-weight: 900; line-height: 1.1; }
+
+.clabel-code { margin-top: auto; border-top: 2.5px solid #000; padding-top: 2mm; text-align: center; }
+.clabel-code svg, .clabel-code canvas { max-width: 100%; height: auto; }
+.clabel-track { font-size: 11pt; font-weight: 900; letter-spacing: 1px; word-break: break-all; }
+
+.clabel-meta { display: flex; justify-content: space-between; gap: 3mm; font-size: 8pt; }
+.clabel-meta b { font-size: 9pt; }
+.clabel-remark { font-size: 8pt; border-top: 1px dashed #000; padding-top: 1.5mm; word-break: break-word; }
+
+/* Screen preview scales the sticker to the card; print uses real mm. */
+.cl-card .clabel { height: 190px; overflow: hidden; }
+.cl-card.land .clabel { height: 150px; }
+
+@media print {
+  .sysbar, [data-wms-shell], .mod-head, .cl-wrap > :not(.cl-print-area) { display: none !important; }
+}

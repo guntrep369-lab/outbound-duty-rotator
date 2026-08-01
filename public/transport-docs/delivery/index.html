@@ -102,25 +102,7 @@ table.pod-tbl tr:nth-child(even) td{background:#f9f9f9}
 <div class="wms-shell">
 <div data-wms-shell="transport" data-root="../../"></div>
 <div class="wms-main">
-  <div class="mod-head">
-    <div class="mod-title">
-      <div class="ic">🚚</div>
-      <div>
-        <h2>ทำใบงานขนส่ง · Transport Documents</h2>
-        <p>เลือกขนส่ง แล้วสร้างเอกสารจากไฟล์ Excel</p>
-      </div>
-    </div>
-    <nav class="carrier-nav">
-        <span class="carrier-tab active" aria-current="page">รถบริษัท</span>
-        <a class="carrier-tab soon" href="../kex/">Kex express<span class="soon-badge">เร็ว ๆ นี้</span></a>
-        <a class="carrier-tab soon" href="../best/">Best express<span class="soon-badge">เร็ว ๆ นี้</span></a>
-        <a class="carrier-tab soon" href="../business-idea/">Business Idea<span class="soon-badge">เร็ว ๆ นี้</span></a>
-    </nav>
-    <nav class="mod-subnav">
-      <a class="mod-tab" href="../">🏷️ Picklist Label</a>
-      <span class="mod-tab active">📄 ใบนำส่งสินค้า</span>
-    </nav>
-  </div>
+  <div data-transport-nav="company" data-depth="1" data-doc="delivery"></div>
 
 
 <div id="upload-screen">
@@ -581,5 +563,6 @@ document.getElementById('logoInput').addEventListener('change', function(e) {
 </div><!-- /.wms-main -->
 </div><!-- /.wms-shell -->
 <script type="module" src="../../wms-shell.js"></script>
+<script type="module" src="../transport-nav.js"></script>
 </body>
 </html>
