@@ -222,10 +222,20 @@ describe('the file can never grow past what GitHub will hand back', () => {
   });
 
   it('stays bounded no matter how many weeks pile up', () => {
+    // Small weeks against an explicit small budget. What this proves is that
+    // repeated saves converge to a steady state instead of creeping upward —
+    // the exact byte figures are the previous test's job. Sizing it down also
+    // keeps the run fast: pruneHistory re-serializes the document once per
+    // week it drops, so a full-size 200-week loop took ~4.9s and would time
+    // out on a loaded machine.
+    const BUDGET = 8000;
     let live = [];
-    for (let w = 1; w <= 200; w++) {
-      live = pruneHistory([...live, ...week(key(2026 + Math.floor(w / 53), (w % 52) + 1), 140)]).kept;
-      expect(historyBytes(live)).toBeLessThanOrEqual(HISTORY_BUDGET_BYTES);
+    for (let w = 0; w < 200; w++) {
+      const wk = key(2026 + Math.floor(w / 52), (w % 52) + 1); // always moves forward
+      // mirror the real save path, which replaces the week being saved
+      live = pruneHistory([...live.filter((r) => r.weekKey !== wk), ...week(wk, 5)], 52, BUDGET).kept;
+      expect(historyBytes(live)).toBeLessThanOrEqual(BUDGET);
     }
+    expect(live.length).toBeGreaterThan(0); // never prunes itself to nothing
   });
 });

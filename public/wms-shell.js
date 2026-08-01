@@ -39,6 +39,15 @@ export function sidebarHTML(activeId, root) {
     return `<a ${attrs}>${icon(m.icon, 'sysmod-ic')}<span>${esc(m.label)}</span><em>${esc(m.labelEn)}</em></a>`;
   }).join('\n    ');
 
+  // Who is signed in, from wms-gate.js. Absent if the gate isn't loaded.
+  const user = typeof window !== 'undefined' && window.wmsGate ? window.wmsGate.user() : null;
+  const userRow = user
+    ? `<div class="sysbar-user">
+    <span class="sysbar-user-name" title="${esc(user)}">${esc(user)}</span>
+    <button type="button" class="sysbar-signout" data-wms-signout>ออก</button>
+  </div>`
+    : '';
+
   return `<aside class="sysbar">
   <div class="sysbar-brand">
     <div class="sysbar-logo">${icon(BRAND.logo, 'sysbar-logo-ic')}</div>
@@ -51,6 +60,7 @@ export function sidebarHTML(activeId, root) {
     <p class="sysbar-modlabel">โมดูล · Modules</p>
     ${mods}
   </nav>
+  ${userRow}
 </aside>`;
 }
 
@@ -60,6 +70,9 @@ export function mountShell(doc = document) {
     const active = slot.getAttribute('data-wms-shell') || '';
     const root = slot.getAttribute('data-root') ?? './';
     slot.outerHTML = sidebarHTML(active, root);
+  }
+  for (const btn of doc.querySelectorAll('[data-wms-signout]')) {
+    btn.addEventListener('click', () => window.wmsGate?.signOut());
   }
 }
 

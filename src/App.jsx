@@ -61,6 +61,30 @@ function SyncStatus() {
   );
 }
 
+/**
+ * Signed-in user from wms-gate.js, with a way out. Renders nothing when the
+ * gate isn't loaded, so the app still works if the script is ever removed.
+ */
+function GateUser() {
+  const gate = typeof window !== 'undefined' ? window.wmsGate : null;
+  const name = gate?.user?.();
+  if (!name) return null;
+  return (
+    <div className="mb-2 flex items-center gap-2">
+      <span className="min-w-0 flex-1 truncate text-xs text-slate-300" title={name}>
+        👤 {name}
+      </span>
+      <button
+        type="button"
+        onClick={() => gate.signOut()}
+        className="shrink-0 rounded-md border border-slate-700 px-2.5 py-1 text-[11px] font-medium text-slate-400 transition-colors hover:border-slate-600 hover:bg-slate-800 hover:text-white"
+      >
+        ออก
+      </button>
+    </div>
+  );
+}
+
 /** Icon name (from wms-modules.js) → the lucide component that draws it. */
 const MODULE_ICONS = { calendar: CalendarRange, clipboard: ClipboardCheck, truck: Truck, warehouse: Warehouse };
 
@@ -120,8 +144,10 @@ function SystemSidebar({ active }) {
         })}
       </nav>
 
-      {/* Sync status pinned to the bottom on desktop */}
+      {/* Signed-in user + sync status, pinned to the bottom on desktop.
+          Mirrors .sysbar-user in wms-theme.css, which the static modules use. */}
       <div className="hidden px-4 lg:absolute lg:bottom-4 lg:left-0 lg:right-0 lg:block">
+        <GateUser />
         <SyncStatus />
       </div>
     </aside>
