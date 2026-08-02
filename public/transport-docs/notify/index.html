@@ -15,34 +15,53 @@
 
 /* ── Main Screen ── */
 #main-screen{display:none}
-.topbar{display:flex;align-items:center;gap:8px;padding:8px 20px;background:#000;position:sticky;top:0;z-index:10}
-.topbar .info{flex:1;font-size:12px;color:#ccc}
-.topbar .info b{color:#fff}
-.topbar button{border:1px solid #555;background:transparent;border-radius:4px;padding:5px 14px;font-size:12px;cursor:pointer;color:#fff;font-weight:500;font-family:'Sarabun',Arial,sans-serif}
-.topbar button:hover{background:#222}
+.topbar{display:flex;align-items:center;gap:8px;padding:10px 20px;position:sticky;top:0;z-index:10}
+.topbar .info{flex:1;font-size:12px;color:var(--wms-muted)}
+.topbar .info b{color:var(--wms-text);font-weight:600}
 
 /* ── Notify ── */
-.notify-wrap{background:#f5f5f5;padding:20px;min-height:calc(100vh - 52px)}
-.notify-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px}
-.notify-header h2{font-size:16px;font-weight:800}
-.truck-selector{display:flex;gap:8px;flex-wrap:wrap}
-.truck-tab{border:1.5px solid #ccc;background:#fff;border-radius:20px;padding:6px 16px;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;font-family:'Sarabun',Arial,sans-serif}
-.truck-tab:hover{border-color:#000;background:#f0f0f0}
-.truck-tab.active{background:#000;color:#fff;border-color:#000}
-.notify-card{background:#fff;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.10);overflow:hidden;max-width:720px;margin:0 auto}
-.notify-card-head{background:#000;color:#fff;padding:14px 20px;display:flex;align-items:center;justify-content:space-between}
-.notify-card-head .truck-label{font-size:11px;color:#aaa;letter-spacing:1px;text-transform:uppercase}
-.notify-card-head .truck-name{font-size:20px;font-weight:900;margin-top:2px;color:#fff}
-.notify-card-head .date-badge{background:#fff;color:#000;border-radius:6px;padding:4px 12px;font-size:12px;font-weight:700}
+.notify-wrap{padding:20px;display:flex;gap:16px;align-items:flex-start}
+.notify-side{width:250px;flex-shrink:0;background:var(--wms-surface);border:1px solid var(--wms-border);
+  border-radius:var(--wms-radius);box-shadow:var(--wms-shadow);padding:12px;position:sticky;top:72px}
+.notify-side h2{font-size:13px;font-weight:600;color:var(--wms-text);margin-bottom:8px}
+.truck-search{width:100%;padding:8px 11px;border:1px solid var(--wms-border2);border-radius:9px;
+  font-family:var(--wms-font);font-size:13px;background:var(--wms-surface);color:var(--wms-text);outline:none}
+.truck-search:focus{border-color:var(--wms-primary)}
+.truck-count{font-size:11px;color:var(--wms-faint);margin:8px 2px 6px}
+.truck-selector{display:flex;flex-direction:column;gap:3px;max-height:min(58vh,520px);overflow-y:auto}
+.truck-tab{display:flex;align-items:center;gap:8px;width:100%;text-align:left;border:0;background:transparent;
+  border-radius:9px;padding:8px 10px;font-size:13px;font-weight:500;color:var(--wms-text);cursor:pointer;
+  font-family:var(--wms-font);transition:background .12s,color .12s}
+.truck-tab .n{margin-left:auto;font-size:11px;color:var(--wms-faint);font-weight:500}
+.truck-tab:hover:not(.active){background:var(--wms-surface2)}
+.truck-tab.active{background:var(--wms-primary);color:#fff;cursor:default}
+.truck-tab.active .n{color:rgba(255,255,255,.75)}
+.truck-empty{font-size:12px;color:var(--wms-faint);padding:14px 4px;text-align:center}
+
+.notify-card{flex:1;min-width:0;background:var(--wms-surface);border:1px solid var(--wms-border);
+  border-radius:var(--wms-radius);box-shadow:var(--wms-shadow);overflow:hidden}
+.notify-card-head{background:var(--wms-primary);color:#fff;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.notify-card-head .truck-label{font-size:10px;color:#C7D2FE;letter-spacing:1px;text-transform:uppercase;font-weight:600}
+.notify-card-head .truck-name{font-size:19px;font-weight:700;margin-top:2px;color:#fff}
+.notify-card-head .date-badge{background:rgba(255,255,255,.16);color:#fff;border-radius:8px;padding:5px 12px;font-size:12px;font-weight:600;flex-shrink:0}
 .notify-body{padding:16px 20px}
-.msg-box{background:#f9f9f9;border:1px solid #e0e0e0;border-radius:8px;padding:14px 16px;font-size:13px;line-height:1.9;white-space:pre-wrap;word-break:break-word;font-family:'Sarabun',Arial,sans-serif;min-height:120px;max-height:70vh;overflow-y:auto}
-.copy-bar{display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap}
-.btn-copy{background:#000;color:#fff;border:none;border-radius:6px;padding:9px 22px;font-size:13px;font-weight:700;cursor:pointer;transition:all .15s;font-family:'Sarabun',Arial,sans-serif}
-.btn-copy:hover{background:#333}
-.btn-copy.copied{background:#1a7a1a}
-.copy-hint{font-size:11px;color:#888}
-.summary-bar{background:#f0f0f0;border-top:1px solid #e0e0e0;padding:10px 20px;display:flex;gap:20px;font-size:11px;color:#555;flex-wrap:wrap}
-.summary-bar b{color:#000}
+.msg-box{background:var(--wms-surface2);border:1px solid var(--wms-border);border-radius:var(--wms-radius-sm);
+  padding:14px 16px;font-size:13px;line-height:1.9;white-space:pre-wrap;word-break:break-word;
+  font-family:'Sarabun',Arial,sans-serif;color:var(--wms-text);min-height:120px;max-height:62vh;overflow-y:auto}
+.copy-bar{display:flex;gap:10px;margin-top:12px;align-items:center;flex-wrap:wrap}
+.btn-copy{background:var(--wms-primary);color:#fff;border:none;border-radius:var(--wms-radius-sm);padding:9px 22px;
+  font-size:13px;font-weight:600;cursor:pointer;transition:background .15s;font-family:var(--wms-font)}
+.btn-copy:hover{background:var(--wms-primary-dark)}
+.btn-copy.copied{background:var(--wms-success)}
+.copy-hint{font-size:11px;color:var(--wms-muted)}
+.summary-bar{background:var(--wms-surface2);border-top:1px solid var(--wms-border);padding:10px 20px;
+  display:flex;gap:20px;font-size:11px;color:var(--wms-muted);flex-wrap:wrap}
+.summary-bar b{color:var(--wms-text)}
+@media (max-width:900px){
+  .notify-wrap{flex-direction:column}
+  .notify-side{width:100%;position:static}
+  .truck-selector{max-height:200px}
+}
 </style>
 <link rel="stylesheet" href="../../wms-theme.css">
 </head>
@@ -80,11 +99,13 @@
  <button onclick="resetApp()">⬆ อัปโหลดใหม่</button>
  </div>
  <div class="notify-wrap">
- <div class="notify-header">
- <h2> ข้อความแจ้งงานคนรถ</h2>
- <div class="truck-selector" id="truckSelector"></div>
- </div>
- <div class="notify-card" id="notifyCard"></div>
+   <aside class="notify-side">
+     <h2>เลือกคันรถ</h2>
+     <input class="truck-search" id="truckSearch" type="search" placeholder="ค้นหาชื่อคน / เลขคัน" autocomplete="off">
+     <div class="truck-count" id="truckCount"></div>
+     <div class="truck-selector" id="truckSelector"></div>
+   </aside>
+   <div class="notify-card" id="notifyCard"></div>
  </div>
 </div>
 
@@ -153,21 +174,43 @@ function buildApp(data){
 }
 
 function buildNotifyTab(){
+ const box=document.getElementById('truckSearch');
+ box.value='';
+ box.addEventListener('input',()=>renderTruckList(box.value));
+ renderTruckList('');
+ renderNotifyCard(0);
+}
+
+/** Draw the truck list, filtered by `q`. 20+ trucks made a wrapped pill row
+    unusable, so it is a searchable list instead. */
+function renderTruckList(q){
  const sel=document.getElementById('truckSelector');
+ const needle=String(q||'').trim().toLowerCase();
+ const hits=PARSED_TRUCKS.map((t,i)=>({t,i}))
+ .filter(({t})=>!needle||t.name.toLowerCase().includes(needle));
+
+ document.getElementById('truckCount').textContent =
+ needle ? `พบ ${hits.length} จาก ${PARSED_TRUCKS.length} คัน` : `ทั้งหมด ${PARSED_TRUCKS.length} คัน`;
+
  sel.innerHTML='';
- PARSED_TRUCKS.forEach((truck,i)=>{
+ if(!hits.length){
+ const p=document.createElement('div');
+ p.className='truck-empty'; p.textContent='ไม่พบคันที่ค้นหา';
+ sel.appendChild(p); return;
+ }
+ hits.forEach(({t,i})=>{
  const btn=document.createElement('button');
- btn.className='truck-tab'+(i===0?' active':'');
- btn.textContent=' '+truck.name;
+ btn.type='button';
+ btn.className='truck-tab'+(i===CURRENT_TRUCK_IDX?' active':'');
+ btn.innerHTML='<span>'+esc(t.name)+'</span><span class="n">'+t.rows.length+'</span>';
  btn.onclick=()=>{
- document.querySelectorAll('.truck-tab').forEach(b=>b.classList.remove('active'));
- btn.classList.add('active');
  CURRENT_TRUCK_IDX=i;
+ sel.querySelectorAll('.truck-tab').forEach(x=>x.classList.remove('active'));
+ btn.classList.add('active');
  renderNotifyCard(i);
  };
  sel.appendChild(btn);
  });
- renderNotifyCard(0);
 }
 
 function renderNotifyCard(idx){
@@ -211,17 +254,20 @@ function renderNotifyCard(idx){
  if(phone1) msg+=` เบอร์: ${phone1}${phone2?' / '+phone2:''}\n`;
  if(addr) msg+=` ที่อยู่: ${addr}\n`;
 
+ // แจ้งงานคนรถเอาเฉพาะที่นอน (คอลัมน์ E แบรนด์) แถวของแถมมีแต่คอลัมน์ H
+ // ทำให้ E ว่าง — เดิมยังพิมพ์ " • " เปล่าออกมา ตัดทิ้งไปเลย
+ const items=srows.filter(row=>v(row,C.brand));
+ if(items.length){
  msg+=` สินค้า:\n`;
- srows.forEach(row=>{
- const brand=v(row,C.brand);
+ items.forEach(row=>{
  const size=v(row,C.size);
  const qty=v(row,C.qty);
- let line=` • `;
- if(brand) line+=brand;
+ let line=` • `+v(row,C.brand);
  if(size) line+=` ${size}`;
  if(qty) line+=` × ${qty} ชิ้น`;
  msg+=line+'\n';
  });
+ }
 
  if(payment) msg+=` การเงิน: ${payment}\n`;
  if(platform) msg+=` Platform: ${platform}\n`;
