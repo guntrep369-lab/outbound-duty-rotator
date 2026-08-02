@@ -123,7 +123,9 @@
 </div>
 
 <script>
-const C={truck:0,date:1,sup:2,order:3,brand:4,size:5,qty:6,gift:7,giftQty:8,customer:9,phone1:10,phone2:11,address:12,time:13,payment:14,remark:15,platform:16,cardMachine:17};
+/* ตำแหน่งคอลัมน์มาจาก transport-file.js — ชุดเดียวของทั้งโมดูล
+   แก้ที่นั่นที่เดียวเมื่อชีตเปลี่ยน ไม่ต้องไล่แก้ทีละหน้า */
+const C = TransportFile.COLS;
 let PARSED_TRUCKS=[];
 let CURRENT_TRUCK_IDX=0;
 let LOADED_FILE='';   // ชื่อไฟล์ที่กำลังดูอยู่ แสดงบน topbar
@@ -158,7 +160,7 @@ function processFile(file){
  const data=rows.slice(1).filter(r=>r.some(c=>String(c).trim()!==''));
  if(!data.length){setErr('ไม่พบข้อมูลในไฟล์');return;}
  buildApp(data);
- TransportFile.save(file.name, data);   // ให้อีกสองหน้าใช้ไฟล์เดียวกัน
+ TransportFile.save(file.name, data, rows[0]);   // ให้อีกสองหน้าใช้ไฟล์เดียวกัน
  }catch(err){setErr('อ่านไฟล์ไม่ได้: '+err.message);}
  };
  reader.readAsArrayBuffer(file);

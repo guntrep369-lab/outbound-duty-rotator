@@ -289,6 +289,15 @@ body[data-wms-module="transport"] .tf-bar .tf-change {
 }
 body[data-wms-module="transport"] .tf-bar .tf-change:hover { background: var(--wms-primary); color: #fff; border-color: var(--wms-primary); }
 
+/* Column layout no longer matches what the tools expect. Silent here means
+   printing someone else's address, so it is loud. */
+body[data-wms-module="transport"] .tf-warn {
+  margin: -6px 20px 14px; padding: 9px 14px;
+  background: #FFFBEB; border: 1px solid #FDE68A; border-radius: var(--wms-radius-sm);
+  font-family: var(--wms-font); font-size: 12.5px; line-height: 1.6; color: #92400E;
+}
+body[data-wms-module="transport"] .tf-warn b { display: block; margin-bottom: 2px; }
+
 /* ── Upload screen — shared by Picklist Label and ใบนำส่งสินค้า ───────────
    Both pages open on "give me a file". They used to look unrelated: the
    picklist's dashed box stretched the full window width, while the delivery

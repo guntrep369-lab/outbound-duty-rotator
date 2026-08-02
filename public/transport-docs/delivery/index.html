@@ -187,7 +187,9 @@ table.pod-tbl tr:nth-child(even) td{background:#f9f9f9}
 </div>
 
 <script>
-var C = {truck:0,date:1,sup:2,order:3,brand:4,size:5,qty:6,gift:7,giftQty:8,customer:9,phone1:10,phone2:11,address:12,time:13,payment:14,remark:15,platform:16,cardMachine:17};
+/* ตำแหน่งคอลัมน์มาจาก transport-file.js — ชุดเดียวของทั้งโมดูล
+   แก้ที่นั่นที่เดียวเมื่อชีตเปลี่ยน ไม่ต้องไล่แก้ทีละหน้า */
+var C = TransportFile.COLS;
 /* โลโก้บริษัทไม่เปลี่ยนทุกวันเหมือนไฟล์ออเดอร์ จึงเก็บถาวรใน localStorage
    ไม่ใช่ sessionStorage — โลโก้เก่าไม่ทำให้ส่งของผิด แต่การต้องแนบใหม่ทุกวันกวนจริง */
 var LAST_BODY = null;   // ข้อมูลใบที่แสดงอยู่
@@ -547,7 +549,7 @@ function processFile(f) {
       var body = data.slice(1).filter(function(r){ return r.some(function(c){ return c !== ''; }); });
       if (!body.length) { document.getElementById('errMsg').textContent = 'ไม่พบข้อมูลในไฟล์'; return; }
       render(body);
-      TransportFile.save(f.name, body);   // ให้อีกสองหน้าใช้ไฟล์เดียวกัน
+      TransportFile.save(f.name, body, data[0]);   // ให้อีกสองหน้าใช้ไฟล์เดียวกัน
     } catch(err) {
       document.getElementById('errMsg').textContent = 'อ่านไฟล์ไม่ได้: ' + err.message;
     }

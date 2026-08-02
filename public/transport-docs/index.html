@@ -197,9 +197,12 @@ const esc=v=>String(v??'')
   .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 
 const ci=l=>l.toUpperCase().charCodeAt(0)-65;
+/* ตำแหน่งคอลัมน์มาจาก transport-file.js — ชุดเดียวของทั้งโมดูล
+   แก้ที่นั่นที่เดียวเมื่อชีตเปลี่ยน ไม่ต้องไล่แก้ทีละหน้า */
+const _T=TransportFile.COLS;
 const COL={
-  bed:{truck:ci('A'),date:ci('B'),sup:ci('C'),order:ci('D'),brand:ci('E'),size:ci('F'),qty:ci('G'),customer:ci('J'),address:ci('M'),appt:ci('N')},
-  gift:{truck:ci('A'),date:ci('B'),sup:ci('C'),order:ci('D'),gift:ci('H'),qty:ci('I'),customer:ci('J'),address:ci('M'),appt:ci('N')}
+  bed :{truck:_T.truck,date:_T.date,sup:_T.sup,order:_T.order,brand:_T.brand,size:_T.size,qty:_T.qty,customer:_T.customer,address:_T.address,appt:_T.time},
+  gift:{truck:_T.truck,date:_T.date,sup:_T.sup,order:_T.order,gift:_T.gift,qty:_T.giftQty,customer:_T.customer,address:_T.address,appt:_T.time}
 };
 const gv=(row,idx)=>{
   if(idx==null||row[idx]==null)return '';
@@ -244,7 +247,7 @@ function loadFile(file,type){
       if(data.length<2){alert('ไฟล์ไม่มีข้อมูล');return;}
       const rows=data.slice(1).filter(r=>r.some(c=>String(c).trim()!==''));
       buildBed(rows); buildGift(rows);
-      TransportFile.save(file.name, rows);   // ให้อีกสองหน้าใช้ไฟล์เดียวกัน
+      TransportFile.save(file.name, rows, data[0]);   // ให้อีกสองหน้าใช้ไฟล์เดียวกัน
     }catch(err){alert('อ่านไฟล์ไม่ได้: '+err.message);}
   };
   r.readAsBinaryString(file);
