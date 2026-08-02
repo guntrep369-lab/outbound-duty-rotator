@@ -22,6 +22,7 @@ export const CARRIERS = [
 export const DOCS = [
   { id: 'picklist', label: '🏷️ Picklist Label', dir: '' },
   { id: 'delivery', label: '📄 ใบนำส่งสินค้า', dir: 'delivery' },
+  { id: 'notify', label: '💬 แจ้งงานคนรถ', dir: 'notify' },
 ];
 
 const esc = (s) =>

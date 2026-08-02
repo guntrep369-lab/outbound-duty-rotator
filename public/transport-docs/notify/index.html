@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>แจ้งงานคนรถ - HRZ</title>
+<link rel="stylesheet" href="../../wms-gate.css">
+<script src="../../wms-gate.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+
+/* ── Upload Screen ── */
+.err{color:#c00;font-size:12px;margin-top:8px;font-weight:600}
+
+/* ── Main Screen ── */
+#main-screen{display:none}
+.topbar{display:flex;align-items:center;gap:8px;padding:8px 20px;background:#000;position:sticky;top:0;z-index:10}
+.topbar .info{flex:1;font-size:12px;color:#ccc}
+.topbar .info b{color:#fff}
+.topbar button{border:1px solid #555;background:transparent;border-radius:4px;padding:5px 14px;font-size:12px;cursor:pointer;color:#fff;font-weight:500;font-family:'Sarabun',Arial,sans-serif}
+.topbar button:hover{background:#222}
+
+/* ── Notify ── */
+.notify-wrap{background:#f5f5f5;padding:20px;min-height:calc(100vh - 52px)}
+.notify-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px}
+.notify-header h2{font-size:16px;font-weight:800}
+.truck-selector{display:flex;gap:8px;flex-wrap:wrap}
+.truck-tab{border:1.5px solid #ccc;background:#fff;border-radius:20px;padding:6px 16px;font-size:12px;font-weight:700;cursor:pointer;transition:all .15s;font-family:'Sarabun',Arial,sans-serif}
+.truck-tab:hover{border-color:#000;background:#f0f0f0}
+.truck-tab.active{background:#000;color:#fff;border-color:#000}
+.notify-card{background:#fff;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.10);overflow:hidden;max-width:720px;margin:0 auto}
+.notify-card-head{background:#000;color:#fff;padding:14px 20px;display:flex;align-items:center;justify-content:space-between}
+.notify-card-head .truck-label{font-size:11px;color:#aaa;letter-spacing:1px;text-transform:uppercase}
+.notify-card-head .truck-name{font-size:20px;font-weight:900;margin-top:2px;color:#fff}
+.notify-card-head .date-badge{background:#fff;color:#000;border-radius:6px;padding:4px 12px;font-size:12px;font-weight:700}
+.notify-body{padding:16px 20px}
+.msg-box{background:#f9f9f9;border:1px solid #e0e0e0;border-radius:8px;padding:14px 16px;font-size:13px;line-height:1.9;white-space:pre-wrap;word-break:break-word;font-family:'Sarabun',Arial,sans-serif;min-height:120px;max-height:70vh;overflow-y:auto}
+.copy-bar{display:flex;gap:8px;margin-top:12px;align-items:center;flex-wrap:wrap}
+.btn-copy{background:#000;color:#fff;border:none;border-radius:6px;padding:9px 22px;font-size:13px;font-weight:700;cursor:pointer;transition:all .15s;font-family:'Sarabun',Arial,sans-serif}
+.btn-copy:hover{background:#333}
+.btn-copy.copied{background:#1a7a1a}
+.copy-hint{font-size:11px;color:#888}
+.summary-bar{background:#f0f0f0;border-top:1px solid #e0e0e0;padding:10px 20px;display:flex;gap:20px;font-size:11px;color:#555;flex-wrap:wrap}
+.summary-bar b{color:#000}
+</style>
+<link rel="stylesheet" href="../../wms-theme.css">
+</head>
+<body data-wms-module="transport">
+
+<div class="wms-shell">
+<div data-wms-shell="transport" data-root="../../"></div>
+<div class="wms-main">
+  <div data-transport-nav="company" data-depth="1" data-doc="notify"></div>
+
+
+<!-- ══════════ UPLOAD SCREEN ══════════ -->
+<div id="upload-screen">
+ <div class="up-card">
+ <h1> แจ้งงานคนรถ</h1>
+ <p class="sub">บริษัท ฮอริซอน กรุ๊ป (ประเทศไทย) จำกัด</p>
+ <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+ <div class="icon"></div>
+ <div class="dt">วางไฟล์ที่นี่ หรือคลิกเพื่อเลือก</div>
+ <div class="ds">.xlsx / .xls — รองรับหลายคันในไฟล์เดียว</div>
+ </div>
+ <input type="file" id="fileInput" accept=".xlsx,.xls" style="display:none">
+ <p id="errMsg" class="err"></p>
+ <div class="col-hint">
+ <p>คอลัมน์ที่รองรับ · แถวแรก = หัวตาราง</p>
+ <div class="col-grid"><span>A: ชื่อรถ</span><span>B: Date</span><span>C: Sup</span><span>D: เลขOrder</span><span>E: แบรนด์</span><span>F: ขนาด</span><span>G: จำนวน</span><span>H: ของแถม</span><span>I: จำนวน(แถม)</span><span>J: ชื่อลูกค้า</span><span>K: Phone 1</span><span>L: Phone 2</span><span>M: ที่อยู่</span><span>N: เวลานัด</span><span>O: การเงิน</span><span>P: หมายเหตุ</span><span>Q: Platform_Order</span><span>R: เครื่องรูดบัตร</span></div>
+ </div>
+ </div>
+</div>
+
+<!-- ══════════ MAIN SCREEN ══════════ -->
+<div id="main-screen">
+ <div class="topbar">
+ <div class="info" id="topInfo"></div>
+ <button onclick="resetApp()">⬆ อัปโหลดใหม่</button>
+ </div>
+ <div class="notify-wrap">
+ <div class="notify-header">
+ <h2> ข้อความแจ้งงานคนรถ</h2>
+ <div class="truck-selector" id="truckSelector"></div>
+ </div>
+ <div class="notify-card" id="notifyCard"></div>
+ </div>
+</div>
+
+<script>
+const C={truck:0,date:1,sup:2,order:3,brand:4,size:5,qty:6,gift:7,giftQty:8,customer:9,phone1:10,phone2:11,address:12,time:13,payment:14,remark:15,platform:16,cardMachine:17};
+let PARSED_TRUCKS=[];
+let CURRENT_TRUCK_IDX=0;
+
+// ── DRAG & DROP ──
+const dz=document.getElementById('dropZone');
+dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag');});
+dz.addEventListener('dragleave',()=>dz.classList.remove('drag'));
+dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag');const f=e.dataTransfer.files[0];if(f)processFile(f);});
+document.getElementById('fileInput').addEventListener('change',function(){if(this.files[0])processFile(this.files[0]);});
+
+function resetApp(){
+ document.getElementById('upload-screen').style.display='flex';
+ document.getElementById('main-screen').style.display='none';
+ document.getElementById('fileInput').value='';
+ document.getElementById('errMsg').textContent='';
+}
+
+function setErr(msg){document.getElementById('errMsg').textContent=msg;}
+
+function processFile(file){
+ const reader=new FileReader();
+ reader.onload=function(e){
+ try{
+ const wb=XLSX.read(e.target.result,{type:'array'});
+ const ws=wb.Sheets[wb.SheetNames[0]];
+ const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+ if(rows.length<2){setErr('ไฟล์ไม่มีข้อมูล');return;}
+ const data=rows.slice(1).filter(r=>r.some(c=>String(c).trim()!==''));
+ if(!data.length){setErr('ไม่พบข้อมูลในไฟล์');return;}
+ buildApp(data);
+ }catch(err){setErr('อ่านไฟล์ไม่ได้: '+err.message);}
+ };
+ reader.readAsArrayBuffer(file);
+}
+
+function v(row,col){return String(row[col]||'').trim();}
+function fmtDate(raw){
+ if(!raw)return'';
+ if(typeof raw==='number'){const d=XLSX.SSF.parse_date_code(raw);return`${d.d}/${d.m}/${d.y}`;}
+ return String(raw).trim();
+}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+function buildApp(data){
+ const trucks={};const truckOrder=[];
+ data.forEach(row=>{
+ const t=v(row,C.truck)||'ไม่ระบุ';
+ if(!trucks[t]){trucks[t]=[];truckOrder.push(t);}
+ trucks[t].push(row);
+ });
+ PARSED_TRUCKS=truckOrder.map(name=>({name,rows:trucks[name]}));
+
+ let totalOrders=0;
+ truckOrder.forEach(t=>totalOrders+=trucks[t].length);
+
+ document.getElementById('topInfo').innerHTML=`<b>${truckOrder.length}</b> คัน &nbsp;·&nbsp; <b>${totalOrders}</b> orders`;
+ document.getElementById('upload-screen').style.display='none';
+ document.getElementById('main-screen').style.display='block';
+
+ buildNotifyTab();
+}
+
+function buildNotifyTab(){
+ const sel=document.getElementById('truckSelector');
+ sel.innerHTML='';
+ PARSED_TRUCKS.forEach((truck,i)=>{
+ const btn=document.createElement('button');
+ btn.className='truck-tab'+(i===0?' active':'');
+ btn.textContent=' '+truck.name;
+ btn.onclick=()=>{
+ document.querySelectorAll('.truck-tab').forEach(b=>b.classList.remove('active'));
+ btn.classList.add('active');
+ CURRENT_TRUCK_IDX=i;
+ renderNotifyCard(i);
+ };
+ sel.appendChild(btn);
+ });
+ renderNotifyCard(0);
+}
+
+function renderNotifyCard(idx){
+ const truck=PARSED_TRUCKS[idx];
+ const card=document.getElementById('notifyCard');
+
+ const stops={};const stopOrder=[];
+ truck.rows.forEach(row=>{
+ const k=v(row,C.customer)||v(row,C.order)||'ไม่ระบุ';
+ if(!stops[k]){stops[k]=[];stopOrder.push(k);}
+ stops[k].push(row);
+ });
+
+ const dateVal=fmtDate(truck.rows[0][C.date]);
+ const totalQty=truck.rows.reduce((s,r)=>{const n=parseInt(v(r,C.qty))||0;return s+n;},0);
+ const allCards=[...new Set(truck.rows.map(r=>v(r,C.cardMachine)).filter(Boolean))];
+
+ let msg='';
+ msg+=` แจ้งงานส่งสินค้า\n`;
+ if(dateVal) msg+=` วันที่: ${dateVal}\n`;
+ msg+=` คันรถ: ${truck.name}\n`;
+ msg+=` รวมจุดส่ง: ${stopOrder.length} จุด\n`;
+ if(allCards.length) msg+=` เครื่องรูดบัตร: ${allCards.join(', ')}\n`;
+ msg+=`${'─'.repeat(32)}\n`;
+
+ stopOrder.forEach((stopKey,si)=>{
+ const srows=stops[stopKey];
+ const fr=srows[0];
+ const time=v(fr,C.time);
+ const phone1=v(fr,C.phone1);
+ const phone2=v(fr,C.phone2);
+ const addr=v(fr,C.address);
+ const payment=v(fr,C.payment);
+ const remark=v(fr,C.remark);
+ const platform=v(fr,C.platform);
+ const stopOrders=[...new Set(srows.map(r=>v(r,C.order)).filter(Boolean))];
+
+ msg+=`\n จุดที่ ${si+1}: ${stopKey}\n`;
+ if(stopOrders.length) msg+=` Order: ${stopOrders.join(', ')}\n`;
+ if(time) msg+=` ⏰ เวลานัด: ${time}\n`;
+ if(phone1) msg+=` เบอร์: ${phone1}${phone2?' / '+phone2:''}\n`;
+ if(addr) msg+=` ที่อยู่: ${addr}\n`;
+
+ msg+=` สินค้า:\n`;
+ srows.forEach(row=>{
+ const brand=v(row,C.brand);
+ const size=v(row,C.size);
+ const qty=v(row,C.qty);
+ let line=` • `;
+ if(brand) line+=brand;
+ if(size) line+=` ${size}`;
+ if(qty) line+=` × ${qty} ชิ้น`;
+ msg+=line+'\n';
+ });
+
+ if(payment) msg+=` การเงิน: ${payment}\n`;
+ if(platform) msg+=` Platform: ${platform}\n`;
+ if(remark) msg+=` หมายเหตุ: ${remark}\n`;
+
+ if(si<stopOrder.length-1) msg+=`${'─'.repeat(32)}\n`;
+ });
+
+ msg+=`\n${'═'.repeat(32)}\n`;
+
+ msg+=` ขอบคุณและขอให้เดินทางปลอดภัยครับ/ค่ะ`;
+
+ card.innerHTML=`
+ <div class="notify-card-head">
+ <div>
+ <div class="truck-label">TRUCK NOTIFICATION</div>
+ <div class="truck-name"> ${esc(truck.name)}</div>
+ </div>
+ ${dateVal?`<div class="date-badge"> ${esc(dateVal)}</div>`:''}
+ </div>
+ <div class="notify-body">
+ <div class="msg-box" id="msgBox">${esc(msg)}</div>
+ <div class="copy-bar">
+ <button class="btn-copy" id="copyBtn" onclick="copyMsg()"> คัดลอกข้อความ</button>
+ <span class="copy-hint">คัดลอกแล้วส่งทาง LINE / WhatsApp ได้เลย</span>
+ </div>
+ </div>
+ <div class="summary-bar">
+ <span> คัน: <b>${esc(truck.name)}</b></span>
+ <span> Orders: <b>${truck.rows.length}</b></span>
+ <span> รวมชิ้น: <b>${totalQty}</b></span>
+ </div>
+ `;
+ card._msg=msg;
+}
+
+function copyMsg(){
+ const card=document.getElementById('notifyCard');
+ const msg=card._msg||document.getElementById('msgBox').innerText;
+ if(navigator.clipboard){
+ navigator.clipboard.writeText(msg).then(()=>showCopied());
+ }else{
+ const ta=document.createElement('textarea');
+ ta.value=msg;ta.style.position='fixed';ta.style.opacity='0';
+ document.body.appendChild(ta);ta.select();document.execCommand('copy');
+ document.body.removeChild(ta);showCopied();
+ }
+}
+function showCopied(){
+ const btn=document.getElementById('copyBtn');
+ if(!btn)return;
+ btn.textContent=' คัดลอกแล้ว!';btn.classList.add('copied');
+ setTimeout(()=>{btn.textContent=' คัดลอกข้อความ';btn.classList.remove('copied');},2500);
+}
+</script>
+</div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+<script type="module" src="../../wms-shell.js"></script>
+<script type="module" src="../transport-nav.js"></script>
+</body>
+</html>
