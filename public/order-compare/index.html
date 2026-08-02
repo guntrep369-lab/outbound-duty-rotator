@@ -292,6 +292,14 @@ td{padding:9px 12px;vertical-align:middle}
   .summary-strip{grid-template-columns:1fr 1fr}
   .search-box{margin-left:0}.search-box input{width:100%}
 }
+
+  /* Which sheet the stock numbers were calculated from */
+  .stock-src { align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px; font-size:12px; }
+  .stock-src .src-k { color:var(--muted); }
+  .stock-src .src-v { font-weight:600; padding:3px 10px; border-radius:999px;
+                      background:var(--primary-light); color:var(--primary); }
+  .stock-src .src-v.warn { background:#FEF3C7; color:#92400E; }
+  .stock-src .src-warn { color:#B45309; font-weight:500; }
 </style>
 <link rel="stylesheet" href="../wms-theme.css">
 <link rel="stylesheet" href="../wms-gate.css">
@@ -458,7 +466,7 @@ td{padding:9px 12px;vertical-align:middle}
         <div style="font-size:24px">📋</div>
         <div>
           <div style="font-weight:600;font-size:14px">ไฟล์ออเดอร์</div>
-          <div style="font-size:12px;color:var(--muted)">ใช้ Sheet Sheet Daily CRM คำนวณความต้องการ</div>
+          <div style="font-size:12px;color:var(--muted)">ใช้ Sheet Daily Logis (รอบเช้า) คำนวณความต้องการ</div>
         </div>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px">
@@ -516,6 +524,7 @@ td{padding:9px 12px;vertical-align:middle}
   </div>
 
   <!-- Stock summary -->
+  <div id="stock-src" class="stock-src" style="display:none"></div>
   <div class="summary-strip" id="stockSummaryStrip" style="display:none">
     <div class="stat-card">
       <div class="stat-icon" style="background:#EBF0FF">🔢</div>
@@ -685,7 +694,8 @@ const esc = v => String(v ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
-let data1 = [], data2 = [], data2raw = []; // data2raw = raw rows for stock tab
+let data1 = [], data2 = [], stockRaw = []; // stockRaw = rows the stock tab reads
+let stockSourceLabel = '';  // which sheet those rows came from, shown on the results
 let stockMap = {};   // sku -> {sku, description, qa, newwh, total}
 let diffResults = [];
 let skuDemand = {};  // sku -> {qty, name, orders:[]}
@@ -764,7 +774,8 @@ document.getElementById('file-single').addEventListener('change', e => {
     }
     data1 = sheetToRows(wb.Sheets[wb.SheetNames[0]]);
     data2 = sheetToRows(wb.Sheets[wb.SheetNames[1]]);
-    data2raw = data2;
+    stockRaw = data1;                    // stock reads the morning sheet
+    stockSourceLabel = wb.SheetNames[0];
     document.getElementById('sheet-status').textContent =
       `✓ "${wb.SheetNames[0]}" ${data1.length} แถว | "${wb.SheetNames[1]}" ${data2.length} แถว`;
     updateCompareBtn();
@@ -779,11 +790,13 @@ function loadOrderForStock(e) {
   const reader = new FileReader();
   reader.onload = ev => {
     const wb = XLSX.read(ev.target.result, { type: 'array' });
-    const sheetIdx = wb.SheetNames.length >= 2 ? 1 : 0;
-    data2raw = sheetToRows(wb.Sheets[wb.SheetNames[sheetIdx]]);
+    // sheet แรก = Daily Logis (รอบเช้า) ซึ่งเป็นตัวตั้งของการเช็คสต๊อก
+    const sheetIdx = 0;
+    stockRaw = sheetToRows(wb.Sheets[wb.SheetNames[sheetIdx]]);
+    stockSourceLabel = wb.SheetNames[sheetIdx];
     const card = document.getElementById('order-card-2');
     card.classList.add('has-file');
-    document.getElementById('order2-fname').textContent = `📄 ${file.name} (Sheet: ${wb.SheetNames[sheetIdx]}, ${data2raw.length} แถว)`;
+    document.getElementById('order2-fname').textContent = `📄 ${file.name} (Sheet: ${wb.SheetNames[sheetIdx]}, ${stockRaw.length} แถว)`;
     document.getElementById('stock-status').textContent = '';
   };
   reader.readAsArrayBuffer(file);
@@ -1385,12 +1398,13 @@ function aggregateSKUDemand(rows) {
 }
 
 function runStockCheck() {
-  // รวมทุก carrier (sheet Sheet Daily CRM) — ถ้าไม่มี carriersData ใช้ data2raw
+  // ความต้องการสินค้าคิดจาก Sheet Daily Logis (รอบเช้า / sheet แรก) — งานที่ต้อง
+  // จัดของวันนี้ ไม่ใช่ Daily CRM ซึ่งเป็นภาพรอบเย็นหลังออเดอร์เปลี่ยนไปแล้ว
   let rows = [];
   if (carriersData.length > 0) {
-    carriersData.forEach(car => { rows = rows.concat(car.data2); });
+    carriersData.forEach(car => { rows = rows.concat(car.data1); });
   } else {
-    rows = data2raw.length ? data2raw : data2;
+    rows = stockRaw.length ? stockRaw : data1;
   }
 
   if (!rows.length) {
@@ -1441,6 +1455,18 @@ function runStockCheck() {
   const carrierSummary = carriersData.length > 0
     ? `${carriersData.length} ขนส่ง (${carriersData.map(car=>car.key).join(', ')}) — รวม ${rows.length} แถว`
     : `${rows.length} แถว`;
+
+  // Name the sheet these numbers came from. Without it the tab looks identical
+  // whichever round was loaded — which is how it went unnoticed that the stock
+  // check had been reading the evening sheet all along.
+  const src = stockSourceLabel || 'Sheet Daily Logis';
+  const expected = /logis/i.test(src);
+  const badge = document.getElementById('stock-src');
+  badge.innerHTML =
+    '<span class="src-k">กำลังเช็คจาก</span>' +
+    `<span class="src-v${expected ? '' : ' warn'}">${esc(src)}</span>` +
+    (expected ? '' : '<span class="src-warn">⚠️ ปกติต้องเป็น Sheet Daily Logis (รอบเช้า)</span>');
+  badge.style.display = 'flex';
   document.getElementById('stock-status').textContent = `✓ คำนวณจาก ${carrierSummary}`;
 
   renderStockTable();
@@ -1863,7 +1889,8 @@ function applyCarrier(idx) {
   activeCarrier = idx;
   data1    = carriersData[idx].data1;
   data2    = carriersData[idx].data2;
-  data2raw = carriersData[idx].data2;
+  stockRaw = carriersData[idx].data1;  // stock reads the morning sheet
+  stockSourceLabel = 'Sheet Daily Logis';
   // Reset compare results
   diffResults = [];
   document.getElementById('summaryStrip').style.display = 'none';
