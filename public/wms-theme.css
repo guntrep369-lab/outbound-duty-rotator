@@ -266,6 +266,29 @@ body[data-wms-module="transport"] .check-row:hover { background:var(--wms-surfac
 body[data-wms-module="transport"] .btn-ok { background:var(--wms-primary); border-radius:var(--wms-radius-sm); }
 body[data-wms-module="transport"] .btn-cancel { border:1px solid var(--wms-border2); border-radius:var(--wms-radius-sm); }
 
+/* ── Shared-file bar (transport-file.js) ─────────────────────────────────
+   Shown once a file is loaded, on all three รถบริษัท tools. Naming the file
+   matters: the three pages now share one upload, so without this you could be
+   looking at a file you did not pick on this page.                          */
+body[data-wms-module="transport"] .tf-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 0 20px 14px; padding: 8px 14px;
+  background: var(--wms-primary-light); border: 1px solid #C7D2FE;
+  border-radius: var(--wms-radius-sm);
+  font-family: var(--wms-font); font-size: 12.5px; color: var(--wms-primary-dark);
+}
+body[data-wms-module="transport"] .tf-bar .tf-ic { flex-shrink: 0; }
+body[data-wms-module="transport"] .tf-bar .tf-name {
+  font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+body[data-wms-module="transport"] .tf-bar .tf-rows { color: var(--wms-primary); opacity: .8; }
+body[data-wms-module="transport"] .tf-bar .tf-change {
+  margin-left: auto; flex-shrink: 0; padding: 4px 12px; border-radius: 7px; cursor: pointer;
+  border: 1px solid #A5B4FC; background: var(--wms-surface); color: var(--wms-primary-dark);
+  font-family: var(--wms-font); font-size: 12px; font-weight: 500;
+}
+body[data-wms-module="transport"] .tf-bar .tf-change:hover { background: var(--wms-primary); color: #fff; border-color: var(--wms-primary); }
+
 /* ── Upload screen — shared by Picklist Label and ใบนำส่งสินค้า ───────────
    Both pages open on "give me a file". They used to look unrelated: the
    picklist's dashed box stretched the full window width, while the delivery

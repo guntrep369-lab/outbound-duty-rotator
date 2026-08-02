@@ -89,6 +89,7 @@ table.pod-tbl tr:nth-child(even) td{background:#f9f9f9}
 <link rel="stylesheet" href="../../wms-theme.css">
 <link rel="stylesheet" href="../../wms-gate.css">
 <script src="../../wms-gate.js"></script>
+<script src="../transport-file.js"></script>
 </head>
 <body data-wms-module="transport">
 
@@ -512,6 +513,7 @@ function processFile(f) {
       var body = data.slice(1).filter(function(r){ return r.some(function(c){ return c !== ''; }); });
       if (!body.length) { document.getElementById('errMsg').textContent = 'ไม่พบข้อมูลในไฟล์'; return; }
       render(body);
+      TransportFile.save(f.name, body);   // ให้อีกสองหน้าใช้ไฟล์เดียวกัน
     } catch(err) {
       document.getElementById('errMsg').textContent = 'อ่านไฟล์ไม่ได้: ' + err.message;
     }
@@ -520,6 +522,8 @@ function processFile(f) {
 }
 
 function resetApp() {
+ /* ล้างไฟล์ที่แชร์ด้วย ไม่งั้นอีกสองหน้าจะยังใช้ไฟล์เก่า */
+ if(window.TransportFile) TransportFile.clear();
   document.getElementById('upload-screen').style.display = 'flex';
   document.getElementById('doc-screen').style.display = 'none';
   document.getElementById('fileInput').value = '';
@@ -542,6 +546,15 @@ document.getElementById('logoInput').addEventListener('change', function(e) {
   };
   r.readAsDataURL(e.target.files[0]);
 });
+
+/* ไฟล์ถูกอัปที่หน้าอื่นแล้ว → สร้างเลย ไม่ต้องอัปซ้ำ */
+(function(){
+  var f=window.TransportFile && TransportFile.get(); if(!f) return;
+  render(f.rows);
+  var host=document.createElement('div');
+  document.getElementById('main-screen').prepend(host);
+  TransportFile.renderBar(host, function(){ resetApp(); });
+})();
 </script>
 </div><!-- /.wms-main -->
 </div><!-- /.wms-shell -->

@@ -102,6 +102,7 @@ body{font-family:Arial,sans-serif;background:#f4f4f4;color:#111;font-size:14px}
 <link rel="stylesheet" href="../wms-theme.css">
 <link rel="stylesheet" href="../wms-gate.css">
 <script src="../wms-gate.js"></script>
+<script src="./transport-file.js"></script>
 </head>
 <body data-wms-module="transport">
 
@@ -242,7 +243,8 @@ function loadFile(file,type){
       const data=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
       if(data.length<2){alert('ไฟล์ไม่มีข้อมูล');return;}
       const rows=data.slice(1).filter(r=>r.some(c=>String(c).trim()!==''));
-      type==='bed'?buildBed(rows):buildGift(rows);
+      buildBed(rows); buildGift(rows);
+      TransportFile.save(file.name, rows);   // ให้อีกสองหน้าใช้ไฟล์เดียวกัน
     }catch(err){alert('อ่านไฟล์ไม่ได้: '+err.message);}
   };
   r.readAsBinaryString(file);
@@ -449,7 +451,20 @@ function toggle(type,i){const el=document.getElementById('lc-'+type+'-'+i);const
 function toggleCb(type,i,cb){const el=document.getElementById('lc-'+type+'-'+i);const cls=type==='bed'?'sel':'sel-g';if(cb.checked)el.classList.add(cls);else el.classList.remove(cls);syncAll(type);}
 function toggleAll(type,checked){const cls=type==='bed'?'sel':'sel-g';document.querySelectorAll('[id^="lc-'+type+'-"]').forEach(el=>{if(checked)el.classList.add(cls);else el.classList.remove(cls);const cb=el.querySelector('input[type=checkbox]');if(cb)cb.checked=checked;});}
 function syncAll(type){const all=document.querySelectorAll('[id^="lc-'+type+'-"]');const cls=type==='bed'?'sel':'sel-g';const n=[...all].filter(e=>e.classList.contains(cls)).length;const cb=document.getElementById('chk-all-'+type);if(cb)cb.checked=all.length>0&&all.length===n;}
-function resetPanel(type){document.getElementById('file-'+type).value='';document.getElementById('drop-'+type).style.display='block';document.getElementById('main-'+type).style.display='none';}
+function resetPanel(type){
+ /* ล้างไฟล์ที่แชร์ด้วย ไม่งั้นอีกสองหน้าจะยังใช้ไฟล์เก่า */
+ if(window.TransportFile) TransportFile.clear();document.getElementById('file-'+type).value='';document.getElementById('drop-'+type).style.display='block';document.getElementById('main-'+type).style.display='none';}
+
+/* ไฟล์ถูกอัปที่หน้าอื่นแล้ว → สร้างเลย ไม่ต้องอัปซ้ำ */
+(function(){
+  var f=window.TransportFile && TransportFile.get(); if(!f) return;
+  buildBed(f.rows); buildGift(f.rows);
+  ['bed','gift'].forEach(function(t){
+    var host=document.createElement('div');
+    document.getElementById('main-'+t).prepend(host);
+    TransportFile.renderBar(host, function(){ resetPanel('bed'); resetPanel('gift'); });
+  });
+})();
 </script>
 <script type="module" src="../wms-shell.js"></script>
 <script type="module" src="./transport-nav.js"></script>

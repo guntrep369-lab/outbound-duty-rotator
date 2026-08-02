@@ -73,6 +73,7 @@
 }
 </style>
 <link rel="stylesheet" href="../../wms-theme.css">
+<script src="../transport-file.js"></script>
 </head>
 <body data-wms-module="transport">
 
@@ -135,6 +136,8 @@ dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag');co
 document.getElementById('fileInput').addEventListener('change',function(){if(this.files[0])processFile(this.files[0]);});
 
 function resetApp(){
+ /* ล้างไฟล์ที่แชร์ด้วย ไม่งั้นอีกสองหน้าจะยังใช้ไฟล์เก่า */
+ if(window.TransportFile) TransportFile.clear();
  document.getElementById('upload-screen').style.display='flex';
  document.getElementById('main-screen').style.display='none';
  document.getElementById('fileInput').value='';
@@ -155,6 +158,7 @@ function processFile(file){
  const data=rows.slice(1).filter(r=>r.some(c=>String(c).trim()!==''));
  if(!data.length){setErr('ไม่พบข้อมูลในไฟล์');return;}
  buildApp(data);
+ TransportFile.save(file.name, data);   // ให้อีกสองหน้าใช้ไฟล์เดียวกัน
  }catch(err){setErr('อ่านไฟล์ไม่ได้: '+err.message);}
  };
  reader.readAsArrayBuffer(file);
@@ -350,6 +354,12 @@ function showCopied(){
  btn.textContent=' คัดลอกแล้ว!';btn.classList.add('copied');
  setTimeout(()=>{btn.textContent=' คัดลอกข้อความ';btn.classList.remove('copied');},2500);
 }
+
+/* ไฟล์ถูกอัปที่หน้าอื่นแล้ว → สร้างเลย ไม่ต้องอัปซ้ำ */
+(function(){
+  var f=window.TransportFile && TransportFile.get(); if(!f) return;
+  LOADED_FILE=f.fileName; buildApp(f.rows);
+})();
 </script>
 </div><!-- /.wms-main -->
 </div><!-- /.wms-shell -->
