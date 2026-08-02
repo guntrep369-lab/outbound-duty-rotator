@@ -360,6 +360,21 @@ td{padding:9px 12px;vertical-align:middle}
     .ps-table{page-break-inside:auto}
     .ps-table tr{page-break-inside:avoid}
   }
+
+  .ps-cat{margin-top:10px}
+  .ps-cat:first-child{margin-top:2px}
+  .ps-cname{font-size:12.5px;font-weight:700;color:var(--text);padding:4px 0 3px;
+    border-bottom:1.5px solid var(--border)}
+  .ps-cname span{font-weight:400;font-size:11px;color:var(--muted);margin-left:6px}
+  .ps-size{font-size:11.5px;font-weight:600;color:var(--primary);background:var(--primary-light);
+    border-radius:6px;padding:3px 9px;margin:7px 0 3px;display:inline-block}
+  .ps-size span{font-weight:400;color:var(--primary);opacity:.75;margin-left:5px}
+  @media print{
+    .ps-cname{border-bottom:1.5px solid #000}
+    .ps-size{background:#EEE!important;color:#000!important;border:1px solid #000}
+    .ps-size span{color:#000!important}
+    .ps-cat{page-break-inside:auto}
+  }
 </style>
 <link rel="stylesheet" href="../wms-theme.css">
 <link rel="stylesheet" href="../wms-gate.css">
@@ -1428,6 +1443,43 @@ function renderStockPanel(norm) {
 // TAB 2 — STOCK CHECK LOGIC
 // ══════════════════════════════════════════════════════
 
+
+/* ══════════ การจัดกลุ่มสินค้าในใบสรุปหยิบของ ══════════
+   จำแนกจาก "ชื่อสินค้า" ซึ่งขึ้นต้นด้วยคำประเภทเสมอ เช่น
+     ที่นอน 6FT Emmas Boston…     เก้าอี้เพื่อสุขภาพ Lunio…
+     ท็อปโต๊ะ 160x80CM…           แถม - หมอน Morning Sleep…
+
+   แก้กฎได้ที่นี่ที่เดียว ลำดับสำคัญ: อันที่เจาะจงกว่าต้องอยู่ก่อน
+
+   ⚠️ ของที่ไม่เข้ากฎไหนเลยจะไปอยู่กลุ่ม "อื่น ๆ" — ไม่หายไปจากใบ
+      เพราะของหายจากใบหยิบแปลว่าลืมหยิบจริง */
+const PICK_CATS = [
+  { label: '🛏️ ที่นอน', re: /ที่นอน|mattress/i, bySize: true },
+  { label: '💺 เก้าอี้', re: /เก้าอี้|chair/i },
+  { label: '🪑 โต๊ะ',   re: /โต๊ะ|desk|desktop/i },
+  { label: '🛌 เตียง',  re: /เตียง|bed frame|adjustable bed/i },
+];
+const GIFT_CATS = [
+  { label: 'ชุดเครื่องนอน',   re: /ชุดเครื่องนอน|bedding set/i },
+  { label: 'ผ้านวม',         re: /ผ้านวม|duvet|comforter/i },
+  { label: 'ผ้ารองกันเปื้อน', re: /ผ้ารอง|กันเปื้อน|protector/i },
+  { label: 'หมอน',           re: /หมอน|pillow/i },
+];
+
+/** ขนาดที่นอนจากชื่อ เช่น "6FT" "3.5FT" → 6, 3.5 (ไม่เจอ = null) */
+function pickSize(name) {
+  const m = /(\d+(?:\.\d+)?)\s*(?:ft|ฟุต)/i.exec(String(name || ''));
+  return m ? parseFloat(m[1]) : null;
+}
+
+/** จับสินค้าเข้ากลุ่ม ตัวแรกที่ตรงชนะ ไม่ตรงเลย → อื่น ๆ */
+function pickCategory(item) {
+  const cats = item.type === 'gift' ? GIFT_CATS : PICK_CATS;
+  const name = String(item.name || '');
+  for (const c of cats) if (c.re.test(name)) return c;
+  return { label: 'อื่น ๆ', re: null };
+}
+
 /* ══════════ สรุปหยิบของ (แยกตามขนส่ง) ══════════
    ใช้ aggregateSKUDemand() ตัวเดียวกับแท็บเช็คสต๊อก แต่เรียกทีละขนส่ง
    แทนที่จะรวมทุกเจ้าเข้าด้วยกัน — น้องในทีมจะได้หยิบของแต่ละคันในรอบเดียว */
@@ -1488,17 +1540,67 @@ function renderPickSum() {
 function renderPickGroup(title, list) {
   if (!list.length) return '';
   const sum = list.reduce((n, x) => n + x.qty, 0);
+
+  // จัดเข้าหมวด แล้วที่นอนซอยย่อยตามขนาดอีกชั้น
+  const cats = new Map();
+  list.forEach(item => {
+    const c = pickCategory(item);
+    if (!cats.has(c.label)) cats.set(c.label, { cat: c, items: [] });
+    cats.get(c.label).items.push(item);
+  });
+
+  // เรียงหมวดตามลำดับใน PICK_CATS/GIFT_CATS ไม่ใช่ตามที่บังเอิญเจอก่อนในข้อมูล
+  // เพื่อให้ใบหยิบหน้าตาเหมือนกันทุกวัน คนหยิบจะได้ชินที่
+  const order = (list[0] && list[0].type === 'gift') ? GIFT_CATS : PICK_CATS;
+  const sorted = [...cats.values()].sort((a, b) => {
+    const ia = order.findIndex(c => c.label === a.cat.label);
+    const ib = order.findIndex(c => c.label === b.cat.label);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);   // อื่น ๆ ไว้ท้ายสุดเสมอ
+  });
+
+  let body = '';
+  for (const { cat, items } of sorted) {
+    const csum = items.reduce((n, x) => n + x.qty, 0);
+    body += '<div class="ps-cat"><div class="ps-cname">' + esc(cat.label) +
+            ' <span>' + items.length + ' รายการ · ' + csum + ' ชิ้น</span></div>';
+
+    if (cat.bySize) {
+      // ซอยตามขนาด เรียงใหญ่→เล็ก ของที่ไม่ระบุขนาดไว้ท้ายสุด
+      const sizes = new Map();
+      items.forEach(it => {
+        const s = pickSize(it.name);
+        const k = s === null ? '__none' : s;
+        if (!sizes.has(k)) sizes.set(k, []);
+        sizes.get(k).push(it);
+      });
+      const keys = [...sizes.keys()].sort((a, b) =>
+        a === '__none' ? 1 : b === '__none' ? -1 : b - a);
+      keys.forEach(k => {
+        const rows = sizes.get(k);
+        const label = k === '__none' ? 'ไม่ระบุขนาด' : k + ' ฟุต';
+        const ssum = rows.reduce((n, x) => n + x.qty, 0);
+        body += '<div class="ps-size">' + esc(label) +
+                ' <span>' + ssum + ' ชิ้น</span></div>' + pickTable(rows);
+      });
+    } else {
+      body += pickTable(items);
+    }
+    body += '</div>';
+  }
+
   return '<div class="ps-group"><div class="ps-gtitle">' + title +
-    ' <span>' + list.length + ' รายการ · ' + sum + ' ชิ้น</span></div>' +
-    '<table class="ps-table"><thead><tr>' +
-      '<th style="width:34px"></th><th style="width:150px">SKU</th><th>ชื่อสินค้า</th>' +
-      '<th style="width:70px;text-align:right">จำนวน</th></tr></thead><tbody>' +
-    list.map(x =>
+    ' <span>' + list.length + ' รายการ · ' + sum + ' ชิ้น</span></div>' + body + '</div>';
+}
+
+function pickTable(list) {
+  return '<table class="ps-table"><tbody>' +
+    list.sort((a, b) => b.qty - a.qty).map(x =>
       '<tr><td class="ps-chk"></td><td class="ps-sku">' + esc(x.sku) + '</td>' +
       '<td>' + esc(x.name) + '</td>' +
       '<td class="ps-qty">' + x.qty + '</td></tr>').join('') +
-    '</tbody></table></div>';
+    '</tbody></table>';
 }
+
 
 function aggregateSKUDemand(rows) {
   const demand = {};
