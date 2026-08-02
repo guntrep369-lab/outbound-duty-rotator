@@ -1561,28 +1561,46 @@ function renderStockTable() {
 
 // ── Load stock from Google Apps Script (bypasses CORS) ─────────────────────
 /* ── Fetch helper: timeout + auto-retry (GAS ชอบ timeout/หลุดเป็นครั้งคราว) ── */
-async function fetchWithRetry(url, { retries = 2, timeoutMs = 30000, onRetry } = {}) {
+/**
+ * Fetch an Apps Script endpoint, which is slow and occasionally flaky.
+ *
+ * TIMEOUT: 90s, not 30s. A GAS web app reading a grown sheet routinely needs
+ * 30–60s, and the old 30s cap turned "slow but working" into "aborted, retried
+ * twice, failed after 94 seconds". Waiting 40s and succeeding beats that.
+ *
+ * RETRY: only for errors that a retry can fix — a dropped connection, a 5xx,
+ * a GAS cold start. A timeout is NOT retried: the caller has already waited the
+ * full 90s, and spending another 90 to hear the same thing is worse than
+ * handing back control. `onProgress` ticks each second so the wait shows.
+ */
+async function fetchWithRetry(url, { retries = 1, timeoutMs = 90000, onRetry, onProgress } = {}) {
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt++) {
     const ctrl = new AbortController();
+    const started = Date.now();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    const ticker = onProgress
+      ? setInterval(() => onProgress(Math.round((Date.now() - started) / 1000), attempt), 1000)
+      : null;
     try {
       const resp = await fetch(url, { redirect: 'follow', signal: ctrl.signal });
-      clearTimeout(timer);
+      clearTimeout(timer); if (ticker) clearInterval(ticker);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       return resp;
     } catch (err) {
-      clearTimeout(timer);
-      lastErr = err.name === 'AbortError'
-        ? new Error(`หมดเวลา (${timeoutMs / 1000}s)`)
+      clearTimeout(timer); if (ticker) clearInterval(ticker);
+      const timedOut = err.name === 'AbortError';
+      lastErr = timedOut
+        ? new Error(`หมดเวลา ${timeoutMs / 1000} วินาที — Apps Script ตอบช้าเกินไป`)
         : err;
+      if (timedOut) break;                       // see RETRY above
       if (attempt < retries) {
         if (onRetry) onRetry(attempt + 1, retries, lastErr);
-        await new Promise(r => setTimeout(r, 1200 * (attempt + 1))); // backoff
+        await new Promise(r => setTimeout(r, 1200 * (attempt + 1)));
       }
     }
   }
-  throw new Error(`${lastErr.message} — ลองใหม่ ${retries} ครั้งแล้วไม่สำเร็จ`);
+  throw lastErr;
 }
 
 /* ── CSV export ────────────────────────────────────────────────────────────── */
@@ -1645,6 +1663,7 @@ async function loadStockFromGAS(inputId, directUrl) {
   try {
     // Apps Script ต้อง redirect-follow + retry เมื่อ timeout
     const resp = await fetchWithRetry(url, {
+      onProgress: (sec) => setStockStatus(`⏳ กำลังดึงข้อมูล... ${sec} วินาที`),
       onRetry: (n, max) => setStockStatus(`⏳ ไม่สำเร็จ — ลองใหม่ครั้งที่ ${n}/${max}...`),
     });
 
@@ -1811,6 +1830,10 @@ async function loadOrderFromGAS() {
 
   try {
     const resp = await fetchWithRetry(url, {
+      onProgress: (sec) => {
+        document.getElementById('sheet-status').textContent =
+          `⏳ กำลังดึงข้อมูล... ${sec} วินาที`;
+      },
       onRetry: (n, max) => {
         document.getElementById('sheet-status').textContent =
           `⏳ ไม่สำเร็จ — ลองใหม่ครั้งที่ ${n}/${max}...`;
