@@ -16,8 +16,17 @@
 /* ── Main Screen ── */
 #main-screen{display:none}
 .topbar{display:flex;align-items:center;gap:8px;padding:10px 20px;position:sticky;top:0;z-index:10}
-.topbar .info{flex:1;font-size:12px;color:var(--wms-muted)}
-.topbar .info b{color:var(--wms-text);font-weight:600}
+.topbar .info{flex:1;min-width:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.topbar .chip{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;
+  background:var(--wms-surface2);border:1px solid var(--wms-border);font-size:12px;color:var(--wms-muted)}
+.topbar .chip b{color:var(--wms-text);font-weight:600}
+.topbar .fname{font-size:12px;color:var(--wms-faint);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;min-width:0}
+.btn-reupload{display:inline-flex;align-items:center;gap:7px;flex-shrink:0;padding:7px 14px;
+  border-radius:var(--wms-radius-sm);border:1px solid var(--wms-border2);background:var(--wms-surface);
+  color:#334155;font-family:var(--wms-font);font-size:12.5px;font-weight:500;cursor:pointer;transition:all .15s}
+.btn-reupload:hover{background:var(--wms-primary-light);border-color:var(--wms-primary);color:var(--wms-primary-dark)}
+.btn-reupload svg{width:14px;height:14px;flex-shrink:0}
 
 /* ── Notify ── */
 .notify-wrap{padding:20px;display:flex;gap:16px;align-items:flex-start}
@@ -96,7 +105,10 @@
 <div id="main-screen">
  <div class="topbar">
  <div class="info" id="topInfo"></div>
- <button onclick="resetApp()">⬆ อัปโหลดใหม่</button>
+ <button class="btn-reupload" onclick="resetApp()">
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+ อัปโหลดไฟล์ใหม่
+ </button>
  </div>
  <div class="notify-wrap">
    <aside class="notify-side">
@@ -113,6 +125,7 @@
 const C={truck:0,date:1,sup:2,order:3,brand:4,size:5,qty:6,gift:7,giftQty:8,customer:9,phone1:10,phone2:11,address:12,time:13,payment:14,remark:15,platform:16,cardMachine:17};
 let PARSED_TRUCKS=[];
 let CURRENT_TRUCK_IDX=0;
+let LOADED_FILE='';   // ชื่อไฟล์ที่กำลังดูอยู่ แสดงบน topbar
 
 // ── DRAG & DROP ──
 const dz=document.getElementById('dropZone');
@@ -131,6 +144,7 @@ function resetApp(){
 function setErr(msg){document.getElementById('errMsg').textContent=msg;}
 
 function processFile(file){
+ LOADED_FILE=file.name;
  const reader=new FileReader();
  reader.onload=function(e){
  try{
@@ -166,7 +180,12 @@ function buildApp(data){
  let totalOrders=0;
  truckOrder.forEach(t=>totalOrders+=trucks[t].length);
 
- document.getElementById('topInfo').innerHTML=`<b>${truckOrder.length}</b> คัน &nbsp;·&nbsp; <b>${totalOrders}</b> orders`;
+ const totalStops=PARSED_TRUCKS.reduce((n,t)=>n+groupStops(t.rows).stopOrder.length,0);
+ document.getElementById('topInfo').innerHTML=
+ `<span class="chip">🚚 <b>${truckOrder.length}</b> คัน</span>`+
+ `<span class="chip">📍 <b>${totalStops}</b> จุดส่ง</span>`+
+ `<span class="chip">📦 <b>${totalOrders}</b> orders</span>`+
+ (LOADED_FILE?`<span class="fname" title="${esc(LOADED_FILE)}">${esc(LOADED_FILE)}</span>`:'');
  document.getElementById('upload-screen').style.display='none';
  document.getElementById('main-screen').style.display='block';
 
@@ -202,7 +221,7 @@ function renderTruckList(q){
  const btn=document.createElement('button');
  btn.type='button';
  btn.className='truck-tab'+(i===CURRENT_TRUCK_IDX?' active':'');
- btn.innerHTML='<span>'+esc(t.name)+'</span><span class="n">'+t.rows.length+'</span>';
+ btn.innerHTML='<span>'+esc(t.name)+'</span><span class="n">'+groupStops(t.rows).stopOrder.length+' จุด</span>';
  btn.onclick=()=>{
  CURRENT_TRUCK_IDX=i;
  sel.querySelectorAll('.truck-tab').forEach(x=>x.classList.remove('active'));
@@ -213,16 +232,25 @@ function renderTruckList(q){
  });
 }
 
-function renderNotifyCard(idx){
- const truck=PARSED_TRUCKS[idx];
- const card=document.getElementById('notifyCard');
-
+/**
+ * จัดแถวเป็น "จุดส่ง" — คีย์คือชื่อลูกค้า ถ้าไม่มีใช้เลข Order
+ * ใช้ทั้งตอนนับเลขท้ายชื่อคันและตอนสร้างข้อความ จะได้ไม่นับคนละแบบ
+ */
+function groupStops(rows){
  const stops={};const stopOrder=[];
- truck.rows.forEach(row=>{
+ rows.forEach(row=>{
  const k=v(row,C.customer)||v(row,C.order)||'ไม่ระบุ';
  if(!stops[k]){stops[k]=[];stopOrder.push(k);}
  stops[k].push(row);
  });
+ return {stops,stopOrder};
+}
+
+function renderNotifyCard(idx){
+ const truck=PARSED_TRUCKS[idx];
+ const card=document.getElementById('notifyCard');
+
+ const {stops,stopOrder}=groupStops(truck.rows);
 
  const dateVal=fmtDate(truck.rows[0][C.date]);
  const totalQty=truck.rows.reduce((s,r)=>{const n=parseInt(v(r,C.qty))||0;return s+n;},0);
