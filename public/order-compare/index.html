@@ -375,6 +375,9 @@ td{padding:9px 12px;vertical-align:middle}
     .ps-size span{color:#000!important}
     .ps-cat{page-break-inside:auto}
   }
+  .ps-nostock{font-size:10px;font-weight:600;color:#B45309;background:#FEF3C7;
+    border:1px solid #FDE68A;border-radius:5px;padding:1px 6px;white-space:nowrap}
+  @media print{.ps-nostock{background:#fff!important;border:1px solid #000;color:#000!important}}
 </style>
 <link rel="stylesheet" href="../wms-theme.css">
 <link rel="stylesheet" href="../wms-gate.css">
@@ -928,7 +931,8 @@ function loadStockFile(e) {
       rows.forEach(r => {
         const keys = Object.keys(r);
         const skuKey  = keys.find(k => /^sku$/i.test(k.trim()));
-        const descKey = keys.find(k => /desc/i.test(k));
+        const descKey = keys.find(k => k !== skuKey &&
+          /desc|ชื่อสินค้า|ชื่อ|รายละเอียด|product\s*name|item\s*name|^name$/i.test(k));
         const qaKey   = keys.find(k => /\bqa\b/i.test(k));
         const nwKey   = keys.find(k => /new.*wh|คลัง new/i.test(k));
         const totKey  = keys.find(k => /total/i.test(k));
@@ -1466,6 +1470,26 @@ const GIFT_CATS = [
   { label: 'หมอน',           re: /หมอน|pillow/i },
 ];
 
+/**
+ * ชื่อที่ใช้ "จำแนกประเภทและขนาด"
+ *
+ * ไฟล์สต๊อกระบุขนาด/ประเภทชัดกว่าไฟล์ออเดอร์มาก จึงใช้ description จาก
+ * stockMap เป็นหลัก แล้วค่อยถอยไปใช้ชื่อจากไฟล์ออเดอร์เมื่อ
+ *   • ยังไม่ได้โหลดไฟล์สต๊อก  หรือ
+ *   • SKU นั้นไม่มีในไฟล์สต๊อก
+ * ใบหยิบจึงยังใช้ได้แม้ไม่มีสต๊อก แค่จำแนกหยาบลง
+ */
+function pickName(item) {
+  const s = stockMap[item.sku];
+  const desc = s && String(s.description || '').trim();
+  return desc || item.name || '';
+}
+
+/** SKU นี้มีในไฟล์สต๊อกไหม — ใช้ติดป้ายเตือนบนใบ */
+function inStockFile(item) {
+  return !!stockMap[item.sku];
+}
+
 /** ขนาดที่นอนจากชื่อ เช่น "6FT" "3.5FT" → 6, 3.5 (ไม่เจอ = null) */
 function pickSize(name) {
   const m = /(\d+(?:\.\d+)?)\s*(?:ft|ฟุต)/i.exec(String(name || ''));
@@ -1475,7 +1499,7 @@ function pickSize(name) {
 /** จับสินค้าเข้ากลุ่ม ตัวแรกที่ตรงชนะ ไม่ตรงเลย → อื่น ๆ */
 function pickCategory(item) {
   const cats = item.type === 'gift' ? GIFT_CATS : PICK_CATS;
-  const name = String(item.name || '');
+  const name = pickName(item);
   for (const c of cats) if (c.re.test(name)) return c;
   return { label: 'อื่น ๆ', re: null };
 }
@@ -1568,7 +1592,7 @@ function renderPickGroup(title, list) {
       // ซอยตามขนาด เรียงใหญ่→เล็ก ของที่ไม่ระบุขนาดไว้ท้ายสุด
       const sizes = new Map();
       items.forEach(it => {
-        const s = pickSize(it.name);
+        const s = pickSize(pickName(it));
         const k = s === null ? '__none' : s;
         if (!sizes.has(k)) sizes.set(k, []);
         sizes.get(k).push(it);
@@ -1596,7 +1620,8 @@ function pickTable(list) {
   return '<table class="ps-table"><tbody>' +
     list.sort((a, b) => b.qty - a.qty).map(x =>
       '<tr><td class="ps-chk"></td><td class="ps-sku">' + esc(x.sku) + '</td>' +
-      '<td>' + esc(x.name) + '</td>' +
+      '<td>' + esc(pickName(x)) +
+        (inStockFile(x) ? '' : ' <span class="ps-nostock">ไม่พบใน Stock</span>') + '</td>' +
       '<td class="ps-qty">' + x.qty + '</td></tr>').join('') +
     '</tbody></table>';
 }
@@ -1969,7 +1994,8 @@ async function loadStockFromGAS(inputId, directUrl) {
       json.forEach(r => {
         const keys = Object.keys(r);
         const skuKey  = keys.find(k => /^sku$/i.test(k.trim()));
-        const descKey = keys.find(k => /desc/i.test(k));
+        const descKey = keys.find(k => k !== skuKey &&
+          /desc|ชื่อสินค้า|ชื่อ|รายละเอียด|product\s*name|item\s*name|^name$/i.test(k));
         const qaKey   = keys.find(k => /\bqa\b/i.test(k));
         const nwKey   = keys.find(k => /new.*wh|คลัง\s*new/i.test(k));
         const totKey  = keys.find(k => /total/i.test(k));
@@ -1989,7 +2015,8 @@ async function loadStockFromGAS(inputId, directUrl) {
       // Format A: { headers, rows }
       const h = json.headers.map(x => String(x).toLowerCase().replace(/\s/g,''));
       const iSku  = h.findIndex(x => /^sku$/.test(x));
-      const iDesc = h.findIndex(x => x.includes('desc'));
+      const iDesc = h.findIndex((x, i) => i !== iSku &&
+        /desc|ชื่อสินค้า|ชื่อ|รายละเอียด|product\s*name|item\s*name|^name$/i.test(x));
       const iQA   = h.findIndex(x => /\bqa\b/.test(x));
       const iNW   = h.findIndex(x => x.includes('new') || (x.includes('wh') && !/qa/.test(x)));
       const iTot  = h.findIndex(x => x.includes('total'));
