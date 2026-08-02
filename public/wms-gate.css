@@ -80,13 +80,28 @@ html.wms-locked body > *:not(#wms-gate) { visibility: hidden; }
 
 .gate-field { text-align: left; margin-bottom: 12px; }
 .gate-field label { display: block; font-size: 11px; font-weight: 600; color: #94A3B8; margin-bottom: 5px; }
-.gate-field input {
+.gate-field input, .gate-field select {
   width: 100%; padding: 11px 13px; border-radius: 10px;
   border: 1px solid #334155; background: #1E293B; color: #fff;
   font-family: inherit; font-size: 14px; outline: none; transition: border-color .15s;
 }
-.gate-field input:focus { border-color: #6366F1; }
+.gate-field input:focus, .gate-field select:focus { border-color: #6366F1; }
 .gate-field input::placeholder { color: #475569; }
+/* Native arrow is invisible on a dark field, so draw our own. */
+.gate-field select {
+  appearance: none; -webkit-appearance: none; cursor: pointer; padding-right: 34px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394A3B8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 11px center; background-size: 15px;
+}
+.gate-field select option { background: #1E293B; color: #fff; }
+
+/* Secondary action: switch between signing in and creating a code. */
+.gate-link {
+  width: 100%; margin-top: 12px; padding: 9px; border-radius: 10px; cursor: pointer;
+  border: 1px solid #334155; background: transparent; color: #94A3B8;
+  font-family: inherit; font-size: 12.5px; font-weight: 500; transition: all .15s;
+}
+.gate-link:hover { background: #1E293B; color: #fff; border-color: #475569; }
 
 .gate-btn {
   width: 100%; padding: 11px; margin-top: 6px; border: 0; border-radius: 10px;
