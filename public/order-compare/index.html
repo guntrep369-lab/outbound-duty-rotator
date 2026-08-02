@@ -300,6 +300,17 @@ td{padding:9px 12px;vertical-align:middle}
                       background:var(--primary-light); color:var(--primary); }
   .stock-src .src-v.warn { background:#FEF3C7; color:#92400E; }
   .stock-src .src-warn { color:#B45309; font-weight:500; }
+
+  /* ปุ่มลิงก์ไปชีตต้นทาง — อยู่บน header จึงเห็นได้จากทุกแท็บ */
+  header { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; }
+  .sheet-link {
+    display:inline-flex; align-items:center; gap:7px; flex-shrink:0;
+    padding:8px 14px; border-radius:10px; text-decoration:none; white-space:nowrap;
+    border:1px solid var(--border); background:var(--surface); color:var(--text);
+    font-family:var(--sans); font-size:13px; font-weight:500; transition:all .15s;
+  }
+  .sheet-link:hover { border-color:var(--primary); color:var(--primary); background:var(--primary-light); }
+  .sheet-link svg { width:15px; height:15px; flex-shrink:0; }
 </style>
 <link rel="stylesheet" href="../wms-theme.css">
 <link rel="stylesheet" href="../wms-gate.css">
@@ -317,6 +328,15 @@ td{padding:9px 12px;vertical-align:middle}
     <h1>📋 เทียบ Order &amp; สต๊อก</h1>
     <div class="sub">เปรียบเทียบ Order · ตรวจสต๊อกก่อนส่ง</div>
   </div>
+  <!-- ต้นทางของทุกแท็บ จึงวางไว้บน header ไม่ใช่ในแท็บใดแท็บหนึ่ง -->
+  <a class="sheet-link" href="https://docs.google.com/spreadsheets/d/1rzu9uBptTGRySKP_xG6dyjsbI7Czj2x5iAucKkVyojo/edit"
+     target="_blank" rel="noopener noreferrer" title="เปิด Google Sheet ต้นทางในแท็บใหม่">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M15 3h6v6"/><path d="M10 14 21 3"/>
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+    </svg>
+    เปิด Google Sheet
+  </a>
 </header>
 
 <!-- ── Tabs ── -->
