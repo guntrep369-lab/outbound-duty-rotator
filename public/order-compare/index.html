@@ -1407,12 +1407,32 @@ function runStockCheck() {
     rows = stockRaw.length ? stockRaw : data1;
   }
 
+  // Bailing out must also WIPE the previous run. Leaving the old table up next
+  // to a "กำลังเช็คจาก Sheet Daily Logis" badge reads as today's numbers, and
+  // picking against yesterday's demand is a real mistake.
+  function abort(msg) {
+    stockResults = [];
+    skuDemand = {};
+    document.getElementById('stock-src').style.display = 'none';
+    document.getElementById('stockSummaryStrip').style.display = 'none';
+    document.getElementById('stockFilterBar').style.display = 'none';
+    document.getElementById('stockTableWrap').innerHTML =
+      `<div class="empty-state" style="padding:36px 20px;text-align:center;color:var(--muted)">${msg}</div>`;
+    document.getElementById('stock-status').textContent = msg;
+  }
+
   if (!rows.length) {
-    document.getElementById('stock-status').textContent = '⚠️ กรุณาดึงข้อมูลออเดอร์ก่อน (Tab เทียบ Order)';
+    // Distinguish "nothing loaded" from "loaded, but the morning sheet is
+    // empty" — the second used to tell people to go and load the data they
+    // had just successfully loaded.
+    const pulled = carriersData.length > 0 || stockRaw.length > 0 || data2.length > 0;
+    abort(pulled
+      ? '⚠️ Sheet Daily Logis (รอบเช้า) ยังไม่มีข้อมูล — ดึงข้อมูลมาแล้ว แต่ sheet รอบเช้าว่าง'
+      : '⚠️ กรุณาดึงข้อมูลออเดอร์ก่อน (Tab เทียบ Order)');
     return;
   }
   if (!Object.keys(stockMap).length) {
-    document.getElementById('stock-status').textContent = '⚠️ กรุณาอัปโหลดไฟล์สต๊อกก่อน';
+    abort('⚠️ กรุณาอัปโหลดไฟล์สต๊อกก่อน');
     return;
   }
 
