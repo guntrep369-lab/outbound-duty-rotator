@@ -85,6 +85,10 @@ table.pod-tbl tr:nth-child(even) td{background:#f9f9f9}
   @page{size:A4 portrait;margin:8mm 5mm}
 }/* module sub-nav */
 
+
+#logoTopBtn{display:inline-flex;align-items:center;gap:7px}
+#logoTopPreview{height:18px;max-width:46px;object-fit:contain;display:none;
+  background:#fff;border-radius:3px;padding:1px 2px}
 </style>
 <link rel="stylesheet" href="../../wms-theme.css">
 <link rel="stylesheet" href="../../wms-gate.css">
@@ -127,6 +131,7 @@ table.pod-tbl tr:nth-child(even) td{background:#f9f9f9}
   <div class="topbar">
     <div class="info" id="topInfo"></div>
     <button onclick="openExportModal()">📊 Export Excel</button>
+    <button onclick="document.getElementById('logoInput').click()" id="logoTopBtn" title="โลโก้จะแสดงบนหัวใบทุกหน้า"><img id="logoTopPreview" alt="">🖼 โลโก้</button>
     <button onclick="resetApp()">⬆ อัปโหลดใหม่</button>
     <button onclick="openPrintModal()" class="btn-p">🖨 Print / PDF</button>
   </div>
@@ -183,7 +188,35 @@ table.pod-tbl tr:nth-child(even) td{background:#f9f9f9}
 
 <script>
 var C = {truck:0,date:1,sup:2,order:3,brand:4,size:5,qty:6,gift:7,giftQty:8,customer:9,phone1:10,phone2:11,address:12,time:13,payment:14,remark:15,platform:16,cardMachine:17};
+/* โลโก้บริษัทไม่เปลี่ยนทุกวันเหมือนไฟล์ออเดอร์ จึงเก็บถาวรใน localStorage
+   ไม่ใช่ sessionStorage — โลโก้เก่าไม่ทำให้ส่งของผิด แต่การต้องแนบใหม่ทุกวันกวนจริง */
+var LAST_BODY = null;   // ข้อมูลใบที่แสดงอยู่
+var LOGO_KEY = 'wms:transport:logo';
 var LOGO_B64 = '';
+try { LOGO_B64 = localStorage.getItem(LOGO_KEY) || ''; } catch (e) {}
+
+function setLogo(dataUrl) {
+  LOGO_B64 = dataUrl || '';
+  try {
+    if (LOGO_B64) localStorage.setItem(LOGO_KEY, LOGO_B64);
+    else localStorage.removeItem(LOGO_KEY);
+  } catch (e) {
+    alert('บันทึกโลโก้ไม่ได้ (พื้นที่เต็มหรือเบราว์เซอร์ปิดไว้) — ใบนี้ยังใส่โลโก้ให้ แต่ครั้งหน้าต้องแนบใหม่');
+  }
+  showLogo();
+}
+
+/** อัปเดตรูปตัวอย่างทั้งบนหน้าอัปโหลดและบน topbar */
+function showLogo() {
+  var p = document.getElementById('logoPreview');
+  if (p) { p.src = LOGO_B64; p.style.display = LOGO_B64 ? 'inline-block' : 'none'; }
+  var b = document.getElementById('logoBtn');
+  if (b) b.textContent = LOGO_B64 ? 'เปลี่ยนโลโก้' : '+ เพิ่มโลโก้';
+  var t = document.getElementById('logoTopPreview');
+  if (t) { t.src = LOGO_B64; t.style.display = LOGO_B64 ? 'inline-block' : 'none'; }
+  var tb = document.getElementById('logoTopBtn');
+  if (tb) tb.title = LOGO_B64 ? 'เปลี่ยนโลโก้บริษัท' : 'ยังไม่ได้ใส่โลโก้ — กดเพื่อเพิ่ม';
+}
 var ALL_GROUPS = [];
 
 var BANKS = {
@@ -284,6 +317,7 @@ function buildHeader(truck, dateStr, nStops, titleTh, titleEn) {
 }
 
 function render(body) {
+  LAST_BODY = body;   // เก็บไว้วาดใหม่ตอนเปลี่ยนโลโก้ โดยไม่ต้องอัปไฟล์ซ้ำ
   var groups = groupData(body);
   ALL_GROUPS = groups;
   var totalStops = groups.reduce(function(s,g){return s+g.stops.length;}, 0);
@@ -539,13 +573,14 @@ document.getElementById('logoInput').addEventListener('change', function(e) {
   if (!e.target.files[0]) return;
   var r = new FileReader();
   r.onload = function(ev) {
-    LOGO_B64 = ev.target.result;
-    var p = document.getElementById('logoPreview');
-    p.src = LOGO_B64; p.style.display = 'inline-block';
-    document.getElementById('logoBtn').textContent = 'เปลี่ยนโลโก้';
+    setLogo(ev.target.result);
+    // ถ้ากำลังดูใบอยู่ ให้วาดใหม่จะได้เห็นโลโก้ทันที ไม่ต้องอัปไฟล์ซ้ำ
+    if (LAST_BODY && document.getElementById('main-screen').style.display !== 'none') render(LAST_BODY);
   };
   r.readAsDataURL(e.target.files[0]);
+  e.target.value = '';   // เลือกไฟล์เดิมซ้ำได้
 });
+showLogo();
 
 /* ไฟล์ถูกอัปที่หน้าอื่นแล้ว → สร้างเลย ไม่ต้องอัปซ้ำ */
 (function(){
