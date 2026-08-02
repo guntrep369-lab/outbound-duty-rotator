@@ -103,14 +103,34 @@ body {
 }
 
 /* ── Module header (icon tile + title + sub-nav) ─────────────────────────── */
-.mod-head { background:var(--wms-surface); border-bottom:1px solid var(--wms-border); padding:14px 20px 0; font-family:var(--wms-font); }
-.mod-title .ic { width:38px; height:38px; border-radius:12px; background:var(--wms-primary-light); color:var(--wms-primary); font-size:19px; }
-.mod-title h2 { font-size:16px; font-weight:700; color:var(--wms-text); }
-.mod-title p  { font-size:12px; color:var(--wms-muted); }
-.mod-subnav   { margin-top:10px; gap:2px; }
-.mod-tab      { padding:10px 14px; font-size:14px; font-weight:500; color:var(--wms-muted); border-bottom:2px solid transparent; font-family:var(--wms-font); }
-.mod-tab:hover{ color:var(--wms-text); }
-.mod-tab.active { color:var(--wms-primary-dark); border-bottom-color:var(--wms-primary); }
+.mod-head { background:var(--wms-surface); border-bottom:1px solid var(--wms-border);
+            padding:14px 20px 0; flex-shrink:0; font-family:var(--wms-font); }
+.mod-title { display:flex; align-items:center; gap:10px; }
+.mod-title .ic { width:38px; height:38px; border-radius:12px; flex-shrink:0;
+                 display:flex; align-items:center; justify-content:center;
+                 background:var(--wms-primary-light); color:var(--wms-primary); font-size:19px; }
+.mod-title h2 { font-size:16px; font-weight:700; color:var(--wms-text); margin:0; }
+.mod-title p  { font-size:12px; color:var(--wms-muted); margin:2px 0 0; }
+/* Document tabs. LAYOUT LIVES HERE, not in the pages: the header markup comes
+   from transport-nav.js, so a page that has no CSS of its own must still get a
+   correct row. (It didn't — .mod-subnav had no display:flex, and the two older
+   pages happened to supply it locally, so แจ้งงานคนรถ rendered with the tabs
+   spilling 8px past the header's bottom border.) */
+.mod-subnav {
+  display:flex; align-items:stretch; gap:2px; margin-top:10px;
+  overflow-x:auto; scrollbar-width:none;
+}
+.mod-subnav::-webkit-scrollbar { display:none; }
+.mod-tab {
+  display:inline-flex; align-items:center; gap:6px; flex-shrink:0;
+  padding:10px 14px; border:0; background:none; text-decoration:none; cursor:pointer;
+  font-family:var(--wms-font); font-size:14px; font-weight:500; white-space:nowrap;
+  color:var(--wms-muted);
+  /* 2px indicator sits ON the header's 1px border rather than below it */
+  border-bottom:2px solid transparent; margin-bottom:-1px;
+}
+.mod-tab:hover:not(.active) { color:var(--wms-text); }
+.mod-tab.active { color:var(--wms-primary-dark); border-bottom-color:var(--wms-primary); cursor:default; }
 
 /* ── Carrier row (ทำใบงานขนส่ง) — the level ABOVE the document tabs, so it
       uses pills rather than the underline used by .mod-tab. ───────────────── */
