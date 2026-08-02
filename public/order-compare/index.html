@@ -1593,6 +1593,21 @@ function renderStockTable() {
  * full 90s, and spending another 90 to hear the same thing is worse than
  * handing back control. `onProgress` ticks each second so the wait shows.
  */
+
+/**
+ * เติม ?api= ให้ URL ของ Apps Script
+ *
+ * order กับ stock อยู่ในโปรเจกต์ Apps Script เดียวกัน ซึ่งมี doGet ได้ตัวเดียว
+ * จึงรวมเป็น URL เดียวแล้วแยกงานด้วยพารามิเตอร์ — วาง URL เดียวกันได้ทั้งสองช่อง
+ * ถ้า URL ใส่ api มาเองแล้วก็เคารพของเดิม (เผื่อ deployment แยกแบบเก่า)
+ */
+function withApi(url, api) {
+  var u = String(url || '').trim();
+  if (!u) return u;
+  if (/[?&]api=/.test(u)) return u;
+  return u + (u.indexOf('?') === -1 ? '?' : '&') + 'api=' + api;
+}
+
 async function fetchWithRetry(url, { retries = 1, timeoutMs = 90000, onRetry, onProgress } = {}) {
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -1682,7 +1697,7 @@ async function loadStockFromGAS(inputId, directUrl) {
 
   try {
     // Apps Script ต้อง redirect-follow + retry เมื่อ timeout
-    const resp = await fetchWithRetry(url, {
+    const resp = await fetchWithRetry(withApi(url, 'stock'), {
       onProgress: (sec) => setStockStatus(`⏳ กำลังดึงข้อมูล... ${sec} วินาที`),
       onRetry: (n, max) => setStockStatus(`⏳ ไม่สำเร็จ — ลองใหม่ครั้งที่ ${n}/${max}...`),
     });
@@ -1849,7 +1864,7 @@ async function loadOrderFromGAS() {
   document.getElementById('file-single-name').textContent = '';
 
   try {
-    const resp = await fetchWithRetry(url, {
+    const resp = await fetchWithRetry(withApi(url, 'order'), {
       onProgress: (sec) => {
         document.getElementById('sheet-status').textContent =
           `⏳ กำลังดึงข้อมูล... ${sec} วินาที`;
