@@ -379,6 +379,11 @@ td{padding:9px 12px;vertical-align:middle}
     border:1px solid #FDE68A;border-radius:5px;padding:1px 6px;white-space:nowrap}
   @media print{.ps-nostock{background:#fff!important;border:1px solid #000;color:#000!important}}
   .ps-sep{width:1px;height:18px;background:var(--border);margin:0 4px}
+  .ps-carriers{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+  .ps-chip{padding:5px 13px;border-radius:999px;border:1px solid var(--border);background:var(--surface);
+    color:var(--muted);font-family:var(--sans);font-size:12.5px;font-weight:500;cursor:pointer}
+  .ps-chip:hover:not(.active){border-color:var(--primary);color:var(--primary)}
+  .ps-chip.active{background:var(--primary);border-color:var(--primary);color:#fff;cursor:default}
 </style>
 <link rel="stylesheet" href="../wms-theme.css">
 <link rel="stylesheet" href="../wms-gate.css">
@@ -1515,6 +1520,13 @@ function pickCategory(item) {
    แทนที่จะรวมทุกเจ้าเข้าด้วยกัน — น้องในทีมจะได้หยิบของแต่ละคันในรอบเดียว */
 let pickSource = 1;   // 1 = Daily Logis (รอบเช้า), 2 = Daily CRM
 let pickFilter = 'all';  // 'all' | 'bed' | 'gift' — แยกใบให้สองคนหยิบพร้อมกันได้
+let pickCarrier = '';    // '' = ทุกขนส่ง, ไม่งั้นเป็น key ของขนส่งนั้น
+
+function setPickCarrier(key) {
+  key = key || '';
+  pickCarrier = key;
+  renderPickSum();
+}
 
 function setPickFilter(v, btn) {
   pickFilter = v;
@@ -1543,7 +1555,10 @@ function renderPickSum() {
   let html = '';
   let grand = 0;
 
-  carriersData.forEach((car, ci) => {
+  const shownCarriers = carriersData.filter(c => !pickCarrier || c.key === pickCarrier);
+  if (!shownCarriers.length) pickCarrier = '';   // ขนส่งหายไปหลังดึงข้อมูลใหม่
+
+  (pickCarrier ? shownCarriers : carriersData).forEach((car, ci) => {
     const rows = pickSource === 1 ? car.data1 : car.data2;
     const demand = aggregateSKUDemand(rows || []);
     const items = Object.values(demand).sort((a, b) =>
@@ -1572,9 +1587,17 @@ function renderPickSum() {
     html += '</section>';
   });
 
-  host.innerHTML =
-    '<div class="ps-grand no-print">รวมทุกขนส่ง <b>' + grand + '</b> ชิ้น · ' +
-    carriersData.length + ' ขนส่ง · จาก ' + esc(srcName) + '</div>' + html;
+  const chips = '<div class="ps-carriers no-print"><span class="ps-lbl">พิมพ์ขนส่ง</span>' +
+    '<button class="ps-chip' + (pickCarrier ? '' : ' active') + '" onclick="setPickCarrier()">ทุกขนส่ง</button>' +
+    carriersData.map(c =>
+      '<button class="ps-chip' + (pickCarrier === c.key ? ' active' : '') + '" ' +
+      'onclick="setPickCarrier(' + JSON.stringify(c.key).replace(/"/g, '&quot;') + ')">' +
+      esc(c.key) + '</button>').join('') + '</div>';
+
+  const scopeTxt = (pickCarrier ? esc(pickCarrier) : carriersData.length + ' ขนส่ง');
+  host.innerHTML = chips +
+    '<div class="ps-grand no-print">รวม <b>' + grand + '</b> ชิ้น · ' +
+    scopeTxt + ' · จาก ' + esc(srcName) + '</div>' + html;
 }
 
 function renderPickGroup(title, list) {
