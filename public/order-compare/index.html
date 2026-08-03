@@ -416,9 +416,10 @@ td{padding:9px 12px;vertical-align:middle}
   .ps-papermode .ps-card{
     position:relative;margin:0 auto 18px;border-radius:0;border:1px solid #C9D2DD;
     box-shadow:0 2px 10px rgba(15,23,42,.13);overflow:visible;
-    width:150mm;padding:4mm;                 /* ค่าเริ่มต้น = label */
+    width:210mm;padding:10mm;                /* ฐาน = A4 ถูกตั้งแต่ก่อน JS ทำงาน */
   }
-  body.ps-a4 .ps-papermode .ps-card{width:210mm;padding:10mm}
+  body.ps-paper-label .ps-papermode .ps-card{width:150mm;padding:4mm}
+  body.ps-portrait   .ps-papermode .ps-card{width:100mm;padding:4mm}
   /* หัวใบเดิมกินขอบเต็ม ในโหมดกระดาษต้องอยู่ในขอบพิมพ์ */
   .ps-papermode .ps-head{margin:0}
   .ps-papermode .ps-group{padding-left:0;padding-right:0}
@@ -852,7 +853,8 @@ td{padding:9px 12px;vertical-align:middle}
       <span class="ps-sep"></span>
       <span class="ps-lbl">กระดาษ</span>
       <button class="ps-opt active" data-paper="a4" onclick="setPickPaper('a4',this)">A4</button>
-      <button class="ps-opt" data-paper="label" onclick="setPickPaper('label',this)">🏷️ 150×100 มม.</button>
+      <button class="ps-opt" data-paper="land" onclick="setPickPaper('land',this)">🏷️ 150×100 แนวนอน</button>
+      <button class="ps-opt" data-paper="port" onclick="setPickPaper('port',this)">🏷️ 100×150 แนวตั้ง</button>
       <span class="ps-spacer"></span>
       <button class="btn btn-secondary btn-sm" onclick="renderPickSum()">🔄 คำนวณใหม่</button>
       <button class="btn btn-primary btn-sm" onclick="window.print()">🖨 พิมพ์</button>
@@ -893,7 +895,12 @@ function switchTab(tab, btn) {
   document.getElementById('tab-' + tab).classList.add('active');
   btn.classList.add('active');
   // สรุปหยิบของคำนวณสดทุกครั้งที่เปิด — ข้อมูลออเดอร์อาจถูกดึงใหม่ไปแล้ว
-  if (tab === 'picksum') renderPickSum();
+  if (tab === 'picksum') {
+    // ต้องเรียก setPickPaper ด้วย ไม่งั้น @page ไม่เคยถูกตั้งเลยจนกว่าจะกดปุ่ม
+    // และหน้าจะพิมพ์ด้วยขนาดกระดาษเริ่มต้นของเบราว์เซอร์ ไม่ตรงกับปุ่มที่โชว์ว่าเลือกอยู่
+    setPickPaper(pickPaper);
+    renderPickSum();
+  }
 }
 
 // ══════════════════════════════════════════════════════
@@ -1588,8 +1595,9 @@ function pickCategory(item) {
       และฟอนต์ตอนพิมพ์อาจต่างจากบนจอเล็กน้อย จึงอาจคลาดหนึ่งบรรทัด
       ใช้ดูว่ากินกี่หน้า/จัดหน้าสวยไหม ถ้าต้องการเป๊ะ 100% ให้กด Ctrl+P */
 const PAPER = {
-  a4:    { w: 210, h: 297, margin: 10, label: 'A4' },
-  label: { w: 150, h: 100, margin: 4,  label: '150×100 มม.' },
+  a4:     { w: 210, h: 297, margin: 10, label: 'A4' },
+  land:   { w: 150, h: 100, margin: 4,  label: '150×100 แนวนอน' },
+  port:   { w: 100, h: 150, margin: 4,  label: '100×150 แนวตั้ง' },
 };
 
 /** px ต่อ 1mm ของเบราว์เซอร์นี้ วัดจริงไม่เดา */
@@ -1645,18 +1653,27 @@ let pickPaper = 'a4';    // 'a4' | 'label' (150×100 มม.)
  * รายการยาวจะไหลลงดวงถัดไปเอง และยังขึ้นดวงใหม่ทุกขนส่งเหมือนเดิม
  */
 function setPickPaper(v, btn) {
+  if (!PAPER[v]) v = 'a4';
   pickPaper = v;
-  document.querySelectorAll('#tab-picksum .ps-opt[data-paper]').forEach(b => b.classList.remove('active'));
+  const pg = PAPER[v];
+  document.querySelectorAll('#tab-picksum .ps-opt[data-paper]').forEach(b =>
+    b.classList.toggle('active', b.dataset.paper === v));
   if (btn) btn.classList.add('active');
-  document.body.classList.toggle('ps-paper-label', v === 'label');
+
+  // ขนาดกระดาษเล็กใช้ตัวอักษรบีบ ส่วน A4 ใช้ปกติ
+  document.body.classList.toggle('ps-paper-label', v !== 'a4');
+  document.body.classList.toggle('ps-a4', v === 'a4');
+  document.body.classList.toggle('ps-portrait', v === 'port');
+
+  // ระบุทั้งกว้างและสูงเสมอ เบราว์เซอร์จึงล็อกแนวให้ตรงกับที่เลือกไว้
+  // (นี่คือเหตุผลที่ปุ่มแนวตั้ง/แนวนอนใน print dialog กดไม่ได้ — จึงต้องเลือกที่นี่)
   let st = document.getElementById('ps-page-size');
   if (!st) { st = document.createElement('style'); st.id = 'ps-page-size'; document.head.appendChild(st); }
-  st.textContent = v === 'label'
-    ? '@page { size: 150mm 100mm; margin: 4mm; }'
-    : '@page { size: A4; margin: 10mm; }';
-  document.body.classList.toggle('ps-a4', v !== 'label');
+  st.textContent = '@page { size: ' + pg.w + 'mm ' + pg.h + 'mm; margin: ' + pg.margin + 'mm; }';
+
   drawPageGuides();
 }
+
 
 function setPickCarrier(key) {
   key = key || '';
