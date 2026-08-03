@@ -407,11 +407,8 @@ td{padding:9px 12px;vertical-align:middle}
     body.ps-paper-label .ps-table td.ps-chk::before{width:9px;height:9px;border-width:1px}
     body.ps-paper-label .ps-empty{padding:8px;font-size:9px}
     body.ps-paper-label .ps-card{page-break-inside:auto}
-    /* ดวงที่ 2 เป็นต้นไปไม่มีหัวการ์ด ชื่อขนส่งที่หัวหมวดจึงเป็นตัวบอกว่าของใคร */
-    body.ps-paper-label .ps-cn-carrier{display:inline;float:right;font-weight:700;font-size:8.5px}
     body.ps-paper-label .ps-cat{page-break-inside:avoid}
   }
-  .ps-cn-carrier{display:none}
 
   /* ── ตัวอย่างตามขนาดกระดาษ ── */
   .ps-papermode{background:#E9EDF2;padding:16px 0;border-radius:12px}
@@ -439,6 +436,15 @@ td{padding:9px 12px;vertical-align:middle}
     .ps-papermode .ps-card{width:auto!important;padding:0!important;border:0!important;
       box-shadow:none!important;margin:0!important}
     .ps-cut{display:none!important}
+  }
+  /* การ์ดเป็น <table> แล้ว กันสไตล์ตารางอื่นมากวน */
+  .ps-card{border-collapse:collapse;width:100%;table-layout:fixed}
+  .ps-card > thead > tr > td,.ps-card > tbody > tr > td{padding:0;border:0}
+  @media print{
+    /* หัวใจของเรื่อง: เบราว์เซอร์พิมพ์ thead ซ้ำทุกหน้าที่ตารางกินไป
+       จึงได้หัวขนส่งบนทุกแผ่นโดยไม่ต้องคำนวณเอง */
+    .ps-card > thead{display:table-header-group}
+    .ps-card > tbody{display:table-row-group}
   }
 </style>
 <link rel="stylesheet" href="../wms-theme.css">
@@ -1615,7 +1621,9 @@ function drawPageGuides() {
       const cut = document.createElement('div');
       cut.className = 'ps-cut';
       cut.style.top = (i * usableH) + 'px';
-      cut.innerHTML = '<span>ตัดหน้า · หน้า ' + (i + 1) + '</span>';
+      const who = card.querySelector('.ps-carrier');
+      cut.innerHTML = '<span>ตัดหน้า · หน้า ' + (i + 1) +
+        (who ? ' · ขึ้นหัว ' + who.textContent : '') + '</span>';
       card.appendChild(cut);
     }
     const tag = card.querySelector('.ps-pagecount');
@@ -1700,20 +1708,25 @@ function renderPickSum() {
     const scope = pickFilter === 'bed' ? ' · เฉพาะที่นอน' : pickFilter === 'gift' ? ' · เฉพาะของแถม' : '';
 
     // แต่ละขนส่งขึ้นหน้าใหม่ตอนพิมพ์ เพื่อฉีกแจกให้แต่ละคนได้
-    html += '<section class="ps-card">' +
+    // การ์ดเป็น <table> ไม่ใช่ <section> เพราะหัวขนส่งต้องซ้ำทุกแผ่นที่พิมพ์
+    // เบราว์เซอร์ทำให้เองเมื่ออยู่ใน <thead> + display:table-header-group
+    // วิธีอื่น (position:fixed / ซ้ำเองด้วย JS) ไม่ทำงานกับการแบ่งหน้าจริง
+    html += '<table class="ps-card"><thead><tr><td>' +
       '<div class="ps-head">' +
         '<div><div class="ps-carrier">' + esc(car.key) + '</div>' +
         '<div class="ps-meta">' + esc(srcName) + ' · ' + esc(today) + esc(scope) + '</div></div>' +
         '<div class="ps-tot"><b>' + pieces + '</b><span>ชิ้น</span>' +
         '<span class="ps-pagecount no-print"></span></div>' +
-      '</div>';
+      '</div>' +
+    '</td></tr></thead><tbody><tr><td>';
 
     if (!shown.length) {
-      html += '<div class="ps-empty">ไม่มีรายการ' + (scope ? scope.replace(' · ','') : '') + 'ของขนส่งนี้</div></section>';
+      html += '<div class="ps-empty">ไม่มีรายการ' + (scope ? scope.replace(' · ','') : '') +
+              'ของขนส่งนี้</div></td></tr></tbody></table>';
       return;
     }
-    html += renderPickGroup('🛏️ ที่นอน', beds, car.key) + renderPickGroup('🎁 ของแถม', gifts, car.key);
-    html += '</section>';
+    html += renderPickGroup('🛏️ ที่นอน', beds) + renderPickGroup('🎁 ของแถม', gifts);
+    html += '</td></tr></tbody></table>';
   });
 
   const chips = '<div class="ps-carriers no-print"><span class="ps-lbl">พิมพ์ขนส่ง</span>' +
@@ -1735,7 +1748,7 @@ function renderPickSum() {
   drawPageGuides();
 }
 
-function renderPickGroup(title, list, carrierKey) {
+function renderPickGroup(title, list) {
   if (!list.length) return '';
   const sum = list.reduce((n, x) => n + x.qty, 0);
 
@@ -1759,12 +1772,8 @@ function renderPickGroup(title, list, carrierKey) {
   let body = '';
   for (const { cat, items } of sorted) {
     const csum = items.reduce((n, x) => n + x.qty, 0);
-    // ชื่อขนส่งติดไว้ทุกหัวหมวด — โหมด label ดวงหนึ่งใส่ได้ไม่กี่บรรทัด
-    // รายการยาวจะไหลไปดวงถัดไปซึ่งไม่มีหัวการ์ด ถ้าไม่มีชื่อกำกับจะไม่รู้ว่าของใคร
     body += '<div class="ps-cat"><div class="ps-cname">' + esc(cat.label) +
-            ' <span>' + items.length + ' รายการ · ' + csum + ' ชิ้น</span>' +
-            (carrierKey ? '<span class="ps-cn-carrier">' + esc(carrierKey) + '</span>' : '') +
-            '</div>';
+            ' <span>' + items.length + ' รายการ · ' + csum + ' ชิ้น</span></div>';
 
     if (cat.bySize) {
       // ซอยตามขนาด เรียงใหญ่→เล็ก ของที่ไม่ระบุขนาดไว้ท้ายสุด
@@ -1787,6 +1796,8 @@ function renderPickGroup(title, list, carrierKey) {
     } else {
       body += pickTable(items);
     }
+    body += '<div class="ps-cat"><div class="ps-cname">' + esc(cat.label) +
+            ' <span>' + items.length + ' รายการ · ' + csum + ' ชิ้น</span></div>';
     body += '</div>';
   }
 
