@@ -440,7 +440,9 @@ td{padding:9px 12px;vertical-align:middle}
 
   @media print{
     .ps-papermode{background:#fff!important;padding:0;border-radius:0}
-    .ps-papermode .ps-card{width:auto!important;padding:0!important;border:0!important;
+    /* ⚠️ width:auto บน <table> = หดตามเนื้อหา (ไม่เหมือน block ที่เต็มความกว้าง)
+       ต้องสั่ง 100% ไม่งั้นพิมพ์ออกมาไม่เต็มหน้ากระดาษ */
+    .ps-papermode .ps-card{width:100%!important;padding:0!important;border:0!important;
       box-shadow:none!important;margin:0!important}
     /* @page คุมขอบกระดาษจริงแล้ว เซลล์ต้องไม่เว้นซ้ำอีกชั้น */
     .ps-papermode .ps-card > thead > tr > td,
