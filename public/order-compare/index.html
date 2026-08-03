@@ -384,6 +384,8 @@ td{padding:9px 12px;vertical-align:middle}
     color:var(--muted);font-family:var(--sans);font-size:12.5px;font-weight:500;cursor:pointer}
   .ps-chip:hover:not(.active){border-color:var(--primary);color:var(--primary)}
   .ps-chip.active{background:var(--primary);border-color:var(--primary);color:#fff;cursor:default}
+  .consign-no{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--text);
+    white-space:nowrap;line-height:1.5}
 </style>
 <link rel="stylesheet" href="../wms-theme.css">
 <link rel="stylesheet" href="../wms-gate.css">
@@ -1159,6 +1161,9 @@ function runCompare() {
 
   diffResults = [];
 
+  // ออเดอร์เดียวอาจมีหลายพัสดุ จึงเก็บทุกเลขที่ไม่ซ้ำ ไม่ใช่เอาแค่ตัวแรก
+  const consignsOf = rs => [...new Set((rs || []).map(r => String(r.consign || '').trim()).filter(Boolean))];
+
   allKeys.forEach(key => {
     const rows1 = g1[key];
     const rows2 = g2[key];
@@ -1167,12 +1172,12 @@ function runCompare() {
       const sup1r = rows1.map(r => r.sup).find(s => s) || '';
       diffResults.push({ orderId: key, status: 'removed', rows1, rows2: null,
         norm1: normalizeOrder(rows1), norm2: null, diffs: [],
-        customer: getCustomer(rows1[0]), sup: sup1r });
+        customer: getCustomer(rows1[0]), sup: sup1r, consigns: consignsOf(rows1) });
     } else if (!rows1 && rows2) {
       const sup2 = rows2.map(r => r.sup).find(s => s) || '';
       diffResults.push({ orderId: key, status: 'added', rows1: null, rows2,
         norm1: null, norm2: normalizeOrder(rows2), diffs: [],
-        customer: getCustomer(rows2[0]), sup: sup2 });
+        customer: getCustomer(rows2[0]), sup: sup2, consigns: consignsOf(rows2) });
     } else {
       const norm1 = normalizeOrder(rows1);
       const norm2 = normalizeOrder(rows2);
@@ -1180,7 +1185,7 @@ function runCompare() {
       const status = diffs.length === 0 ? 'same' : 'changed';
       const sup1 = rows1.map(r => r.sup).find(s => s) || '';
       diffResults.push({ orderId: key, status, rows1, rows2, norm1, norm2, diffs,
-        customer: getCustomer(rows1[0]), sup: sup1 });
+        customer: getCustomer(rows1[0]), sup: sup1, consigns: consignsOf(rows1).concat(consignsOf(rows2)).filter((v,i,a)=>a.indexOf(v)===i) });
     }
   });
 
@@ -1259,7 +1264,7 @@ function renderTable() {
       <th>ลูกค้า</th>
       <th>ขนส่ง (Sup)</th>
       <th>สิ่งที่เปลี่ยนแปลง</th>
-      <th>สต๊อก</th>
+      <th>เลข Consign</th>
       <th>สถานะ</th>
     </tr></thead>
     <tbody>`;
@@ -1304,14 +1309,10 @@ function renderTable() {
     }
 
     // stock warning badge for this order
-    const normForStock = r.norm2 || r.norm1;
-    let stockCell = '<span style="color:var(--muted); font-size:12px;">—</span>';
-    if (Object.keys(stockMap).length && normForStock) {
-      const warn = hasStockWarning(normForStock);
-      stockCell = warn
-        ? '<span class="stock-badge stock-low">⚠️ เหลือน้อย</span>'
-        : '<span class="stock-badge stock-ok">✓ พอ</span>';
-    }
+    // คอลัมน์สต๊อกถูกถอดออก — แท็บ "เช็คสต๊อก" ทำหน้าที่นี้ละเอียดกว่าอยู่แล้ว
+    const consignCell = (r.consigns && r.consigns.length)
+      ? r.consigns.map(c => `<div class="consign-no">${esc(c)}</div>`).join('')
+      : '<span style="color:var(--muted); font-size:12px;">—</span>';
 
     html += `
     <tr class="${rowClass[r.status]}">
@@ -1320,7 +1321,7 @@ function renderTable() {
       <td class="customer-name">${esc(r.customer) || '—'}</td>
       <td><span style="font-size:12px; color:var(--muted)">${esc(r.sup) || '—'}</span></td>
       <td>${changeSummary}</td>
-      <td>${stockCell}</td>
+      <td>${consignCell}</td>
       <td><span class="badge ${badgeMap[r.status]}">${statusLabel[r.status]}</span></td>
     </tr>
     <tr class="detail-row" id="${esc(rid)}">
