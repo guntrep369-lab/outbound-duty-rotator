@@ -1541,6 +1541,9 @@ function renderStockPanel(norm) {
    ⚠️ ของที่ไม่เข้ากฎไหนเลยจะไปอยู่กลุ่ม "อื่น ๆ" — ไม่หายไปจากใบ
       เพราะของหายจากใบหยิบแปลว่าลืมหยิบจริง */
 const PICK_CATS = [
+  // ท๊อปเปอร์มาก่อนที่นอน เพราะชื่อสินค้ามักมีคำว่า "ที่นอน" หรือ "mattress"
+  // ปนอยู่ด้วย ถ้าเรียงทีหลังจะถูกที่นอนจับไปก่อน
+  { label: '🧶 ท๊อปเปอร์', re: /ท๊อปเปอร์|ท็อปเปอร์|topper/i, bySize: true },
   { label: '🛏️ ที่นอน', re: /ที่นอน|mattress/i, bySize: true },
   { label: '💺 เก้าอี้', re: /เก้าอี้|chair/i },
   { label: '🪑 โต๊ะ',   re: /โต๊ะ|desk|desktop/i },
@@ -1550,6 +1553,8 @@ const GIFT_CATS = [
   { label: 'ชุดเครื่องนอน',   re: /ชุดเครื่องนอน|bedding set/i },
   { label: 'ผ้านวม',         re: /ผ้านวม|duvet|comforter/i },
   { label: 'ผ้ารองกันเปื้อน', re: /ผ้ารอง|กันเปื้อน|protector/i },
+  // ปลอกหมอนมาก่อนหมอน ด้วยเหตุผลเดียวกัน — ชื่อมีคำว่า "หมอน"/"pillow" อยู่แล้ว
+  { label: 'ปลอกหมอน',       re: /ปลอกหมอน|pillow\s*case|pillowcase/i },
   { label: 'หมอน',           re: /หมอน|pillow/i },
 ];
 
@@ -1813,8 +1818,6 @@ function renderPickGroup(title, list) {
     } else {
       body += pickTable(items);
     }
-    body += '<div class="ps-cat"><div class="ps-cname">' + esc(cat.label) +
-            ' <span>' + items.length + ' รายการ · ' + csum + ' ชิ้น</span></div>';
     body += '</div>';
   }
 
