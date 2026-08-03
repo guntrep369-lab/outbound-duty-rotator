@@ -386,6 +386,32 @@ td{padding:9px 12px;vertical-align:middle}
   .ps-chip.active{background:var(--primary);border-color:var(--primary);color:#fff;cursor:default}
   .consign-no{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--text);
     white-space:nowrap;line-height:1.5}
+
+  /* ── โหมดพิมพ์ label 150×100 มม. — บีบให้ลงดวงเล็ก ── */
+  @media print{
+    body.ps-paper-label .ps-head{padding:0 0 4px;border-bottom:2px solid #000}
+    body.ps-paper-label .ps-carrier{font-size:13px}
+    body.ps-paper-label .ps-meta{font-size:8px}
+    body.ps-paper-label .ps-tot b{font-size:15px}
+    body.ps-paper-label .ps-tot span{font-size:8px}
+    body.ps-paper-label .ps-group{padding:4px 0 5px}
+    body.ps-paper-label .ps-gtitle{font-size:10px;margin-bottom:3px}
+    body.ps-paper-label .ps-gtitle span{font-size:8px}
+    body.ps-paper-label .ps-cname{font-size:9.5px;padding:2px 0 1px}
+    body.ps-paper-label .ps-cname span{font-size:8px}
+    body.ps-paper-label .ps-size{font-size:8.5px;padding:1px 5px;margin:3px 0 1px}
+    body.ps-paper-label .ps-table{font-size:9px}
+    body.ps-paper-label .ps-table td{padding:2px 4px}
+    body.ps-paper-label .ps-sku{font-size:8.5px}
+    body.ps-paper-label .ps-qty{font-size:11px}
+    body.ps-paper-label .ps-table td.ps-chk::before{width:9px;height:9px;border-width:1px}
+    body.ps-paper-label .ps-empty{padding:8px;font-size:9px}
+    body.ps-paper-label .ps-card{page-break-inside:auto}
+    /* ดวงที่ 2 เป็นต้นไปไม่มีหัวการ์ด ชื่อขนส่งที่หัวหมวดจึงเป็นตัวบอกว่าของใคร */
+    body.ps-paper-label .ps-cn-carrier{display:inline;float:right;font-weight:700;font-size:8.5px}
+    body.ps-paper-label .ps-cat{page-break-inside:avoid}
+  }
+  .ps-cn-carrier{display:none}
 </style>
 <link rel="stylesheet" href="../wms-theme.css">
 <link rel="stylesheet" href="../wms-gate.css">
@@ -789,6 +815,10 @@ td{padding:9px 12px;vertical-align:middle}
       <button class="ps-opt active" data-filter="all"  onclick="setPickFilter('all',this)">ทั้งหมด</button>
       <button class="ps-opt" data-filter="bed"  onclick="setPickFilter('bed',this)">🛏️ เฉพาะที่นอน</button>
       <button class="ps-opt" data-filter="gift" onclick="setPickFilter('gift',this)">🎁 เฉพาะของแถม</button>
+      <span class="ps-sep"></span>
+      <span class="ps-lbl">กระดาษ</span>
+      <button class="ps-opt active" data-paper="a4" onclick="setPickPaper('a4',this)">A4</button>
+      <button class="ps-opt" data-paper="label" onclick="setPickPaper('label',this)">🏷️ 150×100 มม.</button>
       <span class="ps-spacer"></span>
       <button class="btn btn-secondary btn-sm" onclick="renderPickSum()">🔄 คำนวณใหม่</button>
       <button class="btn btn-primary btn-sm" onclick="window.print()">🖨 พิมพ์</button>
@@ -1522,6 +1552,24 @@ function pickCategory(item) {
 let pickSource = 1;   // 1 = Daily Logis (รอบเช้า), 2 = Daily CRM
 let pickFilter = 'all';  // 'all' | 'bed' | 'gift' — แยกใบให้สองคนหยิบพร้อมกันได้
 let pickCarrier = '';    // '' = ทุกขนส่ง, ไม่งั้นเป็น key ของขนส่งนั้น
+let pickPaper = 'a4';    // 'a4' | 'label' (150×100 มม.)
+
+/**
+ * สลับขนาดกระดาษที่จะพิมพ์
+ * เนื้อหาเหมือนกันทุกอย่าง ต่างแค่ @page และความแน่นของตัวอักษร —
+ * รายการยาวจะไหลลงดวงถัดไปเอง และยังขึ้นดวงใหม่ทุกขนส่งเหมือนเดิม
+ */
+function setPickPaper(v, btn) {
+  pickPaper = v;
+  document.querySelectorAll('#tab-picksum .ps-opt[data-paper]').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  document.body.classList.toggle('ps-paper-label', v === 'label');
+  let st = document.getElementById('ps-page-size');
+  if (!st) { st = document.createElement('style'); st.id = 'ps-page-size'; document.head.appendChild(st); }
+  st.textContent = v === 'label'
+    ? '@page { size: 150mm 100mm; margin: 4mm; }'
+    : '@page { size: A4; margin: 10mm; }';
+}
 
 function setPickCarrier(key) {
   key = key || '';
@@ -1584,7 +1632,7 @@ function renderPickSum() {
       html += '<div class="ps-empty">ไม่มีรายการ' + (scope ? scope.replace(' · ','') : '') + 'ของขนส่งนี้</div></section>';
       return;
     }
-    html += renderPickGroup('🛏️ ที่นอน', beds) + renderPickGroup('🎁 ของแถม', gifts);
+    html += renderPickGroup('🛏️ ที่นอน', beds, car.key) + renderPickGroup('🎁 ของแถม', gifts, car.key);
     html += '</section>';
   });
 
@@ -1601,7 +1649,7 @@ function renderPickSum() {
     scopeTxt + ' · จาก ' + esc(srcName) + '</div>' + html;
 }
 
-function renderPickGroup(title, list) {
+function renderPickGroup(title, list, carrierKey) {
   if (!list.length) return '';
   const sum = list.reduce((n, x) => n + x.qty, 0);
 
@@ -1625,8 +1673,12 @@ function renderPickGroup(title, list) {
   let body = '';
   for (const { cat, items } of sorted) {
     const csum = items.reduce((n, x) => n + x.qty, 0);
+    // ชื่อขนส่งติดไว้ทุกหัวหมวด — โหมด label ดวงหนึ่งใส่ได้ไม่กี่บรรทัด
+    // รายการยาวจะไหลไปดวงถัดไปซึ่งไม่มีหัวการ์ด ถ้าไม่มีชื่อกำกับจะไม่รู้ว่าของใคร
     body += '<div class="ps-cat"><div class="ps-cname">' + esc(cat.label) +
-            ' <span>' + items.length + ' รายการ · ' + csum + ' ชิ้น</span></div>';
+            ' <span>' + items.length + ' รายการ · ' + csum + ' ชิ้น</span>' +
+            (carrierKey ? '<span class="ps-cn-carrier">' + esc(carrierKey) + '</span>' : '') +
+            '</div>';
 
     if (cat.bySize) {
       // ซอยตามขนาด เรียงใหญ่→เล็ก ของที่ไม่ระบุขนาดไว้ท้ายสุด
