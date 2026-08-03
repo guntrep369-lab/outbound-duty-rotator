@@ -378,6 +378,7 @@ td{padding:9px 12px;vertical-align:middle}
   .ps-nostock{font-size:10px;font-weight:600;color:#B45309;background:#FEF3C7;
     border:1px solid #FDE68A;border-radius:5px;padding:1px 6px;white-space:nowrap}
   @media print{.ps-nostock{background:#fff!important;border:1px solid #000;color:#000!important}}
+  .ps-sep{width:1px;height:18px;background:var(--border);margin:0 4px}
 </style>
 <link rel="stylesheet" href="../wms-theme.css">
 <link rel="stylesheet" href="../wms-gate.css">
@@ -776,6 +777,11 @@ td{padding:9px 12px;vertical-align:middle}
       <span class="ps-lbl">ใช้ข้อมูลจาก</span>
       <button class="ps-opt active" data-src="1" onclick="setPickSource(1,this)">🌅 Daily Logis (รอบเช้า)</button>
       <button class="ps-opt" data-src="2" onclick="setPickSource(2,this)">🌆 Daily CRM</button>
+      <span class="ps-sep"></span>
+      <span class="ps-lbl">พิมพ์</span>
+      <button class="ps-opt active" data-filter="all"  onclick="setPickFilter('all',this)">ทั้งหมด</button>
+      <button class="ps-opt" data-filter="bed"  onclick="setPickFilter('bed',this)">🛏️ เฉพาะที่นอน</button>
+      <button class="ps-opt" data-filter="gift" onclick="setPickFilter('gift',this)">🎁 เฉพาะของแถม</button>
       <span class="ps-spacer"></span>
       <button class="btn btn-secondary btn-sm" onclick="renderPickSum()">🔄 คำนวณใหม่</button>
       <button class="btn btn-primary btn-sm" onclick="window.print()">🖨 พิมพ์</button>
@@ -1508,6 +1514,14 @@ function pickCategory(item) {
    ใช้ aggregateSKUDemand() ตัวเดียวกับแท็บเช็คสต๊อก แต่เรียกทีละขนส่ง
    แทนที่จะรวมทุกเจ้าเข้าด้วยกัน — น้องในทีมจะได้หยิบของแต่ละคันในรอบเดียว */
 let pickSource = 1;   // 1 = Daily Logis (รอบเช้า), 2 = Daily CRM
+let pickFilter = 'all';  // 'all' | 'bed' | 'gift' — แยกใบให้สองคนหยิบพร้อมกันได้
+
+function setPickFilter(v, btn) {
+  pickFilter = v;
+  document.querySelectorAll('#tab-picksum .ps-opt[data-filter]').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderPickSum();
+}
 
 function setPickSource(n, btn) {
   pickSource = n;
@@ -1535,21 +1549,23 @@ function renderPickSum() {
     const items = Object.values(demand).sort((a, b) =>
       a.type === b.type ? b.qty - a.qty : (a.type === 'bed' ? -1 : 1));
 
-    const beds  = items.filter(x => x.type === 'bed');
-    const gifts = items.filter(x => x.type !== 'bed');
-    const pieces = items.reduce((n, x) => n + x.qty, 0);
+    const beds  = pickFilter === 'gift' ? [] : items.filter(x => x.type === 'bed');
+    const gifts = pickFilter === 'bed'  ? [] : items.filter(x => x.type !== 'bed');
+    const shown = beds.concat(gifts);
+    const pieces = shown.reduce((n, x) => n + x.qty, 0);
     grand += pieces;
+    const scope = pickFilter === 'bed' ? ' · เฉพาะที่นอน' : pickFilter === 'gift' ? ' · เฉพาะของแถม' : '';
 
     // แต่ละขนส่งขึ้นหน้าใหม่ตอนพิมพ์ เพื่อฉีกแจกให้แต่ละคนได้
     html += '<section class="ps-card">' +
       '<div class="ps-head">' +
         '<div><div class="ps-carrier">' + esc(car.key) + '</div>' +
-        '<div class="ps-meta">' + esc(srcName) + ' · ' + esc(today) + '</div></div>' +
+        '<div class="ps-meta">' + esc(srcName) + ' · ' + esc(today) + esc(scope) + '</div></div>' +
         '<div class="ps-tot"><b>' + pieces + '</b><span>ชิ้น</span></div>' +
       '</div>';
 
-    if (!items.length) {
-      html += '<div class="ps-empty">ไม่มีรายการของขนส่งนี้</div></section>';
+    if (!shown.length) {
+      html += '<div class="ps-empty">ไม่มีรายการ' + (scope ? scope.replace(' · ','') : '') + 'ของขนส่งนี้</div></section>';
       return;
     }
     html += renderPickGroup('🛏️ ที่นอน', beds) + renderPickGroup('🎁 ของแถม', gifts);
