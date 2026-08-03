@@ -1261,10 +1261,10 @@ function renderTable() {
     <thead><tr>
       <th style="width:32px"></th>
       <th>Order ID</th>
-      <th>ลูกค้า</th>
       <th>ขนส่ง (Sup)</th>
-      <th>สิ่งที่เปลี่ยนแปลง</th>
       <th>เลข Consign</th>
+      <th>ลูกค้า</th>
+      <th>สิ่งที่เปลี่ยนแปลง</th>
       <th>สถานะ</th>
     </tr></thead>
     <tbody>`;
@@ -1318,10 +1318,10 @@ function renderTable() {
     <tr class="${rowClass[r.status]}">
       <td><button class="expand-btn" onclick="toggleDetail('${esc(rid)}', this)">▶</button></td>
       <td><span class="order-id">${esc(r.orderId)}</span></td>
-      <td class="customer-name">${esc(r.customer) || '—'}</td>
       <td><span style="font-size:12px; color:var(--muted)">${esc(r.sup) || '—'}</span></td>
-      <td>${changeSummary}</td>
       <td>${consignCell}</td>
+      <td class="customer-name">${esc(r.customer) || '—'}</td>
+      <td>${changeSummary}</td>
       <td><span class="badge ${badgeMap[r.status]}">${statusLabel[r.status]}</span></td>
     </tr>
     <tr class="detail-row" id="${esc(rid)}">
