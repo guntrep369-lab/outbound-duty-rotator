@@ -413,13 +413,19 @@ td{padding:9px 12px;vertical-align:middle}
   /* ── ตัวอย่างตามขนาดกระดาษ ── */
   .ps-papermode{background:#E9EDF2;padding:16px 0;border-radius:12px}
   .ps-papermode .ps-carriers,.ps-papermode .ps-grand{margin-left:16px;margin-right:16px}
+  /* ⚠️ padding บน <table> ที่ border-collapse:collapse ไม่มีผลตามสเปก
+     ขอบกระดาษจึงต้องไปอยู่ที่เซลล์ ไม่ใช่ที่ตัวตาราง */
   .ps-papermode .ps-card{
     position:relative;margin:0 auto 18px;border-radius:0;border:1px solid #C9D2DD;
     box-shadow:0 2px 10px rgba(15,23,42,.13);overflow:visible;
-    width:210mm;padding:10mm;                /* ฐาน = A4 ถูกตั้งแต่ก่อน JS ทำงาน */
+    width:210mm;padding:0;                   /* ฐาน = A4 ถูกตั้งแต่ก่อน JS ทำงาน */
   }
-  body.ps-paper-label .ps-papermode .ps-card{width:150mm;padding:4mm}
-  body.ps-portrait   .ps-papermode .ps-card{width:100mm;padding:4mm}
+  .ps-papermode .ps-card > thead > tr > td{padding:10mm 10mm 0}
+  .ps-papermode .ps-card > tbody > tr > td{padding:0 10mm 10mm}
+  body.ps-paper-label .ps-papermode .ps-card{width:150mm}
+  body.ps-paper-label .ps-papermode .ps-card > thead > tr > td{padding:4mm 4mm 0}
+  body.ps-paper-label .ps-papermode .ps-card > tbody > tr > td{padding:0 4mm 4mm}
+  body.ps-portrait   .ps-papermode .ps-card{width:100mm}
   /* หัวใบเดิมกินขอบเต็ม ในโหมดกระดาษต้องอยู่ในขอบพิมพ์ */
   .ps-papermode .ps-head{margin:0}
   .ps-papermode .ps-group{padding-left:0;padding-right:0}
@@ -436,6 +442,9 @@ td{padding:9px 12px;vertical-align:middle}
     .ps-papermode{background:#fff!important;padding:0;border-radius:0}
     .ps-papermode .ps-card{width:auto!important;padding:0!important;border:0!important;
       box-shadow:none!important;margin:0!important}
+    /* @page คุมขอบกระดาษจริงแล้ว เซลล์ต้องไม่เว้นซ้ำอีกชั้น */
+    .ps-papermode .ps-card > thead > tr > td,
+    .ps-papermode .ps-card > tbody > tr > td{padding:0!important}
     .ps-cut{display:none!important}
   }
   /* การ์ดเป็น <table> แล้ว กันสไตล์ตารางอื่นมากวน */
