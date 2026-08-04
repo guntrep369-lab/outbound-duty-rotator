@@ -458,6 +458,9 @@ td{padding:9px 12px;vertical-align:middle}
     .ps-card > thead{display:table-header-group}
     .ps-card > tbody{display:table-row-group}
   }
+  .dup-carrier{margin-left:auto;font-size:11.5px;font-weight:600;color:var(--primary);
+    background:var(--primary-light);border-radius:999px;padding:2px 10px;white-space:nowrap}
+  .dup-carrier.multi{color:#B45309;background:#FEF3C7}
 </style>
 <link rel="stylesheet" href="../wms-theme.css">
 <link rel="stylesheet" href="../wms-gate.css">
@@ -2646,6 +2649,7 @@ function findDuplicateOrders(rows) {
       address:  r.address  || '',
       phone1:   r.phone1   || '',
       sup:      r.sup      || '',
+      carrier:  r._carrier || '',
     };
 
     // ถ้ายังไม่มีเลย → เพิ่มทันที
@@ -2671,6 +2675,7 @@ function findDuplicateOrders(rows) {
         address:  e.address  || '—',
         phone1:   e.phone1   || '—',
         sup:      e.sup      || '—',
+        carrier:  e.carrier  || '',
       })),
     }))
     .sort((a, b) => a.orderId.localeCompare(b.orderId));
@@ -2685,9 +2690,12 @@ function runDuplicateCheck() {
   // รวมทุก carrier
   let rows1 = [], rows2 = [];
   if (carriersData.length > 0) {
+    // ติดชื่อขนส่งไว้กับแถวก่อน ไม่งั้นพอรวมทุกเจ้าแล้วบอกไม่ได้ว่าใครเป็นเจ้าของ
+    // ใช้สำเนา ไม่แตะ carriersData ซึ่งแท็บอื่นใช้อยู่
     carriersData.forEach(car => {
-      rows1 = rows1.concat(car.data1);
-      rows2 = rows2.concat(car.data2);
+      const tag = r => ({ ...r, _carrier: car.key });
+      rows1 = rows1.concat(car.data1.map(tag));
+      rows2 = rows2.concat(car.data2.map(tag));
     });
   } else {
     rows1 = data1;
@@ -2738,26 +2746,36 @@ function renderDupPanel(dups) {
       ✅ ไม่พบ Order ที่ส่งให้ลูกค้าต่างกัน
     </div>`;
 
-  return dups.map(d => `
+  return dups.map(d => {
+    // ออเดอร์เดียวอยู่หลายขนส่งเป็นเรื่องผิดปกติในตัวมันเอง จึงบอกไว้ด้วย
+    const carriers = [...new Set(d.customers.map(c => c.carrier).filter(Boolean))];
+    const carrierTag = carriers.length
+      ? `<span class="dup-carrier${carriers.length > 1 ? ' multi' : ''}">` +
+        esc(carriers.join(' + ')) + (carriers.length > 1 ? ' ⚠️ ข้ามขนส่ง' : '') + '</span>'
+      : '';
+    return `
     <div class="dup-section" style="margin-bottom:10px">
       <div class="dup-section-header">
         <span class="order-id" style="color:inherit">${esc(d.orderId)}</span>
         <span class="dup-count">${d.customers.length} ลูกค้า</span>
+          ${carrierTag}
       </div>
       <div style="padding:8px 14px">
-        <div class="dup-col-hdr" style="grid-template-columns:1fr 1fr 110px">
-          <span>ชื่อลูกค้า</span><span>ที่อยู่</span><span>Phone 1</span>
+        <div class="dup-col-hdr" style="grid-template-columns:110px 1fr 1fr 110px">
+          <span>ขนส่ง</span><span>ชื่อลูกค้า</span><span>ที่อยู่</span><span>Phone 1</span>
         </div>
         ${d.customers.map((cust, i) => `
-          <div style="display:grid;grid-template-columns:1fr 1fr 110px;gap:8px;
+          <div style="display:grid;grid-template-columns:110px 1fr 1fr 110px;gap:8px;
                       padding:6px 0;font-size:12px;border-top:1px dashed var(--border);
                       background:${i % 2 === 0 ? 'transparent' : 'var(--surface2)'}">
+            <span style="color:var(--primary);font-weight:500">${esc(cust.carrier) || '—'}</span>
             <span style="font-weight:500">${esc(cust.customer)}</span>
             <span style="color:var(--neutral)">${esc(cust.address) || '—'}</span>
             <span style="color:var(--muted)">${esc(cust.phone1) || '—'}</span>
           </div>`).join('')}
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 // ══════════════════════════════════════════════════════
