@@ -2931,6 +2931,7 @@ function renderCustomerTable() {
     <th style="width:32px"></th>
     <th>Order ID</th>
     <th>ขนส่ง</th>
+    <th>เลข Consign</th>
     <th>ชื่อลูกค้า</th>
     <th>สิ่งที่เปลี่ยน</th>
     <th>สถานะ</th>
@@ -2941,6 +2942,8 @@ function renderCustomerTable() {
     const mainRow  = r.r2 || r.r1;
     const custName = mainRow?.customer || '—';
     const sup      = mainRow?.sup      || '—';
+    // ออเดอร์อาจมีเลขพัสดุคนละตัวระหว่างสองรอบ เอามาทั้งคู่แบบไม่ซ้ำ
+    const consigns = [...new Set([r.r1, r.r2].map(x => String(x?.consign || '').trim()).filter(Boolean))];
 
     let changeSummary = '';
     if (r.status === 'changed') {
@@ -2957,12 +2960,13 @@ function renderCustomerTable() {
       <td><button class="expand-btn" onclick="toggleDetail('${esc(rid)}',this)">▶</button></td>
       <td><span class="order-id">${esc(r.orderId)}</span></td>
       <td style="font-size:12px;color:var(--muted)">${esc(sup)}</td>
+      <td>${consigns.length ? consigns.map(c => `<div class="consign-no">${esc(c)}</div>`).join('') : '<span style="color:var(--muted);font-size:12px">—</span>'}</td>
       <td style="font-weight:500">${esc(custName)}</td>
       <td>${changeSummary}</td>
       <td><span class="badge ${badgeMap[r.status]}">${statusLabel[r.status]}</span></td>
     </tr>
     <tr class="detail-row" id="${esc(rid)}">
-      <td colspan="6" class="detail-cell">${buildCustDetail(r)}</td>
+      <td colspan="7" class="detail-cell">${buildCustDetail(r)}</td>
     </tr>`;
   });
 
