@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>ป้ายชี้บ่งสถานะสินค้า — เอกสารขนส่ง</title>
+<link rel="stylesheet" href="../wms-theme.css">
+<link rel="stylesheet" href="./forms.css">
+<link rel="stylesheet" href="../wms-gate.css">
+<script src="../wms-gate.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+
+/* A4 แนวนอน ขอบ 12.7mm — ตรงตามไฟล์ Word ต้นฉบับ (720 twips) */
+@page { size: 297mm 210mm; margin: 12.7mm; }
+
+.paper{ width:297mm; height:210mm; padding:12.7mm; }
+
+.tag{ height:100%; }
+.tag td{ padding:0 6mm; }
+
+.tag .title{
+  height:33mm;
+  text-align:center;
+  font-size:72pt;
+  font-weight:700;
+  line-height:1.1;
+  padding:0 4mm;
+}
+/* คอลัมน์ซ้าย 4390 / ขวา 10914 twips จากไฟล์ต้นฉบับ */
+.tag .lbl{ width:28.7%; font-size:28pt; font-weight:700; white-space:nowrap; }
+.tag .val{ width:71.3%; }
+
+/* แถวเปล่าถูกยืดให้เต็มแผ่น เพราะเป็นป้ายที่คนเขียนด้วยมือแล้วแปะหน้าสินค้า
+   ช่องที่พอดีตัวหนังสือเขียนไม่ถนัดและอ่านจากระยะไกลไม่ออก */
+.tag .row{ height:21mm; }
+
+@media print{
+  .paper{ height:auto !important; }
+  .tag{ height:180mm; }   /* พื้นที่จริง 184.6 — เว้นไว้ 4.6mm กัน
+                             ปัดเศษแล้วดันแผ่นเปล่าตามมาอีกใบ */
+}
+</style>
+</head>
+<body data-wms-module="forms">
+
+<div class="wms-shell">
+<div data-wms-shell="forms" data-root="../"></div>
+<div class="wms-main">
+  <div data-forms-nav="company" data-depth="0" data-form="status-tag"></div>
+
+  <div class="fm-bar">
+    <a class="fm-btn" href="./">← รายการเอกสาร</a>
+    <span class="fm-name">🏷️ ป้ายชี้บ่งสถานะสินค้า</span>
+    <span class="fm-chip">A4 แนวนอน</span>
+    <span class="fm-meta">1 แผ่น = 1 ป้าย · พิมพ์หลายใบได้จากช่อง “จำนวนชุด” ในหน้าต่างพิมพ์</span>
+    <span class="fm-spacer"></span>
+    <button class="fm-btn primary" onclick="window.print()">🖨 พิมพ์</button>
+  </div>
+
+  <div class="fm-stage">
+    <div class="paper">
+      <table class="form-tbl tag">
+        <tbody>
+          <tr><td class="title" colspan="2">ป้ายชี้บ่งสถานะสินค้า</td></tr>
+          <tr class="row"><td class="lbl">เลขที่ Order</td><td class="val"></td></tr>
+          <tr class="row"><td class="lbl">สินค้า</td><td class="val"></td></tr>
+          <tr class="row"><td class="lbl">ขนาด</td><td class="val"></td></tr>
+          <tr class="row"><td class="lbl">จำนวน</td><td class="val"></td></tr>
+          <tr class="row"><td class="lbl">รายละเอียด</td><td class="val"></td></tr>
+          <tr class="row"><td class="lbl">พนักงานขับรถ</td><td class="val"></td></tr>
+          <tr class="row"><td class="lbl">วัน / เดือน / ปี</td><td class="val"></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+
+<script type="module" src="../wms-shell.js"></script>
+<script type="module" src="./forms-nav.js"></script>
+<script>
+// มาจากปุ่ม "พิมพ์เลย" ในหน้ารายการ — รอ load ให้ฟอนต์และตารางเข้าที่ก่อน
+// ไม่งั้นหน้าต่างพิมพ์จะจับภาพตอนที่ความสูงแถวยังไม่ถูกคำนวณ
+if (location.hash === '#print') {
+  window.addEventListener('load', () => setTimeout(() => window.print(), 250));
+}
+</script>
+</body>
+</html>

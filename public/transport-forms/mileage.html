@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>ฟอร์มเขียนเลขไมล์ — เอกสารขนส่ง</title>
+<link rel="stylesheet" href="../wms-theme.css">
+<link rel="stylesheet" href="./forms.css">
+<link rel="stylesheet" href="../wms-gate.css">
+<script src="../wms-gate.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+
+/* A4 แนวตั้ง — ต้นฉบับตั้ง scale 88% ไว้ ความสูงแถวข้างล่างคูณ 0.88 มาแล้ว
+   จึงได้ 3 ชุดต่อแผ่นเท่าเดิมโดยไม่ต้องพึ่งการย่อของเครื่องพิมพ์ */
+@page { size: 210mm 297mm; margin: 10mm; }
+
+.paper{ width:210mm; min-height:297mm; padding:10mm; }
+
+/* ต้นฉบับเว้น 4.3mm แต่เหลือระยะแค่ 1mm ซึ่งบางเกินกว่าจะไว้ใจการปัดเศษ
+   ของเบราว์เซอร์ — ล้น 1mm คือเสียกระดาษเพิ่มทั้งแผ่นและชุดคนขับขาดกลาง */
+.blk + .blk{ margin-top:2.5mm; }
+
+.hdrline{
+  height:6.8mm; line-height:6.8mm;
+  font-size:9.5pt; font-weight:600; white-space:nowrap; overflow:hidden;
+}
+
+.ml td, .ml th{ font-size:9pt; text-align:center; padding:0 1mm; }
+.ml thead th{ height:4.5mm; font-size:8pt; font-weight:700; line-height:1.12; }
+.ml tbody td{ height:5.45mm; }
+
+/* แถวสรุป: ป้ายอยู่บรรทัดบน ส่วนบรรทัดล่างเป็นที่คิดเลขซึ่งในไฟล์ต้นฉบับ
+   เป็นกล่องข้อความลอยพาดคอลัมน์ เริ่มต้น–ราคาน้ำมัน จึงไม่มีเส้นคั่นกลาง */
+.ml .sum td{ height:6.2mm; font-size:8pt; font-weight:700; }
+.ml .calc td{ height:6.2mm; border-top:0; font-size:9pt; letter-spacing:.5px; }
+.ml .cash td{ height:6.2mm; font-weight:700; text-align:left; padding-left:2mm; }
+
+@media print{ .paper{ min-height:0 !important; } .blk{ break-inside:avoid; } }
+</style>
+</head>
+<body data-wms-module="forms">
+
+<div class="wms-shell">
+<div data-wms-shell="forms" data-root="../"></div>
+<div class="wms-main">
+  <div data-forms-nav="company" data-depth="0" data-form="mileage"></div>
+
+  <div class="fm-bar">
+    <a class="fm-btn" href="./">← รายการเอกสาร</a>
+    <span class="fm-name">⛽ ฟอร์มเขียนเลขไมล์</span>
+    <span class="fm-chip">A4 แนวตั้ง</span>
+    <span class="fm-meta">3 ชุดต่อแผ่น · 1 ชุดต่อคนขับ 1 คน</span>
+    <span class="fm-spacer"></span>
+    <button class="fm-btn primary" onclick="window.print()">🖨 พิมพ์</button>
+  </div>
+
+  <div class="fm-stage">
+    <div class="paper" id="sheet"></div>
+  </div>
+</div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+
+<script type="module" src="../wms-shell.js"></script>
+<script type="module" src="./forms-nav.js"></script>
+<script>
+// สามชุดบนแผ่นเดียวเหมือนกันทุกช่อง เขียนครั้งเดียวแล้ววนออกมา
+// ต้นฉบับเป็น Excel ที่ก๊อปวางลงมาสามรอบ ซึ่งเป็นเหตุผลเดียวกับที่แก้ช่องหนึ่ง
+// แล้วอีกสองช่องไม่ตาม
+const BLOCK = `
+  <div class="blk">
+    <div class="hdrline">ทะเบียน____________________ชื่อ พขร.________________วันที่___________________________</div>
+    <table class="form-tbl ml">
+      <colgroup>
+        <col style="width:16.84%"><col style="width:12.46%"><col style="width:12.46%">
+        <col style="width:11.80%"><col style="width:11.32%"><col style="width:11.32%">
+        <col style="width:11.70%"><col style="width:12.08%">
+      </colgroup>
+      <thead>
+        <tr>
+          <th rowspan="2">Order ID</th>
+          <th rowspan="2">เลขไมล์<br>เริ่มต้น</th>
+          <th rowspan="2">เลขไมล์<br>สิ้นสุด</th>
+          <th colspan="3">เก็บเงินปลายทาง</th>
+          <th rowspan="2">ผู้รับเงิน</th>
+          <th rowspan="2">วันที่ส่งเงิน</th>
+        </tr>
+        <tr><th>เงินสด</th><th>รูดบัตร</th><th>ธนาคาร</th></tr>
+      </thead>
+      <tbody>${'<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>'.repeat(10)}</tbody>
+      <tfoot>
+        <tr class="sum">
+          <td>สรุปเลขไมล์</td><td>คลัง</td><td>เริ่มต้น</td><td>รวม (กม.)</td>
+          <td>ราคาน้ำมัน</td><td>เป็นเงิน (บาท)</td><td>เติมจริง (บาท)</td><td>เติมเพิ่ม (บาท)</td>
+        </tr>
+        <tr class="calc">
+          <td></td><td></td>
+          <td colspan="3">...................... ÷ 13</td>
+          <td></td><td></td><td></td>
+        </tr>
+        <tr class="cash"><td colspan="8">รวมยอดเงินสด</td></tr>
+      </tfoot>
+    </table>
+  </div>`;
+
+document.getElementById('sheet').innerHTML = BLOCK.repeat(3);
+
+if (location.hash === '#print') {
+  window.addEventListener('load', () => setTimeout(() => window.print(), 250));
+}
+</script>
+</body>
+</html>

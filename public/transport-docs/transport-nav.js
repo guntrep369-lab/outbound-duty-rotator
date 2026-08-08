@@ -10,13 +10,10 @@
  *   data-depth         = folders below /transport-docs/ (0 for the index page)
  */
 
-/** Carriers under this module. `docs` renders only for carriers marked ready. */
-export const CARRIERS = [
-  { id: 'company', label: 'รถบริษัท', dir: '', ready: true },
-  { id: 'kex', label: 'Kex express', dir: 'kex', ready: true },
-  { id: 'best', label: 'Best express', dir: 'best', ready: true },
-  { id: 'bi', label: 'Business Idea', dir: 'business-idea', ready: true },
-];
+import { CARRIERS as ALL } from '../wms-carriers.js';
+
+/** Carriers under this module. Every one has a label tool, so all are ready. */
+export const CARRIERS = ALL.map((c) => ({ ...c, ready: true }));
 
 /** Documents that exist under รถบริษัท. Third-party carriers print labels only. */
 export const DOCS = [

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>ใบสรุปเงินสด — เอกสารขนส่ง</title>
+<link rel="stylesheet" href="../wms-theme.css">
+<link rel="stylesheet" href="./forms.css">
+<link rel="stylesheet" href="../wms-gate.css">
+<script src="../wms-gate.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+
+/* A4 แนวนอน — ชีต "เงินสด" ของไฟล์ฟอร์มเขียนเลขไมล์ */
+@page { size: 297mm 210mm; margin: 7mm; }
+
+.paper{ width:297mm; min-height:210mm; padding:7mm; }
+
+.grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:6mm; }
+
+.slip td{ font-size:9pt; text-align:center; height:7.4mm; padding:0 1mm; }
+.slip .hd td{ font-weight:700; }
+.slip .date td{ text-align:left; padding-left:2mm; font-weight:600; }
+.slip .ft td{ font-weight:700; }
+.slip .ft .who{ text-align:left; padding-left:2mm; }
+
+@media print{ .paper{ min-height:0 !important; } .slip{ break-inside:avoid; } }
+</style>
+</head>
+<body data-wms-module="forms">
+
+<div class="wms-shell">
+<div data-wms-shell="forms" data-root="../"></div>
+<div class="wms-main">
+  <div data-forms-nav="company" data-depth="0" data-form="cash"></div>
+
+  <div class="fm-bar">
+    <a class="fm-btn" href="./">← รายการเอกสาร</a>
+    <span class="fm-name">💵 ใบสรุปเงินสด</span>
+    <span class="fm-chip">A4 แนวนอน</span>
+    <span class="fm-meta">9 ใบต่อแผ่น · 1 ใบต่อคนขับ 1 รอบ</span>
+    <span class="fm-spacer"></span>
+    <button class="fm-btn primary" onclick="window.print()">🖨 พิมพ์</button>
+  </div>
+
+  <div class="fm-stage">
+    <div class="paper"><div class="grid" id="grid"></div></div>
+  </div>
+</div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+
+<script type="module" src="../wms-shell.js"></script>
+<script type="module" src="./forms-nav.js"></script>
+<script>
+// ใบเดียวกัน 9 ช่อง เขียนครั้งเดียวแล้ววน — ต้นฉบับก๊อปวางไว้ 3×3
+const SLIP = `
+  <table class="form-tbl slip">
+    <colgroup>
+      <col style="width:12.47%"><col style="width:38.32%">
+      <col style="width:28.34%"><col style="width:20.86%">
+    </colgroup>
+    <tbody>
+      <tr class="date"><td colspan="4">วันที่</td></tr>
+      <tr class="hd"><td>ลำดับ</td><td>ชื่อลูกค้า</td><td>Order ID</td><td>จำนวนเงิน</td></tr>
+      ${[1,2,3,4,5].map((n) => `<tr><td>${n}</td><td></td><td></td><td></td></tr>`).join('')}
+      <tr class="ft"><td class="who" colspan="2">ชื่อ พขร.</td><td>รวม</td><td></td></tr>
+    </tbody>
+  </table>`;
+
+document.getElementById('grid').innerHTML = SLIP.repeat(9);
+
+if (location.hash === '#print') {
+  window.addEventListener('load', () => setTimeout(() => window.print(), 250));
+}
+</script>
+</body>
+</html>

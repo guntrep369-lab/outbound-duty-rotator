@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>รถบริษัท — เอกสารขนส่ง</title>
+<link rel="stylesheet" href="../wms-theme.css">
+<link rel="stylesheet" href="./forms.css">
+<link rel="stylesheet" href="../wms-gate.css">
+<script src="../wms-gate.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+
+.fm-list{padding:20px;display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));
+  max-width:1100px}
+.fm-card{background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:var(--wms-radius);
+  box-shadow:var(--wms-shadow);padding:16px 16px 14px;display:flex;flex-direction:column;gap:10px}
+.fm-card .top{display:flex;gap:12px;align-items:flex-start}
+.fm-card .ic{width:44px;height:44px;border-radius:12px;flex-shrink:0;display:grid;place-items:center;
+  background:var(--wms-primary-light);font-size:22px}
+.fm-card h3{font-size:14.5px;font-weight:700;color:var(--wms-text);margin:0 0 3px}
+.fm-card p{font-size:12.5px;color:var(--wms-muted);line-height:1.5;margin:0}
+.fm-card .src{font-size:11px;color:var(--wms-faint);margin-top:6px}
+.fm-card .acts{display:flex;gap:8px;margin-top:auto;padding-top:4px}
+.fm-note{margin:0 20px;max-width:1060px;padding:11px 14px;border-radius:var(--wms-radius-sm);
+  background:var(--wms-primary-light);border:1px solid var(--wms-border);
+  font-size:12.5px;color:var(--wms-primary-dark);line-height:1.6}
+</style>
+</head>
+<body data-wms-module="forms">
+
+<div class="wms-shell">
+<div data-wms-shell="forms" data-root="../"></div>
+<div class="wms-main">
+  <div data-forms-nav="company" data-depth="0"></div>
+
+  <div class="fm-note">
+    ฟอร์มเปล่าทั้งหมดเก็บไว้ในระบบแล้ว — กด <b>ดู / พิมพ์</b> ได้เลย ไม่ต้องเปิดไฟล์ Word หรือ Excel
+    และไม่ต้องหาไฟล์ต้นฉบับในเครื่องใคร
+  </div>
+
+  <div class="fm-list" id="list"></div>
+</div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+
+<script type="module" src="../wms-shell.js"></script>
+<script type="module" src="./forms-nav.js"></script>
+<script type="module">
+import { FORMS } from './forms-nav.js';
+
+const esc = (s) =>
+  String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+// ปุ่มพิมพ์เปิดหน้าเอกสารพร้อม #print ให้หน้านั้นเรียก print() เอง
+// สั่งพิมพ์ข้ามหน้าไม่ได้ เพราะแต่ละฟอร์มมี @page ของตัวเอง ถ้าพิมพ์จากหน้านี้
+// จะได้ขนาดกระดาษของหน้ารายการแทน
+document.getElementById('list').innerHTML = FORMS.map((f) => `
+  <div class="fm-card">
+    <div class="top">
+      <div class="ic">${f.icon}</div>
+      <div>
+        <h3>${esc(f.label)}</h3>
+        <p>${esc(f.desc)}</p>
+        <div class="src">📄 ${esc(f.source)}</div>
+      </div>
+    </div>
+    <div class="acts">
+      <a class="fm-btn primary" href="./${f.file}">👁 ดู / พิมพ์</a>
+      <a class="fm-btn" href="./${f.file}#print">🖨 พิมพ์เลย</a>
+      <span class="fm-chip" style="margin-left:auto;align-self:center">${esc(f.paper)}</span>
+    </div>
+  </div>`).join('');
+</script>
+</body>
+</html>

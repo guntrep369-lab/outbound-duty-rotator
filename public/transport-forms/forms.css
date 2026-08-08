@@ -1,0 +1,95 @@
+/**
+ * forms.css — the paper look shared by every stored form.
+ *
+ * Each form page sets its own @page size and a .paper of the matching mm, then
+ * writes plain tables inside. Two rules here are load-bearing and were learned
+ * the hard way elsewhere in this system:
+ *
+ *   • padding is ignored on a table with border-collapse:collapse, so paper
+ *     margins live on .paper (a div), never on the form table.
+ *   • width:auto on a table means shrink-to-fit, not full width. Printed tables
+ *     get width:100% explicitly or they come out narrow no matter how the
+ *     preview looked.
+ */
+
+/* ── หน้าจอ: วางกระดาษบนพื้นเทา ขนาดเท่าของจริง ───────────────────── */
+.fm-stage {
+  padding: 18px 20px 40px;
+  background: #E5E7EB;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  min-height: 60vh;
+}
+
+.paper {
+  background: #fff;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, .18);
+  color: #000;
+  font-family: 'Browallia New', 'BrowalliaUPC', Tahoma, 'Leelawadee UI', sans-serif;
+  flex-shrink: 0;
+}
+
+/* ── แถบเครื่องมือเหนือกระดาษ ─────────────────────────────────────── */
+.fm-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 20px;
+  background: var(--wms-surface);
+  border-bottom: 1px solid var(--wms-border);
+}
+.fm-bar .fm-name { font-size: 13.5px; font-weight: 600; color: var(--wms-text); }
+.fm-bar .fm-meta { font-size: 12px; color: var(--wms-muted); }
+.fm-bar .fm-spacer { flex: 1; }
+.fm-chip {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--wms-surface2);
+  border: 1px solid var(--wms-border);
+  font-size: 11.5px;
+  color: var(--wms-muted);
+}
+
+.fm-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 15px;
+  border-radius: var(--wms-radius-sm);
+  border: 1px solid var(--wms-border2);
+  background: var(--wms-surface);
+  color: #334155;
+  font-family: var(--wms-font);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all .15s;
+}
+.fm-btn:hover { background: var(--wms-primary-light); border-color: var(--wms-primary); color: var(--wms-primary-dark); }
+.fm-btn.primary { background: var(--wms-primary); border-color: var(--wms-primary); color: #fff; }
+.fm-btn.primary:hover { filter: brightness(1.08); color: #fff; }
+
+/* ── ตารางในฟอร์ม ─────────────────────────────────────────────────── */
+.form-tbl { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.form-tbl th,
+.form-tbl td { border: 1px solid #000; vertical-align: middle; }
+
+/* ── พิมพ์ ────────────────────────────────────────────────────────── */
+@media print {
+  .no-print, .fm-bar { display: none !important; }
+  .fm-stage { padding: 0; background: none; display: block; min-height: 0; }
+  .paper {
+    box-shadow: none;
+    /* ความกว้างที่ตั้งไว้เป็นมิลลิเมตรใช้กับหน้าจอ ตอนพิมพ์ต้องเป็น 100%
+       ของพื้นที่ใน @page ไม่งั้นกระดาษจะไม่เต็มแผ่น */
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+}
