@@ -2146,42 +2146,13 @@ function renderStockTable() {
  * จึงรวมเป็น URL เดียวแล้วแยกงานด้วยพารามิเตอร์ — วาง URL เดียวกันได้ทั้งสองช่อง
  * ถ้า URL ใส่ api มาเองแล้วก็เคารพของเดิม (เผื่อ deployment แยกแบบเก่า)
  */
-function withApi(url, api) {
-  var u = String(url || '').trim();
-  if (!u) return u;
-  if (/[?&]api=/.test(u)) return u;
-  return u + (u.indexOf('?') === -1 ? '?' : '&') + 'api=' + api;
-}
+/* withApi · fetchWithRetry · convertGASRows ย้ายไปอยู่ ../wms-order-index.js
+   เพราะหน้าค้นหาออเดอร์ต้องดึงข้อมูลชุดเดียวกันได้เองด้วย สองหน้าที่ดึงจาก
+   Apps Script คนละชุดคือสองหน้าที่ค่อย ๆ อ่านชีตไม่เหมือนกันโดยไม่มีใครรู้
+   ที่เหลือไว้ตรงนี้เป็นแค่ชื่อเดิม เพื่อไม่ต้องไล่แก้จุดเรียกทั้งหน้า */
+function withApi(url, api) { return OrderIndex.withApi(url, api); }
 
-async function fetchWithRetry(url, { retries = 1, timeoutMs = 90000, onRetry, onProgress } = {}) {
-  let lastErr;
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    const ctrl = new AbortController();
-    const started = Date.now();
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-    const ticker = onProgress
-      ? setInterval(() => onProgress(Math.round((Date.now() - started) / 1000), attempt), 1000)
-      : null;
-    try {
-      const resp = await fetch(url, { redirect: 'follow', signal: ctrl.signal });
-      clearTimeout(timer); if (ticker) clearInterval(ticker);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      return resp;
-    } catch (err) {
-      clearTimeout(timer); if (ticker) clearInterval(ticker);
-      const timedOut = err.name === 'AbortError';
-      lastErr = timedOut
-        ? new Error(`หมดเวลา ${timeoutMs / 1000} วินาที — Apps Script ตอบช้าเกินไป`)
-        : err;
-      if (timedOut) break;                       // see RETRY above
-      if (attempt < retries) {
-        if (onRetry) onRetry(attempt + 1, retries, lastErr);
-        await new Promise(r => setTimeout(r, 1200 * (attempt + 1)));
-      }
-    }
-  }
-  throw lastErr;
-}
+function fetchWithRetry(url, opts) { return OrderIndex.fetchWithRetry(url, opts); }
 
 /* ── CSV export ────────────────────────────────────────────────────────────── */
 function toCSV(rows) {
@@ -2362,39 +2333,7 @@ function loadSavedOrderGasUrl() {
 }
 
 // แปลง array of objects จาก GAS → row format ที่ระบบใช้
-function convertGASRows(rows) {
-  return rows
-    .filter(r => r['Order ID'] != null && String(r['Order ID']).trim() !== '')
-    .map(r => {
-      const keys = Object.keys(r);
-      const qtyKeys = keys.filter(k => k.startsWith('จำนวน'));
-      const qty1Key = qtyKeys[0] || 'จำนวน';
-      const qty2Key = qtyKeys[1] || 'จำนวน_1';
-      const rawD = r['Date'] || r['date'] || '';
-      let dateStr = '';
-      if (rawD) {
-        const d = new Date(rawD);
-        dateStr = isNaN(d) ? String(rawD).slice(0,10) : d.toISOString().slice(0,10);
-      }
-      return {
-        orderID:  String(r['Order ID']   || '').trim(),
-        consign:  String(r['เลข consign'] || r['เลขconsign'] || r['Consign'] || '').trim(),
-        sup:      String(r['Sup']        || '').trim(),
-        brand:    String(r['แบรนด์']     || '').trim(),
-        size:     String(r['ขนาด']       || '').trim(),
-        qty1:     r[qty1Key] != null ? r[qty1Key] : 1,
-        giftRaw:  String(r['ของแถม']    || '').trim(),
-        qtyRaw:   r[qty2Key] != null ? String(r[qty2Key]).trim() : '',
-        customer: String(r['ชื่อลูกค้า'] || '').trim(),
-        address:  String(r['ที่อยู่']     || '').trim(),
-        phone1:   String(r['Phone 1']    || '').trim(),
-        phone2:   String(r['Phone 2']    || '').trim(),
-        payment:  String(r['การเงิน']    || '').trim(),
-        remark:   String(r['หมายเหตุ']   || '').trim(),
-        date:     dateStr,
-      };
-    });
-}
+function convertGASRows(rows) { return OrderIndex.convertGASRows(rows); }
 
 // ── Multi-carrier order loader ─────────────────────────────────────────────
 // GAS ส่งมาเป็น { carriers: [ { key, sheet1:[...], sheet2:[...] }, ... ] }

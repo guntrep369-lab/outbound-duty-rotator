@@ -31,6 +31,20 @@
 .lk-src .sp{flex:1}
 .lk-src a.go{color:var(--wms-primary-dark);text-decoration:none;font-weight:600}
 .lk-src a.go:hover{text-decoration:underline}
+.lk-src button{padding:4px 12px;border-radius:999px;border:1px solid var(--wms-border2);
+  background:var(--wms-surface);font-family:var(--wms-font);font-size:12px;color:#334155;cursor:pointer}
+.lk-src button:hover:not(:disabled){background:var(--wms-primary-light);border-color:var(--wms-primary);
+  color:var(--wms-primary-dark)}
+.lk-src button.p{background:var(--wms-primary);border-color:var(--wms-primary);color:#fff}
+.lk-src button.p:hover:not(:disabled){filter:brightness(1.08);color:#fff}
+.lk-src button:disabled{opacity:.6;cursor:default}
+.lk-url{display:none;gap:8px;align-items:center;padding:10px 20px;background:var(--wms-surface);
+  border-bottom:1px solid var(--wms-border);flex-wrap:wrap}
+.lk-url input{flex:1;min-width:260px;padding:8px 12px;border-radius:var(--wms-radius-sm);
+  border:1px solid var(--wms-border2);font-family:var(--wms-font);font-size:12.5px;outline:none}
+.lk-url input:focus{border-color:var(--wms-primary)}
+.lk-url .t{font-size:12px;color:var(--wms-muted)}
+.lk-err{margin:10px 0 0;font-size:12.5px;color:#B91C1C;font-weight:600}
 
 /* ── ผลลัพธ์ ── */
 .lk-body{padding:16px 20px 40px;max-width:1000px}
@@ -98,6 +112,11 @@ mark{background:#FEF08A;color:inherit;border-radius:3px;padding:0 1px}
   </div>
 
   <div class="lk-src" id="src"></div>
+  <div class="lk-url" id="urlRow">
+    <span class="t">Apps Script URL</span>
+    <input id="gasUrl" type="url" placeholder="https://script.google.com/macros/s/.../exec" spellcheck="false">
+    <button class="p" onclick="pullNow()">ดึงข้อมูล</button>
+  </div>
   <div class="lk-body" id="body"></div>
 
 </div><!-- /.wms-main -->
@@ -112,6 +131,7 @@ const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 let ROWS = [];       // ออเดอร์ทุกขนส่งจากแท็บเทียบ Order
 let TRUCK = null;    // ไฟล์รถบริษัท: orderID -> { truck, time, seq, stops }
 let INDEX_AT = 0;
+let PULLING = '';   // ข้อความสถานะระหว่างดึง — ว่าง = ไม่ได้กำลังดึง
 
 /**
  * ไฟล์รถบริษัทตอบคำถามที่ข้อมูลจาก Apps Script ตอบไม่ได้ — ไปกับคันไหน คิวที่
@@ -165,7 +185,9 @@ function renderSrc() {
     : '';
 
   let html = '';
-  if (ROWS.length) {
+  if (PULLING) {
+    html += `<span class="pill">⏳ ${esc(PULLING)}</span>`;
+  } else if (ROWS.length) {
     html += `<span class="pill">📋 <b>${ROWS.length}</b> รายการ · ${carriers.length} ขนส่ง</span>` +
             `<span class="pill">🕐 ดึงเมื่อ <b>${esc(when)}</b></span>`;
   } else {
@@ -174,9 +196,67 @@ function renderSrc() {
   html += TRUCK
     ? `<span class="pill">🚚 ไฟล์รถบริษัท <b>${TRUCK.size}</b> ออเดอร์</span>`
     : `<span class="pill">🚚 ยังไม่มีไฟล์รถบริษัท — จะไม่บอกคันรถและคิวจุดส่ง</span>`;
-  html += `<span class="sp"></span>` +
-          `<a class="go" href="../order-compare/">ดึงข้อมูลที่แท็บเทียบ Order →</a>`;
+
+  html += `<span class="sp"></span>`;
+  const url = OrderIndex.savedUrl();
+  html += `<button id="pullBtn" class="${ROWS.length ? '' : 'p'}" ${PULLING ? 'disabled' : ''} ` +
+          `onclick="${url ? 'pullNow()' : 'showUrlRow()'}">` +
+          `${PULLING ? 'กำลังดึง…' : (ROWS.length ? '🔄 ดึงใหม่' : '⬇️ ดึงข้อมูลวันนี้')}</button>`;
+  if (!url) html += `<span class="pill">ยังไม่ได้ตั้ง Apps Script URL</span>`;
   el.innerHTML = html;
+}
+
+function showUrlRow() {
+  const row = document.getElementById('urlRow');
+  row.style.display = 'flex';
+  const box = document.getElementById('gasUrl');
+  box.value = OrderIndex.savedUrl();
+  box.focus();
+}
+
+/**
+ * ดึงข้อมูลเองจากหน้านี้
+ *
+ * ใช้ URL และตัวดึงชุดเดียวกับแท็บเทียบ Order (../wms-order-index.js) — ตั้ง URL
+ * ที่หน้าไหนก็ใช้ได้ทั้งสองหน้า และไม่มีทางที่สองหน้าจะอ่านชีตคนละแบบ
+ *
+ * การดึงใช้เวลาเป็นสิบวินาที จึงนับวินาทีให้เห็น ไม่ใช่ปล่อยให้จอนิ่งจนคนคิดว่าค้าง
+ */
+async function pullNow() {
+  if (PULLING) return;
+  const typed = document.getElementById('gasUrl').value.trim();
+  const url = typed || OrderIndex.savedUrl();
+  if (!url) { showUrlRow(); setErr('ใส่ Apps Script URL ก่อน'); return; }
+
+  setErr('');
+  PULLING = 'กำลังดึงข้อมูล…';
+  renderSrc();
+  try {
+    await OrderIndex.pull(url, {
+      onProgress: (sec) => { PULLING = `กำลังดึงข้อมูล… ${sec} วินาที`; renderSrc(); },
+      onRetry: () => { PULLING = 'ไม่สำเร็จ กำลังลองใหม่…'; renderSrc(); },
+    });
+    OrderIndex.saveUrl(url);
+    document.getElementById('urlRow').style.display = 'none';
+    PULLING = '';
+    load();
+    render();
+  } catch (err) {
+    PULLING = '';
+    renderSrc();
+    setErr('ดึงข้อมูลไม่สำเร็จ — ' + err.message);
+  }
+}
+
+function setErr(msg) {
+  let el = document.getElementById('lkErr');
+  if (!el) {
+    el = document.createElement('p');
+    el.id = 'lkErr'; el.className = 'lk-err';
+    document.getElementById('urlRow').appendChild(el);
+  }
+  el.textContent = msg;
+  if (msg) document.getElementById('urlRow').style.display = 'flex';
 }
 
 // ── ค้นหา ────────────────────────────────────────────────────────────────
@@ -303,7 +383,8 @@ function render() {
 
   if (!ROWS.length) {
     body.innerHTML = `<div class="lk-empty">ยังไม่มีข้อมูลออเดอร์ของวันนี้<br>
-      ไปที่แท็บ <b>เทียบ Order</b> แล้วกดดึงข้อมูลก่อน — หน้านี้จะใช้ชุดเดียวกันทันที ไม่ต้องดึงซ้ำ</div>`;
+      กด <b>${OrderIndex.savedUrl() ? '⬇️ ดึงข้อมูลวันนี้' : 'ตั้ง Apps Script URL'}</b> ที่แถบด้านบน
+      — หรือถ้าเพิ่งดึงที่แท็บ <b>เทียบ Order</b> ไปแล้ว หน้านี้จะใช้ชุดเดียวกันทันที</div>`;
     return;
   }
   if (norm(raw).length < 2) {

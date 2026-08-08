@@ -61,9 +61,165 @@
     return rows;
   }
 
+
+  // ══════════════════════════════════════════════════════════════════════
+  // ดึงออเดอร์จาก Apps Script — ย้ายมาจากแท็บเทียบ Order เพื่อให้หน้าค้นหา
+  // ดึงเองได้ด้วย โดยไม่ต้องมีตรรกะการดึงสองชุดที่ค่อย ๆ ต่างกัน
+  // ══════════════════════════════════════════════════════════════════════
+
+  var URL_KEY = 'orderapp_order_gas_url';
+
+  /**
+   * เติม ?api= ให้ URL ของ Apps Script
+   *
+   * order กับ stock อยู่ในโปรเจกต์ Apps Script เดียวกัน ซึ่งมี doGet ได้ตัวเดียว
+   * จึงรวมเป็น URL เดียวแล้วแยกงานด้วยพารามิเตอร์ — วาง URL เดียวกันได้ทั้งสองช่อง
+   * ถ้า URL ใส่ api มาเองแล้วก็เคารพของเดิม (เผื่อ deployment แยกแบบเก่า)
+   */
+  function withApi(url, api) {
+    var u = String(url || '').trim();
+    if (!u) return u;
+    if (/[?&]api=/.test(u)) return u;
+    return u + (u.indexOf('?') === -1 ? '?' : '&') + 'api=' + api;
+  }
+
+  /**
+   * Fetch an Apps Script endpoint, which is slow and occasionally flaky.
+   *
+   * TIMEOUT: 90s, not 30s. A GAS web app reading a grown sheet routinely needs
+   * 30–60s, and the old 30s cap turned "slow but working" into "aborted, retried
+   * twice, failed after 94 seconds". Waiting 40s and succeeding beats that.
+   *
+   * RETRY: only for errors that a retry can fix — a dropped connection, a 5xx,
+   * a GAS cold start. A timeout is NOT retried: the caller has already waited the
+   * full 90s, and spending another 90 to hear the same thing is worse than
+   * handing back control. `onProgress` ticks each second so the wait shows.
+   */
+  async function fetchWithRetry(url, opts) {
+    var o = opts || {};
+    var retries = o.retries == null ? 1 : o.retries;
+    var timeoutMs = o.timeoutMs == null ? 90000 : o.timeoutMs;
+    var lastErr;
+    for (var attempt = 0; attempt <= retries; attempt++) {
+      var ctrl = new AbortController();
+      var started = Date.now();
+      var timer = setTimeout(function () { ctrl.abort(); }, timeoutMs);
+      var ticker = o.onProgress
+        ? setInterval((function (a) {
+            return function () { o.onProgress(Math.round((Date.now() - started) / 1000), a); };
+          })(attempt), 1000)
+        : null;
+      try {
+        var resp = await fetch(url, { redirect: 'follow', signal: ctrl.signal });
+        clearTimeout(timer); if (ticker) clearInterval(ticker);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        return resp;
+      } catch (err) {
+        clearTimeout(timer); if (ticker) clearInterval(ticker);
+        var timedOut = err.name === 'AbortError';
+        lastErr = timedOut
+          ? new Error('หมดเวลา ' + (timeoutMs / 1000) + ' วินาที — Apps Script ตอบช้าเกินไป')
+          : err;
+        if (timedOut) break;                       // see RETRY above
+        if (attempt < retries) {
+          if (o.onRetry) o.onRetry(attempt + 1, retries, lastErr);
+          await new Promise(function (r) { setTimeout(r, 1200 * (attempt + 1)); });
+        }
+      }
+    }
+    throw lastErr;
+  }
+
+  /** แถวดิบจากชีต → รูปแบบที่ทุกหน้าในระบบใช้ */
+  function convertGASRows(rows) {
+    return (rows || [])
+      .filter(function (r) { return r['Order ID'] != null && String(r['Order ID']).trim() !== ''; })
+      .map(function (r) {
+        var keys = Object.keys(r);
+        var qtyKeys = keys.filter(function (k) { return k.indexOf('จำนวน') === 0; });
+        var qty1Key = qtyKeys[0] || 'จำนวน';
+        var qty2Key = qtyKeys[1] || 'จำนวน_1';
+        var rawD = r['Date'] || r['date'] || '';
+        var dateStr = '';
+        if (rawD) {
+          var d = new Date(rawD);
+          dateStr = isNaN(d) ? String(rawD).slice(0, 10) : d.toISOString().slice(0, 10);
+        }
+        return {
+          orderID:  String(r['Order ID']   || '').trim(),
+          consign:  String(r['เลข consign'] || r['เลขconsign'] || r['Consign'] || '').trim(),
+          sup:      String(r['Sup']        || '').trim(),
+          brand:    String(r['แบรนด์']     || '').trim(),
+          size:     String(r['ขนาด']       || '').trim(),
+          qty1:     r[qty1Key] != null ? r[qty1Key] : 1,
+          giftRaw:  String(r['ของแถม']    || '').trim(),
+          qtyRaw:   r[qty2Key] != null ? String(r[qty2Key]).trim() : '',
+          customer: String(r['ชื่อลูกค้า'] || '').trim(),
+          address:  String(r['ที่อยู่']     || '').trim(),
+          phone1:   String(r['Phone 1']    || '').trim(),
+          phone2:   String(r['Phone 2']    || '').trim(),
+          payment:  String(r['การเงิน']    || '').trim(),
+          remark:   String(r['หมายเหตุ']   || '').trim(),
+          date:     dateStr,
+        };
+      });
+  }
+
+  /**
+   * JSON ที่ Apps Script ตอบมา → carriersData
+   * รองรับสองรูปแบบ: หลายขนส่ง { carriers:[…] } และแบบเก่าชุดเดียว { sheet1, sheet2 }
+   */
+  function parsePayload(json) {
+    if (json && json.error) throw new Error(json.error);
+    var out;
+    if (json && json.carriers && Array.isArray(json.carriers)) {
+      out = json.carriers.map(function (car) {
+        return {
+          key: car.key,
+          data1: convertGASRows(car.sheet1 || []),
+          data2: convertGASRows(car.sheet2 || []),
+          error1: car.error1 || null,
+          error2: car.error2 || null,
+        };
+      });
+    } else if (json && (json.sheet1 || json.sheet2)) {
+      out = [{ key: 'ออเดอร์', data1: convertGASRows(json.sheet1 || []), data2: convertGASRows(json.sheet2 || []) }];
+    } else {
+      throw new Error('รูปแบบไม่รองรับ — keys: [' + Object.keys(json || {}).join(', ') + ']');
+    }
+    if (!out.length) throw new Error('ไม่พบข้อมูลขนส่ง');
+    return out;
+  }
+
+  /** ดึง + แปลง + เก็บดัชนี ในขั้นตอนเดียว สำหรับหน้าที่ไม่ได้ทำอะไรกับข้อมูลดิบต่อ */
+  async function pull(url, opts) {
+    var resp = await fetchWithRetry(withApi(url, 'order'), opts);
+    var text = await resp.text();
+    var json;
+    try { json = JSON.parse(text); }
+    catch (e) { throw new Error('ข้อมูลไม่ใช่ JSON: ' + text.slice(0, 120)); }
+    var carriers = parsePayload(json);
+    window.OrderIndex.save(carriers);
+    return carriers;
+  }
+
   window.OrderIndex = {
     KEY: KEY,
+    URL_KEY: URL_KEY,
     build: build,
+    withApi: withApi,
+    fetchWithRetry: fetchWithRetry,
+    convertGASRows: convertGASRows,
+    parsePayload: parsePayload,
+    pull: pull,
+
+    /** URL ที่แท็บเทียบ Order บันทึกไว้ — ทั้งสองหน้าใช้ช่องเดียวกัน */
+    savedUrl: function () {
+      try { return localStorage.getItem(URL_KEY) || ''; } catch (e) { return ''; }
+    },
+    saveUrl: function (url) {
+      try { if (String(url).trim()) localStorage.setItem(URL_KEY, String(url).trim()); } catch (e) {}
+    },
 
     /** @returns {{at:number, rows:Array}|null} */
     get: function () {
