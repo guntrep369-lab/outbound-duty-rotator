@@ -5,41 +5,13 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>ป้ายชี้บ่งสถานะสินค้า — เอกสารขนส่ง</title>
 <link rel="stylesheet" href="../wms-theme.css">
-<link rel="stylesheet" href="./forms.css">
+<link rel="stylesheet" href="../wms-paper.css">
+<link rel="stylesheet" href="../wms-status-tag.css">
 <link rel="stylesheet" href="../wms-gate.css">
 <script src="../wms-gate.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 
-/* A4 แนวนอน ขอบ 12.7mm — ตรงตามไฟล์ Word ต้นฉบับ (720 twips) */
-@page { size: 297mm 210mm; margin: 12.7mm; }
-
-.paper{ width:297mm; height:210mm; padding:12.7mm; }
-
-.tag{ height:100%; }
-.tag td{ padding:0 6mm; }
-
-.tag .title{
-  height:33mm;
-  text-align:center;
-  font-size:72pt;
-  font-weight:700;
-  line-height:1.1;
-  padding:0 4mm;
-}
-/* คอลัมน์ซ้าย 4390 / ขวา 10914 twips จากไฟล์ต้นฉบับ */
-.tag .lbl{ width:28.7%; font-size:28pt; font-weight:700; white-space:nowrap; }
-.tag .val{ width:71.3%; }
-
-/* แถวเปล่าถูกยืดให้เต็มแผ่น เพราะเป็นป้ายที่คนเขียนด้วยมือแล้วแปะหน้าสินค้า
-   ช่องที่พอดีตัวหนังสือเขียนไม่ถนัดและอ่านจากระยะไกลไม่ออก */
-.tag .row{ height:21mm; }
-
-@media print{
-  .paper{ height:auto !important; }
-  .tag{ height:180mm; }   /* พื้นที่จริง 184.6 — เว้นไว้ 4.6mm กัน
-                             ปัดเศษแล้วดันแผ่นเปล่าตามมาอีกใบ */
-}
 </style>
 </head>
 <body data-wms-module="forms">

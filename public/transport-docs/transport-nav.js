@@ -20,6 +20,7 @@ export const DOCS = [
   { id: 'picklist', label: '🏷️ Picklist Label', dir: '' },
   { id: 'delivery', label: '📄 ใบนำส่งสินค้า', dir: 'delivery' },
   { id: 'notify', label: '💬 แจ้งงานคนรถ', dir: 'notify' },
+  { id: 'status-tag', label: '🏷️ ป้ายชี้บ่งสถานะ', dir: 'status-tag' },
 ];
 
 const esc = (s) =>

@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>ป้ายชี้บ่งสถานะ — ทำใบงานขนส่ง</title>
+<link rel="stylesheet" href="../../wms-theme.css">
+<link rel="stylesheet" href="../../wms-paper.css">
+<link rel="stylesheet" href="../../wms-status-tag.css">
+<link rel="stylesheet" href="../../wms-gate.css">
+<script src="../../wms-gate.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+
+.err{color:#c00;font-size:12px;margin-top:8px;font-weight:600}
+#upload-screen{display:flex;align-items:center;justify-content:center;padding:40px 20px}
+#main-screen{display:none}
+
+.topbar{display:flex;align-items:center;gap:8px;padding:10px 20px;flex-wrap:wrap}
+.topbar .chip{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;
+  background:var(--wms-surface2);border:1px solid var(--wms-border);font-size:12px;color:var(--wms-muted)}
+.topbar .chip b{color:var(--wms-text);font-weight:600}
+.topbar .fname{font-size:12px;color:var(--wms-faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* แถบเลือก: รถคันไหน · ใบต่ออะไร · เลือก/ไม่เลือก */
+.st-bar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:10px 20px;
+  background:var(--wms-surface);border-top:1px solid var(--wms-border);border-bottom:1px solid var(--wms-border)}
+.st-lbl{font-size:11.5px;color:var(--wms-muted);font-weight:600}
+.st-sep{width:1px;height:20px;background:var(--wms-border)}
+.st-spacer{flex:1}
+.st-chip{padding:5px 12px;border-radius:999px;border:1px solid var(--wms-border);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:12px;color:var(--wms-muted);cursor:pointer;transition:all .15s;white-space:nowrap}
+.st-chip:hover:not(.active){border-color:var(--wms-primary);color:var(--wms-primary)}
+.st-chip.active{background:var(--wms-primary);border-color:var(--wms-primary);color:#fff}
+.st-count{font-size:12.5px;color:var(--wms-text);font-weight:600}
+
+/* หัวใบแต่ละแผ่นบนหน้าจอ — ติ๊กออกได้ทีละใบ ไม่ต้องมีรายการแยกให้ตรงกันสองที่ */
+.tag-wrap{display:flex;flex-direction:column;align-items:center;gap:7px}
+.tag-pick{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--wms-text);
+  background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:999px;
+  padding:5px 14px;cursor:pointer;user-select:none}
+.tag-pick input{width:15px;height:15px;accent-color:var(--wms-primary);cursor:pointer}
+.tag-pick .no{color:var(--wms-faint);font-size:11.5px}
+.tag-wrap.off .paper{opacity:.32}
+.tag-wrap.off .tag-pick{color:var(--wms-faint)}
+
+/* ช่องที่ไฟล์ไม่มีข้อมูล ปล่อยว่างไว้ให้เขียนมือ ไม่เติมขีดหรือคำว่า "-"
+   ป้ายนี้เขียนต่อด้วยปากกาเสมอ ขีดที่ใส่ไปเองกลายเป็นสิ่งที่ต้องขีดฆ่าทิ้ง */
+.tag .val{ font-size:26pt; font-weight:600; line-height:1.2; }
+.tag .val .ln{ display:block; }
+.tag .val.small{ font-size:19pt; }
+
+@media print{
+  .topbar,.st-bar{display:none!important}
+  .tag-wrap{page-break-after:always;break-after:page;gap:0}
+  .tag-wrap.last{page-break-after:auto;break-after:auto}
+  .tag-wrap.off{display:none!important}
+}
+</style>
+</head>
+<body data-wms-module="transport">
+
+<div class="wms-shell">
+<div data-wms-shell="transport" data-root="../../"></div>
+<div class="wms-main">
+  <div data-transport-nav="company" data-depth="1" data-doc="status-tag"></div>
+
+  <!-- ══════════ UPLOAD SCREEN ══════════ -->
+  <div id="upload-screen">
+    <div class="up-card">
+      <h1>🏷️ ป้ายชี้บ่งสถานะ</h1>
+      <p class="sub">กรอกจากไฟล์ออเดอร์ให้เลย ไม่ต้องเขียนมือทีละใบ</p>
+      <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+        <div class="icon">📄</div>
+        <div class="dt">วางไฟล์ที่นี่ หรือคลิกเพื่อเลือก</div>
+        <div class="ds">.xlsx / .xls — ไฟล์เดียวกับที่ใช้ทำใบนำส่งและแจ้งงานคนรถ</div>
+      </div>
+      <input type="file" id="fileInput" accept=".xlsx,.xls" style="display:none">
+      <p id="errMsg" class="err"></p>
+    </div>
+  </div>
+
+  <!-- ══════════ MAIN SCREEN ══════════ -->
+  <div id="main-screen">
+    <div class="topbar" id="topInfo"></div>
+    <div class="st-bar">
+      <span class="st-lbl">รถ</span>
+      <span id="truckChips" style="display:contents"></span>
+      <span class="st-sep"></span>
+      <span class="st-lbl">1 ใบต่อ</span>
+      <button class="st-chip active" data-mode="order" onclick="setMode('order',this)">ออเดอร์</button>
+      <button class="st-chip" data-mode="item" onclick="setMode('item',this)">รายการสินค้า</button>
+      <span class="st-sep"></span>
+      <button class="st-chip" onclick="pickAll(true)">เลือกทั้งหมด</button>
+      <button class="st-chip" onclick="pickAll(false)">ไม่เลือกเลย</button>
+      <span class="st-spacer"></span>
+      <span class="st-count" id="stCount"></span>
+      <button class="fm-btn" onclick="reupload()">🔄 เปลี่ยนไฟล์</button>
+      <button class="fm-btn primary" onclick="window.print()">🖨 พิมพ์</button>
+    </div>
+    <div class="fm-stage" id="stage"></div>
+  </div>
+
+</div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+
+<script type="module" src="../../wms-shell.js"></script>
+<script type="module" src="../transport-nav.js"></script>
+<script src="../transport-file.js"></script>
+<script>
+/* ตำแหน่งคอลัมน์มาจาก transport-file.js — ชุดเดียวของทั้งโมดูล */
+const C = TransportFile.COLS;
+let ROWS = [];        // ทุกแถวในไฟล์
+let LOADED_FILE = '';
+let MODE = 'order';   // 'order' = รวมรายการของออเดอร์เดียวกันไว้ใบเดียว
+let TRUCK = '';       // '' = ทุกคัน
+let OFF = new Set();  // ใบที่ติ๊กออก เก็บด้วย key ของใบ ไม่ใช่ลำดับ
+
+const dz = document.getElementById('dropZone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('drag');
+  const f = e.dataTransfer.files[0]; if (f) processFile(f);
+});
+document.getElementById('fileInput').addEventListener('change', function(){ if (this.files[0]) processFile(this.files[0]); });
+
+function reupload(){
+  /* ล้างไฟล์ที่แชร์ด้วย ไม่งั้นอีกสามหน้าจะยังใช้ไฟล์เก่า */
+  if (window.TransportFile) TransportFile.clear();
+  document.getElementById('upload-screen').style.display = 'flex';
+  document.getElementById('main-screen').style.display = 'none';
+  document.getElementById('fileInput').value = '';
+  document.getElementById('errMsg').textContent = '';
+}
+
+function processFile(file){
+  LOADED_FILE = file.name;
+  const reader = new FileReader();
+  reader.onload = function(e){
+    try{
+      const wb = XLSX.read(e.target.result, { type:'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' });
+      if (rows.length < 2) { setErr('ไฟล์ไม่มีข้อมูล'); return; }
+      const data = rows.slice(1).filter(r => r.some(c => String(c).trim() !== ''));
+      if (!data.length) { setErr('ไม่พบข้อมูลในไฟล์'); return; }
+      buildApp(data);
+      TransportFile.save(file.name, data, rows[0]);   // ให้อีกสามหน้าใช้ไฟล์เดียวกัน
+    }catch(err){ setErr('อ่านไฟล์ไม่ได้: ' + err.message); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+function setErr(m){ document.getElementById('errMsg').textContent = m; }
+
+function v(row, col){ return String(row[col] ?? '').trim(); }
+function esc(s){ return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function fmtDate(raw){
+  if (raw === '' || raw == null) return '';
+  if (typeof raw === 'number'){ const d = XLSX.SSF.parse_date_code(raw); return `${d.d}/${d.m}/${d.y}`; }
+  return String(raw).trim();
+}
+
+function buildApp(data){
+  ROWS = data;
+  OFF = new Set();
+  document.getElementById('upload-screen').style.display = 'none';
+  document.getElementById('main-screen').style.display = 'block';
+  renderTrucks();
+  render();
+}
+
+function trucks(){
+  const seen = [];
+  ROWS.forEach(r => { const t = v(r, C.truck) || 'ไม่ระบุ'; if (!seen.includes(t)) seen.push(t); });
+  return seen;
+}
+
+function renderTrucks(){
+  const list = trucks();
+  const attr = s => JSON.stringify(s).replace(/"/g, '&quot;');
+  document.getElementById('truckChips').innerHTML =
+    `<button class="st-chip${TRUCK ? '' : ' active'}" onclick="setTruck('')">ทุกคัน</button>` +
+    list.map(t => `<button class="st-chip${TRUCK === t ? ' active' : ''}" onclick="setTruck(${attr(t)})">${esc(t)}</button>`).join('');
+}
+
+function setTruck(t){ TRUCK = t; renderTrucks(); render(); }
+function setMode(m, btn){
+  MODE = m;
+  document.querySelectorAll('.st-chip[data-mode]').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  // สลับโหมดแล้ว key ของใบเปลี่ยนไปทั้งชุด ที่ติ๊กออกไว้จึงใช้ต่อไม่ได้
+  OFF = new Set();
+  render();
+}
+
+/**
+ * แถวในไฟล์ → ใบป้าย
+ *
+ * โหมด 'order' รวมทุกรายการของออเดอร์เดียวกันไว้ใบเดียว เพราะของออเดอร์เดียวกัน
+ * ถูกจัดกองไว้ด้วยกันและได้ป้ายใบเดียว ถ้าแยกใบต่อรายการ กองเดียวจะมีสองป้าย
+ * ที่ขัดกันเอง — แต่บางวันของชิ้นใหญ่ถูกวางแยกกอง จึงเลือกโหมด 'item' ได้
+ *
+ * แถวที่ไม่มีเลขออเดอร์ไม่ถูกยุบรวมกัน เพราะ "ว่าง" ไม่ได้แปลว่าเป็นออเดอร์เดียวกัน
+ */
+function buildTags(){
+  const rows = ROWS.filter(r => !TRUCK || (v(r, C.truck) || 'ไม่ระบุ') === TRUCK);
+  if (MODE === 'item') return rows.map((r, i) => ({ key: 'i' + i, rows: [r] }));
+
+  const map = new Map(); const order = [];
+  rows.forEach((r, i) => {
+    const id = v(r, C.order);
+    const k = id ? 'o' + id : 'x' + i;
+    if (!map.has(k)) { map.set(k, []); order.push(k); }
+    map.get(k).push(r);
+  });
+  return order.map(k => ({ key: k, rows: map.get(k) }));
+}
+
+function tagHTML(tag){
+  const rs = tag.rows;
+  const lines = (col) => rs.map(r => v(r, col));
+  // รายละเอียด = ของแถม (พร้อมจำนวน) + หมายเหตุ ทั้งสองอย่างคือสิ่งที่ต้องรู้
+  // ตอนของอยู่บนกอง และไม่มีช่องอื่นบนป้ายรองรับ
+  const detail = [];
+  rs.forEach(r => {
+    const g = v(r, C.gift), gq = v(r, C.giftQty), rm = v(r, C.remark);
+    if (g) detail.push(g + (gq ? ' × ' + gq : ''));
+    if (rm) detail.push(rm);
+  });
+
+  const cell = (arr, cls) => {
+    const use = arr.filter(x => x !== '');
+    if (!use.length) return '';
+    const many = use.length > 2;
+    return `<span class="${many ? 'many' : ''}">${use.map(x => `<span class="ln">${esc(x)}</span>`).join('')}</span>`;
+  };
+  const rowHTML = (label, arr) => {
+    const use = [...new Set(arr.filter(x => x !== ''))];
+    const cls = use.join('').length > 40 || use.length > 2 ? ' small' : '';
+    return `<tr class="row"><td class="lbl">${label}</td>` +
+           `<td class="val${cls}">${use.map(x => `<span class="ln">${esc(x)}</span>`).join('')}</td></tr>`;
+  };
+
+  return `<table class="form-tbl tag"><tbody>
+      <tr><td class="title" colspan="2">ป้ายชี้บ่งสถานะสินค้า</td></tr>
+      ${rowHTML('เลขที่ Order', lines(C.order))}
+      ${rowHTML('สินค้า', lines(C.brand))}
+      ${rowHTML('ขนาด', lines(C.size))}
+      ${rowHTML('จำนวน', lines(C.qty))}
+      ${rowHTML('รายละเอียด', detail)}
+      ${rowHTML('พนักงานขับรถ', lines(C.truck))}
+      ${rowHTML('วัน / เดือน / ปี', rs.map(r => fmtDate(r[C.date])))}
+    </tbody></table>`;
+}
+
+function render(){
+  const tags = buildTags();
+  const stage = document.getElementById('stage');
+
+  stage.innerHTML = tags.map((t, i) => {
+    const off = OFF.has(t.key);
+    const id = v(t.rows[0], C.order) || '(ไม่มีเลขออเดอร์)';
+    const truck = v(t.rows[0], C.truck) || 'ไม่ระบุ';
+    return `<div class="tag-wrap${off ? ' off' : ''}" data-key="${esc(t.key)}">
+        <label class="tag-pick no-print">
+          <input type="checkbox" ${off ? '' : 'checked'} onchange="togglePick(${JSON.stringify(t.key).replace(/"/g,'&quot;')},this.checked)">
+          <b>${esc(id)}</b><span class="no">· ${esc(truck)} · ${t.rows.length} รายการ · ใบที่ ${i + 1}</span>
+        </label>
+        ${`<div class="paper">${tagHTML(t)}</div>`}
+      </div>`;
+  }).join('');
+
+  const on = tags.filter(t => !OFF.has(t.key)).length;
+  document.getElementById('stCount').textContent = `พิมพ์ ${on} ใบ` + (on < tags.length ? ` (จาก ${tags.length})` : '');
+  document.getElementById('topInfo').innerHTML =
+    `<span class="chip">🚚 <b>${trucks().length}</b> คัน</span>` +
+    `<span class="chip">📦 <b>${ROWS.length}</b> รายการ</span>` +
+    `<span class="chip">🏷️ <b>${tags.length}</b> ใบ</span>` +
+    (LOADED_FILE ? `<span class="fname" title="${esc(LOADED_FILE)}">${esc(LOADED_FILE)}</span>` : '');
+  markLast();
+}
+
+function togglePick(key, on){
+  if (on) OFF.delete(key); else OFF.add(key);
+  const el = document.querySelector(`.tag-wrap[data-key="${CSS.escape(key)}"]`);
+  if (el) el.classList.toggle('off', !on);
+  const tags = buildTags();
+  const n = tags.filter(t => !OFF.has(t.key)).length;
+  document.getElementById('stCount').textContent = `พิมพ์ ${n} ใบ` + (n < tags.length ? ` (จาก ${tags.length})` : '');
+  markLast();
+}
+
+function pickAll(on){
+  if (on) OFF = new Set(); else OFF = new Set(buildTags().map(t => t.key));
+  render();
+}
+
+/**
+ * ใบสุดท้ายที่จะพิมพ์จริงต้องไม่ขึ้นหน้าใหม่ต่อท้าย ไม่งั้นได้กระดาษเปล่าอีกแผ่น
+ * CSS เลือก "ใบสุดท้ายที่ยังไม่ถูกติ๊กออก" ไม่ได้ จึงติดคลาสให้เอง
+ */
+function markLast(){
+  const all = [...document.querySelectorAll('.tag-wrap')];
+  all.forEach(e => e.classList.remove('last'));
+  const on = all.filter(e => !e.classList.contains('off'));
+  if (on.length) on[on.length - 1].classList.add('last');
+}
+window.addEventListener('beforeprint', markLast);
+
+/* ไฟล์ถูกอัปที่หน้าอื่นแล้ว → สร้างเลย ไม่ต้องอัปซ้ำ */
+(function(){
+  var f = window.TransportFile && TransportFile.get(); if (!f) return;
+  LOADED_FILE = f.fileName; buildApp(f.rows);
+})();
+</script>
+</body>
+</html>
