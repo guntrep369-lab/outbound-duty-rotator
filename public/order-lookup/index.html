@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>ค้นหาออเดอร์วันนี้ — WMS</title>
+<link rel="stylesheet" href="../wms-theme.css">
+<link rel="stylesheet" href="../wms-gate.css">
+<script src="../wms-gate.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+
+/* ── แถบค้นหา ── */
+.lk-head{padding:16px 20px 14px;background:var(--wms-surface);border-bottom:1px solid var(--wms-border)}
+.lk-box{position:relative;max-width:640px}
+.lk-box input{width:100%;padding:13px 15px 13px 44px;border-radius:12px;border:1.5px solid var(--wms-border2);
+  background:var(--wms-surface);font-family:var(--wms-font);font-size:15px;color:var(--wms-text);outline:none;
+  transition:border-color .15s}
+.lk-box input:focus{border-color:var(--wms-primary)}
+.lk-box .ic{position:absolute;left:15px;top:50%;transform:translateY(-50%);font-size:16px;opacity:.5}
+.lk-hint{margin-top:8px;font-size:12px;color:var(--wms-muted)}
+.lk-hint b{color:var(--wms-text);font-weight:600}
+
+/* ── แถบแหล่งข้อมูล ── */
+.lk-src{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 20px;
+  background:var(--wms-surface2);border-bottom:1px solid var(--wms-border);font-size:12px}
+.lk-src .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;
+  background:var(--wms-surface);border:1px solid var(--wms-border);color:var(--wms-muted)}
+.lk-src .pill b{color:var(--wms-text);font-weight:600}
+.lk-src .pill.warn{background:#FEF3C7;border-color:#FDE68A;color:#92400E}
+.lk-src .sp{flex:1}
+.lk-src a.go{color:var(--wms-primary-dark);text-decoration:none;font-weight:600}
+.lk-src a.go:hover{text-decoration:underline}
+
+/* ── ผลลัพธ์ ── */
+.lk-body{padding:16px 20px 40px;max-width:1000px}
+.lk-empty{padding:44px 20px;text-align:center;color:var(--wms-muted);font-size:14px;line-height:1.7}
+.lk-empty b{color:var(--wms-text)}
+
+.oc{background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:var(--wms-radius);
+  box-shadow:var(--wms-shadow);margin-bottom:12px;overflow:hidden}
+.oc-top{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:12px 15px;
+  border-bottom:1px solid var(--wms-border);background:var(--wms-surface2)}
+.oc-id{font-size:15px;font-weight:700;color:var(--wms-text);font-family:ui-monospace,Menlo,monospace}
+.oc-tag{padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:600;
+  background:var(--wms-primary-light);color:var(--wms-primary-dark)}
+.oc-tag.crm{background:#FEF3C7;color:#92400E}
+.oc-tag.truck{background:#DCFCE7;color:#166534}
+.oc-sp{flex:1}
+.oc-copy{padding:4px 11px;border-radius:var(--wms-radius-sm);border:1px solid var(--wms-border2);
+  background:var(--wms-surface);font-family:var(--wms-font);font-size:11.5px;color:#334155;cursor:pointer}
+.oc-copy:hover{background:var(--wms-primary-light);border-color:var(--wms-primary);color:var(--wms-primary-dark)}
+
+.oc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:0}
+.oc-f{padding:10px 15px;border-right:1px solid var(--wms-border);border-bottom:1px solid var(--wms-border)}
+.oc-f:last-child{border-right:0}
+.oc-f .k{font-size:11px;color:var(--wms-muted);font-weight:600;margin-bottom:3px}
+.oc-f .v{font-size:13.5px;color:var(--wms-text);line-height:1.5;word-break:break-word}
+.oc-f .v.mono{font-family:ui-monospace,Menlo,monospace;font-size:12.5px}
+.oc-f .v.dim{color:var(--wms-faint)}
+
+.oc-items{padding:11px 15px}
+.oc-items table{width:100%;border-collapse:collapse;font-size:13px}
+.oc-items th{text-align:left;font-size:11px;font-weight:600;color:var(--wms-muted);
+  padding:0 8px 6px;border-bottom:1px solid var(--wms-border)}
+.oc-items td{padding:6px 8px;border-bottom:1px solid #F1F5F9;vertical-align:top}
+.oc-items tr:last-child td{border-bottom:0}
+.oc-items .q{text-align:right;font-weight:600;white-space:nowrap}
+.oc-gift{color:var(--wms-muted);font-size:12px}
+
+mark{background:#FEF08A;color:inherit;border-radius:3px;padding:0 1px}
+.lk-more{padding:10px 4px;font-size:12.5px;color:var(--wms-muted)}
+</style>
+</head>
+<body data-wms-module="lookup">
+
+<div class="wms-shell">
+<div data-wms-shell="lookup" data-root="../"></div>
+<div class="wms-main">
+
+  <div class="mod-head">
+    <div class="mod-title">
+      <div class="ic">🔎</div>
+      <div>
+        <h2>ค้นหาออเดอร์วันนี้ · Order Lookup</h2>
+        <p>ลูกค้าโทรมาถาม — พิมพ์เลขออเดอร์ ชื่อ หรือเบอร์ แล้วตอบได้ทันที</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="lk-head">
+    <div class="lk-box">
+      <span class="ic">🔎</span>
+      <input id="q" type="search" autocomplete="off" spellcheck="false"
+             placeholder="เลขออเดอร์ · ชื่อลูกค้า · เบอร์โทร · เลข Consign · ที่อยู่">
+    </div>
+    <div class="lk-hint">พิมพ์อย่างน้อย <b>2 ตัวอักษร</b> · เบอร์โทรพิมพ์ตัวเลขติดกันได้ ไม่ต้องใส่ขีด</div>
+  </div>
+
+  <div class="lk-src" id="src"></div>
+  <div class="lk-body" id="body"></div>
+
+</div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+
+<script type="module" src="../wms-shell.js"></script>
+<script src="../wms-order-index.js"></script>
+<script src="../transport-docs/transport-file.js"></script>
+<script>
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+let ROWS = [];       // ออเดอร์ทุกขนส่งจากแท็บเทียบ Order
+let TRUCK = null;    // ไฟล์รถบริษัท: orderID -> { truck, time, seq, stops }
+let INDEX_AT = 0;
+
+/**
+ * ไฟล์รถบริษัทตอบคำถามที่ข้อมูลจาก Apps Script ตอบไม่ได้ — ไปกับคันไหน คิวที่
+ * เท่าไหร่ นัดกี่โมง ซึ่งเป็นสามคำถามแรกที่ลูกค้าถามเสมอ จึงต่อสองแหล่งเข้าด้วยกัน
+ * ตรงนี้ ไม่ใช่ให้คนรับสายเปิดสองหน้าแล้วไล่หาเอง
+ */
+function buildTruckMap() {
+  const f = window.TransportFile && TransportFile.get();
+  if (!f) return null;
+  const C = TransportFile.COLS;
+  const v = (r, c) => String(r[c] ?? '').trim();
+
+  const byTruck = new Map();
+  f.rows.forEach(r => {
+    const t = v(r, C.truck) || 'ไม่ระบุ';
+    if (!byTruck.has(t)) byTruck.set(t, []);
+    byTruck.get(t).push(r);
+  });
+
+  const map = new Map();
+  byTruck.forEach((rows, truck) => {
+    // ลำดับจุดส่ง = ลำดับลูกค้าในไฟล์ ไม่ใช่ลำดับแถว หลายแถวของลูกค้าคนเดียว
+    // คือจุดเดียว คนขับแวะครั้งเดียว
+    const stopOf = new Map(); let n = 0;
+    rows.forEach(r => {
+      const k = v(r, C.customer) || v(r, C.order) || '?';
+      if (!stopOf.has(k)) stopOf.set(k, ++n);
+    });
+    rows.forEach(r => {
+      const id = v(r, C.order); if (!id) return;
+      const k = v(r, C.customer) || id;
+      map.set(id, { truck, time: v(r, C.time), seq: stopOf.get(k), stops: n });
+    });
+  });
+  return map;
+}
+
+function load() {
+  const idx = window.OrderIndex && OrderIndex.get();
+  ROWS = idx ? idx.rows : [];
+  INDEX_AT = idx ? idx.at : 0;
+  TRUCK = buildTruckMap();
+  renderSrc();
+}
+
+function renderSrc() {
+  const el = document.getElementById('src');
+  const carriers = [...new Set(ROWS.map(r => r.carrier).filter(Boolean))];
+  const when = INDEX_AT
+    ? new Date(INDEX_AT).toLocaleTimeString('th-TH', { hour:'2-digit', minute:'2-digit' })
+    : '';
+
+  let html = '';
+  if (ROWS.length) {
+    html += `<span class="pill">📋 <b>${ROWS.length}</b> รายการ · ${carriers.length} ขนส่ง</span>` +
+            `<span class="pill">🕐 ดึงเมื่อ <b>${esc(when)}</b></span>`;
+  } else {
+    html += `<span class="pill warn">⚠️ ยังไม่มีข้อมูลออเดอร์</span>`;
+  }
+  html += TRUCK
+    ? `<span class="pill">🚚 ไฟล์รถบริษัท <b>${TRUCK.size}</b> ออเดอร์</span>`
+    : `<span class="pill">🚚 ยังไม่มีไฟล์รถบริษัท — จะไม่บอกคันรถและคิวจุดส่ง</span>`;
+  html += `<span class="sp"></span>` +
+          `<a class="go" href="../order-compare/">ดึงข้อมูลที่แท็บเทียบ Order →</a>`;
+  el.innerHTML = html;
+}
+
+// ── ค้นหา ────────────────────────────────────────────────────────────────
+const norm = s => String(s ?? '').toLowerCase().replace(/\s+/g, '');
+const digits = s => String(s ?? '').replace(/\D/g, '');
+
+/**
+ * ให้คะแนนความตรง เพื่อให้สิ่งที่คนพิมพ์มาน่าจะหมายถึงที่สุดอยู่บนสุด
+ * เลขออเดอร์ตรงเป๊ะสำคัญกว่าชื่อที่บังเอิญมีคำนั้นอยู่กลางประโยค
+ */
+function score(row, q, qd) {
+  const id = norm(row.orderID), cn = norm(row.consign);
+  if (id && id === q) return 100;
+  if (cn && cn === q) return 95;
+  if (id && id.includes(q)) return 80;
+  if (cn && cn.includes(q)) return 75;
+  // เทียบเบอร์เฉพาะตอนที่พิมพ์มาเป็นตัวเลขล้วน — ถ้าดึงเลขออกจาก "TP-1001"
+  // มาเทียบด้วย เบอร์ที่บังเอิญมี 1001 อยู่ข้างในจะโผล่ขึ้นมาเป็นคนละลูกค้า
+  if (qd.length >= 3 && qd.length === q.length) {
+    const p1 = digits(row.phone1), p2 = digits(row.phone2);
+    if (p1 === qd || p2 === qd) return 90;
+    if ((p1 && p1.includes(qd)) || (p2 && p2.includes(qd))) return 70;
+  }
+  const cu = norm(row.customer);
+  if (cu && cu.startsWith(q)) return 60;
+  if (cu && cu.includes(q)) return 50;
+  if (norm(row.address).includes(q)) return 30;
+  if (norm(row.brand).includes(q)) return 20;
+  return 0;
+}
+
+function search(raw) {
+  const q = norm(raw), qd = digits(raw);
+  if (q.length < 2) return [];
+
+  // จับกลุ่มเป็นออเดอร์ ไม่ใช่แถว — ออเดอร์เดียวมีหลายรายการสินค้า
+  // และคนโทรมาถามถึงออเดอร์ ไม่ได้ถามถึงบรรทัดใดบรรทัดหนึ่ง
+  const groups = new Map();
+  ROWS.forEach((r, i) => {
+    const s = score(r, q, qd);
+    if (!s) return;
+    const key = (r.carrier || '') + '|' + (r.orderID || ('#' + i));
+    if (!groups.has(key)) groups.set(key, { key, rows: [], score: 0 });
+    const g = groups.get(key);
+    g.rows.push(r);
+    if (s > g.score) g.score = s;
+  });
+  return [...groups.values()].sort((a, b) => b.score - a.score || a.key.localeCompare(b.key));
+}
+
+function hi(text, raw) {
+  const t = String(text ?? ''); if (!t) return '';
+  const q = String(raw ?? '').trim();
+  if (q.length < 2) return esc(t);
+  const i = norm(t).indexOf(norm(q));
+  if (i < 0) return esc(t);
+  // ตำแหน่งใน norm ไม่ตรงกับต้นฉบับเมื่อมีช่องว่าง จึงไล่นับกลับทีละตัว
+  let seen = 0, from = -1, to = -1;
+  for (let k = 0; k < t.length; k++) {
+    if (/\s/.test(t[k])) continue;
+    if (seen === i && from < 0) from = k;
+    if (seen === i + norm(q).length - 1) { to = k + 1; break; }
+    seen++;
+  }
+  if (from < 0 || to < 0) return esc(t);
+  return esc(t.slice(0, from)) + '<mark>' + esc(t.slice(from, to)) + '</mark>' + esc(t.slice(to));
+}
+
+const field = (k, v, cls) =>
+  `<div class="oc-f"><div class="k">${k}</div><div class="v ${cls || ''}">${v || '<span class="dim">—</span>'}</div></div>`;
+
+function card(g, raw) {
+  const r = g.rows[0];
+  const id = r.orderID || '(ไม่มีเลขออเดอร์)';
+  const t = TRUCK && r.orderID ? TRUCK.get(r.orderID) : null;
+
+  const items = g.rows.map(x => {
+    const gift = x.giftRaw
+      ? `<div class="oc-gift">+ ${esc(x.giftRaw)}${x.qtyRaw ? ' × ' + esc(x.qtyRaw) : ''}</div>` : '';
+    return `<tr><td>${hi(x.brand, raw)}${gift}</td><td>${esc(x.size || '')}</td>` +
+           `<td class="q">${esc(x.qty1 ?? '')}</td></tr>`;
+  }).join('');
+
+  const consigns = [...new Set(g.rows.map(x => x.consign).filter(Boolean))];
+
+  return `<div class="oc">
+    <div class="oc-top">
+      <span class="oc-id">${hi(id, raw)}</span>
+      <span class="oc-tag">${esc(r.carrier || '—')}</span>
+      ${r.source === 'crm' ? '<span class="oc-tag crm">⚠️ มีแต่ใน CRM — เพิ่มหลังจัดรอบเช้า</span>' : ''}
+      ${t ? `<span class="oc-tag truck">🚚 ${esc(t.truck)} · จุดที่ ${t.seq}/${t.stops}</span>` : ''}
+      <span class="oc-sp"></span>
+      <button class="oc-copy" onclick="copyOrder(this,${JSON.stringify(id).replace(/"/g,'&quot;')})">คัดลอกเลข</button>
+    </div>
+    <div class="oc-grid">
+      ${field('ลูกค้า', hi(r.customer, raw))}
+      ${field('เบอร์โทร', [r.phone1, r.phone2].filter(Boolean).map(p => hi(p, raw)).join(' · '), 'mono')}
+      ${field('เลข Consign', consigns.map(c => hi(c, raw)).join('<br>'), 'mono')}
+      ${field('เวลานัด', t && t.time ? esc(t.time) : '')}
+      ${field('การเงิน', esc(r.payment || ''))}
+      ${field('ที่อยู่', hi(r.address, raw))}
+      ${r.remark ? field('หมายเหตุ', esc(r.remark)) : ''}
+    </div>
+    <div class="oc-items">
+      <table><thead><tr><th>สินค้า</th><th>ขนาด</th><th class="q">จำนวน</th></tr></thead>
+      <tbody>${items}</tbody></table>
+    </div>
+  </div>`;
+}
+
+function copyOrder(btn, id) {
+  navigator.clipboard.writeText(id).then(() => {
+    const old = btn.textContent;
+    btn.textContent = '✓ คัดลอกแล้ว';
+    setTimeout(() => { btn.textContent = old; }, 1400);
+  }).catch(() => {});
+}
+
+const MAX = 40;   // มากกว่านี้คือพิมพ์กว้างไป ให้พิมพ์เพิ่มดีกว่าเลื่อนหาเอง
+
+function render() {
+  const raw = document.getElementById('q').value;
+  const body = document.getElementById('body');
+
+  if (!ROWS.length) {
+    body.innerHTML = `<div class="lk-empty">ยังไม่มีข้อมูลออเดอร์ของวันนี้<br>
+      ไปที่แท็บ <b>เทียบ Order</b> แล้วกดดึงข้อมูลก่อน — หน้านี้จะใช้ชุดเดียวกันทันที ไม่ต้องดึงซ้ำ</div>`;
+    return;
+  }
+  if (norm(raw).length < 2) {
+    body.innerHTML = `<div class="lk-empty">พิมพ์เลขออเดอร์ ชื่อลูกค้า หรือเบอร์โทร<br>
+      ค้นจากออเดอร์ <b>${ROWS.length}</b> รายการของวันนี้</div>`;
+    return;
+  }
+
+  const hits = search(raw);
+  if (!hits.length) {
+    body.innerHTML = `<div class="lk-empty">ไม่พบ "<b>${esc(raw)}</b>" ในออเดอร์ของวันนี้<br>
+      อาจเป็นออเดอร์ของวันอื่น หรือยังไม่ได้ดึงข้อมูลรอบล่าสุด</div>`;
+    return;
+  }
+  body.innerHTML =
+    (hits.length > MAX ? `<div class="lk-more">พบ ${hits.length} ออเดอร์ — แสดง ${MAX} รายการแรก พิมพ์เพิ่มเพื่อให้แคบลง</div>` : '') +
+    hits.slice(0, MAX).map(g => card(g, raw)).join('');
+}
+
+document.getElementById('q').addEventListener('input', render);
+load();
+render();
+document.getElementById('q').focus();
+</script>
+</body>
+</html>

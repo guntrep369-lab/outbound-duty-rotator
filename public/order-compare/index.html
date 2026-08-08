@@ -886,6 +886,7 @@ td{padding:9px 12px;vertical-align:middle}
 </div><!-- /tab-consigncheck -->
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="../wms-order-index.js"></script>
 <script>
 // ══════════════════════════════════════════════════════
 // GLOBAL STATE
@@ -2453,6 +2454,10 @@ async function loadOrderFromGAS() {
       const el = document.getElementById(id);
       if (el) el.value = url;
     });
+
+    // เก็บไว้ให้โมดูลค้นหาออเดอร์ใช้ต่อ การดึงรอบนี้ใช้เวลาไปแล้ว
+    // ไม่มีเหตุผลให้คนรับสายต้องรอดึงข้อมูลชุดเดียวกันซ้ำอีกรอบ
+    if (window.OrderIndex) OrderIndex.save(carriersData);
 
     // Set active carrier = first one
     activeCarrier = 0;
