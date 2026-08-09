@@ -67,7 +67,6 @@
   // ดึงเองได้ด้วย โดยไม่ต้องมีตรรกะการดึงสองชุดที่ค่อย ๆ ต่างกัน
   // ══════════════════════════════════════════════════════════════════════
 
-  var URL_KEY = 'orderapp_order_gas_url';
 
   /**
    * เติม ?api= ให้ URL ของ Apps Script
@@ -205,7 +204,6 @@
 
   window.OrderIndex = {
     KEY: KEY,
-    URL_KEY: URL_KEY,
     build: build,
     withApi: withApi,
     fetchWithRetry: fetchWithRetry,
@@ -213,13 +211,9 @@
     parsePayload: parsePayload,
     pull: pull,
 
-    /** URL ที่แท็บเทียบ Order บันทึกไว้ — ทั้งสองหน้าใช้ช่องเดียวกัน */
-    savedUrl: function () {
-      try { return localStorage.getItem(URL_KEY) || ''; } catch (e) { return ''; }
-    },
-    saveUrl: function (url) {
-      try { if (String(url).trim()) localStorage.setItem(URL_KEY, String(url).trim()); } catch (e) {}
-    },
+    /* URL เป็นของ WmsSettings — ที่นี่แค่ส่งต่อ เพื่อไม่ให้ชื่อคีย์อยู่สองไฟล์ */
+    savedUrl: function () { return window.WmsSettings ? WmsSettings.orderUrl() : ''; },
+    saveUrl: function (url) { if (window.WmsSettings) WmsSettings.setOrderUrl(url); },
 
     /** @returns {{at:number, rows:Array}|null} */
     get: function () {

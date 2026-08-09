@@ -15,6 +15,7 @@ import {
   Truck,
   FileText,
   Search,
+  Settings2,
 } from 'lucide-react';
 import { MODULES, BRAND } from '../public/wms-modules.js';
 import { useApp } from './context/useApp.js';
@@ -88,7 +89,7 @@ function GateUser() {
 }
 
 /** Icon name (from wms-modules.js) → the lucide component that draws it. */
-const MODULE_ICONS = { calendar: CalendarRange, clipboard: ClipboardCheck, truck: Truck, warehouse: Warehouse, file: FileText, search: Search };
+const MODULE_ICONS = { calendar: CalendarRange, clipboard: ClipboardCheck, truck: Truck, warehouse: Warehouse, file: FileText, search: Search, settings: Settings2 };
 
 /**
  * Dark system chrome. Left sidebar on desktop, collapsing to a top bar on small

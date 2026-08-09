@@ -111,6 +111,45 @@
       } catch (e) {}
       location.reload();
     },
+
+    /* ── จัดการผู้ใช้จากหน้าตั้งค่า ─────────────────────────────────────────
+       เปิดออกมาแทนที่จะให้หน้าตั้งค่าอ่าน localStorage เอง เพราะการสร้างรหัส
+       ต้องใช้ salt และวิธี hash ชุดเดียวกับตอนล็อกอินเป๊ะ ๆ ถ้าสองที่คำนวณ
+       ต่างกันแม้นิดเดียว จะได้ผู้ใช้ที่สร้างสำเร็จแต่ล็อกอินไม่ได้ */
+
+    /** รายชื่อผู้ใช้ — ไม่คืน salt/hash ออกไป หน้าอื่นไม่มีเหตุต้องเห็น */
+    users: function () {
+      return readUsers().map(function (u) {
+        return { name: u.name, createdAt: u.createdAt || 0 };
+      });
+    },
+
+    /** @returns {Promise<{ok:boolean, error?:string}>} */
+    addUser: function (name, code) {
+      name = String(name == null ? '' : name).trim();
+      code = String(code == null ? '' : code);
+      if (!name) return Promise.resolve({ ok: false, error: 'ใส่ชื่อก่อน' });
+      if (code.length < MIN_CODE) {
+        return Promise.resolve({ ok: false, error: 'รหัสต้องยาวอย่างน้อย ' + MIN_CODE + ' ตัว' });
+      }
+      var users = readUsers();
+      var taken = users.some(function (u) { return sameName(u.name, name); });
+      if (taken) return Promise.resolve({ ok: false, error: 'มีชื่อนี้อยู่แล้ว' });
+
+      var salt = randomSalt();
+      return hashCode(code, salt).then(function (h) {
+        var ok = writeUsers(users.concat([{ name: name, salt: salt, hash: h, createdAt: Date.now() }]));
+        return ok ? { ok: true } : { ok: false, error: 'บันทึกไม่ได้ (พื้นที่เต็มหรือโหมดส่วนตัว)' };
+      });
+    },
+
+    /** @returns {{ok:boolean, error?:string}} */
+    removeUser: function (name) {
+      var users = readUsers();
+      var left = users.filter(function (u) { return !sameName(u.name, name); });
+      if (left.length === users.length) return { ok: false, error: 'ไม่พบชื่อนี้' };
+      return writeUsers(left) ? { ok: true } : { ok: false, error: 'บันทึกไม่ได้' };
+    },
   };
 
   if (readSession()) return; // already signed in — no intro, straight to work

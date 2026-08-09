@@ -392,6 +392,14 @@ td{padding:9px 12px;vertical-align:middle}
   .ps-split span{padding:2px 9px;border-radius:6px;border:1px solid var(--border);
     font-size:11px;color:var(--muted);white-space:nowrap}
   .ps-split b{color:var(--text);font-weight:700;margin-left:2px}
+  .conn-line{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:9px 11px;
+    border:1px solid var(--border);border-radius:9px;background:var(--surface)}
+  .conn-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--muted)}
+  .conn-dot.on{background:#16A34A}
+  .conn-dot.off{background:#F59E0B}
+  .conn-txt{font-size:12.5px;color:var(--text);flex:1;min-width:120px}
+  .conn-edit{font-size:12px;color:var(--primary-dark);text-decoration:none;font-weight:600;white-space:nowrap}
+  .conn-edit:hover{text-decoration:underline}
   .consign-no{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--text);
     white-space:nowrap;line-height:1.5}
 
@@ -524,11 +532,11 @@ td{padding:9px 12px;vertical-align:middle}
         </div>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px">
-        <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Apps Script URL (Google Sheet)</div>
-        <div style="display:flex;gap:6px">
-          <input id="orderGasUrl" type="text" placeholder="https://script.google.com/macros/s/..." style="flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-family:var(--sans);background:var(--surface);color:var(--text)" oninput="saveOrderGasUrl(this.value)">
+        <div class="conn-line">
+          <span class="conn-dot" data-conn="order"></span>
+          <span class="conn-txt" data-conn="order"></span>
+          <a class="conn-edit" href="../settings/">⚙ ตั้งค่า</a>
           <button class="btn btn-primary btn-sm" onclick="loadOrderFromGAS()">ดึงข้อมูล</button>
-          <button class="btn btn-secondary btn-sm" onclick="clearOrderGasUrl()" title="ล้าง URL">✕</button>
         </div>
         <div style="display:flex;align-items:center;gap:8px;margin:2px 0">
           <div style="flex:1;height:1px;background:var(--border)"></div>
@@ -554,11 +562,11 @@ td{padding:9px 12px;vertical-align:middle}
         </div>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px">
-        <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Apps Script URL</div>
-        <div style="display:flex;gap:6px">
-          <input id="gasUrl1" type="text" placeholder="https://script.google.com/macros/s/..." style="flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-family:var(--sans);background:var(--surface);color:var(--text)" onclick="event.stopPropagation()" oninput="saveGasUrl(this.value)">
-          <button class="btn btn-primary btn-sm" onclick="loadStockFromGAS('gasUrl1')">ดึงข้อมูล</button>
-          <button class="btn btn-secondary btn-sm" onclick="clearSavedGasUrl()" title="ล้าง URL ที่บันทึกไว้">✕</button>
+        <div class="conn-line">
+          <span class="conn-dot" data-conn="order"></span>
+          <span class="conn-txt" data-conn="order"></span>
+          <a class="conn-edit" href="../settings/">⚙ ตั้งค่า</a>
+          <button class="btn btn-primary btn-sm" onclick="loadOrderFromGAS()">ดึงข้อมูล</button>
         </div>
         <div style="display:flex;align-items:center;gap:8px;margin:2px 0">
           <div style="flex:1;height:1px;background:var(--border)"></div>
@@ -649,11 +657,11 @@ td{padding:9px 12px;vertical-align:middle}
         </div>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px">
-        <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Apps Script URL (Google Sheet)</div>
-        <div style="display:flex;gap:6px">
-          <input id="orderGasUrl2" type="text" placeholder="https://script.google.com/macros/s/..." style="flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-family:var(--sans);background:var(--surface);color:var(--text)" oninput="saveOrderGasUrl(this.value)">
-          <button class="btn btn-primary btn-sm" onclick="loadOrderFromGAS()">ดึงข้อมูล</button>
-          <button class="btn btn-secondary btn-sm" onclick="clearOrderGasUrl()" title="ล้าง URL">✕</button>
+        <div class="conn-line">
+          <span class="conn-dot" data-conn="stock"></span>
+          <span class="conn-txt" data-conn="stock"></span>
+          <a class="conn-edit" href="../settings/">⚙ ตั้งค่า</a>
+          <button class="btn btn-primary btn-sm" onclick="loadStockFromGAS()">ดึงข้อมูล</button>
         </div>
         <div style="display:flex;align-items:center;gap:8px;margin:2px 0">
           <div style="flex:1;height:1px;background:var(--border)"></div>
@@ -677,11 +685,11 @@ td{padding:9px 12px;vertical-align:middle}
         </div>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px">
-        <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Apps Script URL</div>
-        <div style="display:flex;gap:6px">
-          <input id="gasUrl2" type="text" placeholder="https://script.google.com/macros/s/..." style="flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;font-family:var(--sans);background:var(--surface);color:var(--text)" onclick="event.stopPropagation()" oninput="saveGasUrl(this.value)">
-          <button class="btn btn-primary btn-sm" onclick="loadStockFromGAS('gasUrl2')">ดึงข้อมูล</button>
-          <button class="btn btn-secondary btn-sm" onclick="clearSavedGasUrl()" title="ล้าง URL ที่บันทึกไว้">✕</button>
+        <div class="conn-line">
+          <span class="conn-dot" data-conn="stock"></span>
+          <span class="conn-txt" data-conn="stock"></span>
+          <a class="conn-edit" href="../settings/">⚙ ตั้งค่า</a>
+          <button class="btn btn-primary btn-sm" onclick="loadStockFromGAS()">ดึงข้อมูล</button>
         </div>
         <div style="display:flex;align-items:center;gap:8px;margin:2px 0">
           <div style="flex:1;height:1px;background:var(--border)"></div>
@@ -886,6 +894,7 @@ td{padding:9px 12px;vertical-align:middle}
 </div><!-- /tab-consigncheck -->
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="../wms-settings.js"></script>
 <script src="../wms-order-index.js"></script>
 <script>
 // ══════════════════════════════════════════════════════
@@ -2206,7 +2215,7 @@ function exportCustomerCSV() {
 }
 
 async function loadStockFromGAS(inputId, directUrl) {
-  const url = directUrl || (document.getElementById(inputId)?.value || '').trim();
+  const url = directUrl || (document.getElementById(inputId)?.value || '').trim() || WmsSettings.stockUrl();
   if (!url) { alert('กรุณาใส่ Apps Script URL'); return; }
 
   setStockStatus('⏳ กำลังดึงข้อมูล...');
@@ -2295,11 +2304,7 @@ async function loadStockFromGAS(inputId, directUrl) {
       const el = document.getElementById(id);
       if (el) el.classList.add('has-file');
     });
-    ['gasUrl1','gasUrl2'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.value = url;
-    });
-    saveGasUrl(url);
+    WmsSettings.setStockUrl(url);
     if (diffResults.length) renderTable();
 
   } catch (err) {
@@ -2307,29 +2312,33 @@ async function loadStockFromGAS(inputId, directUrl) {
   }
 }
 
-// ── localStorage: save/restore Apps Script URL ─────────────────────────────
-const ORDER_GAS_URL_KEY = 'orderapp_order_gas_url';
+/* ── URL อยู่ที่โมดูลตั้งค่าแล้ว ───────────────────────────────────────────
+   หน้านี้ใช้ทุกเช้า ส่วน URL ตั้งปีละครั้ง การเอาช่องกรอกออกไปแลกมาด้วยการ
+   เสียคุณสมบัติ "พังตรงไหนแก้ตรงนั้น" จึงต้องเหลือบรรทัดสถานะไว้ให้เห็นว่า
+   ต่อไว้หรือยัง และลิงก์ไปแก้ได้ในคลิกเดียว */
+function renderConnLines() {
+  const state = {
+    order: { url: WmsSettings.orderUrl(), label: 'ออเดอร์' },
+    stock: { url: WmsSettings.stockUrl(), label: 'สต๊อก' },
+  };
+  document.querySelectorAll('.conn-line').forEach(line => {
+    const kind = line.querySelector('.conn-dot')?.dataset.conn || 'order';
+    const st = state[kind];
+    const on = !!st.url;
+    line.querySelector('.conn-dot').className = 'conn-dot ' + (on ? 'on' : 'off');
+    line.querySelector('.conn-txt').textContent = on
+      ? 'เชื่อม Apps Script ' + st.label + ' แล้ว'
+      : 'ยังไม่ได้ตั้ง Apps Script URL ' + st.label;
+    const btn = line.querySelector('button');
+    if (btn) btn.disabled = !on;
+  });
+}
 
-function saveOrderGasUrl(url) {
-  if (url.trim()) localStorage.setItem(ORDER_GAS_URL_KEY, url.trim());
-}
-function clearOrderGasUrl() {
-  localStorage.removeItem(ORDER_GAS_URL_KEY);
-  ['orderGasUrl','orderGasUrl2'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.value = '';
-  });
-  document.getElementById('sheet-status').textContent = '';
-  document.getElementById('file-single-name').textContent = '';
-}
 function loadSavedOrderGasUrl() {
-  const saved = localStorage.getItem(ORDER_GAS_URL_KEY);
-  if (!saved) return;
-  ['orderGasUrl','orderGasUrl2'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.value = saved;
-  });
-  document.getElementById('sheet-status').textContent = '🔗 มี URL ออเดอร์บันทึกไว้ — กด "ดึงข้อมูล" เพื่อโหลด';
+  renderConnLines();
+  if (WmsSettings.orderUrl()) {
+    document.getElementById('sheet-status').textContent = '🔗 มี URL ออเดอร์บันทึกไว้ — กด "ดึงข้อมูล" เพื่อโหลด';
+  }
 }
 
 // แปลง array of objects จาก GAS → row format ที่ระบบใช้
@@ -2342,8 +2351,7 @@ let carriersData = [];   // [ { key, data1:[], data2:[] } ]
 let activeCarrier = 0;   // index ของ carrier ที่เลือกอยู่ใน tab
 
 async function loadOrderFromGAS() {
-  const url = (document.getElementById('orderGasUrl')?.value ||
-               document.getElementById('orderGasUrl2')?.value || '').trim();
+  const url = WmsSettings.orderUrl();
   if (!url) { alert('กรุณาใส่ Apps Script URL'); return; }
 
   document.getElementById('sheet-status').textContent = '⏳ กำลังดึงข้อมูล...';
@@ -2388,11 +2396,6 @@ async function loadOrderFromGAS() {
 
     if (!carriersData.length) throw new Error('ไม่พบข้อมูลขนส่ง');
 
-    saveOrderGasUrl(url);
-    ['orderGasUrl','orderGasUrl2'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.value = url;
-    });
 
     // เก็บไว้ให้โมดูลค้นหาออเดอร์ใช้ต่อ การดึงรอบนี้ใช้เวลาไปแล้ว
     // ไม่มีเหตุผลให้คนรับสายต้องรอดึงข้อมูลชุดเดียวกันซ้ำอีกรอบ
@@ -2433,10 +2436,6 @@ async function refreshOrder() {
   if (!lastOrderGasUrl) return;
   const b = document.getElementById('refreshOrderBtn');
   if (b) { b.textContent = '⏳ กำลังโหลด...'; b.classList.add('spinning'); b.disabled = true; }
-  ['orderGasUrl','orderGasUrl2'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.value = lastOrderGasUrl;
-  });
   await loadOrderFromGAS();
 }
 
@@ -2500,32 +2499,11 @@ function selectCarrier(idx) {
 }
 
 
-const GAS_URL_KEY = 'orderapp_gas_url';
-
-function saveGasUrl(url) {
-  if (url.trim()) {
-    localStorage.setItem(GAS_URL_KEY, url.trim());
-  }
-}
 
 function loadSavedGasUrl() {
-  const saved = localStorage.getItem(GAS_URL_KEY);
-  if (!saved) return;
-  // Populate both inputs
-  ['gasUrl1','gasUrl2'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.value = saved;
-  });
-  setStockStatus('🔗 มี URL บันทึกไว้ — กด "ดึงข้อมูล" เพื่อโหลดสต๊อก');
-}
-
-function clearSavedGasUrl() {
-  localStorage.removeItem(GAS_URL_KEY);
-  ['gasUrl1','gasUrl2'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.value = '';
-  });
-  setStockStatus('');
+  if (WmsSettings.stockUrl()) {
+    setStockStatus('🔗 มี URL บันทึกไว้ — กด "ดึงข้อมูล" เพื่อโหลดสต๊อก');
+  }
 }
 
 let lastStockSource = null;   // 'gas' | 'file'

@@ -93,6 +93,7 @@ table.pod-tbl tr:nth-child(even) td{background:#f9f9f9}
 <link rel="stylesheet" href="../../wms-theme.css">
 <link rel="stylesheet" href="../../wms-gate.css">
 <script src="../../wms-gate.js"></script>
+<script src="../../wms-settings.js"></script>
 <script src="../transport-file.js"></script>
 </head>
 <body data-wms-module="transport">
@@ -193,16 +194,12 @@ var C = TransportFile.COLS;
 /* โลโก้บริษัทไม่เปลี่ยนทุกวันเหมือนไฟล์ออเดอร์ จึงเก็บถาวรใน localStorage
    ไม่ใช่ sessionStorage — โลโก้เก่าไม่ทำให้ส่งของผิด แต่การต้องแนบใหม่ทุกวันกวนจริง */
 var LAST_BODY = null;   // ข้อมูลใบที่แสดงอยู่
-var LOGO_KEY = 'wms:transport:logo';
-var LOGO_B64 = '';
-try { LOGO_B64 = localStorage.getItem(LOGO_KEY) || ''; } catch (e) {}
+/* คีย์อยู่ที่ wms-settings.js — หน้าตั้งค่าแก้โลโก้ตัวเดียวกันนี้ได้ด้วย */
+var LOGO_B64 = WmsSettings.logo();
 
 function setLogo(dataUrl) {
   LOGO_B64 = dataUrl || '';
-  try {
-    if (LOGO_B64) localStorage.setItem(LOGO_KEY, LOGO_B64);
-    else localStorage.removeItem(LOGO_KEY);
-  } catch (e) {
+  if (!WmsSettings.setLogo(LOGO_B64)) {
     alert('บันทึกโลโก้ไม่ได้ (พื้นที่เต็มหรือเบราว์เซอร์ปิดไว้) — ใบนี้ยังใส่โลโก้ให้ แต่ครั้งหน้าต้องแนบใหม่');
   }
   showLogo();
