@@ -44,7 +44,7 @@
     <a class="fm-btn" href="./">← รายการเอกสาร</a>
     <span class="fm-name">📦 ใบขนย้ายของ Saffron</span>
     <span class="fm-chip">A4 แนวตั้ง</span>
-    <span class="fm-meta">20 ใบต่อแผ่น · ตัดแจกได้</span>
+    <span class="fm-meta">20 ใบต่อแผ่น</span>
     <span class="fm-spacer"></span>
     <button class="fm-btn" onclick="setAll()">📅 ใส่วันที่วันนี้ทุกใบ</button>
     <button class="fm-btn" onclick="location.reload()">🧹 ล้าง</button>
@@ -62,7 +62,8 @@
 <script src="./wh-shared.js"></script>
 <script>
 /* ต้นฉบับมี 20 ใบต่อแผ่น เรียงสองคอลัมน์ ใบละแค่ชื่อเอกสารกับวันที่
-   — เป็นใบตัดแปะไปกับของ ไม่ใช่เอกสารที่ต้องกรอกรายละเอียด */
+   ทั้งชีตมีข้อความอยู่สองอย่างเท่านั้นคือชื่อเอกสารกับคำว่า Date — ยังไม่รู้ว่า
+   ใช้ในขั้นตอนไหน ถ้ารู้แล้วค่อยเพิ่มช่องตามที่ใช้จริง อย่าเดาช่องใส่ไปก่อน */
 const SLIPS = 20;
 document.getElementById('slips').innerHTML = Array.from({ length: SLIPS }, () => `
   <div class="slip">

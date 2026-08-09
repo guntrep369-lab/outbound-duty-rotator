@@ -10,8 +10,12 @@
 (function () {
   'use strict';
 
+  /* แผนก: อ่านได้จริงจากไฟล์ Excel ต้นฉบับทั้งสี่ค่า
+     คลัง: ผู้ใช้ยืนยันมาว่ามีสามที่นี้ — ตอนแรกผมใส่ NEW WH-1 / OLD WH / SAFFRON
+     เพิ่มเข้าไปเองโดยเดาว่าคลังคงมีมากกว่าที่เห็นในไฟล์ ซึ่งเป็นการเดาที่ทำให้
+     คนกรอกเลือกปลายทางที่ไม่มีอยู่จริงได้โดยไม่มีอะไรเตือน */
   var DEPTS = ['', 'INBOUND', 'OUTBOUND', 'INVENTORY', 'QA'];
-  var WAREHOUSES = ['', 'QA', 'NEW WH-1', 'NEW WH-2', 'OLD WH', 'SAFFRON'];
+  var WAREHOUSES = ['', 'NEW WH-2', 'QA', 'RACK'];
 
   function options(list, sel) {
     return list.map(function (v) {
