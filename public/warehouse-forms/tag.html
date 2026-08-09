@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>ป้ายบ่งชี้ — เอกสารคลังสินค้า</title>
+<link rel="stylesheet" href="../wms-theme.css">
+<link rel="stylesheet" href="../wms-paper.css">
+<link rel="stylesheet" href="./wh-forms.css">
+<link rel="stylesheet" href="../wms-gate.css">
+<script src="../wms-gate.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+/* A4 แนวนอน — ต้นฉบับเป็น paperSize 9 landscape */
+@page { size: 297mm 210mm; margin: 8mm; }
+.paper{ width:297mm; min-height:210mm; padding:8mm; }
+
+/* ป้ายเรียงเป็นตาราง 2 คอลัมน์เสมอ ต่างกันที่จำนวนแถวต่อแผ่น
+   ต้นฉบับมีสองขนาด: แถวสูง 129pt (2 ป้าย/แผ่น) และ 51pt (4 ป้าย/แผ่น) */
+.tags{ display:grid; grid-template-columns:1fr 1fr; gap:6mm; }
+.tag{ border:1.5px solid #000; display:flex; flex-direction:column; }
+.tag .t{ text-align:center; font-weight:700; border-bottom:1px solid #000;
+  display:flex; align-items:center; justify-content:center; }
+.tag .f{ display:flex; align-items:stretch; border-bottom:1px solid #000; flex:1; }
+.tag .f:last-child{ border-bottom:0; }
+.tag .f .k{ display:flex; align-items:center; justify-content:center; font-weight:700;
+  border-right:1px solid #000; flex-shrink:0; }
+.tag .f .v{ flex:1; display:flex; flex-direction:column; justify-content:center; min-width:0; padding:0 2mm; }
+.tag .f .v input{ width:100%; border:0; background:#F8FAFC; font-family:inherit; font-weight:700;
+  color:#000; outline:none; padding:0; }
+.tag .f .v input:focus{ background:#EEF2FF; }
+.tag .nm{ font-size:9pt; font-weight:400; color:#334155; line-height:1.15;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* ── ใหญ่: 2 ป้ายต่อแผ่น ── */
+/* 191 ไม่ใช่ 194 (= พื้นที่พิมพ์เต็ม) — เต็มพอดีเป๊ะแปลว่าปัดเศษขึ้น 0.1mm
+   ก็ได้กระดาษเปล่าตามมาอีกแผ่นทุกครั้งที่พิมพ์ */
+body.per2 .tags{ grid-template-rows:1fr; height:191mm; }
+body.per2 .tag .t{ height:26mm; font-size:30pt; }
+body.per2 .tag .f .k{ width:34mm; font-size:20pt; }
+body.per2 .tag .f .v input{ font-size:26pt; height:14mm; }
+body.per2 .tag:nth-child(n+3){ display:none; }
+
+/* ── กลาง: 4 ป้ายต่อแผ่น ── */
+body.per4 .tags{ grid-template-rows:1fr 1fr; height:191mm; }
+body.per4 .tag .t{ height:13mm; font-size:17pt; }
+body.per4 .tag .f .k{ width:24mm; font-size:12pt; }
+body.per4 .tag .f .v input{ font-size:15pt; height:8mm; }
+body.per4 .tag .nm{ font-size:7.5pt; }
+
+@media print{
+  .paper{ min-height:0 !important; }
+  .tag .f .v input{ background:none !important; }
+}
+</style>
+</head>
+<body data-wms-module="warehouse" class="per2">
+
+<div class="wms-shell">
+<div data-wms-shell="warehouse" data-root="../"></div>
+<div class="wms-main">
+  <div data-wh-nav="tag"></div>
+  <div id="warnSlot"></div>
+
+  <div class="fm-bar">
+    <a class="fm-btn" href="./">← รายการเอกสาร</a>
+    <span class="fm-name">🏷️ ป้ายบ่งชี้</span>
+    <span class="fm-chip">A4 แนวนอน</span>
+    <span class="fm-meta">ขนาดป้าย</span>
+    <button class="fm-btn primary" id="b2" onclick="setPer(2)">2 ป้าย/แผ่น</button>
+    <button class="fm-btn" id="b4" onclick="setPer(4)">4 ป้าย/แผ่น</button>
+    <span class="fm-spacer"></span>
+    <button class="fm-btn" onclick="copyFirst()">⧉ คัดลอกใบแรกไปทุกใบ</button>
+    <button class="fm-btn" onclick="location.reload()">🧹 ล้าง</button>
+    <button class="fm-btn primary" onclick="window.print()">🖨 พิมพ์</button>
+  </div>
+
+  <div class="fm-stage">
+    <div class="paper wh-paper"><div class="tags" id="tags"></div></div>
+  </div>
+</div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+
+<script type="module" src="../wms-shell.js"></script>
+<script type="module" src="./wh-nav.js"></script>
+<script src="../wms-settings.js"></script>
+<script src="./wh-sku.js"></script>
+<script src="./wh-form.js"></script>
+<script src="./wh-shared.js"></script>
+<script>
+/* สร้าง 4 ใบไว้เสมอ แล้วซ่อนสองใบหลังตอนเลือกขนาดใหญ่ — ถ้าสร้างใหม่ตอนสลับขนาด
+   สิ่งที่กรอกไปแล้วจะหายทุกครั้งที่กดเปลี่ยนขนาด ซึ่งเป็นสิ่งที่คนทำหลังกรอกเสร็จ */
+const FIELDS = [['PO', ''], ['SKU', 'sku'], ['QTY', ''], ['Date', 'date']];
+document.getElementById('tags').innerHTML = [1,2,3,4].map(() => `
+  <div class="tag">
+    <div class="t">ป้ายบ่งชี้</div>
+    ${FIELDS.map(([k, kind]) => `
+      <div class="f"><div class="k">${k}</div><div class="v">
+        <input ${kind === 'sku' ? 'data-sku autocomplete="off"' : ''}${kind === 'date' ? ' type="date"' : ''}>
+        ${kind === 'sku' ? '<div class="nm"></div>' : ''}
+      </div></div>`).join('')}
+  </div>`).join('');
+
+/* ป้ายนี้ไปแปะบนกองของ คนเดินผ่านต้องอ่านออกว่ากองไหนคืออะไร — รหัสเปล่า ๆ
+   อย่าง AHM001 ไม่ได้บอกอะไรใคร จึงเติมชื่อสินค้าไว้ใต้รหัส */
+document.getElementById('tags').addEventListener('input', (e) => {
+  if (!e.target.matches('[data-sku]')) return;
+  const nm = e.target.parentNode.querySelector('.nm');
+  const hit = window.WhSku ? WhSku.find(e.target.value) : null;
+  if (nm) nm.textContent = hit ? hit.name : '';
+});
+
+function setPer(n) {
+  document.body.className = 'per' + n;
+  document.body.dataset.wmsModule = 'warehouse';
+  document.getElementById('b2').className = 'fm-btn' + (n === 2 ? ' primary' : '');
+  document.getElementById('b4').className = 'fm-btn' + (n === 4 ? ' primary' : '');
+}
+
+/** ป้ายชุดเดียวกันมักติดหลายกล่องของ PO เดียวกัน — คัดลอกทีเดียวแทนพิมพ์ซ้ำสี่รอบ */
+function copyFirst() {
+  const tags = [...document.querySelectorAll('.tag')];
+  const src = [...tags[0].querySelectorAll('input')].map((i) => i.value);
+  tags.slice(1).forEach((t) => {
+    [...t.querySelectorAll('input')].forEach((i, k) => {
+      i.value = src[k];
+      i.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  });
+}
+
+// ผูกกล่องช่วยค้น SKU ตัวเดียวกับที่ฟอร์มอื่นใช้ (มันข้ามการเติมชื่อเองเพราะ
+// ที่นี่ไม่ได้เป็นตาราง จึงเติมชื่อด้วยตัวจัดการข้างบนแทน)
+WhForm.wire(document.getElementById('tags'));
+
+document.querySelectorAll('.tag input[type=date]').forEach((el) => {
+  const d = new Date();
+  el.value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') +
+             '-' + String(d.getDate()).padStart(2, '0');
+});
+WhShared.warnIfNoSku();
+</script>
+</body>
+</html>

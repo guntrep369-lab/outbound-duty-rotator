@@ -102,7 +102,7 @@ document.getElementById('list').innerHTML = FORMS.map((f) => `
     </div>
     <div class="acts">
       <a class="fm-btn primary" href="./${f.file}">✏️ กรอกแบบฟอร์ม</a>
-      <span class="fm-chip" style="margin-left:auto">${esc(f.paper)} · ${f.rows} บรรทัด</span>
+      <span class="fm-chip" style="margin-left:auto">${esc(f.paper)} · ${f.rows} ${esc(f.unit || 'บรรทัด')}</span>
     </div>
   </div>`).join('');
 </script>

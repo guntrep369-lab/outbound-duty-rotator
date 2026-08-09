@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>ใบขนย้ายของ Saffron — เอกสารคลังสินค้า</title>
+<link rel="stylesheet" href="../wms-theme.css">
+<link rel="stylesheet" href="../wms-paper.css">
+<link rel="stylesheet" href="./wh-forms.css">
+<link rel="stylesheet" href="../wms-gate.css">
+<script src="../wms-gate.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+/* A4 แนวตั้ง — ต้นฉบับเป็น paperSize 9 portrait, สองคอลัมน์เท่ากัน */
+@page { size: 210mm 297mm; margin: 8mm; }
+.paper{ width:210mm; min-height:297mm; padding:8mm; }
+
+.slips{ display:grid; grid-template-columns:1fr 1fr; gap:4mm; }
+/* ใบสูง 24mm เพื่อให้ 10 แถวเต็มแผ่น — ปล่อยไว้ตามเนื้อหาจะเหลือขาวท้ายแผ่น
+   เกือบ 8 ซม. ซึ่งเป็นกระดาษที่จ่ายไปแล้วแต่ใช้ไม่ได้ และใบเตี้ยก็ตัดยากด้วย */
+.slip{ border:1px solid #000; padding:2mm 3mm; text-align:center; min-height:24mm;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1mm; }
+.slip .t{ font-size:12pt; font-weight:700; line-height:1.3; }
+.slip .d{ display:flex; align-items:center; justify-content:center; gap:2mm;
+  margin-top:1.5mm; font-size:11pt; font-weight:700; }
+.slip .d input{ width:34mm; border:0; border-bottom:1px solid #000; background:#F8FAFC;
+  font-family:inherit; font-size:10.5pt; font-weight:700; color:#000; outline:none; text-align:center; }
+.slip .d input:focus{ background:#EEF2FF; }
+
+@media print{
+  .paper{ min-height:0 !important; }
+  .slip .d input{ background:none !important; }
+}
+</style>
+</head>
+<body data-wms-module="warehouse">
+
+<div class="wms-shell">
+<div data-wms-shell="warehouse" data-root="../"></div>
+<div class="wms-main">
+  <div data-wh-nav="saffron"></div>
+
+  <div class="fm-bar">
+    <a class="fm-btn" href="./">← รายการเอกสาร</a>
+    <span class="fm-name">📦 ใบขนย้ายของ Saffron</span>
+    <span class="fm-chip">A4 แนวตั้ง</span>
+    <span class="fm-meta">20 ใบต่อแผ่น · ตัดแจกได้</span>
+    <span class="fm-spacer"></span>
+    <button class="fm-btn" onclick="setAll()">📅 ใส่วันที่วันนี้ทุกใบ</button>
+    <button class="fm-btn" onclick="location.reload()">🧹 ล้าง</button>
+    <button class="fm-btn primary" onclick="window.print()">🖨 พิมพ์</button>
+  </div>
+
+  <div class="fm-stage">
+    <div class="paper wh-paper"><div class="slips" id="slips"></div></div>
+  </div>
+</div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+
+<script type="module" src="../wms-shell.js"></script>
+<script type="module" src="./wh-nav.js"></script>
+<script src="./wh-shared.js"></script>
+<script>
+/* ต้นฉบับมี 20 ใบต่อแผ่น เรียงสองคอลัมน์ ใบละแค่ชื่อเอกสารกับวันที่
+   — เป็นใบตัดแปะไปกับของ ไม่ใช่เอกสารที่ต้องกรอกรายละเอียด */
+const SLIPS = 20;
+document.getElementById('slips').innerHTML = Array.from({ length: SLIPS }, () => `
+  <div class="slip">
+    <div class="t">เอกสารใบขนย้ายของ Saffron</div>
+    <div class="d"><span>Date</span><input type="date"></div>
+  </div>`).join('');
+
+/** ทั้งแผ่นมักเป็นของวันเดียวกัน — พิมพ์ยี่สิบครั้งไม่มีเหตุผล */
+function setAll() {
+  const d = new Date();
+  const v = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') +
+            '-' + String(d.getDate()).padStart(2, '0');
+  document.querySelectorAll('.slip input[type=date]').forEach((el) => { el.value = v; });
+}
+</script>
+</body>
+</html>
