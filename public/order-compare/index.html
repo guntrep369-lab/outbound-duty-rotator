@@ -397,6 +397,9 @@ td{padding:9px 12px;vertical-align:middle}
   .dsrc{display:flex;align-items:center;gap:8px}
   .ddot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0}
   .ddot.on{background:#16A34A} .ddot.wait{background:#F59E0B} .ddot.off{background:#CBD5E1}
+  .ddot.old{background:#DC2626}
+  .dage.stale{color:#B45309;font-weight:600}
+  .dage.old{color:#B91C1C;font-weight:700}
   .dtxt{color:var(--text);white-space:nowrap}
   .dtxt b{font-weight:700}
   .dtxt .dim{color:var(--muted);font-weight:400}
@@ -2306,6 +2309,28 @@ function restoreOrRefetch() {
    ที่บอกว่ามีอะไรอยู่ ดึงมาเมื่อไหร่ และจะดึงใหม่ได้จากตรงไหน */
 let PULL_MSG = { order: '', stock: '' };   // ข้อความระหว่างดึง ว่าง = ไม่ได้ดึงอยู่
 
+/**
+ * ข้อมูลเก่าแค่ไหนแล้ว
+ *
+ * ดึงรอบเช้าแล้วตอบลูกค้าตอนบ่ายเป็นความผิดพลาดที่มองไม่เห็น — หน้าจอดูปกติทุกอย่าง
+ * ออเดอร์ที่เพิ่มเข้ามาระหว่างวันหายไปเฉย ๆ โดยไม่มีอะไรฟ้อง เวลาบนแถบจึงต้อง
+ * เปลี่ยนสีเองเมื่อผ่านไปนานพอ ไม่ใช่รอให้คนสังเกตตัวเลข
+ *
+ * ข้ามวันแยกเป็นอีกระดับ เพราะเบราว์เซอร์ที่เปิดค้างข้ามคืนยังถือข้อมูลเมื่อวานไว้
+ * ซึ่งไม่ใช่ "เก่าหน่อย" แต่คือผิดทั้งชุด
+ */
+const STALE_HOURS = 3;
+
+function dataAge(at) {
+  if (!at) return { cls: '', note: '' };
+  const h = Math.floor((Date.now() - at) / 3600000);
+  if (new Date(at).toDateString() !== new Date().toDateString()) {
+    return { cls: 'old', note: 'ข้อมูลของเมื่อวาน — ดึงใหม่ก่อนใช้' };
+  }
+  if (h >= STALE_HOURS) return { cls: 'stale', note: `ดึงมา ${h} ชั่วโมงแล้ว` };
+  return { cls: '', note: '' };
+}
+
 function updateDataBar() {
   const hhmm = t => new Date(t).toLocaleTimeString('th-TH', { hour:'2-digit', minute:'2-digit' });
   const idx = window.OrderIndex ? OrderIndex.getCarriers() : null;
@@ -2340,9 +2365,14 @@ function updateDataBar() {
       return;
     }
     const has = st.n > 0;
-    dot.className = 'ddot ' + (has ? 'on' : st.url ? 'wait' : 'off');
+    const age = has ? dataAge(st.at) : { cls: '', note: '' };
+    dot.className = 'ddot ' + (!has ? (st.url ? 'wait' : 'off')
+      : age.cls === 'old' ? 'old' : age.cls === 'stale' ? 'wait' : 'on');
     txt.innerHTML = has
-      ? st.have + (st.at ? ` <span class="dim">· ${hhmm(st.at)}</span>` : '')
+      ? st.have + (st.at
+          ? ` <span class="dim">· ${hhmm(st.at)}</span>` +
+            (age.note ? ` <span class="dage ${age.cls}">· ${esc(age.note)}</span>` : '')
+          : '')
       : (st.url ? st.none : st.noUrl);
     btn.disabled = !st.url;
     btn.textContent = has ? 'ดึงใหม่' : 'ดึงข้อมูล';
@@ -3140,6 +3170,8 @@ window.addEventListener('DOMContentLoaded', () => {
   loadSavedGasUrl();
   loadSavedOrderGasUrl();
   restoreOrRefetch();
+  // อายุข้อมูลเดินต่อแม้ไม่มีใครแตะหน้าจอ ถ้าไม่วาดใหม่ คำเตือนจะไม่มีวันโผล่
+  setInterval(updateDataBar, 60000);
 });
 
 </script>
