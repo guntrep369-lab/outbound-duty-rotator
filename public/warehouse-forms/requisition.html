@@ -46,19 +46,25 @@
       </div>
 
       <div class="wh-meta">
-        <label><span class="k">วันที่</span><input class="wh-in" id="fDate" type="date" style="width:32mm"></label>
-        <label><span class="k">เวลา</span><input class="wh-in" type="time" style="width:22mm"></label>
-        <label><span class="k">เลขที่ใบโอน/ใบเบิก</span><input class="wh-in" style="width:32mm"></label>
-        <label><span class="k">จุดประสงค์การโอน</span>
-          <select class="wh-in" style="width:32mm">
+        <div class="wh-mcell"><span class="k">วันที่</span>
+          <div class="v"><input class="wh-in" id="fDate" type="date"></div></div>
+        <div class="wh-mcell"><span class="k">เวลา</span>
+          <div class="v"><input class="wh-in" type="time"></div></div>
+        <div class="wh-mcell"><span class="k">เลขที่ใบโอน / ใบเบิก</span>
+          <div class="v"><input class="wh-in"></div></div>
+        <div class="wh-mcell"><span class="k">จุดประสงค์การโอน</span>
+          <div class="v"><select class="wh-in">
             <option>เพื่อจำหน่าย</option><option>ตรวจสอบสินค้า</option><option>คืนสินค้า</option><option></option>
-          </select></label>
-      </div>
-      <div class="wh-meta">
-        <label><span class="k">แผนกผู้ขอโอน</span><select class="wh-in dept" data-value="OUTBOUND" style="width:26mm"></select></label>
-        <label><span class="k">แผนกผู้รับ</span><select class="wh-in dept" data-value="OUTBOUND" style="width:26mm"></select></label>
-        <label><span class="k">จากคลังสินค้า</span><select class="wh-in wh" data-value="QA" style="width:26mm"></select></label>
-        <label><span class="k">ไปคลังสินค้า</span><select class="wh-in wh" data-value="NEW WH-2" style="width:26mm"></select></label>
+          </select></div></div>
+
+        <div class="wh-mcell"><span class="k">แผนกผู้ขอโอน</span>
+          <div class="v"><select class="wh-in dept" data-value="OUTBOUND"></select></div></div>
+        <div class="wh-mcell"><span class="k">แผนกผู้รับ</span>
+          <div class="v"><select class="wh-in dept" data-value="OUTBOUND"></select></div></div>
+        <div class="wh-mcell"><span class="k">จากคลังสินค้า</span>
+          <div class="v"><select class="wh-in wh" data-value="QA"></select></div></div>
+        <div class="wh-mcell"><span class="k">ไปคลังสินค้า</span>
+          <div class="v"><select class="wh-in wh" data-value="NEW WH-2"></select></div></div>
       </div>
 
       <table class="wh-tbl" id="items">
@@ -99,7 +105,7 @@
 <script src="./wh-shared.js"></script>
 <script>
 WhShared.fillDepts();
-WhShared.buildRows('rows', 14, (n) => `
+WhShared.buildRows('rows', 10, (n) => `
   <td class="no">${n}</td>
   <td><input class="wh-in" data-sku autocomplete="off"></td>
   <td class="name"><input data-name readonly></td>

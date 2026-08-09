@@ -47,25 +47,27 @@
       </div>
 
       <div class="wh-meta">
-        <label><span class="k">วันที่</span><input class="wh-in" id="fDate" type="date" style="width:32mm"></label>
-        <label><span class="k">เวลา</span><input class="wh-in" type="time" style="width:22mm"></label>
-        <label><span class="k">เลขที่ใบโอน/ใบเบิก</span><input class="wh-in" style="width:30mm"></label>
-        <label><span class="k">เลขที่ใบรับ</span><input class="wh-in" style="width:26mm"></label>
-      </div>
-      <div class="wh-meta">
-        <label><span class="k">จุดประสงค์การโอน</span>
-          <select class="wh-in" style="width:34mm">
+        <div class="wh-mcell"><span class="k">วันที่</span>
+          <div class="v"><input class="wh-in" id="fDate" type="date"></div></div>
+        <div class="wh-mcell"><span class="k">เวลา</span>
+          <div class="v"><input class="wh-in" type="time"></div></div>
+        <div class="wh-mcell"><span class="k">เลขที่ใบโอน / ใบเบิก</span>
+          <div class="v"><input class="wh-in"></div></div>
+        <div class="wh-mcell"><span class="k">เลขที่ใบรับ</span>
+          <div class="v"><input class="wh-in"></div></div>
+
+        <div class="wh-mcell"><span class="k">จุดประสงค์การโอน</span>
+          <div class="v"><select class="wh-in">
             <option>เพื่อจำหน่าย</option><option>ตรวจสอบสินค้า</option>
             <option>โอนข้าม Location</option><option>คืนสินค้า</option><option></option>
-          </select></label>
-        <label><span class="k">แผนกผู้ขอโอน</span>
-          <select class="wh-in dept" style="width:26mm"></select></label>
-        <label><span class="k">แผนกผู้รับ</span>
-          <select class="wh-in dept" style="width:26mm"></select></label>
-        <label><span class="k">จากคลัง</span>
-          <select class="wh-in wh" style="width:26mm"></select></label>
-        <label><span class="k">ไปคลัง</span>
-          <select class="wh-in wh" style="width:26mm"></select></label>
+          </select></div></div>
+        <div class="wh-mcell"><span class="k">แผนก ผู้ขอโอน → ผู้รับ</span>
+          <div class="v"><select class="wh-in dept"></select><span class="arrow">→</span>
+            <select class="wh-in dept"></select></div></div>
+        <div class="wh-mcell"><span class="k">จากคลังสินค้า</span>
+          <div class="v"><select class="wh-in wh"></select></div></div>
+        <div class="wh-mcell"><span class="k">ไปคลังสินค้า</span>
+          <div class="v"><select class="wh-in wh"></select></div></div>
       </div>
 
       <table class="wh-tbl" id="items">
@@ -106,7 +108,7 @@
 <script src="./wh-shared.js"></script>
 <script>
 WhShared.fillDepts();
-WhShared.buildRows('rows', 14, (n) => `
+WhShared.buildRows('rows', 10, (n) => `
   <td class="no">${n}</td>
   <td><input class="wh-in" data-sku autocomplete="off"></td>
   <td class="name"><input data-name readonly></td>

@@ -13,11 +13,8 @@
 *{box-sizing:border-box;margin:0;padding:0}
 @page { size: 210mm 148mm; margin: 7mm; }
 .paper{ width:210mm; min-height:148mm; padding:7mm; }
-.wh-tbl td{ height:7mm; }
-.wh-tbl td input{ height:6.8mm; }
-.purpose{display:flex;gap:7mm;font-size:8pt;margin-top:1.5mm;align-items:center}
-.purpose label{display:inline-flex;align-items:center;gap:1.5mm;cursor:pointer}
-.purpose input[type=radio]{width:3.2mm;height:3.2mm;accent-color:#000}
+.wh-tbl td{ height:9mm; }
+.wh-tbl td input{ height:8.8mm; }
 @media print{ .paper{ min-height:0 !important; } }
 </style>
 </head>
@@ -48,14 +45,17 @@
       </div>
 
       <div class="wh-meta">
-        <label><span class="k">วันที่</span><input class="wh-in" id="fDate" type="date" style="width:32mm"></label>
-        <label><span class="k">เวลา</span><input class="wh-in" type="time" style="width:22mm"></label>
-        <label><span class="k">เลขที่การแปลง</span><input class="wh-in" style="width:34mm"></label>
-      </div>
-      <div class="purpose">
-        <span class="k">จุดประสงค์การแปลง :</span>
-        <label><input type="radio" name="purpose" checked> แปลงสินค้าขายเป็นสินค้าแถม</label>
-        <label><input type="radio" name="purpose"> แปลงสินค้าแถมเป็นสินค้าขาย</label>
+        <div class="wh-mcell"><span class="k">วันที่</span>
+          <div class="v"><input class="wh-in" id="fDate" type="date"></div></div>
+        <div class="wh-mcell"><span class="k">เวลา</span>
+          <div class="v"><input class="wh-in" type="time"></div></div>
+        <div class="wh-mcell"><span class="k">เลขที่การแปลง</span>
+          <div class="v"><input class="wh-in"></div></div>
+        <div class="wh-mcell"><span class="k">จุดประสงค์การแปลง</span>
+          <div class="v"><select class="wh-in">
+            <option>แปลงสินค้าขายเป็นสินค้าแถม</option>
+            <option>แปลงสินค้าแถมเป็นสินค้าขาย</option>
+          </select></div></div>
       </div>
 
       <table class="wh-tbl" id="items">
