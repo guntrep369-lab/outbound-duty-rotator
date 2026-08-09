@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>เอกสารคลังสินค้า — WMS</title>
+<link rel="stylesheet" href="../wms-theme.css">
+<link rel="stylesheet" href="../wms-paper.css">
+<link rel="stylesheet" href="./wh-forms.css">
+<link rel="stylesheet" href="../wms-gate.css">
+<script src="../wms-gate.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+
+.wh-body{padding:20px;max-width:1060px;display:flex;flex-direction:column;gap:16px}
+.wh-list{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
+.wh-card{background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:var(--wms-radius);
+  box-shadow:var(--wms-shadow);padding:16px;display:flex;flex-direction:column;gap:10px}
+.wh-card .top{display:flex;gap:12px;align-items:flex-start}
+.wh-card .ic{width:44px;height:44px;border-radius:12px;flex-shrink:0;display:grid;place-items:center;
+  background:var(--wms-primary-light);font-size:22px}
+.wh-card h3{font-size:14.5px;font-weight:700;color:var(--wms-text);margin:0 0 2px}
+.wh-card .en{font-size:11px;color:var(--wms-faint);margin-bottom:4px}
+.wh-card p{font-size:12.5px;color:var(--wms-muted);line-height:1.5;margin:0}
+.wh-card .acts{display:flex;gap:8px;align-items:center;margin-top:auto;padding-top:4px}
+
+.sku-card{background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:var(--wms-radius);
+  box-shadow:var(--wms-shadow);overflow:hidden}
+.sku-card h3{display:flex;align-items:center;gap:9px;font-size:14px;font-weight:700;color:var(--wms-text);
+  padding:13px 16px;border-bottom:1px solid var(--wms-border);background:var(--wms-surface2);margin:0}
+.sku-card .in{padding:15px 16px;display:flex;flex-direction:column;gap:11px}
+.sku-row{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.sku-stat{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;
+  background:var(--wms-surface2);border:1px solid var(--wms-border);font-size:12px;color:var(--wms-muted)}
+.sku-stat b{color:var(--wms-text);font-weight:700}
+.sku-stat.warn{background:#FEF3C7;border-color:#FDE68A;color:#92400E}
+.sku-hint{font-size:11.5px;color:var(--wms-muted);line-height:1.6}
+.sku-msg{font-size:12.5px;font-weight:600;min-height:16px}
+.sku-msg.ok{color:#15803D} .sku-msg.bad{color:#B91C1C}
+.sku-try{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sku-try input{flex:1;min-width:200px;padding:8px 11px;border-radius:var(--wms-radius-sm);
+  border:1px solid var(--wms-border2);font-family:var(--wms-font);font-size:12.5px;outline:none}
+.sku-try input:focus{border-color:var(--wms-primary)}
+.sku-out{font-size:12.5px;color:var(--wms-text);min-height:18px}
+.sku-out .miss{color:#B91C1C;font-weight:600}
+</style>
+</head>
+<body data-wms-module="warehouse">
+
+<div class="wms-shell">
+<div data-wms-shell="warehouse" data-root="../"></div>
+<div class="wms-main">
+  <div data-wh-nav></div>
+  <div id="warnSlot"></div>
+
+  <div class="wh-body">
+
+    <div class="sku-card">
+      <h3>📚 รายชื่อสินค้า <span id="skuStat" style="margin-left:auto"></span></h3>
+      <div class="in">
+        <div class="sku-row">
+          <button class="fm-btn primary" onclick="document.getElementById('skuFile').click()">📁 อัปไฟล์ Excel</button>
+          <button class="fm-btn" onclick="clearSku()">ลบรายชื่อ</button>
+          <input type="file" id="skuFile" accept=".xlsx,.xls" style="display:none">
+          <span class="sku-msg" id="skuMsg"></span>
+        </div>
+        <div class="sku-hint">
+          ใช้ไฟล์ <b>แบบฟอร์มเบิกของ QA.xlsx</b> ได้เลย — ระบบอ่านชีต <code>data</code> (รหัส/ชื่อสินค้า)
+          และ <code>Master แปลงบาร์</code> (คู่ขาย↔แถม) เก็บไว้ในเบราว์เซอร์เครื่องนี้เท่านั้น
+          ไม่ได้อัปขึ้นที่ไหน อัปใหม่เมื่อมีสินค้าเพิ่ม
+        </div>
+        <div class="sku-try">
+          <input id="skuTry" type="text" placeholder="ลองพิมพ์รหัสดู เช่น ZCP057" autocomplete="off">
+          <span class="sku-out" id="skuOut"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="wh-list" id="list"></div>
+  </div>
+</div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+
+<script type="module" src="../wms-shell.js"></script>
+<script src="./wh-sku.js"></script>
+<script type="module" src="./wh-nav.js"></script>
+<script type="module">
+import { FORMS } from './wh-nav.js';
+const esc = (s) =>
+  String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+document.getElementById('list').innerHTML = FORMS.map((f) => `
+  <div class="wh-card">
+    <div class="top">
+      <div class="ic">${f.icon}</div>
+      <div>
+        <h3>${esc(f.label)}</h3>
+        <div class="en">${esc(f.en)}</div>
+        <p>${esc(f.desc)}</p>
+      </div>
+    </div>
+    <div class="acts">
+      <a class="fm-btn primary" href="./${f.file}">✏️ กรอกแบบฟอร์ม</a>
+      <span class="fm-chip" style="margin-left:auto">${esc(f.paper)} · ${f.rows} บรรทัด</span>
+    </div>
+  </div>`).join('');
+</script>
+<script>
+function paintSku() {
+  const db = WhSku.get();
+  const stat = document.getElementById('skuStat');
+  if (db) {
+    const when = new Date(db.at).toLocaleDateString('th-TH', { day:'numeric', month:'short', year:'numeric' });
+    stat.className = 'sku-stat';
+    stat.innerHTML = `<b>${db.items.length.toLocaleString()}</b> สินค้า · <b>${(db.pairs||[]).length}</b> คู่ขาย↔แถม · ${when}`;
+  } else {
+    stat.className = 'sku-stat warn';
+    stat.textContent = '⚠️ ยังไม่มีรายชื่อสินค้า — ฟอร์มจะไม่เติมชื่อให้';
+  }
+}
+
+function say(msg, cls) {
+  const el = document.getElementById('skuMsg');
+  el.textContent = msg || '';
+  el.className = 'sku-msg' + (cls ? ' ' + cls : '');
+}
+
+document.getElementById('skuFile').addEventListener('change', function () {
+  const file = this.files[0]; this.value = '';
+  if (!file) return;
+  say('⏳ กำลังอ่านไฟล์…', '');
+  const rd = new FileReader();
+  rd.onload = (e) => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array' });
+      const parsed = WhSku.parseWorkbook(wb);
+      const r = WhSku.save(file.name, parsed);
+      if (!r.ok) { say('❌ ' + r.error, 'bad'); return; }
+      paintSku();
+      say(`✅ อ่านได้ ${parsed.items.length.toLocaleString()} สินค้า จากชีต "${parsed.dataName}"` +
+          (parsed.pairs.length ? ` · คู่แปลงรหัส ${parsed.pairs.length} คู่` : ' · ไม่พบชีตคู่แปลงรหัส'), 'ok');
+    } catch (err) {
+      say('❌ อ่านไฟล์ไม่ได้: ' + err.message, 'bad');
+    }
+  };
+  rd.readAsArrayBuffer(file);
+});
+
+function clearSku() {
+  if (!WhSku.get()) return;
+  if (!confirm('ลบรายชื่อสินค้าออกจากเครื่องนี้?\nฟอร์มจะไม่เติมชื่อสินค้าให้จนกว่าจะอัปใหม่')) return;
+  WhSku.clear(); paintSku(); say('ลบแล้ว', '');
+}
+
+// ลองค้นได้ตรงนี้เลย — จะได้รู้ว่าอัปแล้วใช้ได้จริงก่อนไปเปิดฟอร์ม
+document.getElementById('skuTry').addEventListener('input', function () {
+  const out = document.getElementById('skuOut');
+  const q = this.value.trim();
+  if (q.length < 2) { out.textContent = ''; return; }
+  const hit = WhSku.find(q);
+  if (hit) {
+    const p = WhSku.pair(q);
+    out.innerHTML = '✅ ' + hit.name + (p ? ` <span style="color:var(--wms-muted)">· แปลงเป็น ${p.to}</span>` : '');
+    return;
+  }
+  const near = WhSku.search(q, 3);
+  out.innerHTML = near.length
+    ? '<span class="miss">ไม่ตรงรหัสใด</span> — ใกล้เคียง: ' + near.map(x => x.sku).join(', ')
+    : '<span class="miss">ไม่พบ</span>';
+});
+
+paintSku();
+</script>
+</body>
+</html>

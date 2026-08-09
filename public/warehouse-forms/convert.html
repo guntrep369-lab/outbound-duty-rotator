@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>ใบขอแปลงรหัสสินค้า — เอกสารคลังสินค้า</title>
+<link rel="stylesheet" href="../wms-theme.css">
+<link rel="stylesheet" href="../wms-paper.css">
+<link rel="stylesheet" href="./wh-forms.css">
+<link rel="stylesheet" href="../wms-gate.css">
+<script src="../wms-gate.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+@page { size: 210mm 148mm; margin: 7mm; }
+.paper{ width:210mm; min-height:148mm; padding:7mm; }
+.wh-tbl td{ height:7mm; }
+.wh-tbl td input{ height:6.8mm; }
+.purpose{display:flex;gap:7mm;font-size:8pt;margin-top:1.5mm;align-items:center}
+.purpose label{display:inline-flex;align-items:center;gap:1.5mm;cursor:pointer}
+.purpose input[type=radio]{width:3.2mm;height:3.2mm;accent-color:#000}
+@media print{ .paper{ min-height:0 !important; } }
+</style>
+</head>
+<body data-wms-module="warehouse">
+
+<div class="wms-shell">
+<div data-wms-shell="warehouse" data-root="../"></div>
+<div class="wms-main">
+  <div data-wh-nav="convert"></div>
+  <div id="warnSlot"></div>
+
+  <div class="fm-bar">
+    <a class="fm-btn" href="./">← รายการเอกสาร</a>
+    <span class="fm-name">🔁 ใบขอแปลงรหัสสินค้า</span>
+    <span class="fm-chip">A5 แนวนอน</span>
+    <span class="fm-meta">ใส่รหัสด้านหนึ่ง อีกด้านขึ้นให้จากคู่ที่บันทึกไว้</span>
+    <span class="fm-spacer"></span>
+    <button class="fm-btn" onclick="location.reload()">🧹 ล้างฟอร์ม</button>
+    <button class="fm-btn primary" onclick="window.print()">🖨 พิมพ์</button>
+  </div>
+
+  <div class="fm-stage">
+    <div class="paper wh-paper">
+      <div class="wh-title"><div class="en">ใบขอแปลงรหัสสินค้า</div></div>
+
+      <div class="wh-meta">
+        <label><span class="k">วันที่</span><input class="wh-in" id="fDate" type="date" style="width:32mm"></label>
+        <label><span class="k">เวลา</span><input class="wh-in" type="time" style="width:22mm"></label>
+        <label><span class="k">เลขที่การแปลง</span><input class="wh-in" style="width:34mm"></label>
+      </div>
+      <div class="purpose">
+        <span class="k">จุดประสงค์การแปลง :</span>
+        <label><input type="radio" name="purpose" checked> แปลงสินค้าขายเป็นสินค้าแถม</label>
+        <label><input type="radio" name="purpose"> แปลงสินค้าแถมเป็นสินค้าขาย</label>
+      </div>
+
+      <table class="wh-tbl" id="items">
+        <colgroup>
+          <col style="width:5%"><col style="width:11%"><col style="width:26%">
+          <col style="width:11%"><col style="width:26%">
+          <col style="width:7%"><col style="width:7%"><col style="width:7%">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>NO</th>
+            <th>SKU ต้นทาง</th><th>ชื่อสินค้าต้นทาง</th>
+            <th>SKU ปลายทาง</th><th>ชื่อสินค้าปลายทาง</th>
+            <th>จำนวน<br>ชิ้น/กล่อง</th><th>จำนวน<br>กล่อง</th><th>ยอดรวม</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+        <tfoot>
+          <tr><td colspan="7">รวม</td><td class="num"><input data-grand readonly></td></tr>
+        </tfoot>
+      </table>
+
+      <div class="wh-sign">
+        <div><div class="line"></div><div class="cap">ผู้ขอแปลง</div></div>
+        <div><div class="line"></div><div class="cap">ผู้บันทึกข้อมูล &nbsp;( IB / OB / INV )</div></div>
+        <div><div class="line"></div><div class="cap">ผู้ตรวจสอบ</div></div>
+      </div>
+    </div>
+  </div>
+</div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+
+<script type="module" src="../wms-shell.js"></script>
+<script type="module" src="./wh-nav.js"></script>
+<script src="./wh-sku.js"></script>
+<script src="./wh-form.js"></script>
+<script src="./wh-shared.js"></script>
+<script>
+WhShared.buildRows('rows', 9, (n) => `
+  <td class="no">${n}</td>
+  <td><input class="wh-in" data-sku autocomplete="off"></td>
+  <td class="name"><input data-name readonly></td>
+  <td><input class="wh-in" data-sku-to autocomplete="off"></td>
+  <td class="name"><input data-name-to readonly></td>
+  <td class="num"><input class="wh-in" data-a inputmode="numeric"></td>
+  <td class="num"><input class="wh-in" data-b inputmode="numeric"></td>
+  <td class="num"><input data-total readonly></td>`);
+WhForm.wire(document.getElementById('items'), { usePair: true });
+WhShared.today('fDate');
+WhShared.warnIfNoSku();
+</script>
+</body>
+</html>

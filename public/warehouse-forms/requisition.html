@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>ใบเบิก — เอกสารคลังสินค้า</title>
+<link rel="stylesheet" href="../wms-theme.css">
+<link rel="stylesheet" href="../wms-paper.css">
+<link rel="stylesheet" href="./wh-forms.css">
+<link rel="stylesheet" href="../wms-gate.css">
+<script src="../wms-gate.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+@page { size: 210mm 148mm; margin: 5mm; }
+.paper{ width:210mm; min-height:148mm; padding:5mm; }
+@media print{ .paper{ min-height:0 !important; } }
+</style>
+</head>
+<body data-wms-module="warehouse">
+
+<div class="wms-shell">
+<div data-wms-shell="warehouse" data-root="../"></div>
+<div class="wms-main">
+  <div data-wh-nav="requisition"></div>
+  <div id="warnSlot"></div>
+
+  <div class="fm-bar">
+    <a class="fm-btn" href="./">← รายการเอกสาร</a>
+    <span class="fm-name">📤 ใบเบิก</span>
+    <span class="fm-chip">A5 แนวนอน</span>
+    <span class="fm-meta">กรอกแล้วกดพิมพ์ — ระบบไม่เก็บสิ่งที่กรอกไว้</span>
+    <span class="fm-spacer"></span>
+    <button class="fm-btn" onclick="location.reload()">🧹 ล้างฟอร์ม</button>
+    <button class="fm-btn primary" onclick="window.print()">🖨 พิมพ์</button>
+  </div>
+
+  <div class="fm-stage">
+    <div class="paper wh-paper">
+      <div class="wh-title">
+        <div class="en">Transfer Request Form</div>
+        <div class="th">( ใบเบิก )</div>
+      </div>
+
+      <div class="wh-meta">
+        <label><span class="k">วันที่</span><input class="wh-in" id="fDate" type="date" style="width:32mm"></label>
+        <label><span class="k">เวลา</span><input class="wh-in" type="time" style="width:22mm"></label>
+        <label><span class="k">เลขที่ใบโอน/ใบเบิก</span><input class="wh-in" style="width:32mm"></label>
+        <label><span class="k">จุดประสงค์การโอน</span>
+          <select class="wh-in" style="width:32mm">
+            <option>เพื่อจำหน่าย</option><option>ตรวจสอบสินค้า</option><option>คืนสินค้า</option><option></option>
+          </select></label>
+      </div>
+      <div class="wh-meta">
+        <label><span class="k">แผนกผู้ขอโอน</span><select class="wh-in dept" data-value="OUTBOUND" style="width:26mm"></select></label>
+        <label><span class="k">แผนกผู้รับ</span><select class="wh-in dept" data-value="OUTBOUND" style="width:26mm"></select></label>
+        <label><span class="k">จากคลังสินค้า</span><select class="wh-in wh" data-value="QA" style="width:26mm"></select></label>
+        <label><span class="k">ไปคลังสินค้า</span><select class="wh-in wh" data-value="NEW WH-2" style="width:26mm"></select></label>
+      </div>
+
+      <table class="wh-tbl" id="items">
+        <colgroup>
+          <col style="width:5%"><col style="width:11%"><col style="width:30%">
+          <col style="width:7.5%"><col style="width:7.5%"><col style="width:7%">
+          <col style="width:11%"><col style="width:11%"><col style="width:9%">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>No.</th><th>รหัส SKU</th><th>ชื่อสินค้า</th>
+            <th>จำนวนชิ้น/<br>กล่อง (A)</th><th>จำนวน<br>กล่อง (B)</th><th>รวม<br>(A×B)</th>
+            <th>เลขออเดอร์<br>ออนไลน์</th><th>เลขออเดอร์<br>ภายใน</th><th>ไปโลไหน</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+        <tfoot>
+          <tr><td colspan="5">รวม</td><td class="num"><input data-grand readonly></td><td colspan="3"></td></tr>
+        </tfoot>
+      </table>
+
+      <div class="wh-sign">
+        <div><div class="line"></div><div class="cap">ผู้ขอโอน</div></div>
+        <div><div class="line"></div><div class="cap">ผู้รับโอน</div></div>
+        <div><div class="line"></div><div class="cap">ผู้ดำเนินการ</div></div>
+        <div><div class="line"></div><div class="cap">ผู้ตรวจสอบ</div></div>
+      </div>
+    </div>
+  </div>
+</div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+
+<script type="module" src="../wms-shell.js"></script>
+<script type="module" src="./wh-nav.js"></script>
+<script src="./wh-sku.js"></script>
+<script src="./wh-form.js"></script>
+<script src="./wh-shared.js"></script>
+<script>
+WhShared.fillDepts();
+WhShared.buildRows('rows', 14, (n) => `
+  <td class="no">${n}</td>
+  <td><input class="wh-in" data-sku autocomplete="off"></td>
+  <td class="name"><input data-name readonly></td>
+  <td class="num"><input class="wh-in" data-a inputmode="numeric"></td>
+  <td class="num"><input class="wh-in" data-b inputmode="numeric"></td>
+  <td class="num"><input data-total readonly></td>
+  <td><input class="wh-in"></td>
+  <td><input class="wh-in"></td>
+  <td><input class="wh-in"></td>`);
+WhForm.wire(document.getElementById('items'));
+WhShared.today('fDate');
+WhShared.warnIfNoSku();
+</script>
+</body>
+</html>

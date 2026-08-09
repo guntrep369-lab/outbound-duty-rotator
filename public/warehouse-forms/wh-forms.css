@@ -1,0 +1,89 @@
+/**
+ * wh-forms.css — หน้าตาของฟอร์มคลังสินค้าทั้งสามใบ
+ *
+ * ฟอร์มพวกนี้ "กรอกในเว็บแล้วพิมพ์" ไม่ใช่พิมพ์เปล่า ช่องกรอกบนหน้าจอจึงต้องเห็น
+ * ชัดว่าเป็นช่องกรอก แต่ตอนพิมพ์ต้องหายไปเหลือแต่ตัวหนังสือบนเส้นตาราง ไม่งั้น
+ * ใบที่พิมพ์ออกมาจะเต็มไปด้วยกรอบสีเทาของ input
+ */
+
+.wh-paper { font-family: 'Sarabun', Tahoma, 'Leelawadee UI', sans-serif; }
+
+/* ── หัวใบ ── */
+.wh-title { text-align: center; line-height: 1.25; }
+.wh-title .en { font-size: 12pt; font-weight: 700; letter-spacing: .3px; }
+.wh-title .th { font-size: 10.5pt; font-weight: 600; }
+
+.wh-meta { display: flex; flex-wrap: wrap; gap: 2mm 5mm; font-size: 8pt; margin-top: 1.5mm; }
+.wh-meta label { display: inline-flex; align-items: baseline; gap: 1.5mm; }
+.wh-meta .k { color: #000; white-space: nowrap; }
+
+/* ── ช่องกรอก ── */
+.wh-in {
+  border: 0; border-bottom: 1px solid #94A3B8; background: #F8FAFC;
+  font-family: inherit; font-size: 8pt; color: #000; outline: none;
+  padding: 0 1mm; min-width: 0;
+}
+.wh-in:focus { background: #EEF2FF; border-bottom-color: #4F46E5; }
+.wh-in.wh-miss { background: #FEF2F2; }
+
+select.wh-in { background: #F8FAFC; }
+
+/* ── ตารางรายการ ── */
+.wh-tbl { width: 100%; border-collapse: collapse; table-layout: fixed; margin-top: 1.5mm; }
+.wh-tbl th, .wh-tbl td { border: 1px solid #000; padding: 0; }
+.wh-tbl th {
+  font-size: 6.6pt; font-weight: 700; line-height: 1.15; text-align: center;
+  padding: 0.6mm 0.4mm; background: #fff;
+}
+/* 14 แถวคือจำนวนที่ฟอร์มต้นฉบับมี ความสูงแถวจึงเป็นตัวที่ต้องยอม ไม่ใช่จำนวนแถว
+   — ตัดแถวออกแปลว่าฟอร์มรับของได้น้อยกว่าเดิม */
+.wh-tbl td { height: 4.9mm; }
+.wh-tbl td.no { text-align: center; font-size: 7.5pt; }
+.wh-tbl input { width: 100%; height: 4.7mm; border: 0; background: none; }
+.wh-tbl input.wh-in { border-bottom: 0; background: #F8FAFC; }
+.wh-tbl input.wh-in:focus { background: #EEF2FF; }
+.wh-tbl input[readonly] { background: #fff; }
+.wh-tbl input.wh-miss { background: #FEF2F2; }
+.wh-tbl .num input { text-align: right; padding-right: 1mm; }
+.wh-tbl .name input { font-size: 7.2pt; }
+.wh-tbl tfoot td { font-size: 7.5pt; font-weight: 700; text-align: right; padding-right: 1.5mm; }
+
+/* ── ลายเซ็นท้ายใบ ── */
+.wh-sign { display: flex; gap: 4mm; margin-top: 2mm; font-size: 7.5pt; }
+.wh-sign > div { flex: 1; }
+.wh-sign .line { border-bottom: 1px dotted #000; height: 5mm; }
+.wh-sign .cap { margin-top: 0.8mm; text-align: center; color: #000; }
+
+/* ── กล่องรายการสินค้าที่ลอยขึ้นมา ── */
+.wh-sug {
+  display: none; position: absolute; z-index: 60; max-height: 240px; overflow-y: auto;
+  background: var(--wms-surface, #fff); border: 1px solid var(--wms-border, #E2E8F0);
+  border-radius: 10px; box-shadow: 0 8px 24px rgba(15, 23, 42, .16); padding: 4px;
+}
+.wh-sug-row {
+  display: flex; flex-direction: column; gap: 1px; width: 100%; text-align: left;
+  padding: 6px 9px; border: 0; border-radius: 7px; background: none; cursor: pointer;
+  font-family: var(--wms-font, inherit);
+}
+.wh-sug-row:hover { background: var(--wms-primary-light, #EEF2FF); }
+.wh-sug-row b { font-size: 12px; color: var(--wms-text, #0F172A); font-family: ui-monospace, Menlo, monospace; }
+.wh-sug-row span { font-size: 11.5px; color: var(--wms-muted, #64748B); line-height: 1.35; }
+
+/* ── แถบเตือนว่ายังไม่มีรายชื่อสินค้า ── */
+.wh-warn {
+  margin: 12px 20px 0; padding: 11px 14px; border-radius: var(--wms-radius-sm, 8px);
+  background: #FEF3C7; border: 1px solid #FDE68A; color: #92400E;
+  font-size: 12.5px; line-height: 1.6;
+}
+.wh-warn a { color: #92400E; font-weight: 700; }
+
+@media print {
+  .wh-sug, .wh-warn { display: none !important; }
+  /* บนกระดาษต้องเหลือแต่ตัวหนังสือ ไม่ใช่กรอบของช่องกรอก */
+  .wh-in, .wh-tbl input, select.wh-in {
+    background: none !important; border-bottom-color: transparent !important;
+    -webkit-appearance: none; appearance: none;
+  }
+  .wh-in.wh-miss, .wh-tbl input.wh-miss { background: none !important; }
+  .wh-meta .wh-in { border-bottom: 1px dotted #000 !important; }
+}
