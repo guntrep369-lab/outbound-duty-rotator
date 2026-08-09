@@ -2280,6 +2280,40 @@ async function loadStockFromGAS(inputId, directUrl) {
    เสียคุณสมบัติ "พังตรงไหนแก้ตรงนั้น" จึงต้องเหลือบรรทัดสถานะไว้ให้เห็นว่า
    ต่อไว้หรือยัง และลิงก์ไปแก้ได้ในคลิกเดียว */
 /* ── แถบข้อมูลของวันนี้ ───────────────────────────────────────────────────
+/* ── สต๊อกของวันนี้ ──────────────────────────────────────────────────────
+   เก็บแยกจากออเดอร์เพราะเป็นคนละแหล่งและอัปเดตคนละจังหวะ แต่เหตุผลเดียวกัน:
+   รีเฟรชหน้าทีแล้วต้องกดดึงใหม่ทุกครั้งคือการรอสิบ ๆ วินาทีกับข้อมูลชุดเดิม
+
+   ไม่เก็บ stockRaw (แถวออเดอร์ที่ใช้คำนวณความต้องการ) เพราะมันมาจากไฟล์ออเดอร์
+   ซึ่งกู้คืนมาแล้วอีกทางหนึ่ง — เก็บซ้ำคือเปลืองที่และเสี่ยงสองชุดไม่ตรงกัน */
+const STOCK_KEY = 'wms:stock:today';
+
+function saveStockCache() {
+  try {
+    if (!Object.keys(stockMap).length) return;
+    sessionStorage.setItem(STOCK_KEY, JSON.stringify({
+      at: stockLoadedAt || Date.now(), map: stockMap,
+      source: lastStockSource, url: lastStockGasUrl, filename: lastStockFile,
+    }));
+  } catch (e) {
+    console.warn('เก็บสต๊อกของวันนี้ไม่ได้ —', e.message);
+  }
+}
+
+function restoreStockCache() {
+  let o = null;
+  try { o = JSON.parse(sessionStorage.getItem(STOCK_KEY) || 'null'); } catch (e) {}
+  if (!o || !o.map || !Object.keys(o.map).length) return false;
+  stockMap = o.map;
+  stockLoadedAt = o.at || 0;
+  setStockStatus('', { source: o.source, url: o.url, filename: o.filename,
+                       count: Object.keys(o.map).length });
+  // ต้องวาดแถบเองตรงนี้ — เส้นทางที่ไม่มีออเดอร์ให้กู้จะจบโดยไม่วาดอะไรเลย
+  // แล้วสต๊อกที่กู้มาสำเร็จจะไม่ปรากฏบนแถบ
+  updateDataBar();
+  return true;
+}
+
 /**
  * เปิดหน้ามาแล้วให้มีข้อมูลพร้อมใช้ โดยไม่ยิง Apps Script เกินจำเป็น
  *
@@ -2290,6 +2324,7 @@ async function loadStockFromGAS(inputId, directUrl) {
  * ไม่ดึงให้เองถ้ายังไม่ได้ตั้ง URL — จะกลายเป็นยิงพลาดทุกครั้งที่เปิดหน้า
  */
 function restoreOrRefetch() {
+  restoreStockCache();
   const saved = window.OrderIndex ? OrderIndex.getCarriers() : null;
   if (saved) {
     carriersData = saved.carriers;
@@ -2590,6 +2625,11 @@ function setStockStatus(msg, opts) {
       ${refreshBtn}
     </div>`;
   });
+
+  /* เก็บไว้ให้รีเฟรชหน้าแล้วไม่ต้องดึงใหม่ — วางตรงนี้เพราะเป็นจุดเดียวที่
+     ทุกเส้นทาง (GAS และไฟล์) ผ่านหลังบันทึกที่มาแล้ว ถ้าเก็บก่อนหน้านี้
+     จะได้ source เป็น null แล้วปุ่มรีเฟรชหายไปหลังกู้คืน */
+  if (opts) saveStockCache();
 }
 
 async function refreshStock() {
