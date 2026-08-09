@@ -37,9 +37,13 @@
 
   <div class="fm-stage">
     <div class="paper wh-paper">
-      <div class="wh-title">
-        <div class="en">Transfer Request Form</div>
-        <div class="th">( ใบโอนย้ายสินค้า )</div>
+      <div class="wh-head">
+        <img class="wh-logo" alt="">
+        <div class="wh-title">
+          <div class="en">Transfer Request Form</div>
+          <div class="th">( ใบโอนย้ายสินค้า )</div>
+        </div>
+        <div class="wh-logo-sp"></div>
       </div>
 
       <div class="wh-meta">
@@ -96,6 +100,7 @@
 
 <script type="module" src="../wms-shell.js"></script>
 <script type="module" src="./wh-nav.js"></script>
+<script src="../wms-settings.js"></script>
 <script src="./wh-sku.js"></script>
 <script src="./wh-form.js"></script>
 <script src="./wh-shared.js"></script>
@@ -114,6 +119,7 @@ WhShared.buildRows('rows', 14, (n) => `
   <td><input class="wh-in"></td>`);
 WhForm.wire(document.getElementById('items'));
 WhShared.today('fDate');
+WhShared.mountLogo();
 WhShared.warnIfNoSku();
 </script>
 </body>

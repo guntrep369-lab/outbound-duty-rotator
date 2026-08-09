@@ -8,8 +8,18 @@
 
 .wh-paper { font-family: 'Sarabun', Tahoma, 'Leelawadee UI', sans-serif; }
 
-/* ── หัวใบ ── */
-.wh-title { text-align: center; line-height: 1.25; }
+/* ── หัวใบ ──
+   โลโก้อยู่ในแถวเดียวกับชื่อเอกสาร ไม่ใช่ position:absolute เพราะแต่ละใบเว้นขอบ
+   กระดาษไม่เท่ากัน (5mm/5mm/7mm) การวางแบบลอยจะต้องรู้ค่าขอบของทุกใบ
+
+   ช่องเปล่าฝั่งขวากว้างเท่าโลโก้ เพื่อให้ชื่อเอกสารอยู่กึ่งกลางแผ่นจริง ๆ
+   ไม่ใช่กึ่งกลางของที่ว่างที่เหลือหลังหักโลโก้ */
+.wh-head { display: flex; align-items: center; gap: 3mm; }
+.wh-logo, .wh-logo-sp { width: 30mm; flex-shrink: 0; }
+.wh-logo { max-height: 12mm; object-fit: contain; object-position: left center; }
+.wh-head.no-logo .wh-logo, .wh-head.no-logo .wh-logo-sp { display: none; }
+
+.wh-title { flex: 1; text-align: center; line-height: 1.25; }
 .wh-title .en { font-size: 12pt; font-weight: 700; letter-spacing: .3px; }
 .wh-title .th { font-size: 10.5pt; font-weight: 600; }
 
