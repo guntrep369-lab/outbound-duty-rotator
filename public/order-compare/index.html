@@ -24,8 +24,12 @@ header h1{font-size:17px;font-weight:600;letter-spacing:-.3px}
 header .sub{font-size:12px;color:var(--muted);margin-top:2px}
 
 /* ── Tabs ── */
-.tabs{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:0;background:var(--surface);padding:0 24px}
-.tab-btn{padding:12px 20px;font-size:14px;font-weight:500;border:none;background:none;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-2px;font-family:var(--sans);transition:all .15s;display:flex;align-items:center;gap:6px}
+/* แถวแท็บ 6 ปุ่มกว้างกว่าจอมือถือ ถ้าไม่ให้มันเลื่อนในตัวเองมันจะดันทั้งหน้า
+     ออกไป แล้วทุกหน้าจอต้องปัดซ้ายขวาเพื่ออ่านตาราง — ใช้วิธีเดียวกับ .mod-subnav */
+  .tabs{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:0;background:var(--surface);
+    padding:0 24px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .tabs::-webkit-scrollbar{display:none}
+.tab-btn{flex-shrink:0;white-space:nowrap;padding:12px 20px;font-size:14px;font-weight:500;border:none;background:none;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-2px;font-family:var(--sans);transition:all .15s;display:flex;align-items:center;gap:6px}
 .tab-btn.active{color:var(--primary);border-bottom-color:var(--primary)}
 .tab-btn:hover:not(.active){color:var(--neutral)}
 .tab-pane{display:none}.tab-pane.active{display:block}

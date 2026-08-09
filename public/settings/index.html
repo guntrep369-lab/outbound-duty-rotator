@@ -68,6 +68,15 @@
   font-family:var(--wms-font);font-size:11.5px;color:#334155;cursor:pointer}
 .urow .x:hover{background:#FEE2E2;border-color:#FCA5A5;color:#B91C1C}
 .empty{padding:16px;text-align:center;font-size:12.5px;color:var(--wms-muted)}
+.bk-cmp{display:grid;grid-template-columns:1fr auto 1fr;gap:6px 12px;align-items:center;
+  padding:11px 13px;border-radius:var(--wms-radius-sm);background:var(--wms-surface2);
+  border:1px solid var(--wms-border);font-size:12.5px}
+.bk-cmp .h{font-weight:700;color:var(--wms-text);font-size:12px}
+.bk-cmp .arw{color:var(--wms-muted)}
+.bk-cmp .li{color:var(--wms-muted);line-height:1.7}
+.bk-cmp .li b{color:var(--wms-text)}
+.bk-cmp .warn{grid-column:1/-1;color:#B45309;font-weight:600;font-size:12px}
+.bk-cmp .acts{grid-column:1/-1;display:flex;gap:8px;margin-top:4px}
 </style>
 </head>
 <body data-wms-module="settings">
@@ -165,6 +174,26 @@
           รหัสถูกเก็บเป็นค่า hash พร้อม salt ต่อคน ไม่ได้เก็บตัวรหัสเอง — แต่ด่านนี้เป็น
           <b>ป้ายหน้าประตู ไม่ใช่กุญแจ</b> มันกันคนเดินผ่านหยิบเครื่องไปกด ไม่ได้กันคนที่ตั้งใจ
           และข้อมูลทั้งหมดอยู่ในเบราว์เซอร์เครื่องนี้เท่านั้น
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ สำรอง / กู้คืน ══════ -->
+    <div class="card">
+      <h3>💾 สำรอง / กู้คืนการตั้งค่า <span class="sub" id="bkStat"></span></h3>
+      <div class="in">
+        <div class="row">
+          <button class="btn2 p" onclick="doExport()">⬇️ ดาวน์โหลดไฟล์สำรอง</button>
+          <button class="btn2" onclick="document.getElementById('bkFile').click()">⬆️ กู้คืนจากไฟล์</button>
+          <input type="file" id="bkFile" accept=".json" style="display:none">
+          <span class="msg" id="bkMsg"></span>
+        </div>
+        <div id="bkCompare"></div>
+        <div class="hint">
+          ทุกอย่างในหน้านี้เก็บอยู่ในเบราว์เซอร์เครื่องนี้เท่านั้น ไม่มีเซิร์ฟเวอร์เก็บให้ —
+          ล้างข้อมูลเบราว์เซอร์หรือเปลี่ยนเครื่องแล้ว<b>กู้เองไม่ได้</b>
+          เก็บไฟล์นี้ไว้ที่ปลอดภัย <b>ไม่ควรส่งในแชทกลุ่ม</b> เพราะข้างในมีรายชื่อผู้ใช้และรายชื่อสินค้าทั้งหมด
+          <br>ไม่รวมข้อมูลของวัน (ออเดอร์ / สต๊อก / ไฟล์รถบริษัท) และไม่รวมการล็อกอินของคุณ
         </div>
       </div>
     </div>
@@ -320,10 +349,83 @@ function removeUser(name) {
   say('msg-user', 'ลบ ' + name + ' แล้ว', '');
 }
 
+// ── สำรอง / กู้คืน ─────────────────────────────────────────────────────
+function paintBackup() {
+  const d = WmsSettings.describe(WmsSettings.exportAll().data);
+  $('bkStat').textContent = `เครื่องนี้: ${d.keys} รายการ · ผู้ใช้ ${d.users} · สินค้า ${d.skus.toLocaleString()}`;
+}
+
+function doExport() {
+  const file = WmsSettings.exportAll();
+  const d = WmsSettings.describe(file.data);
+  if (!d.keys) { say('bkMsg', 'ยังไม่มีอะไรให้สำรอง', 'bad'); return; }
+  const now = new Date();
+  const name = 'wms-settings-' + now.getFullYear() +
+    String(now.getMonth() + 1).padStart(2, '0') + String(now.getDate()).padStart(2, '0') + '.json';
+  const url = URL.createObjectURL(new Blob([JSON.stringify(file)], { type: 'application/json' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  say('bkMsg', `✅ ดาวน์โหลด ${name} แล้ว (${d.keys} รายการ)`, 'ok');
+}
+
+const line = (d) =>
+  `<div class="li">🔗 URL ออเดอร์ <b>${d.orderUrl ? 'มี' : '—'}</b> · URL สต๊อก <b>${d.stockUrl ? 'มี' : '—'}</b><br>` +
+  `🖼️ โลโก้ <b>${d.logo ? 'มี' : '—'}</b><br>` +
+  `👥 ผู้ใช้ <b>${d.users}</b> คน<br>` +
+  `📚 สินค้า <b>${d.skus.toLocaleString()}</b> รายการ<br>` +
+  `⚙️ อื่น ๆ <b>${d.others}</b> รายการ</div>`;
+
+/**
+ * กู้คืนแล้วทับของเดิมทั้งชุด จึงต้องให้เห็นก่อนว่ากำลังทับอะไรด้วยอะไร
+ * ไม่ใช่ถามว่า "แน่ใจไหม" ลอย ๆ แล้วเขียนทับเลย
+ */
+document.getElementById('bkFile').addEventListener('change', function () {
+  const f = this.files[0]; this.value = '';
+  $('bkCompare').innerHTML = '';
+  if (!f) return;
+  const rd = new FileReader();
+  rd.onload = (e) => {
+    let file;
+    try { file = JSON.parse(e.target.result); }
+    catch (err) { say('bkMsg', '❌ อ่านไฟล์ไม่ได้ — ไม่ใช่ไฟล์ JSON', 'bad'); return; }
+    if (!file || file.kind !== 'settings-backup') {
+      say('bkMsg', '❌ ไฟล์นี้ไม่ใช่ไฟล์สำรองของระบบ', 'bad'); return;
+    }
+    const now = WmsSettings.describe(WmsSettings.exportAll().data);
+    const inc = WmsSettings.describe(file.data);
+    const when = file.at ? new Date(file.at).toLocaleString('th-TH', {
+      day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '(ไม่ทราบ)';
+    say('bkMsg', '');
+    $('bkCompare').innerHTML =
+      `<div class="bk-cmp">
+        <div class="h">เครื่องนี้ตอนนี้</div><div class="arw">→</div>
+        <div class="h">ไฟล์ ${esc(f.name)} <span style="font-weight:400;color:var(--wms-muted)">· ${esc(when)}</span></div>
+        ${line(now)}<div class="arw">→</div>${line(inc)}
+        <div class="warn">⚠️ กู้คืนแล้วของเดิมในเครื่องนี้จะถูกทับทั้งหมด และย้อนกลับไม่ได้</div>
+        <div class="acts">
+          <button class="btn2 p" id="bkGo">กู้คืนทับของเดิม</button>
+          <button class="btn2" onclick="document.getElementById('bkCompare').innerHTML=''">ยกเลิก</button>
+        </div>
+      </div>`;
+    document.getElementById('bkGo').addEventListener('click', () => {
+      const r = WmsSettings.importAll(file);
+      $('bkCompare').innerHTML = '';
+      if (!r.ok) { say('bkMsg', '❌ ' + r.error, 'bad'); return; }
+      say('bkMsg', `✅ กู้คืน ${r.written} รายการแล้ว`, 'ok');
+      // ค่าที่เพิ่งกู้มาต้องเห็นบนหน้าจอทันที ไม่ใช่รอให้คนรีเฟรชเอง
+      $('orderUrl').value = WmsSettings.orderUrl();
+      $('stockUrl').value = WmsSettings.stockUrl();
+      paintDots(); paintLogo(); paintUsers(); paintBackup();
+    });
+  };
+  rd.readAsText(f);
+});
+
 // ── เริ่มต้น ───────────────────────────────────────────────────────────
 $('orderUrl').value = WmsSettings.orderUrl();
 $('stockUrl').value = WmsSettings.stockUrl();
-paintDots(); paintLogo(); paintUsers();
+paintDots(); paintLogo(); paintUsers(); paintBackup();
 </script>
 </body>
 </html>
