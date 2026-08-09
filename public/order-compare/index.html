@@ -392,14 +392,31 @@ td{padding:9px 12px;vertical-align:middle}
   .ps-split span{padding:2px 9px;border-radius:6px;border:1px solid var(--border);
     font-size:11px;color:var(--muted);white-space:nowrap}
   .ps-split b{color:var(--text);font-weight:700;margin-left:2px}
-  .conn-line{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:9px 11px;
-    border:1px solid var(--border);border-radius:9px;background:var(--surface)}
-  .conn-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;background:var(--muted)}
-  .conn-dot.on{background:#16A34A}
-  .conn-dot.off{background:#F59E0B}
-  .conn-txt{font-size:12.5px;color:var(--text);flex:1;min-width:120px}
-  .conn-edit{font-size:12px;color:var(--primary-dark);text-decoration:none;font-weight:600;white-space:nowrap}
-  .conn-edit:hover{text-decoration:underline}
+  .dbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:9px 20px;
+    background:var(--surface);border-bottom:1px solid var(--border);font-size:12.5px}
+  .dsrc{display:flex;align-items:center;gap:8px}
+  .ddot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0}
+  .ddot.on{background:#16A34A} .ddot.wait{background:#F59E0B} .ddot.off{background:#CBD5E1}
+  .dtxt{color:var(--text);white-space:nowrap}
+  .dtxt b{font-weight:700}
+  .dtxt .dim{color:var(--muted);font-weight:400}
+  .dbtn{padding:3px 11px;border-radius:999px;border:1px solid var(--border2, var(--border));
+    background:var(--surface);font-family:var(--sans);font-size:11.5px;color:#334155;cursor:pointer}
+  .dbtn:hover:not(:disabled){background:var(--primary-light);border-color:var(--primary);color:var(--primary-dark)}
+  .dbtn:disabled{opacity:.5;cursor:default}
+  .dsp{flex:1}
+  .dlink{font-size:12px;color:var(--primary-dark);text-decoration:none;font-weight:600;
+    background:none;border:0;font-family:var(--sans);cursor:pointer;padding:0;white-space:nowrap}
+  .dlink:hover{text-decoration:underline}
+  .dpanel{display:none;gap:12px;flex-wrap:wrap;padding:13px 20px;
+    background:var(--surface2, #F8FAFC);border-bottom:1px solid var(--border)}
+  .dpanel.open{display:flex}
+  .dcard{flex:1;min-width:220px;display:flex;flex-direction:column;gap:7px;
+    background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:11px 12px}
+  .dch{font-size:12.5px;font-weight:600;color:var(--text)}
+  .dch span{display:block;font-size:11px;font-weight:400;color:var(--muted);margin-top:2px}
+  .dupl{cursor:pointer;justify-content:center;width:100%}
+  .dst{font-size:11px;color:var(--muted)}
   .consign-no{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--text);
     white-space:nowrap;line-height:1.5}
 
@@ -514,6 +531,47 @@ td{padding:9px 12px;vertical-align:middle}
   <button class="tab-btn" onclick="switchTab('consigncheck',this)">📦 ตรวจเลข Consign</button>
     <button class="tab-btn" onclick="switchTab('picksum',this)">🧾 สรุปหยิบของ</button>
 </div>
+<!-- ══ แถบข้อมูลของวันนี้ ══
+     ข้อมูลสองชุดนี้เป็นของทั้งโมดูล ไม่ใช่ของแท็บใดแท็บหนึ่ง — ดึงที่ไหนก็ใช้ได้
+     ทุกแท็บ เดิมจึงมีการ์ดโหลดซ้ำกัน 4 ใบใน 2 แท็บ ส่วนอีก 4 แท็บดึงเองไม่ได้เลย
+     ต้องเดินกลับไปกดที่แท็บแรก -->
+<div class="dbar no-print">
+  <div class="dsrc" data-src="order">
+    <span class="ddot"></span><span class="dtxt"></span>
+    <button class="dbtn" onclick="loadOrderFromGAS()">ดึงใหม่</button>
+  </div>
+  <div class="dsrc" data-src="stock">
+    <span class="ddot"></span><span class="dtxt"></span>
+    <button class="dbtn" onclick="loadStockFromGAS()">ดึงใหม่</button>
+  </div>
+  <span class="dsp"></span>
+  <button class="dlink" id="dfileBtn" onclick="toggleUpload()">⬆ ใช้ไฟล์แทน</button>
+  <a class="dlink" href="../settings/">⚙ ตั้งค่า</a>
+</div>
+
+<!-- ทางหนีเวลา Apps Script ล่ม — พับไว้เพราะไม่ได้ใช้ทุกวัน แต่วันที่ต้องใช้
+     คือวันที่ไม่มีทางอื่นเลย จึงไม่ตัดทิ้ง -->
+<div class="dpanel no-print" id="dpanel">
+  <div class="dcard" id="card-single">
+    <div class="dch">📋 ไฟล์ออเดอร์ 2 Sheet <span>เช้า + CRM · ใช้เทียบ Order</span></div>
+    <label class="btn btn-secondary btn-sm dupl">📁 เลือกไฟล์
+      <input type="file" id="file-single" accept=".xlsx,.xls" style="display:none"></label>
+    <div class="fname" id="file-single-name"></div>
+    <div id="sheet-status" class="dst"></div>
+  </div>
+  <div class="dcard" id="order-card-2">
+    <div class="dch">📋 ไฟล์ออเดอร์ Sheet เดียว <span>รอบเช้า · ใช้คำนวณสต๊อก</span></div>
+    <label class="btn btn-secondary btn-sm dupl">📁 เลือกไฟล์
+      <input type="file" id="orderFile2" accept=".xlsx,.xls" style="display:none" onchange="loadOrderForStock(event)"></label>
+    <div class="fname" id="order2-fname"></div>
+  </div>
+  <div class="dcard" id="stock-card-1">
+    <div class="dch">📦 ไฟล์สต๊อก <span>.xlsx / .csv</span></div>
+    <label class="btn btn-secondary btn-sm dupl">📁 เลือกไฟล์
+      <input type="file" id="stockFile1" accept=".xlsx,.xls,.csv" style="display:none" onchange="loadStockFile(event)"></label>
+    <div class="fname" id="stock-fname"></div>
+  </div>
+</div>
 
 <!-- ══════════════════════════════════════════════════════════════
      TAB 1: เทียบ Order
@@ -523,63 +581,8 @@ td{padding:9px 12px;vertical-align:middle}
 
   <!-- Upload -->
   <div class="upload-row">
-    <div class="stock-connect-card" id="card-single">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-        <div style="font-size:24px">📋</div>
-        <div>
-          <div style="font-weight:600;font-size:14px">ไฟล์ออเดอร์</div>
-          <div style="font-size:12px;color:var(--muted)">Sheet เช้า vs Sheet เย็น</div>
-        </div>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <div class="conn-line">
-          <span class="conn-dot" data-conn="order"></span>
-          <span class="conn-txt" data-conn="order"></span>
-          <a class="conn-edit" href="../settings/">⚙ ตั้งค่า</a>
-          <button class="btn btn-primary btn-sm" onclick="loadOrderFromGAS()">ดึงข้อมูล</button>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;margin:2px 0">
-          <div style="flex:1;height:1px;background:var(--border)"></div>
-          <span style="font-size:11px;color:var(--muted)">หรือ</span>
-          <div style="flex:1;height:1px;background:var(--border)"></div>
-        </div>
-        <label class="btn btn-secondary btn-sm" style="cursor:pointer;justify-content:center;width:100%">
-          📁 อัปโหลดไฟล์ Excel (2 Sheet)
-          <input type="file" id="file-single" accept=".xlsx,.xls" style="display:none">
-        </label>
-      </div>
-      <div class="fname" id="file-single-name" style="margin-top:8px"></div>
-      <div id="sheet-status" style="font-size:11px;margin-top:4px;color:var(--muted)"></div>
-    </div>
 
     <!-- Stock file (shared with tab2) -->
-    <div class="stock-connect-card" id="stock-card-1">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-        <div style="font-size:24px">📦</div>
-        <div>
-          <div style="font-weight:600;font-size:14px">สต๊อกสินค้า</div>
-          <div style="font-size:12px;color:var(--muted)">เชื่อมจาก Google Sheet หรืออัปโหลดไฟล์</div>
-        </div>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <div class="conn-line">
-          <span class="conn-dot" data-conn="stock"></span>
-          <span class="conn-txt" data-conn="stock"></span>
-          <a class="conn-edit" href="../settings/">⚙ ตั้งค่า</a>
-          <button class="btn btn-primary btn-sm" onclick="loadStockFromGAS()">ดึงข้อมูล</button>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;margin:2px 0">
-          <div style="flex:1;height:1px;background:var(--border)"></div>
-          <span style="font-size:11px;color:var(--muted)">หรือ</span>
-          <div style="flex:1;height:1px;background:var(--border)"></div>
-        </div>
-        <label class="btn btn-secondary btn-sm" style="cursor:pointer;justify-content:center;width:100%">
-          📁 อัปโหลดไฟล์ (.xlsx / .csv)
-          <input type="file" id="stockFile1" accept=".xlsx,.xls,.csv" style="display:none" onchange="loadStockFile(event)">
-        </label>
-      </div>
-      <div class="fname" id="stock-fname" style="margin-top:8px"></div>
-    </div>
   </div>
 
   <!-- Date mismatch warning -->
@@ -648,61 +651,7 @@ td{padding:9px 12px;vertical-align:middle}
 <div class="main">
 
   <div class="stock-upload-row">
-    <div class="stock-connect-card" id="order-card-2">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-        <div style="font-size:24px">📋</div>
-        <div>
-          <div style="font-weight:600;font-size:14px">ไฟล์ออเดอร์</div>
-          <div style="font-size:12px;color:var(--muted)">ใช้ Sheet Daily Logis (รอบเช้า) คำนวณความต้องการ</div>
-        </div>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <div class="conn-line">
-          <span class="conn-dot" data-conn="order"></span>
-          <span class="conn-txt" data-conn="order"></span>
-          <a class="conn-edit" href="../settings/">⚙ ตั้งค่า</a>
-          <button class="btn btn-primary btn-sm" onclick="loadOrderFromGAS()">ดึงข้อมูล</button>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;margin:2px 0">
-          <div style="flex:1;height:1px;background:var(--border)"></div>
-          <span style="font-size:11px;color:var(--muted)">หรือ</span>
-          <div style="flex:1;height:1px;background:var(--border)"></div>
-        </div>
-        <label class="btn btn-secondary btn-sm" style="cursor:pointer;justify-content:center;width:100%">
-          📁 อัปโหลดไฟล์ Excel
-          <input type="file" id="orderFile2" accept=".xlsx,.xls" style="display:none" onchange="loadOrderForStock(event)">
-        </label>
-      </div>
-      <div class="fname" id="order2-fname" style="margin-top:8px"></div>
-    </div>
 
-    <div class="stock-connect-card" id="stock-card-2">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-        <div style="font-size:24px">📦</div>
-        <div>
-          <div style="font-weight:600;font-size:14px">สต๊อกสินค้า</div>
-          <div style="font-size:12px;color:var(--muted)">เชื่อมจาก Google Sheet หรืออัปโหลดไฟล์</div>
-        </div>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <div class="conn-line">
-          <span class="conn-dot" data-conn="stock"></span>
-          <span class="conn-txt" data-conn="stock"></span>
-          <a class="conn-edit" href="../settings/">⚙ ตั้งค่า</a>
-          <button class="btn btn-primary btn-sm" onclick="loadStockFromGAS()">ดึงข้อมูล</button>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;margin:2px 0">
-          <div style="flex:1;height:1px;background:var(--border)"></div>
-          <span style="font-size:11px;color:var(--muted)">หรือ</span>
-          <div style="flex:1;height:1px;background:var(--border)"></div>
-        </div>
-        <label class="btn btn-secondary btn-sm" style="cursor:pointer;justify-content:center;width:100%">
-          📁 อัปโหลดไฟล์ (.xlsx / .csv)
-          <input type="file" id="stockFile2" accept=".xlsx,.xls,.csv" style="display:none" onchange="loadStockFile(event)">
-        </label>
-      </div>
-      <div class="fname" id="stock-fname2" style="margin-top:8px"></div>
-    </div>
   </div>
 
   <div class="action-bar">
@@ -910,6 +859,7 @@ const esc = v => String(v ?? '')
 
 let data1 = [], data2 = [], stockRaw = []; // stockRaw = rows the stock tab reads
 let stockSourceLabel = '';  // which sheet those rows came from, shown on the results
+let stockLoadedAt = 0;   // เวลาที่สต๊อกชุดล่าสุดเข้าระบบ ใช้แสดงบนแถบข้อมูล
 let stockMap = {};   // sku -> {sku, description, qa, newwh, total}
 let diffResults = [];
 let skuDemand = {};  // sku -> {qty, name, orders:[]}
@@ -1000,6 +950,7 @@ document.getElementById('file-single').addEventListener('change', e => {
     document.getElementById('sheet-status').textContent =
       `✓ "${wb.SheetNames[0]}" ${data1.length} แถว | "${wb.SheetNames[1]}" ${data2.length} แถว`;
     updateCompareBtn();
+    PULL_MSG.order = ''; updateDataBar();
   };
   reader.readAsArrayBuffer(file);
 });
@@ -1066,6 +1017,9 @@ function loadStockFile(e) {
       });
       if (!count) throw new Error('ไม่พบคอลัมน์ SKU');
       stockMap = map;
+      stockLoadedAt = Date.now();
+      PULL_MSG.stock = '';
+      updateDataBar();
       setStockStatus('', { source:'file', filename: file.name, count });
       ['stock-card-1','stock-card-2'].forEach(id => {
         const el = document.getElementById(id);
@@ -2218,12 +2172,14 @@ async function loadStockFromGAS(inputId, directUrl) {
   const url = directUrl || (document.getElementById(inputId)?.value || '').trim() || WmsSettings.stockUrl();
   if (!url) { alert('กรุณาใส่ Apps Script URL'); return; }
 
+  PULL_MSG.stock = 'กำลังดึงสต๊อก…'; updateDataBar();
   setStockStatus('⏳ กำลังดึงข้อมูล...');
 
   try {
     // Apps Script ต้อง redirect-follow + retry เมื่อ timeout
     const resp = await fetchWithRetry(withApi(url, 'stock'), {
-      onProgress: (sec) => setStockStatus(`⏳ กำลังดึงข้อมูล... ${sec} วินาที`),
+      onProgress: (sec) => { PULL_MSG.stock = `กำลังดึงสต๊อก… ${sec} วินาที`; updateDataBar();
+              setStockStatus(`⏳ กำลังดึงข้อมูล... ${sec} วินาที`); },
       onRetry: (n, max) => setStockStatus(`⏳ ไม่สำเร็จ — ลองใหม่ครั้งที่ ${n}/${max}...`),
     });
 
@@ -2299,6 +2255,9 @@ async function loadStockFromGAS(inputId, directUrl) {
     if (!count) throw new Error('ไม่พบข้อมูล SKU ใน response');
 
     stockMap = map;
+    stockLoadedAt = Date.now();
+    PULL_MSG.stock = '';
+    updateDataBar();
     setStockStatus('', { source:'gas', url, count });
     ['stock-card-1','stock-card-2'].forEach(id => {
       const el = document.getElementById(id);
@@ -2308,6 +2267,7 @@ async function loadStockFromGAS(inputId, directUrl) {
     if (diffResults.length) renderTable();
 
   } catch (err) {
+    PULL_MSG.stock = ''; updateDataBar();
     setStockStatus('❌ ' + err.message);
   }
 }
@@ -2316,26 +2276,88 @@ async function loadStockFromGAS(inputId, directUrl) {
    หน้านี้ใช้ทุกเช้า ส่วน URL ตั้งปีละครั้ง การเอาช่องกรอกออกไปแลกมาด้วยการ
    เสียคุณสมบัติ "พังตรงไหนแก้ตรงนั้น" จึงต้องเหลือบรรทัดสถานะไว้ให้เห็นว่า
    ต่อไว้หรือยัง และลิงก์ไปแก้ได้ในคลิกเดียว */
-function renderConnLines() {
+/* ── แถบข้อมูลของวันนี้ ───────────────────────────────────────────────────
+/**
+ * เปิดหน้ามาแล้วให้มีข้อมูลพร้อมใช้ โดยไม่ยิง Apps Script เกินจำเป็น
+ *
+ * 1) ถ้ารอบนี้ของเบราว์เซอร์เคยดึงไว้แล้ว → กู้จาก sessionStorage ทันที
+ *    รีเฟรชหน้าจึงไม่เสียเวลาสิบ ๆ วินาทีซ้ำกับข้อมูลชุดเดิม
+ * 2) ถ้ายังไม่เคยดึงเลยและตั้ง URL ไว้แล้ว → ดึงให้เอง
+ *    ตัดปัญหา "ลืมกดดึงข้อมูล" ซึ่งลงเอยด้วยการทำงานทั้งวันบนข้อมูลว่าง
+ * ไม่ดึงให้เองถ้ายังไม่ได้ตั้ง URL — จะกลายเป็นยิงพลาดทุกครั้งที่เปิดหน้า
+ */
+function restoreOrRefetch() {
+  const saved = window.OrderIndex ? OrderIndex.getCarriers() : null;
+  if (saved) {
+    carriersData = saved.carriers;
+    activeCarrier = 0;
+    applyCarrier(0);
+    renderCarrierTabs();
+    updateCompareBtn();
+    updateDataBar();
+    return;
+  }
+  if (WmsSettings.orderUrl()) loadOrderFromGAS();
+}
+
+
+/* ── แถบข้อมูลของวันนี้ ───────────────────────────────────────────────────
+   ข้อมูลเป็นของทั้งโมดูล ไม่ใช่ของแท็บ แถบนี้จึงอยู่เหนือทุกแท็บและเป็นที่เดียว
+   ที่บอกว่ามีอะไรอยู่ ดึงมาเมื่อไหร่ และจะดึงใหม่ได้จากตรงไหน */
+let PULL_MSG = { order: '', stock: '' };   // ข้อความระหว่างดึง ว่าง = ไม่ได้ดึงอยู่
+
+function updateDataBar() {
+  const hhmm = t => new Date(t).toLocaleTimeString('th-TH', { hour:'2-digit', minute:'2-digit' });
+  const idx = window.OrderIndex ? OrderIndex.getCarriers() : null;
+
+  const orderRows = carriersData.reduce((n, c) => n + c.data1.length + c.data2.length, 0)
+                    || (data1.length + data2.length);
+  const stockCount = Object.keys(stockMap).length;
+
   const state = {
-    order: { url: WmsSettings.orderUrl(), label: 'ออเดอร์' },
-    stock: { url: WmsSettings.stockUrl(), label: 'สต๊อก' },
+    order: {
+      url: WmsSettings.orderUrl(), n: orderRows, at: idx ? idx.at : 0,
+      have: `<b>ออเดอร์</b> ${orderRows} แถว` + (carriersData.length ? ` <span class="dim">· ${carriersData.length} ขนส่ง</span>` : ''),
+      none: 'ยังไม่ได้ดึง<b>ออเดอร์</b>ของวันนี้',
+      noUrl: 'ยังไม่ได้ตั้ง URL <b>ออเดอร์</b>',
+    },
+    stock: {
+      url: WmsSettings.stockUrl(), n: stockCount, at: stockLoadedAt,
+      have: `<b>สต๊อก</b> ${stockCount.toLocaleString()} SKU`,
+      none: 'ยังไม่ได้ดึง<b>สต๊อก</b>ของวันนี้',
+      noUrl: 'ยังไม่ได้ตั้ง URL <b>สต๊อก</b>',
+    },
   };
-  document.querySelectorAll('.conn-line').forEach(line => {
-    const kind = line.querySelector('.conn-dot')?.dataset.conn || 'order';
-    const st = state[kind];
-    const on = !!st.url;
-    line.querySelector('.conn-dot').className = 'conn-dot ' + (on ? 'on' : 'off');
-    line.querySelector('.conn-txt').textContent = on
-      ? 'เชื่อม Apps Script ' + st.label + ' แล้ว'
-      : 'ยังไม่ได้ตั้ง Apps Script URL ' + st.label;
-    const btn = line.querySelector('button');
-    if (btn) btn.disabled = !on;
+
+  document.querySelectorAll('.dbar .dsrc').forEach(el => {
+    const kind = el.dataset.src, st = state[kind];
+    const dot = el.querySelector('.ddot'), txt = el.querySelector('.dtxt'), btn = el.querySelector('.dbtn');
+    if (PULL_MSG[kind]) {
+      dot.className = 'ddot wait';
+      txt.innerHTML = esc(PULL_MSG[kind]);
+      btn.disabled = true;
+      btn.textContent = 'กำลังดึง…';
+      return;
+    }
+    const has = st.n > 0;
+    dot.className = 'ddot ' + (has ? 'on' : st.url ? 'wait' : 'off');
+    txt.innerHTML = has
+      ? st.have + (st.at ? ` <span class="dim">· ${hhmm(st.at)}</span>` : '')
+      : (st.url ? st.none : st.noUrl);
+    btn.disabled = !st.url;
+    btn.textContent = has ? 'ดึงใหม่' : 'ดึงข้อมูล';
+    btn.title = st.url ? '' : 'ตั้ง Apps Script URL ที่หน้าตั้งค่าก่อน';
   });
 }
 
+function toggleUpload() {
+  const p = document.getElementById('dpanel');
+  const open = p.classList.toggle('open');
+  document.getElementById('dfileBtn').textContent = open ? '✕ ปิดการอัปโหลดไฟล์' : '⬆ ใช้ไฟล์แทน';
+}
+
 function loadSavedOrderGasUrl() {
-  renderConnLines();
+  updateDataBar();
   if (WmsSettings.orderUrl()) {
     document.getElementById('sheet-status').textContent = '🔗 มี URL ออเดอร์บันทึกไว้ — กด "ดึงข้อมูล" เพื่อโหลด';
   }
@@ -2354,12 +2376,14 @@ async function loadOrderFromGAS() {
   const url = WmsSettings.orderUrl();
   if (!url) { alert('กรุณาใส่ Apps Script URL'); return; }
 
+  PULL_MSG.order = 'กำลังดึงออเดอร์…'; updateDataBar();
   document.getElementById('sheet-status').textContent = '⏳ กำลังดึงข้อมูล...';
   document.getElementById('file-single-name').textContent = '';
 
   try {
     const resp = await fetchWithRetry(withApi(url, 'order'), {
       onProgress: (sec) => {
+        PULL_MSG.order = `กำลังดึงออเดอร์… ${sec} วินาที`; updateDataBar();
         document.getElementById('sheet-status').textContent =
           `⏳ กำลังดึงข้อมูล... ${sec} วินาที`;
       },
@@ -2422,11 +2446,13 @@ async function loadOrderFromGAS() {
     document.getElementById('order2-fname').textContent =
       carriersData.map(c => `${c.key}: ${c.data2.length} แถว`).join(' | ');
     updateCompareBtn();
+    PULL_MSG.order = ''; updateDataBar();
 
     // Auto-run ทุก Tab ทันทีหลังดึงข้อมูล (ไม่ต้องกดเองทีละ Tab)
     autoRunAll();
 
   } catch(err) {
+    PULL_MSG.order = ''; updateDataBar();
     document.getElementById('sheet-status').textContent = '❌ ' + err.message;
   }
 }
@@ -2467,6 +2493,7 @@ function applyCarrier(idx) {
      <h3>เลือกขนส่ง: ${esc(carriersData[idx].key)}</h3>
      <p>${data1.length} แถว (เช้า) | ${data2.length} แถว (เย็น) — กด "เปรียบเทียบ"</p></div>`;
   updateCompareBtn();
+  PULL_MSG.order = ''; updateDataBar();
 }
 
 // Build carrier selector tabs above the compare table
@@ -3112,6 +3139,7 @@ function runConsignCheck() {
 window.addEventListener('DOMContentLoaded', () => {
   loadSavedGasUrl();
   loadSavedOrderGasUrl();
+  restoreOrRefetch();
 });
 
 </script>

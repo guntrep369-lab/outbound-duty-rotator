@@ -215,28 +215,41 @@
     savedUrl: function () { return window.WmsSettings ? WmsSettings.orderUrl() : ''; },
     saveUrl: function (url) { if (window.WmsSettings) WmsSettings.setOrderUrl(url); },
 
-    /** @returns {{at:number, rows:Array}|null} */
-    get: function () {
+    /**
+     * carriersData เต็มของรอบล่าสุด — แท็บเทียบ Order ใช้กู้สถานะคืนหลังรีเฟรชหน้า
+     * โดยไม่ต้องยิง Apps Script ใหม่ ซึ่งกินเวลาเป็นสิบวินาทีทุกครั้ง
+     */
+    getCarriers: function () {
       try {
         var raw = sessionStorage.getItem(KEY);
         if (!raw) return null;
         var o = JSON.parse(raw);
-        return o && Array.isArray(o.rows) && o.rows.length ? o : null;
+        return o && Array.isArray(o.carriers) && o.carriers.length ? o : null;
       } catch (e) {
         return null;
       }
     },
 
-    /** เก็บดัชนีไว้ให้หน้าค้นหา เรียกหลังดึงข้อมูลสำเร็จ */
+    /**
+     * ดัชนีค้นหา สร้างจากของเต็มตอนอ่าน ไม่ได้เก็บซ้ำอีกชุด
+     * @returns {{at:number, rows:Array}|null}
+     */
+    get: function () {
+      var o = window.OrderIndex.getCarriers();
+      if (!o) return null;
+      var rows = build(o.carriers);
+      return rows.length ? { at: o.at, rows: rows } : null;
+    },
+
+    /** เก็บข้อมูลของรอบนี้ไว้ให้หน้าอื่นและให้หน้านี้เองใช้ตอนรีเฟรช */
     save: function (carriersData) {
       try {
-        var rows = build(carriersData);
-        if (!rows.length) return;
-        sessionStorage.setItem(KEY, JSON.stringify({ at: Date.now(), rows: rows }));
+        if (!carriersData || !carriersData.length) return;
+        sessionStorage.setItem(KEY, JSON.stringify({ at: Date.now(), carriers: carriersData }));
       } catch (e) {
         // เต็มโควตาหรืออยู่ในโหมดส่วนตัว — แท็บเทียบ Order ยังทำงานได้ตามปกติ
         // หน้าค้นหาจะขอให้กดดึงเอง ไม่คุ้มที่จะขัดจังหวะใคร
-        console.warn('OrderIndex: เก็บดัชนีค้นหาไม่ได้ —', e.message);
+        console.warn('OrderIndex: เก็บข้อมูลวันนี้ไม่ได้ —', e.message);
       }
     },
 
