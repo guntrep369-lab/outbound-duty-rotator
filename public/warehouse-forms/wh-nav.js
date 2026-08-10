@@ -50,9 +50,9 @@ export const FORMS = [
     icon: '🏷️',
     label: 'ป้ายบ่งชี้',
     en: 'Identification Tag',
-    desc: 'ป้ายแปะกองของ — PO / SKU / QTY / วันที่ เลือกได้ 2 หรือ 4 ป้ายต่อแผ่น',
-    paper: 'A4 แนวนอน',
-    rows: 4, unit: 'ป้าย/แผ่น',
+    desc: 'ป้ายรับเข้าคลัง — Location / SKU / PO / LOT / QTY / MFG / ผู้รับเข้า-ผู้ตรวจสอบ',
+    paper: 'A5 แนวนอน หรือ A4 แนวตั้ง',
+    rows: 1, unit: 'ป้าย/แผ่น (หรือ 2 ใบต่อ A4)',
   },
   {
     id: 'saffron',

@@ -11,50 +11,41 @@
 <script src="../wms-gate.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-/* A4 แนวนอน — ต้นฉบับเป็น paperSize 9 landscape */
-@page { size: 297mm 210mm; margin: 8mm; }
-.paper{ width:297mm; min-height:210mm; padding:8mm; }
 
-/* ป้ายเรียงเป็นตาราง 2 คอลัมน์เสมอ ต่างกันที่จำนวนแถวต่อแผ่น
-   ต้นฉบับมีสองขนาด: แถวสูง 129pt (2 ป้าย/แผ่น) และ 51pt (4 ป้าย/แผ่น) */
-.tags{ display:grid; grid-template-columns:1fr 1fr; gap:6mm; }
-.tag{ border:1.5px solid #000; display:flex; flex-direction:column; }
-.tag .t{ text-align:center; font-weight:700; border-bottom:1px solid #000;
-  display:flex; align-items:center; justify-content:center; }
-.tag .f{ display:flex; align-items:stretch; border-bottom:1px solid #000; flex:1; }
-.tag .f:last-child{ border-bottom:0; }
-.tag .f .k{ display:flex; align-items:center; justify-content:center; font-weight:700;
-  border-right:1px solid #000; flex-shrink:0; }
-.tag .f .v{ flex:1; display:flex; flex-direction:column; justify-content:center; min-width:0; padding:0 2mm; }
-.tag .f .v input{ width:100%; border:0; background:#F8FAFC; font-family:inherit; font-weight:700;
-  color:#000; outline:none; padding:0; }
-.tag .f .v input:focus{ background:#EEF2FF; }
-.tag .nm{ font-size:9pt; font-weight:400; color:#334155; line-height:1.15;
+/* ขนาดป้ายเท่ากันทั้งสองโหมด (≈198×136mm ตามป้ายจริงที่ใช้อยู่)
+   ต่างกันแค่ใส่กี่ใบต่อแผ่น — A5 ทีละใบ หรือ A4 แนวตั้งสองใบเพื่อประหยัดกระดาษ */
+.paper{ padding:6mm; }
+body.p1 .paper{ width:210mm; min-height:148mm; }
+body.p2 .paper{ width:210mm; min-height:297mm; }
+
+.tags{ display:flex; flex-direction:column; gap:6mm; }
+body.p1 .tag:nth-child(n+2){ display:none; }
+
+.tag{ width:100%; border-collapse:collapse; table-layout:fixed; }
+/* 17mm ให้ป้ายสูงเต็มหน้า A5 พอดี — ปล่อยตามเนื้อหาจะเหลือขาวท้ายป้าย 15mm
+     แล้วสัดส่วนจะผิดจากป้ายจริงที่ทีมใช้อยู่ */
+  .tag td{ border:1px solid #000; padding:0.8mm 1.6mm; height:17mm; vertical-align:middle; }
+.tag .ttl{ text-align:center; font-size:19pt; font-weight:700; height:15mm; }
+.tag .k{ font-size:13pt; font-weight:700; white-space:nowrap; }
+.tag .k.sm{ font-size:11pt; }
+.tag input{ width:100%; border:0; background:#F8FAFC; font-family:inherit; font-size:16pt;
+  font-weight:700; color:#000; outline:none; padding:0 1mm; height:11mm; }
+.tag input:focus{ background:#EEF2FF; }
+.tag input.sm{ font-size:13pt; height:9mm; }
+/* ชื่อสินค้าใต้รหัส — ป้ายที่เขียนแค่ LNO-216 ไม่บอกใครว่ากล่องนี้คืออะไร */
+.tag .nm{ font-size:9pt; font-weight:400; color:#334155; line-height:1.2;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-
-/* ── ใหญ่: 2 ป้ายต่อแผ่น ── */
-/* 191 ไม่ใช่ 194 (= พื้นที่พิมพ์เต็ม) — เต็มพอดีเป๊ะแปลว่าปัดเศษขึ้น 0.1mm
-   ก็ได้กระดาษเปล่าตามมาอีกแผ่นทุกครั้งที่พิมพ์ */
-body.per2 .tags{ grid-template-rows:1fr; height:191mm; }
-body.per2 .tag .t{ height:26mm; font-size:30pt; }
-body.per2 .tag .f .k{ width:34mm; font-size:20pt; }
-body.per2 .tag .f .v input{ font-size:26pt; height:14mm; }
-body.per2 .tag:nth-child(n+3){ display:none; }
-
-/* ── กลาง: 4 ป้ายต่อแผ่น ── */
-body.per4 .tags{ grid-template-rows:1fr 1fr; height:191mm; }
-body.per4 .tag .t{ height:13mm; font-size:17pt; }
-body.per4 .tag .f .k{ width:24mm; font-size:12pt; }
-body.per4 .tag .f .v input{ font-size:15pt; height:8mm; }
-body.per4 .tag .nm{ font-size:7.5pt; }
+.tag .pcs{ font-size:11pt; font-weight:700; padding-left:1mm; white-space:nowrap; }
+.tag .cell{ display:flex; align-items:center; gap:1mm; }
 
 @media print{
   .paper{ min-height:0 !important; }
-  .tag .f .v input{ background:none !important; }
+  .tag input{ background:none !important; }
+  .tag{ break-inside:avoid; }
 }
 </style>
 </head>
-<body data-wms-module="warehouse" class="per2">
+<body data-wms-module="warehouse" class="p1">
 
 <div class="wms-shell">
 <div data-wms-shell="warehouse" data-root="../"></div>
@@ -65,12 +56,11 @@ body.per4 .tag .nm{ font-size:7.5pt; }
   <div class="fm-bar">
     <a class="fm-btn" href="./">← รายการเอกสาร</a>
     <span class="fm-name">🏷️ ป้ายบ่งชี้</span>
-    <span class="fm-chip">A4 แนวนอน</span>
-    <span class="fm-meta">ขนาดป้าย</span>
-    <button class="fm-btn primary" id="b2" onclick="setPer(2)">2 ป้าย/แผ่น</button>
-    <button class="fm-btn" id="b4" onclick="setPer(4)">4 ป้าย/แผ่น</button>
+    <span class="fm-meta">กระดาษ</span>
+    <button class="fm-btn primary" id="b1" onclick="setPer(1)">1 ป้าย · A5 แนวนอน</button>
+    <button class="fm-btn" id="b2" onclick="setPer(2)">2 ป้าย · A4 แนวตั้ง</button>
     <span class="fm-spacer"></span>
-    <button class="fm-btn" onclick="copyFirst()">⧉ คัดลอกใบแรกไปทุกใบ</button>
+    <button class="fm-btn" onclick="copyFirst()">⧉ คัดลอกใบแรก</button>
     <button class="fm-btn" onclick="location.reload()">🧹 ล้าง</button>
     <button class="fm-btn primary" onclick="window.print()">🖨 พิมพ์</button>
   </div>
@@ -88,21 +78,41 @@ body.per4 .tag .nm{ font-size:7.5pt; }
 <script src="./wh-form.js"></script>
 <script src="./wh-shared.js"></script>
 <script>
-/* สร้าง 4 ใบไว้เสมอ แล้วซ่อนสองใบหลังตอนเลือกขนาดใหญ่ — ถ้าสร้างใหม่ตอนสลับขนาด
-   สิ่งที่กรอกไปแล้วจะหายทุกครั้งที่กดเปลี่ยนขนาด ซึ่งเป็นสิ่งที่คนทำหลังกรอกเสร็จ */
-const FIELDS = [['PO', ''], ['SKU', 'sku'], ['QTY', ''], ['Date', 'date']];
-document.getElementById('tags').innerHTML = [1,2,3,4].map(() => `
-  <div class="tag">
-    <div class="t">ป้ายบ่งชี้</div>
-    ${FIELDS.map(([k, kind]) => `
-      <div class="f"><div class="k">${k}</div><div class="v">
-        <input ${kind === 'sku' ? 'data-sku autocomplete="off"' : ''}${kind === 'date' ? ' type="date"' : ''}>
-        ${kind === 'sku' ? '<div class="nm"></div>' : ''}
-      </div></div>`).join('')}
-  </div>`).join('');
+/* ช่องทั้งหมดมาจากป้ายจริงที่ใช้อยู่ ไม่ใช่จากชีต "ใบบ่งชี้ผ้าปู" ในไฟล์ Excel
+   ซึ่งมีแค่ PO / SKU / QTY / Date — ป้ายที่ใช้จริงมี Location, LOT, MFG,
+   Transfer Date และช่องเซ็นสองคน คือใบรับเข้าคลัง ไม่ใช่ป้ายติดของเฉย ๆ */
+const TAG = `
+  <table class="tag">
+    <colgroup><col style="width:22%"><col style="width:31%"><col style="width:16%"><col style="width:31%"></colgroup>
+    <tbody>
+      <tr><td class="ttl" colspan="4">ป้ายบ่งชี้</td></tr>
+      <tr>
+        <td colspan="2"></td>
+        <td class="k">RC/Date</td>
+        <td><input type="date" data-rc></td>
+      </tr>
+      <tr><td class="k">Location</td><td colspan="3"><input data-loc></td></tr>
+      <tr><td class="k">SKU</td>
+        <td colspan="3"><input data-sku autocomplete="off"><div class="nm"></div></td></tr>
+      <tr>
+        <td class="k">PO.</td><td><input class="sm"></td>
+        <td class="k">LOT.</td><td><input class="sm"></td>
+      </tr>
+      <tr>
+        <td class="k">QTY</td>
+        <td><div class="cell"><input class="sm"><span class="pcs">Pcs.</span></div></td>
+        <td class="k">MFG.</td><td><input class="sm"></td>
+      </tr>
+      <tr><td class="k sm">Transfer Date.</td><td colspan="3"><input class="sm"></td></tr>
+      <tr>
+        <td class="k sm">ผู้ดำเนินการรับเข้า</td><td><input class="sm"></td>
+        <td class="k sm">ผู้ตรวจสอบ</td><td><input class="sm"></td>
+      </tr>
+    </tbody>
+  </table>`;
 
-/* ป้ายนี้ไปแปะบนกองของ คนเดินผ่านต้องอ่านออกว่ากองไหนคืออะไร — รหัสเปล่า ๆ
-   อย่าง AHM001 ไม่ได้บอกอะไรใคร จึงเติมชื่อสินค้าไว้ใต้รหัส */
+document.getElementById('tags').innerHTML = TAG + TAG;
+
 document.getElementById('tags').addEventListener('input', (e) => {
   if (!e.target.matches('[data-sku]')) return;
   const nm = e.target.parentNode.querySelector('.nm');
@@ -110,34 +120,39 @@ document.getElementById('tags').addEventListener('input', (e) => {
   if (nm) nm.textContent = hit ? hit.name : '';
 });
 
+/* @page ต้องเปลี่ยนตามโหมดด้วย ไม่งั้นเลือก A4 แล้วเครื่องพิมพ์ยังใช้ขนาด A5
+   ตามที่ประกาศไว้ตอนโหลดหน้า แล้วป้ายใบที่สองจะถูกตัดหาย */
 function setPer(n) {
-  document.body.className = 'per' + n;
+  document.body.className = 'p' + n;
   document.body.dataset.wmsModule = 'warehouse';
+  document.getElementById('b1').className = 'fm-btn' + (n === 1 ? ' primary' : '');
   document.getElementById('b2').className = 'fm-btn' + (n === 2 ? ' primary' : '');
-  document.getElementById('b4').className = 'fm-btn' + (n === 4 ? ' primary' : '');
+  let st = document.getElementById('tag-page-size');
+  if (!st) { st = document.createElement('style'); st.id = 'tag-page-size'; document.head.appendChild(st); }
+  st.textContent = n === 1
+    ? '@page { size: 210mm 148mm; margin: 6mm; }'
+    : '@page { size: 210mm 297mm; margin: 6mm; }';
 }
 
-/** ป้ายชุดเดียวกันมักติดหลายกล่องของ PO เดียวกัน — คัดลอกทีเดียวแทนพิมพ์ซ้ำสี่รอบ */
+/** ของ PO เดียวกันมักติดหลายกล่อง — ใบที่สองมักซ้ำใบแรกทั้งใบ */
 function copyFirst() {
   const tags = [...document.querySelectorAll('.tag')];
   const src = [...tags[0].querySelectorAll('input')].map((i) => i.value);
-  tags.slice(1).forEach((t) => {
-    [...t.querySelectorAll('input')].forEach((i, k) => {
-      i.value = src[k];
-      i.dispatchEvent(new Event('input', { bubbles: true }));
-    });
+  [...tags[1].querySelectorAll('input')].forEach((i, k) => {
+    i.value = src[k];
+    i.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }
 
-// ผูกกล่องช่วยค้น SKU ตัวเดียวกับที่ฟอร์มอื่นใช้ (มันข้ามการเติมชื่อเองเพราะ
-// ที่นี่ไม่ได้เป็นตาราง จึงเติมชื่อด้วยตัวจัดการข้างบนแทน)
 WhForm.wire(document.getElementById('tags'));
 
-document.querySelectorAll('.tag input[type=date]').forEach((el) => {
-  const d = new Date();
-  el.value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') +
-             '-' + String(d.getDate()).padStart(2, '0');
-});
+// RC/Date คือวันที่รับเข้า ซึ่งคือวันที่กรอกป้ายเกือบทุกครั้ง
+const d = new Date();
+const today = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') +
+              '-' + String(d.getDate()).padStart(2, '0');
+document.querySelectorAll('[data-rc]').forEach((el) => { el.value = today; });
+
+setPer(1);
 WhShared.warnIfNoSku();
 </script>
 </body>
