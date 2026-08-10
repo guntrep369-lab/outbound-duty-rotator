@@ -1545,7 +1545,7 @@ const PICK_CATS = [
 ];
 const GIFT_CATS = [
   { label: 'ชุดเครื่องนอน',   re: /ชุดเครื่องนอน|bedding set/i },
-  { label: 'ผ้านวม',         re: /ผ้านวม|duvet|comforter/i },
+  { label: 'ผ้านวม / ผ้าห่ม', re: /ผ้านวม|ผ้าห่ม|duvet|comforter|blanket/i },
   { label: 'ผ้ารองกันเปื้อน', re: /ผ้ารอง|กันเปื้อน|protector/i },
   // กลุ่มนวดต้องมาก่อนหมอน ไม่งั้น "หมอนนวด" จะถูกกลุ่มหมอนจับไปก่อน
   { label: '💆 เครื่องนวด / ปืนนวด',
@@ -1553,12 +1553,14 @@ const GIFT_CATS = [
   // สะกดได้ทั้ง โน๊ต และ โน้ต จึงรับทั้งสองแบบ ไม่งั้นครึ่งหนึ่งของรายการหลุดกลุ่ม
   { label: '🖥️ แขนจับจอ / ที่วางโน้ตบุ๊ค',
     re: /แขนจับจอ|ขาตั้งจอ|(ที่|แท่น)วางโน[๊้]ตบุ[๊้]ค|monitor\s*(arm|stand|mount)|(laptop|notebook)\s*stand/i },
-  // ท๊อปโต๊ะ/ขาโต๊ะ มีคำว่า "โต๊ะ" อยู่แล้ว แต่เขียนแยกไว้ให้เห็นว่าตั้งใจรวมสามอย่างนี้
-  { label: '🪑 เก้าอี้ / ท๊อปโต๊ะ / ขาโต๊ะ',
-    re: /เก้าอี้|ท[๊็]อปโต๊ะ|ขาโต๊ะ|โต๊ะ|chair|desk|table\s*top/i },
   // ปลอกหมอนมาก่อนหมอน ด้วยเหตุผลเดียวกัน — ชื่อมีคำว่า "หมอน"/"pillow" อยู่แล้ว
   { label: 'ปลอกหมอน',       re: /ปลอกหมอน|pillow\s*case|pillowcase/i },
   { label: 'หมอน',           re: /หมอน|pillow/i },
+  // ของชิ้นใหญ่ ทีมขอให้อยู่ท้ายใบเสมอ — last:true ไม่ใช่แค่วางไว้ล่างสุดของ
+  // รายการนี้ เพราะ "อื่น ๆ" ถูกจัดให้อยู่ท้ายอยู่แล้ว ถ้าไม่ทำเครื่องหมายไว้
+  // กลุ่มนี้จะไปโผล่เหนือ อื่น ๆ ทุกครั้งที่มีของหลุดกลุ่ม
+  { label: '🪑 เก้าอี้ / ท๊อปโต๊ะ / ขาโต๊ะ', last: true,
+    re: /เก้าอี้|ท[๊็]อปโต๊ะ|ขาโต๊ะ|โต๊ะ|chair|desk|table\s*top/i },
 ];
 
 /**
@@ -1834,11 +1836,12 @@ function renderPickGroup(title, list) {
   // เรียงหมวดตามลำดับใน PICK_CATS/GIFT_CATS ไม่ใช่ตามที่บังเอิญเจอก่อนในข้อมูล
   // เพื่อให้ใบหยิบหน้าตาเหมือนกันทุกวัน คนหยิบจะได้ชินที่
   const order = (list[0] && list[0].type === 'gift') ? GIFT_CATS : PICK_CATS;
-  const sorted = [...cats.values()].sort((a, b) => {
-    const ia = order.findIndex(c => c.label === a.cat.label);
-    const ib = order.findIndex(c => c.label === b.cat.label);
-    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);   // อื่น ๆ ไว้ท้ายสุดเสมอ
-  });
+  const rank = (c) => {
+    if (c.last) return 999;                    // กลุ่มที่ทีมขอให้อยู่ท้ายใบ
+    const i = order.findIndex(x => x.label === c.label);
+    return i < 0 ? 99 : i;                     // ไม่รู้จัก (อื่น ๆ) มาก่อนกลุ่มท้ายใบ
+  };
+  const sorted = [...cats.values()].sort((a, b) => rank(a.cat) - rank(b.cat));
 
   let body = '';
   for (const { cat, items } of sorted) {
