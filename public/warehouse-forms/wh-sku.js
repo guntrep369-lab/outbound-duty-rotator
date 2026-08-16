@@ -13,6 +13,14 @@
  * WHY ไม่ฝังไว้ใน repo: repo นี้เป็น public การใส่รหัสสินค้าและชื่อสินค้าทั้งหมด
  * ลงไปเท่ากับเผยแพร่แคตตาล็อกภายในโดยไม่ได้ตั้งใจ
  *
+ * ── สองแหล่ง ───────────────────────────────────────────────────────────
+ * 1. การดึงสต๊อก — ไฟล์สต๊อกมี SKU กับชื่อสินค้าครบอยู่แล้ว และระบบดึงทุกวัน
+ *    ชื่อสินค้าจึงมาเองโดยไม่ต้องให้ใครอัปอะไร (wms-stock.js เก็บไว้ให้)
+ * 2. ไฟล์ที่อัป — ให้สิ่งที่สต๊อกไม่มี คือคู่รหัสขาย↔แถม (ใบขอแปลงรหัสสินค้า)
+ *    และรหัสอีกแบบหนึ่งของสินค้าเดียวกัน (รหัสสั้น/รหัสยาว)
+ *
+ * ไฟล์ที่อัปมาก่อนเสมอเมื่อมีทั้งคู่ เพราะเป็นของที่คนตั้งใจเอามาใส่
+ *
  * โหลดเป็น classic script เปิดเป็น window.WhSku
  */
 (function () {
@@ -36,8 +44,23 @@
   function index() {
     if (_idx) return _idx;
     var db = read();
-    _idx = { bySku: Object.create(null), pairOf: Object.create(null), items: db ? db.items : [] };
+    _idx = { bySku: Object.create(null), pairOf: Object.create(null), items: [] };
+
+    /* ชื่อจากสต๊อกลงก่อน แล้วให้ไฟล์ที่อัปทับทีหลัง — ของที่คนตั้งใจเอามาใส่
+       ควรชนะของที่ระบบหยิบมาให้เอง และไฟล์ที่อัปมีรหัสอีกแบบ (pid) ด้วย */
+    var st = window.WmsStock && window.WmsStock.names();
+    if (st) {
+      Object.keys(st.names).forEach(function (code) {
+        var it = { sku: code, pid: '', name: st.names[code], from: 'stock' };
+        _idx.bySku[norm(code)] = it;
+        _idx.items.push(it);
+      });
+    }
+
     if (!db) return _idx;
+    _idx.items = db.items.concat(_idx.items.filter(function (it) {
+      return !db.items.some(function (d) { return norm(d.sku) === norm(it.sku); });
+    }));
     db.items.forEach(function (it) {
       // ชี้ได้ทั้งรหัสสั้น (AHM001) และรหัสยาว (AHM0000000001) เพราะเอกสารคนละใบ
       // ใช้คนละแบบ และคนกรอกก็หยิบมาจากที่ที่มีอยู่ตรงหน้า
@@ -96,6 +119,23 @@
 
     /** @returns {{at:number, items:Array, pairs:Array, fileName:string}|null} */
     get: read,
+
+    /**
+     * แหล่งที่มาของชื่อสินค้าตอนนี้ ใช้บอกผู้ใช้ว่ายังต้องอัปไฟล์อยู่ไหม
+     * @returns {{stock:{count:number,at:number}|null, file:{count:number,pairs:number,fileName:string,at:number}|null}}
+     */
+    sources: function () {
+      var st = window.WmsStock && window.WmsStock.names();
+      var db = read();
+      return {
+        stock: st ? { count: st.count, at: st.at } : null,
+        file: db ? { count: db.items.length, pairs: (db.pairs || []).length,
+                     fileName: db.fileName || '', at: db.at || 0 } : null,
+      };
+    },
+
+    /** ให้หน้าที่เพิ่งดึงสต๊อกมาสั่งสร้าง index ใหม่ ไม่ต้องโหลดหน้าใหม่ */
+    refresh: function () { _idx = null; },
 
     /** @returns {{ok:boolean, error?:string}} */
     save: function (fileName, parsed) {

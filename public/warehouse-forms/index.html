@@ -60,15 +60,18 @@
       <h3>📚 รายชื่อสินค้า <span id="skuStat" style="margin-left:auto"></span></h3>
       <div class="in">
         <div class="sku-row">
-          <button class="fm-btn primary" onclick="document.getElementById('skuFile').click()">📁 อัปไฟล์ Excel</button>
-          <button class="fm-btn" onclick="clearSku()">ลบรายชื่อ</button>
+          <button class="fm-btn primary" id="skuPull" onclick="pullSku()">📦 ดึงจากสต๊อก</button>
+          <button class="fm-btn" onclick="document.getElementById('skuFile').click()">📁 อัปไฟล์ Excel</button>
+          <button class="fm-btn" onclick="clearSku()">ลบไฟล์ที่อัป</button>
           <input type="file" id="skuFile" accept=".xlsx,.xls" style="display:none">
           <span class="sku-msg" id="skuMsg"></span>
         </div>
         <div class="sku-hint">
-          ใช้ไฟล์ <b>แบบฟอร์มเบิกของ QA.xlsx</b> ได้เลย — ระบบอ่านชีต <code>data</code> (รหัส/ชื่อสินค้า)
-          และ <code>Master แปลงบาร์</code> (คู่ขาย↔แถม) เก็บไว้ในเบราว์เซอร์เครื่องนี้เท่านั้น
-          ไม่ได้อัปขึ้นที่ไหน อัปใหม่เมื่อมีสินค้าเพิ่ม
+          <b>ชื่อสินค้ามาจากการดึงสต๊อกเองแล้ว</b> — ไฟล์สต๊อกมีรหัสกับชื่อครบอยู่แล้ว
+          ไม่ต้องอัปอะไรถ้าแค่อยากให้ช่อง “ชื่อสินค้า” ขึ้นเอง<br>
+          อัป <b>แบบฟอร์มเบิกของ QA.xlsx</b> เมื่อต้องใช้ <code>Master แปลงบาร์</code>
+          (คู่ขาย↔แถม ของ<b>ใบขอแปลงรหัสสินค้า</b>) หรือเมื่ออยากค้นด้วยรหัสอีกแบบที่สต๊อกไม่มี —
+          ทั้งสองอย่างเก็บไว้ในเบราว์เซอร์เครื่องนี้เท่านั้น ไม่ได้อัปขึ้นที่ไหน
         </div>
         <div class="sku-try">
           <input id="skuTry" type="text" placeholder="ลองพิมพ์รหัสดู เช่น ZCP057" autocomplete="off">
@@ -83,6 +86,9 @@
 </div><!-- /.wms-shell -->
 
 <script type="module" src="../wms-shell.js"></script>
+<script src="../wms-settings.js"></script>
+<script src="../wms-gas.js"></script>
+<script src="../wms-stock.js"></script>
 <script src="./wh-sku.js"></script>
 <script type="module" src="./wh-nav.js"></script>
 <script type="module">
@@ -107,17 +113,49 @@ document.getElementById('list').innerHTML = FORMS.map((f) => `
   </div>`).join('');
 </script>
 <script>
+/**
+ * สถานะของรายชื่อสินค้า — มาได้สองทาง
+ *
+ * ชื่อสินค้ามาจากการดึงสต๊อกเองแล้ว ไฟล์ที่อัปจึงเหลือหน้าที่เดียวคือคู่ขาย↔แถม
+ * ที่สต๊อกไม่มี การ์ดนี้ต้องบอกตามจริง ไม่ใช่ยังขึ้นว่า "ยังไม่มีรายชื่อ" ทั้งที่
+ * ฟอร์มเติมชื่อให้ได้อยู่แล้ว — คนจะไปหาไฟล์มาอัปทั้งที่ไม่ต้องทำอะไรเลย
+ */
 function paintSku() {
-  const db = WhSku.get();
+  const src = WhSku.sources();
   const stat = document.getElementById('skuStat');
-  if (db) {
-    const when = new Date(db.at).toLocaleDateString('th-TH', { day:'numeric', month:'short', year:'numeric' });
+  const day = (t) => new Date(t).toLocaleDateString('th-TH', { day:'numeric', month:'short' });
+  const bits = [];
+
+  if (src.stock) bits.push(`📦 <b>${src.stock.count.toLocaleString()}</b> ชื่อจากสต๊อก · ${day(src.stock.at)}`);
+  if (src.file)  bits.push(`📁 <b>${src.file.pairs}</b> คู่ขาย↔แถม · ${day(src.file.at)}`);
+
+  if (bits.length) {
     stat.className = 'sku-stat';
-    stat.innerHTML = `<b>${db.items.length.toLocaleString()}</b> สินค้า · <b>${(db.pairs||[]).length}</b> คู่ขาย↔แถม · ${when}`;
+    stat.innerHTML = bits.join(' &nbsp;·&nbsp; ');
   } else {
     stat.className = 'sku-stat warn';
-    stat.textContent = '⚠️ ยังไม่มีรายชื่อสินค้า — ฟอร์มจะไม่เติมชื่อให้';
+    stat.textContent = '⚠️ ยังไม่มีรายชื่อสินค้า — ดึงสต๊อกหรืออัปไฟล์ก่อน';
   }
+  const pull = document.getElementById('skuPull');
+  if (pull) pull.style.display = WmsStock.savedUrl() ? '' : 'none';
+}
+
+/** ดึงสต๊อกจากตรงนี้เลย ไม่ต้องเดินไปเปิดโมดูลสต๊อกแล้วเดินกลับมา */
+async function pullSku() {
+  const url = WmsStock.savedUrl();
+  if (!url) return;
+  const btn = document.getElementById('skuPull');
+  btn.disabled = true; btn.textContent = 'กำลังดึง…';
+  say('', '');
+  try {
+    const r = await WmsStock.pull(url, { onProgress: (s) => { btn.textContent = `กำลังดึง… ${s} วิ`; } });
+    WhSku.refresh();
+    paintSku();
+    say(`ได้ชื่อสินค้า ${r.count.toLocaleString()} รายการ`, 'ok');
+  } catch (err) {
+    say('ดึงสต๊อกไม่สำเร็จ — ' + err.message, 'bad');
+  }
+  btn.disabled = false; btn.textContent = '📦 ดึงจากสต๊อก';
 }
 
 function say(msg, cls) {

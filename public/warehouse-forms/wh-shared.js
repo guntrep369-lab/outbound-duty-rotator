@@ -76,7 +76,10 @@
      * ต้องบอกตรงนี้ ไม่ใช่ปล่อยให้พิมพ์รหัสแล้วสงสัยว่าทำไมช่องชื่อว่าง
      */
     warnIfNoSku: function () {
-      if (window.WhSku && WhSku.get()) return;
+      // นับทั้งสองแหล่ง — ชื่อสินค้ามาจากการดึงสต๊อกได้แล้ว การเตือนให้ไปอัปไฟล์
+      // ทั้งที่ฟอร์มเติมชื่อได้อยู่แล้ว คือส่งคนไปทำงานที่ไม่ต้องทำ
+      var src = window.WhSku && window.WhSku.sources();
+      if (src && (src.stock || src.file)) return;
       var slot = document.getElementById('warnSlot');
       if (!slot) return;
       // ต่อท้าย ไม่ใช่เขียนทับ — ช่องนี้อาจมีข้อความจากที่อื่นอยู่แล้ว เช่นแถบ

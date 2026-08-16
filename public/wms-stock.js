@@ -103,6 +103,42 @@
      แล้วต้องหายไป ไม่งั้นพรุ่งนี้เปิดมาจะเห็นยอดเมื่อวานโดยไม่มีอะไรบอก */
   var KEY = 'wms:stock:today';
 
+  /**
+   * ชื่อสินค้าที่ได้จากการดึงสต๊อก เก็บแยกไว้ให้ทั้งระบบใช้
+   *
+   * ไฟล์สต๊อกมี SKU กับชื่อสินค้าครบทุกตัวอยู่แล้ว ฟอร์มคลังสินค้าจึงไม่ควรต้อง
+   * ให้คนอัปไฟล์รายชื่อซ้ำอีกไฟล์เพื่อได้ข้อมูลชุดเดียวกัน
+   *
+   * WHY localStorage ทั้งที่ยอดสต๊อกอยู่ใน sessionStorage: ยอดคงเหลือเป็นตัวเลข
+   * ของ "ตอนนี้" ค้างข้ามวันแล้วอันตราย ส่วนชื่อสินค้าไม่ได้เปลี่ยนรายวัน และ
+   * ฟอร์มคลังถูกเปิดมาพิมพ์เดี่ยว ๆ โดยไม่ได้ดึงสต๊อกก่อนเสมอไป — ถ้าชื่อหายไป
+   * พร้อมยอด คนจะกลับไปเจอฟอร์มที่กรอกรหัสแล้วชื่อไม่ขึ้นเหมือนเดิม
+   */
+  var NAMES_KEY = 'wms:sku:names';
+
+  function saveNames(map) {
+    try {
+      var out = {};
+      var n = 0;
+      Object.keys(map).forEach(function (k) {
+        var d = map[k] && map[k].description;
+        if (d) { out[k] = d; n++; }
+      });
+      if (!n) return;                              // ไฟล์ไม่มีชื่อสินค้า อย่าไปลบของเดิมทิ้ง
+      localStorage.setItem(NAMES_KEY, JSON.stringify({ at: Date.now(), count: n, names: out }));
+    } catch (e) {
+      console.warn('เก็บชื่อสินค้าจากสต๊อกไม่ได้ —', e.message);
+    }
+  }
+
+  /** @returns {{at:number, count:number, names:Object}|null} */
+  function readNames() {
+    try {
+      var o = JSON.parse(localStorage.getItem(NAMES_KEY) || 'null');
+      return o && o.names && Object.keys(o.names).length ? o : null;
+    } catch (e) { return null; }
+  }
+
   /** @returns {{at:number, map:Object, source:string, url:string, filename:string}|null} */
   function read() {
     var o = null;
@@ -119,6 +155,7 @@
         at: at || Date.now(), map: map,
         source: m.source || null, url: m.url || '', filename: m.filename || '',
       }));
+      saveNames(map);
     } catch (e) {
       console.warn('เก็บสต๊อกของวันนี้ไม่ได้ —', e.message);
     }
@@ -141,6 +178,11 @@
     read: read,
     save: save,
     pull: pull,
+
+    /* ชื่อสินค้าที่ระบบรู้จักจากการดึงสต๊อกครั้งล่าสุด — ฟอร์มคลังสินค้าใช้เติม
+       ช่อง "ชื่อสินค้า" โดยไม่ต้องให้ใครอัปไฟล์รายชื่อซ้ำ */
+    NAMES_KEY: NAMES_KEY,
+    names: readNames,
 
     /* URL เป็นของ WmsSettings — ที่นี่แค่ส่งต่อ เพื่อไม่ให้ชื่อคีย์อยู่สองไฟล์ */
     savedUrl: function () { return window.WmsSettings ? WmsSettings.stockUrl() : ''; },
