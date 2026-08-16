@@ -20,6 +20,11 @@ const SRC = fs.readFileSync(
   'utf8'
 );
 
+/* transport-file.js เขียนวันที่ผ่าน ../wms-date.js เพื่อให้ทุกหน้าในระบบเขียน
+   เหมือนกัน — โหลดตัวจริงเข้าไปด้วย ไม่ใช่ทำ stub ปลอม ๆ ขึ้นมา ไม่งั้นเทสต์จะ
+   ผ่านกับกติกาวันที่ที่ไม่มีอยู่จริง */
+const DATE_SRC = fs.readFileSync(path.resolve(__dirname, '../../public/wms-date.js'), 'utf8');
+
 const ROWS = [['รถ1', '16/08/2026', '', 'SO-1', 'แบรนด์A', '6ฟุต', 1, '', '',
                'คุณเอ', '0812345678', '', 'กรุงเทพ', '09:00']];
 
@@ -76,6 +81,7 @@ function boot(files, opts = {}) {
     },
   };
 
+  new Function('window', DATE_SRC)(win);
   new Function('window', 'sessionStorage', 'console', 'document', 'location', SRC)(
     win, sessionStorage, { warn: () => {} }, document, location
   );

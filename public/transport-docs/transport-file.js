@@ -296,23 +296,10 @@
     return e;
   }
 
-  /** "วันนี้ 08:15" / "14 ส.ค. 08:15" — เวลาจากสคริปต์เป็น 'YYYY-MM-DD HH:mm' */
-  function whenLabel(at) {
-    var s = String(at || '');
-    var m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}:\d{2})/.exec(s);
-    if (!m) return s;
-    var d = new Date(+m[1], +m[2] - 1, +m[3]);
-    var today = new Date(); today.setHours(0, 0, 0, 0);
-    if (d.getTime() === today.getTime()) return 'วันนี้ ' + m[4] + ' น.';
-    return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }) + ' ' + m[4] + ' น.';
-  }
-
-  function isToday(at) {
-    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(at || ''));
-    if (!m) return false;
-    var t = new Date(); t.setHours(0, 0, 0, 0);
-    return new Date(+m[1], +m[2] - 1, +m[3]).getTime() === t.getTime();
-  }
+  /* รูปแบบวันที่ทั้งหมดอยู่ที่ ../wms-date.js — ทุกหน้าต้องเขียนวันเหมือนกัน
+     และกติกา "ปีปัจจุบันไม่ต้องเขียน ปีอื่นต้องเขียน" ต้องมีชุดเดียว */
+  function whenLabel(at) { return window.WmsDate.when(at); }
+  function isToday(at) { return window.WmsDate.isToday(at); }
 
   function host() {
     var found = document.getElementById('tc-bar');
@@ -397,26 +384,8 @@
            ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
   }
 
-  /** 'วันนี้' แบบ YYYY-MM-DD ตามเครื่องผู้ใช้ */
-  function todayYmd() {
-    var d = new Date(), p = function (n) { return String(n).padStart(2, '0'); };
-    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
-  }
-
-  /** '17 ส.ค.' หรือ '16–17 ส.ค.' จากรายการวันที่ของงานในไฟล์ */
-  function workLabel(forDates) {
-    var ds = (forDates || []).filter(Boolean).sort();
-    if (!ds.length) return '';
-    var th = function (v) {
-      var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
-      if (!m) return v;
-      return new Date(+m[1], +m[2] - 1, +m[3])
-        .toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
-    };
-    if (ds.length === 1) return th(ds[0]);
-    if (ds.length === 2) return th(ds[0]) + ', ' + th(ds[1]);
-    return th(ds[0]) + '–' + th(ds[ds.length - 1]);
-  }
+  /** '17 ส.ค.' / '16 ส.ค., 17 ส.ค.' / '16 ส.ค.–18 ส.ค.' จากวันที่ของงานในไฟล์ */
+  function workLabel(forDates) { return window.WmsDate.range(forDates); }
 
   /**
    * @param {Function} [onPicked] เรียกเมื่อเลือกไฟล์เสร็จ ถ้าไม่ส่งมาจะโหลดหน้าใหม่
@@ -512,7 +481,7 @@
    * บันทึกวันนี้ — ไม่งั้นของเก่าที่ยังใช้อยู่จะหายไปเฉย ๆ ตอนอัปเดตระบบ
    */
   function autoPick(files) {
-    var today = todayYmd();
+    var today = window.WmsDate.todayYmd();
     var i;
     for (i = 0; i < files.length; i++) {
       if ((files[i].forDates || []).indexOf(today) >= 0) return files[i];

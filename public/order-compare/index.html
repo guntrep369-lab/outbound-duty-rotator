@@ -875,6 +875,7 @@ td{padding:9px 12px;vertical-align:middle}
 </div><!-- /tab-consigncheck -->
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="../wms-date.js"></script>
 <script src="../wms-settings.js"></script>
 <script src="../wms-gas.js"></script>
 <script src="../wms-order-index.js"></script>
@@ -2533,17 +2534,9 @@ function updateDataBar() {
 function comparedDates() {
   const ds = [...new Set(carriersData.map(c => c.date).filter(Boolean))].sort();
   if (!ds.length) return '';
-  const th = (v) => {
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
-    if (!m) return v;
-    return new Date(+m[1], +m[2] - 1, +m[3])
-      .toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
-  };
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const m0 = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ds[0]);
-  const isToday = ds.length === 1 && m0 &&
-    new Date(+m0[1], +m0[2] - 1, +m0[3]).getTime() === today.getTime();
-  return ` <span class="ddate${isToday ? '' : ' ahead'}">· ของวันที่ ${ds.map(th).join(', ')}</span>`;
+  const isToday = ds.length === 1 && WmsDate.isToday(ds[0]);
+  return ` <span class="ddate${isToday ? '' : ' ahead'}">· ของวันที่ ` +
+         `${ds.map(WmsDate.thai).join(', ')}</span>`;
 }
 
 /**
