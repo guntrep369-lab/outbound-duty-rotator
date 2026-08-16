@@ -679,7 +679,7 @@ td{padding:9px 12px;vertical-align:middle}
     </div>
     <div class="stat-card">
       <div class="stat-icon" style="background:var(--changed-bg)">⚠️</div>
-      <div><h4 id="lowSKUs" style="color:var(--changed)">0</h4><p>เหลือน้อย</p></div>
+      <div><h4 id="lowSKUs" style="color:var(--changed)">0</h4><p>เหลือน้อย (&lt;10 ชิ้น)</p></div>
     </div>
     <div class="stat-card">
       <div class="stat-icon" style="background:var(--removed-bg)">🚫</div>
@@ -691,7 +691,7 @@ td{padding:9px 12px;vertical-align:middle}
   <div class="filter-bar" id="stockFilterBar" style="display:none">
     <button class="filter-tab active" data-sfilter="all" onclick="setStockFilter('all',this)">ทั้งหมด <span class="cnt" id="scnt-all">0</span></button>
     <button class="filter-tab" data-sfilter="out" onclick="setStockFilter('out',this)">🚫 ไม่พอ/หมด <span class="cnt" id="scnt-out">0</span></button>
-    <button class="filter-tab" data-sfilter="low" onclick="setStockFilter('low',this)">⚠️ เหลือน้อย <span class="cnt" id="scnt-low">0</span></button>
+    <button class="filter-tab" data-sfilter="low" onclick="setStockFilter('low',this)">⚠️ เหลือน้อย &lt;10 <span class="cnt" id="scnt-low">0</span></button>
     <button class="filter-tab" data-sfilter="ok" onclick="setStockFilter('ok',this)">✅ พอ <span class="cnt" id="scnt-ok">0</span></button>
     <button class="filter-tab" data-sfilter="na" onclick="setStockFilter('na',this)">— ไม่มีในสต๊อก <span class="cnt" id="scnt-na">0</span></button>
     <div class="search-box">
@@ -867,6 +867,15 @@ const esc = v => String(v ?? '')
 let data1 = [], data2 = [], stockRaw = []; // stockRaw = rows the stock tab reads
 let stockSourceLabel = '';  // which sheet those rows came from, shown on the results
 let stockLoadedAt = 0;   // เวลาที่สต๊อกชุดล่าสุดเข้าระบบ ใช้แสดงบนแถบข้อมูล
+/**
+ * ต่ำกว่านี้ถือว่าเหลือน้อย — เป็นจำนวนชิ้นตรง ๆ ไม่ผูกกับยอดที่ต้องใช้วันนี้
+ *
+ * เดิมสองที่คิดคนละแบบ: ตารางหลักใช้ need×1.5 ส่วนแผงย่อยใต้แถวใช้ qty×2
+ * SKU เดียวกันจึงขึ้น "เหลือน้อย" ที่หนึ่งแต่ "พอ" อีกที่หนึ่งได้ และเกณฑ์ที่ผูกกับ
+ * ยอดวันนี้ยังแปลว่าของ 8 ชิ้นจะดู "พอ" ทุกวันที่ออเดอร์น้อย ทั้งที่ใกล้หมดจริง
+ */
+const LOW_STOCK_QTY = 10;
+
 let stockMap = {};   // sku -> {sku, description, qa, newwh, total}
 let diffResults = [];
 let skuDemand = {};  // sku -> {qty, name, orders:[]}
@@ -1513,7 +1522,7 @@ function renderStockPanel(norm) {
     if (!s) return `<div class="stock-row"><span title="${item.sku}">${item.name}</span><span>—</span><span>—</span><span>—</span><span class="badge stock-na">ไม่มีข้อมูล</span></div>`;
     const badge = s.total <= 0 ? `<span class="badge stock-out">หมด (${s.total})</span>`
       : s.total < item.qty ? `<span class="badge stock-out">ไม่พอ (${s.total}/${item.qty})</span>`
-      : s.total < item.qty * 2 ? `<span class="badge stock-low">เหลือน้อย (${s.total})</span>`
+      : s.total < LOW_STOCK_QTY ? `<span class="badge stock-low">เหลือน้อย (${s.total})</span>`
       : `<span class="badge stock-ok">พอ (${s.total})</span>`;
     return `<div class="stock-row"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${item.sku}">${item.name}</span><span style="text-align:center">${s.qa}</span><span style="text-align:center">${s.newwh}</span><span style="text-align:center;font-weight:600">${s.total}</span>${badge}</div>`;
   }).join('');
@@ -1995,7 +2004,7 @@ function runStockCheck() {
     if (s) {
       qa = s.qa; newwh = s.newwh; total = s.total;
       if (s.total <= 0 || s.total < need) status = 'out';
-      else if (s.total < need * 1.5)      status = 'low';
+      else if (s.total < LOW_STOCK_QTY)  status = 'low';
       else                                 status = 'ok';
     }
     const orderList = Object.values(d.orderMap).sort((a,b) => a.orderId.localeCompare(b.orderId));
