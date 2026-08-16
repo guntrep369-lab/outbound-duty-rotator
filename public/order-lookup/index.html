@@ -213,7 +213,8 @@ function renderSrc() {
   } else {
     html += TRUCK_ERR
       ? `<span class="pill warn">🚚 ${esc(TRUCK_ERR)}</span>`
-      : `<span class="pill">🚚 ยังไม่มีไฟล์รถบริษัท — จะไม่บอกคันรถและคิวจุดส่ง</span>`;
+      // เวลานัดมาจากชีตออเดอร์ได้แล้ว ไฟล์รถจึงเหลือหน้าที่บอกคันรถกับคิวจุดส่ง
+      : `<span class="pill">🚚 ยังไม่มีไฟล์รถบริษัท — เวลานัดยังขึ้นจากชีตออเดอร์ แต่จะไม่บอกคันรถและคิวจุดส่ง</span>`;
     // ตั้งส่วนกลางไว้แล้วแต่ยังไม่ได้ไฟล์ = ดึงเองซ้ำได้ ไม่ต้องรอใครอัปให้
     if (central) html += `<button onclick="pickTruck()">📁 เลือกไฟล์รถ</button>` +
                          `<button onclick="pullTruck(true)">🚚 ของวันนี้</button>`;
@@ -397,6 +398,26 @@ function hi(text, raw) {
   return esc(t.slice(0, from)) + '<mark>' + esc(t.slice(from, to)) + '</mark>' + esc(t.slice(to));
 }
 
+/**
+ * เวลานัดของออเดอร์นี้
+ *
+ * มีสองแหล่ง: ไฟล์รถบริษัทที่ทีมขนส่งจัดรอบไว้ กับคอลัมน์ "เวลานัด" ในชีตออเดอร์
+ * ซึ่งดึงมาอยู่แล้วทุกเช้า — เมื่อก่อนใช้แค่แหล่งแรก คนรับสายจึงไม่เห็นเวลานัดเลย
+ * จนกว่าจะมีคนอัปไฟล์รถ ทั้งที่ข้อมูลอยู่ในมือแล้ว
+ *
+ * ไฟล์รถมาก่อนเมื่อมี เพราะเป็นตัวจัดรอบจริงและมาคู่กับคันรถที่แสดงข้าง ๆ กัน
+ * ถ้าเอาเวลาจากคนละแหล่งกับคันรถมาแสดงคู่กันแล้วสองค่าไม่ตรง จะอ่านไม่ออกว่า
+ * อันไหนจริง
+ *
+ * ในชีต เวลานัดกรอกไว้ที่แถวแรกของออเดอร์ แถวที่เหลือเป็น "-" จึงไล่หาค่าแรก
+ * ที่ใช้ได้ในกลุ่ม ไม่ใช่อ่านแค่แถวแรกที่บังเอิญเรียงมาก่อน
+ */
+function apptTime(g, t) {
+  if (t && t.time) return esc(t.time);
+  const hit = g.rows.find(r => r.apptTime);
+  return hit ? esc(hit.apptTime) : '';
+}
+
 const field = (k, v, cls) =>
   `<div class="oc-f"><div class="k">${k}</div><div class="v ${cls || ''}">${v || '<span class="dim">—</span>'}</div></div>`;
 
@@ -427,7 +448,7 @@ function card(g, raw) {
       ${field('ลูกค้า', hi(r.customer, raw))}
       ${field('เบอร์โทร', [r.phone1, r.phone2].filter(Boolean).map(p => hi(p, raw)).join(' · '), 'mono')}
       ${field('เลข Consign', consigns.map(c => hi(c, raw)).join('<br>'), 'mono')}
-      ${field('เวลานัด', t && t.time ? esc(t.time) : '')}
+      ${field('เวลานัด', apptTime(g, t))}
       ${field('การเงิน', esc(r.payment || ''))}
       ${field('ที่อยู่', hi(r.address, raw))}
       ${r.remark ? field('หมายเหตุ', esc(r.remark)) : ''}

@@ -22,7 +22,8 @@
    * ก็คือของที่ไม่มีใครสังเกตว่ามันผิด
    */
   var FIELDS = ['orderID', 'consign', 'sup', 'customer', 'address', 'phone1', 'phone2',
-                'brand', 'size', 'qty1', 'giftRaw', 'qtyRaw', 'payment', 'remark', 'date'];
+                'brand', 'size', 'qty1', 'giftRaw', 'qtyRaw', 'payment', 'remark', 'date',
+                'apptTime'];
 
   function pick(row) {
     var o = {};
@@ -78,6 +79,22 @@
   function withApi(url, api) { return window.WmsGas.withApi(url, api); }
   function fetchWithRetry(url, opts) { return window.WmsGas.fetchWithRetry(url, opts); }
 
+  /** ปีที่ทำให้วัน-เดือนนี้อยู่ใกล้วันนี้ที่สุด ใช้กับวันที่ที่ไม่ได้เขียนปีมา */
+  function nearYear(month, day) {
+    var now = new Date(), best = now.getFullYear(), gap = Infinity;
+    for (var y = now.getFullYear() - 1; y <= now.getFullYear() + 1; y++) {
+      var g = Math.abs(new Date(y, month, day).getTime() - now.getTime());
+      if (g < gap) { gap = g; best = y; }
+    }
+    return best;
+  }
+
+  /** ค่าในช่องเวลานัด — "-" กับช่องว่างถือว่าไม่มี */
+  function apptOf(v) {
+    var t = String(v == null ? '' : v).trim();
+    return /^-+$/.test(t) ? '' : t;
+  }
+
   /** แถวดิบจากชีต → รูปแบบที่ทุกหน้าในระบบใช้ */
   function convertGASRows(rows) {
     return (rows || [])
@@ -91,7 +108,17 @@
         var dateStr = '';
         if (rawD) {
           var d = new Date(rawD);
-          dateStr = isNaN(d) ? String(rawD).slice(0, 10) : d.toISOString().slice(0, 10);
+          /* ใช้ส่วนประกอบแบบเวลาท้องถิ่น ไม่ใช่ toISOString ซึ่งลบ 7 ชั่วโมงออกแล้ว
+             ทำให้ "Mon, Aug 17" ในชีตกลายเป็นวันที่ 16 — เลื่อนไปหนึ่งวันเงียบ ๆ */
+          if (isNaN(d)) dateStr = String(rawD).slice(0, 10);
+          else {
+            var pad = function (n) { return String(n).padStart(2, '0'); };
+            /* ชีตเขียนวันที่เป็น "Mon, Aug 17" ซึ่งไม่มีปี ตัวแปลของ JS เติมให้เป็น
+               2001 — ใส่ปีที่ใกล้วันนี้ที่สุดแทน (ข้ามปลายปีขึ้นปีใหม่ได้ด้วย) */
+            var yr = /\d{4}/.test(String(rawD)) ? d.getFullYear()
+                                                : nearYear(d.getMonth(), d.getDate());
+            dateStr = yr + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+          }
         }
         return {
           orderID:  String(r['Order ID']   || '').trim(),
@@ -109,6 +136,10 @@
           payment:  String(r['การเงิน']    || '').trim(),
           remark:   String(r['หมายเหตุ']   || '').trim(),
           date:     dateStr,
+          /* เวลานัดอยู่ในชีตออเดอร์อยู่แล้ว (คอลัมน์ "เวลานัด" ของหน้า Logis)
+             ทีมกรอกไว้ที่แถวแรกของออเดอร์ แถวถัด ๆ ไปใส่ "-" ไว้ ไม่ใช่ปล่อยว่าง
+             จึงต้องตัด "-" ทิ้ง ไม่งั้นจะได้ขีดไปแสดงแทนเวลา */
+          apptTime: apptOf(r['เวลานัด'] || r['เวลา'] || ''),
         };
       });
   }
