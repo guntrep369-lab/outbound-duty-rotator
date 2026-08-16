@@ -17,6 +17,7 @@
 .card > h3{display:flex;align-items:center;gap:9px;font-size:14px;font-weight:700;color:var(--wms-text);
   padding:13px 16px;border-bottom:1px solid var(--wms-border);background:var(--wms-surface2);margin:0}
 .card > h3 .sub{font-size:11.5px;font-weight:400;color:var(--wms-muted);margin-left:auto;text-align:right}
+.sub-inline{font-weight:400;color:var(--wms-muted);font-size:11.5px}
 .card .in{padding:15px 16px;display:flex;flex-direction:column;gap:13px}
 
 .fld{display:flex;flex-direction:column;gap:6px}
@@ -130,6 +131,34 @@
           <div class="msg" id="msg-stock"></div>
         </div>
 
+        <div class="fld">
+          <label><span class="dot" id="dot-transport"></span> Apps Script URL — ไฟล์รถบริษัท</label>
+          <div class="row">
+            <input id="transportUrl" type="url" spellcheck="false"
+                   placeholder="https://script.google.com/macros/s/.../exec">
+            <button class="btn2" onclick="testUrl('transport')">ทดสอบ</button>
+            <button class="btn2 danger" onclick="clearUrl('transport')">ล้าง</button>
+          </div>
+          <div class="hint">
+            ทำให้ไฟล์รถบริษัทที่ทีมขนส่งอัป <b>ข้ามไปเครื่องอื่นได้</b> — ไม่ใส่ก็ยังใช้โมดูลได้ตามปกติ
+            แต่ไฟล์จะอยู่แค่ในเครื่องที่อัป ใส่ URL เดียวกับออเดอร์ได้ถ้าติดตั้ง
+            <code>transport-api.gs</code> ไว้ในโปรเจกต์เดียวกัน
+          </div>
+          <div class="msg" id="msg-transport"></div>
+        </div>
+
+        <div class="fld">
+          <label>รหัสสำหรับบันทึกไฟล์ <span class="sub-inline">(ถ้าตั้ง TRANSPORT_TOKEN ไว้ใน Apps Script)</span></label>
+          <div class="row">
+            <input id="transportToken" type="text" spellcheck="false" autocomplete="off" placeholder="เว้นว่างได้">
+            <input id="meName" type="text" spellcheck="false" autocomplete="off" placeholder="ชื่อคุณ — ติดไปกับไฟล์ที่บันทึก">
+          </div>
+          <div class="hint">
+            ช่องขวาไม่ใช่การล็อกอิน แค่ให้คนที่มาเลือกไฟล์รู้ว่าใครอัปมา
+            เวลามีไฟล์สองไฟล์ของวันเดียวกันจะได้ไม่ต้องเดา
+          </div>
+        </div>
+
         <div class="row">
           <button class="btn2 p" onclick="saveUrls()">💾 บันทึก URL</button>
           <span class="msg" id="msg-save" style="align-self:center"></span>
@@ -220,18 +249,23 @@ function say(id, text, cls) {
 function paintDots() {
   $('dot-order').className = 'dot ' + (WmsSettings.orderUrl() ? 'on' : 'off');
   $('dot-stock').className = 'dot ' + (WmsSettings.stockUrl() ? 'on' : 'off');
+  $('dot-transport').className = 'dot ' + (WmsSettings.transportUrl() ? 'on' : 'off');
 }
 
 function saveUrls() {
   const a = WmsSettings.setOrderUrl($('orderUrl').value);
   const b = WmsSettings.setStockUrl($('stockUrl').value);
+  const c = WmsSettings.setTransportUrl($('transportUrl').value);
+  const d = WmsSettings.setTransportToken($('transportToken').value);
+  const e = WmsSettings.setMe($('meName').value);
   paintDots();
-  if (a && b) say('msg-save', '✅ บันทึกแล้ว', 'ok');
+  if (a && b && c && d && e) say('msg-save', '✅ บันทึกแล้ว', 'ok');
   else say('msg-save', '❌ บันทึกไม่ได้ (เบราว์เซอร์โหมดส่วนตัวหรือพื้นที่เต็ม)', 'bad');
 }
 
 function clearUrl(kind) {
   if (kind === 'order') { WmsSettings.setOrderUrl(''); $('orderUrl').value = ''; }
+  else if (kind === 'transport') { WmsSettings.setTransportUrl(''); $('transportUrl').value = ''; }
   else { WmsSettings.setStockUrl(''); $('stockUrl').value = ''; }
   paintDots();
   say('msg-' + kind, 'ล้างแล้ว', '');
@@ -244,7 +278,7 @@ function clearUrl(kind) {
  * ที่ลบไปแล้ว จะเงียบจนถึงเช้าวันที่ต้องใช้จริง — ตอนนั้นแก้ไม่ทันแล้ว
  */
 async function testUrl(kind) {
-  const raw = (kind === 'order' ? $('orderUrl') : $('stockUrl')).value.trim();
+  const raw = $(kind === 'order' ? 'orderUrl' : kind === 'transport' ? 'transportUrl' : 'stockUrl').value.trim();
   if (!raw) { say('msg-' + kind, 'ใส่ URL ก่อน', 'bad'); return; }
 
   say('msg-' + kind, '⏳ กำลังทดสอบ…', 'busy');
@@ -263,6 +297,13 @@ async function testUrl(kind) {
       const cars = OrderIndex.parsePayload(json);
       const n = cars.reduce((s, c) => s + c.data1.length + c.data2.length, 0);
       say('msg-order', `✅ ต่อได้ — ${cars.length} ขนส่ง · ${n} แถวของวันนี้`, 'ok');
+    } else if (kind === 'transport') {
+      /* ไม่มีไฟล์บันทึกไว้ยังถือว่าต่อได้ — วันแรกที่ตั้งค่ายังไม่มีใครกดบันทึก
+         การขึ้นว่าล้มเหลวตรงนี้จะทำให้คนคิดว่า URL ผิดแล้วไปแก้สิ่งที่ถูกอยู่แล้ว */
+      if (!json.files) throw new Error('ต่อได้ แต่สคริปต์ไม่รู้จัก api=transport — ยังไม่ได้ติดตั้ง transport-api.gs หรือยังไม่ได้ deploy เวอร์ชันใหม่');
+      say('msg-transport', json.files.length
+        ? `✅ ต่อได้ — มีไฟล์บันทึกไว้ ${json.files.length} ไฟล์`
+        : '✅ ต่อได้ — ยังไม่มีไฟล์ที่บันทึกไว้', 'ok');
     } else {
       const n = Array.isArray(json) ? json.length : (json.rows ? json.rows.length : 0);
       if (!n) throw new Error('ต่อได้ แต่ไม่พบแถวสต๊อก — URL นี้อาจเป็นของออเดอร์');
@@ -371,7 +412,8 @@ function doExport() {
 }
 
 const line = (d) =>
-  `<div class="li">🔗 URL ออเดอร์ <b>${d.orderUrl ? 'มี' : '—'}</b> · URL สต๊อก <b>${d.stockUrl ? 'มี' : '—'}</b><br>` +
+  `<div class="li">🔗 URL ออเดอร์ <b>${d.orderUrl ? 'มี' : '—'}</b> · URL สต๊อก <b>${d.stockUrl ? 'มี' : '—'}</b>` +
+    ` · URL ไฟล์รถบริษัท <b>${d.transportUrl ? 'มี' : '—'}</b><br>` +
   `🖼️ โลโก้ <b>${d.logo ? 'มี' : '—'}</b><br>` +
   `👥 ผู้ใช้ <b>${d.users}</b> คน<br>` +
   `📚 สินค้า <b>${d.skus.toLocaleString()}</b> รายการ<br>` +
@@ -417,6 +459,9 @@ document.getElementById('bkFile').addEventListener('change', function () {
       // ค่าที่เพิ่งกู้มาต้องเห็นบนหน้าจอทันที ไม่ใช่รอให้คนรีเฟรชเอง
       $('orderUrl').value = WmsSettings.orderUrl();
       $('stockUrl').value = WmsSettings.stockUrl();
+      $('transportUrl').value = WmsSettings.transportUrl();
+      $('transportToken').value = WmsSettings.transportToken();
+      $('meName').value = WmsSettings.me();
       paintDots(); paintLogo(); paintUsers(); paintBackup();
     });
   };
@@ -426,6 +471,9 @@ document.getElementById('bkFile').addEventListener('change', function () {
 // ── เริ่มต้น ───────────────────────────────────────────────────────────
 $('orderUrl').value = WmsSettings.orderUrl();
 $('stockUrl').value = WmsSettings.stockUrl();
+$('transportUrl').value = WmsSettings.transportUrl();
+$('transportToken').value = WmsSettings.transportToken();
+$('meName').value = WmsSettings.me();
 paintDots(); paintLogo(); paintUsers(); paintBackup();
 </script>
 </body>

@@ -19,6 +19,9 @@
     orderUrl: 'orderapp_order_gas_url',
     stockUrl: 'orderapp_gas_url',
     logo:     'wms:transport:logo',
+    transportUrl:   'wms:transport:url',
+    transportToken: 'wms:transport:token',
+    me:             'wms:me',
   };
 
   function read(key) {
@@ -55,6 +58,28 @@
     logo: function () { return read(KEYS.logo); },
     setLogo: function (v) { return write(KEYS.logo, v); },
 
+    /**
+     * Apps Script URL ของไฟล์รถบริษัทส่วนกลาง
+     *
+     * เป็น URL เดียวกับออเดอร์/สต๊อกได้ (สคริปต์แยกงานด้วย ?api=) แต่แยกช่องไว้
+     * เพราะเป็น deployment ที่ "เขียนได้" ไม่ใช่แค่อ่าน บางที่จึงอาจอยากแยก
+     */
+    transportUrl: function () { return read(KEYS.transportUrl); },
+    setTransportUrl: function (v) { return write(KEYS.transportUrl, v); },
+
+    /** รหัสสั้น ๆ ที่ต้องตรงกับ TRANSPORT_TOKEN ใน Apps Script — เว้นว่างได้ */
+    transportToken: function () { return read(KEYS.transportToken); },
+    setTransportToken: function (v) { return write(KEYS.transportToken, v); },
+
+    /**
+     * ชื่อคนที่ใช้เครื่องนี้ — ติดไปกับไฟล์ที่บันทึกขึ้นส่วนกลาง
+     *
+     * ไม่ใช่การล็อกอินและไม่ได้กันอะไร แค่ให้เด็กคลังที่มาเลือกไฟล์รู้ว่าใครอัปมา
+     * ไฟล์สองไฟล์ของวันเดียวกันจะได้ไม่ต้องเดาว่าอันไหนคือตัวจริง
+     */
+    me: function () { return read(KEYS.me); },
+    setMe: function (v) { return write(KEYS.me, v); },
+
     // ══════════════════════════════════════════════════════════════════
     // สำรอง / กู้คืน
     //
@@ -69,8 +94,12 @@
      * session คือการล็อกอินของคนที่กดสำรอง ไม่ใช่การตั้งค่า — ใส่ไปแล้วใครเอาไฟล์
      * ไปกู้ก็จะกลายเป็นล็อกอินเป็นคนนั้นทันที
      * ส่วน orders/stock/transport:file เป็นข้อมูลของวัน กู้ข้ามวันมาแล้วอันตราย
+     *
+     * wms:me คือชื่อคนที่นั่งเครื่องนี้ ไม่ใช่การตั้งค่าของระบบ — เอาไฟล์ไปกู้อีกเครื่อง
+     * แล้วไฟล์ที่อัปจากเครื่องนั้นจะขึ้นชื่อคนอื่น ซึ่งแย่กว่าไม่มีชื่อเลย เพราะเด็กคลัง
+     * ที่มาเลือกไฟล์จะเชื่อชื่อที่เห็น
      */
-    SKIP: ['wms:session', 'wms:orders', 'wms:stock', 'wms:transport:file'],
+    SKIP: ['wms:session', 'wms:orders', 'wms:stock', 'wms:transport:file', 'wms:me'],
 
     /**
      * เก็บทุกคีย์ที่เป็นการตั้งค่า ไม่ใช่รายการที่เขียนไว้ตายตัว
@@ -97,10 +126,12 @@
       try { users = (JSON.parse(d['wms:users'] || '[]') || []).length; } catch (e) {}
       try { skus = ((JSON.parse(d['wms:wh:sku'] || 'null') || {}).items || []).length; } catch (e) {}
       return {
-        orderUrl: !!d[KEYS.orderUrl], stockUrl: !!d[KEYS.stockUrl], logo: !!d[KEYS.logo],
+        orderUrl: !!d[KEYS.orderUrl], stockUrl: !!d[KEYS.stockUrl],
+        transportUrl: !!d[KEYS.transportUrl], logo: !!d[KEYS.logo],
         users: users, skus: skus,
         others: Object.keys(d).filter(function (k) {
-          return [KEYS.orderUrl, KEYS.stockUrl, KEYS.logo, 'wms:users', 'wms:wh:sku'].indexOf(k) === -1;
+          return [KEYS.orderUrl, KEYS.stockUrl, KEYS.transportUrl, KEYS.logo,
+                  'wms:users', 'wms:wh:sku'].indexOf(k) === -1;
         }).length,
         keys: Object.keys(d).length,
       };
