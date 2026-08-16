@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { Fragment, useState } from 'react';
 import {
   LayoutDashboard,
   CalendarRange,
@@ -20,7 +20,7 @@ import {
   Package,
   Sunrise,
 } from 'lucide-react';
-import { MODULES, BRAND } from '../public/wms-modules.js';
+import { MODULES, GROUPS, BRAND } from '../public/wms-modules.js';
 import { useApp } from './context/useApp.js';
 import { Toasts } from './components/ui/Toasts.jsx';
 import { Dashboard } from './components/Dashboard.jsx';
@@ -126,26 +126,38 @@ function SystemSidebar({ active }) {
 
       {/* Modules — horizontal on mobile, vertical on desktop */}
       <nav className="flex gap-1 overflow-x-auto px-3 pb-2 lg:flex-col lg:overflow-visible lg:px-3">
-        <p className="hidden px-1 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500 lg:block">
-          โมดูล · Modules
-        </p>
-        {MODULES.map((m) => {
-          const Icon = MODULE_ICONS[m.icon];
-          const on = m.id === active;
+        {/* จัดเป็นหมวดให้ตรงกับ wms-shell.js — เมนูสองฝั่งต้องเรียงเหมือนกัน
+            ไม่งั้นคนที่สลับไปมาระหว่างหน้า React กับหน้า static จะหาโมดูลคนละที่ */}
+        {[{ id: null, label: null, labelEn: null }, ...GROUPS].map((g) => {
+          const inGroup = MODULES.filter((m) => (m.group || null) === g.id);
+          if (!inGroup.length) return null;
           return (
-            <a
-              key={m.id}
-              // This module IS the site root, so a module path is already relative to it.
-              href={on ? undefined : `./${m.path}`}
-              aria-current={on ? 'page' : undefined}
-              className={`flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors lg:w-full ${
-                on ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-            >
-              <Icon className="h-4 w-4 shrink-0" />
-              <span className="truncate">{m.label}</span>
-              <span className="hidden text-[11px] opacity-70 lg:inline">{m.labelEn}</span>
-            </a>
+            <Fragment key={g.id || "top"}>
+              {g.label && (
+                <p className="hidden px-1 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500 lg:block">
+                  {g.label} · {g.labelEn}
+                </p>
+              )}
+              {inGroup.map((m) => {
+                const Icon = MODULE_ICONS[m.icon];
+                const on = m.id === active;
+                return (
+                  <a
+                    key={m.id}
+                    // This module IS the site root, so a module path is already relative to it.
+                    href={on ? undefined : `./${m.path}`}
+                    aria-current={on ? 'page' : undefined}
+                    className={`flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors lg:w-full ${
+                      on ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                    }`}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span className="truncate">{m.label}</span>
+                    <span className="hidden text-[11px] opacity-70 lg:inline">{m.labelEn}</span>
+                  </a>
+                );
+              })}
+            </Fragment>
           );
         })}
       </nav>

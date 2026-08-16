@@ -12,19 +12,36 @@
  * way back up ('./' from the root page, '../../' from /transport-docs/kex/).
  */
 
+/**
+ * หมวดของโมดูล เรียงตามลำดับที่อยากให้ขึ้นในเมนู
+ *
+ * เก้าโมดูลเรียงยาวเป็นแถวเดียวโดยลำดับมาจากการทยอยสร้าง ไม่ได้มาจากการใช้งาน
+ * คนเปิดมาต้องอ่านทั้งเก้าอันเพื่อหาอันที่ต้องการ การจับกลุ่มทำให้กวาดตาหาได้
+ * ทีละหมวดแทน
+ *
+ * โมดูลที่ไม่มี group จะอยู่บนสุดโดยไม่มีหัวข้อ — ตอนนี้คือสรุปเช้า ซึ่งเป็นหน้า
+ * ที่เปิดเป็นอันแรกของวันและพาไปที่อื่นต่อ จึงไม่ควรถูกยัดอยู่ในหมวดใดหมวดหนึ่ง
+ */
+export const GROUPS = [
+  { id: 'order',     label: 'ออเดอร์',     labelEn: 'Orders' },
+  { id: 'warehouse', label: 'คลังสินค้า',  labelEn: 'Warehouse' },
+  { id: 'transport', label: 'ขนส่ง',       labelEn: 'Transport' },
+  { id: 'system',    label: 'ทีมและระบบ',  labelEn: 'Team & System' },
+];
+
 export const MODULES = [
   /* สรุปเช้ามาก่อนทุกอย่าง เพราะเป็นหน้าที่ตอบว่า "วันนี้ต้องดูอะไรก่อน" — พอมี
      เก้าโมดูล การเปิดมาแล้วต้องไล่กดดูทีละอันเพื่อหาว่ามีอะไรผิดปกติคือภาระที่
      ระบบควรรับไปเอง */
   { id: 'summary', label: 'สรุปเช้า', labelEn: 'Morning Brief', path: 'summary/', icon: 'sunrise' },
-  { id: 'roster', label: 'จัดตารางงาน', labelEn: 'Duty Roster', path: '', icon: 'calendar' },
-  { id: 'order', label: 'เทียบ Order', labelEn: 'Order Compare', path: 'order-compare/', icon: 'clipboard' },
-  { id: 'stock', label: 'สต๊อกคงเหลือ', labelEn: 'Stock on Hand', path: 'stock/', icon: 'package' },
-  { id: 'transport', label: 'ทำใบงานขนส่ง', labelEn: 'Transport Docs', path: 'transport-docs/', icon: 'truck' },
-  { id: 'forms', label: 'เอกสารขนส่ง', labelEn: 'Transport Forms', path: 'transport-forms/', icon: 'file' },
-  { id: 'lookup', label: 'ค้นหาออเดอร์', labelEn: 'Order Lookup', path: 'order-lookup/', icon: 'search' },
-  { id: 'warehouse', label: 'เอกสารคลังสินค้า', labelEn: 'Warehouse Forms', path: 'warehouse-forms/', icon: 'boxes' },
-  { id: 'settings', label: 'ตั้งค่า', labelEn: 'Settings', path: 'settings/', icon: 'settings' },
+  { id: 'order', label: 'เทียบ Order', labelEn: 'Order Compare', path: 'order-compare/', icon: 'clipboard', group: 'order' },
+  { id: 'lookup', label: 'ค้นหาออเดอร์', labelEn: 'Order Lookup', path: 'order-lookup/', icon: 'search', group: 'order' },
+  { id: 'stock', label: 'สต๊อกคงเหลือ', labelEn: 'Stock on Hand', path: 'stock/', icon: 'package', group: 'warehouse' },
+  { id: 'warehouse', label: 'เอกสารคลังสินค้า', labelEn: 'Warehouse Forms', path: 'warehouse-forms/', icon: 'boxes', group: 'warehouse' },
+  { id: 'transport', label: 'ทำใบงานขนส่ง', labelEn: 'Transport Docs', path: 'transport-docs/', icon: 'truck', group: 'transport' },
+  { id: 'forms', label: 'เอกสารขนส่ง', labelEn: 'Transport Forms', path: 'transport-forms/', icon: 'file', group: 'transport' },
+  { id: 'roster', label: 'จัดตารางงาน', labelEn: 'Duty Roster', path: '', icon: 'calendar', group: 'system' },
+  { id: 'settings', label: 'ตั้งค่า', labelEn: 'Settings', path: 'settings/', icon: 'settings', group: 'system' },
 ];
 
 /** Brand text — kept here so the six pages can never drift apart again. */

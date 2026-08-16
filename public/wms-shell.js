@@ -13,7 +13,7 @@
  * emitted here live in wms-theme.css.
  */
 
-import { MODULES, BRAND, ICON_PATHS } from './wms-modules.js';
+import { MODULES, GROUPS, BRAND, ICON_PATHS } from './wms-modules.js';
 
 /** Inline SVG for one lucide icon name. */
 function icon(name, cls) {
@@ -32,12 +32,23 @@ const esc = (s) =>
  * @param {string} root     relative path to the site root, e.g. '../'
  */
 export function sidebarHTML(activeId, root) {
-  const mods = MODULES.map((m) => {
+  const link = (m) => {
     const on = m.id === activeId;
     // The active module is not a link — same as aria-current in the React sidebar.
     const attrs = on ? 'class="sysmod active" aria-current="page"' : `class="sysmod" href="${root}${m.path}"`;
     return `<a ${attrs}>${icon(m.icon, 'sysmod-ic')}<span>${esc(m.label)}</span><em>${esc(m.labelEn)}</em></a>`;
-  }).join('\n    ');
+  };
+
+  /* โมดูลที่ไม่มีหมวดขึ้นก่อนโดยไม่มีหัวข้อ แล้วค่อยไล่ทีละหมวดตามลำดับใน GROUPS
+     หมวดที่ไม่มีโมดูลเหลืออยู่จะไม่ขึ้นหัวข้อค้างไว้ */
+  const parts = MODULES.filter((m) => !m.group).map(link);
+  for (const g of GROUPS) {
+    const inGroup = MODULES.filter((m) => m.group === g.id);
+    if (!inGroup.length) continue;
+    parts.push(`<p class="sysbar-modlabel">${esc(g.label)} · ${esc(g.labelEn)}</p>`);
+    parts.push(...inGroup.map(link));
+  }
+  const mods = parts.join('\n    ');
 
   // Who is signed in, from wms-gate.js. Absent if the gate isn't loaded.
   const user = typeof window !== 'undefined' && window.wmsGate ? window.wmsGate.user() : null;
@@ -57,7 +68,6 @@ export function sidebarHTML(activeId, root) {
     </div>
   </div>
   <nav class="sysbar-mods">
-    <p class="sysbar-modlabel">โมดูล · Modules</p>
     ${mods}
   </nav>
   ${userRow}
