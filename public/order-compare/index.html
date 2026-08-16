@@ -694,6 +694,7 @@ td{padding:9px 12px;vertical-align:middle}
     <button class="filter-tab" data-sfilter="out" onclick="setStockFilter('out',this)">🚫 ไม่พอ/หมด <span class="cnt" id="scnt-out">0</span></button>
     <button class="filter-tab" data-sfilter="low" onclick="setStockFilter('low',this)">⚠️ เหลือน้อย &lt;10 <span class="cnt" id="scnt-low">0</span></button>
     <button class="filter-tab" data-sfilter="ok" onclick="setStockFilter('ok',this)">✅ พอ <span class="cnt" id="scnt-ok">0</span></button>
+    <button class="filter-tab" data-sfilter="qa" onclick="setStockFilter('qa',this)">📦 เบิก QA <span class="cnt" id="scnt-qa">0</span></button>
     <button class="filter-tab" data-sfilter="na" onclick="setStockFilter('na',this)">— ไม่มีในสต๊อก <span class="cnt" id="scnt-na">0</span></button>
     <div class="search-box">
       <span class="search-icon">🔍</span>
@@ -2023,6 +2024,7 @@ function runStockCheck() {
   // Update summary
   const counts = { ok:0, low:0, out:0, na:0 };
   stockResults.forEach(r => counts[r.status]++);
+  const qaCount = stockResults.filter(r => r.qaPick).length;
   document.getElementById('totalSKUs').textContent = stockResults.length;
   document.getElementById('okSKUs').textContent    = counts.ok;
   document.getElementById('lowSKUs').textContent   = counts.low;
@@ -2032,6 +2034,7 @@ function runStockCheck() {
   document.getElementById('scnt-low').textContent  = counts.low;
   document.getElementById('scnt-ok').textContent   = counts.ok;
   document.getElementById('scnt-na').textContent   = counts.na;
+  document.getElementById('scnt-qa').textContent   = qaCount;
   document.getElementById('stockSummaryStrip').style.display = 'grid';
   document.getElementById('stockFilterBar').style.display = 'flex';
   const carrierSummary = carriersData.length > 0
@@ -2066,7 +2069,9 @@ function renderStockTable() {
   const search = document.getElementById('stockSearch').value.toLowerCase();
   let rows = stockResults;
   if (currentStockFilter2 !== 'all') {
-    if (currentStockFilter2 === 'out') rows = rows.filter(r => r.status === 'out' || r.status === 'na');
+    // เบิก QA ไม่ใช่สถานะของจำนวน แต่เป็นที่อยู่ของของ — กรองแยกจาก ok/low/out
+    if (currentStockFilter2 === 'qa') rows = rows.filter(r => r.qaPick);
+    else if (currentStockFilter2 === 'out') rows = rows.filter(r => r.status === 'out' || r.status === 'na');
     else rows = rows.filter(r => r.status === currentStockFilter2);
   }
   if (search) rows = rows.filter(r => r.sku.toLowerCase().includes(search) || r.name.toLowerCase().includes(search));
@@ -2087,7 +2092,6 @@ function renderStockTable() {
     <th style="text-align:center">Total</th>
     <th style="text-align:center">ส่วนต่าง</th>
     <th>สถานะ</th>
-    <th style="text-align:center">เบิก QA</th>
     <th style="text-align:center">Orders</th>
   </tr></thead><tbody>`;
 
@@ -2109,8 +2113,7 @@ function renderStockTable() {
       <td style="text-align:center">${r.newwh}</td>
       <td style="text-align:center;font-weight:600">${r.total}</td>
       <td style="text-align:center">${diffHtml}</td>
-      <td><span class="badge ${statusClass[r.status]}">${statusLabel[r.status]}</span></td>
-      <td style="text-align:center">${r.qaPick ? '<span class="badge stock-qa">เบิก QA</span>' : ''}</td>
+      <td><span class="badge ${statusClass[r.status]}">${statusLabel[r.status]}</span>${r.qaPick ? ' <span class="badge stock-qa">📦 เบิก QA</span>' : ''}</td>
       <td style="text-align:center">
         <span class="orders-link" onclick="showOrderModal(${idx})">
           ${r.orders} order${r.orders > 1 ? 's' : ''}
