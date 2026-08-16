@@ -283,6 +283,18 @@ td{padding:9px 12px;vertical-align:middle}
 .modal-close{background:none;border:none;cursor:pointer;font-size:18px;color:var(--muted);padding:2px 6px;border-radius:4px;line-height:1;flex-shrink:0}
 .modal-close:hover{background:var(--surface2)}
 .modal-body{overflow-y:auto;padding:16px 20px}
+.qa-row{display:grid;grid-template-columns:26px 1fr 92px 76px;gap:10px;align-items:center;
+  padding:9px 0;border-bottom:1px solid var(--border);font-size:13px}
+.qa-row:last-child{border-bottom:none}
+.qa-row input[type=checkbox]{width:16px;height:16px;accent-color:var(--primary);cursor:pointer}
+.qa-row .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qa-row .sku{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.qa-row .stk{font-size:11.5px;color:var(--muted);text-align:right;white-space:nowrap}
+.qa-row input[type=number]{width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:6px;
+  font-family:var(--sans);font-size:13px;text-align:right}
+.qa-row.off{opacity:.45}
+.qa-foot{display:flex;align-items:center;gap:10px;padding:14px 20px;border-top:1px solid var(--border)}
+.qa-foot .n{font-size:13px;font-weight:600;color:var(--text);flex:1}
 .modal-order-row{display:grid;grid-template-columns:1fr 1fr 60px;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;align-items:center}
 .modal-order-row:last-child{border-bottom:none}
 .modal-order-id{font-family:var(--mono);font-size:12px;font-weight:500;color:var(--primary)}
@@ -2202,16 +2214,71 @@ function exportCompareCSV() {
  * จำนวนที่ต้องใช้ลงช่อง A (ชิ้น/กล่อง) และ B = 1 เพื่อให้ยอดรวมถูกต้องตั้งแต่แรก
  * คนเบิกปรับเป็นจำนวนกล่องจริงทีหลังได้ ระบบไม่รู้ว่ากล่องหนึ่งใส่กี่ชิ้น
  */
+/**
+ * เปิดหน้าต่างให้เลือกว่าจะเบิกอะไรบ้าง แทนที่จะส่งทุกรายการไปเลย
+ *
+ * ของที่ต้องเบิก QA ไม่ได้แปลว่าต้องเบิกวันนี้ทุกตัว บางตัวรอรวมรอบได้ และ
+ * บางตัวอยากเบิกมากกว่ายอดวันนี้เพื่อเติมชั้น จึงต้องเลือกและแก้จำนวนได้ก่อน
+ * ไม่ใช่ไปลบแถวทิ้งในใบเบิกทีหลัง ซึ่งไม่ต่างจากพิมพ์เอง
+ */
 function makeQaRequisition() {
-  const items = stockResults.filter(r => r.qaPick).map(r => ({
-    sku: r.sku, name: r.name, qty: r.need,
-  }));
+  const items = stockResults.filter(r => r.qaPick);
   if (!items.length) return;
-  const ok = WmsDraft.put('requisition', items, { from: 'QA', to: 'NEW WH-2' });
-  if (!ok) { alert('ส่งข้อมูลไปใบเบิกไม่ได้ (เบราว์เซอร์โหมดส่วนตัวหรือพื้นที่เต็ม)'); return; }
-  location.href = '../warehouse-forms/requisition.html';
+  document.getElementById('qaList').innerHTML = items.map((r, i) => `
+    <label class="qa-row" data-i="${i}">
+      <input type="checkbox" checked onchange="qaSync()">
+      <span class="nm" title="${esc(r.name)}">${esc(r.name)}<br><span class="sku">${esc(r.sku)}</span></span>
+      <span class="stk">${r.qa} / ${r.newwh}</span>
+      <input type="number" min="1" value="${r.need}" oninput="qaSync()">
+    </label>`).join('');
+  document.getElementById('qaAll').checked = true;
+  qaSync();
+  document.getElementById('qaModal').classList.add('open');
 }
 
+function qaToggleAll(on) {
+  document.querySelectorAll('#qaList input[type=checkbox]').forEach(c => { c.checked = on; });
+  qaSync();
+}
+
+/** นับที่เลือกไว้ และปิดปุ่มเมื่อไม่ได้เลือกอะไรเลย — ใบเบิกเปล่าไม่มีประโยชน์ */
+function qaSync() {
+  const rows = [...document.querySelectorAll('#qaList .qa-row')];
+  let n = 0, pieces = 0;
+  rows.forEach(row => {
+    const on = row.querySelector('input[type=checkbox]').checked;
+    row.classList.toggle('off', !on);
+    if (on) { n++; pieces += parseInt(row.querySelector('input[type=number]').value, 10) || 0; }
+  });
+  document.getElementById('qaCount').textContent = n
+    ? `เลือกไว้ ${n} รายการ · รวม ${pieces} ชิ้น`
+    : 'ยังไม่ได้เลือกรายการ';
+  document.getElementById('qaGo').disabled = !n;
+  const all = document.getElementById('qaAll');
+  all.checked = n === rows.length;
+  all.indeterminate = n > 0 && n < rows.length;
+}
+
+/**
+ * จำนวนที่ต้องใช้ลงช่อง A (ชิ้น/กล่อง) และ B = 1 เพื่อให้ยอดรวมถูกต้องตั้งแต่แรก
+ * คนเบิกปรับเป็นจำนวนกล่องจริงทีหลังได้ ระบบไม่รู้ว่ากล่องหนึ่งใส่กี่ชิ้น
+ */
+function qaConfirm() {
+  const all = stockResults.filter(r => r.qaPick);
+  const items = [];
+  document.querySelectorAll('#qaList .qa-row').forEach(row => {
+    if (!row.querySelector('input[type=checkbox]').checked) return;
+    const r = all[+row.dataset.i];
+    const qty = parseInt(row.querySelector('input[type=number]').value, 10) || r.need;
+    items.push({ sku: r.sku, name: r.name, qty });
+  });
+  if (!items.length) return;
+  if (!WmsDraft.put('requisition', items, { from: 'QA', to: 'NEW WH-2' })) {
+    alert('ส่งข้อมูลไปใบเบิกไม่ได้ (เบราว์เซอร์โหมดส่วนตัวหรือพื้นที่เต็ม)');
+    return;
+  }
+  location.href = '../warehouse-forms/requisition.html';
+}
 
 function exportStockCSV() {
   const rows = [['SKU','ชื่อสินค้า','ต้องใช้','คลัง QA','คลัง NEW WH','รวมสต๊อก','สถานะ']];
@@ -3315,6 +3382,30 @@ window.addEventListener('DOMContentLoaded', () => {
         <span>Order ID</span><span>ขนส่ง (Sup)</span><span style="text-align:right">จำนวน</span>
       </div>
       <div id="modalOrderList"></div>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="qaModal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div>
+        <h3>เลือกรายการที่จะเบิกจาก QA</h3>
+        <p>ติ๊กเฉพาะที่จะเบิก และแก้จำนวนได้ — จำนวนตั้งต้นคือยอดที่ต้องใช้วันนี้</p>
+      </div>
+      <button class="modal-close" onclick="document.getElementById('qaModal').classList.remove('open')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-col-hdr" style="grid-template-columns:26px 1fr 92px 76px">
+        <span><input type="checkbox" id="qaAll" checked onchange="qaToggleAll(this.checked)"></span>
+        <span>สินค้า</span><span style="text-align:right">สต๊อก QA / NEW</span>
+        <span style="text-align:right">เบิก</span>
+      </div>
+      <div id="qaList"></div>
+    </div>
+    <div class="qa-foot">
+      <span class="n" id="qaCount"></span>
+      <button class="btn btn-secondary btn-sm" onclick="document.getElementById('qaModal').classList.remove('open')">ยกเลิก</button>
+      <button class="btn btn-primary btn-sm" id="qaGo" onclick="qaConfirm()">สร้างใบเบิก</button>
     </div>
   </div>
 </div>
