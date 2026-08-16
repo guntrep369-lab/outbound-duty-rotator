@@ -61,8 +61,9 @@
     /**
      * Apps Script URL ของไฟล์รถบริษัทส่วนกลาง
      *
-     * เป็น URL เดียวกับออเดอร์/สต๊อกได้ (สคริปต์แยกงานด้วย ?api=) แต่แยกช่องไว้
-     * เพราะเป็น deployment ที่ "เขียนได้" ไม่ใช่แค่อ่าน บางที่จึงอาจอยากแยก
+     * เป็นคนละ deployment กับออเดอร์และสต๊อกเสมอ ไม่ใช่ URL เดียวกัน: ทั้งสองตัวนั้น
+     * ผูกกับชีตของตัวเองและใช้ doGet ของตัวเองไปแล้ว ซึ่ง Apps Script มีได้
+     * โปรเจกต์ละตัว — ตัวนี้จึงอยู่ในชีตแยกของมันเอง (ดู transport-api.gs)
      */
     transportUrl: function () { return read(KEYS.transportUrl); },
     setTransportUrl: function (v) { return write(KEYS.transportUrl, v); },
