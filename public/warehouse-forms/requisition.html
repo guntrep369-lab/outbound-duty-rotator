@@ -100,6 +100,7 @@
 <script type="module" src="../wms-shell.js"></script>
 <script type="module" src="./wh-nav.js"></script>
 <script src="../wms-settings.js"></script>
+<script src="../wms-draft.js"></script>
 <script src="./wh-sku.js"></script>
 <script src="./wh-form.js"></script>
 <script src="./wh-shared.js"></script>
@@ -116,6 +117,56 @@ WhShared.buildRows('rows', 10, (n) => `
   <td><input class="wh-in"></td>
   <td><input class="wh-in"></td>`);
 WhForm.wire(document.getElementById('items'));
+
+/**
+ * รับรายการที่ส่งมาจากแท็บเช็คสต๊อก (ปุ่ม "สร้างใบเบิก QA")
+ *
+ * ใบนี้มี 10 บรรทัด ถ้าของที่ต้องเบิกมากกว่านั้นจะกรอก 10 รายการแรก แล้วเก็บ
+ * ที่เหลือไว้ให้กดสร้างใบถัดไป — ตัดทิ้งเงียบ ๆ แปลว่าของหายจากใบเบิกโดยไม่มี
+ * ใครรู้ ซึ่งจะไปโผล่ตอนหยิบของไม่ครบ
+ */
+(function () {
+  const d = window.WmsDraft && WmsDraft.take('requisition');
+  if (!d || !d.items.length) return;
+
+  const rows = [...document.querySelectorAll('#rows tr')];
+  const use = d.items.slice(0, rows.length);
+  const left = d.items.slice(rows.length);
+
+  use.forEach((it, i) => {
+    const tr = rows[i];
+    const set = (sel, v) => {
+      const el = tr.querySelector(sel);
+      if (!el) return;
+      el.value = v;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    set('[data-sku]', it.sku);
+    set('[data-a]', it.qty);
+    set('[data-b]', 1);
+  });
+
+  if (d.meta.from) document.querySelectorAll('select.wh')[0].value = d.meta.from;
+  if (d.meta.to)   document.querySelectorAll('select.wh')[1].value = d.meta.to;
+
+  const slot = document.getElementById('warnSlot');
+  if (!slot) return;
+  const more = left.length
+    ? ` · ยังเหลืออีก <b>${left.length}</b> รายการ พิมพ์ใบนี้แล้วกด ` +
+      `<a href="#" id="nextSheet">สร้างใบถัดไป</a>`
+    : '';
+  slot.insertAdjacentHTML('beforeend', `<div class="wh-warn" style="background:#DCFCE7;border-color:#86EFAC;color:#166534">` +
+    `📤 กรอก <b>${use.length}</b> รายการจากแท็บเช็คสต๊อกให้แล้ว — ` +
+    `จำนวนที่ต้องใช้อยู่ในช่อง <b>A</b> ปรับเป็นจำนวนกล่องได้${more}</div>`);
+
+  const next = document.getElementById('nextSheet');
+  if (next) next.addEventListener('click', (e) => {
+    e.preventDefault();
+    WmsDraft.put('requisition', left, d.meta);
+    location.reload();
+  });
+})();
+
 WhShared.today('fDate');
 WhShared.mountLogo();
 WhShared.warnIfNoSku();

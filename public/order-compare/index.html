@@ -700,6 +700,7 @@ td{padding:9px 12px;vertical-align:middle}
       <span class="search-icon">🔍</span>
       <input type="text" id="stockSearch" placeholder="ค้นหา SKU / ชื่อสินค้า..." oninput="renderStockTable()">
     </div>
+    <button class="export-btn" id="qaReqBtn" style="display:none" onclick="makeQaRequisition()" title="เปิดใบเบิกที่กรอก SKU และจำนวนมาให้แล้ว">📤 สร้างใบเบิก QA</button>
     <button class="export-btn" onclick="exportStockCSV()" title="ดาวน์โหลดผลเช็คสต๊อกเป็น CSV">⬇️ Export CSV</button>
   </div>
 
@@ -854,6 +855,7 @@ td{padding:9px 12px;vertical-align:middle}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../wms-settings.js"></script>
 <script src="../wms-order-index.js"></script>
+<script src="../wms-draft.js"></script>
 <script>
 // ══════════════════════════════════════════════════════
 // GLOBAL STATE
@@ -2035,6 +2037,9 @@ function runStockCheck() {
   document.getElementById('scnt-ok').textContent   = counts.ok;
   document.getElementById('scnt-na').textContent   = counts.na;
   document.getElementById('scnt-qa').textContent   = qaCount;
+  const qaBtn = document.getElementById('qaReqBtn');
+  qaBtn.style.display = qaCount ? 'inline-flex' : 'none';
+  qaBtn.textContent = `📤 สร้างใบเบิก QA (${qaCount})`;
   document.getElementById('stockSummaryStrip').style.display = 'grid';
   document.getElementById('stockFilterBar').style.display = 'flex';
   const carrierSummary = carriersData.length > 0
@@ -2188,6 +2193,26 @@ function exportCompareCSV() {
   });
   downloadCSV(`compare-${carrier || 'order'}-${stamp()}.csv`, rows);
 }
+/**
+ * ส่งรายการที่ต้องเบิก QA ไปกรอกในใบเบิกให้เลย
+ *
+ * เดิมคนอ่านหน้านี้แล้วพิมพ์ SKU กับจำนวนลงใบเบิกใหม่ทีละบรรทัด ทั้งที่ตัวเลข
+ * อยู่ตรงหน้าอยู่แล้ว — พิมพ์ซ้ำคือโอกาสพิมพ์ผิดโดยไม่มีอะไรตรวจ
+ *
+ * จำนวนที่ต้องใช้ลงช่อง A (ชิ้น/กล่อง) และ B = 1 เพื่อให้ยอดรวมถูกต้องตั้งแต่แรก
+ * คนเบิกปรับเป็นจำนวนกล่องจริงทีหลังได้ ระบบไม่รู้ว่ากล่องหนึ่งใส่กี่ชิ้น
+ */
+function makeQaRequisition() {
+  const items = stockResults.filter(r => r.qaPick).map(r => ({
+    sku: r.sku, name: r.name, qty: r.need,
+  }));
+  if (!items.length) return;
+  const ok = WmsDraft.put('requisition', items, { from: 'QA', to: 'NEW WH-2' });
+  if (!ok) { alert('ส่งข้อมูลไปใบเบิกไม่ได้ (เบราว์เซอร์โหมดส่วนตัวหรือพื้นที่เต็ม)'); return; }
+  location.href = '../warehouse-forms/requisition.html';
+}
+
+
 function exportStockCSV() {
   const rows = [['SKU','ชื่อสินค้า','ต้องใช้','คลัง QA','คลัง NEW WH','รวมสต๊อก','สถานะ']];
   stockResults.forEach(s => rows.push([s.sku, s.name, s.need, s.qa, s.newwh, s.total, s.status]));
