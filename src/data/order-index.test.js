@@ -1,0 +1,237 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+
+/**
+ * Tests for public/wms-order-index.js — the code every module's order data
+ * passes through on its way from the sheet to a screen.
+ *
+ * Every order-side defect found this week lived in this file and was caught by
+ * hand in a browser, where the check disappears the moment the tab closes:
+ *   • "Mon, Aug 17" has no year, so JS supplied 2001
+ *   • toISOString() shifted UTC+7 back a day, turning Aug 17 into Aug 16
+ *   • เวลานัด repeats as "-" on an order's continuation rows
+ *   • the sheet's two quantity columns are "จำนวน 1" and "จำนวน", and which one
+ *     is the product depends on their order in the header row
+ * Each of those is a case below, written against the headers of the real
+ * รถบริษัท (หน้าLogis) sheet rather than headers I invented.
+ *
+ * The shipped file is evaluated the way a browser would run it, so this tests
+ * what deploys rather than a copy.
+ */
+const SRC = fs.readFileSync(path.resolve(__dirname, '../../public/wms-order-index.js'), 'utf8');
+
+let OrderIndex;
+let store;
+
+beforeEach(() => {
+  store = new Map();
+  const win = {};
+  new Function('window', 'sessionStorage', 'console', SRC)(
+    win,
+    {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => store.set(k, String(v)),
+      removeItem: (k) => store.delete(k),
+    },
+    { warn: () => {} }
+  );
+  OrderIndex = win.OrderIndex;
+});
+
+/** หัวคอลัมน์จริงของชีต รถบริษัท (หน้าLogis) เรียงตามไฟล์ตัวอย่าง */
+const sheetRow = (over = {}) => ({
+  'Date': 'Mon, Aug 17',
+  'Sup': 'Lunio',
+  'Order ID': 'AA-92876',
+  'เลข consign': 'CN-1',
+  'Invoice': '',
+  'แบรนด์': 'Lunio Gen 4',
+  'ขนาด': 'King',
+  'จำนวน 1': 1,
+  'ของแถม': 'แถม - หมอนสุขภาพ',
+  'จำนวน': 2,
+  'ชื่อลูกค้า': 'คุณโสภา',
+  'Phone 1': '064-7915965',
+  'Phone 2': '',
+  'ที่อยู่': 'บ้านเลขที่ 37/14',
+  'เวลานัด': '13.00น',
+  'ลำดับที่': 3,
+  'การเงิน': 'โอนจ่ายปลายทาง',
+  'หมายเหตุ': 'ขอช่วงบ่าย',
+  ...over,
+});
+
+const thisYear = new Date().getFullYear();
+
+describe('convertGASRows — อ่านชีตจริง', () => {
+  it('อ่านทุกฟิลด์ที่หน้าอื่นใช้ ด้วยหัวคอลัมน์ของชีตจริง', () => {
+    const [r] = OrderIndex.convertGASRows([sheetRow()]);
+    expect(r.orderID).toBe('AA-92876');
+    expect(r.consign).toBe('CN-1');
+    expect(r.customer).toBe('คุณโสภา');
+    expect(r.address).toBe('บ้านเลขที่ 37/14');
+    expect(r.phone1).toBe('064-7915965');
+    expect(r.brand).toBe('Lunio Gen 4');
+    expect(r.size).toBe('King');
+    expect(r.payment).toBe('โอนจ่ายปลายทาง');
+    expect(r.remark).toBe('ขอช่วงบ่าย');
+  });
+
+  it('แยกจำนวนสินค้ากับจำนวนของแถมตามลำดับคอลัมน์ในชีต', () => {
+    // "จำนวน 1" มาก่อน "จำนวน" ในชีต ตัวแรกคือจำนวนสินค้า ตัวหลังคือของแถม
+    const [r] = OrderIndex.convertGASRows([sheetRow({ 'จำนวน 1': 4, 'จำนวน': 9 })]);
+    expect(r.qty1).toBe(4);
+    expect(r.qtyRaw).toBe('9');
+  });
+
+  it('ตัดแถวที่ไม่มีเลขออเดอร์ทิ้ง', () => {
+    const rows = OrderIndex.convertGASRows([sheetRow(), sheetRow({ 'Order ID': '' }), sheetRow({ 'Order ID': '  ' })]);
+    expect(rows).toHaveLength(1);
+  });
+});
+
+describe('เวลานัด', () => {
+  it('อ่านเวลานัดจากชีตออเดอร์ ไม่ต้องมีไฟล์รถ', () => {
+    const [r] = OrderIndex.convertGASRows([sheetRow()]);
+    expect(r.apptTime).toBe('13.00น');
+  });
+
+  it('"-" ในแถวต่อของออเดอร์เดียวกัน ไม่ใช่เวลานัด', () => {
+    // ทีมกรอกเวลาไว้ที่แถวแรก แถวถัดไปใส่ขีด ถ้าไม่ตัดทิ้งจะเอาขีดไปแสดงแทนเวลา
+    for (const dash of ['-', '--', ' - ']) {
+      const [r] = OrderIndex.convertGASRows([sheetRow({ 'เวลานัด': dash })]);
+      expect(r.apptTime).toBe('');
+    }
+  });
+
+  it('ช่องว่างก็ถือว่าไม่มี', () => {
+    const [r] = OrderIndex.convertGASRows([sheetRow({ 'เวลานัด': '' })]);
+    expect(r.apptTime).toBe('');
+  });
+});
+
+describe('วันที่', () => {
+  it('"Mon, Aug 17" ไม่มีปี — ต้องเติมปีที่ใกล้วันนี้ ไม่ใช่ 2001 ที่ JS เดาให้', () => {
+    const [r] = OrderIndex.convertGASRows([sheetRow({ Date: 'Mon, Aug 17' })]);
+    expect(r.date).toBe(`${thisYear}-08-17`);
+  });
+
+  it('ไม่เลื่อนวันตามโซนเวลา — Aug 17 ต้องไม่กลายเป็น Aug 16', () => {
+    // toISOString() ลบ 7 ชั่วโมงออกจากเวลาไทย แล้ววันที่ถอยไปหนึ่งวันเงียบ ๆ
+    const [r] = OrderIndex.convertGASRows([sheetRow({ Date: 'Mon, Aug 17' })]);
+    expect(r.date.endsWith('-08-17')).toBe(true);
+  });
+
+  it('เขียนปีมาเองก็ใช้ปีนั้น ไม่ไปเดาทับ', () => {
+    expect(OrderIndex.convertGASRows([sheetRow({ Date: '2024-03-09' })])[0].date).toBe('2024-03-09');
+    expect(OrderIndex.convertGASRows([sheetRow({ Date: 'Sat, Mar 9 2024' })])[0].date).toBe('2024-03-09');
+  });
+
+  it('อ่านไม่ออกก็ไม่พัง', () => {
+    expect(OrderIndex.convertGASRows([sheetRow({ Date: '' })])[0].date).toBe('');
+    expect(() => OrderIndex.convertGASRows([sheetRow({ Date: 'ไม่ใช่วันที่' })])).not.toThrow();
+  });
+});
+
+describe('parsePayload', () => {
+  const payload = (over = {}) => ({
+    carriers: [{ key: 'รถบริษัท', sheet1: [sheetRow()], sheet2: [], ...over }],
+  });
+
+  it('อ่านรูปแบบหลายขนส่ง', () => {
+    const out = OrderIndex.parsePayload(payload());
+    expect(out).toHaveLength(1);
+    expect(out[0].key).toBe('รถบริษัท');
+    expect(out[0].data1).toHaveLength(1);
+    expect(out[0].data2).toHaveLength(0);
+  });
+
+  it('รับฟิลด์ของสคริปต์ v4 — วันที่และคำเตือนวันไม่ตรง', () => {
+    const out = OrderIndex.parsePayload(payload({
+      date: '2026-08-17', dates1: ['2026-08-17'], dates2: ['2026-08-16'],
+      warn: 'วันที่ไม่ตรงกัน', error1: null, error2: null,
+    }));
+    expect(out[0].date).toBe('2026-08-17');
+    expect(out[0].dates2).toEqual(['2026-08-16']);
+    expect(out[0].warn).toBe('วันที่ไม่ตรงกัน');
+  });
+
+  it('สคริปต์รุ่นเก่าที่ไม่ส่งฟิลด์ใหม่มา ต้องไม่พังและไม่แต่งค่าขึ้นเอง', () => {
+    const out = OrderIndex.parsePayload(payload());
+    expect(out[0].date).toBe('');
+    expect(out[0].warn).toBeNull();
+    expect(out[0].dates1).toEqual([]);
+  });
+
+  it('ส่งต่อ error ของชีตที่หายไป โดยไม่ทิ้งข้อมูลของขนส่งนั้น', () => {
+    const out = OrderIndex.parsePayload(payload({ error2: 'ไม่พบ Sheet: รถบริษัท (หน้าCRM)' }));
+    expect(out[0].error2).toBe('ไม่พบ Sheet: รถบริษัท (หน้าCRM)');
+    expect(out[0].data1).toHaveLength(1);
+  });
+
+  it('รูปแบบเก่าชุดเดียวก็ยังอ่านได้', () => {
+    const out = OrderIndex.parsePayload({ sheet1: [sheetRow()], sheet2: [] });
+    expect(out[0].key).toBe('ออเดอร์');
+    expect(out[0].data1).toHaveLength(1);
+  });
+
+  it('error จากสคริปต์ต้องโยนออกมา ไม่ใช่กลืนแล้วคืนค่าว่าง', () => {
+    expect(() => OrderIndex.parsePayload({ error: 'ไม่พบ Sheet' })).toThrow('ไม่พบ Sheet');
+  });
+
+  it('รูปแบบที่ไม่รู้จักต้องฟ้องพร้อมบอก keys ที่ได้มา', () => {
+    expect(() => OrderIndex.parsePayload({ nonsense: 1 })).toThrow(/nonsense/);
+  });
+});
+
+describe('build — ดัชนีค้นหา', () => {
+  const carriers = [{
+    key: 'รถบริษัท',
+    data1: OrderIndex_rows(['A1', 'A2']),
+    data2: OrderIndex_rows(['A2', 'A3']),
+  }];
+  function OrderIndex_rows(ids) {
+    return ids.map((id) => ({ orderID: id, customer: 'ลูกค้า ' + id, apptTime: '10.00น' }));
+  }
+
+  it('ออเดอร์ที่อยู่ทั้งสองหน้า ขึ้นครั้งเดียว', () => {
+    const rows = OrderIndex.build(carriers);
+    expect(rows.map((r) => r.orderID)).toEqual(['A1', 'A2', 'A3']);
+  });
+
+  it('ติดป้ายว่ามาจากรอบเช้าหรือ CRM — คนละคำตอบเวลาลูกค้าถามว่าของออกหรือยัง', () => {
+    const rows = OrderIndex.build(carriers);
+    expect(rows.find((r) => r.orderID === 'A2').source).toBe('logis');
+    expect(rows.find((r) => r.orderID === 'A3').source).toBe('crm');
+  });
+
+  it('ติดชื่อขนส่งไปด้วย', () => {
+    expect(OrderIndex.build(carriers)[0].carrier).toBe('รถบริษัท');
+  });
+
+  it('เก็บเวลานัดไว้ในดัชนีด้วย ไม่งั้นหน้าค้นหาจะไม่มีอะไรให้แสดง', () => {
+    expect(OrderIndex.build(carriers)[0].apptTime).toBe('10.00น');
+  });
+});
+
+describe('แคชของวันนี้', () => {
+  it('เก็บแล้วอ่านกลับได้ครบ', () => {
+    const carriers = OrderIndex.parsePayload({ carriers: [{ key: 'รถบริษัท', sheet1: [sheetRow()], sheet2: [] }] });
+    OrderIndex.save(carriers);
+    const back = OrderIndex.getCarriers();
+    expect(back.carriers[0].data1[0].orderID).toBe('AA-92876');
+    expect(back.at).toBeGreaterThan(0);
+  });
+
+  it('ไม่มีอะไรเก็บไว้ = null ไม่ใช่ object ว่างที่ทำให้หน้าเชื่อว่ามีข้อมูล', () => {
+    expect(OrderIndex.getCarriers()).toBeNull();
+    expect(OrderIndex.get()).toBeNull();
+  });
+
+  it('ล้างแล้วต้องหายจริง', () => {
+    OrderIndex.save([{ key: 'x', data1: [{ orderID: 'A1' }], data2: [] }]);
+    OrderIndex.clear();
+    expect(OrderIndex.getCarriers()).toBeNull();
+  });
+});
