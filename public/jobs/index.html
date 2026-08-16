@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>ประเภทงานรถ — WMS</title>
+<link rel="stylesheet" href="../wms-theme.css">
+<link rel="stylesheet" href="../wms-gate.css">
+<script src="../wms-gate.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+
+.jb-src{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 20px;
+  background:var(--wms-surface2);border-bottom:1px solid var(--wms-border);font-size:12px}
+.jb-src .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;
+  background:var(--wms-surface);border:1px solid var(--wms-border);color:var(--wms-muted)}
+.jb-src .pill b{color:var(--wms-text);font-weight:600}
+.jb-src .sp{flex:1}
+.jb-src button{padding:4px 12px;border-radius:999px;border:1px solid var(--wms-border2);
+  background:var(--wms-surface);font-family:var(--wms-font);font-size:12px;color:#334155;cursor:pointer}
+.jb-src button:hover:not(:disabled){background:var(--wms-primary-light);border-color:var(--wms-primary);
+  color:var(--wms-primary-dark)}
+
+.jb-body{padding:16px 20px 40px;max-width:1060px}
+
+/* เตือนเรื่องความแม่น — ต้องอยู่บนสุดและอ่านง่าย ไม่ใช่ตัวเล็กใต้ตาราง
+   เพราะคนจะเอาตัวเลขพวกนี้ไปจัดรถจริง */
+.jb-note{margin-bottom:14px;padding:11px 14px;background:#EEF2FF;border:1px solid #C7D2FE;
+  border-radius:var(--wms-radius-sm);font-size:12.5px;line-height:1.7;color:var(--wms-primary-dark)}
+
+.jb-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:11px;margin-bottom:8px}
+.jb-card{padding:13px 15px;background:var(--wms-surface);border:1px solid var(--wms-border);
+  border-radius:var(--wms-radius);box-shadow:var(--wms-shadow);cursor:pointer;text-align:left;
+  font-family:var(--wms-font);transition:border-color .15s}
+.jb-card:hover{border-color:var(--wms-primary)}
+.jb-card.on{border-color:var(--wms-primary);background:var(--wms-primary-light)}
+.jb-card .k{font-size:12px;color:var(--wms-muted);font-weight:600}
+.jb-card .v{margin-top:6px;font-size:25px;font-weight:700;color:var(--wms-text);font-variant-numeric:tabular-nums}
+.jb-card.warn{border-color:#FDBA74;background:#FFFBEB}
+.jb-card.warn .v{color:#B45309}
+
+.jb-strip{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 16px;font-size:12.5px}
+.jb-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;
+  background:var(--wms-surface);border:1px solid var(--wms-border);color:#334155}
+.jb-chip b{font-weight:700;color:var(--wms-text)}
+
+.jb-job{background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:var(--wms-radius);
+  box-shadow:var(--wms-shadow);margin-bottom:10px;overflow:hidden}
+.jb-top{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:11px 14px;
+  border-bottom:1px solid var(--wms-border);background:var(--wms-surface2)}
+.jb-id{font-family:ui-monospace,Menlo,monospace;font-size:14px;font-weight:700}
+.jb-cus{color:var(--wms-muted);font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.jb-sp{flex:1}
+.jb-type{padding:3px 11px;border-radius:999px;font-size:11.5px;font-weight:600;white-space:nowrap;
+  background:var(--wms-primary-light);color:var(--wms-primary-dark)}
+.jb-type.t2{background:#FEF3C7;color:#92400E}
+.jb-type.t3{background:#E0E7FF;color:#3730A3}
+.jb-type.t4{background:#DCFCE7;color:#166534}
+.jb-ret{padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:600;background:#FEE2E2;color:#991B1B}
+.jb-ret.maybe{background:#FEF3C7;color:#92400E}
+.jb-flag{padding:2px 9px;border-radius:999px;font-size:11px;background:var(--wms-surface);
+  border:1px solid var(--wms-border2);color:#475569}
+.jb-in{padding:10px 14px;font-size:13px;line-height:1.65;color:#334155;word-break:break-word}
+.jb-why{margin-top:6px;font-size:11.5px;color:var(--wms-muted)}
+.jb-job.review{border-color:#FDBA74}
+.jb-job.review .jb-top{background:#FFFBEB}
+
+.jb-empty{padding:40px 20px;text-align:center;color:var(--wms-muted);font-size:14px;line-height:1.8}
+.jb-empty b{color:var(--wms-text)}
+@media (max-width:640px){ .jb-body,.jb-src{padding-left:12px;padding-right:12px} }
+</style>
+</head>
+<body data-wms-module="jobs">
+
+<div class="wms-shell">
+<div data-wms-shell="jobs" data-root="../"></div>
+<div class="wms-main">
+
+  <div class="mod-head">
+    <div class="mod-title">
+      <div class="ic">🧭</div>
+      <div>
+        <h2>ประเภทงานรถ · Job Types</h2>
+        <p>อ่านหมายเหตุของเซล แล้วบอกว่าวันนี้มีงานส่ง งานเปลี่ยน งานช่าง และงานรับของกลับอย่างละกี่งาน</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="jb-src" id="src"></div>
+  <div class="jb-body" id="body"></div>
+
+</div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+
+<script type="module" src="../wms-shell.js"></script>
+<script src="../wms-date.js"></script>
+<script src="../wms-settings.js"></script>
+<script src="../wms-gas.js"></script>
+<script src="../wms-order-index.js"></script>
+<script src="../wms-jobtype.js"></script>
+<script>
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+/**
+ * งานทั้งวัน = ออเดอร์ที่ดึงมาแล้ว ไม่ต้องอัปไฟล์อะไรเพิ่ม
+ *
+ * จับกลุ่มเป็นออเดอร์ ไม่ใช่แถว เพราะหมายเหตุผูกกับงานหนึ่งงาน ส่วนแถวคือรายการ
+ * สินค้าในงานนั้น ออเดอร์เดียวที่มีสินค้าห้าอย่างคือหนึ่งงาน ไม่ใช่ห้างาน — ถ้านับ
+ * เป็นแถวจะได้ตัวเลขที่เอาไปจัดรถไม่ได้เลย
+ */
+let JOBS = [];
+let AT = 0;
+let FILTER = 'all';
+let PULLING = '';
+
+function load() {
+  const o = window.OrderIndex ? OrderIndex.getCarriers() : null;
+  AT = o ? o.at : 0;
+  JOBS = [];
+  if (!o) return;
+
+  o.carriers.forEach(c => {
+    const seen = new Map();
+    (c.data1 || []).concat(c.data2 || []).forEach(r => {
+      const id = r.orderID || '';
+      if (!id) return;
+      if (!seen.has(id)) seen.set(id, { id, carrier: c.key, customer: r.customer || '', notes: [] });
+      const g = seen.get(id);
+      if (r.remark && g.notes.indexOf(r.remark) === -1) g.notes.push(r.remark);
+      if (!g.customer && r.customer) g.customer = r.customer;
+    });
+    seen.forEach(g => {
+      // หลายแถวของออเดอร์เดียวอาจมีหมายเหตุคนละอัน อ่านรวมกันทีเดียว
+      const note = g.notes.join(' ');
+      JOBS.push(Object.assign({}, g, { note, job: WmsJobType.classify(note) }));
+    });
+  });
+}
+
+function renderSrc() {
+  const el = document.getElementById('src');
+  let html = '';
+  if (PULLING) html += `<span class="pill">⏳ ${esc(PULLING)}</span>`;
+  else if (JOBS.length) {
+    html += `<span class="pill">🧭 <b>${JOBS.length}</b> งาน</span>` +
+            `<span class="pill">🕐 ดึงเมื่อ <b>${new Date(AT).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'})}</b></span>`;
+  } else html += `<span class="pill">ยังไม่มีออเดอร์ของวันนี้</span>`;
+  html += '<span class="sp"></span>';
+  html += `<button onclick="pullNow()" ${PULLING ? 'disabled' : ''}>🔄 ดึงออเดอร์ใหม่</button>`;
+  el.innerHTML = html;
+}
+
+async function pullNow() {
+  if (PULLING) return;
+  const url = OrderIndex.savedUrl();
+  if (!url) { location.href = '../settings/'; return; }
+  PULLING = 'กำลังดึงออเดอร์…'; renderSrc();
+  try { await OrderIndex.pull(url, { onProgress: s => { PULLING = `กำลังดึงออเดอร์… ${s} วินาที`; renderSrc(); } }); }
+  catch (e) { /* แถบจะกลับไปบอกว่ายังไม่มีข้อมูล ปุ่มยังกดซ้ำได้ */ }
+  PULLING = ''; load(); render();
+}
+
+function setFilter(f) { FILTER = FILTER === f ? 'all' : f; render(); }
+
+function render() {
+  renderSrc();
+  const body = document.getElementById('body');
+
+  if (!JOBS.length) {
+    body.innerHTML = `<div class="jb-empty">ยังไม่มีออเดอร์ของวันนี้<br>
+      กด <b>🔄 ดึงออเดอร์ใหม่</b> ที่แถบด้านบน — หรือถ้าเพิ่งดึงที่โมดูลอื่นไปแล้ว หน้านี้จะใช้ชุดเดียวกันทันที</div>`;
+    return;
+  }
+
+  const s = WmsJobType.summarise(JOBS.map(j => j.job));
+  const T = WmsJobType.TYPES;
+
+  const card = (id, label, value, cls) =>
+    `<button class="jb-card ${cls || ''} ${FILTER === id ? 'on' : ''}" onclick="setFilter('${id}')">
+       <div class="k">${label}</div><div class="v">${value}</div></button>`;
+
+  const chips = WmsJobType.FLAGS
+    .filter(f => s.flags[f.id])
+    .map(f => `<span class="jb-chip">${esc(f.label)} <b>${s.flags[f.id]}</b></span>`).join('');
+
+  const shown = JOBS.filter(j =>
+    FILTER === 'all' ? true :
+    FILTER === 'review' ? j.job.needsReview :
+    FILTER === 'return' ? j.job.hasReturn !== 'ไม่มี' :
+    String(j.job.type) === FILTER);
+
+  body.innerHTML =
+    `<div class="jb-note">
+       ระบบอ่านหมายเหตุด้วยการจับคำตามกฎ <b>ไม่ได้เข้าใจภาษาจริง</b> —
+       ใช้เป็นตัวช่วยกวาดสายตา ไม่ใช่คำตอบสุดท้าย
+       งานที่สัญญาณกำกวมจะถูกแยกไว้ที่ <b>ต้องอ่านเอง</b> แทนที่จะเดาให้
+     </div>` +
+
+    '<div class="jb-cards">' +
+      [1,2,3,4].map(n => card(String(n), T[n].icon + ' ' + T[n].label, s.byType[n])).join('') +
+      card('return', '↩️ ต้องรับของกลับ', s.withReturn, s.withReturn ? 'warn' : '') +
+      card('review', '❓ ต้องอ่านเอง', s.needsReview, s.needsReview ? 'warn' : '') +
+    '</div>' +
+    (chips ? `<div class="jb-strip">${chips}</div>` : '') +
+    (shown.length ? shown.map(jobCard).join('')
+      : '<div class="jb-empty">ไม่มีงานในกลุ่มนี้</div>');
+}
+
+function jobCard(j) {
+  const g = j.job;
+  const ret = g.hasReturn === 'ไม่มี' ? ''
+    : `<span class="jb-ret ${g.hasReturn === 'ไม่แน่ใจ' ? 'maybe' : ''}">↩️ รับของกลับ${g.hasReturn === 'ไม่แน่ใจ' ? ' (มีเงื่อนไข)' : ''}</span>`;
+  return `<div class="jb-job ${g.needsReview ? 'review' : ''}">
+    <div class="jb-top">
+      <span class="jb-id">${esc(j.id)}</span>
+      <span class="jb-cus">${esc(j.customer)}</span>
+      <span class="jb-sp"></span>
+      ${ret}
+      ${g.flags.map(f => `<span class="jb-flag">${esc(f.label)}</span>`).join('')}
+      <span class="jb-type t${g.type}">${g.icon} ${esc(g.label)}</span>
+    </div>
+    <div class="jb-in">${j.note ? esc(j.note) : '<i style="color:var(--wms-faint)">ไม่มีหมายเหตุ</i>'}
+      <div class="jb-why">${g.needsReview ? '❓ ' : ''}${esc(g.why)}</div>
+    </div>
+  </div>`;
+}
+
+load();
+render();
+
+/* ดึงออเดอร์ให้เองตอนเปิด ด้วยกติกาเดียวกับหน้าอื่น */
+if (!JOBS.length && OrderIndex.savedUrl() && WmsGas.firstTry('order:jobs')) pullNow();
+</script>
+</body>
+</html>
