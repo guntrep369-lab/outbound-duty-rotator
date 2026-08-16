@@ -47,6 +47,10 @@ function boot(files, opts = {}) {
     addEventListener: (kind, fn) => { if (kind === 'DOMContentLoaded') handlers.push(fn); },
     getElementById: () => null,
     querySelector: () => null,          // ไม่มี .mod-head → แถบไม่วาด ทดสอบเฉพาะการตัดสินใจ
+    // โมดูลของหน้า: ส่วนกลางทำงานเฉพาะในโมดูลทำใบงานขนส่ง หน้าอื่นที่โหลดไฟล์นี้
+    // (เช่น ค้นหาออเดอร์ ซึ่งใช้ข้อมูลรถตอบว่าออเดอร์ไปกับคันไหน) ต้องไม่ถูกแตะ
+    body: { getAttribute: (k) => (k === 'data-wms-module'
+      ? (opts.module === undefined ? 'transport' : opts.module) : null) },
   };
 
   const reloads = { n: 0 };
@@ -144,6 +148,31 @@ describe('เปิดหน้ามาแล้วดึงไฟล์ให�
 
     expect(t.TransportFile.get()).toBeNull();
     expect(t.reloads.n).toBe(0);
+  });
+
+  /**
+   * กันไม่ให้บั๊กที่เคยเกิดกลับมา
+   *
+   * ตอนแรกส่วนกลางแปะตัวเองลงทุกหน้าที่โหลดไฟล์นี้ หน้าค้นหาออเดอร์จึงมีปุ่ม
+   * "บันทึกให้ทีมคลังใช้" โผล่มาแบบไม่มีสไตล์ และ autoLoad ก็ทำงานที่นั่นด้วย
+   * แล้วจบด้วยการโหลดหน้าใหม่กลางคันตอนคนกำลังพิมพ์ค้นหาให้ลูกค้าที่โทรมา
+   */
+  it('หน้าที่ไม่ใช่โมดูลขนส่ง ต้องไม่ถูกแตะเลย', async () => {
+    const t = boot([fileOf(ymd(0))], { module: 'lookup' });
+    await t.fire();
+
+    expect(t.calls.length).toBe(0);        // ไม่ยิง Apps Script
+    expect(t.reloads.n).toBe(0);           // ไม่โหลดหน้าใหม่ใส่คนที่กำลังใช้งาน
+    expect(t.TransportFile.get()).toBeNull();
+  });
+
+  it('แต่ยังอ่านเขียนไฟล์ได้ตามปกติในหน้าอื่น', async () => {
+    const t = boot([fileOf(ymd(0))], { module: 'lookup' });
+    t.TransportFile.save('อัปเอง.xlsx', ROWS, null);
+    await t.fire();
+
+    expect(t.TransportFile.get().fileName).toBe('อัปเอง.xlsx');
+    expect(t.TransportFile.COLS.time).toBe(13);
   });
 
   it('ยิงครั้งเดียวต่อรอบเบราว์เซอร์ ไม่ถล่มสคริปต์ทุกหน้าที่เปิด', async () => {

@@ -222,6 +222,23 @@
   var C = window.TransportFile.central;
   var AUTO_FLAG = 'wms:transport:autotried';
 
+  /**
+   * แถบนี้เป็นของโมดูลทำใบงานขนส่งเท่านั้น
+   *
+   * ไฟล์นี้ถูกโหลดในหน้าค้นหาออเดอร์ด้วย เพราะที่นั่นใช้ข้อมูลรถตอบว่าออเดอร์ไป
+   * กับคันไหน แต่ตอนแรกผมให้แถบแปะตัวเองลงทุกหน้าที่มี .mod-head ผลคือปุ่ม
+   * "บันทึกให้ทีมคลังใช้" ไปโผล่ในหน้าค้นหา แบบไม่มีสไตล์ด้วย เพราะ CSS ผูกกับ
+   * data-wms-module="transport" — และที่หนักกว่านั้นคือ autoLoad ก็ทำงานตาม
+   * ไปด้วย แล้วจบด้วย location.reload() กลางหน้าที่คนกำลังพิมพ์ค้นหาให้ลูกค้า
+   *
+   * การอ่าน/เขียนไฟล์ยังใช้ได้ทุกหน้าเหมือนเดิม ที่กั้นคือส่วนที่แสดงผลกับที่
+   * โหลดหน้าใหม่เท่านั้น
+   */
+  function onTransportPage() {
+    return typeof document !== 'undefined' && document.body &&
+           document.body.getAttribute('data-wms-module') === 'transport';
+  }
+
   function el(tag, cls, text) {
     var e = document.createElement(tag);
     if (cls) e.className = cls;
@@ -276,7 +293,7 @@
     // ส่วนบนของไฟล์นี้ (COLS, checkHeader, save/get) ตั้งใจให้ไม่แตะ DOM เลย
     // เทสต์จึงโหลดมันได้ด้วย window ปลอมโดยไม่ต้องมีเบราว์เซอร์ — ส่วน UI ตรงนี้
     // ต้องเคารพข้อตกลงเดิมนั้น ไม่ใช่บังคับให้ทุกคนที่ import ต้องมี document
-    if (typeof document === 'undefined') return;
+    if (!onTransportPage()) return;
     var h = host();
     if (!h) return;
     h.innerHTML = '';
@@ -386,6 +403,7 @@
    * ยิงครั้งเดียวต่อรอบเบราว์เซอร์ ล้มแล้วไม่ยิงซ้ำทุกหน้าที่เปิด
    */
   function autoLoad() {
+    if (!onTransportPage()) return;
     if (!C.on() || read()) return;
     try { if (sessionStorage.getItem(AUTO_FLAG)) return; sessionStorage.setItem(AUTO_FLAG, '1'); } catch (e) {}
     C.list().then(function (files) {
