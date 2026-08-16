@@ -209,6 +209,11 @@ document.getElementById('skuTry').addEventListener('input', function () {
 });
 
 paintSku();
+
+/* ไม่มีชื่อสินค้าเลยและตั้ง URL สต๊อกไว้แล้ว → ดึงให้เอง เหมือนโมดูลอื่นในระบบ
+   ดึงเฉพาะตอนไม่มีอะไรเลย ไม่ใช่ทุกครั้งที่เปิด เพราะชื่อสินค้าไม่ได้เปลี่ยนรายวัน
+   และเก็บอยู่ในเครื่องข้ามวันอยู่แล้ว — ปุ่มดึงเองยังกดได้เมื่อมีสินค้าใหม่ */
+if (!WhSku.sources().stock && WmsStock.savedUrl() && WmsGas.firstTry('stock:warehouse')) pullSku();
 </script>
 </body>
 </html>
