@@ -68,66 +68,15 @@
   // ══════════════════════════════════════════════════════════════════════
 
 
-  /**
-   * เติม ?api= ให้ URL ของ Apps Script
-   *
-   * order กับ stock อยู่ในโปรเจกต์ Apps Script เดียวกัน ซึ่งมี doGet ได้ตัวเดียว
-   * จึงรวมเป็น URL เดียวแล้วแยกงานด้วยพารามิเตอร์ — วาง URL เดียวกันได้ทั้งสองช่อง
-   * ถ้า URL ใส่ api มาเองแล้วก็เคารพของเดิม (เผื่อ deployment แยกแบบเก่า)
-   */
-  function withApi(url, api) {
-    var u = String(url || '').trim();
-    if (!u) return u;
-    if (/[?&]api=/.test(u)) return u;
-    return u + (u.indexOf('?') === -1 ? '?' : '&') + 'api=' + api;
-  }
+  /* ตัวยิง Apps Script ย้ายไปอยู่ wms-gas.js แล้ว เพราะโมดูลสต๊อกก็ต้องใช้ตัวเดียวกัน
+     ห่อไว้ตรงนี้เพื่อให้ที่เรียก OrderIndex.withApi / .fetchWithRetry อยู่เดิมไม่พัง
+     และเรียกผ่าน window ตอนใช้งานจริง ไม่ใช่ตอนโหลดไฟล์ ลำดับ <script> จึงไม่สำคัญ
 
-  /**
-   * Fetch an Apps Script endpoint, which is slow and occasionally flaky.
-   *
-   * TIMEOUT: 90s, not 30s. A GAS web app reading a grown sheet routinely needs
-   * 30–60s, and the old 30s cap turned "slow but working" into "aborted, retried
-   * twice, failed after 94 seconds". Waiting 40s and succeeding beats that.
-   *
-   * RETRY: only for errors that a retry can fix — a dropped connection, a 5xx,
-   * a GAS cold start. A timeout is NOT retried: the caller has already waited the
-   * full 90s, and spending another 90 to hear the same thing is worse than
-   * handing back control. `onProgress` ticks each second so the wait shows.
-   */
-  async function fetchWithRetry(url, opts) {
-    var o = opts || {};
-    var retries = o.retries == null ? 1 : o.retries;
-    var timeoutMs = o.timeoutMs == null ? 90000 : o.timeoutMs;
-    var lastErr;
-    for (var attempt = 0; attempt <= retries; attempt++) {
-      var ctrl = new AbortController();
-      var started = Date.now();
-      var timer = setTimeout(function () { ctrl.abort(); }, timeoutMs);
-      var ticker = o.onProgress
-        ? setInterval((function (a) {
-            return function () { o.onProgress(Math.round((Date.now() - started) / 1000), a); };
-          })(attempt), 1000)
-        : null;
-      try {
-        var resp = await fetch(url, { redirect: 'follow', signal: ctrl.signal });
-        clearTimeout(timer); if (ticker) clearInterval(ticker);
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        return resp;
-      } catch (err) {
-        clearTimeout(timer); if (ticker) clearInterval(ticker);
-        var timedOut = err.name === 'AbortError';
-        lastErr = timedOut
-          ? new Error('หมดเวลา ' + (timeoutMs / 1000) + ' วินาที — Apps Script ตอบช้าเกินไป')
-          : err;
-        if (timedOut) break;                       // see RETRY above
-        if (attempt < retries) {
-          if (o.onRetry) o.onRetry(attempt + 1, retries, lastErr);
-          await new Promise(function (r) { setTimeout(r, 1200 * (attempt + 1)); });
-        }
-      }
-    }
-    throw lastErr;
-  }
+     เรื่อง ?api=: order กับ stock อยู่ในโปรเจกต์ Apps Script เดียวกัน ซึ่งมี doGet
+     ได้ตัวเดียว จึงรวมเป็น URL เดียวแล้วแยกงานด้วยพารามิเตอร์ — วาง URL เดียวกัน
+     ได้ทั้งสองช่อง */
+  function withApi(url, api) { return window.WmsGas.withApi(url, api); }
+  function fetchWithRetry(url, opts) { return window.WmsGas.fetchWithRetry(url, opts); }
 
   /** แถวดิบจากชีต → รูปแบบที่ทุกหน้าในระบบใช้ */
   function convertGASRows(rows) {

@@ -156,7 +156,7 @@ WhForm.wire(document.getElementById('items'));
       `<a href="#" id="nextSheet">สร้างใบถัดไป</a>`
     : '';
   slot.insertAdjacentHTML('beforeend', `<div class="wh-warn" style="background:#DCFCE7;border-color:#86EFAC;color:#166534">` +
-    `📤 กรอก <b>${use.length}</b> รายการจากแท็บเช็คสต๊อกให้แล้ว — ` +
+    `📤 กรอก <b>${use.length}</b> รายการจาก${d.meta.src || 'แท็บเช็คสต๊อก'}ให้แล้ว — ` +
     `จำนวนที่ต้องใช้อยู่ในช่อง <b>A</b> ปรับเป็นจำนวนกล่องได้${more}</div>`);
 
   const next = document.getElementById('nextSheet');

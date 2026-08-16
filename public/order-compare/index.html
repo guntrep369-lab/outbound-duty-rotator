@@ -866,7 +866,9 @@ td{padding:9px 12px;vertical-align:middle}
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="../wms-settings.js"></script>
+<script src="../wms-gas.js"></script>
 <script src="../wms-order-index.js"></script>
+<script src="../wms-stock.js"></script>
 <script src="../wms-draft.js"></script>
 <script>
 // ══════════════════════════════════════════════════════
@@ -889,8 +891,10 @@ let stockLoadedAt = 0;   // เวลาที่สต๊อกชุดล่�
  * เดิมสองที่คิดคนละแบบ: ตารางหลักใช้ need×1.5 ส่วนแผงย่อยใต้แถวใช้ qty×2
  * SKU เดียวกันจึงขึ้น "เหลือน้อย" ที่หนึ่งแต่ "พอ" อีกที่หนึ่งได้ และเกณฑ์ที่ผูกกับ
  * ยอดวันนี้ยังแปลว่าของ 8 ชิ้นจะดู "พอ" ทุกวันที่ออเดอร์น้อย ทั้งที่ใกล้หมดจริง
+ *
+ * ตัวเลขจริงอยู่ที่ ../wms-stock.js เพราะหน้าสต๊อกทั้งคลังใช้เกณฑ์เดียวกัน
  */
-const LOW_STOCK_QTY = 10;
+const LOW_STOCK_QTY = WmsStock.LOW_QTY;
 
 let stockMap = {};   // sku -> {sku, description, qa, newwh, total}
 let diffResults = [];
@@ -2026,8 +2030,9 @@ function runStockCheck() {
     const orderList = Object.values(d.orderMap).sort((a,b) => a.orderId.localeCompare(b.orderId));
     /* ของกองอยู่ที่ QA มากกว่าที่ NEW WH แปลว่าต้องไปเบิกจาก QA มา ไม่ใช่หยิบ
        จากคลังหน้างานได้เลย — ทีมอยากเห็นตั้งแต่ตอนอ่านใบ ไม่ใช่ไปเจอตอนหยิบไม่พอ
-       เท่ากันไม่นับ ตามที่ตกลงไว้ว่า "มากกว่า" */
-    const qaPick = !!s && s.qa > s.newwh;
+       เท่ากันไม่นับ ตามที่ตกลงไว้ว่า "มากกว่า" (กฎอยู่ที่ ../wms-stock.js
+       เพราะหน้าสต๊อกทั้งคลังคัดด้วยกฎเดียวกัน) */
+    const qaPick = WmsStock.needsQa(s);
     return { sku: d.sku, name: d.name, need, qa, newwh, total, status, qaPick, orders: orderList.length, orderList };
   });
 
@@ -2273,7 +2278,7 @@ function qaConfirm() {
     items.push({ sku: r.sku, name: r.name, qty });
   });
   if (!items.length) return;
-  if (!WmsDraft.put('requisition', items, { from: 'QA', to: 'NEW WH-2' })) {
+  if (!WmsDraft.put('requisition', items, { from: 'QA', to: 'NEW WH-2', src: 'แท็บเช็คสต๊อก' })) {
     alert('ส่งข้อมูลไปใบเบิกไม่ได้ (เบราว์เซอร์โหมดส่วนตัวหรือพื้นที่เต็ม)');
     return;
   }
@@ -2324,66 +2329,10 @@ async function loadStockFromGAS(inputId, directUrl) {
       throw new Error(`ข้อมูลที่ได้ไม่ใช่ JSON: "${text.slice(0,120)}..."`);
     }
 
-    // Support 3 formats:
-    // A: { headers:[...], rows:[[...]] }        ← our Apps Script format
-    // B: [ { SKU:'', Description:'', ... } ]    ← array of objects
-    // C: { error: '...' }                        ← error from script
-
-    if (json.error) throw new Error(`Apps Script error: ${json.error}`);
-
-    let map = {};
-    let count = 0;
-
-    if (Array.isArray(json)) {
-      // Format B: array of objects
-      json.forEach(r => {
-        const keys = Object.keys(r);
-        const skuKey  = keys.find(k => /^sku$/i.test(k.trim()));
-        const descKey = keys.find(k => k !== skuKey &&
-          /desc|ชื่อสินค้า|ชื่อ|รายละเอียด|product\s*name|item\s*name|^name$/i.test(k));
-        const qaKey   = keys.find(k => /\bqa\b/i.test(k));
-        const nwKey   = keys.find(k => /new.*wh|คลัง\s*new/i.test(k));
-        const totKey  = keys.find(k => /total/i.test(k));
-        if (!skuKey) return;
-        const sku = String(r[skuKey] || '').trim();
-        if (!sku) return;
-        map[sku] = {
-          sku,
-          description: descKey ? String(r[descKey] || '') : '',
-          qa:    parseFloat(r[qaKey]  || 0) || 0,
-          newwh: parseFloat(r[nwKey]  || 0) || 0,
-          total: parseFloat(r[totKey] || 0) || 0,
-        };
-        count++;
-      });
-    } else if (json.headers && json.rows) {
-      // Format A: { headers, rows }
-      const h = json.headers.map(x => String(x).toLowerCase().replace(/\s/g,''));
-      const iSku  = h.findIndex(x => /^sku$/.test(x));
-      const iDesc = h.findIndex((x, i) => i !== iSku &&
-        /desc|ชื่อสินค้า|ชื่อ|รายละเอียด|product\s*name|item\s*name|^name$/i.test(x));
-      const iQA   = h.findIndex(x => /\bqa\b/.test(x));
-      const iNW   = h.findIndex(x => x.includes('new') || (x.includes('wh') && !/qa/.test(x)));
-      const iTot  = h.findIndex(x => x.includes('total'));
-      if (iSku < 0) throw new Error(`ไม่พบคอลัมน์ SKU ใน headers: [${json.headers.join(', ')}]`);
-      json.rows.forEach(row => {
-        const sku = String(row[iSku] || '').trim();
-        if (!sku) return;
-        map[sku] = {
-          sku,
-          description: iDesc >= 0 ? String(row[iDesc] || '') : '',
-          qa:    parseFloat(row[iQA]  || 0) || 0,
-          newwh: parseFloat(row[iNW]  || 0) || 0,
-          total: parseFloat(row[iTot] || 0) || 0,
-        };
-        count++;
-      });
-    } else {
-      // Unknown format — show keys for debugging
-      throw new Error(`รูปแบบไม่รองรับ — keys ที่ได้: [${Object.keys(json).join(', ')}]`);
-    }
-
-    if (!count) throw new Error('ไม่พบข้อมูล SKU ใน response');
+    /* แปลงเป็น ../wms-stock.js เพราะหน้าสต๊อกทั้งคลังอ่านชีตเดียวกันนี้
+       รองรับสองรูปแบบ: { headers, rows } ของสคริปต์เรา และ array of objects
+       ส่วน { error } ของสคริปต์ก็โยนออกมาจากในนั้นเลย */
+    const { map, count } = WmsStock.parse(json);
 
     stockMap = map;
     stockLoadedAt = Date.now();
@@ -2434,25 +2383,20 @@ function maybePullStock() {
    รีเฟรชหน้าทีแล้วต้องกดดึงใหม่ทุกครั้งคือการรอสิบ ๆ วินาทีกับข้อมูลชุดเดิม
 
    ไม่เก็บ stockRaw (แถวออเดอร์ที่ใช้คำนวณความต้องการ) เพราะมันมาจากไฟล์ออเดอร์
-   ซึ่งกู้คืนมาแล้วอีกทางหนึ่ง — เก็บซ้ำคือเปลืองที่และเสี่ยงสองชุดไม่ตรงกัน */
-const STOCK_KEY = 'wms:stock:today';
+   ซึ่งกู้คืนมาแล้วอีกทางหนึ่ง — เก็บซ้ำคือเปลืองที่และเสี่ยงสองชุดไม่ตรงกัน
+
+   ตัวเก็บอยู่ที่ ../wms-stock.js เพราะโมดูลสต๊อกอ่านแคชกองเดียวกันนี้ — ดึงที่หน้า
+   ไหนอีกหน้าก็ได้ใช้ทันที ไม่ต้องรอ Apps Script ซ้ำอีกสิบ ๆ วินาที */
 
 function saveStockCache() {
-  try {
-    if (!Object.keys(stockMap).length) return;
-    sessionStorage.setItem(STOCK_KEY, JSON.stringify({
-      at: stockLoadedAt || Date.now(), map: stockMap,
-      source: lastStockSource, url: lastStockGasUrl, filename: lastStockFile,
-    }));
-  } catch (e) {
-    console.warn('เก็บสต๊อกของวันนี้ไม่ได้ —', e.message);
-  }
+  WmsStock.save(stockMap, stockLoadedAt, {
+    source: lastStockSource, url: lastStockGasUrl, filename: lastStockFile,
+  });
 }
 
 function restoreStockCache() {
-  let o = null;
-  try { o = JSON.parse(sessionStorage.getItem(STOCK_KEY) || 'null'); } catch (e) {}
-  if (!o || !o.map || !Object.keys(o.map).length) return false;
+  const o = WmsStock.read();
+  if (!o) return false;
   stockMap = o.map;
   stockLoadedAt = o.at || 0;
   setStockStatus('', { source: o.source, url: o.url, filename: o.filename,

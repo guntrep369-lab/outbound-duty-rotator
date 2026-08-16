@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>สต๊อกคงเหลือ — WMS</title>
+<link rel="stylesheet" href="../wms-theme.css">
+<link rel="stylesheet" href="../wms-gate.css">
+<script src="../wms-gate.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+
+/* ── แถบแหล่งข้อมูล ── */
+.sk-src{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 20px;
+  background:var(--wms-surface2);border-bottom:1px solid var(--wms-border);font-size:12px}
+.sk-src .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;
+  background:var(--wms-surface);border:1px solid var(--wms-border);color:var(--wms-muted)}
+.sk-src .pill b{color:var(--wms-text);font-weight:600}
+.sk-src .pill.warn{background:#FEF3C7;border-color:#FDE68A;color:#92400E}
+.sk-src .sp{flex:1}
+.sk-src button{padding:4px 12px;border-radius:999px;border:1px solid var(--wms-border2);
+  background:var(--wms-surface);font-family:var(--wms-font);font-size:12px;color:#334155;cursor:pointer}
+.sk-src button:hover:not(:disabled){background:var(--wms-primary-light);border-color:var(--wms-primary);
+  color:var(--wms-primary-dark)}
+.sk-src button.p{background:var(--wms-primary);border-color:var(--wms-primary);color:#fff}
+.sk-src button.p:hover:not(:disabled){filter:brightness(1.08);color:#fff}
+.sk-src button:disabled{opacity:.6;cursor:default}
+.sk-url{display:none;gap:8px;align-items:center;padding:10px 20px;background:var(--wms-surface);
+  border-bottom:1px solid var(--wms-border);flex-wrap:wrap}
+.sk-url input{flex:1;min-width:260px;padding:8px 12px;border-radius:var(--wms-radius-sm);
+  border:1px solid var(--wms-border2);font-family:var(--wms-font);font-size:12.5px;outline:none}
+.sk-url input:focus{border-color:var(--wms-primary)}
+.sk-url .t{font-size:12px;color:var(--wms-muted)}
+.sk-err{width:100%;margin:2px 0 0;font-size:12.5px;color:#B91C1C;font-weight:600}
+
+/* ── มุมมอง + ค้นหา ── */
+.sk-head{padding:13px 20px;background:var(--wms-surface);border-bottom:1px solid var(--wms-border)}
+.sk-views{display:flex;gap:7px;overflow-x:auto;padding-bottom:2px}
+.sk-view{flex-shrink:0;white-space:nowrap;display:inline-flex;align-items:center;gap:7px;
+  padding:7px 14px;border-radius:999px;border:1px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:13px;color:#334155;cursor:pointer;transition:all .13s}
+.sk-view:hover{border-color:var(--wms-primary);color:var(--wms-primary-dark)}
+.sk-view.on{background:var(--wms-primary);border-color:var(--wms-primary);color:#fff;font-weight:600}
+.sk-view .n{padding:1px 7px;border-radius:999px;background:var(--wms-surface2);
+  font-size:11.5px;font-weight:700;color:var(--wms-muted)}
+.sk-view.on .n{background:rgba(255,255,255,.22);color:#fff}
+.sk-why{margin-top:9px;font-size:12px;color:var(--wms-muted);line-height:1.6}
+.sk-why b{color:var(--wms-text);font-weight:600}
+.sk-find{position:relative;margin-top:11px;max-width:460px}
+.sk-find input{width:100%;padding:9px 13px 9px 36px;border-radius:10px;border:1.5px solid var(--wms-border2);
+  background:var(--wms-surface);font-family:var(--wms-font);font-size:13.5px;color:var(--wms-text);outline:none}
+.sk-find input:focus{border-color:var(--wms-primary)}
+.sk-find .ic{position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:14px;opacity:.5}
+
+/* ── ตาราง ── */
+.sk-body{padding:14px 20px 96px}
+.sk-tbl{width:100%;border-collapse:collapse;background:var(--wms-surface);
+  border:1px solid var(--wms-border);border-radius:var(--wms-radius);overflow:hidden;font-size:13px}
+.sk-tbl th{text-align:left;padding:9px 11px;background:var(--wms-surface2);font-size:11.5px;
+  font-weight:600;color:var(--wms-muted);border-bottom:1px solid var(--wms-border);white-space:nowrap}
+.sk-tbl td{padding:8px 11px;border-bottom:1px solid #F1F5F9;vertical-align:middle}
+.sk-tbl tr:last-child td{border-bottom:0}
+.sk-tbl tr.pick td{background:var(--wms-primary-light)}
+.sk-tbl .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.sk-tbl .sku{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;font-weight:600;white-space:nowrap}
+.sk-tbl .nm{color:#334155;line-height:1.4}
+.sk-tbl .cb{width:34px;text-align:center}
+.sk-tbl input[type=checkbox]{width:16px;height:16px;accent-color:var(--wms-primary);cursor:pointer}
+.sk-tbl input.q{width:64px;padding:4px 7px;border-radius:6px;border:1px solid var(--wms-border2);
+  font-family:var(--wms-font);font-size:12.5px;text-align:right;outline:none}
+.sk-tbl input.q:focus{border-color:var(--wms-primary)}
+.tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;white-space:nowrap}
+.tag.qa{background:#EDE9FE;color:#5B21B6}
+.tag.low{background:#FEF3C7;color:#92400E}
+.tag.out{background:#FEE2E2;color:#991B1B}
+.sk-empty{padding:44px 20px;text-align:center;color:var(--wms-muted);font-size:14px;line-height:1.7}
+.sk-empty b{color:var(--wms-text)}
+.sk-more{padding:9px 4px;font-size:12.5px;color:var(--wms-muted)}
+mark{background:#FEF08A;color:inherit;border-radius:3px;padding:0 1px}
+
+/* ── แถบสร้างใบเบิก ──
+   ลอยล่างจอ เพราะรายการยาวเป็นร้อยแถว ถ้าปุ่มอยู่ท้ายตารางคนต้องเลื่อนกลับลงไปหา
+   ทุกครั้งที่ติ๊กเพิ่มหนึ่งตัว */
+.sk-bar{position:fixed;left:0;right:0;bottom:0;z-index:40;display:none;align-items:center;gap:12px;
+  flex-wrap:wrap;padding:11px 20px;background:var(--wms-surface);border-top:1px solid var(--wms-border);
+  box-shadow:0 -3px 14px rgba(15,23,42,.09)}
+.sk-bar.on{display:flex}
+.sk-bar .sum{font-size:13.5px;color:var(--wms-text)}
+.sk-bar .sum b{font-weight:700}
+.sk-bar .sp{flex:1}
+.sk-bar button{padding:8px 16px;border-radius:10px;border:1px solid var(--wms-border2);
+  background:var(--wms-surface);font-family:var(--wms-font);font-size:13px;color:#334155;cursor:pointer}
+.sk-bar button.p{background:var(--wms-primary);border-color:var(--wms-primary);color:#fff;font-weight:600}
+.sk-bar button.p:hover{filter:brightness(1.08)}
+@media (max-width:640px){
+  .sk-body{padding:12px 12px 110px}
+  .sk-src,.sk-head{padding-left:12px;padding-right:12px}
+  .sk-tbl .nm{display:none}
+}
+</style>
+</head>
+<body data-wms-module="stock">
+
+<div class="wms-shell">
+<div data-wms-shell="stock" data-root="../"></div>
+<div class="wms-main">
+
+  <div class="mod-head">
+    <div class="mod-title">
+      <div class="ic">📦</div>
+      <div>
+        <h2>สต๊อกคงเหลือ · Stock on Hand</h2>
+        <p>ดูสต๊อกทั้งคลัง ไม่ใช่แค่ SKU ที่มีออเดอร์วันนี้ — ติ๊กแล้วส่งเข้าใบเบิกได้เลย</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="sk-src" id="src"></div>
+  <div class="sk-url" id="urlRow">
+    <span class="t">Apps Script URL</span>
+    <input id="gasUrl" type="url" placeholder="https://script.google.com/macros/s/.../exec" spellcheck="false">
+    <button class="p" onclick="pullNow()">ดึงข้อมูล</button>
+  </div>
+
+  <div class="sk-head">
+    <div class="sk-views" id="views"></div>
+    <div class="sk-why" id="why"></div>
+    <div class="sk-find">
+      <span class="ic">🔎</span>
+      <input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="ค้นหารหัส SKU หรือชื่อสินค้า">
+    </div>
+  </div>
+
+  <div class="sk-body" id="body"></div>
+
+</div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+
+<div class="sk-bar" id="bar"></div>
+
+<script type="module" src="../wms-shell.js"></script>
+<script src="../wms-settings.js"></script>
+<script src="../wms-gas.js"></script>
+<script src="../wms-stock.js"></script>
+<script src="../wms-draft.js"></script>
+<script>
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+let ROWS = [];        // ทุก SKU ในไฟล์สต๊อก
+let AT = 0;           // ดึงมาเมื่อไหร่
+let SRC = null;       // 'gas' | 'file' — มาจากไฟล์แปลว่ากดดึงใหม่ที่นี่ไม่ได้ถ้าไม่มี URL
+let PULLING = '';
+let VIEW = 'qa';      // เปิดมาเจอ "ต้องเบิก QA" ก่อน ตามที่ทีมใช้จริงทุกเช้า
+const PICK = new Map();   // sku -> จำนวนที่จะเบิก (คงอยู่ข้ามมุมมองและข้ามคำค้น)
+
+/**
+ * มุมมองของหน้านี้
+ *
+ * ทุกมุมมองมองข้อมูลชุดเดียวกันคนละมุม จึงเขียนเป็นตัวกรอง + ตัวเรียงคู่กัน
+ * ไม่ใช่ทำตารางแยกกันสี่ตาราง ซึ่งจะกลายเป็นสี่ที่ที่ต้องแก้ตามกันทุกครั้ง
+ *
+ * `why` คือประโยคที่บอกว่าแถวพวกนี้ถูกคัดมาด้วยเกณฑ์อะไร — ตัวเลขบนหน้าจอที่
+ * ไม่บอกที่มาคือตัวเลขที่คนต้องเดา แล้วสุดท้ายก็ไปเปิดชีตเช็คเองอยู่ดี
+ */
+const VIEWS = [
+  {
+    id: 'qa', icon: '📦', label: 'ต้องเบิก QA',
+    why: 'ของที่กองอยู่ที่ <b>คลัง QA มากกว่า NEW WH</b> — หน้าคลังหยิบไม่พอ ต้องไปขนมา ' +
+         'เรียงจากที่หน้าคลังเหลือน้อยที่สุดขึ้นก่อน',
+    test: (r) => WmsStock.needsQa(r),
+    sort: (a, b) => a.newwh - b.newwh || b.qa - a.qa,
+  },
+  {
+    id: 'low', icon: '⚠️', label: 'ใกล้หมด',
+    why: `ยอดรวมทั้งคลังต่ำกว่า <b>${WmsStock.LOW_QTY} ชิ้น</b> — นับทั้งคลัง ไม่ใช่แค่ SKU ที่มีออเดอร์วันนี้ ` +
+         'ของที่วันนี้ไม่มีใครสั่งจึงโผล่ตรงนี้ได้ ก่อนจะกลายเป็นของขาดในวันที่มีคนสั่ง',
+    test: (r) => r.total < WmsStock.LOW_QTY,
+    sort: (a, b) => a.total - b.total,
+  },
+  {
+    id: 'zero', icon: '🚨', label: 'NEW WH หมด · QA มีของ',
+    why: 'หน้าคลังหยิบเป็น <b>ศูนย์</b> แต่ของยังอยู่ที่ QA — หยิบไม่ได้ทั้งที่บริษัทมีของ เบิกได้ทันที',
+    test: (r) => r.newwh <= 0 && r.qa > 0,
+    sort: (a, b) => b.qa - a.qa,
+  },
+  {
+    id: 'all', icon: '📋', label: 'ทั้งหมด',
+    why: 'ทุก SKU ในไฟล์สต๊อก — ใช้ช่องค้นหาด้านล่างเพื่อดูตัวใดตัวหนึ่ง',
+    test: () => true,
+    sort: (a, b) => a.sku.localeCompare(b.sku),
+  },
+];
+
+const viewOf = (id) => VIEWS.find(v => v.id === id) || VIEWS[0];
+
+/* ── โหลดข้อมูล ─────────────────────────────────────────────────────────── */
+
+function load() {
+  const o = WmsStock.read();
+  ROWS = o ? Object.values(o.map) : [];
+  AT   = o ? (o.at || 0) : 0;
+  SRC  = o ? o.source : null;
+}
+
+function renderSrc() {
+  const el = document.getElementById('src');
+  const when = AT ? new Date(AT).toLocaleTimeString('th-TH', { hour:'2-digit', minute:'2-digit' }) : '';
+  const url = WmsStock.savedUrl();
+
+  let html = '';
+  if (PULLING) {
+    html += `<span class="pill">⏳ ${esc(PULLING)}</span>`;
+  } else if (ROWS.length) {
+    html += `<span class="pill">📦 <b>${ROWS.length}</b> SKU</span>` +
+            `<span class="pill">🕐 ${SRC === 'file' ? 'จากไฟล์' : 'ดึงเมื่อ'} <b>${esc(when)}</b></span>`;
+  } else {
+    html += `<span class="pill warn">⚠️ ยังไม่มีข้อมูลสต๊อก</span>`;
+  }
+
+  html += `<span class="sp"></span>`;
+  html += `<button id="pullBtn" class="${ROWS.length ? '' : 'p'}" ${PULLING ? 'disabled' : ''} ` +
+          `onclick="${url ? 'pullNow()' : 'showUrlRow()'}">` +
+          `${PULLING ? 'กำลังดึง…' : (ROWS.length ? '🔄 ดึงใหม่' : '⬇️ ดึงสต๊อกล่าสุด')}</button>`;
+  if (!url) html += `<span class="pill">ยังไม่ได้ตั้ง Apps Script URL — <a href="../settings/">ตั้งที่หน้าตั้งค่า</a></span>`;
+  el.innerHTML = html;
+}
+
+function showUrlRow() {
+  const row = document.getElementById('urlRow');
+  row.style.display = 'flex';
+  const box = document.getElementById('gasUrl');
+  box.value = WmsStock.savedUrl();
+  box.focus();
+}
+
+function setErr(msg) {
+  let el = document.getElementById('skErr');
+  if (!el) {
+    el = document.createElement('p');
+    el.id = 'skErr'; el.className = 'sk-err';
+    document.getElementById('urlRow').appendChild(el);
+  }
+  el.textContent = msg;
+  if (msg) document.getElementById('urlRow').style.display = 'flex';
+}
+
+/**
+ * ดึงเองจากหน้านี้ ไม่ต้องแวะแท็บเช็คสต๊อกก่อน
+ *
+ * ใช้ URL ตัวดึงและตัวแปลงชุดเดียวกับแท็บเช็คสต๊อก (../wms-stock.js) แล้วเก็บลง
+ * แคชกองเดียวกัน — ดึงที่นี่แล้วเปิดแท็บเช็คสต๊อกก็มีข้อมูลรออยู่แล้ว และกลับกันด้วย
+ */
+async function pullNow() {
+  if (PULLING) return;
+  const typed = document.getElementById('gasUrl').value.trim();
+  const url = typed || WmsStock.savedUrl();
+  if (!url) { showUrlRow(); setErr('ใส่ Apps Script URL ก่อน'); return; }
+
+  setErr('');
+  PULLING = 'กำลังดึงสต๊อก…';
+  renderSrc();
+  try {
+    await WmsStock.pull(url, {
+      onProgress: (sec) => { PULLING = `กำลังดึงสต๊อก… ${sec} วินาที`; renderSrc(); },
+      onRetry: () => { PULLING = 'ไม่สำเร็จ กำลังลองใหม่…'; renderSrc(); },
+    });
+    WmsStock.saveUrl(url);
+    document.getElementById('urlRow').style.display = 'none';
+    PULLING = '';
+    load();
+    renderAll();
+  } catch (err) {
+    PULLING = '';
+    renderSrc();
+    setErr('ดึงสต๊อกไม่สำเร็จ — ' + err.message);
+  }
+}
+
+/* ── กรอง + วาด ─────────────────────────────────────────────────────────── */
+
+const norm = s => String(s ?? '').toLowerCase().replace(/\s+/g, '');
+
+function inView(id) { return ROWS.filter(viewOf(id).test); }
+
+function visible() {
+  const v = viewOf(VIEW);
+  const q = norm(document.getElementById('q').value);
+  let rows = inView(VIEW);
+  if (q.length >= 1) rows = rows.filter(r => norm(r.sku).includes(q) || norm(r.description).includes(q));
+  return rows.sort(v.sort);
+}
+
+function renderViews() {
+  document.getElementById('views').innerHTML = VIEWS.map(v =>
+    `<button class="sk-view ${v.id === VIEW ? 'on' : ''}" onclick="setView('${v.id}')">` +
+    `${v.icon} ${esc(v.label)} <span class="n">${ROWS.length ? inView(v.id).length : 0}</span></button>`
+  ).join('');
+  document.getElementById('why').innerHTML = viewOf(VIEW).why;
+}
+
+function setView(id) { VIEW = id; renderViews(); renderBody(); }
+
+function hi(text, q) {
+  const t = String(text ?? ''); if (!t) return '';
+  if (!q) return esc(t);
+  const i = t.toLowerCase().indexOf(q);
+  if (i < 0) return esc(t);
+  return esc(t.slice(0, i)) + '<mark>' + esc(t.slice(i, i + q.length)) + '</mark>' + esc(t.slice(i + q.length));
+}
+
+const MAX = 300;   // มากกว่านี้เบราว์เซอร์เริ่มหน่วง และคนก็ไม่ได้ไล่อ่านทีละแถวอยู่แล้ว
+
+function renderBody() {
+  const body = document.getElementById('body');
+  const rawQ = document.getElementById('q').value.trim().toLowerCase();
+
+  if (!ROWS.length) {
+    body.innerHTML = `<div class="sk-empty">ยังไม่มีข้อมูลสต๊อก<br>
+      กด <b>${WmsStock.savedUrl() ? '⬇️ ดึงสต๊อกล่าสุด' : 'ตั้ง Apps Script URL'}</b> ที่แถบด้านบน
+      — หรือถ้าเพิ่งดึงที่แท็บ <b>เช็คสต๊อก</b> ในโมดูลเทียบ Order ไปแล้ว หน้านี้จะใช้ชุดเดียวกันทันที</div>`;
+    renderBar();
+    return;
+  }
+
+  const rows = visible();
+  if (!rows.length) {
+    body.innerHTML = `<div class="sk-empty">${rawQ
+      ? `ไม่พบ "<b>${esc(rawQ)}</b>" ในมุมมองนี้`
+      : 'ไม่มีรายการในมุมมองนี้ — <b>เป็นเรื่องดี</b>'}</div>`;
+    renderBar();
+    return;
+  }
+
+  const shown = rows.slice(0, MAX);
+  const allOn = shown.every(r => PICK.has(r.sku));
+
+  body.innerHTML =
+    (rows.length > MAX ? `<div class="sk-more">พบ ${rows.length} รายการ — แสดง ${MAX} แถวแรก พิมพ์ค้นหาเพื่อให้แคบลง</div>` : '') +
+    `<table class="sk-tbl">
+      <thead><tr>
+        <th class="cb"><input type="checkbox" id="allCb" ${allOn ? 'checked' : ''} onchange="toggleAll(this.checked)"></th>
+        <th>SKU</th><th>ชื่อสินค้า</th>
+        <th class="num">QA</th><th class="num">NEW WH</th><th class="num">รวม</th>
+        <th></th>
+        <th class="num">เบิก</th>
+      </tr></thead>
+      <tbody>${shown.map(r => row(r, rawQ)).join('')}</tbody>
+    </table>`;
+  // indeterminate เป็น property ไม่ใช่ attribute เขียนลง HTML ไม่ได้ ต้องตั้งหลังวาด
+  // ไม่งั้นทุกครั้งที่วาดตารางใหม่ (สลับมุมมอง พิมพ์ค้นหา) หัวตารางจะกลับไปเป็น
+  // ช่องว่างเปล่า ทั้งที่ยังเลือกของไว้อยู่ครึ่งหนึ่ง
+  syncAllCb();
+  renderBar();
+}
+
+function row(r, q) {
+  const on = PICK.has(r.sku);
+  const tags =
+    (WmsStock.needsQa(r) ? '<span class="tag qa">เบิก QA</span> ' : '') +
+    (r.total <= 0 ? '<span class="tag out">หมด</span>'
+      : r.total < WmsStock.LOW_QTY ? '<span class="tag low">เหลือน้อย</span>' : '');
+  return `<tr class="${on ? 'pick' : ''}" data-sku="${esc(r.sku)}">
+    <td class="cb"><input type="checkbox" ${on ? 'checked' : ''} onchange="togglePick('${esc(r.sku)}',this.checked)"></td>
+    <td class="sku">${hi(r.sku, q)}</td>
+    <td class="nm">${hi(r.description, q)}</td>
+    <td class="num">${r.qa}</td>
+    <td class="num">${r.newwh}</td>
+    <td class="num">${r.total}</td>
+    <td>${tags}</td>
+    <td class="num"><input class="q" type="number" min="1" value="${on ? PICK.get(r.sku) : ''}"
+      placeholder="${defaultQty(r)}" oninput="setQty('${esc(r.sku)}',this.value)"></td>
+  </tr>`;
+}
+
+/**
+ * จำนวนตั้งต้นเวลาติ๊กเลือก = ยอดที่ QA มีอยู่
+ *
+ * เป็นยอดที่อ่านได้จากไฟล์ตรง ๆ ไม่ใช่กฎเติมสต๊อกที่ผมตั้งขึ้นเอง (เช่น "เติมให้ถึง
+ * 10") ซึ่งจะเป็นตัวเลขที่ดูน่าเชื่อถือทั้งที่ไม่มีใครในทีมเคยตกลงด้วย — ถ้าทีมมีกฎ
+ * เติมของจริง ค่อยเปลี่ยนตรงนี้ทีเดียว ระหว่างนี้ช่องจำนวนแก้ได้ทุกแถว
+ */
+function defaultQty(r) { return Math.max(1, Math.round(r.qa)); }
+
+function togglePick(sku, on) {
+  const r = ROWS.find(x => x.sku === sku);
+  if (on && r) PICK.set(sku, defaultQty(r)); else PICK.delete(sku);
+  const tr = document.querySelector(`tr[data-sku="${CSS.escape(sku)}"]`);
+  if (tr) {
+    tr.classList.toggle('pick', on);
+    const q = tr.querySelector('input.q');
+    if (q) q.value = on ? PICK.get(sku) : '';
+  }
+  syncAllCb();
+  renderBar();
+}
+
+/** พิมพ์จำนวนลงไปตรง ๆ = ตั้งใจจะเบิกตัวนั้น ติ๊กให้เลย ไม่ต้องกดสองที */
+function setQty(sku, val) {
+  const n = parseInt(val, 10);
+  if (!val.trim()) { PICK.delete(sku); }
+  else if (!isNaN(n) && n > 0) { PICK.set(sku, n); }
+  else return;
+  const tr = document.querySelector(`tr[data-sku="${CSS.escape(sku)}"]`);
+  if (tr) {
+    tr.classList.toggle('pick', PICK.has(sku));
+    const cb = tr.querySelector('input[type=checkbox]');
+    if (cb) cb.checked = PICK.has(sku);
+  }
+  syncAllCb();
+  renderBar();
+}
+
+function toggleAll(on) {
+  visible().slice(0, MAX).forEach(r => {
+    if (on) PICK.set(r.sku, PICK.get(r.sku) || defaultQty(r)); else PICK.delete(r.sku);
+  });
+  renderBody();
+}
+
+function syncAllCb() {
+  const cb = document.getElementById('allCb');
+  if (!cb) return;
+  const shown = visible().slice(0, MAX);
+  const n = shown.filter(r => PICK.has(r.sku)).length;
+  cb.checked = n > 0 && n === shown.length;
+  cb.indeterminate = n > 0 && n < shown.length;
+}
+
+function renderBar() {
+  const bar = document.getElementById('bar');
+  if (!PICK.size) { bar.className = 'sk-bar'; bar.innerHTML = ''; return; }
+  let pcs = 0; PICK.forEach(v => { pcs += v; });
+  bar.className = 'sk-bar on';
+  bar.innerHTML =
+    `<span class="sum">เลือกไว้ <b>${PICK.size}</b> รายการ · รวม <b>${pcs}</b> ชิ้น</span>` +
+    `<span class="sp"></span>` +
+    `<button onclick="clearPick()">ล้างที่เลือก</button>` +
+    `<button class="p" onclick="makeRequisition()">📤 สร้างใบเบิก</button>`;
+}
+
+function clearPick() { PICK.clear(); renderBody(); }
+
+/**
+ * ส่งเข้าใบเบิกของโมดูลเอกสารคลังสินค้า
+ *
+ * ใบเบิกกรอกได้ 10 แถวต่อแผ่น ส่วนที่เกินหน้านั้นรับไปจัดการต่อเองด้วยลิงก์
+ * "สร้างใบถัดไป" — ที่นี่จึงส่งไปทั้งก้อน ไม่ต้องตัดให้
+ */
+function makeRequisition() {
+  if (!PICK.size) return;
+  const items = [];
+  ROWS.forEach(r => { if (PICK.has(r.sku)) items.push({ sku: r.sku, name: r.description, qty: PICK.get(r.sku) }); });
+  if (!WmsDraft.put('requisition', items, { from: 'QA', to: 'NEW WH-2', src: 'หน้าสต๊อกคงเหลือ' })) {
+    alert('ส่งรายการไปใบเบิกไม่ได้ — เบราว์เซอร์ไม่ยอมให้เก็บข้อมูลชั่วคราว');
+    return;
+  }
+  location.href = '../warehouse-forms/requisition.html';
+}
+
+function renderAll() { renderSrc(); renderViews(); renderBody(); }
+
+document.getElementById('q').addEventListener('input', renderBody);
+
+load();
+renderAll();
+
+/* ยังไม่มีข้อมูลแต่ตั้ง URL ไว้แล้ว → ดึงให้เลย เปิดหน้ามาแล้วต้องกดปุ่มก่อนถึงจะ
+   เห็นอะไรคือขั้นตอนที่ไม่ได้ให้ทางเลือกอะไรกับใคร ยิงครั้งเดียว ล้มแล้วไม่ยิงซ้ำ */
+if (!ROWS.length && WmsStock.savedUrl()) pullNow();
+</script>
+</body>
+</html>
