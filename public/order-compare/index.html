@@ -421,6 +421,9 @@ td{padding:9px 12px;vertical-align:middle}
   .ddot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0}
   .ddot.on{background:#16A34A} .ddot.wait{background:#F59E0B} .ddot.off{background:#CBD5E1}
   .ddot.old{background:#DC2626}
+  .ddate{color:var(--muted)}
+  /* ไม่ใช่วันนี้ = ปกติสำหรับทีมที่ทำงานล่วงหน้า แต่ต้องสะดุดตาพอให้รู้ตัว */
+  .ddate.ahead{color:#B45309;font-weight:600}
   .dage.stale{color:#B45309;font-weight:600}
   .dage.old{color:#B91C1C;font-weight:700}
   .dtxt{color:var(--text);white-space:nowrap}
@@ -2477,7 +2480,7 @@ function updateDataBar() {
   const state = {
     order: {
       url: WmsSettings.orderUrl(), n: orderRows, at: idx ? idx.at : 0,
-      have: `<b>ออเดอร์</b> ${orderRows} แถว` + (carriersData.length ? ` <span class="dim">· ${carriersData.length} ขนส่ง</span>` : ''),
+      have: `<b>ออเดอร์</b> ${orderRows} แถว` + (carriersData.length ? ` <span class="dim">· ${carriersData.length} ขนส่ง</span>` : '') + comparedDates(),
       none: 'ยังไม่ได้ดึง<b>ออเดอร์</b>ของวันนี้',
       noUrl: 'ยังไม่ได้ตั้ง URL <b>ออเดอร์</b>',
     },
@@ -2518,6 +2521,29 @@ function updateDataBar() {
 }
 
 /**
+ * วันที่ของออเดอร์ที่กำลังเทียบอยู่
+ *
+ * ต้องเห็นตลอดเวลา เพราะสคริปต์ไม่ได้ยึดว่าเป็น "วันนี้" อีกแล้ว — มันใช้วันล่าสุด
+ * ที่มีอยู่ในชีต ซึ่งคือวันที่ทีมกำลังทำอยู่ อาจเป็นพรุ่งนี้ก็ได้ ถ้าไม่บอก คนจะ
+ * ไม่มีทางรู้ว่าตัวเลขตรงหน้าเป็นของวันไหน
+ */
+function comparedDates() {
+  const ds = [...new Set(carriersData.map(c => c.date).filter(Boolean))].sort();
+  if (!ds.length) return '';
+  const th = (v) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+    if (!m) return v;
+    return new Date(+m[1], +m[2] - 1, +m[3])
+      .toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
+  };
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const m0 = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ds[0]);
+  const isToday = ds.length === 1 && m0 &&
+    new Date(+m0[1], +m0[2] - 1, +m0[3]).getTime() === today.getTime();
+  return ` <span class="ddate${isToday ? '' : ' ahead'}">· ของวันที่ ${ds.map(th).join(', ')}</span>`;
+}
+
+/**
  * แสดงสิ่งที่ Apps Script ส่งกลับมาเตือน
  *
  * มีสองแบบ: ชีตที่ตั้งชื่อไว้ใน CARRIERS แต่หาไม่เจอ กับชีตที่มีข้อมูลอยู่แต่ไม่มี
@@ -2531,6 +2557,9 @@ function renderCarrierNotes() {
   if (!el) return;
   const notes = [];
   carriersData.forEach(c => {
+    // warn มาก่อน — "สองหน้าคนละวัน" สำคัญกว่าชีตหาย เพราะมันทำให้ผลการเทียบ
+    // ผิดทั้งใบโดยที่หน้าจอยังดูปกติทุกอย่าง
+    if (c.warn)   notes.push((c.key ? c.key + ': ' : '') + c.warn);
     if (c.error1) notes.push(c.error1);
     if (c.error2) notes.push(c.error2);
   });
@@ -2585,26 +2614,10 @@ async function loadOrderFromGAS() {
     try { json = JSON.parse(text); } catch(e) { throw new Error('ข้อมูลไม่ใช่ JSON: ' + text.slice(0,120)); }
     if (json.error) throw new Error(json.error);
 
-    // ── Format A: { carriers: [...] }  (multi-carrier) ──
-    if (json.carriers && Array.isArray(json.carriers)) {
-      carriersData = json.carriers.map(car => ({
-        key:   car.key,
-        data1: convertGASRows(car.sheet1 || []),
-        data2: convertGASRows(car.sheet2 || []),
-        error1: car.error1 || null,
-        error2: car.error2 || null,
-      }));
-    }
-    // ── Format B: { sheet1, sheet2 }  (single, backward compat) ──
-    else if (json.sheet1 || json.sheet2) {
-      carriersData = [{
-        key:   'ออเดอร์',
-        data1: convertGASRows(json.sheet1 || []),
-        data2: convertGASRows(json.sheet2 || []),
-      }];
-    } else {
-      throw new Error(`รูปแบบไม่รองรับ — keys: [${Object.keys(json).join(', ')}]`);
-    }
+    /* แปลงที่ ../wms-order-index.js ที่เดียว — เดิมหน้านี้มีตัวแปลงของตัวเองอีกชุด
+       ที่ทำเรื่องเดียวกัน พอสคริปต์ฝั่ง Apps Script ส่งฟิลด์ใหม่มา ต้องไปเพิ่มสองที่
+       ให้ตรงกัน ซึ่งเป็นรูปแบบที่โปรเจกต์นี้เคยพลาดมาแล้วหลายรอบ */
+    carriersData = OrderIndex.parsePayload(json);
 
     if (!carriersData.length) throw new Error('ไม่พบข้อมูลขนส่ง');
 

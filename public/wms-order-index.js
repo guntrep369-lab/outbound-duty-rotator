@@ -128,6 +128,13 @@
           data2: convertGASRows(car.sheet2 || []),
           error1: car.error1 || null,
           error2: car.error2 || null,
+          /* v4: วันที่มาจากชีต ไม่ใช่จากปฏิทิน ทีมทำงานล่วงหน้าเป็นเรื่องปกติ
+             จึงต้องรู้ให้ได้ว่ากำลังเทียบของวันไหนอยู่ และสองหน้าตรงวันกันไหม
+             สคริปต์รุ่นเก่าไม่ส่งมา ค่าจะเป็น '' / null แล้วหน้าเว็บไม่แสดงอะไร */
+          date: car.date || '',
+          dates1: car.dates1 || [],
+          dates2: car.dates2 || [],
+          warn: car.warn || null,
         };
       });
     } else if (json && (json.sheet1 || json.sheet2)) {
