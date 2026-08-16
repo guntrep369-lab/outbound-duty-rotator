@@ -412,6 +412,12 @@ td{padding:9px 12px;vertical-align:middle}
   .dbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:9px 20px;
     background:var(--surface);border-bottom:1px solid var(--border);font-size:12.5px}
   .dsrc{display:flex;align-items:center;gap:8px}
+  /* เรื่องที่สคริปต์ส่งกลับมาบอก เช่น ชีตหาย หรือชีตมีข้อมูลแต่ไม่ใช่ของวันนี้
+     เดิม error1/error2 ถูกอ่านเก็บไว้แล้วไม่เคยแสดงที่ไหน — พอดึงข้อมูลแบบกรอง
+     วันที่ การเงียบตรงนี้แปลว่าแท็บว่างโดยไม่มีอะไรอธิบายว่าทำไม */
+  .dnote{display:none;padding:8px 20px;background:#FFFBEB;border-bottom:1px solid #FDE68A;
+    font-size:12.5px;line-height:1.65;color:#92400E}
+  .dnote div + div{margin-top:3px}
   .ddot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0}
   .ddot.on{background:#16A34A} .ddot.wait{background:#F59E0B} .ddot.off{background:#CBD5E1}
   .ddot.old{background:#DC2626}
@@ -568,6 +574,7 @@ td{padding:9px 12px;vertical-align:middle}
   <button class="dlink" id="dfileBtn" onclick="toggleUpload()">⬆ ใช้ไฟล์แทน</button>
   <a class="dlink" href="../settings/">⚙ ตั้งค่า</a>
 </div>
+<div class="dnote no-print" id="dnote"></div>
 
 <!-- ทางหนีเวลา Apps Script ล่ม — พับไว้เพราะไม่ได้ใช้ทุกวัน แต่วันที่ต้องใช้
      คือวันที่ไม่มีทางอื่นเลย จึงไม่ตัดทิ้ง -->
@@ -2506,6 +2513,29 @@ function updateDataBar() {
     btn.textContent = has ? 'ดึงใหม่' : 'ดึงข้อมูล';
     btn.title = st.url ? '' : 'ตั้ง Apps Script URL ที่หน้าตั้งค่าก่อน';
   });
+
+  renderCarrierNotes();
+}
+
+/**
+ * แสดงสิ่งที่ Apps Script ส่งกลับมาเตือน
+ *
+ * มีสองแบบ: ชีตที่ตั้งชื่อไว้ใน CARRIERS แต่หาไม่เจอ กับชีตที่มีข้อมูลอยู่แต่ไม่มี
+ * ของวันที่ดึง — แบบหลังเกิดตอนชีตนั้นเป็นของวันอื่น เช่นลงล่วงหน้าไว้เป็นของ
+ * พรุ่งนี้ ถ้าไม่บอก แท็บจะว่างเปล่าแล้วทุกคนจะคิดว่าระบบพัง ทั้งที่ข้อมูลอยู่ครบ
+ *
+ * ค่าพวกนี้มีมาตั้งแต่สคริปต์เวอร์ชันแรก แต่ฝั่งเว็บอ่านเก็บไว้เฉย ๆ ไม่เคยแสดง
+ */
+function renderCarrierNotes() {
+  const el = document.getElementById('dnote');
+  if (!el) return;
+  const notes = [];
+  carriersData.forEach(c => {
+    if (c.error1) notes.push(c.error1);
+    if (c.error2) notes.push(c.error2);
+  });
+  el.innerHTML = notes.map(n => `<div>⚠️ ${esc(n)}</div>`).join('');
+  el.style.display = notes.length ? 'block' : 'none';
 }
 
 function toggleUpload() {
