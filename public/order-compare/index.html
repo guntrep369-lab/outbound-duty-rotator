@@ -97,6 +97,7 @@ td{padding:9px 12px;vertical-align:middle}
 .stock-low{background:#FFF3CD;color:#7A4F00}
 .stock-out{background:#FDDEDE;color:#A50E0E}
 .stock-na{background:#E5E7EB;color:#6B7280}
+.stock-qa{background:#E0E7FF;color:#3730A3}
 
 /* diff inline */
 .diff-old{background:var(--removed-bg);color:var(--removed);padding:1px 5px;border-radius:4px;font-size:11px;text-decoration:line-through;display:inline-block}
@@ -2008,7 +2009,11 @@ function runStockCheck() {
       else                                 status = 'ok';
     }
     const orderList = Object.values(d.orderMap).sort((a,b) => a.orderId.localeCompare(b.orderId));
-    return { sku: d.sku, name: d.name, need, qa, newwh, total, status, orders: orderList.length, orderList };
+    /* ของกองอยู่ที่ QA มากกว่าที่ NEW WH แปลว่าต้องไปเบิกจาก QA มา ไม่ใช่หยิบ
+       จากคลังหน้างานได้เลย — ทีมอยากเห็นตั้งแต่ตอนอ่านใบ ไม่ใช่ไปเจอตอนหยิบไม่พอ
+       เท่ากันไม่นับ ตามที่ตกลงไว้ว่า "มากกว่า" */
+    const qaPick = !!s && s.qa > s.newwh;
+    return { sku: d.sku, name: d.name, need, qa, newwh, total, status, qaPick, orders: orderList.length, orderList };
   });
 
   // Sort: out > low > na > ok
@@ -2082,6 +2087,7 @@ function renderStockTable() {
     <th style="text-align:center">Total</th>
     <th style="text-align:center">ส่วนต่าง</th>
     <th>สถานะ</th>
+    <th style="text-align:center">เบิก QA</th>
     <th style="text-align:center">Orders</th>
   </tr></thead><tbody>`;
 
@@ -2104,6 +2110,7 @@ function renderStockTable() {
       <td style="text-align:center;font-weight:600">${r.total}</td>
       <td style="text-align:center">${diffHtml}</td>
       <td><span class="badge ${statusClass[r.status]}">${statusLabel[r.status]}</span></td>
+      <td style="text-align:center">${r.qaPick ? '<span class="badge stock-qa">เบิก QA</span>' : ''}</td>
       <td style="text-align:center">
         <span class="orders-link" onclick="showOrderModal(${idx})">
           ${r.orders} order${r.orders > 1 ? 's' : ''}
