@@ -1768,7 +1768,6 @@ function renderPickSum() {
   }
 
   const srcName = pickSource === 1 ? 'Sheet Daily Logis (รอบเช้า)' : 'Sheet Daily CRM';
-  const today = new Date().toLocaleDateString('th-TH', { day:'numeric', month:'long', year:'numeric' });
   let html = '';
   let grand = 0;
 
@@ -1778,6 +1777,29 @@ function renderPickSum() {
 
   const rowsOf = c => (pickSource === 1 ? c.data1 : c.data2) || [];
   const sel = carriersData.filter(c => keys.includes(c.key));
+
+  /**
+   * วันที่บนหัวใบ = วันของงานในใบ ไม่ใช่วันที่กดพิมพ์
+   *
+   * เดิมใช้ new Date() ตรง ๆ ซึ่งผิดทุกครั้งที่ทีมทำงานล่วงหน้า — เย็นนี้พิมพ์ใบ
+   * ไปหยิบของพรุ่งนี้ แล้วบนกระดาษเขียนวันนี้ ใบหยิบของถูกเก็บไว้และถูกใช้อ้างอิง
+   * ทีหลัง วันที่ผิดบนกระดาษจึงอยู่ต่อไปนานกว่าวันที่ผิดบนจอมาก
+   *
+   * สคริปต์รุ่นเก่าที่ยังไม่ส่งวันที่มา จะเขียนว่า "พิมพ์เมื่อ" แทน เพื่อไม่ให้ใบ
+   * อ้างว่าเป็นงานของวันนั้นทั้งที่ไม่รู้จริง
+   */
+  const longTH = (v) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v || ''));
+    if (!m) return '';
+    return new Date(+m[1], +m[2] - 1, +m[3])
+      .toLocaleDateString('th-TH', { day:'numeric', month:'long', year:'numeric' });
+  };
+  function sheetDate(cars) {
+    const ds = [...new Set((cars || []).map(c => c.date).filter(Boolean))].sort();
+    if (ds.length) return 'งานวันที่ ' + ds.map(longTH).join(' และ ');
+    return 'พิมพ์เมื่อ ' + new Date().toLocaleDateString('th-TH',
+      { day:'numeric', month:'long', year:'numeric' });
+  }
 
   // นับชิ้นตามตัวกรองที่เปิดอยู่ ใช้ทั้งยอดรวมของใบและยอดแยกรายเจ้าในหัวใบ
   const piecesOf = rows => Object.values(aggregateSKUDemand(rows))
@@ -1790,8 +1812,9 @@ function renderPickSum() {
         label: sel.map(c => c.key).join(' + '),
         parts: sel.map(c => ({ key: c.key, pieces: piecesOf(rowsOf(c)) })),
         rows:  sel.reduce((a, c) => a.concat(rowsOf(c)), []),
+        cars:  sel,
       }]
-    : (keys.length ? sel : carriersData).map(c => ({ label: c.key, parts: null, rows: rowsOf(c) }));
+    : (keys.length ? sel : carriersData).map(c => ({ label: c.key, parts: null, rows: rowsOf(c), cars: [c] }));
 
   groups.forEach(g => {
     const items = Object.values(aggregateSKUDemand(g.rows)).sort((a, b) =>
@@ -1803,6 +1826,7 @@ function renderPickSum() {
     const pieces = shown.reduce((n, x) => n + x.qty, 0);
     grand += pieces;
     const scope = pickFilter === 'bed' ? ' · เฉพาะที่นอน' : pickFilter === 'gift' ? ' · เฉพาะของแถม' : '';
+    const when = sheetDate(g.cars);
 
     // ใบรวมต้องบอกยอดแยกรายเจ้าไว้ด้วย ไม่งั้นหยิบเสร็จแล้วแบ่งกองไม่ถูกว่าของ
     // เจ้าไหนกี่ชิ้น ซึ่งเป็นงานที่ตามหลังการหยิบเสมอ
@@ -1819,7 +1843,7 @@ function renderPickSum() {
       '<div class="ps-head">' +
         '<div><div class="ps-carrier" data-label="' + esc(g.label) + '">' + esc(g.label) +
         (g.parts ? '<span class="ps-mix">รวม ' + g.parts.length + ' ขนส่ง</span>' : '') + '</div>' +
-        '<div class="ps-meta">' + esc(srcName) + ' · ' + esc(today) + esc(scope) + '</div>' + split +
+        '<div class="ps-meta">' + esc(srcName) + ' · ' + esc(when) + esc(scope) + '</div>' + split +
         '</div>' +
         '<div class="ps-tot"><b>' + pieces + '</b><span>ชิ้น</span>' +
         '<span class="ps-pagecount no-print"></span></div>' +
