@@ -393,28 +393,46 @@
   }
 
   /**
-   * เปิดหน้ามาแล้วมีไฟล์รออยู่เลย โดยไม่ต้องไปตามขอใคร
+   * หาไฟล์ของวันนี้จากส่วนกลางแล้วโหลดมาใช้ที่เครื่องนี้
    *
    * โหลดให้เองเฉพาะไฟล์ของ "วันนี้" เท่านั้น ไฟล์ของเมื่อวานไม่โหลดให้แม้จะเป็น
    * ไฟล์ล่าสุด เพราะความผิดพลาดที่แพงที่สุดของโมดูลนี้คือทำงานจากไฟล์เก่าโดยไม่รู้ตัว
    * (เหตุผลเดียวกับที่ไฟล์นี้เลือก sessionStorage ตั้งแต่ต้น) — ของเก่ายังเลือกเองได้
    * จากปุ่มไฟล์จากส่วนกลาง ซึ่งเป็นการตัดสินใจที่มีคนกดจริง
    *
-   * ยิงครั้งเดียวต่อรอบเบราว์เซอร์ ล้มแล้วไม่ยิงซ้ำทุกหน้าที่เปิด
+   * @param {string} who ชื่อหน้าที่เรียก ใช้แยกโควตา "ลองครั้งเดียวต่อรอบเบราว์เซอร์"
+   *   ของแต่ละหน้า — หน้าหนึ่งดึงไม่สำเร็จจะได้ไม่ปิดโอกาสของอีกหน้าไปด้วย
+   * @param {boolean} [force] คนกดปุ่มเอง — ข้ามโควตา เพราะปุ่มที่กดแล้วเงียบ
+   *   คือปุ่มเสีย และการที่คนกดเองแปลว่าเขายอมรอรอบใหม่อยู่แล้ว
+   * @returns {Promise<object|null>} ไฟล์ที่โหลดมา หรือ null ถ้าไม่มีอะไรต้องโหลด
    */
+  async function fetchToday(who, force) {
+    if (!C.on() || read()) return null;
+    var flag = AUTO_FLAG + ':' + (who || 'page');
+    try {
+      if (!force && sessionStorage.getItem(flag)) return null;
+      sessionStorage.setItem(flag, '1');
+    } catch (e) {}
+    var files = await C.list();
+    var newest = files[0];
+    if (!newest || !isToday(newest.at)) return null;
+    return await C.load(newest.id);
+  }
+
+  /** เปิดหน้าโมดูลขนส่งมาแล้วมีไฟล์รออยู่เลย โดยไม่ต้องไปตามขอใคร */
   function autoLoad() {
     if (!onTransportPage()) return;
-    if (!C.on() || read()) return;
-    try { if (sessionStorage.getItem(AUTO_FLAG)) return; sessionStorage.setItem(AUTO_FLAG, '1'); } catch (e) {}
-    C.list().then(function (files) {
-      var newest = files[0];
-      if (!newest || !isToday(newest.at)) { renderCentral(); return; }
-      return C.load(newest.id).then(function () { location.reload(); });
+    fetchToday('transport').then(function (f) {
+      // โหลดหน้าใหม่เพราะเครื่องมือในโมดูลนี้สร้างผลจากไฟล์ตั้งแต่ตอนเปิดหน้า
+      // หน้าอื่นที่เรียก fetchToday เองไม่ต้องทำแบบนี้ — วาดผลใหม่ในที่เดิมได้
+      if (f) location.reload();
+      else renderCentral();
     }).catch(function () { /* ตั้ง URL ผิดหรือเน็ตล่ม — หน้ายังอัปไฟล์เองได้ตามปกติ */ });
   }
 
   window.TransportFile.renderCentral = renderCentral;
   window.TransportFile.openPicker = openPicker;
+  window.TransportFile.fetchToday = fetchToday;
 
   // nav เป็น type="module" จึงรันหลังหน้าถูก parse แต่ก่อน DOMContentLoaded
   // ตรงนี้จึงเจอ .mod-head ที่ nav วางไว้แล้วเสมอ

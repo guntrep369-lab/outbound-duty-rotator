@@ -134,6 +134,8 @@ let ROWS = [];       // ออเดอร์ทุกขนส่งจาก�
 let TRUCK = null;    // ไฟล์รถบริษัท: orderID -> { truck, time, seq, stops }
 let INDEX_AT = 0;
 let PULLING = '';   // ข้อความสถานะระหว่างดึง — ว่าง = ไม่ได้กำลังดึง
+let TRUCK_MSG = ''; // สถานะระหว่างดึงไฟล์รถบริษัทจากส่วนกลาง
+let TRUCK_ERR = ''; // เหตุผลที่ดึงไม่ได้ แสดงบนแถบเดียวกัน ไม่ใช่ในช่อง URL ออเดอร์
 
 /**
  * ไฟล์รถบริษัทตอบคำถามที่ข้อมูลจาก Apps Script ตอบไม่ได้ — ไปกับคันไหน คิวที่
@@ -195,9 +197,21 @@ function renderSrc() {
   } else {
     html += `<span class="pill warn">⚠️ ยังไม่มีข้อมูลออเดอร์</span>`;
   }
-  html += TRUCK
-    ? `<span class="pill">🚚 ไฟล์รถบริษัท <b>${TRUCK.size}</b> ออเดอร์</span>`
-    : `<span class="pill">🚚 ยังไม่มีไฟล์รถบริษัท — จะไม่บอกคันรถและคิวจุดส่ง</span>`;
+  const tf = window.TransportFile && TransportFile.get();
+  const central = window.TransportFile && TransportFile.central.on();
+  if (TRUCK_MSG) {
+    html += `<span class="pill">⏳ ${esc(TRUCK_MSG)}</span>`;
+  } else if (TRUCK) {
+    html += `<span class="pill">🚚 ไฟล์รถบริษัท <b>${TRUCK.size}</b> ออเดอร์` +
+            (tf && tf.origin && tf.origin.from === 'central' ? ' <span class="dim">· จากส่วนกลาง</span>' : '') +
+            `</span>`;
+  } else {
+    html += TRUCK_ERR
+      ? `<span class="pill warn">🚚 ${esc(TRUCK_ERR)}</span>`
+      : `<span class="pill">🚚 ยังไม่มีไฟล์รถบริษัท — จะไม่บอกคันรถและคิวจุดส่ง</span>`;
+    // ตั้งส่วนกลางไว้แล้วแต่ยังไม่ได้ไฟล์ = ดึงเองซ้ำได้ ไม่ต้องรอใครอัปให้
+    if (central) html += `<button onclick="pullTruck(true)">🚚 ดึงไฟล์รถ</button>`;
+  }
 
   html += `<span class="sp"></span>`;
   const url = OrderIndex.savedUrl();
@@ -224,6 +238,40 @@ function showUrlRow() {
  *
  * การดึงใช้เวลาเป็นสิบวินาที จึงนับวินาทีให้เห็น ไม่ใช่ปล่อยให้จอนิ่งจนคนคิดว่าค้าง
  */
+/**
+ * ดึงไฟล์รถบริษัทจากส่วนกลางมาเอง
+ *
+ * คนรับสายต้องตอบให้ได้ว่าออเดอร์ไปกับคันไหน คิวที่เท่าไหร่ นัดกี่โมง ซึ่งมีอยู่ใน
+ * ไฟล์รถเท่านั้น เดิมหน้านี้เห็นไฟล์เฉพาะตอนมีคนอัปในเบราว์เซอร์เดียวกัน — คนละ
+ * เครื่องกันก็ตอบไม่ได้ ทั้งที่ทีมขนส่งบันทึกไฟล์ขึ้นส่วนกลางไว้แล้ว
+ *
+ * ไม่โหลดหน้าใหม่ ต่างจากในโมดูลขนส่ง เพราะหน้านี้อาจมีคนพิมพ์ค้นหาค้างอยู่
+ * ระหว่างที่คุยโทรศัพท์ — ได้ไฟล์แล้ววาดผลใหม่ในที่เดิมพอ
+ */
+async function pullTruck(manual) {
+  if (TRUCK_MSG || !window.TransportFile) return;
+  TRUCK_MSG = 'กำลังดึงไฟล์รถบริษัท…';
+  TRUCK_ERR = '';
+  renderSrc();
+  try {
+    const f = await TransportFile.fetchToday('lookup', manual);
+    TRUCK_MSG = '';
+    if (!f) {
+      // กดเองแล้วไม่ได้อะไรต้องบอกเหตุผล ไม่ใช่กลับไปหน้าเดิมเฉย ๆ
+      if (manual) TRUCK_ERR = 'ส่วนกลางยังไม่มีไฟล์รถบริษัทของวันนี้';
+      renderSrc();
+      return;
+    }
+    TRUCK = buildTruckMap();
+    renderSrc();
+    render();                       // ผลที่แสดงอยู่ต้องได้คันรถเพิ่มทันที
+  } catch (err) {
+    TRUCK_MSG = '';
+    TRUCK_ERR = 'ดึงไฟล์รถไม่สำเร็จ — ' + err.message;
+    renderSrc();
+  }
+}
+
 async function pullNow() {
   if (PULLING) return;
   const typed = document.getElementById('gasUrl').value.trim();
@@ -410,6 +458,10 @@ document.getElementById('q').addEventListener('input', render);
 load();
 render();
 document.getElementById('q').focus();
+
+/* ไฟล์รถยังไม่มีในเครื่องนี้ แต่ส่วนกลางอาจมีของวันนี้อยู่แล้ว — ลองครั้งเดียว
+   ต่อรอบเบราว์เซอร์ ไม่ขัดจังหวะการค้นหาที่กำลังทำอยู่ */
+if (!TRUCK && window.TransportFile && TransportFile.central.on()) pullTruck();
 </script>
 </body>
 </html>
