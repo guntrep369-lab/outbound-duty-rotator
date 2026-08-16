@@ -71,6 +71,50 @@
     return { ok: problems.length === 0, problems: problems };
   }
 
+  /**
+   * ค่าวันที่จากเซลล์ Excel → 'YYYY-MM-DD' หรือ '' ถ้าอ่านไม่ออก
+   *
+   * ไฟล์นี้มาจาก .xlsx ผ่าน SheetJS ซึ่งคืนค่าวันที่ได้หลายแบบตามที่คนกรอกไว้
+   * และคนไทยพิมพ์ 17/08/2026 เป็นวัน/เดือน/ปี ซึ่ง new Date() อ่านผิดเป็นเดือน/วัน
+   * ตรงนี้จึงแยกกรณีเอง ไม่ปล่อยให้เดา — เดาผิดแล้วจะสลับวันกับเดือนแบบเงียบ ๆ
+   */
+  function fileDate(v) {
+    if (v === '' || v === null || v === undefined) return '';
+    var p = function (n) { return String(n).padStart(2, '0'); };
+    var ymd = function (y, m, d) {
+      if (y > 2400) y -= 543;                    // พ.ศ. → ค.ศ.
+      if (!(y > 1900 && y < 2200 && m >= 1 && m <= 12 && d >= 1 && d <= 31)) return '';
+      return y + '-' + p(m) + '-' + p(d);
+    };
+    if (v instanceof Date) {
+      return isNaN(v.getTime()) ? '' : ymd(v.getFullYear(), v.getMonth() + 1, v.getDate());
+    }
+    if (typeof v === 'number') {                 // เลขซีเรียลของ Excel
+      if (v < 1 || v > 100000) return '';
+      var d0 = new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000);
+      return ymd(d0.getUTCFullYear(), d0.getUTCMonth() + 1, d0.getUTCDate());
+    }
+    var t = String(v).trim();
+    var m1 = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(t);
+    if (m1) return ymd(+m1[1], +m1[2], +m1[3]);
+    var m2 = /^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})/.exec(t);
+    // วัน/เดือน/ปี เสมอ ตามที่ใช้กันในไทย ไม่เดาสลับให้
+    // ไฟล์ที่เขียนแบบเดือน/วัน/ปี เช่น 8/17/2026 จะได้เดือน 17 ซึ่งไม่มีจริง แล้ว
+    // ymd คืนค่าว่าง — ยอมให้ "อ่านไม่ออก" ดีกว่าเดาแล้วสลับวันกับเดือนเงียบ ๆ
+    if (m2) return ymd(+m2[3], +m2[2], +m2[1]);
+    return '';
+  }
+
+  /** วันที่ของงานในไฟล์ ไม่ซ้ำ เรียงแล้ว — อ่านจากคอลัมน์วันที่ของทุกแถว */
+  function fileDates(rows) {
+    var seen = {};
+    (rows || []).forEach(function (r) {
+      var d = fileDate(r && r[COLS.date]);
+      if (d) seen[d] = true;
+    });
+    return Object.keys(seen).sort();
+  }
+
   function read() {
     try {
       var raw = sessionStorage.getItem(KEY);
@@ -86,6 +130,8 @@
     /** ตำแหน่งคอลัมน์ชุดเดียวของทั้งโมดูล */
     COLS: COLS,
     checkHeader: checkHeader,
+    fileDate: fileDate,
+    fileDates: fileDates,
 
     /** Rows + file name of the loaded file, or null. */
     get: read,
@@ -140,6 +186,10 @@
           token: window.WmsSettings ? window.WmsSettings.transportToken() : '',
           fileName: f.fileName, rows: f.rows, header: f.header,
           by: window.WmsSettings ? window.WmsSettings.me() : '',
+          /* ทีมทำงานล่วงหน้า ไฟล์ที่บันทึกเย็นนี้คืองานของพรุ่งนี้ — "บันทึกเมื่อไหร่"
+             จึงตอบไม่ได้ว่าไฟล์ไหนคือของวันที่จะทำ ต้องอ่านวันที่ในตัวไฟล์เอง
+             แล้วส่งขึ้นไปเก็บด้วย เพื่อให้หน้าที่มาเลือกไฟล์เห็นโดยไม่ต้องโหลดทั้งไฟล์ */
+          forDates: fileDates(f.rows),
         }, opts);
         if (r && r.error) throw new Error(r.error);
         return r;
@@ -347,7 +397,32 @@
            ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
   }
 
-  function openPicker() {
+  /** 'วันนี้' แบบ YYYY-MM-DD ตามเครื่องผู้ใช้ */
+  function todayYmd() {
+    var d = new Date(), p = function (n) { return String(n).padStart(2, '0'); };
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+  }
+
+  /** '17 ส.ค.' หรือ '16–17 ส.ค.' จากรายการวันที่ของงานในไฟล์ */
+  function workLabel(forDates) {
+    var ds = (forDates || []).filter(Boolean).sort();
+    if (!ds.length) return '';
+    var th = function (v) {
+      var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+      if (!m) return v;
+      return new Date(+m[1], +m[2] - 1, +m[3])
+        .toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
+    };
+    if (ds.length === 1) return th(ds[0]);
+    if (ds.length === 2) return th(ds[0]) + ', ' + th(ds[1]);
+    return th(ds[0]) + '–' + th(ds[ds.length - 1]);
+  }
+
+  /**
+   * @param {Function} [onPicked] เรียกเมื่อเลือกไฟล์เสร็จ ถ้าไม่ส่งมาจะโหลดหน้าใหม่
+   *   หน้าค้นหาออเดอร์ส่งมา เพราะที่นั่นอาจมีคนพิมพ์ค้นหาค้างอยู่ระหว่างคุยโทรศัพท์
+   */
+  function openPicker(onPicked) {
     var back = el('div', 'tc-back');
     var box = el('div', 'tc-box');
     var head = el('div', 'tc-head');
@@ -371,17 +446,25 @@
       files.forEach(function (fl) {
         var row = el('div', 'tc-row');
         var main = el('div', 'tc-rmain');
-        main.appendChild(el('div', 'tc-rname', fl.fileName || '(ไม่มีชื่อไฟล์)'));
+        /* หัวแถวคือ "งานของวันไหน" ไม่ใช่ชื่อไฟล์ เพราะทีมทำงานล่วงหน้า คนที่มา
+           เลือกกำลังหาไฟล์ของวันที่จะทำ ไม่ได้หาไฟล์ที่ชื่อสวยที่สุด
+           ไฟล์เก่าที่บันทึกไว้ก่อนมีข้อมูลนี้จะไม่มีวันงาน จึงถอยไปใช้ชื่อไฟล์ */
+        var work = workLabel(fl.forDates);
+        main.appendChild(el('div', 'tc-rname',
+          work ? 'งานวันที่ ' + work : (fl.fileName || '(ไม่มีชื่อไฟล์)')));
         main.appendChild(el('div', 'tc-rmeta',
-          whenLabel(fl.at) + ' · ' + fl.rows + ' แถว' + (fl.by ? ' · ' + fl.by : '')));
+          (work && fl.fileName ? fl.fileName + ' · ' : '') +
+          fl.rows + ' แถว · บันทึก ' + whenLabel(fl.at) + (fl.by ? ' โดย ' + fl.by : '')));
         row.appendChild(main);
         var use = el('button', 'tc-btn primary', 'ใช้ไฟล์นี้');
         use.type = 'button';
         use.addEventListener('click', function () {
           use.disabled = true; use.textContent = 'กำลังโหลด…';
-          C.load(fl.id).then(function () { location.reload(); })
-                       .catch(function (err) { use.disabled = false; use.textContent = 'ใช้ไฟล์นี้';
-                                               alert('โหลดไม่สำเร็จ — ' + err.message); });
+          C.load(fl.id).then(function (file) {
+            back.remove();
+            if (onPicked) onPicked(file); else location.reload();
+          }).catch(function (err) { use.disabled = false; use.textContent = 'ใช้ไฟล์นี้';
+                                    alert('โหลดไม่สำเร็จ — ' + err.message); });
         });
         row.appendChild(use);
         list.appendChild(row);
@@ -414,9 +497,30 @@
       sessionStorage.setItem(flag, '1');
     } catch (e) {}
     var files = await C.list();
-    var newest = files[0];
-    if (!newest || !isToday(newest.at)) return null;
-    return await C.load(newest.id);
+    var hit = autoPick(files);
+    if (!hit) return null;
+    return await C.load(hit.id);
+  }
+
+  /**
+   * ไฟล์ไหนคือ "ของวันนี้"
+   *
+   * ดูจากวันที่ของงานในไฟล์ ไม่ใช่วันที่บันทึก เพราะทีมทำงานล่วงหน้า — ไฟล์ที่
+   * บันทึกเมื่อวานเย็นคืองานของเช้านี้ ถ้าดูวันที่บันทึกจะไม่มีวันหยิบมันขึ้นมาได้เลย
+   *
+   * ไฟล์ที่บันทึกไว้ก่อนระบบเก็บวันของงาน (forDates ว่าง) ยังใช้กติกาเดิมคือ
+   * บันทึกวันนี้ — ไม่งั้นของเก่าที่ยังใช้อยู่จะหายไปเฉย ๆ ตอนอัปเดตระบบ
+   */
+  function autoPick(files) {
+    var today = todayYmd();
+    var i;
+    for (i = 0; i < files.length; i++) {
+      if ((files[i].forDates || []).indexOf(today) >= 0) return files[i];
+    }
+    for (i = 0; i < files.length; i++) {
+      if (!(files[i].forDates || []).length && isToday(files[i].at)) return files[i];
+    }
+    return null;
   }
 
   /** เปิดหน้าโมดูลขนส่งมาแล้วมีไฟล์รออยู่เลย โดยไม่ต้องไปตามขอใคร */
@@ -433,6 +537,7 @@
   window.TransportFile.renderCentral = renderCentral;
   window.TransportFile.openPicker = openPicker;
   window.TransportFile.fetchToday = fetchToday;
+  window.TransportFile.workLabel = workLabel;
 
   // nav เป็น type="module" จึงรันหลังหน้าถูก parse แต่ก่อน DOMContentLoaded
   // ตรงนี้จึงเจอ .mod-head ที่ nav วางไว้แล้วเสมอ

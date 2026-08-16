@@ -202,15 +202,21 @@ function renderSrc() {
   if (TRUCK_MSG) {
     html += `<span class="pill">⏳ ${esc(TRUCK_MSG)}</span>`;
   } else if (TRUCK) {
+    // งานของวันไหน สำคัญกว่าชื่อไฟล์ เพราะทีมทำงานล่วงหน้า ไฟล์ที่ใช้อยู่จึงอาจ
+    // เป็นของพรุ่งนี้ และคนรับสายต้องรู้ว่าที่ตอบลูกค้าอยู่เป็นของวันไหน
+    const work = TransportFile.workLabel(TransportFile.fileDates(tf ? tf.rows : []));
     html += `<span class="pill">🚚 ไฟล์รถบริษัท <b>${TRUCK.size}</b> ออเดอร์` +
+            (work ? ` · งานวันที่ <b>${esc(work)}</b>` : '') +
             (tf && tf.origin && tf.origin.from === 'central' ? ' <span class="dim">· จากส่วนกลาง</span>' : '') +
             `</span>`;
+    if (central) html += `<button onclick="pickTruck()">📁 เปลี่ยนไฟล์</button>`;
   } else {
     html += TRUCK_ERR
       ? `<span class="pill warn">🚚 ${esc(TRUCK_ERR)}</span>`
       : `<span class="pill">🚚 ยังไม่มีไฟล์รถบริษัท — จะไม่บอกคันรถและคิวจุดส่ง</span>`;
     // ตั้งส่วนกลางไว้แล้วแต่ยังไม่ได้ไฟล์ = ดึงเองซ้ำได้ ไม่ต้องรอใครอัปให้
-    if (central) html += `<button onclick="pullTruck(true)">🚚 ดึงไฟล์รถ</button>`;
+    if (central) html += `<button onclick="pickTruck()">📁 เลือกไฟล์รถ</button>` +
+                         `<button onclick="pullTruck(true)">🚚 ของวันนี้</button>`;
   }
 
   html += `<span class="sp"></span>`;
@@ -248,6 +254,22 @@ function showUrlRow() {
  * ไม่โหลดหน้าใหม่ ต่างจากในโมดูลขนส่ง เพราะหน้านี้อาจมีคนพิมพ์ค้นหาค้างอยู่
  * ระหว่างที่คุยโทรศัพท์ — ได้ไฟล์แล้ววาดผลใหม่ในที่เดิมพอ
  */
+/**
+ * เลือกไฟล์รถเอง จากรายการที่ทีมขนส่งบันทึกไว้
+ *
+ * ต้องมีเพราะทีมทำงานล่วงหน้า — วันที่ระบบเดาให้ไม่ตรงกับวันที่ตั้งใจจะดูเสมอไป
+ * เลือกเสร็จแล้ววาดผลใหม่ในที่เดิม ไม่โหลดหน้าใหม่ทับคนที่กำลังคุยโทรศัพท์อยู่
+ */
+function pickTruck() {
+  if (!window.TransportFile) return;
+  TransportFile.openPicker(function () {
+    TRUCK_ERR = '';
+    TRUCK = buildTruckMap();
+    renderSrc();
+    render();
+  });
+}
+
 async function pullTruck(manual) {
   if (TRUCK_MSG || !window.TransportFile) return;
   TRUCK_MSG = 'กำลังดึงไฟล์รถบริษัท…';
