@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>สรุปเช้า — WMS</title>
+<link rel="stylesheet" href="../wms-theme.css">
+<link rel="stylesheet" href="../wms-gate.css">
+<script src="../wms-gate.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+
+.sm-src{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 20px;
+  background:var(--wms-surface2);border-bottom:1px solid var(--wms-border);font-size:12px}
+.sm-src .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;
+  background:var(--wms-surface);border:1px solid var(--wms-border);color:var(--wms-muted)}
+.sm-src .pill b{color:var(--wms-text);font-weight:600}
+.sm-src .sp{flex:1}
+.sm-src button{padding:4px 12px;border-radius:999px;border:1px solid var(--wms-border2);
+  background:var(--wms-surface);font-family:var(--wms-font);font-size:12px;color:#334155;cursor:pointer}
+.sm-src button:hover:not(:disabled){background:var(--wms-primary-light);border-color:var(--wms-primary);
+  color:var(--wms-primary-dark)}
+.sm-src button:disabled{opacity:.6;cursor:default}
+
+.sm-body{padding:16px 20px 40px;max-width:1080px}
+
+/* ── เรื่องที่ต้องดูก่อน ──
+   อยู่บนสุดและเป็นสีเตือน เพราะเป็นสิ่งเดียวในหน้านี้ที่ต้องมีคนไปทำอะไรกับมัน
+   ตัวเลขที่เหลือเป็นแค่สถานะ */
+.sm-alert{margin-bottom:16px;padding:12px 15px;background:#FFFBEB;border:1px solid #FDE68A;
+  border-radius:var(--wms-radius-sm);font-size:13px;line-height:1.7;color:#92400E}
+.sm-alert div + div{margin-top:4px}
+.sm-alert a{color:#92400E;font-weight:600}
+
+.sm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+.sm-card{display:block;padding:14px 16px;background:var(--wms-surface);border:1px solid var(--wms-border);
+  border-radius:var(--wms-radius);box-shadow:var(--wms-shadow);text-decoration:none;color:inherit;
+  transition:border-color .15s,transform .15s}
+a.sm-card:hover{border-color:var(--wms-primary);transform:translateY(-1px)}
+.sm-card .k{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--wms-muted);font-weight:600}
+.sm-card .v{margin-top:7px;font-size:26px;font-weight:700;color:var(--wms-text);line-height:1.15;
+  font-variant-numeric:tabular-nums}
+.sm-card .v.none{color:var(--wms-faint);font-size:19px;font-weight:600}
+.sm-card .s{margin-top:5px;font-size:12px;color:var(--wms-muted);line-height:1.5}
+.sm-card.hot{border-color:#FDBA74;background:#FFFBEB}
+.sm-card.hot .v{color:#B45309}
+.sm-card.bad{border-color:#FCA5A5;background:#FEF2F2}
+.sm-card.bad .v{color:#B91C1C}
+
+.sm-sec{margin:22px 0 9px;font-size:12px;font-weight:700;color:var(--wms-muted);
+  letter-spacing:.04em;text-transform:uppercase}
+.sm-empty{padding:38px 20px;text-align:center;color:var(--wms-muted);font-size:14px;line-height:1.8}
+.sm-empty b{color:var(--wms-text)}
+@media (max-width:640px){ .sm-body,.sm-src{padding-left:12px;padding-right:12px} }
+</style>
+</head>
+<body data-wms-module="summary">
+
+<div class="wms-shell">
+<div data-wms-shell="summary" data-root="../"></div>
+<div class="wms-main">
+
+  <div class="mod-head">
+    <div class="mod-title">
+      <div class="ic">🌅</div>
+      <div>
+        <h2>สรุปเช้า · Morning Brief</h2>
+        <p>เปิดมาหน้าเดียวรู้ว่าวันนี้ต้องดูอะไรก่อน แล้วกดเข้าไปทำต่อได้เลย</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="sm-src" id="src"></div>
+  <div class="sm-body" id="body"></div>
+
+</div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+
+<script type="module" src="../wms-shell.js"></script>
+<script src="../wms-settings.js"></script>
+<script src="../wms-gas.js"></script>
+<script src="../wms-order-index.js"></script>
+<script src="../wms-stock.js"></script>
+<script src="../transport-docs/transport-file.js"></script>
+<script>
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+/**
+ * หน้านี้ไม่มีกฎเป็นของตัวเองเลย
+ *
+ * ทุกตัวเลขคำนวณจาก WmsStock / OrderIndex / TransportFile ชุดเดียวกับที่โมดูล
+ * นั้น ๆ ใช้ — ถ้าหน้านี้เก็บกฎของตัวเองไว้ วันหนึ่งสรุปเช้าจะบอกว่าต้องเบิก 12
+ * ตัวแต่โมดูลสต๊อกบอก 9 แล้วไม่มีใครรู้ว่าอันไหนจริง
+ */
+let PULLING = '';
+
+function carriers() {
+  const o = window.OrderIndex ? OrderIndex.getCarriers() : null;
+  return o || null;
+}
+
+function stockRows() {
+  const o = window.WmsStock ? WmsStock.read() : null;
+  return o ? { rows: Object.values(o.map), at: o.at } : null;
+}
+
+/** 'YYYY-MM-DD' → '17 ส.ค.' */
+function thDate(v) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v || ''));
+  if (!m) return String(v || '');
+  return new Date(+m[1], +m[2] - 1, +m[3]).toLocaleDateString('th-TH', { day:'numeric', month:'short' });
+}
+const hhmm = t => new Date(t).toLocaleTimeString('th-TH', { hour:'2-digit', minute:'2-digit' });
+
+function renderSrc() {
+  const el = document.getElementById('src');
+  const o = carriers(), st = stockRows();
+  let html = '';
+  if (PULLING) html += `<span class="pill">⏳ ${esc(PULLING)}</span>`;
+  else {
+    html += o ? `<span class="pill">📋 ออเดอร์ <b>${hhmm(o.at)}</b></span>`
+              : `<span class="pill">📋 ยังไม่มีออเดอร์</span>`;
+    html += st ? `<span class="pill">📦 สต๊อก <b>${hhmm(st.at)}</b></span>`
+               : `<span class="pill">📦 ยังไม่มีสต๊อก</span>`;
+  }
+  html += '<span class="sp"></span>';
+  html += `<button onclick="pullAll()" ${PULLING ? 'disabled' : ''}>🔄 ดึงใหม่ทั้งหมด</button>`;
+  html += '<a class="pill" href="../settings/" style="text-decoration:none">⚙ ตั้งค่า</a>';
+  el.innerHTML = html;
+}
+
+/** ดึงทั้งสองอย่างพร้อมกัน — เป็นคนละคำขอ ไม่มีเหตุผลให้รอทีละอัน */
+async function pullAll() {
+  if (PULLING) return;
+  PULLING = 'กำลังดึงข้อมูล…';
+  renderSrc();
+  const jobs = [];
+  if (OrderIndex.savedUrl()) jobs.push(OrderIndex.pull(OrderIndex.savedUrl()).catch(() => {}));
+  if (WmsStock.savedUrl())   jobs.push(WmsStock.pull(WmsStock.savedUrl()).catch(() => {}));
+  await Promise.all(jobs);
+  PULLING = '';
+  render();
+}
+
+const card = (href, icon, label, value, sub, cls) =>
+  `<a class="sm-card ${cls || ''}" href="${href}">
+     <div class="k">${icon} ${esc(label)}</div>
+     <div class="v ${value === null ? 'none' : ''}">${value === null ? '—' : esc(String(value))}</div>
+     <div class="s">${sub || ''}</div>
+   </a>`;
+
+function render() {
+  renderSrc();
+  const body = document.getElementById('body');
+  const o = carriers(), st = stockRows();
+  const tf = window.TransportFile ? TransportFile.get() : null;
+
+  if (!o && !st) {
+    const noUrl = !OrderIndex.savedUrl() && !WmsStock.savedUrl();
+    body.innerHTML = `<div class="sm-empty">${noUrl
+      ? 'ยังไม่ได้ตั้ง Apps Script URL — <a href="../settings/">ไปที่หน้าตั้งค่า</a> ก่อน'
+      : 'ยังไม่มีข้อมูลของวันนี้ — กด <b>🔄 ดึงใหม่ทั้งหมด</b> ที่แถบด้านบน'}</div>`;
+    return;
+  }
+
+  // ── เรื่องที่ต้องมีคนไปดู ──────────────────────────────────────────────
+  const alerts = [];
+  (o ? o.carriers : []).forEach(c => {
+    if (c.warn)   alerts.push(`${esc(c.key)}: ${esc(c.warn)}`);
+    if (c.error1) alerts.push(esc(c.error1));
+    if (c.error2) alerts.push(esc(c.error2));
+  });
+  if (o && !st && WmsStock.savedUrl()) alerts.push('ดึงออเดอร์มาแล้วแต่ยังไม่มีสต๊อก — เช็คสต๊อกกับใบเบิกจะยังใช้ไม่ได้');
+
+  // ── ตัวเลขของวันนี้ ───────────────────────────────────────────────────
+  const orderRows = o ? o.carriers.reduce((n, c) => n + c.data1.length + c.data2.length, 0) : null;
+  const dates = o ? [...new Set(o.carriers.map(c => c.date).filter(Boolean))].sort() : [];
+  const qa   = st ? st.rows.filter(WmsStock.needsQa) : null;
+  const low  = st ? st.rows.filter(r => r.total < WmsStock.LOW_QTY) : null;
+  const zero = st ? st.rows.filter(r => r.newwh <= 0 && r.qa > 0) : null;
+  const qaPcs = qa ? qa.reduce((n, r) => n + Math.max(1, Math.round(r.qa)), 0) : 0;
+
+  const tfDates = tf && window.TransportFile.fileDates ? TransportFile.fileDates(tf.rows) : [];
+  const tfLabel = tf ? (TransportFile.workLabel(tfDates) || '') : '';
+
+  body.innerHTML =
+    (alerts.length ? `<div class="sm-alert">${alerts.map(a => `<div>⚠️ ${a}</div>`).join('')}</div>` : '') +
+
+    '<div class="sm-sec">งานของวันนี้</div><div class="sm-grid">' +
+    card('../order-compare/', '📋', 'ออเดอร์ที่ดึงมา',
+      orderRows === null ? null : orderRows.toLocaleString(),
+      o ? `${o.carriers.length} ขนส่ง${dates.length ? ' · ของวันที่ ' + dates.map(thDate).join(', ') : ''}`
+        : 'ยังไม่ได้ดึง') +
+    card('../transport-docs/', '🚚', 'ไฟล์รถบริษัท',
+      tf ? tf.rows.length.toLocaleString() : null,
+      tf ? (tfLabel ? 'งานวันที่ ' + esc(tfLabel) : esc(tf.fileName || 'ไฟล์ที่โหลดไว้'))
+         : 'ยังไม่มี — Picklist กับใบนำส่งยังทำไม่ได้') +
+    '</div>' +
+
+    '<div class="sm-sec">สต๊อกที่ต้องจัดการ</div><div class="sm-grid">' +
+    card('../stock/', '📦', 'ต้องเบิก QA',
+      qa === null ? null : qa.length,
+      qa && qa.length ? `รวมประมาณ ${qaPcs.toLocaleString()} ชิ้น · กดเพื่อเลือกทำใบเบิก`
+                      : (st ? 'ไม่มีตัวไหนต้องเบิก' : 'ยังไม่ได้ดึงสต๊อก'),
+      qa && qa.length ? 'hot' : '') +
+    card('../stock/', '⚠️', `ใกล้หมด (น้อยกว่า ${WmsStock.LOW_QTY})`,
+      low === null ? null : low.length,
+      low && low.length ? 'ทั้งคลัง ไม่ใช่แค่ที่สั่งวันนี้' : (st ? 'ไม่มีตัวไหนใกล้หมด' : 'ยังไม่ได้ดึงสต๊อก'),
+      low && low.length ? 'hot' : '') +
+    card('../stock/', '🚨', 'NEW WH หมด · QA มีของ',
+      zero === null ? null : zero.length,
+      zero && zero.length ? 'หยิบไม่ได้ทั้งที่บริษัทมีของ' : (st ? 'ไม่มี' : 'ยังไม่ได้ดึงสต๊อก'),
+      zero && zero.length ? 'bad' : '') +
+    '</div>';
+}
+
+render();
+
+/* ดึงให้เองตอนเปิด ด้วยกติกาเดียวกับหน้าอื่นในระบบ — ลองครั้งเดียวต่อรอบเบราว์เซอร์
+   หน้านี้ยิ่งต้องพร้อมทันที เพราะเป็นหน้าที่คนเปิดเป็นหน้าแรกของวัน */
+if (!carriers() && OrderIndex.savedUrl() && WmsGas.firstTry('order:summary')) {
+  OrderIndex.pull(OrderIndex.savedUrl()).then(render).catch(() => {});
+}
+if (!stockRows() && WmsStock.savedUrl() && WmsGas.firstTry('stock:summary')) {
+  WmsStock.pull(WmsStock.savedUrl()).then(render).catch(() => {});
+}
+</script>
+</body>
+</html>

@@ -13,6 +13,10 @@
  */
 
 export const MODULES = [
+  /* สรุปเช้ามาก่อนทุกอย่าง เพราะเป็นหน้าที่ตอบว่า "วันนี้ต้องดูอะไรก่อน" — พอมี
+     เก้าโมดูล การเปิดมาแล้วต้องไล่กดดูทีละอันเพื่อหาว่ามีอะไรผิดปกติคือภาระที่
+     ระบบควรรับไปเอง */
+  { id: 'summary', label: 'สรุปเช้า', labelEn: 'Morning Brief', path: 'summary/', icon: 'sunrise' },
   { id: 'roster', label: 'จัดตารางงาน', labelEn: 'Duty Roster', path: '', icon: 'calendar' },
   { id: 'order', label: 'เทียบ Order', labelEn: 'Order Compare', path: 'order-compare/', icon: 'clipboard' },
   { id: 'stock', label: 'สต๊อกคงเหลือ', labelEn: 'Stock on Hand', path: 'stock/', icon: 'package' },
@@ -49,6 +53,8 @@ export const ICON_PATHS = {
     '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
   search:
     '<path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/>',
+  sunrise:
+    '<path d="M12 2v8"/><path d="m4.93 10.93 1.41 1.41"/><path d="M2 18h2"/><path d="M20 18h2"/><path d="m19.07 10.93-1.41 1.41"/><path d="M22 22H2"/><path d="m8 6 4-4 4 4"/><path d="M16 18a4 4 0 0 0-8 0"/>',
   package:
     '<path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
   boxes:
