@@ -95,6 +95,49 @@
     return /^-+$/.test(t) ? '' : t;
   }
 
+  /**
+   * ตรวจว่าที่อ่านมา "เข้าเค้า" ไหม — จับกรณีอ่านถูกช่องแต่ผิดความหมาย
+   *
+   * ระบบอ่านข้อมูลตามชื่อหัวคอลัมน์ ซึ่งทนต่อการสลับ/แทรกคอลัมน์ แต่ทนไม่ได้
+   * ถ้าตัวแถวหัวเองเลื่อนไม่พร้อมข้อมูล เพราะทุกป้ายจะติดผิดช่องพร้อมกัน
+   *
+   * เกิดขึ้นจริงแล้วครั้งหนึ่ง: หัวเลื่อนไป 2 ช่อง ระบบจึงอ่านชื่อลูกค้าจากช่อง
+   * ที่ว่างเปล่า เอาหมายเหตุไปแสดงเป็นเวลานัด เอาจำนวนไปแสดงเป็นแบรนด์ —
+   * ทุกหน้าแสดงข้อมูลผิดพร้อมกันโดยหน้าจอดูปกติทุกอย่าง ไม่มี error สักตัว
+   * กว่าจะรู้คือมีคนอ่านแล้วเอะใจเอง ซึ่งอาจกินเวลาหลายวัน
+   *
+   * เช็คแค่สิ่งที่ผิดแน่ ๆ ไม่ใช่เดาความหมายของข้อความ:
+   *   • ช่องที่ต้องมีค่าเสมอ แต่ว่างครบทุกแถว = อ่านผิดช่อง ไม่ใช่ข้อมูลขาด
+   *   • เวลานัดที่ยาวเป็นย่อหน้า = ไปโดนช่องหมายเหตุเข้าแล้ว
+   */
+  var MUST_HAVE = [{ k: 'customer', label: 'ชื่อลูกค้า' }, { k: 'brand', label: 'แบรนด์' }];
+
+  function sanity(carriers) {
+    var rows = [];
+    (carriers || []).forEach(function (c) {
+      rows = rows.concat(c.data1 || [], c.data2 || []);
+    });
+    if (!rows.length) return [];
+
+    var out = [];
+    MUST_HAVE.forEach(function (f) {
+      var has = rows.some(function (r) { return String(r[f.k] || '').trim() !== ''; });
+      if (!has) {
+        out.push('ช่อง "' + f.label + '" ว่างทั้ง ' + rows.length + ' แถว — ' +
+                 'แถวหัวในชีตน่าจะไม่ตรงกับข้อมูลใต้มัน ทำให้อ่านผิดช่องทั้งแผง');
+      }
+    });
+
+    var appt = rows.map(function (r) { return String(r.apptTime || '').trim(); })
+                   .filter(function (t) { return t; });
+    var longAppt = appt.filter(function (t) { return t.length > 40; }).length;
+    if (appt.length && longAppt > appt.length / 2) {
+      out.push('ช่อง "เวลานัด" ได้ข้อความยาวผิดปกติ (' + longAppt + ' จาก ' + appt.length +
+               ' แถว) — น่าจะกำลังอ่านช่องหมายเหตุมาแสดงแทนเวลา');
+    }
+    return out;
+  }
+
   /** แถวดิบจากชีต → รูปแบบที่ทุกหน้าในระบบใช้ */
   function convertGASRows(rows) {
     return (rows || [])
@@ -202,6 +245,7 @@
     convertGASRows: convertGASRows,
     parsePayload: parsePayload,
     pull: pull,
+    sanity: sanity,
 
     /* URL เป็นของ WmsSettings — ที่นี่แค่ส่งต่อ เพื่อไม่ให้ชื่อคีย์อยู่สองไฟล์ */
     savedUrl: function () { return window.WmsSettings ? WmsSettings.orderUrl() : ''; },

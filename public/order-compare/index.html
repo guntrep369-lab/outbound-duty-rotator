@@ -1920,6 +1920,9 @@ function renderCarrierNotes() {
     if (c.error1) notes.push(c.error1);
     if (c.error2) notes.push(c.error2);
   });
+  // อ่านผิดช่องมาก่อนทุกเรื่อง — เรื่องอื่นคือข้อมูลขาด เรื่องนี้คือข้อมูลผิด
+  // ทั้งแผงโดยหน้าจอยังดูปกติ ซึ่งอันตรายกว่าการไม่มีข้อมูลเลย
+  notes.unshift(...OrderIndex.sanity(carriersData));
   el.innerHTML = notes.map(n => `<div>⚠️ ${esc(n)}</div>`).join('');
   el.style.display = notes.length ? 'block' : 'none';
 }

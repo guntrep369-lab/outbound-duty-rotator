@@ -236,6 +236,10 @@ function renderSrc() {
   } else {
     html += `<span class="pill warn">⚠️ ยังไม่มีข้อมูลออเดอร์</span>`;
   }
+  // คนรับสายอ่านหน้านี้ตอบลูกค้าโดยตรง ถ้าอ่านผิดช่องต้องรู้ก่อนยกหูขึ้นพูด
+  const bad = window.OrderIndex ? OrderIndex.sanity(
+    (OrderIndex.getCarriers() || {}).carriers || []) : [];
+  bad.forEach(m => { html += `<span class="pill warn">⚠️ ${esc(m)}</span>`; });
   const tf = window.TransportFile && TransportFile.get();
   const central = window.TransportFile && TransportFile.central.on();
   if (TRUCK_MSG) {

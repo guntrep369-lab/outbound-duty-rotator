@@ -156,6 +156,58 @@ describe('ชื่อรถ', () => {
   });
 });
 
+/**
+ * แถวหัวในชีตเลื่อนไป 2 ช่องโดยข้อมูลไม่เลื่อนตาม ทุกป้ายจึงติดผิดช่องพร้อมกัน
+ * ระบบอ่านได้ปกติ ไม่มี error แต่ทุกหน้าแสดงข้อมูลผิดหมด — เคสนี้เกิดขึ้นจริง
+ * และไม่มีอะไรจับได้เลยจนมีคนมาอ่านแล้วเอะใจ
+ */
+describe('จับตอนอ่านผิดช่อง', () => {
+  /** แถวแบบที่ได้ตอนหัวเลื่อน: ชื่อลูกค้าตกไปช่องว่าง เวลานัดได้หมายเหตุมาแทน */
+  const shifted = (over = {}) => ({
+    'ชื่อรถ': 'คัน31 มณฑล + รัชนี',
+    'Date': 'Mon, Aug 17',
+    'Sup': 'Lunio',
+    'Order ID': 'AA-92876',
+    'เลข consign': 'Lunio Gen 4 (LNO0000000213)',  // ที่จริงคือแบรนด์
+    'Invoice': 'King',                              // ที่จริงคือขนาด
+    'แบรนด์': 2,                                    // ที่จริงคือจำนวน
+    'ของแถม': 'คุณโสภา',                            // ที่จริงคือชื่อลูกค้า
+    'ชื่อลูกค้า': '',                               // ช่องที่เลื่อนมาชนคือช่องว่าง
+    'เวลานัด': 'ส่งสินค้า เวลา 09.00 น. /// รบกวนนำของในลิสต์พร้อมมาให้ครบตามใบเบิกด้วยครับ///',
+    ...over,
+  });
+
+  const carriersOf = (rows) => OrderIndex.parsePayload({
+    carriers: [{ key: 'รถบริษัท', sheet1: rows, sheet2: [] }],
+  });
+
+  it('ฟ้องเมื่อชื่อลูกค้าว่างทุกแถว', () => {
+    const msgs = OrderIndex.sanity(carriersOf([shifted(), shifted({ 'Order ID': 'AA-2' })]));
+    expect(msgs.join(' ')).toMatch(/ชื่อลูกค้า.*ว่างทั้ง 2 แถว/);
+  });
+
+  it('ฟ้องเมื่อเวลานัดได้ข้อความยาวแบบหมายเหตุ', () => {
+    const msgs = OrderIndex.sanity(carriersOf([shifted(), shifted({ 'Order ID': 'AA-2' })]));
+    expect(msgs.join(' ')).toMatch(/เวลานัด.*ยาวผิดปกติ/);
+  });
+
+  it('ข้อมูลที่หัวตรงกับข้อมูล ต้องเงียบสนิท — เตือนพร่ำเพรื่อแล้วคนจะเลิกอ่าน', () => {
+    expect(OrderIndex.sanity(carriersOf([sheetRow(), sheetRow({ 'Order ID': 'AA-2' })]))).toEqual([]);
+  });
+
+  it('ยังไม่มีข้อมูลก็ไม่ใช่เรื่องผิด', () => {
+    expect(OrderIndex.sanity([])).toEqual([]);
+    expect(OrderIndex.sanity(carriersOf([]))).toEqual([]);
+  });
+
+  it('ลูกค้าบางแถวว่างเป็นเรื่องปกติ ต้องไม่ฟ้อง — ฟ้องเฉพาะตอนว่างครบทุกแถว', () => {
+    const msgs = OrderIndex.sanity(carriersOf([
+      sheetRow(), sheetRow({ 'Order ID': 'AA-2', 'ชื่อลูกค้า': '' }),
+    ]));
+    expect(msgs).toEqual([]);
+  });
+});
+
 describe('วันที่', () => {
   it('"Mon, Aug 17" ไม่มีปี — ต้องเติมปีที่ใกล้วันนี้ ไม่ใช่ 2001 ที่ JS เดาให้', () => {
     const [r] = OrderIndex.convertGASRows([sheetRow({ Date: 'Mon, Aug 17' })]);
