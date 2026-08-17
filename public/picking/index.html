@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>สรุปหยิบของ — WMS</title>
+<link rel="stylesheet" href="../wms-theme.css">
+<link rel="stylesheet" href="../wms-gate.css">
+<script src="../wms-gate.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --surface:var(--wms-surface); --surface2:var(--wms-surface2);
+  --border:var(--wms-border); --border2:var(--wms-border2);
+  --primary:var(--wms-primary); --primary-dark:var(--wms-primary-dark);
+  --primary-light:var(--wms-primary-light); --text:var(--wms-text);
+  --muted:var(--wms-muted); --faint:var(--wms-faint);
+  --radius:var(--wms-radius); --radius-sm:var(--wms-radius-sm); --shadow:var(--wms-shadow);
+}
+.main{padding:14px 20px 40px}
+.btn{padding:6px 14px;border-radius:8px;border:1px solid var(--border2);background:var(--surface);
+  font-family:var(--wms-font);font-size:13px;color:#334155;cursor:pointer}
+.btn:hover{border-color:var(--primary);color:var(--primary-dark)}
+.btn-primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn-primary:hover{filter:brightness(1.08);color:#fff}
+.btn-sm{padding:5px 12px;font-size:12.5px}
+.pk-src{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 20px;
+  background:var(--surface2);border-bottom:1px solid var(--border);font-size:12px}
+.pk-src .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;
+  background:var(--surface);border:1px solid var(--border);color:var(--muted)}
+.pk-src .pill b{color:var(--text);font-weight:600}
+.pk-src .sp{flex:1}
+.pk-src button{padding:4px 12px;border-radius:999px;border:1px solid var(--border2);
+  background:var(--surface);font-family:var(--wms-font);font-size:12px;color:#334155;cursor:pointer}
+.pk-src button:hover:not(:disabled){background:var(--primary-light);border-color:var(--primary);color:var(--primary-dark)}
+@media print{ .no-print{display:none!important} .wms-shell,.wms-main{display:block!important} }
+  /* ── สรุปหยิบของ ── */
+  .ps-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  .ps-lbl{font-size:12px;color:var(--muted)}
+  .ps-spacer{flex:1}
+  .ps-opt{padding:6px 13px;border-radius:999px;border:1px solid var(--border);background:var(--surface);
+    color:var(--muted);font-family:var(--sans);font-size:12.5px;font-weight:500;cursor:pointer}
+  .ps-opt.active{background:var(--primary);border-color:var(--primary);color:#fff;cursor:default}
+  .ps-grand{background:var(--primary-light);border:1px solid #C7D2FE;border-radius:10px;
+    padding:9px 14px;font-size:13px;color:#3730A3;margin-bottom:14px}
+  .ps-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    box-shadow:0 1px 3px rgba(15,23,42,.06);overflow:hidden;margin-bottom:16px}
+  .ps-head{display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:13px 18px;background:var(--primary);color:#fff}
+  .ps-carrier{font-size:18px;font-weight:700}
+  .ps-meta{font-size:11.5px;color:#C7D2FE;margin-top:2px}
+  .ps-tot{text-align:right;flex-shrink:0}
+  .ps-tot b{font-size:22px;font-weight:800;display:block;line-height:1}
+  .ps-tot span{font-size:11px;color:#C7D2FE}
+  .ps-group{padding:12px 18px 16px}
+  .ps-gtitle{font-size:13px;font-weight:700;color:var(--text);margin-bottom:7px}
+  .ps-gtitle span{font-weight:400;font-size:11.5px;color:var(--muted);margin-left:6px}
+  .ps-table{width:100%;border-collapse:collapse;font-size:13px}
+  .ps-table th{text-align:left;font-size:11px;font-weight:600;color:var(--muted);
+    text-transform:uppercase;letter-spacing:.04em;padding:5px 8px;border-bottom:1.5px solid var(--border)}
+  .ps-table td{padding:7px 8px;border-bottom:1px solid #F1F5F9;vertical-align:top}
+  .ps-chk{border:1.5px solid #94A3B8;border-radius:4px;width:16px;height:16px;display:inline-block;margin-top:1px}
+  .ps-table td.ps-chk{border:0;padding-left:8px}
+  .ps-table td.ps-chk::before{content:'';display:inline-block;width:15px;height:15px;
+    border:1.5px solid #94A3B8;border-radius:4px}
+  .ps-sku{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--primary)}
+  .ps-qty{text-align:right;font-weight:700;font-size:15px}
+  .ps-empty{padding:22px;text-align:center;color:var(--muted);font-size:13px}
+
+  @media print{
+    body{background:#fff}
+    header,.tabs,.ps-bar,.no-print,.sysbar,[data-wms-shell]{display:none!important}
+    .tab-pane:not(#tab-picksum){display:none!important}
+    .main{padding:0!important;max-width:none!important}
+    /* แต่ละขนส่งขึ้นหน้าใหม่ ฉีกแจกให้แต่ละคนได้ */
+    .ps-card{page-break-after:always;break-after:page;box-shadow:none;border:0;margin:0}
+    .ps-card:last-child{page-break-after:auto;break-after:auto}
+    .ps-head{background:#fff!important;color:#000!important;border-bottom:2.5px solid #000;padding:0 0 8px}
+    .ps-carrier{font-size:20px}
+    .ps-meta,.ps-tot span{color:#444!important}
+    .ps-group{padding:10px 0 12px}
+    .ps-table{page-break-inside:auto}
+    .ps-table tr{page-break-inside:avoid}
+  }
+
+  .ps-cat{margin-top:10px}
+  .ps-cat:first-child{margin-top:2px}
+  .ps-cname{font-size:12.5px;font-weight:700;color:var(--text);padding:4px 0 3px;
+    border-bottom:1.5px solid var(--border)}
+  .ps-cname span{font-weight:400;font-size:11px;color:var(--muted);margin-left:6px}
+  .ps-size{font-size:11.5px;font-weight:600;color:var(--primary);background:var(--primary-light);
+    border-radius:6px;padding:3px 9px;margin:7px 0 3px;display:inline-block}
+  .ps-size span{font-weight:400;color:var(--primary);opacity:.75;margin-left:5px}
+  @media print{
+    .ps-cname{border-bottom:1.5px solid #000}
+    .ps-size{background:#EEE!important;color:#000!important;border:1px solid #000}
+    .ps-size span{color:#000!important}
+    .ps-cat{page-break-inside:auto}
+  }
+  .ps-nostock{font-size:10px;font-weight:600;color:#B45309;background:#FEF3C7;
+    border:1px solid #FDE68A;border-radius:5px;padding:1px 6px;white-space:nowrap}
+  @media print{.ps-nostock{background:#fff!important;border:1px solid #000;color:#000!important}}
+  .ps-sep{width:1px;height:18px;background:var(--border);margin:0 4px}
+  .ps-carriers{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+  .ps-chip{padding:5px 13px;border-radius:999px;border:1px solid var(--border);background:var(--surface);
+    color:var(--muted);font-family:var(--sans);font-size:12.5px;font-weight:500;cursor:pointer}
+  .ps-chip:hover:not(.active){border-color:var(--primary);color:var(--primary)}
+  .ps-chip.active{background:var(--primary);border-color:var(--primary);color:#fff}
+  .ps-chip-alt{border-style:dashed;color:var(--muted)}
+  .ps-hint{font-size:11px;color:var(--muted);margin-left:4px}
+  .ps-mix{margin-left:8px;padding:2px 8px;border-radius:999px;background:var(--primary-light);
+    color:var(--primary);font-size:11px;font-weight:600;vertical-align:middle}
+  .ps-split{display:flex;flex-wrap:wrap;gap:4px 6px;margin-top:6px}
+  .ps-split span{padding:2px 9px;border-radius:6px;border:1px solid var(--border);
+    font-size:11px;color:var(--muted);white-space:nowrap}
+  .ps-split b{color:var(--text);font-weight:700;margin-left:2px}
+  .dbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:9px 20px;
+    background:var(--surface);border-bottom:1px solid var(--border);font-size:12.5px}
+  .dsrc{display:flex;align-items:center;gap:8px}
+  /* เรื่องที่สคริปต์ส่งกลับมาบอก เช่น ชีตหาย หรือชีตมีข้อมูลแต่ไม่ใช่ของวันนี้
+     เดิม error1/error2 ถูกอ่านเก็บไว้แล้วไม่เคยแสดงที่ไหน — พอดึงข้อมูลแบบกรอง
+     วันที่ การเงียบตรงนี้แปลว่าแท็บว่างโดยไม่มีอะไรอธิบายว่าทำไม */
+  .dnote{display:none;padding:8px 20px;background:#FFFBEB;border-bottom:1px solid #FDE68A;
+    font-size:12.5px;line-height:1.65;color:#92400E}
+  .dnote div + div{margin-top:3px}
+  .ddot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0}
+  .ddot.on{background:#16A34A} .ddot.wait{background:#F59E0B} .ddot.off{background:#CBD5E1}
+  .ddot.old{background:#DC2626}
+  .ddate{color:var(--muted)}
+  /* ไม่ใช่วันนี้ = ปกติสำหรับทีมที่ทำงานล่วงหน้า แต่ต้องสะดุดตาพอให้รู้ตัว */
+  .ddate.ahead{color:#B45309;font-weight:600}
+  .dage.stale{color:#B45309;font-weight:600}
+  .dage.old{color:#B91C1C;font-weight:700}
+  .dtxt{color:var(--text);white-space:nowrap}
+  .dtxt b{font-weight:700}
+  .dtxt .dim{color:var(--muted);font-weight:400}
+  .dbtn{padding:3px 11px;border-radius:999px;border:1px solid var(--border2, var(--border));
+    background:var(--surface);font-family:var(--sans);font-size:11.5px;color:#334155;cursor:pointer}
+  .dbtn:hover:not(:disabled){background:var(--primary-light);border-color:var(--primary);color:var(--primary-dark)}
+  .dbtn:disabled{opacity:.5;cursor:default}
+  .dsp{flex:1}
+  .dlink{font-size:12px;color:var(--primary-dark);text-decoration:none;font-weight:600;
+    background:none;border:0;font-family:var(--sans);cursor:pointer;padding:0;white-space:nowrap}
+  .dlink:hover{text-decoration:underline}
+  .dpanel{display:none;gap:12px;flex-wrap:wrap;padding:13px 20px;
+    background:var(--surface2, #F8FAFC);border-bottom:1px solid var(--border)}
+  .dpanel.open{display:flex}
+  .dcard{flex:1;min-width:220px;display:flex;flex-direction:column;gap:7px;
+    background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:11px 12px}
+  .dch{font-size:12.5px;font-weight:600;color:var(--text)}
+  .dch span{display:block;font-size:11px;font-weight:400;color:var(--muted);margin-top:2px}
+  .dupl{cursor:pointer;justify-content:center;width:100%}
+  .dst{font-size:11px;color:var(--muted)}
+  .consign-no{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--text);
+    white-space:nowrap;line-height:1.5}
+
+  /* ── โหมดพิมพ์ label 150×100 มม. — บีบให้ลงดวงเล็ก ── */
+  @media print{
+    body.ps-paper-label .ps-head{padding:0 0 4px;border-bottom:2px solid #000}
+    body.ps-paper-label .ps-carrier{font-size:13px}
+    body.ps-paper-label .ps-meta{font-size:8px}
+    body.ps-paper-label .ps-tot b{font-size:15px}
+    body.ps-paper-label .ps-tot span{font-size:8px}
+    body.ps-paper-label .ps-group{padding:4px 0 5px}
+    body.ps-paper-label .ps-gtitle{font-size:10px;margin-bottom:3px}
+    body.ps-paper-label .ps-gtitle span{font-size:8px}
+    body.ps-paper-label .ps-cname{font-size:9.5px;padding:2px 0 1px}
+    body.ps-paper-label .ps-cname span{font-size:8px}
+    body.ps-paper-label .ps-size{font-size:8.5px;padding:1px 5px;margin:3px 0 1px}
+    body.ps-paper-label .ps-table{font-size:9px}
+    body.ps-paper-label .ps-table td{padding:2px 4px}
+    body.ps-paper-label .ps-sku{font-size:8.5px}
+    body.ps-paper-label .ps-qty{font-size:11px}
+    body.ps-paper-label .ps-table td.ps-chk::before{width:9px;height:9px;border-width:1px}
+    body.ps-paper-label .ps-empty{padding:8px;font-size:9px}
+    body.ps-paper-label .ps-card{page-break-inside:auto}
+    body.ps-paper-label .ps-cat{page-break-inside:avoid}
+  }
+
+  /* ── ตัวอย่างตามขนาดกระดาษ ── */
+  .ps-papermode{background:#E9EDF2;padding:16px 0;border-radius:12px}
+  .ps-papermode .ps-carriers,.ps-papermode .ps-grand{margin-left:16px;margin-right:16px}
+  /* ⚠️ padding บน <table> ที่ border-collapse:collapse ไม่มีผลตามสเปก
+     ขอบกระดาษจึงต้องไปอยู่ที่เซลล์ ไม่ใช่ที่ตัวตาราง */
+  .ps-papermode .ps-card{
+    position:relative;margin:0 auto 18px;border-radius:0;border:1px solid #C9D2DD;
+    box-shadow:0 2px 10px rgba(15,23,42,.13);overflow:visible;
+    width:210mm;padding:0;                   /* ฐาน = A4 ถูกตั้งแต่ก่อน JS ทำงาน */
+  }
+  .ps-papermode .ps-card > thead > tr > td{padding:10mm 10mm 0}
+  .ps-papermode .ps-card > tbody > tr > td{padding:0 10mm 10mm}
+  body.ps-paper-label .ps-papermode .ps-card{width:150mm}
+  body.ps-paper-label .ps-papermode .ps-card > thead > tr > td{padding:4mm 4mm 0}
+  body.ps-paper-label .ps-papermode .ps-card > tbody > tr > td{padding:0 4mm 4mm}
+  body.ps-portrait   .ps-papermode .ps-card{width:100mm}
+  /* หัวใบเดิมกินขอบเต็ม ในโหมดกระดาษต้องอยู่ในขอบพิมพ์ */
+  .ps-papermode .ps-head{margin:0}
+  .ps-papermode .ps-group{padding-left:0;padding-right:0}
+  .ps-papermode .ps-summary,.ps-papermode .ps-empty{padding-left:0;padding-right:0}
+
+  .ps-pagecount{display:block;font-size:10px;color:#C7D2FE;margin-top:2px}
+
+  .ps-cut{position:absolute;left:0;right:0;height:0;border-top:1.5px dashed #94A3B8;
+    pointer-events:none;z-index:2}
+  .ps-cut span{position:absolute;right:4px;top:-9px;background:#E9EDF2;color:#64748B;
+    font-size:9.5px;font-weight:600;padding:1px 6px;border-radius:4px;white-space:nowrap}
+
+  @media print{
+    .ps-papermode{background:#fff!important;padding:0;border-radius:0}
+    /* ⚠️ width:auto บน <table> = หดตามเนื้อหา (ไม่เหมือน block ที่เต็มความกว้าง)
+       ต้องสั่ง 100% ไม่งั้นพิมพ์ออกมาไม่เต็มหน้ากระดาษ */
+    .ps-papermode .ps-card{width:100%!important;padding:0!important;border:0!important;
+      box-shadow:none!important;margin:0!important}
+    /* @page คุมขอบกระดาษจริงแล้ว เซลล์ต้องไม่เว้นซ้ำอีกชั้น */
+    .ps-papermode .ps-card > thead > tr > td,
+    .ps-papermode .ps-card > tbody > tr > td{padding:0!important}
+    .ps-cut{display:none!important}
+  }
+  /* การ์ดเป็น <table> แล้ว กันสไตล์ตารางอื่นมากวน */
+  .ps-card{border-collapse:collapse;width:100%;table-layout:fixed}
+  .ps-card > thead > tr > td,.ps-card > tbody > tr > td{padding:0;border:0}
+  @media print{
+    /* หัวใจของเรื่อง: เบราว์เซอร์พิมพ์ thead ซ้ำทุกหน้าที่ตารางกินไป
+       จึงได้หัวขนส่งบนทุกแผ่นโดยไม่ต้องคำนวณเอง */
+    .ps-card > thead{display:table-header-group}
+    .ps-card > tbody{display:table-row-group}
+  }
+</style>
+</head>
+<body data-wms-module="picking">
+
+<div class="wms-shell">
+<div data-wms-shell="picking" data-root="../" class="no-print"></div>
+<div class="wms-main">
+
+  <div class="mod-head no-print">
+    <div class="mod-title">
+      <div class="ic">🧾</div>
+      <div>
+        <h2>สรุปหยิบของ · Picking Sheet</h2>
+        <p>รวมยอดที่ต้องหยิบทั้งวันเป็นใบเดียว จัดกลุ่มตามชนิดของ แล้วสั่งพิมพ์</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="pk-src no-print" id="src"></div>
+
+  <div class="main">
+    <div class="ps-bar no-print">
+      <span class="ps-lbl">ใช้ข้อมูลจาก</span>
+      <button class="ps-opt active" data-src="1" onclick="setPickSource(1,this)">🌅 Daily Logis</button>
+      <button class="ps-opt" data-src="2" onclick="setPickSource(2,this)">🌆 Daily CRM</button>
+      <span class="ps-sep"></span>
+      <span class="ps-lbl">พิมพ์</span>
+      <button class="ps-opt active" data-filter="all"  onclick="setPickFilter('all',this)">ทั้งหมด</button>
+      <button class="ps-opt" data-filter="bed"  onclick="setPickFilter('bed',this)">🛏️ เฉพาะที่นอน</button>
+      <button class="ps-opt" data-filter="gift" onclick="setPickFilter('gift',this)">🎁 เฉพาะของแถม</button>
+      <span class="ps-sep"></span>
+      <span class="ps-lbl">กระดาษ</span>
+      <button class="ps-opt active" data-paper="a4" onclick="setPickPaper('a4',this)">A4</button>
+      <button class="ps-opt" data-paper="land" onclick="setPickPaper('land',this)">🏷️ 150×100 แนวนอน</button>
+      <button class="ps-opt" data-paper="port" onclick="setPickPaper('port',this)">🏷️ 100×150 แนวตั้ง</button>
+      <span class="ps-spacer"></span>
+      <button class="btn btn-sm" onclick="renderPickSum()">🔄 คำนวณใหม่</button>
+      <button class="btn btn-primary btn-sm" onclick="window.print()">🖨 พิมพ์</button>
+    </div>
+    <div id="pickSumBody"></div>
+  </div>
+
+</div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+
+<script type="module" src="../wms-shell.js"></script>
+<script src="../wms-date.js"></script>
+<script src="../wms-settings.js"></script>
+<script src="../wms-gas.js"></script>
+<script src="../wms-order-index.js"></script>
+<script src="../wms-stock.js"></script>
+<script src="../wms-pick.js"></script>
+<script>
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+/**
+ * ใบหยิบของ — ย้ายออกมาจากแท็บในโมดูลเทียบ Order
+ *
+ * เป็นงานของคลัง ไม่ใช่งานเทียบออเดอร์: คนละคน คนละจังหวะของวัน และเปิดมาเพื่อ
+ * พิมพ์อย่างเดียว ไม่ได้มาดูว่าสองรอบตรงกันไหม
+ *
+ * กฎการนับและจัดกลุ่มอยู่ที่ ../wms-pick.js ชุดเดียวกับที่แท็บเช็คสต๊อกใช้ —
+ * ถ้าต่างคนต่างถือ วันหนึ่งใบหยิบจะบอกให้หยิบ 12 แต่เช็คสต๊อกบอกต้องใช้ 9
+ */
+function carriersOf() {
+  const o = window.OrderIndex ? OrderIndex.getCarriers() : null;
+  return o ? o.carriers : [];
+}
+function stockMap() {
+  const o = window.WmsStock ? WmsStock.read() : null;
+  return o ? o.map : {};
+}
+const PC = (item) => WmsPick.categoryOf(item, stockMap());
+const PN = (item) => WmsPick.nameOf(item, stockMap());
+function inStock(item) { return !!stockMap()[item.sku]; }
+
+/** วันของงานในใบ ไม่ใช่วันที่กดพิมพ์ — ทีมทำงานล่วงหน้า */
+function sheetDate(cars) {
+  const ds = [...new Set((cars || []).map(c => c.date).filter(Boolean))].sort();
+  const longTH = (v) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v || ''));
+    return m ? new Date(+m[1], +m[2] - 1, +m[3])
+      .toLocaleDateString('th-TH', { day:'numeric', month:'long', year:'numeric' }) : '';
+  };
+  if (ds.length) return 'งานวันที่ ' + ds.map(longTH).join(' และ ');
+  return 'พิมพ์เมื่อ ' + new Date().toLocaleDateString('th-TH',
+    { day:'numeric', month:'long', year:'numeric' });
+}
+
+/* ══════════ การจัดกลุ่มสินค้าในใบสรุปหยิบของ ══════════
+   จำแนกจาก "ชื่อสินค้า" ซึ่งขึ้นต้นด้วยคำประเภทเสมอ เช่น
+     ที่นอน 6FT Emmas Boston…     เก้าอี้เพื่อสุขภาพ Lunio…
+     ท็อปโต๊ะ 160x80CM…           แถม - หมอน Morning Sleep…
+
+   แก้กฎได้ที่นี่ที่เดียว ลำดับสำคัญ: อันที่เจาะจงกว่าต้องอยู่ก่อน
+
+   ⚠️ ของที่ไม่เข้ากฎไหนเลยจะไปอยู่กลุ่ม "อื่น ๆ" — ไม่หายไปจากใบ
+      เพราะของหายจากใบหยิบแปลว่าลืมหยิบจริง */
+
+/**
+ * ชื่อที่ใช้ "จำแนกประเภทและขนาด"
+ *
+ * ไฟล์สต๊อกระบุขนาด/ประเภทชัดกว่าไฟล์ออเดอร์มาก จึงใช้ description จาก
+ * stockMap เป็นหลัก แล้วค่อยถอยไปใช้ชื่อจากไฟล์ออเดอร์เมื่อ
+ *   • ยังไม่ได้โหลดไฟล์สต๊อก  หรือ
+ *   • SKU นั้นไม่มีในไฟล์สต๊อก
+ * ใบหยิบจึงยังใช้ได้แม้ไม่มีสต๊อก แค่จำแนกหยาบลง
+ */
+
+/** SKU นี้มีในไฟล์สต๊อกไหม — ใช้ติดป้ายเตือนบนใบ */
+
+/** ขนาดที่นอนจากชื่อ เช่น "6FT" "3.5FT" → 6, 3.5 (ไม่เจอ = null) */
+
+/** จับสินค้าเข้ากลุ่ม ตัวแรกที่ตรงชนะ ไม่ตรงเลย → อื่น ๆ */
+
+
+/* ══════════ ตัวอย่างตามขนาดกระดาษ ══════════
+   แสดงเป็นแผ่นกระดาษขนาดจริงพร้อมเส้นบอกว่าตัดหน้าตรงไหน
+
+   ⚠️ เส้นแบ่งเป็นการ "คำนวณ" ไม่ใช่ผลจริง — ตอนพิมพ์เบราว์เซอร์เป็นคนตัดสิน
+      และฟอนต์ตอนพิมพ์อาจต่างจากบนจอเล็กน้อย จึงอาจคลาดหนึ่งบรรทัด
+      ใช้ดูว่ากินกี่หน้า/จัดหน้าสวยไหม ถ้าต้องการเป๊ะ 100% ให้กด Ctrl+P */
+const PAPER = {
+  a4:     { w: 210, h: 297, margin: 10, label: 'A4' },
+  land:   { w: 150, h: 100, margin: 4,  label: '150×100 แนวนอน' },
+  port:   { w: 100, h: 150, margin: 4,  label: '100×150 แนวตั้ง' },
+};
+
+/** px ต่อ 1mm ของเบราว์เซอร์นี้ วัดจริงไม่เดา */
+function mmPx() {
+  const d = document.createElement('div');
+  d.style.cssText = 'width:100mm;position:absolute;visibility:hidden;top:-9999px';
+  document.body.appendChild(d);
+  const px = d.getBoundingClientRect().width / 100;
+  d.remove();
+  return px || 3.7795;
+}
+
+/**
+ * ลากเส้นแบ่งหน้าบนแต่ละใบ
+ * แต่ละขนส่งขึ้นหน้าใหม่เสมอ การนับหน้าจึงเริ่มใหม่ทุกใบ
+ */
+function drawPageGuides() {
+  const pg = PAPER[pickPaper] || PAPER.a4;
+  const px = mmPx();
+  const usableH = (pg.h - pg.margin * 2) * px;
+
+  document.querySelectorAll('#pickSumBody .ps-card').forEach(card => {
+    card.querySelectorAll('.ps-cut').forEach(e => e.remove());
+    const h = card.scrollHeight;
+    const pages = Math.max(1, Math.ceil(h / usableH));
+    card.dataset.pages = pages;
+
+    for (let i = 1; i < pages; i++) {
+      const cut = document.createElement('div');
+      cut.className = 'ps-cut';
+      cut.style.top = (i * usableH) + 'px';
+      const who = card.querySelector('.ps-carrier');
+      cut.innerHTML = '<span>ตัดหน้า · หน้า ' + (i + 1) +
+        (who ? ' · ขึ้นหัว ' + (who.dataset.label || who.textContent) : '') + '</span>';
+      card.appendChild(cut);
+    }
+    const tag = card.querySelector('.ps-pagecount');
+    if (tag) tag.textContent = pages > 1 ? pages + ' หน้า' : '1 หน้า';
+  });
+}
+
+/* ══════════ สรุปหยิบของ (แยกตามขนส่ง) ══════════
+   ใช้ WmsPick.aggregateSKUDemand() ตัวเดียวกับแท็บเช็คสต๊อก แต่เรียกทีละขนส่ง
+   แทนที่จะรวมทุกเจ้าเข้าด้วยกัน — น้องในทีมจะได้หยิบของแต่ละคันในรอบเดียว */
+let pickSource = 1;   // 1 = Daily Logis (รอบเช้า), 2 = Daily CRM
+let pickFilter = 'all';  // 'all' | 'bed' | 'gift' — แยกใบให้สองคนหยิบพร้อมกันได้
+// ว่าง = แยกใบทุกขนส่ง · 1 เจ้า = ใบของเจ้านั้น · หลายเจ้า = รวมเป็นใบเดียว
+let pickCarriers = [];
+let pickPaper = 'a4';    // 'a4' | 'label' (150×100 มม.)
+
+/**
+ * สลับขนาดกระดาษที่จะพิมพ์
+ * เนื้อหาเหมือนกันทุกอย่าง ต่างแค่ @page และความแน่นของตัวอักษร —
+ * รายการยาวจะไหลลงดวงถัดไปเอง และยังขึ้นดวงใหม่ทุกขนส่งเหมือนเดิม
+ */
+function setPickPaper(v, btn) {
+  if (!PAPER[v]) v = 'a4';
+  pickPaper = v;
+  const pg = PAPER[v];
+  document.querySelectorAll('#tab-picksum .ps-opt[data-paper]').forEach(b =>
+    b.classList.toggle('active', b.dataset.paper === v));
+  if (btn) btn.classList.add('active');
+
+  // ขนาดกระดาษเล็กใช้ตัวอักษรบีบ ส่วน A4 ใช้ปกติ
+  document.body.classList.toggle('ps-paper-label', v !== 'a4');
+  document.body.classList.toggle('ps-a4', v === 'a4');
+  document.body.classList.toggle('ps-portrait', v === 'port');
+
+  // ระบุทั้งกว้างและสูงเสมอ เบราว์เซอร์จึงล็อกแนวให้ตรงกับที่เลือกไว้
+  // (นี่คือเหตุผลที่ปุ่มแนวตั้ง/แนวนอนใน print dialog กดไม่ได้ — จึงต้องเลือกที่นี่)
+  let st = document.getElementById('ps-page-size');
+  if (!st) { st = document.createElement('style'); st.id = 'ps-page-size'; document.head.appendChild(st); }
+  st.textContent = '@page { size: ' + pg.w + 'mm ' + pg.h + 'mm; margin: ' + pg.margin + 'mm; }';
+
+  drawPageGuides();
+}
+
+
+/**
+ * กดชิปขนส่ง — กดซ้ำเพื่อเอาออก, ไม่ส่ง key มาคือกลับไปแยกใบทุกเจ้า
+ *
+ * เลือกหลายเจ้าแล้ว "รวมเป็นใบเดียว" ไม่ใช่พิมพ์หลายใบ เพราะจุดประสงค์ของแท็บนี้
+ * คือหยิบรอบเดียว ถ้าคนเดียวรับผิดชอบสองขนส่งแล้วยังแยกใบ ก็ต้องเดินหยิบซ้ำ
+ * สองรอบอยู่ดี ซึ่งเป็นสิ่งที่แท็บนี้มีไว้ตัดทิ้ง
+ */
+function togglePickCarrier(key) {
+  if (!key) { pickCarriers = []; renderPickSum(); return; }
+  const i = pickCarriers.indexOf(key);
+  if (i < 0) pickCarriers.push(key); else pickCarriers.splice(i, 1);
+  renderPickSum();
+}
+
+function selectAllPickCarriers() {
+  pickCarriers = carriersOf().map(c => c.key);
+  renderPickSum();
+}
+
+function setPickFilter(v, btn) {
+  pickFilter = v;
+  document.querySelectorAll('#tab-picksum .ps-opt[data-filter]').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderPickSum();
+}
+
+function setPickSource(n, btn) {
+  pickSource = n;
+  document.querySelectorAll('#tab-picksum .ps-opt').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderPickSum();
+}
+
+function renderPickSum() {
+  const host = document.getElementById('pickSumBody');
+  if (!carriersOf().length) {
+    host.innerHTML = '<div class="empty-state" style="padding:44px 20px;text-align:center;color:var(--muted)">' +
+      'ยังไม่มีข้อมูลออเดอร์ — ไปที่แท็บ <b>เทียบ Order</b> แล้วกดดึงข้อมูลก่อน</div>';
+    return;
+  }
+
+  const srcName = pickSource === 1 ? 'Sheet Daily Logis (รอบเช้า)' : 'Sheet Daily CRM';
+  let html = '';
+  let grand = 0;
+
+  // ชิปที่เลือกไว้อาจชี้ขนส่งที่หายไปหลังดึงข้อมูลรอบใหม่
+  const keys = pickCarriers.filter(k => carriersOf().some(c => c.key === k));
+  if (keys.length !== pickCarriers.length) pickCarriers = keys;
+
+  const rowsOf = c => (pickSource === 1 ? c.data1 : c.data2) || [];
+  const sel = carriersOf().filter(c => keys.includes(c.key));
+
+  /**
+   * วันที่บนหัวใบ = วันของงานในใบ ไม่ใช่วันที่กดพิมพ์
+   *
+   * เดิมใช้ new Date() ตรง ๆ ซึ่งผิดทุกครั้งที่ทีมทำงานล่วงหน้า — เย็นนี้พิมพ์ใบ
+   * ไปหยิบของพรุ่งนี้ แล้วบนกระดาษเขียนวันนี้ ใบหยิบของถูกเก็บไว้และถูกใช้อ้างอิง
+   * ทีหลัง วันที่ผิดบนกระดาษจึงอยู่ต่อไปนานกว่าวันที่ผิดบนจอมาก
+   *
+   * สคริปต์รุ่นเก่าที่ยังไม่ส่งวันที่มา จะเขียนว่า "พิมพ์เมื่อ" แทน เพื่อไม่ให้ใบ
+   * อ้างว่าเป็นงานของวันนั้นทั้งที่ไม่รู้จริง
+   */
+  const longTH = (v) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v || ''));
+    if (!m) return '';
+    return new Date(+m[1], +m[2] - 1, +m[3])
+      .toLocaleDateString('th-TH', { day:'numeric', month:'long', year:'numeric' });
+  };
+  function sheetDate(cars) {
+    const ds = [...new Set((cars || []).map(c => c.date).filter(Boolean))].sort();
+    if (ds.length) return 'งานวันที่ ' + ds.map(longTH).join(' และ ');
+    return 'พิมพ์เมื่อ ' + new Date().toLocaleDateString('th-TH',
+      { day:'numeric', month:'long', year:'numeric' });
+  }
+
+  // นับชิ้นตามตัวกรองที่เปิดอยู่ ใช้ทั้งยอดรวมของใบและยอดแยกรายเจ้าในหัวใบ
+  const piecesOf = rows => Object.values(WmsPick.aggregateSKUDemand(rows))
+    .filter(x => pickFilter === 'all' || (pickFilter === 'bed') === (x.type === 'bed'))
+    .reduce((n, x) => n + x.qty, 0);
+
+  // เลือกหลายเจ้า = ใบเดียวที่รวมยอดแล้ว ไม่ใช่หลายใบ
+  const groups = keys.length > 1
+    ? [{
+        label: sel.map(c => c.key).join(' + '),
+        parts: sel.map(c => ({ key: c.key, pieces: piecesOf(rowsOf(c)) })),
+        rows:  sel.reduce((a, c) => a.concat(rowsOf(c)), []),
+        cars:  sel,
+      }]
+    : (keys.length ? sel : carriersOf()).map(c => ({ label: c.key, parts: null, rows: rowsOf(c), cars: [c] }));
+
+  groups.forEach(g => {
+    const items = Object.values(WmsPick.aggregateSKUDemand(g.rows)).sort((a, b) =>
+      a.type === b.type ? b.qty - a.qty : (a.type === 'bed' ? -1 : 1));
+
+    const beds  = pickFilter === 'gift' ? [] : items.filter(x => x.type === 'bed');
+    const gifts = pickFilter === 'bed'  ? [] : items.filter(x => x.type !== 'bed');
+    const shown = beds.concat(gifts);
+    const pieces = shown.reduce((n, x) => n + x.qty, 0);
+    grand += pieces;
+    const scope = pickFilter === 'bed' ? ' · เฉพาะที่นอน' : pickFilter === 'gift' ? ' · เฉพาะของแถม' : '';
+    const when = sheetDate(g.cars);
+
+    // ใบรวมต้องบอกยอดแยกรายเจ้าไว้ด้วย ไม่งั้นหยิบเสร็จแล้วแบ่งกองไม่ถูกว่าของ
+    // เจ้าไหนกี่ชิ้น ซึ่งเป็นงานที่ตามหลังการหยิบเสมอ
+    const split = g.parts
+      ? '<div class="ps-split">' + g.parts.map(x =>
+          '<span>' + esc(x.key) + ' <b>' + x.pieces + '</b></span>').join('') + '</div>'
+      : '';
+
+    // แต่ละใบขึ้นหน้าใหม่ตอนพิมพ์ เพื่อฉีกแจกให้แต่ละคนได้
+    // การ์ดเป็น <table> ไม่ใช่ <section> เพราะหัวขนส่งต้องซ้ำทุกแผ่นที่พิมพ์
+    // เบราว์เซอร์ทำให้เองเมื่ออยู่ใน <thead> + display:table-header-group
+    // วิธีอื่น (position:fixed / ซ้ำเองด้วย JS) ไม่ทำงานกับการแบ่งหน้าจริง
+    html += '<table class="ps-card"><thead><tr><td>' +
+      '<div class="ps-head">' +
+        '<div><div class="ps-carrier" data-label="' + esc(g.label) + '">' + esc(g.label) +
+        (g.parts ? '<span class="ps-mix">รวม ' + g.parts.length + ' ขนส่ง</span>' : '') + '</div>' +
+        '<div class="ps-meta">' + esc(srcName) + ' · ' + esc(when) + esc(scope) + '</div>' + split +
+        '</div>' +
+        '<div class="ps-tot"><b>' + pieces + '</b><span>ชิ้น</span>' +
+        '<span class="ps-pagecount no-print"></span></div>' +
+      '</div>' +
+    '</td></tr></thead><tbody><tr><td>';
+
+    if (!shown.length) {
+      html += '<div class="ps-empty">ไม่มีรายการ' + (scope ? scope.replace(' · ','') : '') +
+              'ของขนส่งนี้</div></td></tr></tbody></table>';
+      return;
+    }
+    html += renderPickGroup('🛏️ ที่นอน', beds) + renderPickGroup('🎁 ของแถม', gifts);
+    html += '</td></tr></tbody></table>';
+  });
+
+  const attr = v => JSON.stringify(v).replace(/"/g, '&quot;');
+  const chips = '<div class="ps-carriers no-print"><span class="ps-lbl">พิมพ์ขนส่ง</span>' +
+    '<button class="ps-chip' + (keys.length ? '' : ' active') + '" ' +
+    'onclick="togglePickCarrier()">แยกทุกขนส่ง</button>' +
+    carriersOf().map(c =>
+      '<button class="ps-chip' + (keys.includes(c.key) ? ' active' : '') + '" ' +
+      'onclick="togglePickCarrier(' + attr(c.key) + ')">' + esc(c.key) + '</button>').join('') +
+    (carriersOf().length > 1
+      ? '<button class="ps-chip ps-chip-alt" onclick="selectAllPickCarriers()">➕ รวมทุกเจ้าเป็นใบเดียว</button>'
+      : '') +
+    '<span class="ps-hint">เลือกได้หลายเจ้า — ที่เลือกจะรวมเป็นใบเดียว</span></div>';
+
+  const scopeTxt = keys.length > 1 ? ('รวม ' + keys.length + ' ขนส่งเป็นใบเดียว')
+                 : keys.length === 1 ? esc(keys[0])
+                 : carriersOf().length + ' ขนส่ง (แยกใบ)';
+  host.className = 'ps-papermode';
+  host.innerHTML = chips +
+    '<div class="ps-grand no-print">รวม <b>' + grand + '</b> ชิ้น · ' +
+    scopeTxt + ' · จาก ' + esc(srcName) + '</div>' + html;
+
+  // เรียกตรง ๆ ไม่ผ่าน requestAnimationFrame — rAF ถูก throttle เมื่อแท็บ/เฟรม
+  // ไม่ได้อยู่หน้าจอ ทำให้เส้นแบ่งหน้าไม่ถูกวาด ส่วนการอ่าน scrollHeight
+  // บังคับให้ layout คำนวณเสร็จอยู่แล้ว จึงไม่ต้องรอเฟรมถัดไป
+  drawPageGuides();
+}
+
+function renderPickGroup(title, list) {
+  if (!list.length) return '';
+  const sum = list.reduce((n, x) => n + x.qty, 0);
+
+  // จัดเข้าหมวด แล้วที่นอนซอยย่อยตามขนาดอีกชั้น
+  const cats = new Map();
+  list.forEach(item => {
+    const c = PC(item);
+    if (!cats.has(c.label)) cats.set(c.label, { cat: c, items: [] });
+    cats.get(c.label).items.push(item);
+  });
+
+  // เรียงหมวดตามลำดับใน WmsPick.PICK_CATS/WmsPick.GIFT_CATS ไม่ใช่ตามที่บังเอิญเจอก่อนในข้อมูล
+  // เพื่อให้ใบหยิบหน้าตาเหมือนกันทุกวัน คนหยิบจะได้ชินที่
+  const order = (list[0] && list[0].type === 'gift') ? WmsPick.GIFT_CATS : WmsPick.PICK_CATS;
+  const rank = (c) => {
+    if (c.last) return 999;                    // กลุ่มที่ทีมขอให้อยู่ท้ายใบ
+    const i = order.findIndex(x => x.label === c.label);
+    return i < 0 ? 99 : i;                     // ไม่รู้จัก (อื่น ๆ) มาก่อนกลุ่มท้ายใบ
+  };
+  const sorted = [...cats.values()].sort((a, b) => rank(a.cat) - rank(b.cat));
+
+  let body = '';
+  for (const { cat, items } of sorted) {
+    const csum = items.reduce((n, x) => n + x.qty, 0);
+    body += '<div class="ps-cat"><div class="ps-cname">' + esc(cat.label) +
+            ' <span>' + items.length + ' รายการ · ' + csum + ' ชิ้น</span></div>';
+
+    if (cat.bySize) {
+      // ซอยตามขนาด เรียงใหญ่→เล็ก ของที่ไม่ระบุขนาดไว้ท้ายสุด
+      const sizes = new Map();
+      items.forEach(it => {
+        const s = WmsPick.pickSize(PN(it));
+        const k = s === null ? '__none' : s;
+        if (!sizes.has(k)) sizes.set(k, []);
+        sizes.get(k).push(it);
+      });
+      const keys = [...sizes.keys()].sort((a, b) =>
+        a === '__none' ? 1 : b === '__none' ? -1 : b - a);
+      keys.forEach(k => {
+        const rows = sizes.get(k);
+        const label = k === '__none' ? 'ไม่ระบุขนาด' : k + ' ฟุต';
+        const ssum = rows.reduce((n, x) => n + x.qty, 0);
+        body += '<div class="ps-size">' + esc(label) +
+                ' <span>' + ssum + ' ชิ้น</span></div>' + pickTable(rows);
+      });
+    } else {
+      body += pickTable(items);
+    }
+    body += '</div>';
+  }
+
+  return '<div class="ps-group"><div class="ps-gtitle">' + title +
+    ' <span>' + list.length + ' รายการ · ' + sum + ' ชิ้น</span></div>' + body + '</div>';
+}
+
+function pickTable(list) {
+  return '<table class="ps-table"><tbody>' +
+    list.sort((a, b) => b.qty - a.qty).map(x =>
+      '<tr><td class="ps-chk"></td><td class="ps-sku">' + esc(x.sku) + '</td>' +
+      '<td>' + esc(PN(x)) +
+        (inStock(x) ? '' : ' <span class="ps-nostock">ไม่พบใน Stock</span>') + '</td>' +
+      '<td class="ps-qty">' + x.qty + '</td></tr>').join('') +
+    '</tbody></table>';
+}
+
+/* ── แถบแหล่งข้อมูล ─────────────────────────────────────────────────────── */
+let PULLING = '';
+
+function renderSrc() {
+  const el = document.getElementById('src');
+  const o = window.OrderIndex ? OrderIndex.getCarriers() : null;
+  const st = window.WmsStock ? WmsStock.read() : null;
+  const hhmm = (t) => new Date(t).toLocaleTimeString('th-TH', { hour:'2-digit', minute:'2-digit' });
+  let html = '';
+  if (PULLING) html += `<span class="pill">⏳ ${esc(PULLING)}</span>`;
+  else {
+    const n = o ? o.carriers.reduce((s,c) => s + c.data1.length + c.data2.length, 0) : 0;
+    html += o ? `<span class="pill">📋 ออเดอร์ <b>${n}</b> แถว · ${hhmm(o.at)}</span>`
+              : `<span class="pill">📋 ยังไม่มีออเดอร์ของวันนี้</span>`;
+    /* สต๊อกไม่ใช่ของบังคับ — ใบหยิบยังทำได้ไม่มีสต๊อก แค่จำแนกประเภทหยาบลง
+       เพราะชื่อจากไฟล์ออเดอร์บอกขนาดและชนิดไม่ชัดเท่าชื่อในไฟล์สต๊อก */
+    html += st ? `<span class="pill">📦 สต๊อก <b>${Object.keys(st.map).length}</b> SKU</span>`
+               : `<span class="pill">📦 ยังไม่มีสต๊อก — จัดกลุ่มได้หยาบกว่าปกติ</span>`;
+  }
+  html += '<span class="sp"></span>';
+  html += `<button onclick="pullAll()" ${PULLING ? 'disabled' : ''}>🔄 ดึงข้อมูลใหม่</button>`;
+  el.innerHTML = html;
+}
+
+async function pullAll() {
+  if (PULLING) return;
+  PULLING = 'กำลังดึงข้อมูล…'; renderSrc();
+  const jobs = [];
+  if (OrderIndex.savedUrl()) jobs.push(OrderIndex.pull(OrderIndex.savedUrl()).catch(() => {}));
+  if (WmsStock.savedUrl())   jobs.push(WmsStock.pull(WmsStock.savedUrl()).catch(() => {}));
+  await Promise.all(jobs);
+  PULLING = ''; renderSrc(); renderPickSum();
+}
+
+renderSrc();
+renderPickSum();
+
+/* ดึงให้เองตอนเปิด ด้วยกติกาเดียวกับหน้าอื่นในระบบ */
+if (!OrderIndex.getCarriers() && OrderIndex.savedUrl() && WmsGas.firstTry('order:picking')) pullAll();
+else if (!WmsStock.read() && WmsStock.savedUrl() && WmsGas.firstTry('stock:picking')) pullAll();
+</script>
+</body>
+</html>
