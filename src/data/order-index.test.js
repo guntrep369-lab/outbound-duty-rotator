@@ -41,6 +41,7 @@ beforeEach(() => {
 
 /** หัวคอลัมน์จริงของชีต รถบริษัท (หน้าLogis) เรียงตามไฟล์ตัวอย่าง */
 const sheetRow = (over = {}) => ({
+  'ชื่อรถ': 'คัน31 มณฑล + รัชนี',
   'Date': 'Mon, Aug 17',
   'Sup': 'Lunio',
   'Order ID': 'AA-92876',
@@ -108,6 +109,50 @@ describe('เวลานัด', () => {
   it('ช่องว่างก็ถือว่าไม่มี', () => {
     const [r] = OrderIndex.convertGASRows([sheetRow({ 'เวลานัด': '' })]);
     expect(r.apptTime).toBe('');
+  });
+});
+
+/**
+ * คอลัมน์ "ชื่อรถ" ถูกแทรกเป็นคอลัมน์แรกของหน้า Logis เพื่อให้รู้คันรถตั้งแต่ตอน
+ * ดึงออเดอร์ ไม่ต้องรอทีมขนส่งอัปไฟล์รถก่อน
+ *
+ * รูปแบบตามไฟล์ตัวอย่างจริง: ชื่อรถซ้ำทุกแถวของคันเดียวกัน และออเดอร์เดียวกิน
+ * ได้หลายแถว (M/E-00104 มี 4 แถว) ส่วนชีต CRM กับขนส่งเจ้าอื่นไม่มีคอลัมน์นี้
+ */
+describe('ชื่อรถ', () => {
+  it('อ่านจากคอลัมน์ "ชื่อรถ"', () => {
+    const [r] = OrderIndex.convertGASRows([sheetRow()]);
+    expect(r.truck).toBe('คัน31 มณฑล + รัชนี');
+  });
+
+  it('ติดครบทุกแถวของออเดอร์เดียวกัน และไม่ไปยุ่งกับเวลานัดที่มีแค่แถวแรก', () => {
+    const rows = OrderIndex.convertGASRows([
+      sheetRow({ 'Order ID': 'M/E-00104', 'เวลานัด': '9.00น' }),
+      sheetRow({ 'Order ID': 'M/E-00104', 'เวลานัด': '-' }),
+      sheetRow({ 'Order ID': 'M/E-00104', 'เวลานัด': '' }),
+    ]);
+    expect(rows.map((r) => r.truck)).toEqual(Array(3).fill('คัน31 มณฑล + รัชนี'));
+    expect(rows.map((r) => r.apptTime)).toEqual(['9.00น', '', '']);
+  });
+
+  it('ชีตที่ไม่มีคอลัมน์นี้ได้ค่าว่าง แล้วดัชนีค้นหาไม่พาคีย์เปล่าไปด้วย', () => {
+    const noTruck = sheetRow();
+    delete noTruck['ชื่อรถ'];
+    const [r] = OrderIndex.convertGASRows([noTruck]);
+    expect(r.truck).toBe('');
+    const idx = OrderIndex.build([{ key: 'KEX', data1: [r], data2: [] }]);
+    expect('truck' in idx[0]).toBe(false);
+  });
+
+  it('ขีดกลางแปลว่ายังไม่ระบุ ไม่ใช่รถที่ชื่อว่า "-"', () => {
+    const [r] = OrderIndex.convertGASRows([sheetRow({ 'ชื่อรถ': '-' })]);
+    expect(r.truck).toBe('');
+  });
+
+  it('ดัชนีค้นหาพาชื่อรถไปด้วย ไม่งั้นหน้าค้นหาออเดอร์มองไม่เห็น', () => {
+    const rows = OrderIndex.convertGASRows([sheetRow({ 'ชื่อรถ': 'คัน36 วรวิทย์+วนิดา' })]);
+    const idx = OrderIndex.build([{ key: 'รถบริษัท', data1: rows, data2: [] }]);
+    expect(idx[0].truck).toBe('คัน36 วรวิทย์+วนิดา');
   });
 });
 

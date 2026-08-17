@@ -132,7 +132,8 @@ mark{background:#FEF08A;color:inherit;border-radius:3px;padding:0 1px}
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
 let ROWS = [];       // ออเดอร์ทุกขนส่งจากแท็บเทียบ Order
-let TRUCK = null;    // ไฟล์รถบริษัท: orderID -> { truck, time, seq, stops }
+let TRUCK = null;    // orderID -> { truck, time, seq, stops }
+let TRUCK_SRC = '';  // 'orders' = จากชีตออเดอร์, 'file' = จากไฟล์รถบริษัท
 let INDEX_AT = 0;
 let PULLING = '';   // ข้อความสถานะระหว่างดึง — ว่าง = ไม่ได้กำลังดึง
 let TRUCK_MSG = ''; // สถานะระหว่างดึงไฟล์รถบริษัทจากส่วนกลาง
@@ -144,34 +145,71 @@ let TRUCK_ERR = ''; // เหตุผลที่ดึงไม่ได้ �
  * ตรงนี้ ไม่ใช่ให้คนรับสายเปิดสองหน้าแล้วไล่หาเอง
  */
 function buildTruckMap() {
-  const f = window.TransportFile && TransportFile.get();
-  if (!f) return null;
-  const C = TransportFile.COLS;
-  const v = (r, c) => String(r[c] ?? '').trim();
+  const fromOrders = truckFromOrders();
+  if (fromOrders) { TRUCK_SRC = 'orders'; return fromOrders; }
+  const fromFile = truckFromFile();
+  TRUCK_SRC = fromFile ? 'file' : '';
+  return fromFile;
+}
 
+/**
+ * ลำดับจุดส่ง = ลำดับ "ลูกค้า" ที่พบ ไม่ใช่ลำดับแถว
+ * หลายแถวของลูกค้าคนเดียวคือจุดเดียว คนขับแวะครั้งเดียว
+ *
+ * @param {Array} rows แถวที่เรียงตามลำดับในชีตแล้ว
+ * @param {Function} f  อ่านค่า { truck, order, customer, time } จากหนึ่งแถว
+ */
+function stopMap(rows, f) {
   const byTruck = new Map();
-  f.rows.forEach(r => {
-    const t = v(r, C.truck) || 'ไม่ระบุ';
+  rows.forEach(r => {
+    const t = f(r).truck || 'ไม่ระบุ';
     if (!byTruck.has(t)) byTruck.set(t, []);
     byTruck.get(t).push(r);
   });
 
   const map = new Map();
-  byTruck.forEach((rows, truck) => {
-    // ลำดับจุดส่ง = ลำดับลูกค้าในไฟล์ ไม่ใช่ลำดับแถว หลายแถวของลูกค้าคนเดียว
-    // คือจุดเดียว คนขับแวะครั้งเดียว
+  byTruck.forEach((rs, truck) => {
     const stopOf = new Map(); let n = 0;
-    rows.forEach(r => {
-      const k = v(r, C.customer) || v(r, C.order) || '?';
+    rs.forEach(r => {
+      const c = f(r);
+      const k = c.customer || c.order || '?';
       if (!stopOf.has(k)) stopOf.set(k, ++n);
     });
-    rows.forEach(r => {
-      const id = v(r, C.order); if (!id) return;
-      const k = v(r, C.customer) || id;
-      map.set(id, { truck, time: v(r, C.time), seq: stopOf.get(k), stops: n });
+    rs.forEach(r => {
+      const c = f(r);
+      if (!c.order) return;
+      map.set(c.order, { truck, time: c.time, seq: stopOf.get(c.customer || c.order), stops: n });
     });
   });
   return map;
+}
+
+/**
+ * ชื่อรถจากการดึงออเดอร์ — คอลัมน์ "ชื่อรถ" ของหน้า Logis
+ *
+ * ดีกว่าทางไฟล์ตรงที่มาพร้อมออเดอร์เลย ไม่ต้องรอทีมขนส่งอัปไฟล์ก่อน และเป็น
+ * ข้อมูลชุดเดียวกับที่ทั้งระบบใช้อยู่ จึงไม่มีทางที่สองหน้าจะตอบคนละอย่าง
+ *
+ * ไม่ส่ง time มาด้วย ทั้งที่อ่านได้ เพราะเวลานัดมาจากชีตเดียวกันนี้อยู่แล้ว —
+ * ปล่อยให้ apptTime() ไล่หาค่าแรกที่ใช้ได้ทั้งกลุ่มเหมือนเดิม ซึ่งรอบคอบกว่า
+ * การหยิบค่าจากแถวสุดท้ายที่บังเอิญเรียงมาทีหลัง (เวลานัดกรอกแค่แถวแรก)
+ */
+function truckFromOrders() {
+  const rows = (ROWS || []).filter(r => r.truck);
+  if (!rows.length) return null;
+  return stopMap(rows, r => ({
+    truck: r.truck, order: r.orderID, customer: r.customer, time: '',
+  }));
+}
+
+function truckFromFile() {
+  const f = window.TransportFile && TransportFile.get();
+  if (!f) return null;
+  const C = TransportFile.COLS;
+  const v = (r, c) => String(r[c] ?? '').trim();
+  return stopMap(f.rows, r => ({
+    truck: v(r, C.truck), order: v(r, C.order), customer: v(r, C.customer), time: v(r, C.time),
+  }));
 }
 
 function load() {
@@ -202,6 +240,11 @@ function renderSrc() {
   const central = window.TransportFile && TransportFile.central.on();
   if (TRUCK_MSG) {
     html += `<span class="pill">⏳ ${esc(TRUCK_MSG)}</span>`;
+  } else if (TRUCK && TRUCK_SRC === 'orders') {
+    // มาพร้อมออเดอร์แล้ว ไม่ต้องบอกวันที่ซ้ำ เพราะแถบเดียวกันบอกวันของออเดอร์อยู่
+    const trucks = new Set(Array.from(TRUCK.values(), t => t.truck)).size;
+    html += `<span class="pill">🚚 <b>${trucks}</b> คัน · <b>${TRUCK.size}</b> ออเดอร์` +
+            ` <span class="dim">· จากชีตออเดอร์</span></span>`;
   } else if (TRUCK) {
     // งานของวันไหน สำคัญกว่าชื่อไฟล์ เพราะทีมทำงานล่วงหน้า ไฟล์ที่ใช้อยู่จึงอาจ
     // เป็นของพรุ่งนี้ และคนรับสายต้องรู้ว่าที่ตอบลูกค้าอยู่เป็นของวันไหน
