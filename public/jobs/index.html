@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="../wms-theme.css">
 <link rel="stylesheet" href="../wms-gate.css">
 <script src="../wms-gate.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 
@@ -124,10 +125,15 @@ function load() {
     (c.data1 || []).concat(c.data2 || []).forEach(r => {
       const id = r.orderID || '';
       if (!id) return;
-      if (!seen.has(id)) seen.set(id, { id, carrier: c.key, customer: r.customer || '', notes: [] });
+      if (!seen.has(id)) seen.set(id, { id, carrier: c.key, customer: '', phone: '',
+                                        address: '', apptTime: '', date: '', notes: [] });
       const g = seen.get(id);
       if (r.remark && g.notes.indexOf(r.remark) === -1) g.notes.push(r.remark);
-      if (!g.customer && r.customer) g.customer = r.customer;
+      // เอาค่าแรกที่ไม่ว่างของแต่ละช่อง — แถวต่อ ๆ มาของออเดอร์เดียวกันมักเว้นไว้
+      ['customer', 'phone1', 'address', 'apptTime', 'date'].forEach(k => {
+        const to = k === 'phone1' ? 'phone' : k;
+        if (!g[to] && r[k]) g[to] = r[k];
+      });
     });
     seen.forEach(g => {
       // หลายแถวของออเดอร์เดียวอาจมีหมายเหตุคนละอัน อ่านรวมกันทีเดียว
@@ -147,6 +153,10 @@ function renderSrc() {
   } else html += `<span class="pill">ยังไม่มีออเดอร์ของวันนี้</span>`;
   html += '<span class="sp"></span>';
   html += `<button onclick="pullNow()" ${PULLING ? 'disabled' : ''}>🔄 ดึงออเดอร์ใหม่</button>`;
+  if (JOBS.length) {
+    // บอกให้ชัดว่ากำลังจะได้อะไร — กรองอยู่แล้วกดออกไฟล์โดยไม่รู้ตัวคือไฟล์ที่ขาดงาน
+    html += `<button onclick="exportXlsx()">⬇️ Excel${FILTER === 'all' ? '' : ' (เฉพาะที่กรอง)'}</button>`;
+  }
   el.innerHTML = html;
 }
 
@@ -161,6 +171,48 @@ async function pullNow() {
 }
 
 function setFilter(f) { FILTER = FILTER === f ? 'all' : f; render(); }
+
+/** งานที่แสดงอยู่ตอนนี้ ใช้ทั้งวาดหน้าจอและออกไฟล์ ให้สองอย่างตรงกันเสมอ */
+function visible() {
+  return JOBS.filter(j =>
+    FILTER === 'all' ? true :
+    FILTER === 'review' ? j.job.needsReview :
+    FILTER === 'return' ? j.job.hasReturn !== 'ไม่มี' :
+    String(j.job.type) === FILTER);
+}
+
+/**
+ * ออกไฟล์ Excel
+ *
+ * เขียนเป็น .xlsx ไม่ใช่ CSV เพราะหมายเหตุของเซลมีทั้งจุลภาค เครื่องหมายคำพูด
+ * สแลชคู่ และลิงก์ยาว ๆ อยู่ในข้อความเดียวกัน CSV จะแตกคอลัมน์ผิดตั้งแต่แถวแรก
+ * และภาษาไทยยังต้องมาลุ้นเรื่อง encoding อีก
+ *
+ * สองชีต: รายละเอียดรายงาน และยอดสรุป — คนที่เปิดไฟล์ต่อมักอยากได้ตัวเลขรวม
+ * โดยไม่ต้องมานั่งทำ pivot เอง
+ */
+function exportXlsx() {
+  if (typeof XLSX === 'undefined') {
+    alert('ยังโหลดตัวเขียนไฟล์ Excel ไม่สำเร็จ — ตรวจการเชื่อมต่ออินเทอร์เน็ตแล้วลองใหม่');
+    return;
+  }
+  const list = visible();
+  if (!list.length) return;
+
+  const wb = XLSX.utils.book_new();
+  const detail = XLSX.utils.json_to_sheet(WmsJobType.exportRows(list),
+    { header: WmsJobType.EXPORT_HEADERS });
+  // ความกว้างคอลัมน์ ไม่งั้นหมายเหตุกับเหตุผลจะโดนบีบจนอ่านไม่ออกตอนเปิด
+  detail['!cols'] = [12, 12, 18, 13, 30, 10, 12, 55, 9, 16, 12, 10, 26, 10, 11, 55]
+    .map(w => ({ wch: w }));
+  XLSX.utils.book_append_sheet(wb, detail, 'รายละเอียด');
+  XLSX.utils.book_append_sheet(wb,
+    XLSX.utils.json_to_sheet(WmsJobType.exportSummary(list), { header: ['รายการ', 'จำนวน'] }), 'สรุป');
+
+  const day = (JOBS.find(j => j.date) || {}).date || WmsDate.todayYmd();
+  const tag = FILTER === 'all' ? '' : '-เฉพาะที่กรอง';
+  XLSX.writeFile(wb, `ประเภทงานรถ-${day}${tag}.xlsx`);
+}
 
 function render() {
   renderSrc();
@@ -183,11 +235,7 @@ function render() {
     .filter(f => s.flags[f.id])
     .map(f => `<span class="jb-chip">${esc(f.label)} <b>${s.flags[f.id]}</b></span>`).join('');
 
-  const shown = JOBS.filter(j =>
-    FILTER === 'all' ? true :
-    FILTER === 'review' ? j.job.needsReview :
-    FILTER === 'return' ? j.job.hasReturn !== 'ไม่มี' :
-    String(j.job.type) === FILTER);
+  const shown = visible();
 
   body.innerHTML =
     `<div class="jb-note">

@@ -161,10 +161,71 @@
     return { total: (list || []).length, byType: by, withReturn: ret, needsReview: review, flags: flags };
   }
 
+  /**
+   * แปลงงานทั้งวันเป็นแถวสำหรับไฟล์ Excel
+   *
+   * คอลัมน์เดิมจากชีตมาก่อน แล้วค่อยต่อด้วยคอลัมน์ที่ระบบเติมให้ ตามที่กฎต้นทาง
+   * กำหนดไว้ — คนที่เปิดไฟล์จะได้เทียบกับชีตของตัวเองได้ทีละบรรทัดโดยไม่ต้อง
+   * ไล่หาว่าคอลัมน์ไหนคือของเดิม
+   *
+   * "เหตุผล" ติดไปด้วยเสมอ เพราะไฟล์นี้จะถูกส่งต่อให้คนที่ไม่ได้นั่งดูหน้าจอ
+   * ตอนจัดประเภท ตัวเลขที่อธิบายที่มาไม่ได้จะไม่มีใครกล้าเอาไปใช้จัดรถ
+   *
+   * @param {Array} jobs [{id, carrier, customer, phone, address, apptTime, date, note, job}]
+   * @returns {Array<object>} แถวพร้อมเขียนลงไฟล์ หัวคอลัมน์เป็นภาษาไทย
+   */
+  function exportRows(jobs) {
+    return (jobs || []).map(function (j) {
+      var g = j.job || classify(j.note);
+      return {
+        'เลขออเดอร์': j.id || '',
+        'ขนส่ง': j.carrier || '',
+        'ชื่อลูกค้า': j.customer || '',
+        'เบอร์โทร': j.phone || '',
+        'ที่อยู่': j.address || '',
+        'เวลานัด': j.apptTime || '',
+        'วันที่': j.date || '',
+        'หมายเหตุ': g.note || '',
+        'ประเภทงาน': g.type,
+        'ชื่อประเภท': g.label,
+        'มีรับของกลับ': g.hasReturn,
+        'สถานะ': g.status,
+        'ต้องเตรียม': g.flags.map(function (f) { return f.label; }).join(', '),
+        'ความมั่นใจ': g.confidence,
+        'ต้องอ่านเอง': g.needsReview ? 'ใช่' : '',
+        'เหตุผลที่จัดประเภทนี้': g.why,
+      };
+    });
+  }
+
+  /** ลำดับคอลัมน์ในไฟล์ ใช้บังคับให้แถวที่มีค่าว่างยังอยู่คอลัมน์เดิม */
+  var EXPORT_HEADERS = ['เลขออเดอร์', 'ขนส่ง', 'ชื่อลูกค้า', 'เบอร์โทร', 'ที่อยู่', 'เวลานัด',
+    'วันที่', 'หมายเหตุ', 'ประเภทงาน', 'ชื่อประเภท', 'มีรับของกลับ', 'สถานะ', 'ต้องเตรียม',
+    'ความมั่นใจ', 'ต้องอ่านเอง', 'เหตุผลที่จัดประเภทนี้'];
+
+  /** แถวสรุปยอด ใส่เป็นชีตที่สองในไฟล์ */
+  function exportSummary(jobs) {
+    var s = summarise((jobs || []).map(function (j) { return j.job || classify(j.note); }));
+    var rows = [];
+    [1, 2, 3, 4].forEach(function (n) {
+      rows.push({ 'รายการ': TYPES[n].label, 'จำนวน': s.byType[n] });
+    });
+    rows.push({ 'รายการ': 'รวมทั้งหมด', 'จำนวน': s.total });
+    rows.push({ 'รายการ': 'ต้องรับของกลับ', 'จำนวน': s.withReturn });
+    rows.push({ 'รายการ': 'ต้องอ่านเอง', 'จำนวน': s.needsReview });
+    FLAGS.forEach(function (f) {
+      if (s.flags[f.id]) rows.push({ 'รายการ': f.label, 'จำนวน': s.flags[f.id] });
+    });
+    return rows;
+  }
+
   window.WmsJobType = {
     TYPES: TYPES,
     FLAGS: FLAGS,
+    EXPORT_HEADERS: EXPORT_HEADERS,
     classify: classify,
     summarise: summarise,
+    exportRows: exportRows,
+    exportSummary: exportSummary,
   };
 })();

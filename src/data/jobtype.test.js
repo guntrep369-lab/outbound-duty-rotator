@@ -158,3 +158,54 @@ describe('summarise — ตัวเลขที่ใช้จัดรถ', ()
     expect(JT.summarise(null).byType).toEqual({ 1: 0, 2: 0, 3: 0, 4: 0 });
   });
 });
+
+describe('แถวสำหรับไฟล์ Excel', () => {
+  const job = (over = {}) => Object.assign({
+    id: 'CR-2', carrier: 'รถบริษัท', customer: 'คุณเวชยันต์', phone: '064-7915965',
+    address: 'บ้านเลขที่ 37/14', apptTime: '11.00น', date: '2026-08-18',
+    note: '*ส่งเจ้าหน้าที่*จัดส่งเปลี่ยนปลอกหุ้ม และรับชิ้นเดิมกลับค่ะ',
+  }, over);
+  const rowsOf = (list) => JT.exportRows(list.map((j) => Object.assign({}, j, { job: JT.classify(j.note) })));
+
+  it('คอลัมน์เดิมมาก่อน คอลัมน์ที่ระบบเติมต่อท้าย ตามที่กฎกำหนด', () => {
+    const r = rowsOf([job()])[0];
+    expect(Object.keys(r)).toEqual(JT.EXPORT_HEADERS);
+    expect(JT.EXPORT_HEADERS.indexOf('หมายเหตุ')).toBeLessThan(JT.EXPORT_HEADERS.indexOf('ประเภทงาน'));
+  });
+
+  it('เก็บผลการจัดประเภทครบ รวมเหตุผล', () => {
+    const r = rowsOf([job()])[0];
+    expect(r['ประเภทงาน']).toBe(2);
+    expect(r['ชื่อประเภท']).toBe('ส่งเปลี่ยน/เคลม');
+    expect(r['มีรับของกลับ']).toBe('มี');
+    // ไฟล์ถูกส่งต่อให้คนที่ไม่ได้นั่งดูหน้าจอตอนจัดประเภท ตัวเลขที่อธิบายไม่ได้ไม่มีใครใช้
+    expect(r['เหตุผลที่จัดประเภทนี้'].length).toBeGreaterThan(20);
+  });
+
+  it('งานที่ต้องอ่านเองถูกทำเครื่องหมายไว้ในไฟล์ด้วย', () => {
+    const r = rowsOf([job({ note: '' })])[0];
+    expect(r['ต้องอ่านเอง']).toBe('ใช่');
+    expect(r['ความมั่นใจ']).toBe('ต่ำ');
+  });
+
+  it('ไม่มีงานเลยก็ไม่พัง', () => {
+    expect(JT.exportRows([])).toEqual([]);
+    expect(JT.exportRows(null)).toEqual([]);
+  });
+
+  it('ชีตสรุปนับตรงกับรายละเอียด', () => {
+    const list = [
+      job(),
+      job({ id: 'MM-3', note: 'รับที่นอน 4 หลังกลับจากงานถ่ายโฆษณาที่ studio' }),
+      job({ id: 'AA-1', note: 'จัดส่งที่นอน 6 ฟุต โทรก่อนถึง 30 นาที' }),
+    ].map((j) => Object.assign({}, j, { job: JT.classify(j.note) }));
+    const sum = JT.exportSummary(list);
+    const get = (k) => sum.find((r) => r['รายการ'] === k)['จำนวน'];
+    expect(get('รวมทั้งหมด')).toBe(3);
+    expect(get('ต้องรับของกลับ')).toBe(2);
+    expect(get('ส่งเปลี่ยน/เคลม')).toBe(1);
+    expect(get('รับกลับจากงาน')).toBe(1);
+    // ยอดรวมต้องเท่ากับจำนวนแถวในชีตรายละเอียดเสมอ
+    expect(get('รวมทั้งหมด')).toBe(JT.exportRows(list).length);
+  });
+});
