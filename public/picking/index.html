@@ -69,8 +69,9 @@
 
   @media print{
     body{background:#fff}
-    header,.tabs,.ps-bar,.no-print,.sysbar,[data-wms-shell]{display:none!important}
-    .tab-pane:not(#tab-picksum){display:none!important}
+    /* .tabs กับ .tab-pane:not(#tab-picksum) เคยอยู่ตรงนี้สมัยเป็นแท็บในเทียบ Order
+       หน้านี้ไม่มีแท็บแล้ว จึงเป็นกฎที่ไม่ตรงกับ element ไหนเลย */
+    header,.ps-bar,.no-print,.sysbar,[data-wms-shell]{display:none!important}
     .main{padding:0!important;max-width:none!important}
     /* แต่ละขนส่งขึ้นหน้าใหม่ ฉีกแจกให้แต่ละคนได้ */
     .ps-card{page-break-after:always;break-after:page;box-shadow:none;border:0;margin:0}
@@ -211,18 +212,18 @@
   <div class="main">
     <div class="ps-bar no-print">
       <span class="ps-lbl">ใช้ข้อมูลจาก</span>
-      <button class="ps-opt active" data-src="1" onclick="setPickSource(1,this)">🌅 Daily Logis</button>
-      <button class="ps-opt" data-src="2" onclick="setPickSource(2,this)">🌆 Daily CRM</button>
+      <button class="ps-opt active" data-src="1" onclick="setPickSource(1)">🌅 Daily Logis</button>
+      <button class="ps-opt" data-src="2" onclick="setPickSource(2)">🌆 Daily CRM</button>
       <span class="ps-sep"></span>
       <span class="ps-lbl">พิมพ์</span>
-      <button class="ps-opt active" data-filter="all"  onclick="setPickFilter('all',this)">ทั้งหมด</button>
-      <button class="ps-opt" data-filter="bed"  onclick="setPickFilter('bed',this)">🛏️ เฉพาะที่นอน</button>
-      <button class="ps-opt" data-filter="gift" onclick="setPickFilter('gift',this)">🎁 เฉพาะของแถม</button>
+      <button class="ps-opt active" data-filter="all"  onclick="setPickFilter('all')">ทั้งหมด</button>
+      <button class="ps-opt" data-filter="bed"  onclick="setPickFilter('bed')">🛏️ เฉพาะที่นอน</button>
+      <button class="ps-opt" data-filter="gift" onclick="setPickFilter('gift')">🎁 เฉพาะของแถม</button>
       <span class="ps-sep"></span>
       <span class="ps-lbl">กระดาษ</span>
-      <button class="ps-opt active" data-paper="a4" onclick="setPickPaper('a4',this)">A4</button>
-      <button class="ps-opt" data-paper="land" onclick="setPickPaper('land',this)">🏷️ 150×100 แนวนอน</button>
-      <button class="ps-opt" data-paper="port" onclick="setPickPaper('port',this)">🏷️ 100×150 แนวตั้ง</button>
+      <button class="ps-opt active" data-paper="a4" onclick="setPickPaper('a4')">A4</button>
+      <button class="ps-opt" data-paper="land" onclick="setPickPaper('land')">🏷️ 150×100 แนวนอน</button>
+      <button class="ps-opt" data-paper="port" onclick="setPickPaper('port')">🏷️ 100×150 แนวตั้ง</button>
       <span class="ps-spacer"></span>
       <button class="btn btn-sm" onclick="renderPickSum()">🔄 คำนวณใหม่</button>
       <button class="btn btn-primary btn-sm" onclick="window.print()">🖨 พิมพ์</button>
@@ -369,13 +370,28 @@ let pickPaper = 'a4';    // 'a4' | 'label' (150×100 มม.)
  * เนื้อหาเหมือนกันทุกอย่าง ต่างแค่ @page และความแน่นของตัวอักษร —
  * รายการยาวจะไหลลงดวงถัดไปเอง และยังขึ้นดวงใหม่ทุกขนส่งเหมือนเดิม
  */
-function setPickPaper(v, btn) {
+/**
+ * ทาสีปุ่มในกลุ่มหนึ่งให้ตรงกับค่าที่เลือกอยู่ — กลุ่มคือปุ่มที่มี data ตัวเดียวกัน
+ *
+ * ยึดจาก "ค่าปัจจุบันคืออะไร" ไม่ใช่ "ผู้ใช้เพิ่งกดปุ่มไหน" ปุ่มจึงถูกเสมอ
+ * แม้ค่าจะถูกตั้งจากที่อื่นโดยไม่มีการกด
+ *
+ * เดิมทั้งสามฟังก์ชันกรองด้วย '#tab-picksum .ps-opt' ซึ่งเป็น id ของแท็บสมัยที่
+ * หน้านี้ยังอยู่ในเทียบ Order พอย้ายออกมาเป็นโมดูลของตัวเอง id นั้นไม่มีแล้ว
+ * querySelectorAll จึงคืนค่าว่าง ไม่มีใครถูกถอด active ออก แล้วบรรทัดถัดมาก็เติม
+ * ให้ปุ่มที่กดอีกอัน — กดไปเรื่อย ๆ ปุ่มก็ติดสีสะสมจนม่วงทั้งแถบ
+ * และของเดิมยังกวาด .ps-opt ทุกปุ่มโดยไม่แยกกลุ่ม กลุ่มอื่นจึงดับไปด้วย
+ */
+function pickOne(attr, val) {
+  document.querySelectorAll('.ps-bar .ps-opt[data-' + attr + ']').forEach(b =>
+    b.classList.toggle('active', b.dataset[attr] === String(val)));
+}
+
+function setPickPaper(v) {
   if (!PAPER[v]) v = 'a4';
   pickPaper = v;
   const pg = PAPER[v];
-  document.querySelectorAll('#tab-picksum .ps-opt[data-paper]').forEach(b =>
-    b.classList.toggle('active', b.dataset.paper === v));
-  if (btn) btn.classList.add('active');
+  pickOne('paper', v);
 
   // ขนาดกระดาษเล็กใช้ตัวอักษรบีบ ส่วน A4 ใช้ปกติ
   document.body.classList.toggle('ps-paper-label', v !== 'a4');
@@ -411,17 +427,15 @@ function selectAllPickCarriers() {
   renderPickSum();
 }
 
-function setPickFilter(v, btn) {
+function setPickFilter(v) {
   pickFilter = v;
-  document.querySelectorAll('#tab-picksum .ps-opt[data-filter]').forEach(b => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
+  pickOne('filter', v);
   renderPickSum();
 }
 
-function setPickSource(n, btn) {
+function setPickSource(n) {
   pickSource = n;
-  document.querySelectorAll('#tab-picksum .ps-opt').forEach(b => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
+  pickOne('src', n);
   renderPickSum();
 }
 
