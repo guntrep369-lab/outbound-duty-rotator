@@ -60,9 +60,9 @@
 
       <table class="wh-tbl" id="items">
         <colgroup>
-          <col style="width:5%"><col style="width:11%"><col style="width:26%">
-          <col style="width:11%"><col style="width:26%">
-          <col style="width:7%"><col style="width:7%"><col style="width:7%">
+          <col style="width:4%"><col style="width:13%"><col style="width:27%">
+          <col style="width:13%"><col style="width:27%">
+          <col style="width:5.5%"><col style="width:5.5%"><col style="width:5%">
         </colgroup>
         <thead>
           <tr>
@@ -100,9 +100,9 @@
 WhShared.buildRows('rows', 9, (n) => `
   <td class="no">${n}</td>
   <td><input class="wh-in" data-sku autocomplete="off"></td>
-  <td class="name"><input data-name readonly></td>
+  <td class="name"><div data-name></div></td>
   <td><input class="wh-in" data-sku-to autocomplete="off"></td>
-  <td class="name"><input data-name-to readonly></td>
+  <td class="name"><div data-name-to></div></td>
   <td class="num"><input class="wh-in" data-a inputmode="numeric"></td>
   <td class="num"><input class="wh-in" data-b inputmode="numeric"></td>
   <td class="num"><input data-total readonly></td>`);

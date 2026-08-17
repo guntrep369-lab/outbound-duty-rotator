@@ -70,7 +70,21 @@ select.wh-in { background: #F8FAFC; }
 .wh-tbl input[readonly] { background: #fff; }
 .wh-tbl input.wh-miss { background: #FEF2F2; }
 .wh-tbl .num input { text-align: right; padding-right: 1mm; }
-.wh-tbl .name input { font-size: 7.2pt; }
+/* ชื่อสินค้าได้สองบรรทัด — ชื่อจริงยาวถึง 92 ตัวอักษร บรรทัดเดียวใส่ไม่ได้
+   ไม่ว่าจะย่อฟอนต์แค่ไหน สองบรรทัดที่ 6.5pt พอดีความสูงแถว 7.4mm */
+.wh-tbl .name [data-name], .wh-tbl .name [data-name-to] {
+  font-size: 6.5pt; line-height: 1.12; padding: 0.4mm 0.8mm;
+  max-height: 7.2mm; overflow: hidden; word-break: break-word;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+}
+/* ช่องชื่อเป็น div แล้ว กฎ .wh-miss เดิมเจาะจง input จึงไม่โดน — ถ้าไม่เติมกฎนี้
+   คำเตือน "ไม่พบรหัสนี้" จะหายไปเงียบ ๆ ทั้งที่คลาสยังถูกติดอยู่ */
+.wh-tbl .name [data-name].wh-miss, .wh-tbl .name [data-name-to].wh-miss {
+  background: #FEF2F2;
+}
+
+/* รหัส SKU จริงยาว 13 ตัว (AHM0000000001) — 8pt ล้นช่อง */
+.wh-tbl input[data-sku], .wh-tbl input[data-sku-to] { font-size: 7.2pt; }
 .wh-tbl tfoot td { font-size: 7.5pt; font-weight: 700; text-align: right; padding-right: 1.5mm; }
 
 /* ── ลายเซ็นท้ายใบ ── */
@@ -109,6 +123,7 @@ select.wh-in { background: #F8FAFC; }
     background: none !important; border-bottom-color: transparent !important;
     -webkit-appearance: none; appearance: none;
   }
-  .wh-in.wh-miss, .wh-tbl input.wh-miss { background: none !important; }
+  .wh-in.wh-miss, .wh-tbl input.wh-miss,
+  .wh-tbl .name [data-name].wh-miss, .wh-tbl .name [data-name-to].wh-miss { background: none !important; }
   .wh-meta .wh-in { border-bottom: 1px dotted #000 !important; }
 }

@@ -76,13 +76,22 @@
 
       function rowOf(el) { return el.closest('tr'); }
 
+      /* ช่องชื่อสินค้าเป็น <div> ไม่ใช่ <input> เพราะชื่อจริงยาวได้ถึง 92 ตัวอักษร
+         และ input ตัดบรรทัดไม่ได้เลย ย่อฟอนต์แค่ไหนก็ยังเห็นไม่ครบ
+         รองรับทั้งสองแบบ เผื่อฟอร์มไหนยังเป็น input อยู่ */
+      function setText(el, v) {
+        if (!el) return;
+        if (el.tagName === 'INPUT') el.value = v;
+        else el.textContent = v;
+      }
+
       function fillName(input) {
         var tr = rowOf(input);
         if (!tr) return;
         var name = tr.querySelector('[data-name]');
         var hit = window.WhSku ? WhSku.find(input.value) : null;
         if (name) {
-          name.value = hit ? hit.name : '';
+          setText(name, hit ? hit.name : '');
           name.classList.toggle('wh-miss', !!input.value.trim() && !hit);
           name.title = (!hit && input.value.trim())
             ? 'ไม่พบรหัสนี้ในรายชื่อสินค้า — ตรวจรหัส หรืออัปไฟล์รายชื่อใหม่'
@@ -95,8 +104,7 @@
             var p = WhSku.pair(input.value);
             if (p) {
               other.value = p.to;
-              var n2 = tr.querySelector('[data-name-to]');
-              if (n2) n2.value = p.name || '';
+              setText(tr.querySelector('[data-name-to]'), p.name || '');
             }
           }
         }
@@ -121,9 +129,9 @@
         if (el.matches('[data-sku],[data-sku-to]')) {
           fillName(el.matches('[data-sku]') ? el : el);
           if (el.matches('[data-sku-to]')) {
-            var tr = rowOf(el), n2 = tr && tr.querySelector('[data-name-to]');
+            var tr = rowOf(el);
             var hit = window.WhSku ? WhSku.find(el.value) : null;
-            if (n2) n2.value = hit ? hit.name : '';
+            setText(tr && tr.querySelector('[data-name-to]'), hit ? hit.name : '');
           }
           var hits = window.WhSku ? WhSku.search(el.value, 8) : [];
           showBox(el, hits, function (it) {
