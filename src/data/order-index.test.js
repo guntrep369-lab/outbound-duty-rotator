@@ -195,6 +195,33 @@ describe('จับตอนอ่านผิดช่อง', () => {
     expect(OrderIndex.sanity(carriersOf([sheetRow(), sheetRow({ 'Order ID': 'AA-2' })]))).toEqual([]);
   });
 
+  /**
+   * รุ่นแรกของตัวตรวจนี้รวมทุกชีตมานับด้วยกัน พอ CRM ปกติ (มีชื่อลูกค้า)
+   * เงื่อนไข "ว่างทุกแถว" ก็ไม่จริง คำเตือนเลยเงียบทั้งที่ Logis พังอยู่ —
+   * ซึ่งคือสภาพจริงบนหน้าจอ: การ์ดโชว์ข้อมูลสลับช่องโดยไม่มีอะไรเตือนเลย
+   */
+  it('Logis พังแต่ CRM ปกติ ต้องยังฟ้อง และบอกด้วยว่าชีตไหน', () => {
+    const msgs = OrderIndex.sanity(OrderIndex.parsePayload({
+      carriers: [{
+        key: 'รถบริษัท',
+        sheet1: [shifted(), shifted({ 'Order ID': 'AA-2' })],
+        sheet2: [sheetRow({ 'Order ID': 'AA-9' })],
+      }],
+    }));
+    expect(msgs.join(' ')).toMatch(/รถบริษัท · Logis.*ชื่อลูกค้า.*ว่างทั้ง 2 แถว/);
+    expect(msgs.join(' ')).not.toMatch(/CRM/);
+  });
+
+  it('ขนส่งเจ้าที่ยังดี ต้องไม่โดนหางเลขจากเจ้าที่พัง', () => {
+    const msgs = OrderIndex.sanity(OrderIndex.parsePayload({
+      carriers: [
+        { key: 'รถบริษัท', sheet1: [shifted()], sheet2: [] },
+        { key: 'KEX', sheet1: [sheetRow({ 'Order ID': 'KX-1' })], sheet2: [] },
+      ],
+    }));
+    expect(msgs.every((m) => m.startsWith('รถบริษัท'))).toBe(true);
+  });
+
   it('ยังไม่มีข้อมูลก็ไม่ใช่เรื่องผิด', () => {
     expect(OrderIndex.sanity([])).toEqual([]);
     expect(OrderIndex.sanity(carriersOf([]))).toEqual([]);

@@ -112,18 +112,20 @@
    */
   var MUST_HAVE = [{ k: 'customer', label: 'ชื่อลูกค้า' }, { k: 'brand', label: 'แบรนด์' }];
 
-  function sanity(carriers) {
-    var rows = [];
-    (carriers || []).forEach(function (c) {
-      rows = rows.concat(c.data1 || [], c.data2 || []);
-    });
-    if (!rows.length) return [];
+  /**
+   * ต้องตรวจ "ทีละชีต" ไม่ใช่รวมทุกชีตมานับด้วยกัน
+   *
+   * แต่ละชีตมีแถวหัวของตัวเอง ชีตหนึ่งหัวเลื่อนอีกชีตปกติได้ พอเอามารวมกันแล้ว
+   * เงื่อนไข "ว่างทุกแถว" ก็ไม่จริง เพราะชีตที่ยังดีมีค่าอยู่ — คำเตือนจะเงียบ
+   * ทั้งที่อีกชีตพังอยู่ ซึ่งเป็นสิ่งที่เกิดขึ้นจริงกับรุ่นแรกของตัวตรวจนี้
+   */
+  function checkRows(where, rows, out) {
+    if (!rows || !rows.length) return;
 
-    var out = [];
     MUST_HAVE.forEach(function (f) {
       var has = rows.some(function (r) { return String(r[f.k] || '').trim() !== ''; });
       if (!has) {
-        out.push('ช่อง "' + f.label + '" ว่างทั้ง ' + rows.length + ' แถว — ' +
+        out.push(where + ': ช่อง "' + f.label + '" ว่างทั้ง ' + rows.length + ' แถว — ' +
                  'แถวหัวในชีตน่าจะไม่ตรงกับข้อมูลใต้มัน ทำให้อ่านผิดช่องทั้งแผง');
       }
     });
@@ -132,9 +134,18 @@
                    .filter(function (t) { return t; });
     var longAppt = appt.filter(function (t) { return t.length > 40; }).length;
     if (appt.length && longAppt > appt.length / 2) {
-      out.push('ช่อง "เวลานัด" ได้ข้อความยาวผิดปกติ (' + longAppt + ' จาก ' + appt.length +
-               ' แถว) — น่าจะกำลังอ่านช่องหมายเหตุมาแสดงแทนเวลา');
+      out.push(where + ': ช่อง "เวลานัด" ได้ข้อความยาวผิดปกติ (' + longAppt + ' จาก ' +
+               appt.length + ' แถว) — น่าจะกำลังอ่านช่องหมายเหตุมาแสดงแทนเวลา');
     }
+  }
+
+  function sanity(carriers) {
+    var out = [];
+    (carriers || []).forEach(function (c) {
+      var who = c.key || 'ขนส่ง';
+      checkRows(who + ' · Logis', c.data1, out);
+      checkRows(who + ' · CRM', c.data2, out);
+    });
     return out;
   }
 
