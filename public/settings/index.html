@@ -213,7 +213,8 @@
       <h3>💾 สำรอง / กู้คืนการตั้งค่า <span class="sub" id="bkStat"></span></h3>
       <div class="in">
         <div class="row">
-          <button class="btn2 p" onclick="doExport()">⬇️ ดาวน์โหลดไฟล์สำรอง</button>
+          <button class="btn2 danger" onclick="doExport('key')">🔑 ไฟล์กุญแจ — ห้ามส่งต่อ</button>
+          <button class="btn2 p" onclick="doExport('data')">📦 ไฟล์ข้อมูลสินค้า — ส่งต่อในทีมได้</button>
           <button class="btn2" onclick="document.getElementById('bkFile').click()">⬆️ กู้คืนจากไฟล์</button>
           <input type="file" id="bkFile" accept=".json" style="display:none">
           <span class="msg" id="bkMsg"></span>
@@ -221,8 +222,12 @@
         <div id="bkCompare"></div>
         <div class="hint">
           ทุกอย่างในหน้านี้เก็บอยู่ในเบราว์เซอร์เครื่องนี้เท่านั้น ไม่มีเซิร์ฟเวอร์เก็บให้ —
-          ล้างข้อมูลเบราว์เซอร์หรือเปลี่ยนเครื่องแล้ว<b>กู้เองไม่ได้</b>
-          เก็บไฟล์นี้ไว้ที่ปลอดภัย <b>ไม่ควรส่งในแชทกลุ่ม</b> เพราะข้างในมีรายชื่อผู้ใช้และรายชื่อสินค้าทั้งหมด
+          ล้างข้อมูลเบราว์เซอร์หรือเปลี่ยนเครื่องแล้ว<b>กู้เองไม่ได้</b><br>
+            <b>🔑 ไฟล์กุญแจ</b> มี Apps Script URL รหัส และรายชื่อผู้ใช้พร้อมรหัสเข้าระบบ —
+            ใครได้ไฟล์นี้ไป<b>อ่านออเดอร์ได้ทั้งหมด รวมชื่อ ที่อยู่ เบอร์โทรลูกค้า</b> เก็บไว้ที่ปลอดภัย อย่าส่งในแชท<br>
+            <b>📦 ไฟล์ข้อมูลสินค้า</b> มีรายชื่อสินค้า คู่รหัสขาย↔แถม และโลโก้ —
+            ส่งให้เพื่อนร่วมทีมตั้งเครื่องใหม่ได้โดยไม่ต้องยื่นกุญแจไปด้วย<br>
+            กู้คืนใช้ปุ่มเดียวกันทั้งสองไฟล์ และ<b>กู้เฉพาะสิ่งที่อยู่ในไฟล์นั้น</b> ของอื่นในเครื่องไม่ถูกแตะ
           <br>ไม่รวมข้อมูลของวัน (ออเดอร์ / สต๊อก / ไฟล์รถบริษัท) และไม่รวมการล็อกอินของคุณ
         </div>
       </div>
@@ -400,12 +405,22 @@ function paintBackup() {
   $('bkStat').textContent = `เครื่องนี้: ${d.keys} รายการ · ผู้ใช้ ${d.users} · สินค้า ${d.skus.toLocaleString()}`;
 }
 
-function doExport() {
-  const file = WmsSettings.exportAll();
+/**
+ * ดาวน์โหลดไฟล์สำรองทีละชนิด
+ *
+ * ชื่อไฟล์บอกชนิดไว้ในตัว เพราะสองไฟล์นี้หน้าตาเหมือนกันเมื่ออยู่ในโฟลเดอร์เดียวกัน
+ * และอันหนึ่งส่งต่อไม่ได้ — ถ้าต้องเปิดดูก่อนทุกครั้งว่าอันไหนคืออันไหน สักวันจะมีคนส่งผิด
+ */
+function doExport(kind) {
+  const file = WmsSettings.exportAll(kind);
   const d = WmsSettings.describe(file.data);
-  if (!d.keys) { say('bkMsg', 'ยังไม่มีอะไรให้สำรอง', 'bad'); return; }
+  if (!d.keys) {
+    say('bkMsg', kind === 'data' ? 'ยังไม่มีรายชื่อสินค้าหรือโลโก้ให้สำรอง'
+                                 : 'ยังไม่มี URL หรือผู้ใช้ให้สำรอง', 'bad');
+    return;
+  }
   const now = new Date();
-  const name = 'wms-settings-' + now.getFullYear() +
+  const name = 'wms-' + (kind === 'data' ? 'ข้อมูลสินค้า' : 'กุญแจ-ห้ามส่งต่อ') + '-' + now.getFullYear() +
     String(now.getMonth() + 1).padStart(2, '0') + String(now.getDate()).padStart(2, '0') + '.json';
   const url = URL.createObjectURL(new Blob([JSON.stringify(file)], { type: 'application/json' }));
   const a = document.createElement('a');

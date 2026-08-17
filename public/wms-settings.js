@@ -103,21 +103,52 @@
     SKIP: ['wms:session', 'wms:orders', 'wms:stock', 'wms:transport:file', 'wms:me'],
 
     /**
+     * ไฟล์สำรองแยกเป็นสองชนิด ตามสิ่งที่ "หลุดแล้วเสียหายต่างกัน"
+     *
+     * KEY  — กุญแจ: Apps Script URL ทั้งสามตัว, รหัสเขียนไฟล์รถ, และรายชื่อผู้ใช้
+     *   พร้อมรหัสเข้าระบบ ใครได้ไฟล์นี้ไปอ่านออเดอร์ได้ทั้งหมด รวมชื่อ ที่อยู่
+     *   เบอร์โทรลูกค้าทุกคน และเขียนทับรายการจัดส่งที่เด็กคลังจะทำตามได้ด้วย
+     *   ไฟล์นี้เท่ากับสิทธิ์เข้าถึงระบบ ไม่ใช่แค่การตั้งค่า
+     *
+     * DATA — ข้อมูลอ้างอิง: รายชื่อสินค้า คู่รหัสขาย↔แถม โลโก้ เป็นของภายในบริษัท
+     *   แต่ไม่ได้เปิดประตูอะไรให้ใคร ส่งให้เพื่อนร่วมทีมตั้งเครื่องใหม่ได้โดยไม่ต้อง
+     *   ยื่นกุญแจไปด้วย ซึ่งเป็นเหตุผลทั้งหมดที่แยกสองไฟล์
+     *
+     * แยกด้วยรายการที่เขียนไว้ตรง ๆ ไม่ใช่กฎอัตโนมัติ เพราะการเดาผิดข้างเดียว
+     * แปลว่ากุญแจหลุดไปอยู่ในไฟล์ที่คนตั้งใจส่งต่อ — คีย์ใหม่ที่ไม่ได้อยู่ในรายการ
+     * จะถูกนับเป็น KEY ไว้ก่อนเสมอ
+     */
+    DATA_KEYS: ['wms:wh:sku', 'wms:sku:names', 'wms:transport:logo'],
+
+    /** @returns {'key'|'data'} คีย์นี้อยู่ไฟล์ไหน */
+    kindOf: function (k) {
+      return window.WmsSettings.DATA_KEYS.indexOf(k) === -1 ? 'key' : 'data';
+    },
+
+    /**
      * เก็บทุกคีย์ที่เป็นการตั้งค่า ไม่ใช่รายการที่เขียนไว้ตายตัว
      * — ถ้าเขียนรายชื่อไว้ พอมีการตั้งค่าใหม่เพิ่มทีหลังมันจะไม่ถูกสำรองโดยไม่มีใครรู้
      *   จนถึงวันที่ต้องกู้จริง
      */
-    exportAll: function () {
+    exportAll: function (kind) {
       var self = window.WmsSettings, data = {};
       try {
         for (var i = 0; i < localStorage.length; i++) {
           var k = localStorage.key(i);
           if (!/^(wms:|orderapp_)/.test(k)) continue;
           if (self.SKIP.some(function (p) { return k === p || k.indexOf(p) === 0; })) continue;
+          if (kind && self.kindOf(k) !== kind) continue;
           data[k] = localStorage.getItem(k);
         }
       } catch (e) {}
-      return { app: 'WMS Management by gun', kind: 'settings-backup', at: Date.now(), data: data };
+      return {
+        app: 'WMS Management by gun',
+        kind: 'settings-backup',
+        /* part บอกว่าไฟล์นี้เป็นชนิดไหน ไฟล์เก่าที่ไม่มีช่องนี้ = ไฟล์รวมแบบเดิม
+           ยังกู้คืนได้ตามปกติ ไม่งั้นไฟล์ที่ทุกคนเก็บไว้จะใช้ไม่ได้ทันทีที่อัปเดต */
+        part: kind || 'all',
+        at: Date.now(), data: data,
+      };
     },
 
     /** สรุปว่าในไฟล์/ในเครื่องมีอะไรบ้าง ใช้ให้คนดูก่อนกดทับ */
@@ -126,10 +157,15 @@
       var users = 0, skus = 0;
       try { users = (JSON.parse(d['wms:users'] || '[]') || []).length; } catch (e) {}
       try { skus = ((JSON.parse(d['wms:wh:sku'] || 'null') || {}).items || []).length; } catch (e) {}
+      var names = 0;
+      try { names = Object.keys((JSON.parse(d['wms:sku:names'] || 'null') || {}).names || {}).length; } catch (e) {}
       return {
         orderUrl: !!d[KEYS.orderUrl], stockUrl: !!d[KEYS.stockUrl],
         transportUrl: !!d[KEYS.transportUrl], logo: !!d[KEYS.logo],
-        users: users, skus: skus,
+        token: !!d[KEYS.transportToken],
+        users: users, skus: skus, names: names,
+        /* มีกุญแจอยู่ในไฟล์ไหม — ใช้เตือนตอนคนกำลังจะส่งไฟล์ต่อ */
+        hasKeys: Object.keys(d).some(function (k) { return window.WmsSettings.kindOf(k) === 'key'; }),
         others: Object.keys(d).filter(function (k) {
           return [KEYS.orderUrl, KEYS.stockUrl, KEYS.transportUrl, KEYS.logo,
                   'wms:users', 'wms:wh:sku'].indexOf(k) === -1;
@@ -142,6 +178,12 @@
      * เขียนทับของเดิมทั้งชุด — ผู้เรียกต้องให้คนยืนยันก่อน โดยเทียบกับ describe()
      * ของเครื่องปัจจุบันให้เห็นว่ากำลังทับอะไรอยู่
      * @returns {{ok:boolean, written?:number, error?:string}}
+     */
+    /**
+     * เขียนทับเฉพาะคีย์ที่มีอยู่ในไฟล์ คีย์อื่นในเครื่องไม่ถูกแตะ
+     *
+     * สำคัญตอนแยกสองไฟล์: กู้ไฟล์ข้อมูลสินค้าแล้ว URL กับรายชื่อผู้ใช้ในเครื่อง
+     * ต้องอยู่ครบเหมือนเดิม ไม่ใช่หายไปเพราะไฟล์นั้นไม่มีมันอยู่
      */
     importAll: function (file) {
       if (!file || file.kind !== 'settings-backup' || !file.data || typeof file.data !== 'object') {
