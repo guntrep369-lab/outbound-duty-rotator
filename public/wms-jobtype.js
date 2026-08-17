@@ -198,6 +198,49 @@
     });
   }
 
+  /**
+   * ชื่อชีตที่ Excel ยอมรับ
+   *
+   * Excel ห้าม \ / ? * [ ] : ในชื่อชีต และจำกัด 31 ตัวอักษร — ชื่อประเภทงานของเรา
+   * มี "ส่งเปลี่ยน/เคลม" ซึ่งมีสแลชอยู่ ถ้าส่งดิบ ๆ ไฟล์จะเปิดไม่ขึ้นทั้งไฟล์
+   */
+  function sheetName(s) {
+    return String(s == null ? '' : s).replace(/[\\/\?\*\[\]:]/g, ' ')
+      .replace(/\s+/g, ' ').trim().slice(0, 31) || 'ชีต';
+  }
+
+  /**
+   * ทุกกลุ่มในไฟล์เดียว — ชีตละกลุ่ม
+   *
+   * ก่อนหน้านี้ไฟล์ได้เฉพาะที่กรองอยู่บนหน้าจอ ใครอยากได้ครบทุกสถานะต้องกดออก
+   * หกรอบแล้วเอามารวมเอง ซึ่งเป็นงานที่ไฟล์ควรทำให้ตั้งแต่แรก
+   *
+   * กลุ่มที่ไม่มีงานเลยจะไม่สร้างชีต — ชีตเปล่าทำให้คนเปิดต้องไล่กดดูทีละแท็บ
+   * เพื่อพบว่าไม่มีอะไร
+   *
+   * @param {Array} jobs งานที่จะใส่ในไฟล์ (กรองขนส่งมาแล้วถ้าต้องการ)
+   * @returns {Array<{name:string, rows:Array, headers:Array}>}
+   */
+  function exportBook(jobs) {
+    var list = jobs || [];
+    var g = function (j) { return j.job || classify(j.note); };
+    var out = [{ name: 'ทั้งหมด', rows: exportRows(list), headers: EXPORT_HEADERS }];
+
+    [1, 2, 3, 4].forEach(function (n) {
+      var part = list.filter(function (j) { return g(j).type === n; });
+      if (part.length) out.push({ name: sheetName(TYPES[n].label), rows: exportRows(part), headers: EXPORT_HEADERS });
+    });
+
+    var ret = list.filter(function (j) { return g(j).hasReturn !== 'ไม่มี'; });
+    if (ret.length) out.push({ name: 'ต้องรับของกลับ', rows: exportRows(ret), headers: EXPORT_HEADERS });
+
+    var rev = list.filter(function (j) { return g(j).needsReview; });
+    if (rev.length) out.push({ name: 'ต้องอ่านเอง', rows: exportRows(rev), headers: EXPORT_HEADERS });
+
+    out.push({ name: 'สรุป', rows: exportSummary(list), headers: ['รายการ', 'จำนวน'] });
+    return out;
+  }
+
   /** ลำดับคอลัมน์ในไฟล์ ใช้บังคับให้แถวที่มีค่าว่างยังอยู่คอลัมน์เดิม */
   var EXPORT_HEADERS = ['เลขออเดอร์', 'ขนส่ง', 'ชื่อลูกค้า', 'เบอร์โทร', 'ที่อยู่', 'เวลานัด',
     'วันที่', 'หมายเหตุ', 'ประเภทงาน', 'ชื่อประเภท', 'มีรับของกลับ', 'สถานะ', 'ต้องเตรียม',
@@ -227,5 +270,7 @@
     summarise: summarise,
     exportRows: exportRows,
     exportSummary: exportSummary,
+    exportBook: exportBook,
+    sheetName: sheetName,
   };
 })();

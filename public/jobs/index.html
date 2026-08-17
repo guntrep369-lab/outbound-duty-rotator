@@ -41,6 +41,13 @@
 .jb-card.warn .v{color:#B45309}
 
 .jb-strip{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 16px;font-size:12.5px}
+/* กรองขนส่ง — อยู่เหนือการ์ดประเภท เพราะเป็นการเลือก "ขอบเขต" ก่อนดูตัวเลข */
+.jb-cars{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px}
+.jb-car{padding:6px 14px;border-radius:999px;border:1px solid var(--wms-border2);
+  background:var(--wms-surface);font-family:var(--wms-font);font-size:13px;color:#334155;cursor:pointer}
+.jb-car:hover{border-color:var(--wms-primary);color:var(--wms-primary-dark)}
+.jb-car.on{background:var(--wms-primary);border-color:var(--wms-primary);color:#fff;font-weight:600}
+.jb-car .n{margin-left:6px;opacity:.75;font-size:11.5px}
 .jb-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;
   background:var(--wms-surface);border:1px solid var(--wms-border);color:#334155}
 .jb-chip b{font-weight:700;color:var(--wms-text)}
@@ -112,6 +119,7 @@ const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 let JOBS = [];
 let AT = 0;
 let FILTER = 'all';
+let CARRIER = 'all';
 let PULLING = '';
 
 function load() {
@@ -154,8 +162,8 @@ function renderSrc() {
   html += '<span class="sp"></span>';
   html += `<button onclick="pullNow()" ${PULLING ? 'disabled' : ''}>🔄 ดึงออเดอร์ใหม่</button>`;
   if (JOBS.length) {
-    // บอกให้ชัดว่ากำลังจะได้อะไร — กรองอยู่แล้วกดออกไฟล์โดยไม่รู้ตัวคือไฟล์ที่ขาดงาน
-    html += `<button onclick="exportXlsx()">⬇️ Excel${FILTER === 'all' ? '' : ' (เฉพาะที่กรอง)'}</button>`;
+    // ไฟล์มีครบทุกสถานะเสมอ ที่เปลี่ยนตามตัวกรองคือขนส่ง จึงบอกด้วยชื่อขนส่ง
+    html += `<button onclick="exportXlsx()">⬇️ Excel${CARRIER === 'all' ? ' ทุกขนส่ง' : ' — ' + esc(CARRIER)}</button>`;
   }
   el.innerHTML = html;
 }
@@ -171,10 +179,21 @@ async function pullNow() {
 }
 
 function setFilter(f) { FILTER = FILTER === f ? 'all' : f; render(); }
+function setCarrier(k) { CARRIER = CARRIER === k ? 'all' : k; render(); }
 
-/** งานที่แสดงอยู่ตอนนี้ ใช้ทั้งวาดหน้าจอและออกไฟล์ ให้สองอย่างตรงกันเสมอ */
+/**
+ * งานในขอบเขตที่เลือก — กรองแค่ขนส่ง ยังไม่กรองประเภท
+ *
+ * ตัวเลขบนการ์ดกับไฟล์ที่ออกใช้ชุดนี้ เพราะการกรองขนส่งคือการเลือกว่า "ไฟล์นี้
+ * ของใคร" ส่วนการกรองประเภทเป็นแค่การเลือกดูบนหน้าจอ
+ */
+function scoped() {
+  return CARRIER === 'all' ? JOBS : JOBS.filter(j => j.carrier === CARRIER);
+}
+
+/** งานที่แสดงอยู่ตอนนี้จริง ๆ = ขอบเขต + ประเภทที่เลือกดู */
 function visible() {
-  return JOBS.filter(j =>
+  return scoped().filter(j =>
     FILTER === 'all' ? true :
     FILTER === 'review' ? j.job.needsReview :
     FILTER === 'return' ? j.job.hasReturn !== 'ไม่มี' :
@@ -196,22 +215,22 @@ function exportXlsx() {
     alert('ยังโหลดตัวเขียนไฟล์ Excel ไม่สำเร็จ — ตรวจการเชื่อมต่ออินเทอร์เน็ตแล้วลองใหม่');
     return;
   }
-  const list = visible();
+  const list = scoped();
   if (!list.length) return;
 
-  const wb = XLSX.utils.book_new();
-  const detail = XLSX.utils.json_to_sheet(WmsJobType.exportRows(list),
-    { header: WmsJobType.EXPORT_HEADERS });
   // ความกว้างคอลัมน์ ไม่งั้นหมายเหตุกับเหตุผลจะโดนบีบจนอ่านไม่ออกตอนเปิด
-  detail['!cols'] = [12, 12, 18, 13, 30, 10, 12, 55, 9, 16, 12, 10, 26, 10, 11, 55]
-    .map(w => ({ wch: w }));
-  XLSX.utils.book_append_sheet(wb, detail, 'รายละเอียด');
-  XLSX.utils.book_append_sheet(wb,
-    XLSX.utils.json_to_sheet(WmsJobType.exportSummary(list), { header: ['รายการ', 'จำนวน'] }), 'สรุป');
+  const WIDTHS = [12, 12, 18, 13, 30, 10, 12, 55, 9, 16, 12, 10, 26, 10, 11, 55];
 
-  const day = (JOBS.find(j => j.date) || {}).date || WmsDate.todayYmd();
-  const tag = FILTER === 'all' ? '' : '-เฉพาะที่กรอง';
-  XLSX.writeFile(wb, `ประเภทงานรถ-${day}${tag}.xlsx`);
+  const wb = XLSX.utils.book_new();
+  WmsJobType.exportBook(list).forEach(sh => {
+    const ws = XLSX.utils.json_to_sheet(sh.rows, { header: sh.headers });
+    ws['!cols'] = (sh.headers === WmsJobType.EXPORT_HEADERS ? WIDTHS : [28, 9]).map(w => ({ wch: w }));
+    XLSX.utils.book_append_sheet(wb, ws, sh.name);
+  });
+
+  const day = (list.find(j => j.date) || {}).date || WmsDate.todayYmd();
+  const who = CARRIER === 'all' ? '' : '-' + WmsJobType.sheetName(CARRIER);
+  XLSX.writeFile(wb, `ประเภทงานรถ-${day}${who}.xlsx`);
 }
 
 function render() {
@@ -224,7 +243,8 @@ function render() {
     return;
   }
 
-  const s = WmsJobType.summarise(JOBS.map(j => j.job));
+  const inScope = scoped();
+  const s = WmsJobType.summarise(inScope.map(j => j.job));
   const T = WmsJobType.TYPES;
 
   const card = (id, label, value, cls) =>
@@ -237,7 +257,17 @@ function render() {
 
   const shown = visible();
 
-  body.innerHTML =
+  // ชิปขนส่ง — ขึ้นเฉพาะตอนมีมากกว่าหนึ่งเจ้า ไม่งั้นเป็นปุ่มที่กดแล้วไม่เกิดอะไร
+  const cars = [...new Set(JOBS.map(j => j.carrier).filter(Boolean))];
+  const carChips = cars.length > 1
+    ? '<div class="jb-cars">' +
+      `<button class="jb-car ${CARRIER === 'all' ? 'on' : ''}" onclick="setCarrier('all')">ทุกขนส่ง<span class="n">${JOBS.length}</span></button>` +
+      cars.map(k => `<button class="jb-car ${CARRIER === k ? 'on' : ''}" onclick="setCarrier('${esc(k).replace(/'/g, "\'")}')">` +
+        `${esc(k)}<span class="n">${JOBS.filter(j => j.carrier === k).length}</span></button>`).join('') +
+      '</div>'
+    : '';
+
+  body.innerHTML = carChips +
     `<div class="jb-note">
        ระบบอ่านหมายเหตุด้วยการจับคำตามกฎ <b>ไม่ได้เข้าใจภาษาจริง</b> —
        ใช้เป็นตัวช่วยกวาดสายตา ไม่ใช่คำตอบสุดท้าย

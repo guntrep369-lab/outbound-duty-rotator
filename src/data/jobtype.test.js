@@ -209,3 +209,83 @@ describe('แถวสำหรับไฟล์ Excel', () => {
     expect(get('รวมทั้งหมด')).toBe(JT.exportRows(list).length);
   });
 });
+
+describe('ไฟล์ที่มีทุกสถานะในไฟล์เดียว', () => {
+  const mk = (id, note) => {
+    const j = { id, carrier: 'รถบริษัท', customer: 'ก', note };
+    j.job = JT.classify(note);
+    return j;
+  };
+  // สร้างในแต่ละเทสต์ ไม่ใช่ตอนลงทะเบียน describe — beforeEach ยังไม่ทำงานตอนนั้น
+  const makeList = () => [
+    mk('A1', 'จัดส่งที่นอน 6 ฟุต โทรก่อนถึง 30 นาที'),
+    mk('A2', 'จัดส่งที่นอน 3.5 ฟุต'),
+    mk('B1', 'จัดส่งตัวใหม่ เนื่องจากชำรุด และรับหลังเดิมกลับ'),
+    mk('C1', 'ส่งช่างเข้าตรวจเช็คหน้างาน'),
+    mk('D1', 'รับที่นอนกลับจากงานถ่ายโฆษณาที่ studio'),
+    mk('E1', ''),
+  ];
+
+  it('ชื่อชีตต้องไม่มีอักขระที่ Excel ห้าม ไม่งั้นไฟล์เปิดไม่ขึ้นทั้งไฟล์', () => {
+    expect(JT.sheetName('ส่งเปลี่ยน/เคลม')).toBe('ส่งเปลี่ยน เคลม');
+    for (const bad of ['\\', '/', '?', '*', '[', ']', ':']) {
+      expect(JT.sheetName('ก' + bad + 'ข')).not.toContain(bad);
+    }
+    expect(JT.sheetName('ก'.repeat(50)).length).toBe(31);
+    expect(JT.sheetName('')).toBe('ชีต');
+  });
+
+  it('มีชีตทั้งหมด แยกตามประเภท และกลุ่มที่ต้องลงมือ', () => {
+    const names = JT.exportBook(makeList()).map((s) => s.name);
+    expect(names[0]).toBe('ทั้งหมด');
+    expect(names).toContain('จัดส่งทั่วไป');
+    expect(names).toContain('ส่งเปลี่ยน เคลม');
+    expect(names).toContain('ส่งเจ้าหน้าที่');
+    expect(names).toContain('รับกลับจากงาน');
+    expect(names).toContain('ต้องรับของกลับ');
+    expect(names).toContain('ต้องอ่านเอง');
+    expect(names[names.length - 1]).toBe('สรุป');
+  });
+
+  it('ชีต "ทั้งหมด" มีครบทุกงาน และแต่ละชีตย่อยมีเฉพาะของตัวเอง', () => {
+    const book = JT.exportBook(makeList());
+    const by = (n) => book.find((s) => s.name === n).rows;
+    expect(by('ทั้งหมด')).toHaveLength(6);
+    expect(by('จัดส่งทั่วไป').map((r) => r['เลขออเดอร์']).sort()).toEqual(['A1', 'A2', 'E1']);
+    expect(by('ส่งเปลี่ยน เคลม').map((r) => r['เลขออเดอร์'])).toEqual(['B1']);
+    expect(by('รับกลับจากงาน').map((r) => r['เลขออเดอร์'])).toEqual(['D1']);
+    expect(by('ต้องรับของกลับ').map((r) => r['เลขออเดอร์']).sort()).toEqual(['B1', 'D1']);
+    expect(by('ต้องอ่านเอง').map((r) => r['เลขออเดอร์'])).toEqual(['E1']);
+  });
+
+  it('กลุ่มที่ไม่มีงานเลย ไม่สร้างชีตเปล่าให้ต้องไล่กดดู', () => {
+    const names = JT.exportBook([mk('A1', 'จัดส่งที่นอน 6 ฟุต')]).map((s) => s.name);
+    expect(names).toEqual(['ทั้งหมด', 'จัดส่งทั่วไป', 'สรุป']);
+    expect(names).not.toContain('ต้องรับของกลับ');
+  });
+
+  it('ทุกชีตรายละเอียดใช้ลำดับคอลัมน์ชุดเดียวกัน ส่วนสรุปใช้ของตัวเอง', () => {
+    const book = JT.exportBook(makeList());
+    book.filter((s) => s.name !== 'สรุป').forEach((s) => {
+      expect(s.headers).toBe(JT.EXPORT_HEADERS);
+    });
+    expect(book[book.length - 1].headers).toEqual(['รายการ', 'จำนวน']);
+  });
+
+  it('ยอดในชีตสรุปตรงกับจำนวนแถวของชีตนั้น ๆ', () => {
+    const book = JT.exportBook(makeList());
+    const sum = book[book.length - 1].rows;
+    const get = (k) => sum.find((r) => r['รายการ'] === k)['จำนวน'];
+    const rows = (n) => (book.find((s) => s.name === n) || { rows: [] }).rows.length;
+    expect(get('รวมทั้งหมด')).toBe(rows('ทั้งหมด'));
+    expect(get('ต้องรับของกลับ')).toBe(rows('ต้องรับของกลับ'));
+    expect(get('ต้องอ่านเอง')).toBe(rows('ต้องอ่านเอง'));
+    expect(get('จัดส่งทั่วไป')).toBe(rows('จัดส่งทั่วไป'));
+  });
+
+  it('ไม่มีงานเลยก็ยังได้ไฟล์ที่เปิดได้ ไม่พัง', () => {
+    const book = JT.exportBook([]);
+    expect(book.map((s) => s.name)).toEqual(['ทั้งหมด', 'สรุป']);
+    expect(book[0].rows).toEqual([]);
+  });
+});
