@@ -114,45 +114,8 @@
   .ps-split span{padding:2px 9px;border-radius:6px;border:1px solid var(--border);
     font-size:11px;color:var(--muted);white-space:nowrap}
   .ps-split b{color:var(--text);font-weight:700;margin-left:2px}
-  .dbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:9px 20px;
-    background:var(--surface);border-bottom:1px solid var(--border);font-size:12.5px}
-  .dsrc{display:flex;align-items:center;gap:8px}
-  /* เรื่องที่สคริปต์ส่งกลับมาบอก เช่น ชีตหาย หรือชีตมีข้อมูลแต่ไม่ใช่ของวันนี้
-     เดิม error1/error2 ถูกอ่านเก็บไว้แล้วไม่เคยแสดงที่ไหน — พอดึงข้อมูลแบบกรอง
-     วันที่ การเงียบตรงนี้แปลว่าแท็บว่างโดยไม่มีอะไรอธิบายว่าทำไม */
-  .dnote{display:none;padding:8px 20px;background:#FFFBEB;border-bottom:1px solid #FDE68A;
-    font-size:12.5px;line-height:1.65;color:#92400E}
-  .dnote div + div{margin-top:3px}
-  .ddot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0}
-  .ddot.on{background:#16A34A} .ddot.wait{background:#F59E0B} .ddot.off{background:#CBD5E1}
-  .ddot.old{background:#DC2626}
-  .ddate{color:var(--muted)}
-  /* ไม่ใช่วันนี้ = ปกติสำหรับทีมที่ทำงานล่วงหน้า แต่ต้องสะดุดตาพอให้รู้ตัว */
-  .ddate.ahead{color:#B45309;font-weight:600}
-  .dage.stale{color:#B45309;font-weight:600}
-  .dage.old{color:#B91C1C;font-weight:700}
-  .dtxt{color:var(--text);white-space:nowrap}
-  .dtxt b{font-weight:700}
-  .dtxt .dim{color:var(--muted);font-weight:400}
-  .dbtn{padding:3px 11px;border-radius:999px;border:1px solid var(--border2, var(--border));
-    background:var(--surface);font-family:var(--sans);font-size:11.5px;color:#334155;cursor:pointer}
-  .dbtn:hover:not(:disabled){background:var(--primary-light);border-color:var(--primary);color:var(--primary-dark)}
-  .dbtn:disabled{opacity:.5;cursor:default}
-  .dsp{flex:1}
-  .dlink{font-size:12px;color:var(--primary-dark);text-decoration:none;font-weight:600;
-    background:none;border:0;font-family:var(--sans);cursor:pointer;padding:0;white-space:nowrap}
-  .dlink:hover{text-decoration:underline}
-  .dpanel{display:none;gap:12px;flex-wrap:wrap;padding:13px 20px;
-    background:var(--surface2, #F8FAFC);border-bottom:1px solid var(--border)}
-  .dpanel.open{display:flex}
-  .dcard{flex:1;min-width:220px;display:flex;flex-direction:column;gap:7px;
-    background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:11px 12px}
-  .dch{font-size:12.5px;font-weight:600;color:var(--text)}
-  .dch span{display:block;font-size:11px;font-weight:400;color:var(--muted);margin-top:2px}
-  .dupl{cursor:pointer;justify-content:center;width:100%}
-  .dst{font-size:11px;color:var(--muted)}
-  .consign-no{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--text);
-    white-space:nowrap;line-height:1.5}
+  /* แถบดึงข้อมูล (.d*) และ .consign-no ย้ายไปอยู่ ../wms-theme.css แล้ว
+     เพราะหน้าเทียบ Order ใช้ชุดเดียวกัน — สองสำเนาแปลว่าวันหนึ่งจะเพี้ยนกัน */
 
   /* ── โหมดพิมพ์ label 150×100 มม. — บีบให้ลงดวงเล็ก ── */
   @media print{
