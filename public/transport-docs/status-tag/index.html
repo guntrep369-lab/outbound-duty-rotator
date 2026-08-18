@@ -111,6 +111,7 @@
 <script src="../../wms-settings.js"></script>
 <script src="../../wms-gas.js"></script>
 <script src="../transport-file.js"></script>
+<script src="../../wms-order-index.js"></script>
 <script>
 /* ตำแหน่งคอลัมน์มาจาก transport-file.js — ชุดเดียวของทั้งโมดูล */
 const C = TransportFile.COLS;
@@ -312,10 +313,21 @@ function markLast(){
 }
 window.addEventListener('beforeprint', markLast);
 
-/* ไฟล์ถูกอัปที่หน้าอื่นแล้ว → สร้างเลย ไม่ต้องอัปซ้ำ */
+/* ไฟล์ถูกอัปที่หน้าอื่นแล้ว → สร้างเลย ไม่ต้องอัปซ้ำ
+   ไม่มีไฟล์ก็ยังสร้างได้ ถ้าดึงออเดอร์ไว้แล้วและชีตบอกชื่อรถมาด้วย
+
+   ใบนี้ไม่ต้องมีข้อแม้เหมือนใบนำส่งกับแจ้งงานคนรถ เพราะใช้แค่ คันรถ วันที่
+   ออเดอร์ แบรนด์ ขนาด จำนวน ของแถม จำนวนแถม หมายเหตุ ซึ่งมาครบจากการดึงออเดอร์
+   ไม่ได้แตะช่องเครื่องรูดบัตรที่ชีตยังไม่มี */
 (function(){
-  var f = window.TransportFile && TransportFile.get(); if (!f) return;
-  LOADED_FILE = f.fileName; buildApp(f.rows);
+  var f = window.TransportFile && TransportFile.get();
+  if (f) { LOADED_FILE = f.fileName; buildApp(f.rows); return; }
+
+  var idx = window.OrderIndex && OrderIndex.get();
+  var rows = window.TransportFile ? TransportFile.fromOrders(idx ? idx.rows : []) : [];
+  if (!rows.length) return;
+  LOADED_FILE = 'จากข้อมูลที่ดึงออเดอร์ไว้';
+  buildApp(rows);
 })();
 </script>
 </body>
