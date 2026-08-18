@@ -106,6 +106,7 @@ body{font-family:Arial,sans-serif;background:#f4f4f4;color:#111;font-size:14px}
 <script src="../wms-settings.js"></script>
 <script src="../wms-gas.js"></script>
 <script src="./transport-file.js"></script>
+<script src="../wms-order-index.js"></script>
 </head>
 <body data-wms-module="transport">
 
@@ -461,14 +462,35 @@ function resetPanel(type){
  /* ล้างไฟล์ที่แชร์ด้วย ไม่งั้นอีกสองหน้าจะยังใช้ไฟล์เก่า */
  if(window.TransportFile) TransportFile.clear();document.getElementById('file-'+type).value='';document.getElementById('drop-'+type).style.display='block';document.getElementById('main-'+type).style.display='none';}
 
-/* ไฟล์ถูกอัปที่หน้าอื่นแล้ว → สร้างเลย ไม่ต้องอัปซ้ำ */
+/* ไฟล์ถูกอัปที่หน้าอื่นแล้ว → สร้างเลย ไม่ต้องอัปซ้ำ
+   ไม่มีไฟล์ก็ยังสร้างได้ ถ้าดึงออเดอร์ไว้แล้วและชีตบอกชื่อรถมาด้วย
+
+   ใบนี้ไม่ต้องมีข้อแม้เหมือนอีกสองหน้า เพราะไม่ได้ใช้ช่องเครื่องรูดบัตร —
+   ช่องที่ใช้ (คันรถ วันที่ Sup ออเดอร์ แบรนด์ ขนาด จำนวน ลูกค้า ที่อยู่
+   เวลานัด ของแถม) มาครบจากการดึงออเดอร์อยู่แล้ว */
 (function(){
-  var f=window.TransportFile && TransportFile.get(); if(!f) return;
-  buildBed(f.rows); buildGift(f.rows);
+  var f=window.TransportFile && TransportFile.get();
+  if(f){
+    buildBed(f.rows); buildGift(f.rows);
+    ['bed','gift'].forEach(function(t){
+      var host=document.createElement('div');
+      document.getElementById('main-'+t).prepend(host);
+      TransportFile.renderBar(host, function(){ resetPanel('bed'); resetPanel('gift'); });
+    });
+    return;
+  }
+
+  var idx=window.OrderIndex && OrderIndex.get();
+  var rows=window.TransportFile ? TransportFile.fromOrders(idx?idx.rows:[]) : [];
+  if(!rows.length) return;
+  buildBed(rows); buildGift(rows);
   ['bed','gift'].forEach(function(t){
-    var host=document.createElement('div');
-    document.getElementById('main-'+t).prepend(host);
-    TransportFile.renderBar(host, function(){ resetPanel('bed'); resetPanel('gift'); });
+    var note=document.createElement('div');
+    note.className='no-print';
+    note.style.cssText='padding:9px 13px;margin-bottom:10px;border-radius:8px;background:#ECFDF5;'+
+      'border:1px solid #A7F3D0;color:#065F46;font-size:12.5px';
+    note.innerHTML='🏷️ สร้างจาก<b>ข้อมูลที่ดึงออเดอร์ไว้</b> ไม่ต้องอัปไฟล์รถบริษัท';
+    document.getElementById('main-'+t).prepend(note);
   });
 })();
 </script>
