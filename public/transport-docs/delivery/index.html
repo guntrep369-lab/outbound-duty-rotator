@@ -97,6 +97,7 @@ table.pod-tbl tr:nth-child(even) td{background:#f9f9f9}
 <script src="../../wms-settings.js"></script>
 <script src="../../wms-gas.js"></script>
 <script src="../transport-file.js"></script>
+<script src="../../wms-phone.js"></script>
 <script src="../../wms-order-index.js"></script>
 </head>
 <body data-wms-module="transport">
@@ -396,11 +397,15 @@ function render(body) {
         + '</div>'
         + (r0[C.time] ? '<div class="st">🕐 ' + esc(r0[C.time]) + '</div>' : '')
         + '</div>';
-      if (r0[C.address] || r0[C.phone1] || r0[C.phone2]) {
+      /* ทั้งชีตและไฟล์ Excel เก็บเบอร์เป็นตัวเลข ศูนย์นำหน้าหายตั้งแต่ต้นทาง
+         คนขับอ่านจากกระดาษแล้วกดโทรตามนั้น เบอร์ที่ขาด 0 คือโทรไม่ติด */
+      var ph1 = WmsPhone.format(r0[C.phone1]);
+      var ph2 = WmsPhone.format(r0[C.phone2]);
+      if (r0[C.address] || ph1 || ph2) {
         h2 += '<div class="sa">'
           + (r0[C.address] ? '<span>📍 ' + esc(r0[C.address]) + '</span>' : '')
-          + (r0[C.phone1] ? '<span>📞 ' + esc(r0[C.phone1]) + '</span>' : '')
-          + (r0[C.phone2] ? '<span>📞 ' + esc(r0[C.phone2]) + '</span>' : '')
+          + (ph1 ? '<span>📞 ' + esc(ph1) + '</span>' : '')
+          + (ph2 ? '<span>📞 ' + esc(ph2) + '</span>' : '')
           + '</div>';
       }
       h2 += '<table class="it"><thead><tr>'

@@ -77,6 +77,7 @@
 <script src="../../wms-settings.js"></script>
 <script src="../../wms-gas.js"></script>
 <script src="../transport-file.js"></script>
+<script src="../../wms-phone.js"></script>
 <script src="../../wms-order-index.js"></script>
 </head>
 <body data-wms-module="transport">
@@ -278,8 +279,10 @@ function renderNotifyCard(idx){
  const srows=stops[stopKey];
  const fr=srows[0];
  const time=v(fr,C.time);
- const phone1=v(fr,C.phone1);
- const phone2=v(fr,C.phone2);
+ /* ทั้งชีตและไฟล์ Excel เก็บเบอร์เป็นตัวเลข ศูนย์นำหน้าหายไปแล้วตั้งแต่ต้นทาง
+    จัดรูปตอนอ่าน ไม่ว่าข้อมูลจะมาทางไหนก็ได้เบอร์ที่กดโทรออกได้ */
+ const phone1=WmsPhone.format(v(fr,C.phone1));
+ const phone2=WmsPhone.format(v(fr,C.phone2));
  const addr=v(fr,C.address);
  const payment=v(fr,C.payment);
  const remark=v(fr,C.remark);

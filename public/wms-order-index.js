@@ -213,8 +213,10 @@
           qtyRaw:   r[qty2Key] != null ? String(r[qty2Key]).trim() : '',
           customer: String(r['ชื่อลูกค้า'] || '').trim(),
           address:  String(r['ที่อยู่']     || '').trim(),
-          phone1:   String(r['Phone 1']    || '').trim(),
-          phone2:   String(r['Phone 2']    || '').trim(),
+          /* ชีตเก็บเบอร์เป็นตัวเลข ศูนย์นำหน้าจึงหายไปแล้วตั้งแต่ในชีต
+             คืนให้ตรงนี้ที่เดียว ทุกหน้าที่ใช้ดัชนีนี้จึงได้เบอร์ที่โทรออกได้ */
+          phone1:   window.WmsPhone ? WmsPhone.format(r['Phone 1']) : String(r['Phone 1'] || '').trim(),
+          phone2:   window.WmsPhone ? WmsPhone.format(r['Phone 2']) : String(r['Phone 2'] || '').trim(),
           payment:  String(r['การเงิน']    || '').trim(),
           remark:   String(r['หมายเหตุ']   || '').trim(),
           date:     dateStr,
