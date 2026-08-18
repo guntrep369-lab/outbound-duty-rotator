@@ -106,7 +106,7 @@ mark{background:#FEF08A;color:inherit;border-radius:3px;padding:0 1px}
     <div class="lk-box">
       <span class="ic">🔎</span>
       <input id="q" type="search" autocomplete="off" spellcheck="false"
-             placeholder="เลขออเดอร์ · ชื่อลูกค้า · เบอร์โทร · เลข Consign · ที่อยู่">
+             placeholder="เลขออเดอร์ · ชื่อลูกค้า · เบอร์โทร · เลข Consign · ที่อยู่ · ชื่อรถ">
     </div>
     <div class="lk-hint">พิมพ์อย่างน้อย <b>2 ตัวอักษร</b> · เบอร์โทรพิมพ์ตัวเลขติดกันได้ ไม่ต้องใส่ขีด</div>
   </div>
@@ -378,6 +378,26 @@ function score(row, q, qd) {
   const cu = norm(row.customer);
   if (cu && cu.startsWith(q)) return 60;
   if (cu && cu.includes(q)) return 50;
+
+  /* ชื่อรถ — ตอบคำถามกลับด้าน: ไม่ใช่ "ออเดอร์นี้ไปคันไหน" (ป้ายบนการ์ดบอกอยู่)
+     แต่คือ "คัน21 มีงานอะไรบ้าง" ซึ่งเป็นคำถามที่เกิดตอนคนขับโทรเข้ามาถาม
+     หรือตอนต้องตามงานทั้งคัน
+
+     เทียบเลขคันแบบตรงตัวด้วย เพราะพิมพ์ "คัน21" ไม่ควรไปโดน "คัน210" และ
+     พิมพ์ "21" เฉย ๆ ก็ควรเจอ โดยไม่ลากเอาคัน 2 หรือคัน 12 มาด้วย */
+  const tr = norm(row.truck);
+  if (tr) {
+    // ถามถึงเลขคัน ("คัน21" หรือ "21") → เทียบเลขตรงตัว ไม่ใช่ข้อความบางส่วน
+    // ไม่งั้น "คัน21" จะลาก "คัน210" มาด้วย ซึ่งเป็นคนละคันคนละคนขับ
+    const qn = /^(?:คัน)?(\d+)$/.exec(q);
+    if (qn) {
+      const n = window.WmsTruck ? WmsTruck.numberOf(row.truck) : null;
+      if (n != null && n === parseInt(qn[1], 10)) return 45;
+    } else if (tr.includes(q)) {
+      return 45;   // ถามด้วยชื่อคนขับ เช่น "บัณฑิต"
+    }
+  }
+
   if (norm(row.address).includes(q)) return 30;
   if (norm(row.brand).includes(q)) return 20;
   return 0;
