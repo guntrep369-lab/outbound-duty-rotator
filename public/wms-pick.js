@@ -94,38 +94,42 @@
       demand[sku].orderMap[orderId].qty += qty;
     }
   
+    /**
+     * Gift lines and their quantities are both multi-line inside one cell and
+     * pair up line by line, in order - never the first quantity applied to all.
+     *
+     * This block used to exist twice: once for rows that carry a brand, once
+     * for rows that do not, doing the same thing in both. Fixing the quantity
+     * rule in only one copy would have made the picked amount depend on whether
+     * a row happened to have a brand, which is invisible from the printed sheet
+     * - two identical-looking lines, different counts, no way to tell why.
+     */
+    function addGifts(giftRaw, qtyRaw, orderId) {
+      const gLines = giftRaw.split('\n');
+      const qLines = qtyRaw.split('\n');
+      gLines.forEach((g, i) => {
+        const name = g.replace(/[\u200b\u200c\u200d\ufeff]/g, '').trim();
+        if (!name) return;
+        const q = parseFloat((qLines[i] || '').trim()) || 1;
+        const sku = extractSKU(name);
+        if (sku) addDemand(sku, name, q, orderId, 'gift');
+      });
+    }
+
     rows.forEach(row => {
       const orderId = row.orderID;
       const brand   = row.brand;
       const qty1    = parseFloat(row.qty1 || 1) || 1;
       const giftRaw = row.giftRaw || '';
       const qtyRaw  = row.qtyRaw  || '';
-  
+
       if (brand) {
         const sku = extractSKU(brand);
         if (sku) addDemand(sku, brand, qty1, orderId, 'bed');
-        if (giftRaw) {
-          const gLines = giftRaw.split('\n');
-          const qLines = qtyRaw.split('\n');
-          gLines.forEach((g, i) => {
-            const name = g.replace(/[\u200b\u200c\u200d\ufeff]/g,'').trim();
-            if (!name) return;
-            const q = parseFloat((qLines[i]||'').trim()) || 1;
-            const gsku = extractSKU(name);
-            if (gsku) addDemand(gsku, name, q, orderId, 'gift');
-          });
-        }
-      } else if (giftRaw) {
-        const gLines = giftRaw.split('\n');
-        const qLines = qtyRaw.split('\n');
-        gLines.forEach((g, i) => {
-          const name = g.replace(/[\u200b\u200c\u200d\ufeff]/g,'').trim();
-          if (!name) return;
-          const q = parseFloat((qLines[i]||'').trim()) || 1;
-          const sku = extractSKU(name);
-          if (sku) addDemand(sku, name, q, orderId, 'gift');
-        });
       }
+      // Gifts are always counted when present, brand or no brand. A row with
+      // only gifts (empty brand cell) is a normal shape in the sheet, not bad data.
+      if (giftRaw) addGifts(giftRaw, qtyRaw, orderId);
     });
     return demand;
   }

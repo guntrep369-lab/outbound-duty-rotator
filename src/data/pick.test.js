@@ -167,3 +167,45 @@ describe('โซนหยิบ FRE', () => {
     expect(fre.length + rest.length).toBe(list.length);
   });
 });
+
+/**
+ * ของแถมต้องนับเหมือนกันไม่ว่าแถวนั้นจะมีแบรนด์หรือไม่
+ *
+ * โค้ดจับคู่ของแถมกับจำนวนเคยถูกคัดลอกไว้สองชุด — ชุดหนึ่งใช้ตอนแถวมีแบรนด์
+ * อีกชุดตอนไม่มี ถ้าวันหนึ่งมีคนแก้กฎที่ชุดเดียว ผลจะต่างกันตามว่าแถวนั้นบังเอิญ
+ * มีแบรนด์หรือเปล่า ซึ่งดูจากใบหยิบไม่มีทางรู้ว่าทำไมสองแถวได้จำนวนไม่เท่ากัน
+ */
+describe('ของแถม: มีแบรนด์หรือไม่มี ต้องนับเท่ากัน', () => {
+  const gifts = 'แถม-หมอนหนุน (FRE0000000021)\nแถม-ชุดเครื่องนอน (FRE0000000190)\nแถม-ผ้ารอง (FRE0000000055)';
+  const qtys = '2\n1\n3';
+
+  const giftQty = (row) => {
+    const d = P.aggregateSKUDemand([row]);
+    return Object.values(d).filter((x) => x.type === 'gift')
+      .sort((a, b) => a.sku.localeCompare(b.sku))
+      .map((x) => x.sku + '×' + x.qty);
+  };
+
+  it('แถวมีแบรนด์ กับแถวของแถมล้วน ให้ผลเท่ากัน', () => {
+    const withBrand = giftQty({ orderID: 'A1', brand: 'ที่นอน 5FT (LNO0000000215)', qty1: 1,
+                                giftRaw: gifts, qtyRaw: qtys });
+    const giftOnly  = giftQty({ orderID: 'A1', brand: '', qty1: 1,
+                                giftRaw: gifts, qtyRaw: qtys });
+    expect(withBrand).toEqual(giftOnly);
+    expect(withBrand).toEqual(['FRE0000000021×2', 'FRE0000000055×3', 'FRE0000000190×1']);
+  });
+
+  it('แถวมีแบรนด์ ยังนับที่นอนแยกจากของแถม', () => {
+    const d = P.aggregateSKUDemand([{ orderID: 'A1', brand: 'ที่นอน 5FT (LNO0000000215)',
+                                      qty1: 4, giftRaw: gifts, qtyRaw: qtys }]);
+    expect(d['LNO0000000215']).toMatchObject({ qty: 4, type: 'bed' });
+    expect(Object.values(d).filter((x) => x.type === 'gift')).toHaveLength(3);
+  });
+
+  it('จำนวนจับคู่ตามลำดับบรรทัด ไม่ใช่ใช้ค่าแรกกับทุกบรรทัด', () => {
+    const d = P.aggregateSKUDemand([{ orderID: 'A1', brand: '', giftRaw: gifts, qtyRaw: qtys }]);
+    expect(d['FRE0000000021'].qty).toBe(2);
+    expect(d['FRE0000000190'].qty).toBe(1);
+    expect(d['FRE0000000055'].qty).toBe(3);
+  });
+});
