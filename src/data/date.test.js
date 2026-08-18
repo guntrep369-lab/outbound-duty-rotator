@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -12,6 +12,15 @@ import path from 'node:path';
  * exactly like a correct answer. Anything not from this year has to announce
  * itself.
  */
+/* ตรึงนาฬิกาไว้ทั้งไฟล์
+   กฎที่ทดสอบอยู่นี้ขึ้นกับ "วันนี้" และของทดสอบก็คำนวณ "วันนี้" เองอีกที ถ้าปล่อย
+   ให้เดินตามนาฬิกาจริง การรันที่คร่อมเที่ยงคืน (หรือคร่อมปีใหม่) จะได้คนละวัน
+   กันสองฝั่งแล้วตกโดยที่โค้ดไม่ได้ผิดอะไร — เทสต์ที่ตกเป็นครั้งคราวโดยไม่มีสาเหตุ
+   ทำให้ทั้งชุดเชื่อไม่ได้ ตรึงไว้ที่วันธรรมดาวันหนึ่ง ส่วนกฎเรื่องปีมีเคสของมันเอง */
+vi.useFakeTimers();
+vi.setSystemTime(new Date('2026-08-19T10:00:00+07:00'));
+afterAll(() => vi.useRealTimers());
+
 const SRC = fs.readFileSync(path.resolve(__dirname, '../../public/wms-date.js'), 'utf8');
 
 let WmsDate;
