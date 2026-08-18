@@ -42,6 +42,10 @@ a.sm-card:hover{border-color:var(--wms-primary);transform:translateY(-1px)}
   font-variant-numeric:tabular-nums}
 .sm-card .v.none{color:var(--wms-faint);font-size:19px;font-weight:600}
 .sm-card .s{margin-top:5px;font-size:12px;color:var(--wms-muted);line-height:1.5}
+/* เทียบกับค่าปกติ — ขึ้นเฉพาะตอนต่างจริง สีบอกทิศ ไม่ใช่บอกดี/ร้าย
+   งานเยอะไม่ได้แปลว่าแย่ และงานน้อยไม่ได้แปลว่าดี คนอ่านตัดสินเอง */
+.sm-card .s .up{color:#B45309;font-weight:700}
+.sm-card .s .down{color:#1D4ED8;font-weight:700}
 .sm-card.hot{border-color:#FDBA74;background:#FFFBEB}
 .sm-card.hot .v{color:#B45309}
 .sm-card.bad{border-color:#FCA5A5;background:#FEF2F2}
@@ -82,6 +86,7 @@ a.sm-card:hover{border-color:var(--wms-primary);transform:translateY(-1px)}
 <script src="../wms-gas.js"></script>
 <script src="../wms-phone.js"></script>
 <script src="../wms-order-index.js"></script>
+<script src="../wms-history.js"></script>
 <script src="../wms-stock.js"></script>
 <script src="../transport-docs/transport-file.js"></script>
 <script>
@@ -180,18 +185,54 @@ function render() {
   const tfDates = tf && window.TransportFile.fileDates ? TransportFile.fileDates(tf.rows) : [];
   const tfLabel = tf ? (TransportFile.workLabel(tfDates) || '') : '';
 
+  /* บันทึกตัวเลขของวันนี้ไว้เทียบกับวันอื่น — คีย์ด้วยวันของงานที่อ่านจากชีต
+     ไม่ใช่วันที่กดปุ่ม เพราะเย็นนี้ดึงงานพรุ่งนี้เป็นเรื่องปกติของทีม
+     มีหลายวันในรอบเดียวได้ (แต่ละขนส่งเดินหน้าไม่พร้อมกัน) เก็บวันล่าสุดพอ */
+  const workDay = dates.length ? dates[dates.length - 1] : '';
+  if (workDay && window.WmsHistory) {
+    const idxRows = (OrderIndex.get() || {}).rows || [];
+    WmsHistory.record(workDay, {
+      orders: orderRows,
+      carriers: o ? o.carriers.length : undefined,
+      trucks: new Set(idxRows.map(r => r.truck).filter(Boolean)).size || undefined,
+      qa: qa ? qa.length : undefined,
+      low: low ? low.length : undefined,
+    });
+  }
+
+  /** วันนี้ต่างจากปกติเท่าไหร่ — เงียบไว้จนกว่าจะมีวันมากพอจะเรียกว่าปกติ */
+  const trend = (field) => {
+    const c = workDay && window.WmsHistory ? WmsHistory.compare(field, workDay) : null;
+    if (!c || Math.abs(c.pct) < 10) return '';   // ต่างไม่ถึง 10% คือวันธรรมดา
+    const up = c.pct > 0;
+    return ` · <b class="${up ? 'up' : 'down'}">${up ? '▲' : '▼'} ${Math.abs(c.pct)}%</b>` +
+           ` จากปกติ ${c.median.toLocaleString()} (${c.n} วัน)`;
+  };
+
+  /* ตัวเลขที่ร่วงฮวบไม่ใช่ "วันงานน้อย" เสมอไป — วันที่หัวคอลัมน์ในชีตเลื่อน
+     ระบบอ่านได้แค่เศษเดียวและไม่มีอะไรผิดปกติให้เห็นบนหน้าจอ ตัวตรวจช่องว่าง
+     จับกรณีนั้นไม่ได้เพราะมันไม่รู้ว่า "ปกติ" คือเท่าไหร่ ประวัติรู้ */
+  const drop = workDay && window.WmsHistory ? WmsHistory.compare('orders', workDay) : null;
+  if (drop && drop.pct <= -50) {
+    alerts.push(`ออเดอร์วันนี้ ${orderRows.toLocaleString()} รายการ — น้อยกว่าปกติ ` +
+      `${Math.abs(drop.pct)}% (ปกติราว ${drop.median.toLocaleString()} จาก ${drop.n} วัน) ` +
+      `ตรวจว่าดึงข้อมูลครบและชีตยังเป็นวันที่ถูกต้องหรือเปล่า`);
+  }
+
   body.innerHTML =
     (alerts.length ? `<div class="sm-alert">${alerts.map(a => `<div>⚠️ ${a}</div>`).join('')}</div>` : '') +
 
     '<div class="sm-sec">งานของวันนี้</div><div class="sm-grid">' +
     card('../order-compare/', '📋', 'ออเดอร์ที่ดึงมา',
       orderRows === null ? null : orderRows.toLocaleString(),
-      o ? `${o.carriers.length} ขนส่ง${dates.length ? ' · ของวันที่ ' + dates.map(thDate).join(', ') : ''}`
+      o ? `${o.carriers.length} ขนส่ง${dates.length ? ' · ของวันที่ ' + dates.map(thDate).join(', ') : ''}${trend('orders')}`
         : 'ยังไม่ได้ดึง') +
+    /* เดิมบอกว่า "ยังไม่มีไฟล์ — Picklist กับใบนำส่งยังทำไม่ได้" ซึ่งไม่จริงแล้ว
+       ทั้งสี่ใบสร้างจากการดึงออเดอร์ได้เอง เหลือแค่เครื่องรูดบัตรที่ชีตยังไม่มี */
     card('../transport-docs/', '🚚', 'ไฟล์รถบริษัท',
       tf ? tf.rows.length.toLocaleString() : null,
       tf ? (tfLabel ? 'งานวันที่ ' + esc(tfLabel) : esc(tf.fileName || 'ไฟล์ที่โหลดไว้'))
-         : 'ยังไม่มี — Picklist กับใบนำส่งยังทำไม่ได้') +
+         : 'ไม่มีก็ทำเอกสารได้ — ขาดแค่ข้อมูลเครื่องรูดบัตร') +
     '</div>' +
 
     '<div class="sm-sec">สต๊อกที่ต้องจัดการ</div><div class="sm-grid">' +
