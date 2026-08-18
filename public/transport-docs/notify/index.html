@@ -289,7 +289,11 @@ function renderNotifyCard(idx){
  msg+=`\n จุดที่ ${si+1}: ${stopKey}\n`;
  if(stopOrders.length) msg+=` Order: ${stopOrders.join(', ')}\n`;
  if(time) msg+=` ⏰ เวลานัด: ${time}\n`;
- if(phone1) msg+=` เบอร์: ${phone1}${phone2?' / '+phone2:''}\n`;
+ /* เดิมคุมทั้งบรรทัดด้วย phone1 — ลูกค้าที่กรอกไว้แต่ Phone 2 จึงออกมาเป็น
+    "ไม่มีเบอร์" ทั้งที่มี คนขับโทรหาไม่ได้ทั้งที่เบอร์อยู่ในชีต
+    เช็คทีละช่อง แล้วต่อเฉพาะช่องที่มีค่าจริง */
+ const phones=[phone1,phone2].filter(Boolean);
+ if(phones.length) msg+=` เบอร์: ${phones.join(' / ')}\n`;
  if(addr) msg+=` ที่อยู่: ${addr}\n`;
 
  // แจ้งงานคนรถเอาเฉพาะที่นอน (คอลัมน์ E แบรนด์) แถวของแถมมีแต่คอลัมน์ H
