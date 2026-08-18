@@ -84,6 +84,13 @@
     .ps-table tr{page-break-inside:avoid}
   }
 
+  /* หัวโซนหยิบ — อยู่เหนือชั้นประเภท ต้องหนักกว่าหัวประเภทให้เห็นว่าคุมอยู่ */
+  .ps-zone{margin-top:14px}
+  .ps-zone:first-child{margin-top:4px}
+  .ps-zname{font-size:13px;font-weight:800;color:var(--primary-dark);
+    background:var(--primary-light);border-left:4px solid var(--primary);
+    border-radius:0 6px 6px 0;padding:5px 10px;margin-bottom:2px}
+  .ps-zname span{font-weight:400;font-size:11px;color:var(--primary);opacity:.8;margin-left:6px}
   .ps-cat{margin-top:10px}
   .ps-cat:first-child{margin-top:2px}
   .ps-cname{font-size:12.5px;font-weight:700;color:var(--text);padding:4px 0 3px;
@@ -93,6 +100,10 @@
     border-radius:6px;padding:3px 9px;margin:7px 0 3px;display:inline-block}
   .ps-size span{font-weight:400;color:var(--primary);opacity:.75;margin-left:5px}
   @media print{
+    /* พิมพ์ขาวดำ สีบอกลำดับชั้นไม่ได้ ใช้เส้นกับพื้นเทาแทน */
+    .ps-zname{background:#DDD!important;color:#000!important;border-left:4px solid #000;
+      border-radius:0}
+    .ps-zname span{color:#000!important;opacity:1}
     .ps-cname{border-bottom:1.5px solid #000}
     .ps-size{background:#EEE!important;color:#000!important;border:1px solid #000}
     .ps-size span{color:#000!important}
@@ -570,6 +581,34 @@ function renderPickGroup(title, list) {
   if (!list.length) return '';
   const sum = list.reduce((n, x) => n + x.qty, 0);
 
+  /* ใบของแถมแบ่งโซนหยิบก่อนแบ่งประเภท — ของรหัส FRE เก็บอยู่ติดกันในคลัง
+     เดินรอบเดียวจบ ส่วนการแบ่งประเภทข้างในยังเหมือนเดิมทุกอย่าง
+     ใบที่นอนไม่ต้องแบ่ง เพราะไม่มีรหัส FRE อยู่เลย */
+  let body;
+  if (list[0] && list[0].type === 'gift') {
+    const fre = list.filter(x => WmsPick.inFreZone(x));
+    const rest = list.filter(x => !WmsPick.inFreZone(x));
+    // มีโซนเดียวก็ไม่ต้องขึ้นหัวโซน จะได้ไม่มีหัวข้อที่ไม่ได้แบ่งอะไร
+    body = (fre.length && rest.length)
+      ? zoneBlock('📦 โซน FRE', fre) + zoneBlock('📍 นอกโซน FRE', rest)
+      : catBlocks(list);
+  } else {
+    body = catBlocks(list);
+  }
+
+  return '<div class="ps-group"><div class="ps-gtitle">' + title +
+    ' <span>' + list.length + ' รายการ · ' + sum + ' ชิ้น</span></div>' + body + '</div>';
+}
+
+function zoneBlock(label, list) {
+  if (!list.length) return '';
+  const sum = list.reduce((n, x) => n + x.qty, 0);
+  return '<div class="ps-zone"><div class="ps-zname">' + esc(label) +
+    ' <span>' + list.length + ' รายการ · ' + sum + ' ชิ้น</span></div>' +
+    catBlocks(list) + '</div>';
+}
+
+function catBlocks(list) {
   // จัดเข้าหมวด แล้วที่นอนซอยย่อยตามขนาดอีกชั้น
   const cats = new Map();
   list.forEach(item => {
@@ -618,8 +657,7 @@ function renderPickGroup(title, list) {
     body += '</div>';
   }
 
-  return '<div class="ps-group"><div class="ps-gtitle">' + title +
-    ' <span>' + list.length + ' รายการ · ' + sum + ' ชิ้น</span></div>' + body + '</div>';
+  return body;
 }
 
 function pickTable(list) {

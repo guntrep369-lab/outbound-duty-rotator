@@ -129,3 +129,41 @@ describe('pickSize', () => {
     expect(P.pickSize('หมอน')).toBeNull();
   });
 });
+
+/**
+ * โซนหยิบ FRE — ของรหัสขึ้นต้น FRE เก็บอยู่ติดกันในคลัง
+ *
+ * ในข้อมูลจริง 151 บรรทัดของแถม เป็น FRE 98 บรรทัด (65%) และปนอยู่ในหลายประเภท:
+ * กลุ่ม "หมอน" มี FRE 40 ปนกับรหัสอื่น 14 · "ผ้านวม/ผ้าห่ม" ปนเกือบครึ่งต่อครึ่ง
+ * การแบ่งตามประเภทอย่างเดียวจึงแยกโซนให้ไม่ได้
+ */
+describe('โซนหยิบ FRE', () => {
+  const item = (sku) => ({ sku });
+
+  it('รหัสขึ้นต้น FRE คือของในโซน', () => {
+    expect(P.inFreZone(item('FRE0000000021'))).toBe(true);
+    expect(P.inFreZone(item('FRE0000000190'))).toBe(true);
+  });
+
+  it('รหัสอื่นไม่ใช่ — รวมถึงรหัสที่มี FRE อยู่กลางคำ', () => {
+    for (const s of ['LNO0000000213', 'LEG0000000012', 'ZCP0000000001',
+                     'DAM0000000002', 'MNS0000000001', 'XFRE0000000021']) {
+      expect(P.inFreZone(item(s)), s).toBe(false);
+    }
+  });
+
+  it('ไม่มีรหัสก็ไม่ใช่ ไม่ใช่พังหรือเดาให้', () => {
+    for (const v of [item(''), item(null), item(undefined), {}, null]) {
+      expect(P.inFreZone(v)).toBe(false);
+    }
+  });
+
+  it('แยกโซนแล้วของต้องครบเท่าเดิม ไม่หายไม่ซ้ำ', () => {
+    const list = ['FRE1000001', 'LNO1000002', 'FRE1000003', 'LEG1000004'].map(item);
+    const fre = list.filter((x) => P.inFreZone(x));
+    const rest = list.filter((x) => !P.inFreZone(x));
+    expect(fre).toHaveLength(2);
+    expect(rest).toHaveLength(2);
+    expect(fre.length + rest.length).toBe(list.length);
+  });
+});
