@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>ผังงานรถวันนี้ — WMS</title>
+<link rel="stylesheet" href="../wms-theme.css">
+<link rel="stylesheet" href="../wms-gate.css">
+<script src="../wms-gate.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --surface:var(--wms-surface); --surface2:var(--wms-surface2);
+  --border:var(--wms-border); --border2:var(--wms-border2);
+  --primary:var(--wms-primary); --primary-dark:var(--wms-primary-dark);
+  --primary-light:var(--wms-primary-light); --text:var(--wms-text);
+  --muted:var(--wms-muted); --faint:var(--wms-faint);
+  --radius:var(--wms-radius); --shadow:var(--wms-shadow); --sans:var(--wms-font);
+}
+.main{padding:14px 20px 40px}
+.lp-src{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 20px;
+  background:var(--surface2);border-bottom:1px solid var(--border);font-size:12px}
+.lp-src .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;
+  background:var(--surface);border:1px solid var(--border);color:var(--muted)}
+.lp-src .pill b{color:var(--text);font-weight:600}
+.lp-src .pill.warn{background:#FEF3C7;border-color:#FDE68A;color:#92400E}
+.lp-src .sp{flex:1}
+.lp-src button{padding:4px 12px;border-radius:999px;border:1px solid var(--border2);
+  background:var(--surface);font-family:var(--sans);font-size:12px;color:#334155;cursor:pointer}
+.lp-src button:hover:not(:disabled){background:var(--primary-light);border-color:var(--primary);
+  color:var(--primary-dark)}
+.lp-src button:disabled{opacity:.6;cursor:default}
+
+/* แถบสรุปหัวหน้า */
+.lp-tops{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.lp-top{flex:1;min-width:130px;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);box-shadow:var(--shadow);padding:11px 14px}
+.lp-top .k{font-size:11.5px;color:var(--muted);font-weight:600}
+.lp-top .v{font-size:23px;font-weight:700;color:var(--text);line-height:1.15;margin-top:4px;
+  font-variant-numeric:tabular-nums}
+.lp-top .s{font-size:11.5px;color:var(--muted);margin-top:3px}
+.lp-top.warn{border-color:#FDBA74;background:#FFFBEB}
+.lp-top.warn .v{color:#B45309}
+
+/* หนึ่งแถวต่อหนึ่งคัน */
+.lp-row{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:var(--shadow);margin-bottom:10px;overflow:hidden}
+.lp-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;
+  border-bottom:1px solid var(--border);background:var(--surface2)}
+.lp-name{font-size:15px;font-weight:700;color:var(--text)}
+.lp-team{padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;
+  background:var(--primary-light);color:var(--primary-dark)}
+.lp-team.extra{background:#FEF3C7;color:#92400E}
+.lp-team.none{background:#E2E8F0;color:#475569}
+.lp-sp{flex:1}
+.lp-num{font-size:12.5px;color:var(--muted)}
+.lp-num b{color:var(--text);font-weight:700;font-variant-numeric:tabular-nums}
+
+/* แถบเทียบภาระงานระหว่างคัน — ให้เห็นความไม่บาลานซ์โดยไม่ต้องอ่านตัวเลขทีละคัน */
+.lp-bar{height:4px;background:var(--primary);opacity:.55}
+
+.lp-stops{display:flex;flex-wrap:wrap;gap:6px;padding:11px 14px}
+.lp-stop{display:inline-flex;align-items:baseline;gap:6px;padding:5px 11px;border-radius:8px;
+  border:1px solid var(--border);background:var(--surface);font-size:12.5px;max-width:100%}
+.lp-stop .t{font-weight:700;color:var(--primary-dark);white-space:nowrap;font-variant-numeric:tabular-nums}
+.lp-stop .c{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}
+.lp-stop .q{color:var(--muted);white-space:nowrap}
+/* จุดที่ไม่มีเวลานัด — คนขับไปถึงแล้วอาจไม่มีคนรับ ต้องเห็นก่อนรถออก */
+.lp-stop.notime{border-color:#FDE68A;background:#FFFBEB}
+.lp-stop.notime .t{color:#B45309}
+
+.lp-empty{padding:40px 20px;text-align:center;color:var(--muted);font-size:14px;line-height:1.8}
+.lp-empty b{color:var(--text)}
+.lp-note{font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.6}
+@media print{
+  .no-print{display:none!important}
+  .wms-shell,.wms-main{display:block!important}
+  .main{padding:0!important}
+  .lp-row{page-break-inside:avoid;break-inside:avoid;box-shadow:none;border:1px solid #000}
+  .lp-head{background:#fff!important}
+  .lp-bar{display:none}
+}
+</style>
+</head>
+<body data-wms-module="loadplan">
+
+<div class="wms-shell">
+<div data-wms-shell="loadplan" data-root="../" class="no-print"></div>
+<div class="wms-main">
+
+  <div class="mod-head no-print">
+    <div class="mod-title">
+      <div class="ic">🗺️</div>
+      <div>
+        <h2>ผังงานรถวันนี้ · Load Plan</h2>
+        <p>กางงานทุกคันไว้หน้าเดียว ดูภาพรวมก่อนรถออก</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="lp-src no-print" id="src"></div>
+
+  <div class="main" id="body"></div>
+
+</div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+
+<script type="module" src="../wms-shell.js"></script>
+<script src="../wms-date.js"></script>
+<script src="../wms-settings.js"></script>
+<script src="../wms-gas.js"></script>
+<script src="../wms-phone.js"></script>
+<script src="../wms-order-index.js"></script>
+<script src="../wms-truck.js"></script>
+<script src="../wms-pick.js"></script>
+<script>
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+let PULLING = '';
+
+/**
+ * หน้านี้ไม่มีกฎเป็นของตัวเอง
+ *
+ * คันรถกับลำดับจุดส่งมาจาก WmsTruck ชุดเดียวกับหน้าค้นหาออเดอร์ และจำนวนชิ้น
+ * นับด้วย WmsPick ตัวเดียวกับใบหยิบของ — ถ้าหน้านี้นับเอง วันหนึ่งผังจะบอกว่า
+ * คัน21 มี 14 ชิ้น แต่ใบหยิบบอก 12 แล้วไม่มีใครรู้ว่าอันไหนจริง
+ *
+ * แต่ "เครื่องนับเดียวกัน" ไม่ได้แปลว่ายอดจะตรงกับใบหยิบเสมอ — ใบหยิบเลือกดู
+ * ทีละรอบ (Daily Logis หรือ Daily CRM) ส่วนผังนี้เอาออเดอร์ทั้งวันที่ต้องออก
+ * จริง คือรอบเช้าบวกกับที่ CRM เพิ่มเข้ามาทีหลัง ซึ่งเป็นชุดที่ถูกสำหรับการ
+ * วางแผนรถ หน้าจอจึงต้องเขียนให้ชัดว่านับจากอะไร ไม่ใช่ปล่อยให้เดาว่าตรงกัน
+ */
+const rowsOf = () => ((window.OrderIndex && OrderIndex.get()) || { rows: [] }).rows;
+
+/** ชิ้นที่ต้องขึ้นรถคันนี้ — นับด้วยเครื่องเดียวกับใบหยิบของ */
+function piecesOf(rows) {
+  return Object.values(WmsPick.aggregateSKUDemand(rows)).reduce((n, x) => n + x.qty, 0);
+}
+
+/**
+ * จัดงานเป็นรายคัน พร้อมจุดส่งเรียงตามลำดับในชีต
+ *
+ * จุดส่งนับตาม "ลูกค้า" ไม่ใช่ตามแถว — ลูกค้าคนเดียวหลายออเดอร์คือแวะครั้งเดียว
+ * ใช้กฎเดียวกับที่หน้าค้นหาออเดอร์ใช้บอก "จุดที่ 2/6"
+ */
+function plan() {
+  const rows = rowsOf().filter(r => r.truck);
+  const byTruck = new Map();
+  rows.forEach(r => {
+    if (!byTruck.has(r.truck)) byTruck.set(r.truck, []);
+    byTruck.get(r.truck).push(r);
+  });
+
+  const out = [];
+  byTruck.forEach((rs, truck) => {
+    const stops = new Map();
+    rs.forEach(r => {
+      const k = (r.customer || r.orderID || '?').trim();
+      if (!stops.has(k)) stops.set(k, { name: k, rows: [], time: '' });
+      const s = stops.get(k);
+      s.rows.push(r);
+      // เวลานัดกรอกไว้แถวแรกของออเดอร์ แถวที่เหลือว่าง — เก็บค่าแรกที่ใช้ได้
+      if (!s.time && r.apptTime) s.time = r.apptTime;
+    });
+    const list = [...stops.values()].map(s => ({ ...s, pieces: piecesOf(s.rows) }));
+    out.push({
+      truck,
+      bucket: WmsTruck.bucketOf(truck),
+      team: WmsTruck.teamOf(truck),
+      num: WmsTruck.numberOf(truck),
+      stops: list,
+      pieces: piecesOf(rs),
+      noTime: list.filter(s => !s.time).length,
+    });
+  });
+
+  /* เรียงตามเลขคัน คันที่ไม่มีเลข (งาน Event ที่เขียน "5 คัน") ไว้ท้ายสุด
+     ไม่ใช่ปนอยู่กลางผัง ซึ่งทำให้ไล่สายตาตามลำดับคันไม่ได้ */
+  return out.sort((a, b) =>
+    (a.num == null) - (b.num == null) || (a.num - b.num) || a.truck.localeCompare(b.truck, 'th'));
+}
+
+function renderSrc() {
+  const el = document.getElementById('src');
+  const idx = window.OrderIndex && OrderIndex.get();
+  const when = idx && idx.at
+    ? new Date(idx.at).toLocaleTimeString('th-TH', { hour:'2-digit', minute:'2-digit' }) : '';
+  let html = PULLING
+    ? `<span class="pill">⏳ ${esc(PULLING)}</span>`
+    : (idx ? `<span class="pill">📋 <b>${idx.rows.length}</b> รายการ · ดึงเมื่อ <b>${esc(when)}</b></span>`
+           : `<span class="pill warn">⚠️ ยังไม่มีข้อมูลออเดอร์</span>`);
+  html += '<span class="sp" style="flex:1"></span>';
+  html += `<button onclick="pullNow()" ${PULLING ? 'disabled' : ''}>🔄 ดึงใหม่</button>`;
+  html += `<button onclick="window.print()">🖨 พิมพ์ผัง</button>`;
+  el.innerHTML = html;
+}
+
+async function pullNow() {
+  if (PULLING || !OrderIndex.savedUrl()) return;
+  PULLING = 'กำลังดึงข้อมูล…'; renderSrc();
+  try { await OrderIndex.pull(OrderIndex.savedUrl()); } catch (e) {}
+  PULLING = ''; render();
+}
+
+function render() {
+  renderSrc();
+  const body = document.getElementById('body');
+  const trucks = plan();
+
+  if (!trucks.length) {
+    const any = rowsOf().length;
+    body.innerHTML = `<div class="lp-empty">${any
+      ? 'ข้อมูลที่ดึงมาไม่มีชื่อรถ — ผังนี้ใช้คอลัมน์ <b>ชื่อรถ</b> ของชีตหน้า Logis<br>ขนส่งเจ้าอื่นไม่มีคอลัมน์นี้ จึงไม่ขึ้นในผัง'
+      : 'ยังไม่มีข้อมูลออเดอร์ — กด <b>🔄 ดึงใหม่</b> ที่แถบด้านบน'}</div>`;
+    return;
+  }
+
+  const totStops = trucks.reduce((n, t) => n + t.stops.length, 0);
+  const totPieces = trucks.reduce((n, t) => n + t.pieces, 0);
+  const totNoTime = trucks.reduce((n, t) => n + t.noTime, 0);
+  const max = Math.max(...trucks.map(t => t.pieces), 1);
+
+  const tops =
+    '<div class="lp-tops">' +
+    `<div class="lp-top"><div class="k">🚚 คันที่มีงาน</div><div class="v">${trucks.length}</div>
+       <div class="s">${trucks.filter(t => t.bucket === 'own').length} รถบริษัท ·
+       ${trucks.filter(t => t.bucket === 'extra').length} รถเสริม</div></div>` +
+    `<div class="lp-top"><div class="k">📍 จุดส่งรวม</div><div class="v">${totStops}</div>
+       <div class="s">เฉลี่ย ${(totStops / trucks.length).toFixed(1)} จุดต่อคัน</div></div>` +
+    `<div class="lp-top"><div class="k">📦 ชิ้นที่ต้องขึ้นรถ</div><div class="v">${totPieces.toLocaleString()}</div>
+       <div class="s">ทั้งวัน — รอบเช้า + ที่ CRM เพิ่มมา</div></div>` +
+    `<div class="lp-top${totNoTime ? ' warn' : ''}"><div class="k">⏰ จุดที่ไม่มีเวลานัด</div>
+       <div class="v">${totNoTime}</div>
+       <div class="s">${totNoTime ? 'ไปถึงแล้วอาจไม่มีคนรับ' : 'ทุกจุดมีเวลานัด'}</div></div>` +
+    '</div>';
+
+  const rows = trucks.map(t => {
+    const teamCls = t.bucket === 'extra' ? 'extra' : (t.bucket === 'own' ? '' : 'none');
+    const teamLbl = t.team ? t.team.label
+      : (t.bucket === 'outside' ? 'นอกกลุ่ม' : 'ไม่ระบุคัน');
+    const stops = t.stops.map(s =>
+      `<span class="lp-stop${s.time ? '' : ' notime'}">` +
+      `<span class="t">${s.time ? esc(s.time) : 'ไม่มีเวลานัด'}</span>` +
+      `<span class="c">${esc(s.name)}</span>` +
+      `<span class="q">${s.pieces} ชิ้น</span></span>`).join('');
+    return `<div class="lp-row">
+      <div class="lp-head">
+        <span class="lp-name">${esc(t.truck)}</span>
+        <span class="lp-team ${teamCls}">${esc(teamLbl)}</span>
+        <span class="lp-sp"></span>
+        <span class="lp-num"><b>${t.stops.length}</b> จุด · <b>${t.pieces.toLocaleString()}</b> ชิ้น${
+          t.noTime ? ` · <b style="color:#B45309">${t.noTime}</b> จุดไม่มีเวลา` : ''}</span>
+      </div>
+      <div class="lp-bar" style="width:${Math.round((t.pieces / max) * 100)}%"></div>
+      <div class="lp-stops">${stops}</div>
+    </div>`;
+  }).join('');
+
+  body.innerHTML = tops +
+    '<div class="lp-note no-print">จุดส่งเรียงตามลำดับในชีต · ลูกค้าคนเดียวหลายออเดอร์นับเป็นจุดเดียว ' +
+    '· แถบใต้หัวแถวเทียบจำนวนชิ้นระหว่างคัน</div>' + rows;
+}
+
+render();
+
+/* ดึงให้เองตอนเปิด ด้วยกติกาเดียวกับหน้าอื่น — ลองครั้งเดียวต่อรอบเบราว์เซอร์ */
+if (!rowsOf().length && OrderIndex.savedUrl() && WmsGas.firstTry('order:loadplan')) pullNow();
+</script>
+</body>
+</html>
