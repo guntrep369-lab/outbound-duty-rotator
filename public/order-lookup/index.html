@@ -129,6 +129,7 @@ mark{background:#FEF08A;color:inherit;border-radius:3px;padding:0 1px}
 <script src="../wms-phone.js"></script>
 <script src="../wms-order-index.js"></script>
 <script src="../wms-truck.js"></script>
+<script src="../wms-search.js"></script>
 <script src="../transport-docs/transport-file.js"></script>
 <script>
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -355,53 +356,11 @@ function setErr(msg) {
 }
 
 // ── ค้นหา ────────────────────────────────────────────────────────────────
-const norm = s => String(s ?? '').toLowerCase().replace(/\s+/g, '');
-const digits = s => String(s ?? '').replace(/\D/g, '');
-
-/**
- * ให้คะแนนความตรง เพื่อให้สิ่งที่คนพิมพ์มาน่าจะหมายถึงที่สุดอยู่บนสุด
- * เลขออเดอร์ตรงเป๊ะสำคัญกว่าชื่อที่บังเอิญมีคำนั้นอยู่กลางประโยค
- */
-function score(row, q, qd) {
-  const id = norm(row.orderID), cn = norm(row.consign);
-  if (id && id === q) return 100;
-  if (cn && cn === q) return 95;
-  if (id && id.includes(q)) return 80;
-  if (cn && cn.includes(q)) return 75;
-  // เทียบเบอร์เฉพาะตอนที่พิมพ์มาเป็นตัวเลขล้วน — ถ้าดึงเลขออกจาก "TP-1001"
-  // มาเทียบด้วย เบอร์ที่บังเอิญมี 1001 อยู่ข้างในจะโผล่ขึ้นมาเป็นคนละลูกค้า
-  if (qd.length >= 3 && qd.length === q.length) {
-    const p1 = digits(row.phone1), p2 = digits(row.phone2);
-    if (p1 === qd || p2 === qd) return 90;
-    if ((p1 && p1.includes(qd)) || (p2 && p2.includes(qd))) return 70;
-  }
-  const cu = norm(row.customer);
-  if (cu && cu.startsWith(q)) return 60;
-  if (cu && cu.includes(q)) return 50;
-
-  /* ชื่อรถ — ตอบคำถามกลับด้าน: ไม่ใช่ "ออเดอร์นี้ไปคันไหน" (ป้ายบนการ์ดบอกอยู่)
-     แต่คือ "คัน21 มีงานอะไรบ้าง" ซึ่งเป็นคำถามที่เกิดตอนคนขับโทรเข้ามาถาม
-     หรือตอนต้องตามงานทั้งคัน
-
-     เทียบเลขคันแบบตรงตัวด้วย เพราะพิมพ์ "คัน21" ไม่ควรไปโดน "คัน210" และ
-     พิมพ์ "21" เฉย ๆ ก็ควรเจอ โดยไม่ลากเอาคัน 2 หรือคัน 12 มาด้วย */
-  const tr = norm(row.truck);
-  if (tr) {
-    // ถามถึงเลขคัน ("คัน21" หรือ "21") → เทียบเลขตรงตัว ไม่ใช่ข้อความบางส่วน
-    // ไม่งั้น "คัน21" จะลาก "คัน210" มาด้วย ซึ่งเป็นคนละคันคนละคนขับ
-    const qn = /^(?:คัน)?(\d+)$/.exec(q);
-    if (qn) {
-      const n = window.WmsTruck ? WmsTruck.numberOf(row.truck) : null;
-      if (n != null && n === parseInt(qn[1], 10)) return 45;
-    } else if (tr.includes(q)) {
-      return 45;   // ถามด้วยชื่อคนขับ เช่น "บัณฑิต"
-    }
-  }
-
-  if (norm(row.address).includes(q)) return 30;
-  if (norm(row.brand).includes(q)) return 20;
-  return 0;
-}
+/* กฎการให้คะแนนอยู่ที่ ../wms-search.js — ย้ายออกไปเพื่อให้เทสต์แตะถึง
+   ตอนอยู่ในหน้านี้ไม่มีอะไรกันไม่ให้ลำดับเงื่อนไขสลับแล้วค้นผิดเงียบ ๆ */
+const norm = WmsSearch.norm;
+const digits = WmsSearch.digits;
+const score = WmsSearch.score;
 
 function search(raw) {
   const q = norm(raw), qd = digits(raw);
