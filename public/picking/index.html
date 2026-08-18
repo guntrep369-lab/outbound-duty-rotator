@@ -120,6 +120,10 @@
   .ps-chip.active{background:var(--primary);border-color:var(--primary);color:#fff}
   .ps-chip-alt{border-style:dashed;color:var(--muted)}
   .ps-hint{font-size:11px;color:var(--muted);margin-left:4px}
+  .ps-range{padding:5px 11px;border-radius:999px;border:1px solid var(--border2, var(--border));
+    background:var(--surface);font-family:var(--sans);font-size:12.5px;color:var(--text);
+    outline:none;min-width:210px}
+  .ps-range:focus{border-color:var(--primary)}
   .ps-mix{margin-left:8px;padding:2px 8px;border-radius:999px;background:var(--primary-light);
     color:var(--primary);font-size:11px;font-weight:600;vertical-align:middle}
   .ps-split{display:flex;flex-wrap:wrap;gap:4px 6px;margin-top:6px}
@@ -253,6 +257,7 @@
 <script src="../wms-order-index.js"></script>
 <script src="../wms-stock.js"></script>
 <script src="../wms-pick.js"></script>
+<script src="../wms-truck.js"></script>
 <script>
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
@@ -376,6 +381,24 @@ let pickFilter = 'all';  // 'all' | 'bed' | 'gift' — แยกใบให้�
 // ว่าง = แยกใบทุกขนส่ง · 1 เจ้า = ใบของเจ้านั้น · หลายเจ้า = รวมเป็นใบเดียว
 let pickCarriers = [];
 let pickPaper = 'a4';    // 'a4' | 'label' (150×100 มม.)
+/* ช่วงเลขคันที่ใช้แยกใบ เช่น "1-20, 21-60" — ว่าง = ไม่แยก
+   เก็บไว้ในเครื่อง เพราะทีมแบ่งกลุ่มแบบเดิมทุกวัน ไม่ควรต้องพิมพ์ใหม่ทุกเช้า */
+const TG_KEY = 'wms:pick:truckGroups';
+let truckGroups = (() => { try { return localStorage.getItem(TG_KEY) || ''; } catch (e) { return ''; } })();
+
+function setTruckGroups(v) {
+  truckGroups = v;
+  try { localStorage.setItem(TG_KEY, v); } catch (e) {}
+  renderPickSum();
+  // วาดใหม่แล้ว input ตัวเดิมหายไป ต้องคืนโฟกัสให้พิมพ์ต่อได้ไม่สะดุด
+  const el = document.getElementById('truckGroups');
+  if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+}
+
+/** ข้อมูลชุดนี้มีชื่อรถไหม — ขนส่งเจ้าอื่นไม่มีคอลัมน์นี้ */
+function anyTruck() {
+  return carriersOf().some(c => (c.data1 || []).concat(c.data2 || []).some(r => r.truck));
+}
 
 /**
  * สลับขนาดกระดาษที่จะพิมพ์
@@ -508,7 +531,29 @@ function renderPickSum() {
       }]
     : (keys.length ? sel : carriersOf()).map(c => ({ label: c.key, parts: null, rows: rowsOf(c), cars: [c] }));
 
-  groups.forEach(g => {
+  /* แยกใบตามกลุ่มคนรถ — แต่ละกลุ่มหยิบของกันคนละรอบ จึงต้องได้ยอดของตัวเอง
+     งานที่ดึงเลขคันไม่ได้ (เช่น "5 คัน" ของงาน Event) ไปรวมใบ "ไม่ระบุคัน"
+     ไม่ใช่กระจายเข้าใบใดใบหนึ่ง เพราะจะทำให้ทีมนั้นหยิบของที่ไม่ใช่งานตัวเอง */
+  const ranges = WmsTruck.parseRanges(truckGroups);
+  const groups2 = !ranges.length ? groups : groups.flatMap(g => {
+    const buckets = ranges.map(r => ({ label: r.label, rows: [] }));
+    /* แยกสองกรณีที่ต่างกันจริง: ไม่มีเลขคันเลย กับ มีเลขแต่อยู่นอกช่วงที่ตั้งไว้
+       ถ้ารวมเป็นก้อนเดียวชื่อ "ไม่ระบุคัน" งานของคัน 21 จะไปกองอยู่ในนั้นตอนที่
+       ตั้งช่วงไว้แค่ 1-20 แล้วคนอ่านจะเชื่อว่าคันนั้นไม่มีเลข ทั้งที่แค่ตั้งช่วงไม่ครบ */
+    const noNum = { label: 'ไม่ระบุคัน', rows: [] };
+    const outside = { label: 'นอกช่วงที่ตั้งไว้', rows: [] };
+    g.rows.forEach(r => {
+      const num = WmsTruck.numberOf(r.truck);
+      const i = WmsTruck.rangeIndex(num, ranges);
+      if (i >= 0) buckets[i].rows.push(r);
+      else (num == null ? noNum : outside).rows.push(r);
+    });
+    return buckets.concat(outside, noNum)
+      .filter(b => b.rows.length)
+      .map(b => ({ ...g, label: g.label + ' · ' + b.label, rows: b.rows }));
+  });
+
+  groups2.forEach(g => {
     const items = Object.values(WmsPick.aggregateSKUDemand(g.rows)).sort((a, b) =>
       a.type === b.type ? b.qty - a.qty : (a.type === 'bed' ? -1 : 1));
 
@@ -561,7 +606,15 @@ function renderPickSum() {
     (carriersOf().length > 1
       ? '<button class="ps-chip ps-chip-alt" onclick="selectAllPickCarriers()">➕ รวมทุกเจ้าเป็นใบเดียว</button>'
       : '') +
-    '<span class="ps-hint">เลือกได้หลายเจ้า — ที่เลือกจะรวมเป็นใบเดียว</span></div>';
+    '<span class="ps-hint">เลือกได้หลายเจ้า — ที่เลือกจะรวมเป็นใบเดียว</span></div>' +
+    /* ช่องกลุ่มคนรถ ขึ้นเฉพาะตอนที่ข้อมูลมีชื่อรถจริง — ขนส่งเจ้าอื่นไม่มีคอลัมน์นี้
+       การโชว์ช่องที่ใช้ไม่ได้คือการชวนให้กรอกแล้วสงสัยว่าทำไมไม่มีอะไรเกิดขึ้น */
+    (anyTruck() ? '<div class="ps-carriers no-print"><span class="ps-lbl">กลุ่มคนรถ</span>' +
+      '<input class="ps-range" id="truckGroups" value="' + esc(truckGroups) + '" ' +
+      'placeholder="เช่น 1-20, 21-60 — เว้นว่าง = ไม่แยก" ' +
+      'oninput="setTruckGroups(this.value)">' +
+      '<span class="ps-hint">แยกใบตามเลขคัน · งานที่ไม่มีเลขคันไปรวมใบ “ไม่ระบุคัน”</span></div>'
+      : '');
 
   const scopeTxt = keys.length > 1 ? ('รวม ' + keys.length + ' ขนส่งเป็นใบเดียว')
                  : keys.length === 1 ? esc(keys[0])

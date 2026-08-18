@@ -99,3 +99,77 @@ describe('stopMap — ลำดับจุดส่ง', () => {
     expect(WmsTruck.stopMap(null, read).size).toBe(0);
   });
 });
+
+/**
+ * แยกใบสรุปหยิบของตามกลุ่มคนรถ — ทีมแบ่งกันหยิบตามช่วงเลขคัน
+ *
+ * ตัวหลอกสำคัญคือ "5 คัน" (28% ของแถวจริง) ซึ่งแปลว่าใช้รถ 5 คัน ไม่ใช่คันที่ 5
+ * ถ้าดึงเลขมั่ว งาน Event ก้อนใหญ่จะไปโผล่ในใบของทีมที่ไม่ได้รับผิดชอบ
+ */
+describe('เลขคันจากชื่อรถ', () => {
+  it('อ่านเลขที่ตามหลังคำว่า "คัน"', () => {
+    expect(WmsTruck.numberOf('คัน21 .บัณฑิต')).toBe(21);
+    expect(WmsTruck.numberOf('คัน2 .บี-แมน')).toBe(2);
+    expect(WmsTruck.numberOf('คัน 41 ปัญญา + อุทัยวรรณ')).toBe(41);
+  });
+
+  it('"5 คัน" คือจำนวนคัน ไม่ใช่คันที่ 5', () => {
+    expect(WmsTruck.numberOf('5 คัน')).toBeNull();
+    expect(WmsTruck.numberOf('12 คัน')).toBeNull();
+  });
+
+  it('ไม่มีเลขหรือไม่มีค่า = ไม่รู้', () => {
+    for (const v of ['', null, undefined, 'รถบริษัท', 'Mon, Aug 17']) {
+      expect(WmsTruck.numberOf(v), String(v)).toBeNull();
+    }
+  });
+});
+
+describe('ช่วงเลขคัน', () => {
+  it('อ่าน "1-20, 21-60" เป็นสองกลุ่ม', () => {
+    expect(WmsTruck.parseRanges('1-20, 21-60')).toEqual([
+      { from: 1, to: 20, label: 'คัน 1-20' },
+      { from: 21, to: 60, label: 'คัน 21-60' },
+    ]);
+  });
+
+  it('รับเว้นวรรค ขึ้นบรรทัดใหม่ และคำว่า "ถึง"', () => {
+    expect(WmsTruck.parseRanges(' 1 - 20 \n21ถึง60 ').map((r) => r.label))
+      .toEqual(['คัน 1-20', 'คัน 21-60']);
+  });
+
+  it('เลขเดี่ยวคือคันเดียว', () => {
+    expect(WmsTruck.parseRanges('7')).toEqual([{ from: 7, to: 7, label: 'คัน 7' }]);
+  });
+
+  it('ช่วงกลับหัวหรือพิมพ์ไม่ครบ ทิ้งไป ไม่เดาให้', () => {
+    expect(WmsTruck.parseRanges('20-1')).toEqual([]);
+    expect(WmsTruck.parseRanges('1-, -20, abc, , 1--2')).toEqual([]);
+  });
+
+  it('ว่าง = ไม่แยกใบ', () => {
+    for (const v of ['', '   ', null, undefined]) expect(WmsTruck.parseRanges(v)).toEqual([]);
+  });
+});
+
+describe('จัดคันเข้ากลุ่ม', () => {
+  const R = () => WmsTruck.parseRanges('1-20, 21-60');
+
+  it('เข้าช่วงที่ถูก', () => {
+    expect(WmsTruck.rangeIndex(2, R())).toBe(0);
+    expect(WmsTruck.rangeIndex(20, R())).toBe(0);   // ขอบล่างต้องรวม
+    expect(WmsTruck.rangeIndex(21, R())).toBe(1);   // ขอบบนต้องรวม
+    expect(WmsTruck.rangeIndex(60, R())).toBe(1);
+  });
+
+  it('นอกทุกช่วง หรือไม่รู้เลขคัน = ไม่เข้ากลุ่มไหน', () => {
+    expect(WmsTruck.rangeIndex(61, R())).toBe(-1);
+    expect(WmsTruck.rangeIndex(0, R())).toBe(-1);
+    expect(WmsTruck.rangeIndex(null, R())).toBe(-1);
+  });
+
+  it('ช่วงซ้อนกัน เข้าช่วงแรกที่เจอ ไม่ใช่นับซ้ำสองใบ', () => {
+    const r = WmsTruck.parseRanges('1-30, 20-40');
+    expect(WmsTruck.rangeIndex(25, r)).toBe(0);
+  });
+});

@@ -22,6 +22,54 @@
   function isCount(s) { return /^\d+\s*คัน$/.test(String(s == null ? '' : s).trim()); }
 
   /**
+   * เลขคันจากชื่อรถ — "คัน21 .บัณฑิต" → 21
+   *
+   * ต้องเป็น "คัน" แล้วตามด้วยเลขเท่านั้น เพราะ "5 คัน" (เลขมาก่อน) แปลว่า
+   * ใช้รถ 5 คัน ไม่ใช่คันที่ 5 — ในข้อมูลจริงเป็นแบบหลังถึง 28% ของแถว
+   * ถ้าดึงมั่วงานก้อนใหญ่จะไปโผล่ผิดใบโดยไม่มีใครเห็น
+   */
+  function numberOf(name) {
+    var m = /^\s*คัน\s*(\d+)/.exec(String(name == null ? '' : name));
+    return m ? parseInt(m[1], 10) : null;
+  }
+
+  /**
+   * ข้อความช่วงเลขคัน → รายการกลุ่ม เช่น "1-20, 21-60" หรือ "1-20 21-60"
+   *
+   * รับเลขเดี่ยวได้ด้วย ("5" = คัน 5 คันเดียว) และคัดช่วงที่กลับหัวหรือพิมพ์
+   * ไม่ครบทิ้งเงียบ ๆ ไม่ใช่เดาว่าผู้ใช้หมายถึงอะไร
+   *
+   * @returns {Array<{from:number,to:number,label:string}>}
+   */
+  function parseRanges(text) {
+    var out = [];
+    String(text == null ? '' : text).split(/[,\n]/).forEach(function (part) {
+      var s = part.trim();
+      if (!s) return;
+      var m = /^(\d+)\s*(?:-|–|ถึง)\s*(\d+)$/.exec(s);
+      if (m) {
+        var a = parseInt(m[1], 10), b = parseInt(m[2], 10);
+        if (a <= b) out.push({ from: a, to: b, label: 'คัน ' + a + '-' + b });
+        return;
+      }
+      if (/^\d+$/.test(s)) {
+        var n = parseInt(s, 10);
+        out.push({ from: n, to: n, label: 'คัน ' + n });
+      }
+    });
+    return out;
+  }
+
+  /** ช่วงแรกที่ครอบเลขนี้ — ไม่เข้าช่วงไหนคืน -1 */
+  function rangeIndex(num, ranges) {
+    if (num == null) return -1;
+    for (var i = 0; i < (ranges || []).length; i++) {
+      if (num >= ranges[i].from && num <= ranges[i].to) return i;
+    }
+    return -1;
+  }
+
+  /**
    * แผนที่ เลขออเดอร์ → { truck, time, seq, stops, numbered }
    *
    * ลำดับจุดส่งนับจาก "ลูกค้า" ที่พบ ไม่ใช่ลำดับแถว — หลายแถวของลูกค้าคนเดียว
@@ -62,5 +110,8 @@
     return map;
   }
 
-  window.WmsTruck = { isCount: isCount, stopMap: stopMap };
+  window.WmsTruck = {
+    isCount: isCount, stopMap: stopMap,
+    numberOf: numberOf, parseRanges: parseRanges, rangeIndex: rangeIndex,
+  };
 })();
