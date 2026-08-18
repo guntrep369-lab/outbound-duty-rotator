@@ -123,6 +123,12 @@
     .ps-short{background:#fff!important;border:1.5px solid #000;color:#000!important}
     .ps-warn{background:#fff!important;border:1.5px solid #000;color:#000!important}
   }
+  /* แถบทำใบเบิก — อยู่เหนือใบทั้งหมด เพราะเป็นสิ่งที่ต้องทำก่อนออกไปหยิบ */
+  .ps-qabar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;
+    padding:9px 14px;border-radius:10px;background:#FEF2F2;border:1px solid #FCA5A5;
+    color:#991B1B;font-size:12.5px}
+  .ps-qabar b{font-weight:800}
+  .ps-cannot{color:#7C2D12;font-weight:600}
   .ps-sep{width:1px;height:18px;background:var(--border);margin:0 4px}
   .ps-carriers{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px}
   .ps-chip{padding:5px 13px;border-radius:999px;border:1px solid var(--border);background:var(--surface);
@@ -269,6 +275,7 @@
 <script src="../wms-phone.js"></script>
 <script src="../wms-order-index.js"></script>
 <script src="../wms-stock.js"></script>
+<script src="../wms-draft.js"></script>
 <script src="../wms-pick.js"></script>
 <script src="../wms-truck.js"></script>
 <script>
@@ -526,6 +533,9 @@ function renderPickSum() {
   const srcName = pickSource === 1 ? 'Sheet Daily Logis (รอบเช้า)' : 'Sheet Daily CRM';
   let html = '';
   let grand = 0;
+  /* ของที่ขาดข้ามทุกใบ รวมเป็น SKU เดียวกันครั้งเดียว — ใบเบิกย้ายของทั้งคลัง
+     ถ้าสองใบขาด SKU เดียวกันแล้วขอทั้งสองครั้ง จะได้ใบเบิกที่ขอเกินจริง */
+  SHORTAGE = new Map();
 
   // ชิปที่เลือกไว้อาจชี้ขนส่งที่หายไปหลังดึงข้อมูลรอบใหม่
   const keys = pickCarriers.filter(k => carriersOf().some(c => c.key === k));
@@ -633,6 +643,13 @@ function renderPickSum() {
         '<div class="ps-meta">' + esc(srcName) + ' · ' + esc(when) + esc(scope) + '</div>' + split +
         (() => {
           const short = shortLines(shown);
+          short.forEach(x => {
+            /* บวกข้ามใบ ไม่ใช่เอาค่ามากสุด — แต่ละใบเป็นคนละก้อนไม่ทับกัน
+               (คนละขนส่ง หรือคนละกลุ่มรถ) ของ SKU เดียวกันที่ขาดในสองใบจึงเป็น
+               ความต้องการที่ต้องขนมาให้ครบทั้งสองก้อน ถ้าเอาค่ามากสุดจะขอขาด */
+            const cur = SHORTAGE.get(x.sku);
+            SHORTAGE.set(x.sku, { sku: x.sku, name: PN(x), qty: (cur ? cur.qty : 0) + x.qty });
+          });
           if (!short.length) return '';
           const pcs = short.reduce((n, x) => n + x.qty, 0);
           return '<div class="ps-warn">⚠ ' + short.length + ' รายการ (' + pcs +
@@ -693,7 +710,7 @@ function renderPickSum() {
   host.className = 'ps-papermode';
   host.innerHTML = chips +
     '<div class="ps-grand no-print">รวม <b>' + grand + '</b> ชิ้น · ' +
-    scopeTxt + ' · จาก ' + esc(srcName) + '</div>' + html;
+    scopeTxt + ' · จาก ' + esc(srcName) + '</div>' + shortageBar() + html;
 
   // เรียกตรง ๆ ไม่ผ่าน requestAnimationFrame — rAF ถูก throttle เมื่อแท็บ/เฟรม
   // ไม่ได้อยู่หน้าจอ ทำให้เส้นแบ่งหน้าไม่ถูกวาด ส่วนการอ่าน scrollHeight
@@ -818,6 +835,64 @@ function shortLines(list) {
   const m = stockMap();
   if (!Object.keys(m).length) return [];
   return list.filter(x => { const s = m[x.sku]; return s && s.newwh < x.qty; });
+}
+
+/** ของที่ขาดของทุกใบรวมกัน ตั้งใหม่ทุกครั้งที่วาด */
+let SHORTAGE = new Map();
+
+/**
+ * แบ่งของที่ขาดออกเป็น "เบิกได้" กับ "เบิกไม่ได้"
+ *
+ * ขอเท่าที่ขาดจริง (ที่ต้องใช้ − ที่หน้าคลังมี) ไม่ใช่ทั้งบรรทัด เพราะของที่อยู่
+ * หน้าคลังแล้วไม่ต้องขนมาอีก
+ *
+ * ขอเกินกว่าที่ QA มีไม่ได้ — ใบเบิกคือการขอย้ายของที่มีอยู่จริง ไม่ใช่การสั่งของ
+ * บรรทัดที่ QA เองก็ไม่พอจึงแยกออกมาบอกต่างหาก เพราะใบเบิกแก้ให้ไม่ได้
+ */
+function splitShortage() {
+  const m = stockMap();
+  const can = [], cannot = [];
+  SHORTAGE.forEach(x => {
+    const s = m[x.sku];
+    if (!s) return;
+    const need = x.qty - s.newwh;
+    if (need <= 0) return;
+    if (s.qa >= need) can.push({ sku: x.sku, name: x.name, qty: need });
+    else if (s.qa > 0) { can.push({ sku: x.sku, name: x.name, qty: s.qa }); cannot.push({ ...x, short: need - s.qa }); }
+    else cannot.push({ ...x, short: need });
+  });
+  return { can, cannot };
+}
+
+function shortageBar() {
+  if (!SHORTAGE.size) return '';
+  const { can, cannot } = splitShortage();
+  if (!can.length && !cannot.length) return '';
+  const pcs = can.reduce((n, x) => n + x.qty, 0);
+  return '<div class="ps-qabar no-print">' +
+    (can.length
+      ? '<span>ต้องขนจาก QA มาหน้าคลัง <b>' + can.length + '</b> รายการ · <b>' + pcs + '</b> ชิ้น</span>' +
+        '<button class="btn btn-primary btn-sm" onclick="makeQaRequisition()">📝 ทำใบเบิก QA</button>'
+      : '<span>มีของขาดแต่ QA ก็ไม่มีของ — ใบเบิกช่วยไม่ได้</span>') +
+    (cannot.length
+      ? '<span class="ps-cannot">⚠ ' + cannot.length + ' รายการ QA มีไม่พอด้วย ต้องหาทางอื่น</span>'
+      : '') + '</div>';
+}
+
+/**
+ * ส่งของที่ขาดเข้าใบเบิก โดยกรอกมาให้แล้ว
+ *
+ * ใช้ทางเดียวกับที่หน้าสต๊อกกับแท็บเช็คสต๊อกใช้ (WmsDraft) — ถ้าทำทางที่สอง
+ * วันหนึ่งสองทางจะกรอกใบเบิกคนละแบบแล้วไม่มีใครรู้ว่าอันไหนถูก
+ */
+function makeQaRequisition() {
+  const { can } = splitShortage();
+  if (!can.length) return;
+  if (!WmsDraft.put('requisition', can, { from: 'QA', to: 'NEW WH-2', src: 'ใบสรุปหยิบของ' })) {
+    alert('ส่งรายการไปใบเบิกไม่ได้ — เบราว์เซอร์ไม่ยอมให้เก็บข้อมูลชั่วคราว');
+    return;
+  }
+  location.href = '../warehouse-forms/requisition.html';
 }
 
 /* ── แถบแหล่งข้อมูล ─────────────────────────────────────────────────────── */
