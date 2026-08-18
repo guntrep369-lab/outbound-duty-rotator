@@ -172,6 +172,16 @@ body {
 .dnote{display:none;padding:8px 20px;background:#FFFBEB;border-bottom:1px solid #FDE68A;
   font-size:12.5px;line-height:1.65;color:#92400E}
 .dnote div + div{margin-top:3px}
+/* ตารางเทียบหัวคอลัมน์กับค่าที่อยู่ใต้มัน — ใช้ตอนสงสัยว่าชีตส่งอะไรมากันแน่ */
+.crep{margin-top:8px;background:var(--surface);border:1px solid #FDE68A;border-radius:8px;
+  padding:8px 10px;overflow-x:auto}
+.crep + .crep{margin-top:6px}
+.crep table{border-collapse:collapse;width:100%;margin-top:5px;font-size:12px}
+.crep td{padding:3px 7px;border-top:1px solid var(--border);vertical-align:top}
+.crep tr:first-child td{border-top:0}
+.crep-i{font-family:ui-monospace,Menlo,monospace;color:var(--muted);width:1%;white-space:nowrap}
+.crep-h{font-weight:600;color:#92400E;white-space:nowrap}
+.crep-v{color:var(--text);word-break:break-word}
 .ddot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex-shrink:0}
 .ddot.on{background:#16A34A} .ddot.wait{background:#F59E0B} .ddot.off{background:#CBD5E1}
 .ddot.old{background:#DC2626}

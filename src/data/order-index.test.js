@@ -222,6 +222,22 @@ describe('จับตอนอ่านผิดช่อง', () => {
     expect(msgs.every((m) => m.startsWith('รถบริษัท'))).toBe(true);
   });
 
+  it('รายงานหัวคอลัมน์ บอกหัวคู่กับค่าที่อยู่ใต้มันจริง แยกตามชีต', () => {
+    const rep = OrderIndex.columnReport(OrderIndex.parsePayload({
+      carriers: [{
+        key: 'รถบริษัท',
+        sheet1: [{ 'ชื่อรถ': 'คัน21', 'Order ID': 'AA-1', 'ชื่อลูกค้า': '' }],
+        sheet2: [{ 'Order ID': 'AA-1', 'ชื่อลูกค้า': 'คุณโสภา' }],
+      }],
+    }));
+    expect(rep.map((s) => s.sheet)).toEqual(['รถบริษัท · Logis', 'รถบริษัท · CRM']);
+    // ลำดับคอลัมน์ต้องตรงกับที่ชีตส่งมา ไม่งั้นตัวอักษร A/B/C ที่แสดงจะชี้ผิดช่อง
+    expect(rep[0].cols.map((c) => c.header)).toEqual(['ชื่อรถ', 'Order ID', 'ชื่อลูกค้า']);
+    expect(rep[0].cols[0].values).toEqual(['คัน21']);
+    expect(rep[0].cols[2].values).toEqual([]);   // ว่างต้องเห็นว่าว่าง
+    expect(rep[1].cols[1].values).toEqual(['คุณโสภา']);
+  });
+
   it('ยังไม่มีข้อมูลก็ไม่ใช่เรื่องผิด', () => {
     expect(OrderIndex.sanity([])).toEqual([]);
     expect(OrderIndex.sanity(carriersOf([]))).toEqual([]);

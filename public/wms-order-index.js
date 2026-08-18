@@ -139,6 +139,34 @@
     }
   }
 
+  /**
+   * หัวคอลัมน์ที่ชีตส่งมา คู่กับค่าที่อยู่ใต้มันจริง ๆ
+   *
+   * มีไว้ตอบคำถามเดียว: ป้ายตรงกับของข้างในไหม ซึ่งเป็นคำถามที่เดาจากไฟล์
+   * ที่ export มาดูไม่ได้ เพราะไฟล์ที่ดาวน์โหลดกับชีตที่สคริปต์อ่านอาจคนละรุ่นกัน
+   *
+   * @returns {Array<{sheet, cols: Array<{header, values}>}>}
+   */
+  function columnReport(carriers) {
+    var out = [];
+    (carriers || []).forEach(function (c) {
+      [['Logis', c.raw1], ['CRM', c.raw2]].forEach(function (pair) {
+        var rows = pair[1] || [];
+        if (!rows.length) return;
+        var cols = Object.keys(rows[0]).map(function (h) {
+          return {
+            header: h,
+            values: rows.map(function (r) {
+              return String(r[h] == null ? '' : r[h]).replace(/\s+/g, ' ').slice(0, 60);
+            }).filter(function (v) { return v !== ''; }),
+          };
+        });
+        out.push({ sheet: (c.key || '') + ' · ' + pair[0], cols: cols });
+      });
+    });
+    return out;
+  }
+
   function sanity(carriers) {
     var out = [];
     (carriers || []).forEach(function (c) {
@@ -216,6 +244,11 @@
           key: car.key,
           data1: convertGASRows(car.sheet1 || []),
           data2: convertGASRows(car.sheet2 || []),
+          /* เก็บแถวดิบไว้ 2 แถวต่อชีต ไว้ตอบคำถาม "หัวคอลัมน์ไหนได้ค่าอะไร"
+             จากข้อมูลที่ดึงมาจริง ไม่ใช่จากไฟล์ที่ export มาดูซึ่งอาจคนละรุ่น
+             เท่านี้พอให้เห็นว่าป้ายตรงกับของข้างในไหม และไม่กินที่เก็บ */
+          raw1: (car.sheet1 || []).slice(0, 2),
+          raw2: (car.sheet2 || []).slice(0, 2),
           error1: car.error1 || null,
           error2: car.error2 || null,
           /* v4: วันที่มาจากชีต ไม่ใช่จากปฏิทิน ทีมทำงานล่วงหน้าเป็นเรื่องปกติ
@@ -257,6 +290,7 @@
     parsePayload: parsePayload,
     pull: pull,
     sanity: sanity,
+    columnReport: columnReport,
 
     /* URL เป็นของ WmsSettings — ที่นี่แค่ส่งต่อ เพื่อไม่ให้ชื่อคีย์อยู่สองไฟล์ */
     savedUrl: function () { return window.WmsSettings ? WmsSettings.orderUrl() : ''; },

@@ -1923,8 +1923,45 @@ function renderCarrierNotes() {
   // อ่านผิดช่องมาก่อนทุกเรื่อง — เรื่องอื่นคือข้อมูลขาด เรื่องนี้คือข้อมูลผิด
   // ทั้งแผงโดยหน้าจอยังดูปกติ ซึ่งอันตรายกว่าการไม่มีข้อมูลเลย
   notes.unshift(...OrderIndex.sanity(carriersData));
-  el.innerHTML = notes.map(n => `<div>⚠️ ${esc(n)}</div>`).join('');
-  el.style.display = notes.length ? 'block' : 'none';
+  el.innerHTML = notes.map(n => `<div>⚠️ ${esc(n)}</div>`).join('') +
+    (carriersData.length
+      ? `<div><button class="dlink" onclick="toggleColumnReport()">🔍 ดูหัวคอลัมน์ที่ดึงมา</button></div><div id="colrep"></div>`
+      : '');
+  el.style.display = (notes.length || carriersData.length) ? 'block' : 'none';
+}
+
+/**
+ * หัวคอลัมน์ที่ชีตส่งมาจริง คู่กับค่าที่อยู่ใต้มัน
+ *
+ * มีไว้ตอบคำถามเดียวที่เดาไม่ได้จากไฟล์ที่ export มาดู — ป้ายตรงกับของข้างในไหม
+ * เพราะไฟล์ที่ดาวน์โหลดมากับชีตที่สคริปต์อ่านจริงอาจคนละรุ่นกัน และการเถียงกัน
+ * ว่าใครถูกโดยไม่มีข้อมูลสดตรงหน้าเสียเวลาไปแล้วหลายรอบ
+ */
+function toggleColumnReport() {
+  const box = document.getElementById('colrep');
+  if (!box) return;
+  if (box.innerHTML) { box.innerHTML = ''; return; }
+  const rep = OrderIndex.columnReport(carriersData);
+  if (!rep.length) {
+    box.innerHTML = '<div>ยังไม่มีข้อมูลดิบเก็บไว้ — กดดึงข้อมูลใหม่อีกครั้ง</div>';
+    return;
+  }
+  box.innerHTML = rep.map(sh =>
+    `<div class="crep"><b>${esc(sh.sheet)}</b><table>` +
+    sh.cols.map((c, i) =>
+      `<tr><td class="crep-i">${colLetter(i)}</td>` +
+      `<td class="crep-h">${esc(c.header) || '<i>(หัวว่าง)</i>'}</td>` +
+      `<td class="crep-v">${esc(c.values.join(' · ')) || '<span class="dim">(ว่าง)</span>'}</td></tr>`
+    ).join('') + '</table></div>').join('');
+}
+
+/** 0→A, 25→Z, 26→AA — ให้ตรงกับที่เห็นบนหัวคอลัมน์ของ Google Sheet */
+function colLetter(i) {
+  let s = '';
+  for (let n = i; n >= 0; n = Math.floor(n / 26) - 1) {
+    s = String.fromCharCode(65 + (n % 26)) + s;
+  }
+  return s;
 }
 
 function toggleUpload() {
