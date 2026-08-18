@@ -126,12 +126,61 @@
     }
   }
 
+  /**
+   * แถวจากการดึงออเดอร์ → รูปแบบเดียวกับไฟล์รถบริษัท
+   *
+   * ชีต Logis เพิ่มคอลัมน์จนหน้าตาเกือบเท่าไฟล์รถแล้ว ต่างกันแค่ "เครื่องรูดบัตร"
+   * แปลงตรงนี้ครั้งเดียว หน้าใบงานขนส่งกับหน้าแจ้งคนขับที่เขียนไว้กับตำแหน่ง
+   * คอลัมน์ของไฟล์จึงใช้ข้อมูลจากการดึงออเดอร์ได้เลย โดยไม่ต้องรื้อทั้งสองหน้า
+   *
+   * เอาเฉพาะแถวที่รู้คันรถ — สองหน้านั้นจัดกลุ่มงานตามคันรถ แถวที่ไม่มีคันรถ
+   * (ขนส่งเจ้าอื่น) ไม่ใช่งานของรถบริษัทและจะกลายเป็นกลุ่ม "ไม่ระบุ" ลอย ๆ
+   *
+   * @param {Array} rows ดัชนีค้นหาจาก OrderIndex.get().rows
+   * @returns {Array<Array>} แถวแบบเดียวกับที่อ่านจากไฟล์
+   */
+  function fromOrders(rows) {
+    var out = [];
+    (rows || []).forEach(function (r) {
+      if (!r.truck) return;
+      var a = [];
+      a[COLS.truck] = r.truck || '';
+      a[COLS.date] = r.date || '';
+      a[COLS.sup] = r.sup || '';
+      a[COLS.order] = r.orderID || '';
+      a[COLS.brand] = r.brand || '';
+      a[COLS.size] = r.size || '';
+      a[COLS.qty] = r.qty1 == null ? '' : r.qty1;
+      a[COLS.gift] = r.giftRaw || '';
+      a[COLS.giftQty] = r.qtyRaw || '';
+      a[COLS.customer] = r.customer || '';
+      a[COLS.phone1] = r.phone1 || '';
+      a[COLS.phone2] = r.phone2 || '';
+      a[COLS.address] = r.address || '';
+      a[COLS.time] = r.apptTime || '';
+      a[COLS.payment] = r.payment || '';
+      a[COLS.remark] = r.remark || '';
+      a[COLS.platform] = r.platform || '';
+      a[COLS.cardMachine] = r.cardMachine || '';
+      for (var i = 0; i < a.length; i++) if (a[i] === undefined) a[i] = '';
+      out.push(a);
+    });
+    return out;
+  }
+
+  /** ชีตออเดอร์บอกเครื่องรูดบัตรมาด้วยหรือยัง — ยังไม่บอก = ต้องพึ่งไฟล์รถต่อ */
+  function hasCardMachine(rows) {
+    return (rows || []).some(function (r) { return String(r.cardMachine || '').trim() !== ''; });
+  }
+
   window.TransportFile = {
     /** ตำแหน่งคอลัมน์ชุดเดียวของทั้งโมดูล */
     COLS: COLS,
     checkHeader: checkHeader,
     fileDate: fileDate,
     fileDates: fileDates,
+    fromOrders: fromOrders,
+    hasCardMachine: hasCardMachine,
 
     /** Rows + file name of the loaded file, or null. */
     get: read,

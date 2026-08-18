@@ -107,3 +107,60 @@ describe('checkHeader', () => {
     }
   });
 });
+
+/**
+ * ชีต Logis เพิ่มคอลัมน์จนเกือบเท่าไฟล์รถแล้ว เหลือต่างกันแค่ "เครื่องรูดบัตร"
+ * fromOrders แปลงข้อมูลที่ดึงมาให้อยู่รูปเดียวกับไฟล์ หน้าใบงานขนส่งกับหน้าแจ้ง
+ * คนขับที่เขียนไว้กับตำแหน่งคอลัมน์จึงใช้ได้โดยไม่ต้องแก้
+ */
+describe('fromOrders — ข้อมูลจากการดึงออเดอร์ ให้หน้าที่เขียนไว้กับไฟล์ใช้ได้', () => {
+  const C = () => TransportFile.COLS;
+
+  const orderRow = (over = {}) => ({
+    truck: 'คัน21 .บัณฑิต', date: '2026-08-19', sup: 'Lunio', orderID: 'M/E-00109',
+    brand: 'Lunio Gen 4 (LNO0000000213)', size: 'King', qty1: 2,
+    giftRaw: 'แถม-หมอนหนุน', qtyRaw: '1', customer: 'เสือ ธนากร',
+    phone1: '083-8187834', phone2: '', address: 'โรบินสัน ศรีสมาน',
+    apptTime: '22.00น', payment: 'จ่ายแล้ว', remark: 'งาน Event',
+    platform: '98988,', cardMachine: '', ...over,
+  });
+
+  it('วางค่าลงตรงตำแหน่งเดียวกับที่อ่านจากไฟล์', () => {
+    const [r] = TransportFile.fromOrders([orderRow()]);
+    const c = C();
+    expect(r[c.truck]).toBe('คัน21 .บัณฑิต');
+    expect(r[c.order]).toBe('M/E-00109');
+    expect(r[c.brand]).toBe('Lunio Gen 4 (LNO0000000213)');
+    expect(r[c.qty]).toBe(2);
+    expect(r[c.customer]).toBe('เสือ ธนากร');
+    expect(r[c.address]).toBe('โรบินสัน ศรีสมาน');
+    expect(r[c.time]).toBe('22.00น');
+    expect(r[c.payment]).toBe('จ่ายแล้ว');
+    expect(r[c.remark]).toBe('งาน Event');
+    expect(r[c.platform]).toBe('98988,');
+  });
+
+  it('ยาวเท่าจำนวนคอลัมน์จริง และไม่มีช่อง undefined ให้หน้าอื่นไปเจอ', () => {
+    const [r] = TransportFile.fromOrders([orderRow()]);
+    expect(r).toHaveLength(Object.keys(C()).length);
+    expect(r.every((v) => v !== undefined)).toBe(true);
+  });
+
+  it('ตัดแถวที่ไม่รู้คันรถทิ้ง — ขนส่งเจ้าอื่นไม่ใช่งานของรถบริษัท', () => {
+    const rows = TransportFile.fromOrders([
+      orderRow(), orderRow({ truck: '', orderID: 'KX-1' }), orderRow({ orderID: 'M/E-2' }),
+    ]);
+    expect(rows.map((r) => r[C().order])).toEqual(['M/E-00109', 'M/E-2']);
+  });
+
+  it('ไม่มีแถวเลยก็ต้องไม่พัง', () => {
+    expect(TransportFile.fromOrders([])).toEqual([]);
+    expect(TransportFile.fromOrders(null)).toEqual([]);
+  });
+
+  it('hasCardMachine บอกตรง ๆ ว่าชีตให้ข้อมูลเครื่องรูดบัตรมาหรือยัง', () => {
+    expect(TransportFile.hasCardMachine([orderRow()])).toBe(false);
+    expect(TransportFile.hasCardMachine([orderRow({ cardMachine: 'เครื่อง 3' })])).toBe(true);
+    expect(TransportFile.hasCardMachine([])).toBe(false);
+  });
+});

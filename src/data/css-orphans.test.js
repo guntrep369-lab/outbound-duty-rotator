@@ -13,11 +13,15 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import { htmlPages } from './pages.js';
 
 const PUB = path.resolve(__dirname, '../../public');
 
-/** คลาสที่ตั้งใจไม่มี CSS — เป็นที่เกาะให้ JS หรือ data attribute เท่านั้น */
-const ALLOW = new Set([]);
+/**
+ * คลาสที่ตั้งใจไม่มี CSS — เป็นที่เกาะให้ JS เท่านั้น ไม่ได้ใช้จัดหน้าตา
+ * WhShared.fillDepts() หา select.dept / select.wh เพื่อเติมรายการแผนกกับคลัง
+ */
+const ALLOW = new Set(['dept', 'wh']);
 
 function read(p) { return fs.readFileSync(p, 'utf8'); }
 
@@ -47,9 +51,7 @@ function classesInCss(html, dir) {
   return out;
 }
 
-const pages = fs.readdirSync(PUB, { withFileTypes: true })
-  .filter((d) => d.isDirectory() && fs.existsSync(path.join(PUB, d.name, 'index.html')))
-  .map((d) => ({ name: d.name, file: path.join(PUB, d.name, 'index.html') }));
+const pages = htmlPages();
 
 describe('คลาสใน markup ต้องมี CSS จริง', () => {
   it('เจอหน้าโมดูลครบ', () => {

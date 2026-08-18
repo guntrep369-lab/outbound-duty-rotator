@@ -97,6 +97,7 @@ table.pod-tbl tr:nth-child(even) td{background:#f9f9f9}
 <script src="../../wms-settings.js"></script>
 <script src="../../wms-gas.js"></script>
 <script src="../transport-file.js"></script>
+<script src="../../wms-order-index.js"></script>
 </head>
 <body data-wms-module="transport">
 
@@ -576,20 +577,42 @@ document.getElementById('logoInput').addEventListener('change', function(e) {
   r.onload = function(ev) {
     setLogo(ev.target.result);
     // ถ้ากำลังดูใบอยู่ ให้วาดใหม่จะได้เห็นโลโก้ทันที ไม่ต้องอัปไฟล์ซ้ำ
-    if (LAST_BODY && document.getElementById('main-screen').style.display !== 'none') render(LAST_BODY);
+    if (LAST_BODY && document.getElementById('doc-screen').style.display !== 'none') render(LAST_BODY);
   };
   r.readAsDataURL(e.target.files[0]);
   e.target.value = '';   // เลือกไฟล์เดิมซ้ำได้
 });
 showLogo();
 
-/* ไฟล์ถูกอัปที่หน้าอื่นแล้ว → สร้างเลย ไม่ต้องอัปซ้ำ */
+/* ไฟล์ถูกอัปที่หน้าอื่นแล้ว → สร้างเลย ไม่ต้องอัปซ้ำ
+   ไม่มีไฟล์ก็ยังสร้างได้ ถ้าดึงออเดอร์ไว้แล้วและชีตบอกชื่อรถมาด้วย */
 (function(){
-  var f=window.TransportFile && TransportFile.get(); if(!f) return;
-  render(f.rows);
-  var host=document.createElement('div');
-  document.getElementById('main-screen').prepend(host);
-  TransportFile.renderBar(host, function(){ resetApp(); });
+  var f = window.TransportFile && TransportFile.get();
+  if (f) {
+    render(f.rows);
+    var host = document.createElement('div');
+    document.getElementById('doc-screen').prepend(host);
+    TransportFile.renderBar(host, function(){ resetApp(); });
+    return;
+  }
+
+  var idx = window.OrderIndex && OrderIndex.get();
+  var orderRows = idx ? idx.rows : [];
+  var rows = window.TransportFile ? TransportFile.fromOrders(orderRows) : [];
+  if (!rows.length) return;
+  render(rows);
+
+  /* เครื่องรูดบัตรเป็นช่องเดียวที่ชีตออเดอร์ยังไม่มี และบล็อกในใบจะถูกข้ามเงียบ ๆ
+     เมื่อไม่มีข้อมูล — คนขับที่ถือกระดาษออกไปจะไม่มีทางรู้ว่าขาด จึงต้องบอกบนจอ
+     ก่อนกดพิมพ์ ไม่ใช่ปล่อยให้เงียบ พอทีม Logis เติมคอลัมน์ คำเตือนจะหายเอง */
+  var note = document.createElement('div');
+  note.className = 'no-print';
+  note.style.cssText = 'padding:10px 14px;margin-bottom:10px;border-radius:8px;' +
+    'background:#FFFBEB;border:1px solid #FDE68A;color:#92400E;font-size:13px;line-height:1.6';
+  note.innerHTML = '📄 ใบนี้สร้างจาก<b>ข้อมูลที่ดึงออเดอร์ไว้</b> ไม่ได้ใช้ไฟล์รถบริษัท' +
+    (TransportFile.hasCardMachine(orderRows) ? ''
+      : ' — <b>ยังไม่มีข้อมูลเครื่องรูดบัตร</b> ถ้างานรอบนี้ต้องเบิกเครื่อง ให้อัปไฟล์รถแทน');
+  document.getElementById('doc-screen').prepend(note);
 })();
 </script>
 </div><!-- /.wms-main -->

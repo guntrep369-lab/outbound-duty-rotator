@@ -15,6 +15,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import { htmlPages } from './pages.js';
 
 const PUB = path.resolve(__dirname, '../../public');
 
@@ -58,9 +59,7 @@ function idsQueried(js) {
   return out;
 }
 
-const pages = fs.readdirSync(PUB, { withFileTypes: true })
-  .filter((d) => d.isDirectory() && fs.existsSync(path.join(PUB, d.name, 'index.html')))
-  .map((d) => ({ name: d.name, file: path.join(PUB, d.name, 'index.html') }));
+const pages = htmlPages();
 
 describe('#id ที่ JS หยิบ ต้องมีอยู่จริงบนหน้านั้น', () => {
   for (const p of pages) {

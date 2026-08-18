@@ -23,7 +23,7 @@
    */
   var FIELDS = ['orderID', 'consign', 'sup', 'customer', 'address', 'phone1', 'phone2',
                 'brand', 'size', 'qty1', 'giftRaw', 'qtyRaw', 'payment', 'remark', 'date',
-                'apptTime', 'truck'];
+                'apptTime', 'truck', 'platform', 'cardMachine'];
 
   function pick(row) {
     var o = {};
@@ -227,6 +227,11 @@
              ชีต CRM และขนส่งเจ้าอื่นไม่มีคอลัมน์นี้ ค่าจึงว่าง ซึ่งถูกแล้ว
              เพราะมีแต่รถบริษัทที่แบ่งงานเป็นคัน */
           truck: apptOf(r['ชื่อรถ'] || ''),
+          /* สองช่องนี้ชีตออเดอร์เพิ่งจะมี และเป็นสองช่องสุดท้ายที่ไฟล์รถบริษัท
+             ให้ได้แต่การดึงออเดอร์ให้ไม่ได้ — พอมีครบ ขั้นตอนรออัปไฟล์ก็หมดหน้าที่
+             เครื่องรูดบัตรยังไม่มีในชีต ค่าจะว่างจนกว่าทีม Logis จะเติมคอลัมน์ */
+          platform: String(r['Platform_Order'] || '').trim(),
+          cardMachine: String(r['เครื่องรูดบัตร'] || '').trim(),
         };
       });
   }

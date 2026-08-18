@@ -77,6 +77,7 @@
 <script src="../../wms-settings.js"></script>
 <script src="../../wms-gas.js"></script>
 <script src="../transport-file.js"></script>
+<script src="../../wms-order-index.js"></script>
 </head>
 <body data-wms-module="transport">
 
@@ -360,10 +361,22 @@ function showCopied(){
  setTimeout(()=>{btn.textContent=' คัดลอกข้อความ';btn.classList.remove('copied');},2500);
 }
 
-/* ไฟล์ถูกอัปที่หน้าอื่นแล้ว → สร้างเลย ไม่ต้องอัปซ้ำ */
+/* ไฟล์ถูกอัปที่หน้าอื่นแล้ว → สร้างเลย ไม่ต้องอัปซ้ำ
+   ไม่มีไฟล์ก็ยังสร้างได้ ถ้าดึงออเดอร์ไว้แล้วและชีตบอกชื่อรถมาด้วย
+
+   ข้อความแจ้งคนขับจะใส่บรรทัด "เครื่องรูดบัตร:" เฉพาะตอนมีข้อมูล ถ้าไม่มีจะเงียบ
+   จึงติดป้ายบอกที่มาไว้ ไม่ให้เข้าใจว่ารอบนี้ไม่ต้องเบิกเครื่อง */
 (function(){
-  var f=window.TransportFile && TransportFile.get(); if(!f) return;
-  LOADED_FILE=f.fileName; buildApp(f.rows);
+  var f = window.TransportFile && TransportFile.get();
+  if (f) { LOADED_FILE = f.fileName; buildApp(f.rows); return; }
+
+  var idx = window.OrderIndex && OrderIndex.get();
+  var orderRows = idx ? idx.rows : [];
+  var rows = window.TransportFile ? TransportFile.fromOrders(orderRows) : [];
+  if (!rows.length) return;
+  LOADED_FILE = 'จากข้อมูลที่ดึงออเดอร์ไว้' +
+    (TransportFile.hasCardMachine(orderRows) ? '' : ' (ยังไม่มีข้อมูลเครื่องรูดบัตร)');
+  buildApp(rows);
 })();
 </script>
 </div><!-- /.wms-main -->
