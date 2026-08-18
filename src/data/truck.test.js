@@ -173,3 +173,45 @@ describe('จัดคันเข้ากลุ่ม', () => {
     expect(WmsTruck.rangeIndex(25, r)).toBe(0);
   });
 });
+
+/**
+ * ปุ่มล็อกกลุ่มรถในหน้าสรุปหยิบของ — รถบริษัท (คัน 1-20) กับ รถเสริม (คัน 21-60)
+ *
+ * ต้องแยกสี่ช่องจากกัน ไม่ใช่สาม: คันที่มีเลขแต่อยู่นอกทุกกลุ่ม (เช่น คัน75)
+ * ไม่เหมือนคันที่ไม่มีเลขเลย ("5 คัน") ถ้ารวมกันแล้วติดป้าย "ไม่ระบุคัน"
+ * คนอ่านจะเชื่อว่าคัน75 ไม่มีเลข ทั้งที่กลุ่มที่ตั้งไว้ยังไปไม่ถึงมัน
+ */
+describe('ปุ่มล็อกกลุ่มรถ', () => {
+  it('กลุ่มตรงตามที่ทีมใช้เรียก', () => {
+    expect(WmsTruck.TRUCK_TEAMS.map((t) => [t.label, t.from, t.to]))
+      .toEqual([['รถบริษัท', 1, 20], ['รถเสริม', 21, 60]]);
+  });
+
+  it('จัดคันเข้าช่องถูก รวมขอบของช่วง', () => {
+    expect(WmsTruck.bucketOf('คัน1 ก')).toBe('own');
+    expect(WmsTruck.bucketOf('คัน20 ข')).toBe('own');
+    expect(WmsTruck.bucketOf('คัน21 .บัณฑิต')).toBe('extra');
+    expect(WmsTruck.bucketOf('คัน60 ค')).toBe('extra');
+  });
+
+  it('มีเลขแต่นอกกลุ่ม ≠ ไม่มีเลข', () => {
+    expect(WmsTruck.bucketOf('คัน75 นอกกลุ่ม')).toBe('outside');
+    expect(WmsTruck.bucketOf('คัน0 ศูนย์')).toBe('outside');
+    expect(WmsTruck.bucketOf('5 คัน')).toBe('none');
+    expect(WmsTruck.bucketOf('')).toBe('none');
+  });
+
+  it('teamOf คืนกลุ่มจริงเมื่ออยู่ในกลุ่ม และ null เมื่อไม่อยู่', () => {
+    expect(WmsTruck.teamOf('คัน2 .บี-แมน').label).toBe('รถบริษัท');
+    expect(WmsTruck.teamOf('คัน22 .ณัฐพล+มัสวินต์').label).toBe('รถเสริม');
+    expect(WmsTruck.teamOf('คัน75 นอกกลุ่ม')).toBeNull();
+    expect(WmsTruck.teamOf('5 คัน')).toBeNull();
+  });
+
+  it('ทุกคันตกลงช่องใดช่องหนึ่งเสมอ ไม่มีของหายระหว่างช่อง', () => {
+    const names = ['คัน2 .บี-แมน', 'คัน21 .บัณฑิต', 'คัน75 นอกกลุ่ม', '5 คัน', ''];
+    const ids = names.map((n) => WmsTruck.bucketOf(n));
+    expect(ids.every((i) => ['own', 'extra', 'outside', 'none'].includes(i))).toBe(true);
+    expect(ids).toEqual(['own', 'extra', 'outside', 'none', 'none']);
+  });
+});

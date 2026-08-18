@@ -124,6 +124,8 @@
     background:var(--surface);font-family:var(--sans);font-size:12.5px;color:var(--text);
     outline:none;min-width:210px}
   .ps-range:focus{border-color:var(--primary)}
+  /* เลขช่วงบนปุ่มกลุ่ม — บอกว่าปุ่มนี้ครอบคันไหนบ้าง โดยไม่แย่งสายตาจากชื่อกลุ่ม */
+  .ps-tiny{font-weight:400;font-size:10.5px;opacity:.7;margin-left:3px}
   .ps-mix{margin-left:8px;padding:2px 8px;border-radius:999px;background:var(--primary-light);
     color:var(--primary);font-size:11px;font-weight:600;vertical-align:middle}
   .ps-split{display:flex;flex-wrap:wrap;gap:4px 6px;margin-top:6px}
@@ -386,6 +388,34 @@ let pickPaper = 'a4';    // 'a4' | 'label' (150×100 มม.)
 const TG_KEY = 'wms:pick:truckGroups';
 let truckGroups = (() => { try { return localStorage.getItem(TG_KEY) || ''; } catch (e) { return ''; } })();
 
+/* กลุ่มรถที่ล็อกอยู่ — '' = ไม่ล็อก (ดูทุกกลุ่ม), 'none' = เฉพาะงานที่ไม่มีเลขคัน
+   จำไว้ในเครื่องเหมือนช่วงเลข เพราะคนหยิบคนเดิมมักดูกลุ่มเดิมทุกวัน */
+const TL_KEY = 'wms:pick:truckLock';
+let truckLock = (() => { try { return localStorage.getItem(TL_KEY) || ''; } catch (e) { return ''; } })();
+
+function setTruckLock(id) {
+  truckLock = (truckLock === id) ? '' : id;   // กดซ้ำที่ปุ่มเดิม = ปลดล็อก
+  try { localStorage.setItem(TL_KEY, truckLock); } catch (e) {}
+  renderPickSum();
+}
+
+/** แถวนี้อยู่ในกลุ่มที่ล็อกไว้ไหม */
+function inLockedTeam(r) {
+  return !truckLock || WmsTruck.bucketOf(r.truck) === truckLock;
+}
+
+/* ปุ่มสองอันท้ายขึ้นเฉพาะเมื่อมีงานตกอยู่ในนั้นจริง — ปุ่มที่กดแล้วได้ใบเปล่า
+   คือปุ่มที่ทำให้คนสงสัยว่าตัวเองกดผิดหรือข้อมูลหาย */
+const SPARE_LOCKS = [
+  { id: 'outside', label: 'นอกกลุ่ม' },
+  { id: 'none',    label: 'ไม่ระบุคัน' },
+];
+
+function spareLocksInData() {
+  const rows = carriersOf().flatMap(c => (c.data1 || []).concat(c.data2 || []));
+  return SPARE_LOCKS.filter(s => rows.some(r => r.truck && WmsTruck.bucketOf(r.truck) === s.id));
+}
+
 function setTruckGroups(v) {
   truckGroups = v;
   try { localStorage.setItem(TG_KEY, v); } catch (e) {}
@@ -534,8 +564,17 @@ function renderPickSum() {
   /* แยกใบตามกลุ่มคนรถ — แต่ละกลุ่มหยิบของกันคนละรอบ จึงต้องได้ยอดของตัวเอง
      งานที่ดึงเลขคันไม่ได้ (เช่น "5 คัน" ของงาน Event) ไปรวมใบ "ไม่ระบุคัน"
      ไม่ใช่กระจายเข้าใบใดใบหนึ่ง เพราะจะทำให้ทีมนั้นหยิบของที่ไม่ใช่งานตัวเอง */
-  const ranges = WmsTruck.parseRanges(truckGroups);
-  const groups2 = !ranges.length ? groups : groups.flatMap(g => {
+  /* ล็อกกลุ่มรถ = ดูกลุ่มเดียว จึงกรองก่อน แล้วไม่ต้องแยกใบต่อ — การแยกใบ
+     ของสิ่งที่เหลือกลุ่มเดียวได้ใบเดิมกลับมาพร้อมหัวข้อที่ไม่ได้แบ่งอะไร */
+  const lockedTeam = WmsTruck.TRUCK_TEAMS.find(t => t.id === truckLock);
+  const lockLabel = lockedTeam ? lockedTeam.label
+    : (SPARE_LOCKS.find(s => s.id === truckLock) || {}).label || '';
+  const groups1 = !truckLock ? groups : groups
+    .map(g => ({ ...g, label: g.label + ' · ' + lockLabel, rows: g.rows.filter(inLockedTeam) }))
+    .filter(g => g.rows.length);
+
+  const ranges = truckLock ? [] : WmsTruck.parseRanges(truckGroups);
+  const groups2 = !ranges.length ? groups1 : groups1.flatMap(g => {
     const buckets = ranges.map(r => ({ label: r.label, rows: [] }));
     /* แยกสองกรณีที่ต่างกันจริง: ไม่มีเลขคันเลย กับ มีเลขแต่อยู่นอกช่วงที่ตั้งไว้
        ถ้ารวมเป็นก้อนเดียวชื่อ "ไม่ระบุคัน" งานของคัน 21 จะไปกองอยู่ในนั้นตอนที่
@@ -609,11 +648,25 @@ function renderPickSum() {
     '<span class="ps-hint">เลือกได้หลายเจ้า — ที่เลือกจะรวมเป็นใบเดียว</span></div>' +
     /* ช่องกลุ่มคนรถ ขึ้นเฉพาะตอนที่ข้อมูลมีชื่อรถจริง — ขนส่งเจ้าอื่นไม่มีคอลัมน์นี้
        การโชว์ช่องที่ใช้ไม่ได้คือการชวนให้กรอกแล้วสงสัยว่าทำไมไม่มีอะไรเกิดขึ้น */
-    (anyTruck() ? '<div class="ps-carriers no-print"><span class="ps-lbl">กลุ่มคนรถ</span>' +
-      '<input class="ps-range" id="truckGroups" value="' + esc(truckGroups) + '" ' +
-      'placeholder="เช่น 1-20, 21-60 — เว้นว่าง = ไม่แยก" ' +
-      'oninput="setTruckGroups(this.value)">' +
-      '<span class="ps-hint">แยกใบตามเลขคัน · งานที่ไม่มีเลขคันไปรวมใบ “ไม่ระบุคัน”</span></div>'
+    (anyTruck() ? '<div class="ps-carriers no-print"><span class="ps-lbl">กลุ่มรถ</span>' +
+      '<button class="ps-chip' + (truckLock ? '' : ' active') + '" ' +
+      'onclick="setTruckLock(\'\')">ทั้งหมด</button>' +
+      WmsTruck.TRUCK_TEAMS.map(t =>
+        '<button class="ps-chip' + (truckLock === t.id ? ' active' : '') + '" ' +
+        'onclick="setTruckLock(\'' + t.id + '\')">' + esc(t.label) +
+        ' <span class="ps-tiny">คัน ' + t.from + '-' + t.to + '</span></button>').join('') +
+      spareLocksInData().map(s =>
+        '<button class="ps-chip ps-chip-alt' + (truckLock === s.id ? ' active' : '') + '" ' +
+        'onclick="setTruckLock(\'' + s.id + '\')">' + esc(s.label) + '</button>').join('') +
+      '<span class="ps-hint">ล็อกไว้ดูกลุ่มเดียว · กดปุ่มเดิมซ้ำเพื่อปลด</span></div>' +
+      /* ช่องช่วงเลขไว้ใช้เฉพาะกิจ ซ่อนไว้ตอนล็อกอยู่ เพราะล็อกแล้วเหลือกลุ่มเดียว
+         การแยกใบไม่มีความหมาย และช่องที่กรอกแล้วไม่เกิดอะไรคือช่องที่ทำให้สับสน */
+      (truckLock ? '' :
+        '<div class="ps-carriers no-print"><span class="ps-lbl">แยกใบเอง</span>' +
+        '<input class="ps-range" id="truckGroups" value="' + esc(truckGroups) + '" ' +
+        'placeholder="เช่น 1-20, 21-60 — เว้นว่าง = ไม่แยก" ' +
+        'oninput="setTruckGroups(this.value)">' +
+        '<span class="ps-hint">แยกใบตามช่วงเลขคันที่กำหนดเอง</span></div>')
       : '');
 
   const scopeTxt = keys.length > 1 ? ('รวม ' + keys.length + ' ขนส่งเป็นใบเดียว')

@@ -60,6 +60,41 @@
     return out;
   }
 
+  /**
+   * กลุ่มรถที่ทีมใช้เรียกกันจริง — ล็อกไว้เป็นปุ่ม ไม่ต้องพิมพ์ช่วงเลขทุกครั้ง
+   *
+   * ชื่อ "รถบริษัท" ซ้ำกับชื่อขนส่งในระบบ แต่เป็นคนละชั้นกัน: ขนส่งชื่อรถบริษัท
+   * คลุมรถทั้งหมดของบริษัท ส่วนกลุ่มนี้แยกรถของบริษัทเองออกจากรถเสริมที่จ้างมา
+   * บนหน้าจอจึงต้องมีป้ายกำกับแถวว่าอันไหนคือขนส่ง อันไหนคือกลุ่มรถ
+   */
+  var TRUCK_TEAMS = [
+    { id: 'own',   label: 'รถบริษัท', from: 1,  to: 20 },
+    { id: 'extra', label: 'รถเสริม',  from: 21, to: 60 },
+  ];
+
+  /** กลุ่มที่รถคันนี้สังกัด — ไม่มีเลขคันหรือนอกทุกกลุ่มคืน null */
+  function teamOf(name) {
+    var n = numberOf(name);
+    if (n == null) return null;
+    for (var i = 0; i < TRUCK_TEAMS.length; i++) {
+      if (n >= TRUCK_TEAMS[i].from && n <= TRUCK_TEAMS[i].to) return TRUCK_TEAMS[i];
+    }
+    return null;
+  }
+
+  /**
+   * ช่องที่รถคันนี้ตกลงไป — 'own' | 'extra' | 'outside' | 'none'
+   *
+   * แยก 'outside' (มีเลขคันแต่นอกทุกกลุ่ม เช่น คัน75) ออกจาก 'none' (ไม่มีเลขเลย
+   * เช่น "5 คัน") เพราะถ้ารวมกันแล้วติดป้ายว่า "ไม่ระบุคัน" คนอ่านจะเชื่อว่า
+   * คัน75 ไม่มีเลข ทั้งที่ความจริงคือกลุ่มที่ตั้งไว้ยังไปไม่ถึงมัน
+   */
+  function bucketOf(name) {
+    if (numberOf(name) == null) return 'none';
+    var t = teamOf(name);
+    return t ? t.id : 'outside';
+  }
+
   /** ช่วงแรกที่ครอบเลขนี้ — ไม่เข้าช่วงไหนคืน -1 */
   function rangeIndex(num, ranges) {
     if (num == null) return -1;
@@ -113,5 +148,6 @@
   window.WmsTruck = {
     isCount: isCount, stopMap: stopMap,
     numberOf: numberOf, parseRanges: parseRanges, rangeIndex: rangeIndex,
+    TRUCK_TEAMS: TRUCK_TEAMS, teamOf: teamOf, bucketOf: bucketOf,
   };
 })();
