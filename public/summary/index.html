@@ -144,6 +144,34 @@ async function pullAll() {
   render();
 }
 
+/**
+ * งานที่ขยับหลังรอบเช้า — เพิ่มเข้ามาใหม่ กับหายไปจากรอบเช้า
+ *
+ * วัดว่าแผนที่จัดไว้ตอนเช้าถูกรื้อแค่ไหน ซึ่งเป็นต้นเหตุของการหยิบซ้ำ สลับรถ
+ * และงานล่วงเวลา แท็บเทียบ Order คำนวณเลขนี้อยู่แล้วแต่ทีละขนส่ง (ตามเจ้าที่
+ * เปิดดูอยู่) เอาไปบันทึกเป็นยอดของวันไม่ได้ ที่นี่มีข้อมูลทุกเจ้าพร้อมกัน
+ *
+ * นับจากเลขออเดอร์เท่านั้น ไม่เทียบทีละช่อง — การเทียบช่องเป็นตรรกะก้อนใหญ่ที่
+ * อยู่ในแท็บเทียบ Order ถ้าคัดลอกมาไว้สองที่ วันหนึ่งสองหน้าจะนับไม่เท่ากัน
+ *
+ * ข้ามขนส่งที่ชีตใดชีตหนึ่งว่าง — CRM ที่ยังไม่มีข้อมูลไม่ได้แปลว่างานหายทั้งรอบ
+ * ถ้านับไปจะได้ "หายไป 180" ทุกเช้าก่อนที่ทีม CRM จะเริ่มกรอก
+ */
+function orderChurn(o) {
+  if (!o || !o.carriers) return null;
+  let added = 0, removed = 0, seen = 0;
+  o.carriers.forEach(c => {
+    const d1 = c.data1 || [], d2 = c.data2 || [];
+    if (!d1.length || !d2.length) return;
+    seen++;
+    const a = new Set(d1.map(r => r.orderID).filter(Boolean));
+    const b = new Set(d2.map(r => r.orderID).filter(Boolean));
+    b.forEach(id => { if (!a.has(id)) added++; });
+    a.forEach(id => { if (!b.has(id)) removed++; });
+  });
+  return seen ? { added, removed, carriers: seen } : null;
+}
+
 const card = (href, icon, label, value, sub, cls) =>
   `<a class="sm-card ${cls || ''}" href="${href}">
      <div class="k">${icon} ${esc(label)}</div>
@@ -189,6 +217,7 @@ function render() {
      ไม่ใช่วันที่กดปุ่ม เพราะเย็นนี้ดึงงานพรุ่งนี้เป็นเรื่องปกติของทีม
      มีหลายวันในรอบเดียวได้ (แต่ละขนส่งเดินหน้าไม่พร้อมกัน) เก็บวันล่าสุดพอ */
   const workDay = dates.length ? dates[dates.length - 1] : '';
+  const churn = orderChurn(o);
   if (workDay && window.WmsHistory) {
     const idxRows = (OrderIndex.get() || {}).rows || [];
     WmsHistory.record(workDay, {
@@ -197,6 +226,8 @@ function render() {
       trucks: new Set(idxRows.map(r => r.truck).filter(Boolean)).size || undefined,
       qa: qa ? qa.length : undefined,
       low: low ? low.length : undefined,
+      added: churn ? churn.added : undefined,
+      removed: churn ? churn.removed : undefined,
     });
   }
 
@@ -229,6 +260,12 @@ function render() {
         : 'ยังไม่ได้ดึง') +
     /* เดิมบอกว่า "ยังไม่มีไฟล์ — Picklist กับใบนำส่งยังทำไม่ได้" ซึ่งไม่จริงแล้ว
        ทั้งสี่ใบสร้างจากการดึงออเดอร์ได้เอง เหลือแค่เครื่องรูดบัตรที่ชีตยังไม่มี */
+    card('../order-compare/', '🔀', 'งานที่ขยับหลังรอบเช้า',
+      churn ? (churn.added + churn.removed) : null,
+      churn ? `➕ ใหม่ ${churn.added} · ➖ หายไป ${churn.removed}` +
+              `${trend('added') ? '<br>ที่เพิ่ม' + trend('added') : ''}`
+            : 'ต้องมีทั้งรอบเช้าและ CRM จึงเทียบได้',
+      churn && (churn.added + churn.removed) > 0 ? 'hot' : '') +
     card('../transport-docs/', '🚚', 'ไฟล์รถบริษัท',
       tf ? tf.rows.length.toLocaleString() : null,
       tf ? (tfLabel ? 'งานวันที่ ' + esc(tfLabel) : esc(tf.fileName || 'ไฟล์ที่โหลดไว้'))
