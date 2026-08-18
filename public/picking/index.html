@@ -111,7 +111,18 @@
   }
   .ps-nostock{font-size:10px;font-weight:600;color:#B45309;background:#FEF3C7;
     border:1px solid #FDE68A;border-radius:5px;padding:1px 6px;white-space:nowrap}
-  @media print{.ps-nostock{background:#fff!important;border:1px solid #000;color:#000!important}}
+  /* หน้าคลังมีไม่พอ — ต้องทำใบเบิกก่อนถึงจะหยิบได้ครบ จึงเข้มกว่า "ไม่พบใน Stock"
+     ซึ่งแปลว่าไฟล์สต๊อกไม่รู้จักของชิ้นนี้เฉย ๆ */
+  .ps-short{font-size:10px;font-weight:700;color:#B91C1C;background:#FEF2F2;
+    border:1px solid #FCA5A5;border-radius:5px;padding:1px 6px;white-space:nowrap}
+  /* เตือนที่หัวใบ ให้เห็นก่อนออกเดิน ไม่ใช่ไปเจอที่ชั้น */
+  .ps-warn{background:#FEF2F2;border:1px solid #FCA5A5;color:#991B1B;border-radius:8px;
+    padding:7px 12px;margin:8px 0 0;font-size:12px;line-height:1.6;font-weight:600}
+  @media print{
+    .ps-nostock{background:#fff!important;border:1px solid #000;color:#000!important}
+    .ps-short{background:#fff!important;border:1.5px solid #000;color:#000!important}
+    .ps-warn{background:#fff!important;border:1.5px solid #000;color:#000!important}
+  }
   .ps-sep{width:1px;height:18px;background:var(--border);margin:0 4px}
   .ps-carriers{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:10px}
   .ps-chip{padding:5px 13px;border-radius:999px;border:1px solid var(--border);background:var(--surface);
@@ -620,6 +631,13 @@ function renderPickSum() {
         '<div><div class="ps-carrier" data-label="' + esc(g.label) + '">' + esc(g.label) +
         (g.parts ? '<span class="ps-mix">รวม ' + g.parts.length + ' ขนส่ง</span>' : '') + '</div>' +
         '<div class="ps-meta">' + esc(srcName) + ' · ' + esc(when) + esc(scope) + '</div>' + split +
+        (() => {
+          const short = shortLines(shown);
+          if (!short.length) return '';
+          const pcs = short.reduce((n, x) => n + x.qty, 0);
+          return '<div class="ps-warn">⚠ ' + short.length + ' รายการ (' + pcs +
+            ' ชิ้น) หน้าคลังมีไม่พอ — ดูบรรทัดที่ทำสีไว้ ต้องทำใบเบิกก่อนถึงจะหยิบครบ</div>';
+        })() +
         '</div>' +
         '<div class="ps-tot"><b>' + pieces + '</b><span>ชิ้น</span>' +
         '<span class="ps-pagecount no-print"></span></div>' +
@@ -766,14 +784,40 @@ function catBlocks(list) {
   return body;
 }
 
+/**
+ * หน้าคลังหยิบของบรรทัดนี้ได้ครบไหม
+ *
+ * ระบบรู้ตั้งแต่ตอนกดพิมพ์ว่าของกองอยู่ที่ QA ไม่ใช่ NEW WH แต่ใบที่น้องถือ
+ * ไม่เคยบอก น้องจึงเดินไปถึงชั้นแล้วค่อยรู้ว่าหยิบไม่ครบ ต้องเดินกลับมาบอก
+ * รอทำใบเบิก แล้วเดินไปใหม่ — รู้ก่อนออกเดินคือประหยัดรอบเดินทั้งรอบ
+ *
+ * บอกเป็นตัวเลขที่นับได้จริง ไม่ตัดสินแทนว่า "พอ" หรือ "ไม่พอ" — ของชิ้นเดียวกัน
+ * อาจถูกหยิบให้อีกคันในใบอีกใบด้วย ใบนี้จึงรับประกันแทนทั้งวันไม่ได้
+ *
+ * @returns {string} '' = ไม่มีอะไรต้องบอก
+ */
+function stockNote(x) {
+  const s = stockMap()[x.sku];
+  if (!s) return ' <span class="ps-nostock">ไม่พบใน Stock</span>';
+  if (s.newwh >= x.qty) return '';
+  const qa = s.qa > 0 ? ' · QA มี ' + s.qa : '';
+  return ' <span class="ps-short">NEW WH มี ' + s.newwh + qa + '</span>';
+}
+
 function pickTable(list) {
   return '<table class="ps-table"><tbody>' +
     list.sort((a, b) => b.qty - a.qty).map(x =>
       '<tr><td class="ps-chk"></td><td class="ps-sku">' + esc(x.sku) + '</td>' +
-      '<td>' + esc(PN(x)) +
-        (inStock(x) ? '' : ' <span class="ps-nostock">ไม่พบใน Stock</span>') + '</td>' +
+      '<td>' + esc(PN(x)) + stockNote(x) + '</td>' +
       '<td class="ps-qty">' + x.qty + '</td></tr>').join('') +
     '</tbody></table>';
+}
+
+/** บรรทัดที่หน้าคลังมีไม่พอ — รวมไว้บอกที่หัวใบ ไม่ต้องไล่อ่านทั้งใบก่อนออกเดิน */
+function shortLines(list) {
+  const m = stockMap();
+  if (!Object.keys(m).length) return [];
+  return list.filter(x => { const s = m[x.sku]; return s && s.newwh < x.qty; });
 }
 
 /* ── แถบแหล่งข้อมูล ─────────────────────────────────────────────────────── */
