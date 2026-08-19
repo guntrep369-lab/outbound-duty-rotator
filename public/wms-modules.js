@@ -34,6 +34,7 @@ export const MODULES = [
      เก้าโมดูล การเปิดมาแล้วต้องไล่กดดูทีละอันเพื่อหาว่ามีอะไรผิดปกติคือภาระที่
      ระบบควรรับไปเอง */
   { id: 'summary', label: 'สรุปเช้า', labelEn: 'Morning Brief', path: 'summary/', icon: 'sunrise' },
+  { id: 'history', label: 'ย้อนหลัง', labelEn: 'History', path: 'history/', icon: 'history' },
   { id: 'order', label: 'เทียบ Order', labelEn: 'Order Compare', path: 'order-compare/', icon: 'clipboard', group: 'order' },
   { id: 'lookup', label: 'ค้นหาออเดอร์', labelEn: 'Order Lookup', path: 'order-lookup/', icon: 'search', group: 'order' },
   { id: 'stock', label: 'สต๊อกคงเหลือ', labelEn: 'Stock on Hand', path: 'stock/', icon: 'package', group: 'warehouse' },
@@ -75,6 +76,8 @@ export const ICON_PATHS = {
     '<path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"/><path d="M15 5.764v15"/><path d="M9 3.236v15"/>',
   search:
     '<path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/>',
+  history:
+    '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
   clipboardList:
     '<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>',
   compass:

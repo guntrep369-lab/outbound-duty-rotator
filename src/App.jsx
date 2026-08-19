@@ -95,7 +95,7 @@ function GateUser() {
 }
 
 /** Icon name (from wms-modules.js) → the lucide component that draws it. */
-const MODULE_ICONS = { calendar: CalendarRange, clipboard: ClipboardCheck, truck: Truck, warehouse: Warehouse, file: FileText, search: Search, settings: Settings2, boxes: Boxes, package: Package, sunrise: Sunrise, compass: Compass, clipboardList: ClipboardList, map: MapIcon };
+const MODULE_ICONS = { calendar: CalendarRange, clipboard: ClipboardCheck, truck: Truck, warehouse: Warehouse, file: FileText, search: Search, settings: Settings2, boxes: Boxes, package: Package, sunrise: Sunrise, compass: Compass, clipboardList: ClipboardList, map: MapIcon, history: HistoryIcon };
 
 /**
  * Dark system chrome. Left sidebar on desktop, collapsing to a top bar on small

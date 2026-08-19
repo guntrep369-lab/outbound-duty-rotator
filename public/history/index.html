@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>ย้อนหลัง — WMS</title>
+<link rel="stylesheet" href="../wms-theme.css">
+<link rel="stylesheet" href="../wms-gate.css">
+<script src="../wms-gate.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --surface:var(--wms-surface); --surface2:var(--wms-surface2);
+  --border:var(--wms-border); --border2:var(--wms-border2);
+  --primary:var(--wms-primary); --primary-dark:var(--wms-primary-dark);
+  --primary-light:var(--wms-primary-light); --text:var(--wms-text);
+  --muted:var(--wms-muted); --faint:var(--wms-faint);
+  --radius:var(--wms-radius); --shadow:var(--wms-shadow); --sans:var(--wms-font);
+}
+.main{padding:16px 20px 40px;max-width:1080px}
+
+.hs-tops{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.hs-top{flex:1;min-width:150px;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);box-shadow:var(--shadow);padding:12px 14px}
+.hs-top .k{font-size:11.5px;color:var(--muted);font-weight:600}
+.hs-top .v{font-size:24px;font-weight:700;color:var(--text);line-height:1.15;margin-top:4px;
+  font-variant-numeric:tabular-nums}
+.hs-top .s{font-size:11.5px;color:var(--muted);margin-top:3px}
+
+.hs-sec{margin:22px 0 9px;font-size:12px;font-weight:700;color:var(--muted);
+  letter-spacing:.04em;text-transform:uppercase}
+
+table.hs{width:100%;border-collapse:collapse;font-size:13px;background:var(--surface);
+  border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow)}
+table.hs th{text-align:left;font-size:11px;font-weight:600;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.04em;padding:8px 10px;
+  border-bottom:1.5px solid var(--border);background:var(--surface2);white-space:nowrap}
+table.hs td{padding:7px 10px;border-bottom:1px solid #F1F5F9;vertical-align:middle}
+table.hs tr:last-child td{border-bottom:0}
+table.hs .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+table.hs .day{white-space:nowrap;font-weight:600;color:var(--text)}
+table.hs .dow{color:var(--muted);font-weight:400;margin-left:5px;font-size:11.5px}
+/* วันนี้ต้องหาเจอทันทีเวลาเลื่อนดู */
+table.hs tr.today td{background:var(--primary-light)}
+
+/* แท่งปริมาณงาน — เทียบสายตาได้เร็วกว่าอ่านตัวเลขทีละแถว */
+.hs-bar{height:8px;border-radius:999px;background:var(--primary);opacity:.55;min-width:2px}
+.hs-barcell{width:34%}
+
+.hs-empty{padding:40px 20px;text-align:center;color:var(--muted);font-size:14px;line-height:1.9}
+.hs-empty b{color:var(--text)}
+.hs-note{font-size:12px;color:var(--muted);line-height:1.7;margin-top:12px}
+.hs-dow{display:flex;gap:8px;flex-wrap:wrap}
+.hs-dowcard{flex:1;min-width:96px;background:var(--surface);border:1px solid var(--border);
+  border-radius:10px;padding:9px 11px;text-align:center}
+.hs-dowcard .d{font-size:12px;color:var(--muted);font-weight:600}
+.hs-dowcard .v{font-size:19px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
+.hs-dowcard .n{font-size:10.5px;color:var(--faint)}
+</style>
+</head>
+<body data-wms-module="history">
+
+<div class="wms-shell">
+<div data-wms-shell="history" data-root="../"></div>
+<div class="wms-main">
+
+  <div class="mod-head">
+    <div class="mod-title">
+      <div class="ic">📈</div>
+      <div>
+        <h2>ย้อนหลัง · History</h2>
+        <p>วันนี้หนักกว่าปกติไหม งานแทรกเยอะขึ้นหรือเปล่า ต้องเรียกรถเสริมบ่อยแค่ไหน</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="main" id="body"></div>
+
+</div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+
+<script type="module" src="../wms-shell.js"></script>
+<script src="../wms-date.js"></script>
+<script src="../wms-history.js"></script>
+<script>
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+const DOW = ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัส','ศุกร์','เสาร์'];
+
+/** ค่ากลางของชุดตัวเลข — ทนต่อวันงาน Event ก้อนใหญ่วันเดียวกว่าค่าเฉลี่ย */
+function median(vals) {
+  const s = vals.filter(v => typeof v === 'number' && isFinite(v)).sort((a, b) => a - b);
+  if (!s.length) return null;
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2);
+}
+
+const num = v => (typeof v === 'number' && isFinite(v)) ? v : null;
+const cell = v => v === null ? '<span style="color:var(--faint)">—</span>' : v.toLocaleString();
+
+function render() {
+  const all = WmsHistory.read();
+  const days = Object.keys(all).sort();
+  const body = document.getElementById('body');
+
+  if (!days.length) {
+    body.innerHTML = `<div class="hs-empty">
+      ยังไม่มีข้อมูลย้อนหลัง<br>
+      ระบบเริ่มเก็บตัวเลขของแต่ละวันเมื่อเปิดหน้า <a href="../summary/"><b>สรุปเช้า</b></a>
+      โดยมีข้อมูลออเดอร์อยู่แล้ว<br>
+      ต้องมีอย่างน้อย <b>${WmsHistory.MIN_BASE} วัน</b> ถึงจะเทียบได้ว่าวันไหนผิดปกติ
+    </div>`;
+    return;
+  }
+
+  const rows = days.map(d => ({ day: d, ...all[d] }));
+  const today = WmsDate.todayYmd();
+  const orders = rows.map(r => num(r.orders)).filter(v => v !== null);
+  const max = Math.max(...orders, 1);
+
+  const busiest = rows.filter(r => num(r.orders) !== null)
+    .reduce((a, b) => (a && a.orders >= b.orders ? a : b), null);
+
+  /* งานแทรกเป็นตัวเลขที่ทีมยังไม่เคยเห็นมาก่อน จึงบอกค่ากลางไว้ด้วย
+     ไม่ใช่ให้ไปไล่บวกเอง จากตารางข้างล่าง */
+  const churn = rows.map(r => {
+    const a = num(r.added), b = num(r.removed);
+    return (a === null && b === null) ? null : (a || 0) + (b || 0);
+  }).filter(v => v !== null);
+
+  const tops = '<div class="hs-tops">' +
+    `<div class="hs-top"><div class="k">📅 วันที่เก็บไว้</div><div class="v">${days.length}</div>
+       <div class="s">${esc(WmsDate.thai(days[0]))} – ${esc(WmsDate.thai(days[days.length - 1]))}</div></div>` +
+    `<div class="hs-top"><div class="k">📋 ออเดอร์ต่อวัน (ค่ากลาง)</div>
+       <div class="v">${cell(median(orders))}</div>
+       <div class="s">${orders.length} วันที่มีตัวเลข</div></div>` +
+    `<div class="hs-top"><div class="k">🔀 งานแทรกต่อวัน (ค่ากลาง)</div>
+       <div class="v">${cell(median(churn))}</div>
+       <div class="s">${churn.length ? churn.length + ' วันที่เทียบได้' : 'ยังไม่มีวันที่เทียบได้'}</div></div>` +
+    `<div class="hs-top"><div class="k">🔺 วันที่งานหนักสุด</div>
+       <div class="v">${busiest ? busiest.orders.toLocaleString() : '—'}</div>
+       <div class="s">${busiest ? esc(WmsDate.thai(busiest.day)) : 'ยังไม่มีข้อมูล'}</div></div>` +
+    '</div>';
+
+  /* ค่าเฉลี่ยรายวันในสัปดาห์ — ใช้จัดกำลังคน แต่พูดได้ต่อเมื่อมีตัวอย่างพอ
+     สองสัปดาห์ให้ราวสองตัวอย่างต่อวัน ซึ่งยังน้อย จึงบอกจำนวนตัวอย่างกำกับไว้
+     ให้คนอ่านชั่งเอง ไม่ใช่ยัดตัวเลขให้ดูน่าเชื่อกว่าที่เป็น */
+  let dowBlock = '';
+  if (days.length >= 14) {
+    const buckets = DOW.map(() => []);
+    rows.forEach(r => {
+      const v = num(r.orders); if (v === null) return;
+      const p = r.day.split('-');
+      buckets[new Date(+p[0], +p[1] - 1, +p[2]).getDay()].push(v);
+    });
+    dowBlock = '<div class="hs-sec">ออเดอร์เฉลี่ยตามวันในสัปดาห์</div><div class="hs-dow">' +
+      DOW.map((d, i) => {
+        const b = buckets[i];
+        return `<div class="hs-dowcard"><div class="d">${d}</div>
+          <div class="v">${b.length ? median(b).toLocaleString() : '—'}</div>
+          <div class="n">${b.length} วัน</div></div>`;
+      }).join('') + '</div>';
+  }
+
+  const table = '<div class="hs-sec">รายวัน (ใหม่ก่อน)</div>' +
+    '<table class="hs"><thead><tr>' +
+    '<th>วันของงาน</th><th class="hs-barcell">ออเดอร์</th><th class="n">ออเดอร์</th>' +
+    '<th class="n">คันรถ</th><th class="n">งานใหม่</th><th class="n">งานหาย</th>' +
+    '<th class="n">ต้องเบิก QA</th></tr></thead><tbody>' +
+    rows.slice().reverse().map(r => {
+      const o = num(r.orders);
+      const p = r.day.split('-');
+      const dow = DOW[new Date(+p[0], +p[1] - 1, +p[2]).getDay()];
+      return `<tr class="${r.day === today ? 'today' : ''}">
+        <td class="day">${esc(WmsDate.thai(r.day))}<span class="dow">${dow}</span></td>
+        <td><div class="hs-bar" style="width:${o === null ? 0 : Math.round((o / max) * 100)}%"></div></td>
+        <td class="n">${cell(o)}</td>
+        <td class="n">${cell(num(r.trucks))}</td>
+        <td class="n">${cell(num(r.added))}</td>
+        <td class="n">${cell(num(r.removed))}</td>
+        <td class="n">${cell(num(r.qa))}</td>
+      </tr>`;
+    }).join('') + '</tbody></table>';
+
+  body.innerHTML = tops + dowBlock + table +
+    `<div class="hs-note">เก็บไว้ในเบราว์เซอร์เครื่องนี้เท่านั้น — เครื่องที่เปิดหน้าสรุปเช้า
+     ทุกเช้าจะมีประวัติครบที่สุด ถ้าเปิดคนละเครื่องประวัติจะแยกกัน<br>
+     เก็บย้อนหลังได้ ${WmsHistory.MAX_DAYS} วัน เกินกว่านั้นวันเก่าสุดจะถูกตัดออก ·
+     ช่องที่เป็น — คือวันที่ยังไม่มีตัวเลขนั้น ไม่ใช่ศูนย์</div>`;
+}
+
+render();
+</script>
+</body>
+</html>
