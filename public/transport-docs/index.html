@@ -396,6 +396,7 @@ function giftHTML(l,i){
 const PCSS=`
 *{box-sizing:border-box;margin:0;padding:0}html,body{background:#fff;color:#000}
 .page{page-break-after:always;break-after:page;overflow:hidden}
+.page:last-child{page-break-after:auto;break-after:auto}
 .pb,.pg{width:150mm;height:100mm}
 .linner-bed,.linner-gift{width:150mm;height:100mm;padding:4mm 6mm;font-family:Arial,sans-serif;display:flex;flex-direction:column;overflow:hidden;color:#000}
 .bed-hdr,.gift-hdr{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2.5px solid #000;padding-bottom:4px;margin-bottom:5px}
@@ -430,7 +431,7 @@ const PCSS=`
 .lnum{font-size:9px;color:#555}
 .sel-bar,.piece-badge{display:none!important}
 @page{size:150mm 100mm;margin:0}
-@media print{.page{page-break-after:always;break-after:page}}`;
+@media print{.page{page-break-after:always;break-after:page}.page:last-child{page-break-after:auto;break-after:auto}}`;
 
 function printSelected(){
   const sel=document.querySelectorAll('.lcard.sel,.lcard.sel-g');

@@ -95,6 +95,8 @@ table.pod-tbl tr:nth-child(even) td{background:#f9f9f9}
   .topbar{display:none!important}
   .doc-wrap{background:#fff!important;padding:0!important}
   .a4{box-shadow:none!important;margin:0!important;width:100%!important;max-width:100%!important;padding:6mm!important;page-break-after:always;break-after:page}
+  /* หน้าสุดท้ายไม่ต้องสั่งขึ้นหน้าใหม่ ไม่งั้นได้กระดาษเปล่าท้ายงานพิมพ์ทุกครั้ง */
+  .a4:last-child{page-break-after:auto!important;break-after:auto!important}
   .truck-break{page-break-before:always;break-before:page}
   .stop{page-break-inside:avoid;break-inside:avoid}
   *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
