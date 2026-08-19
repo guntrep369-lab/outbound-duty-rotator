@@ -33,7 +33,7 @@ body{font-family:'Sarabun',Arial,sans-serif;background:#f0f0f0;min-height:100vh;
 .topbar .btn-p{background:#000;color:#fff;border-color:#000;font-weight:700}
 .topbar .btn-p:hover{background:#333}
 .doc-wrap{background:#ccc;padding:20px 12px}
-.a4{width:794px;background:#fff;margin:0 auto 24px;padding:20px 62px 20px 28px;position:relative}
+.a4{width:794px;background:#fff;margin:0 auto 24px;padding:20px 28px}
 .dh{display:flex;border:2px solid #000;margin-bottom:14px}
 .dh-left{flex:1;border-right:2px solid #000}
 .dh-logo{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1.5px solid #000}
@@ -53,13 +53,15 @@ body{font-family:'Sarabun',Arial,sans-serif;background:#f0f0f0;min-height:100vh;
   font-size:12px;cursor:pointer;color:#000;white-space:nowrap}
 .tm-chip:hover:not(.active){background:#f0f0f0}
 .tm-chip.active{background:#000;color:#fff;border-color:#000;font-weight:700}
-/* แถบทีมริมขอบขวา — เห็นจากด้านข้างของกองเอกสารโดยไม่ต้องเปิดดูทีละใบ */
-.tm-edge{position:absolute;top:0;right:0;width:30px;height:100%;
-  border-left:1.5px solid #000;display:flex;align-items:center;justify-content:center;
-  writing-mode:vertical-rl;text-orientation:mixed;
-  font-size:12px;font-weight:900;letter-spacing:5px;text-transform:uppercase;
-  overflow:hidden;white-space:nowrap;
+/* แถบทีมเต็มความกว้าง เหนือหัวใบ — สิ่งแรกที่ตาเห็นเมื่อหยิบใบขึ้นมา
+   ใช้ภาษาเดียวกับหัวใบที่อยู่ใต้มัน (กรอบทึบ 2px) จะได้เป็นเอกสารใบเดียวกัน */
+.tm-top{display:flex;align-items:stretch;border:2px solid #000;margin-bottom:8px;
   -webkit-print-color-adjust:exact;print-color-adjust:exact}
+.tm-top .lb{display:flex;align-items:center;padding:5px 12px;font-size:9px;letter-spacing:2px;
+  text-transform:uppercase;color:#444;border-right:1.5px solid #000;white-space:nowrap}
+.tm-top .nm{flex:1;display:flex;align-items:center;justify-content:center;
+  padding:5px 12px;font-size:18px;font-weight:900;letter-spacing:6px;text-transform:uppercase;
+  font-family:Arial,sans-serif}
 .stop{border:1px solid #bbb;margin-bottom:10px;page-break-inside:avoid;break-inside:avoid}
 .sh{display:flex;align-items:center;gap:8px;padding:5px 10px;border-bottom:1.5px solid #000;background:#f5f5f5}
 .sn{background:#fff;color:#000;border:1.5px solid #000;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;flex-shrink:0}
@@ -91,7 +93,7 @@ table.pod-tbl tr:nth-child(even) td{background:#f9f9f9}
 @media print{
   .topbar{display:none!important}
   .doc-wrap{background:#fff!important;padding:0!important}
-  .a4{box-shadow:none!important;margin:0!important;width:100%!important;max-width:100%!important;padding:6mm 14mm 6mm 6mm!important;page-break-after:always;break-after:page}
+  .a4{box-shadow:none!important;margin:0!important;width:100%!important;max-width:100%!important;padding:6mm!important;page-break-after:always;break-after:page}
   .truck-break{page-break-before:always;break-before:page}
   .stop{page-break-inside:avoid;break-inside:avoid}
   *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
@@ -369,18 +371,18 @@ function buildHeader(truck, dateStr, nStops, titleTh, titleEn, team) {
 }
 
 /**
- * แถบชื่อทีมตามแนวตั้งริมขอบขวาของกระดาษ
+ * แถบชื่อทีมพาดเต็มความกว้าง อยู่เหนือหัวใบ
  *
- * สามปึกวางกองรวมกันบนโต๊ะ ปัญหาไม่ใช่ "อ่านไม่ออกตอนถือ" แต่คือ "แยกไม่ออก
- * ตอนยังไม่หยิบ" แถบที่ขอบจึงเห็นได้จากด้านข้างของกอง โดยไม่ต้องเปิดดูทีละใบ
+ * สามทีมได้เอกสารชุดเดียวกัน ถ้าไม่ติดชื่อไว้ พอวางรวมกันแล้วแยกไม่ออกว่า
+ * ปึกไหนของใคร และถ้ามีคนเขียนลงใบผิดปึก ผลตรวจจะไปอยู่กับทีมอื่น
  *
- * เขียนชื่อซ้ำหลายรอบตลอดความสูง เพราะกองที่วางไม่ตรงกันเป๊ะจะบังบางช่วง
- * ถ้ามีคำเดียวตรงกลางแล้วโดนบัง ก็กลับไปแยกไม่ออกเหมือนเดิม
+ * วางไว้บนสุดเพราะเป็นสิ่งแรกที่ตากวาดถึงเมื่อหยิบใบขึ้นมา และใช้กรอบทึบ
+ * แบบเดียวกับหัวใบที่อยู่ใต้มัน จะได้อ่านเป็นเอกสารใบเดียวกัน ไม่ใช่ป้ายแปะ
  */
-function edgeBand(team) {
+function teamBanner(team) {
   if (!team) return '';
-  var reps = new Array(6).fill(esc(team)).join(' · ');
-  return '<div class="tm-edge">' + reps + '</div>';
+  return '<div class="tm-top"><div class="lb">เอกสารสำหรับทีม / FOR TEAM</div>' +
+    '<div class="nm">' + esc(team) + '</div></div>';
 }
 
 function render(body) {
@@ -432,7 +434,7 @@ function render(body) {
     h1 += '</tbody></table>'
       + '<div style="margin-top:12px;padding-top:8px;border-top:0.5px solid #ddd;font-size:8.5px;color:#888;line-height:1.6">'
       + 'ข้าพเจ้ายินยอมให้ภาพถ่ายที่ทางบริษัทฯได้บันทึกไว้ เป็นลิขสิทธิ์ของทางบริษัทฯในการนำไปใช้ต่อใดๆก็ได้</div>';
-    p1.innerHTML = h1 + edgeBand(team);
+    p1.innerHTML = teamBanner(team) + h1;
     wrap.appendChild(p1);
 
     // ใบ 2: ใบนำส่งสินค้า
@@ -515,7 +517,7 @@ function render(body) {
         + '</div></div>';
     });
 
-    p2.innerHTML = h2 + edgeBand(team);
+    p2.innerHTML = teamBanner(team) + h2;
     wrap.appendChild(p2);
   });
   });
