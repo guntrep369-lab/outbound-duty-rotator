@@ -47,6 +47,16 @@ body{font-family:'Sarabun',Arial,sans-serif;background:#f0f0f0;min-height:100vh;
 .dh-right{background:#fff;color:#000;padding:12px 20px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:150px;border-left:1.5px solid #000}
 .tr-label{font-size:8px;color:#666;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px}
 .tr-name{font-size:22px;font-weight:900;color:#000;font-family:Arial,sans-serif;text-align:center;word-break:break-all}
+/* ชิปเลือกทีมบนแถบเครื่องมือ ไม่ติดไปกับกระดาษ */
+.tm-lbl{font-size:11.5px;color:#666;font-weight:600;white-space:nowrap}
+.tm-chip{border:1px solid #999;background:#fff;border-radius:999px;padding:4px 12px;
+  font-size:12px;cursor:pointer;color:#000;white-space:nowrap}
+.tm-chip:hover:not(.active){background:#f0f0f0}
+.tm-chip.active{background:#000;color:#fff;border-color:#000;font-weight:700}
+/* แถบชื่อทีมบนหัวใบ ต้องอ่านออกจากปลายโต๊ะ เพราะสามปึกวางรวมกันแล้วต้องคว้าถูก */
+.tm-band{font-size:15px;font-weight:900;letter-spacing:1px;text-transform:uppercase;
+  border:2px solid #000;border-radius:4px;padding:2px 12px;margin-bottom:7px;
+  -webkit-print-color-adjust:exact;print-color-adjust:exact}
 .stop{border:1px solid #bbb;margin-bottom:10px;page-break-inside:avoid;break-inside:avoid}
 .sh{display:flex;align-items:center;gap:8px;padding:5px 10px;border-bottom:1.5px solid #000;background:#f5f5f5}
 .sn{background:#fff;color:#000;border:1.5px solid #000;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;flex-shrink:0}
@@ -135,6 +145,8 @@ table.pod-tbl tr:nth-child(even) td{background:#f9f9f9}
 <div id="doc-screen">
   <div class="topbar">
     <div class="info" id="topInfo"></div>
+    <span class="tm-lbl">พิมพ์ให้ทีม</span>
+    <span id="teamChips"></span>
     <button onclick="openExportModal()">📊 Export Excel</button>
     <button onclick="document.getElementById('logoInput').click()" id="logoTopBtn" title="โลโก้จะแสดงบนหัวใบทุกหน้า"><img id="logoTopPreview" alt="">🖼 โลโก้</button>
     <button onclick="resetApp()">⬆ อัปโหลดใหม่</button>
@@ -302,7 +314,41 @@ function groupData(body) {
   });
 }
 
-function buildHeader(truck, dateStr, nStops, titleTh, titleEn) {
+/**
+ * สามทีมตรวจงานหน้างานคนละรอบ จึงต้องได้เอกสารคนละชุด
+ *
+ * เดิมพิมพ์ใบเดียวกันสามครั้งแล้วแจกไป ซึ่งพอวางรวมกันบนโต๊ะแล้วแยกไม่ออกว่า
+ * ปึกไหนของใคร และถ้าใครเขียนลงใบผิดปึก ข้อมูลที่ตรวจมาจะไปอยู่กับทีมอื่น
+ */
+var TEAMS = ['Checker', 'Outbound', 'Transport'];
+
+/* ทีมที่เลือกพิมพ์อยู่ — ว่าง = ทั้งสามทีม ซึ่งเป็นวิธีที่ทีมใช้จริงทุกวัน
+   จำไว้ในเครื่อง คนเดิมมักพิมพ์แบบเดิมทุกเช้า */
+var TK_KEY = 'wms:delivery:team';
+var TEAM_PICK = (function () {
+  try { return localStorage.getItem(TK_KEY) || ''; } catch (e) { return ''; }
+})();
+
+function setTeam(t) {
+  TEAM_PICK = t;
+  try { localStorage.setItem(TK_KEY, t); } catch (e) {}
+  if (LAST_BODY) render(LAST_BODY);
+}
+
+function renderTeamChips() {
+  var host = document.getElementById('teamChips');
+  if (!host) return;
+  var chip = function (val, label) {
+    return '<button class="tm-chip' + (TEAM_PICK === val ? ' active' : '') + '" ' +
+      'onclick="setTeam(\'' + val + '\')">' + esc(label) + '</button>';
+  };
+  host.innerHTML = chip('', 'ทั้ง 3 ทีม') + TEAMS.map(function (t) { return chip(t, t); }).join('');
+}
+
+/** ทีมที่ต้องวาดในรอบนี้ */
+function teamsToRender() { return TEAM_PICK ? [TEAM_PICK] : TEAMS.slice(); }
+
+function buildHeader(truck, dateStr, nStops, titleTh, titleEn, team) {
   var logoHtml = LOGO_B64
     ? '<img src="' + LOGO_B64 + '" style="height:80px;width:130px;object-fit:contain;flex-shrink:0">'
     : '<div style="width:80px;height:60px;border:1px dashed #ccc;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px;color:#bbb;flex-shrink:0">LOGO</div>';
@@ -315,7 +361,11 @@ function buildHeader(truck, dateStr, nStops, titleTh, titleEn) {
     + '<div class="dh-meta"><div><div class="doc-title">' + titleTh + '</div><div class="doc-sub">' + titleEn + '</div></div>'
     + '<div class="doc-info"><span>📅 ' + esc(dateStr||'-') + '</span><span>📍 ' + nStops + ' จุดส่ง</span></div>'
     + '</div></div>'
-    + '<div class="dh-right"><div class="tr-label">รถ / TRUCK</div><div class="tr-name">' + esc(truck) + '</div></div>'
+    /* ชื่อทีมอยู่คู่กับชื่อรถ ไม่ใช่ตัวเล็ก ๆ ที่มุมใบ — สองอย่างนี้คือสิ่งที่คนหยิบใบ
+       ขึ้นมาต้องอ่านก่อนเสมอ ว่าใบนี้ของรถคันไหน และเป็นของทีมใคร */
+    + '<div class="dh-right">'
+    + (team ? '<div class="tm-band">' + esc(team) + '</div>' : '')
+    + '<div class="tr-label">รถ / TRUCK</div><div class="tr-name">' + esc(truck) + '</div></div>'
     + '</div>';
 }
 
@@ -328,14 +378,19 @@ function render(body) {
   var wrap = document.getElementById('docWrap');
   wrap.innerHTML = '';
 
+  renderTeamChips();
+  /* วนทีมชั้นนอก คันรถชั้นใน ปึกของแต่ละทีมจึงออกมาติดกัน หยิบจากถาดแล้ว
+     แจกได้เลย ถ้าวนคันชั้นนอกจะได้ใบสลับทีมทั้งปึก ต้องมานั่งคัดทีหลัง */
+  teamsToRender().forEach(function(team, tmi) {
   groups.forEach(function(tg, ti) {
     var dateStr = parseDate(tg.stops[0][0] ? tg.stops[0][0][C.date] : '');
-    var brk = ti > 0 ? ' truck-break' : '';
+    // ใบแรกของทีมถัดไปต้องขึ้นหน้าใหม่ ไม่ใช่ต่อท้ายใบสุดท้ายของทีมก่อนหน้า
+    var brk = (ti > 0 || tmi > 0) ? ' truck-break' : '';
 
     // ใบ 1: เซ็นรับสินค้า
     var p1 = document.createElement('div');
     p1.className = 'a4 page-pod' + brk;
-    var h1 = buildHeader(tg.truck, dateStr, tg.stops.length, 'ใบเซ็นรับสินค้า', 'PROOF OF DELIVERY');
+    var h1 = buildHeader(tg.truck, dateStr, tg.stops.length, 'ใบเซ็นรับสินค้า', 'PROOF OF DELIVERY', team);
     h1 += '<table class="pod-tbl"><thead><tr>'
       + '<th style="width:30px;text-align:center">#</th>'
       + '<th style="width:90px">Order</th>'
@@ -375,7 +430,7 @@ function render(body) {
       if (v) cardSet.add(v);
     });
     var cardList = Array.from(cardSet);
-    var h2 = buildHeader(tg.truck, dateStr, tg.stops.length, 'ใบนำส่งสินค้า', 'DELIVERY ORDER');
+    var h2 = buildHeader(tg.truck, dateStr, tg.stops.length, 'ใบนำส่งสินค้า', 'DELIVERY ORDER', team);
     if (cardList.length > 0) {
       h2 += '<div style="border:1.5px solid #000;border-radius:4px;padding:8px 12px;margin-bottom:14px;background:#f9f9f9">'
         + '<div style="font-size:11px;font-weight:800;margin-bottom:6px">🏧 เครื่องรูดบัตรที่ต้องเบิกสำหรับคันนี้</div>'
@@ -448,6 +503,7 @@ function render(body) {
 
     p2.innerHTML = h2;
     wrap.appendChild(p2);
+  });
   });
 
   document.getElementById('upload-screen').style.display = 'none';
