@@ -435,7 +435,8 @@ function render(body) {
     h1 += '</tbody></table>'
       + '<div style="margin-top:12px;padding-top:8px;border-top:0.5px solid #ddd;font-size:8.5px;color:#888;line-height:1.6">'
       + 'ข้าพเจ้ายินยอมให้ภาพถ่ายที่ทางบริษัทฯได้บันทึกไว้ เป็นลิขสิทธิ์ของทางบริษัทฯในการนำไปใช้ต่อใดๆก็ได้</div>';
-    p1.innerHTML = teamBanner(team) + h1;
+    // ใบเซ็นรับไม่ติดแถบทีม — ใบนี้เดินไปกับคนขับให้ลูกค้าเซ็น ไม่ได้เป็นของทีมตรวจ
+    p1.innerHTML = h1;
     wrap.appendChild(p1);
 
     // ใบ 2: ใบนำส่งสินค้า
