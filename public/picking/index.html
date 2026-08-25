@@ -422,6 +422,41 @@ function inLockedTeam(r) {
   return !truckLock || WmsTruck.bucketOf(r.truck) === truckLock;
 }
 
+/* Sup ที่ล็อกอยู่ — ว่าง = ทุก Sup
+   ขนส่งรถบริษัทมีของสองเจ้าปนกันในรอบเดียว (Lunio กับ JST) ซึ่งหยิบแยกกัน
+   จำไว้ในเครื่องเหมือนล็อกกลุ่มรถ คนเดิมมักหยิบของเจ้าเดิมทุกวัน */
+const SUP_KEY = 'wms:pick:sup';
+let supLock = (() => { try { return localStorage.getItem(SUP_KEY) || ''; } catch (e) { return ''; } })();
+
+function setSupLock(v) {
+  supLock = (supLock === v) ? '' : v;    // กดซ้ำที่ปุ่มเดิม = ปลดล็อก
+  try { localStorage.setItem(SUP_KEY, supLock); } catch (e) {}
+  renderPickSum();
+}
+
+/**
+ * Sup ที่มีอยู่จริงในข้อมูลวันนี้ — ไม่ฝังชื่อไว้ในโค้ด
+ *
+ * วันนี้มี Lunio กับ JST แต่ถ้าวันหนึ่งมีเจ้าที่สาม ปุ่มจะขึ้นเองโดยไม่ต้องแก้โค้ด
+ * และถ้าวันไหนมีเจ้าเดียว ปุ่มจะไม่ขึ้นเลย เพราะไม่มีอะไรให้แยก
+ */
+function supsInData() {
+  const seen = new Set();
+  carriersOf().forEach(c => (c.data1 || []).concat(c.data2 || [])
+    .forEach(r => { const s = String(r.sup || '').trim(); if (s) seen.add(s); }));
+  return [...seen].sort((a, b) => a.localeCompare(b, 'th'));
+}
+
+/**
+ * กรองที่ระดับแถวออเดอร์ ไม่ใช่ที่รายการสินค้าที่รวมยอดแล้ว
+ *
+ * SKU เดียวกันถูกสั่งได้ทั้งจาก Lunio และ JST ในวันเดียวกัน พอรวมยอดแล้วมันเป็น
+ * บรรทัดเดียวที่มีทั้งสองเจ้าปนอยู่ข้างใน แยกทีหลังไม่ได้ — ต้องกรองก่อนรวม
+ */
+function inLockedSup(r) {
+  return !supLock || String(r.sup || '').trim() === supLock;
+}
+
 /* ปุ่มสองอันท้ายขึ้นเฉพาะเมื่อมีงานตกอยู่ในนั้นจริง — ปุ่มที่กดแล้วได้ใบเปล่า
    คือปุ่มที่ทำให้คนสงสัยว่าตัวเองกดผิดหรือข้อมูลหาย */
 const SPARE_LOCKS = [
@@ -541,7 +576,9 @@ function renderPickSum() {
   const keys = pickCarriers.filter(k => carriersOf().some(c => c.key === k));
   if (keys.length !== pickCarriers.length) pickCarriers = keys;
 
-  const rowsOf = c => (pickSource === 1 ? c.data1 : c.data2) || [];
+  /* กรอง Sup ตั้งแต่ตรงนี้ ไม่ใช่ทีหลัง — ยอดแยกรายขนส่งบนหัวใบรวมก็คิดจาก
+     rowsOf เหมือนกัน ถ้ากรองทีหลังหัวใบจะบอกยอดหนึ่ง เนื้อใบบอกอีกยอด */
+  const rowsOf = c => ((pickSource === 1 ? c.data1 : c.data2) || []).filter(inLockedSup);
   const sel = carriersOf().filter(c => keys.includes(c.key));
 
   /**
@@ -587,10 +624,16 @@ function renderPickSum() {
      ไม่ใช่กระจายเข้าใบใดใบหนึ่ง เพราะจะทำให้ทีมนั้นหยิบของที่ไม่ใช่งานตัวเอง */
   /* ล็อกกลุ่มรถ = ดูกลุ่มเดียว จึงกรองก่อน แล้วไม่ต้องแยกใบต่อ — การแยกใบ
      ของสิ่งที่เหลือกลุ่มเดียวได้ใบเดิมกลับมาพร้อมหัวข้อที่ไม่ได้แบ่งอะไร */
+  /* แถวถูกกรอง Sup ไปแล้วตั้งแต่ rowsOf — ตรงนี้เหลือแค่ติดชื่อ Sup บนหัวใบ
+     และตัดขนส่งที่ไม่มีของเจ้านั้นเลยออก ไม่ให้เหลือใบเปล่า */
+  const groupsS = !supLock ? groups : groups
+    .filter(g => g.rows.length)
+    .map(g => ({ ...g, label: g.label + ' · ' + supLock }));
+
   const lockedTeam = WmsTruck.TRUCK_TEAMS.find(t => t.id === truckLock);
   const lockLabel = lockedTeam ? lockedTeam.label
     : (SPARE_LOCKS.find(s => s.id === truckLock) || {}).label || '';
-  const groups1 = !truckLock ? groups : groups
+  const groups1 = !truckLock ? groupsS : groupsS
     .map(g => ({ ...g, label: g.label + ' · ' + lockLabel, rows: g.rows.filter(inLockedTeam) }))
     .filter(g => g.rows.length);
 
@@ -683,6 +726,17 @@ function renderPickSum() {
     '<span class="ps-hint">เลือกได้หลายเจ้า — ที่เลือกจะรวมเป็นใบเดียว</span></div>' +
     /* ช่องกลุ่มคนรถ ขึ้นเฉพาะตอนที่ข้อมูลมีชื่อรถจริง — ขนส่งเจ้าอื่นไม่มีคอลัมน์นี้
        การโชว์ช่องที่ใช้ไม่ได้คือการชวนให้กรอกแล้วสงสัยว่าทำไมไม่มีอะไรเกิดขึ้น */
+    /* แถว Sup ขึ้นเฉพาะวันที่มีของมากกว่าหนึ่งเจ้า — วันที่มีเจ้าเดียว
+       ปุ่มแยกไม่ได้แยกอะไร มีแต่ทำให้แถบเครื่องมือรก */
+    ((() => {
+      const sups = supsInData();
+      if (sups.length < 2) return '';
+      const chip = (v, label) => '<button class="ps-chip' + (supLock === v ? ' active' : '') + '" ' +
+        'onclick="setSupLock(' + JSON.stringify(v).replace(/"/g, '&quot;') + ')">' + esc(label) + '</button>';
+      return '<div class="ps-carriers no-print"><span class="ps-lbl">Sup</span>' +
+        chip('', 'ทุกเจ้า') + sups.map(s => chip(s, s)).join('') +
+        '<span class="ps-hint">แยกใบตามเจ้าของสินค้า · กดปุ่มเดิมซ้ำเพื่อปลด</span></div>';
+    })()) +
     (anyTruck() ? '<div class="ps-carriers no-print"><span class="ps-lbl">กลุ่มรถ</span>' +
       '<button class="ps-chip' + (truckLock ? '' : ' active') + '" ' +
       'onclick="setTruckLock(\'\')">ทั้งหมด</button>' +
