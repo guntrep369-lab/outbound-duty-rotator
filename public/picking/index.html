@@ -435,26 +435,27 @@ function setSupLock(v) {
 }
 
 /**
- * Sup ที่มีอยู่จริงในข้อมูลวันนี้ — ไม่ฝังชื่อไว้ในโค้ด
+ * รายชื่อ Sup ที่ให้เลือกได้ตอนนี้ — คืน [] แปลว่าไม่ต้องขึ้นแถวนี้เลย
  *
- * วันนี้มี Lunio กับ JST แต่ถ้าวันหนึ่งมีเจ้าที่สาม ปุ่มจะขึ้นเองโดยไม่ต้องแก้โค้ด
- * และถ้าวันไหนมีเจ้าเดียว ปุ่มจะไม่ขึ้นเลย เพราะไม่มีอะไรให้แยก
+ * ปุ่ม Sup เป็นเรื่องของขนส่งรถบริษัทเจ้าเดียว จึงขึ้นเฉพาะตอนที่เจาะจงมาที่รถบริษัทแล้ว
+ * คือกดเลือกขนส่งเจ้าเดียว หรือกดล็อกกลุ่มรถ — มีแต่งานรถบริษัทที่มีชื่อคัน
+ * กลุ่มรถจึงเป็นรถบริษัทอยู่แล้วในตัว ส่วนตอนกาง "แยกทุกขนส่ง" ยังไม่ได้เจาะจงอะไร ปุ่มจึงไม่ขึ้น
+ *
+ * อ่านชื่อเจ้าจากข้อมูลของวันนั้น ไม่ฝัง Lunio/JST ไว้ในโค้ด — วันไหนมีเจ้าที่สาม
+ * ปุ่มขึ้นเอง วันไหนเหลือเจ้าเดียวปุ่มหายไปเอง เพราะไม่มีอะไรให้แยก
+ *
+ * นับเฉพาะแถวที่จะขึ้นใบจริง คือรอบที่เลือกอยู่และกลุ่มรถที่ล็อกไว้ — ปุ่มที่กด
+ * แล้วได้ใบเปล่า คือปุ่มที่ทำให้คนสงสัยว่าตัวเองกดผิดหรือข้อมูลหาย
  */
-function supsInData() {
+function supsInData(keys) {
+  if (!(keys && keys.length === 1) && !truckLock) return [];
+  const sel = (keys && keys.length) ? carriersOf().filter(c => keys.includes(c.key)) : carriersOf();
   const seen = new Set();
-  carriersOf().forEach(c => (c.data1 || []).concat(c.data2 || [])
+  sel.forEach(c => ((pickSource === 1 ? c.data1 : c.data2) || [])
+    .filter(inLockedTeam)
     .forEach(r => { const s = String(r.sup || '').trim(); if (s) seen.add(s); }));
-  return [...seen].sort((a, b) => a.localeCompare(b, 'th'));
-}
-
-/**
- * กรองที่ระดับแถวออเดอร์ ไม่ใช่ที่รายการสินค้าที่รวมยอดแล้ว
- *
- * SKU เดียวกันถูกสั่งได้ทั้งจาก Lunio และ JST ในวันเดียวกัน พอรวมยอดแล้วมันเป็น
- * บรรทัดเดียวที่มีทั้งสองเจ้าปนอยู่ข้างใน แยกทีหลังไม่ได้ — ต้องกรองก่อนรวม
- */
-function inLockedSup(r) {
-  return !supLock || String(r.sup || '').trim() === supLock;
+  const list = [...seen].sort((a, b) => a.localeCompare(b, 'th'));
+  return list.length > 1 ? list : [];
 }
 
 /* ปุ่มสองอันท้ายขึ้นเฉพาะเมื่อมีงานตกอยู่ในนั้นจริง — ปุ่มที่กดแล้วได้ใบเปล่า
@@ -576,9 +577,22 @@ function renderPickSum() {
   const keys = pickCarriers.filter(k => carriersOf().some(c => c.key === k));
   if (keys.length !== pickCarriers.length) pickCarriers = keys;
 
+  /* Sup ที่กรองอยู่จริง ไม่ใช่ค่าที่จำไว้เฉย ๆ — ตัวกรองที่มองไม่เห็นคือของอันตราย
+     ถ้าปลดล็อกกลุ่มรถแล้วแถว Sup หายไปแต่ยังกรองอยู่ ของจะหายจากใบโดยไม่มีอะไร
+     บนจอบอกว่าทำไม ค่าที่จำไว้จึงมีผลเฉพาะตอนที่ปุ่มโผล่ให้กดปลดได้เท่านั้น */
+  const sups = supsInData(keys);
+  const supNow = sups.indexOf(supLock) >= 0 ? supLock : '';
+
   /* กรอง Sup ตั้งแต่ตรงนี้ ไม่ใช่ทีหลัง — ยอดแยกรายขนส่งบนหัวใบรวมก็คิดจาก
-     rowsOf เหมือนกัน ถ้ากรองทีหลังหัวใบจะบอกยอดหนึ่ง เนื้อใบบอกอีกยอด */
-  const rowsOf = c => ((pickSource === 1 ? c.data1 : c.data2) || []).filter(inLockedSup);
+     rowsOf เหมือนกัน ถ้ากรองทีหลังหัวใบจะบอกยอดหนึ่ง เนื้อใบบอกอีกยอด
+
+     และต้องกรองที่ระดับแถวออเดอร์ ไม่ใช่ที่รายการที่รวมยอดแล้ว เพราะ SKU
+     เดียวกันถูกสั่งได้ทั้งจาก Lunio และ JST ในวันเดียวกัน พอรวมยอดแล้วมันเป็น
+     บรรทัดเดียวที่มีทั้งสองเจ้าปนอยู่ข้างใน แยกทีหลังไม่ได้ */
+  const rowsOf = c => {
+    const rows = (pickSource === 1 ? c.data1 : c.data2) || [];
+    return supNow ? rows.filter(r => String(r.sup || '').trim() === supNow) : rows;
+  };
   const sel = carriersOf().filter(c => keys.includes(c.key));
 
   /**
@@ -626,9 +640,9 @@ function renderPickSum() {
      ของสิ่งที่เหลือกลุ่มเดียวได้ใบเดิมกลับมาพร้อมหัวข้อที่ไม่ได้แบ่งอะไร */
   /* แถวถูกกรอง Sup ไปแล้วตั้งแต่ rowsOf — ตรงนี้เหลือแค่ติดชื่อ Sup บนหัวใบ
      และตัดขนส่งที่ไม่มีของเจ้านั้นเลยออก ไม่ให้เหลือใบเปล่า */
-  const groupsS = !supLock ? groups : groups
+  const groupsS = !supNow ? groups : groups
     .filter(g => g.rows.length)
-    .map(g => ({ ...g, label: g.label + ' · ' + supLock }));
+    .map(g => ({ ...g, label: g.label + ' · ' + supNow }));
 
   const lockedTeam = WmsTruck.TRUCK_TEAMS.find(t => t.id === truckLock);
   const lockLabel = lockedTeam ? lockedTeam.label
@@ -714,6 +728,18 @@ function renderPickSum() {
   });
 
   const attr = v => JSON.stringify(v).replace(/"/g, '&quot;');
+
+  /* แถว Sup อยู่ใต้แถวกลุ่มรถ เพราะมันคือการซอยงานรถบริษัทต่ออีกชั้น ไม่ใช่
+     ตัวกรองอิสระ — วางไว้บนสุดแล้วมันจะอ่านเหมือนใช้ได้กับทุกขนส่ง
+     supsInData() เป็นตัวเดียวที่ตัดสินว่าจะขึ้นหรือไม่ขึ้น */
+  const supRow = !sups.length ? '' : (() => {
+    const chip = (v, label) => '<button class="ps-chip' + (supNow === v ? ' active' : '') + '" ' +
+      'onclick="setSupLock(' + attr(v) + ')">' + esc(label) + '</button>';
+    return '<div class="ps-carriers no-print"><span class="ps-lbl">Sup</span>' +
+      chip('', 'ทุกเจ้า') + sups.map(x => chip(x, x)).join('') +
+      '<span class="ps-hint">แยกใบตามเจ้าของสินค้าในรถบริษัท · กดปุ่มเดิมซ้ำเพื่อปลด</span></div>';
+  })();
+
   const chips = '<div class="ps-carriers no-print"><span class="ps-lbl">พิมพ์ขนส่ง</span>' +
     '<button class="ps-chip' + (keys.length ? '' : ' active') + '" ' +
     'onclick="togglePickCarrier()">แยกทุกขนส่ง</button>' +
@@ -726,17 +752,6 @@ function renderPickSum() {
     '<span class="ps-hint">เลือกได้หลายเจ้า — ที่เลือกจะรวมเป็นใบเดียว</span></div>' +
     /* ช่องกลุ่มคนรถ ขึ้นเฉพาะตอนที่ข้อมูลมีชื่อรถจริง — ขนส่งเจ้าอื่นไม่มีคอลัมน์นี้
        การโชว์ช่องที่ใช้ไม่ได้คือการชวนให้กรอกแล้วสงสัยว่าทำไมไม่มีอะไรเกิดขึ้น */
-    /* แถว Sup ขึ้นเฉพาะวันที่มีของมากกว่าหนึ่งเจ้า — วันที่มีเจ้าเดียว
-       ปุ่มแยกไม่ได้แยกอะไร มีแต่ทำให้แถบเครื่องมือรก */
-    ((() => {
-      const sups = supsInData();
-      if (sups.length < 2) return '';
-      const chip = (v, label) => '<button class="ps-chip' + (supLock === v ? ' active' : '') + '" ' +
-        'onclick="setSupLock(' + JSON.stringify(v).replace(/"/g, '&quot;') + ')">' + esc(label) + '</button>';
-      return '<div class="ps-carriers no-print"><span class="ps-lbl">Sup</span>' +
-        chip('', 'ทุกเจ้า') + sups.map(s => chip(s, s)).join('') +
-        '<span class="ps-hint">แยกใบตามเจ้าของสินค้า · กดปุ่มเดิมซ้ำเพื่อปลด</span></div>';
-    })()) +
     (anyTruck() ? '<div class="ps-carriers no-print"><span class="ps-lbl">กลุ่มรถ</span>' +
       '<button class="ps-chip' + (truckLock ? '' : ' active') + '" ' +
       'onclick="setTruckLock(\'\')">ทั้งหมด</button>' +
@@ -756,7 +771,7 @@ function renderPickSum() {
         'placeholder="เช่น 1-20, 21-60 — เว้นว่าง = ไม่แยก" ' +
         'oninput="setTruckGroups(this.value)">' +
         '<span class="ps-hint">แยกใบตามช่วงเลขคันที่กำหนดเอง</span></div>')
-      : '');
+      : '') + supRow;
 
   const scopeTxt = keys.length > 1 ? ('รวม ' + keys.length + ' ขนส่งเป็นใบเดียว')
                  : keys.length === 1 ? esc(keys[0])
