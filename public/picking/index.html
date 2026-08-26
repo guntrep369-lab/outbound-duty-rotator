@@ -475,12 +475,27 @@ function setSupLock(v) {
 function supsInData(keys) {
   if (!(keys && keys.length === 1) && !truckLock) return [];
   const sel = (keys && keys.length) ? carriersOf().filter(c => keys.includes(c.key)) : carriersOf();
+  const list = supsIn(sel);
+  return list.length > 1 ? list : [];
+}
+
+/** ชื่อ Sup ที่อยู่ในขนส่งกลุ่มนี้ ตามรอบและกลุ่มรถที่เลือกอยู่ */
+function supsIn(cars) {
   const seen = new Set();
-  sel.forEach(c => ((pickSource === 1 ? c.data1 : c.data2) || [])
+  cars.forEach(c => ((pickSource === 1 ? c.data1 : c.data2) || [])
     .filter(inLockedTeam)
     .forEach(r => { const s = String(r.sup || '').trim(); if (s) seen.add(s); }));
-  const list = [...seen].sort((a, b) => a.localeCompare(b, 'th'));
-  return list.length > 1 ? list : [];
+  return [...seen].sort((a, b) => a.localeCompare(b, 'th'));
+}
+
+/**
+ * มีขนส่งเจ้าไหนที่กดแล้วจะเจอปุ่ม Sup ไหม
+ *
+ * ปุ่ม Sup ถูกซ่อนไว้จนกว่าจะเจาะจงมาที่รถบริษัท ซึ่งถูกแล้ว แต่คนที่ไม่รู้กติกา
+ * จะเห็นแค่ว่าปุ่มหายไป — ใบ้ไว้ข้างแถวขนส่งว่ากดเจ้าเดียวแล้วจะเจอ
+ */
+function hasMultiSup() {
+  return carriersOf().some(c => supsIn([c]).length > 1);
 }
 
 // นับชิ้นตามตัวกรองที่เปิดอยู่ ใช้ทั้งยอดรวมของใบ ยอดแยกรายเจ้าในหัวใบ และแผงตัดออเดอร์
@@ -965,7 +980,8 @@ function renderPickSum() {
     (carriersOf().length > 1
       ? '<button class="ps-chip ps-chip-alt" onclick="selectAllPickCarriers()">➕ รวมทุกเจ้าเป็นใบเดียว</button>'
       : '') +
-    '<span class="ps-hint">เลือกได้หลายเจ้า — ที่เลือกจะรวมเป็นใบเดียว</span></div>' +
+    '<span class="ps-hint">เลือกได้หลายเจ้า — ที่เลือกจะรวมเป็นใบเดียว' +
+    (!sups.length && hasMultiSup() ? ' · กดเจ้าเดียวเพื่อแยก Sup' : '') + '</span></div>' +
     /* ช่องกลุ่มคนรถ ขึ้นเฉพาะตอนที่ข้อมูลมีชื่อรถจริง — ขนส่งเจ้าอื่นไม่มีคอลัมน์นี้
        การโชว์ช่องที่ใช้ไม่ได้คือการชวนให้กรอกแล้วสงสัยว่าทำไมไม่มีอะไรเกิดขึ้น */
     (anyTruck() ? '<div class="ps-carriers no-print"><span class="ps-lbl">กลุ่มรถ</span>' +
@@ -987,7 +1003,12 @@ function renderPickSum() {
         'placeholder="เช่น 1-20, 21-60 — เว้นว่าง = ไม่แยก" ' +
         'oninput="setTruckGroups(this.value)">' +
         '<span class="ps-hint">แยกใบตามช่วงเลขคันที่กำหนดเอง</span></div>')
-      : '') + supRow + cutUI;
+      /* แถวหายไปเฉย ๆ คือสิ่งที่ทำให้คนเข้าใจว่าฟังก์ชันพัง ทั้งที่ข้อมูลยังไม่มา
+         เขียนไว้ว่าทำไม จะได้รู้ว่าต้องรอชีตกรอกชื่อรถ ไม่ใช่มาตามหาบั๊ก */
+      : '<div class="ps-carriers no-print"><span class="ps-lbl">กลุ่มรถ</span>' +
+        '<span class="ps-hint">ข้อมูลรอบนี้ยังไม่มีชื่อรถสักแถว — ปุ่มรถบริษัท / รถเสริม ' +
+        'จะขึ้นเองเมื่อชีตกรอกคอลัมน์ชื่อรถแล้วกดดึงข้อมูลใหม่</span></div>')
+      + supRow + cutUI;
 
   const scopeTxt = keys.length > 1 ? ('รวม ' + keys.length + ' ขนส่งเป็นใบเดียว')
                  : keys.length === 1 ? esc(keys[0])
