@@ -442,9 +442,40 @@ function setTruckLock(id) {
   renderPickSum();
 }
 
-/** แถวนี้อยู่ในกลุ่มที่ล็อกไว้ไหม */
-function inLockedTeam(r) {
-  return !truckLock || WmsTruck.bucketOf(r.truck) === truckLock;
+/** แถวนี้อยู่ในกลุ่มที่ล็อกไว้ไหม — รับค่าล็อกมา ไม่อ่าน truckLock เอง
+    เพราะค่าที่จำไว้กับค่าที่มีผลจริงเป็นคนละตัวกัน (ดู teamNow) */
+function inTeam(r, lock) {
+  return !lock || WmsTruck.bucketOf(r.truck) === lock;
+}
+
+/**
+ * ตัวกรองของรถทั้งสามแถว (กลุ่มรถ · แยกใบเอง · Sup) เป็นเรื่องของขนส่งเจ้าเดียว
+ * จึงขึ้นต่อเมื่อเจาะจงมาที่เจ้านั้นแล้ว — ตอนกาง "แยกทุกขนส่ง" หรือรวมหลายเจ้า
+ * เป็นใบเดียว การล็อกกลุ่มรถจะไปตัดงานของเจ้าที่ไม่มีชื่อรถทิ้งทั้งหมด
+ *
+ * ไม่ได้เช็คชื่อ "รถบริษัท" ตรง ๆ แต่เช็คว่าเจ้าที่เลือกมีชื่อรถจริงไหม —
+ * วันไหนขนส่งเจ้าอื่นเริ่มส่งชื่อรถมาด้วย ปุ่มจะขึ้นเองโดยไม่ต้องแก้โค้ด
+ */
+function truckScope(keys) {
+  if (!keys || keys.length !== 1) return null;
+  const c = carriersOf().find(x => x.key === keys[0]);
+  return c && hasTruck([c]) ? c : null;
+}
+
+/**
+ * กลุ่มรถที่กรองอยู่จริง ไม่ใช่ค่าที่จำไว้เฉย ๆ
+ *
+ * ล็อกรถเสริมไว้แล้วกด "แยกทุกขนส่ง" — แถวปุ่มหายไป แต่ถ้าค่ายังมีผล งานของ
+ * KEX/BEST/BI จะถูกตัดทิ้งทั้งหมดเพราะไม่มีเลขคัน โดยไม่มีอะไรบนจอบอกว่าทำไม
+ * ค่าที่จำไว้จึงมีผลเฉพาะตอนที่ปุ่มโผล่ให้กดปลดได้เท่านั้น
+ */
+function teamNow(keys) {
+  return truckScope(keys) ? truckLock : '';
+}
+
+/** ขนส่งกลุ่มนี้มีชื่อรถในรอบที่เลือกอยู่ไหม */
+function hasTruck(cars) {
+  return cars.some(c => ((pickSource === 1 ? c.data1 : c.data2) || []).some(r => r.truck));
 }
 
 /* Sup ที่ล็อกอยู่ — ว่าง = ทุก Sup
@@ -473,17 +504,17 @@ function setSupLock(v) {
  * แล้วได้ใบเปล่า คือปุ่มที่ทำให้คนสงสัยว่าตัวเองกดผิดหรือข้อมูลหาย
  */
 function supsInData(keys) {
-  if (!(keys && keys.length === 1) && !truckLock) return [];
-  const sel = (keys && keys.length) ? carriersOf().filter(c => keys.includes(c.key)) : carriersOf();
-  const list = supsIn(sel);
+  if (!keys || keys.length !== 1) return [];
+  const sel = carriersOf().filter(c => keys.includes(c.key));
+  const list = supsIn(sel, teamNow(keys));
   return list.length > 1 ? list : [];
 }
 
 /** ชื่อ Sup ที่อยู่ในขนส่งกลุ่มนี้ ตามรอบและกลุ่มรถที่เลือกอยู่ */
-function supsIn(cars) {
+function supsIn(cars, lock) {
   const seen = new Set();
   cars.forEach(c => ((pickSource === 1 ? c.data1 : c.data2) || [])
-    .filter(inLockedTeam)
+    .filter(r => inTeam(r, lock))
     .forEach(r => { const s = String(r.sup || '').trim(); if (s) seen.add(s); }));
   return [...seen].sort((a, b) => a.localeCompare(b, 'th'));
 }
@@ -495,7 +526,7 @@ function supsIn(cars) {
  * จะเห็นแค่ว่าปุ่มหายไป — ใบ้ไว้ข้างแถวขนส่งว่ากดเจ้าเดียวแล้วจะเจอ
  */
 function hasMultiSup() {
-  return carriersOf().some(c => supsIn([c]).length > 1);
+  return carriersOf().some(c => supsIn([c], '').length > 1);
 }
 
 // นับชิ้นตามตัวกรองที่เปิดอยู่ ใช้ทั้งยอดรวมของใบ ยอดแยกรายเจ้าในหัวใบ และแผงตัดออเดอร์
@@ -616,8 +647,8 @@ const SPARE_LOCKS = [
   { id: 'none',    label: 'ไม่ระบุคัน' },
 ];
 
-function spareLocksInData() {
-  const rows = carriersOf().flatMap(c => (c.data1 || []).concat(c.data2 || []));
+function spareLocksInData(cars) {
+  const rows = cars.flatMap(c => (pickSource === 1 ? c.data1 : c.data2) || []);
   return SPARE_LOCKS.filter(s => rows.some(r => r.truck && WmsTruck.bucketOf(r.truck) === s.id));
 }
 
@@ -631,10 +662,6 @@ function setTruckGroups(v) {
 }
 
 /** ข้อมูลชุดนี้มีชื่อรถไหม — ขนส่งเจ้าอื่นไม่มีคอลัมน์นี้ */
-function anyTruck() {
-  return carriersOf().some(c => (c.data1 || []).concat(c.data2 || []).some(r => r.truck));
-}
-
 /**
  * สลับขนาดกระดาษที่จะพิมพ์
  * เนื้อหาเหมือนกันทุกอย่าง ต่างแค่ @page และความแน่นของตัวอักษร —
@@ -736,6 +763,12 @@ function renderPickSum() {
   const sups = supsInData(keys);
   const supNow = sups.indexOf(supLock) >= 0 ? supLock : '';
 
+  /* ทั้งสามแถวของรถขึ้นพร้อมกัน และมีผลพร้อมกัน — ค่าที่จำไว้ทั้งกลุ่มรถและช่วง
+     เลขคันมีผลเฉพาะตอนที่ปุ่มโผล่ให้กดปลดได้ ไม่งั้นกด "แยกทุกขนส่ง" แล้วงานของ
+     เจ้าที่ไม่มีชื่อรถจะหายทั้งก้อนโดยไม่มีอะไรบนจอบอกว่าทำไม */
+  const truckOn = !!truckScope(keys);
+  const teamLock = teamNow(keys);
+
   /* กรอง Sup ตั้งแต่ตรงนี้ ไม่ใช่ทีหลัง — ยอดแยกรายขนส่งบนหัวใบรวมก็คิดจาก
      rowsOf เหมือนกัน ถ้ากรองทีหลังหัวใบจะบอกยอดหนึ่ง เนื้อใบบอกอีกยอด
 
@@ -792,14 +825,14 @@ function renderPickSum() {
     .filter(g => g.rows.length)
     .map(g => ({ ...g, label: g.label + ' · ' + supNow }));
 
-  const lockedTeam = WmsTruck.TRUCK_TEAMS.find(t => t.id === truckLock);
+  const lockedTeam = WmsTruck.TRUCK_TEAMS.find(t => t.id === teamLock);
   const lockLabel = lockedTeam ? lockedTeam.label
-    : (SPARE_LOCKS.find(s => s.id === truckLock) || {}).label || '';
-  const groups1 = !truckLock ? groupsS : groupsS
-    .map(g => ({ ...g, label: g.label + ' · ' + lockLabel, rows: g.rows.filter(inLockedTeam) }))
+    : (SPARE_LOCKS.find(s => s.id === teamLock) || {}).label || '';
+  const groups1 = !teamLock ? groupsS : groupsS
+    .map(g => ({ ...g, label: g.label + ' · ' + lockLabel, rows: g.rows.filter(r => inTeam(r, teamLock)) }))
     .filter(g => g.rows.length);
 
-  const ranges = truckLock ? [] : WmsTruck.parseRanges(truckGroups);
+  const ranges = (truckOn && !teamLock) ? WmsTruck.parseRanges(truckGroups) : [];
   const groups2 = !ranges.length ? groups1 : groups1.flatMap(g => {
     const buckets = ranges.map(r => ({ label: r.label, rows: [] }));
     /* แยกสองกรณีที่ต่างกันจริง: ไม่มีเลขคันเลย กับ มีเลขแต่อยู่นอกช่วงที่ตั้งไว้
@@ -823,7 +856,7 @@ function renderPickSum() {
      ซึ่งเป็นสิ่งที่ตรวจด้วยตาได้ว่าไม่มีอะไรหายไประหว่างทาง */
   const cutByCarrier = new Map();
   (keys.length ? sel : carriersOf()).forEach(c => {
-    const rs = srcRows(c).filter(r => inSup(r) && isCut(r) && inLockedTeam(r));
+    const rs = srcRows(c).filter(r => inSup(r) && isCut(r) && inTeam(r, teamLock));
     if (rs.length) cutByCarrier.set(c.key, rs);
   });
   const cutRows = [...cutByCarrier.values()].flat();
@@ -980,34 +1013,44 @@ function renderPickSum() {
     (carriersOf().length > 1
       ? '<button class="ps-chip ps-chip-alt" onclick="selectAllPickCarriers()">➕ รวมทุกเจ้าเป็นใบเดียว</button>'
       : '') +
+    /* บอกไว้ว่าตัวกรองของรถไปอยู่ไหน — ขึ้นเฉพาะตอนที่กดแล้วเจอจริง
+       ปุ่มที่หายไปเฉย ๆ คือปุ่มที่คนเชื่อว่าพัง */
     '<span class="ps-hint">เลือกได้หลายเจ้า — ที่เลือกจะรวมเป็นใบเดียว' +
-    (!sups.length && hasMultiSup() ? ' · กดเจ้าเดียวเพื่อแยก Sup' : '') + '</span></div>' +
-    /* ช่องกลุ่มคนรถ ขึ้นเฉพาะตอนที่ข้อมูลมีชื่อรถจริง — ขนส่งเจ้าอื่นไม่มีคอลัมน์นี้
-       การโชว์ช่องที่ใช้ไม่ได้คือการชวนให้กรอกแล้วสงสัยว่าทำไมไม่มีอะไรเกิดขึ้น */
-    (anyTruck() ? '<div class="ps-carriers no-print"><span class="ps-lbl">กลุ่มรถ</span>' +
-      '<button class="ps-chip' + (truckLock ? '' : ' active') + '" ' +
+    (() => {
+      const more = [];
+      if (!truckOn && hasTruck(carriersOf())) more.push('กลุ่มรถ');
+      if (!sups.length && hasMultiSup()) more.push('Sup');
+      return more.length ? ' · กดขนส่งเจ้าเดียวเพื่อแยก' + more.join(' / ') : '';
+    })() + '</span></div>' +
+    /* สามแถวของรถขึ้นเฉพาะตอนเจาะจงมาที่ขนส่งเจ้าที่มีชื่อรถแล้ว — กางทุกเจ้าอยู่
+       แล้วล็อกกลุ่มรถ เท่ากับตัดงานของเจ้าที่ไม่มีชื่อรถทิ้งทั้งหมด */
+    (truckOn ? '<div class="ps-carriers no-print"><span class="ps-lbl">กลุ่มรถ</span>' +
+      '<button class="ps-chip' + (teamLock ? '' : ' active') + '" ' +
       'onclick="setTruckLock(\'\')">ทั้งหมด</button>' +
       WmsTruck.TRUCK_TEAMS.map(t =>
-        '<button class="ps-chip' + (truckLock === t.id ? ' active' : '') + '" ' +
+        '<button class="ps-chip' + (teamLock === t.id ? ' active' : '') + '" ' +
         'onclick="setTruckLock(\'' + t.id + '\')">' + esc(t.label) +
         ' <span class="ps-tiny">คัน ' + t.from + '-' + t.to + '</span></button>').join('') +
-      spareLocksInData().map(s =>
-        '<button class="ps-chip ps-chip-alt' + (truckLock === s.id ? ' active' : '') + '" ' +
+      spareLocksInData([truckScope(keys)]).map(s =>
+        '<button class="ps-chip ps-chip-alt' + (teamLock === s.id ? ' active' : '') + '" ' +
         'onclick="setTruckLock(\'' + s.id + '\')">' + esc(s.label) + '</button>').join('') +
       '<span class="ps-hint">ล็อกไว้ดูกลุ่มเดียว · กดปุ่มเดิมซ้ำเพื่อปลด</span></div>' +
       /* ช่องช่วงเลขไว้ใช้เฉพาะกิจ ซ่อนไว้ตอนล็อกอยู่ เพราะล็อกแล้วเหลือกลุ่มเดียว
          การแยกใบไม่มีความหมาย และช่องที่กรอกแล้วไม่เกิดอะไรคือช่องที่ทำให้สับสน */
-      (truckLock ? '' :
+      (teamLock ? '' :
         '<div class="ps-carriers no-print"><span class="ps-lbl">แยกใบเอง</span>' +
         '<input class="ps-range" id="truckGroups" value="' + esc(truckGroups) + '" ' +
         'placeholder="เช่น 1-20, 21-60 — เว้นว่าง = ไม่แยก" ' +
         'oninput="setTruckGroups(this.value)">' +
         '<span class="ps-hint">แยกใบตามช่วงเลขคันที่กำหนดเอง</span></div>')
-      /* แถวหายไปเฉย ๆ คือสิ่งที่ทำให้คนเข้าใจว่าฟังก์ชันพัง ทั้งที่ข้อมูลยังไม่มา
-         เขียนไว้ว่าทำไม จะได้รู้ว่าต้องรอชีตกรอกชื่อรถ ไม่ใช่มาตามหาบั๊ก */
-      : '<div class="ps-carriers no-print"><span class="ps-lbl">กลุ่มรถ</span>' +
-        '<span class="ps-hint">ข้อมูลรอบนี้ยังไม่มีชื่อรถสักแถว — ปุ่มรถบริษัท / รถเสริม ' +
-        'จะขึ้นเองเมื่อชีตกรอกคอลัมน์ชื่อรถแล้วกดดึงข้อมูลใหม่</span></div>')
+      /* เลือกเจ้าเดียวแล้วปุ่มยังไม่มา แปลว่าชีตยังไม่ได้กรอกชื่อรถ ไม่ใช่ของพัง
+         เช็คทั้งวัน ไม่ใช่เฉพาะเจ้าที่เลือก — เจ้าที่ไม่เคยมีชื่อรถอยู่แล้ว (KEX/BEST)
+         ไม่ควรขึ้นคำอธิบายที่ชวนให้ไปรอของที่ไม่มีวันมา */
+      : (keys.length === 1 && !hasTruck(carriersOf())
+        ? '<div class="ps-carriers no-print"><span class="ps-lbl">กลุ่มรถ</span>' +
+          '<span class="ps-hint">ข้อมูลรอบนี้ยังไม่มีชื่อรถสักแถว — ปุ่มรถบริษัท / รถเสริม ' +
+          'จะขึ้นเองเมื่อชีตกรอกคอลัมน์ชื่อรถแล้วกดดึงข้อมูลใหม่</span></div>'
+        : ''))
       + supRow + cutUI;
 
   const scopeTxt = keys.length > 1 ? ('รวม ' + keys.length + ' ขนส่งเป็นใบเดียว')
