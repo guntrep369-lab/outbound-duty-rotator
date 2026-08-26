@@ -78,6 +78,7 @@
     .ps-card:last-child{page-break-after:auto;break-after:auto}
     .ps-head{background:#fff!important;color:#000!important;border-bottom:2.5px solid #000;padding:0 0 8px}
     .ps-carrier{font-size:20px}
+    .ps-xnote{color:#000!important;font-weight:700}
     .ps-meta,.ps-tot span{color:#444!important}
     .ps-group{padding:10px 0 12px}
     .ps-table{page-break-inside:auto}
@@ -149,6 +150,30 @@
   .ps-split span{padding:2px 9px;border-radius:6px;border:1px solid var(--border);
     font-size:11px;color:var(--muted);white-space:nowrap}
   .ps-split b{color:var(--text);font-weight:700;margin-left:2px}
+
+  /* แผงตัดออเดอร์ออกจากยอด — ชื่อคลาสขึ้นต้น ps-x ไม่ใช่ ps-cut เพราะ ps-cut
+     ถูกใช้ไปแล้วกับเส้นบอกรอยตัดหน้ากระดาษที่ drawPageGuides() วาด */
+  .ps-xpanel{border:1px solid var(--border);border-radius:12px;background:var(--surface);
+    padding:10px 12px;margin-bottom:12px}
+  .ps-xtop{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+  .ps-xq{flex:1;min-width:150px;padding:5px 11px;border-radius:999px;
+    border:1px solid var(--border2,var(--border));background:var(--surface);
+    font-family:var(--sans);font-size:12.5px;color:var(--text)}
+  .ps-xq:focus{border-color:var(--primary);outline:none}
+  .ps-xlist{max-height:290px;overflow-y:auto;display:flex;flex-direction:column;gap:3px}
+  .ps-xrow{display:flex;align-items:center;gap:9px;padding:5px 9px;border-radius:8px;
+    border:1px solid transparent;font-size:12.5px;cursor:pointer}
+  .ps-xrow:hover{background:var(--surface2)}
+  .ps-xrow.on{background:#FEF2F2;border-color:#FCA5A5}
+  .ps-xrow.on .ps-xid{text-decoration:line-through;color:#991B1B}
+  .ps-xid{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--primary);min-width:100px}
+  .ps-xwho{flex:1;min-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+  .ps-xtruck{color:var(--muted);font-size:11.5px;white-space:nowrap}
+  .ps-xpcs{font-weight:700;font-variant-numeric:tabular-nums;min-width:46px;text-align:right;color:var(--text)}
+  .ps-xnone{padding:16px;text-align:center;color:var(--muted);font-size:12.5px}
+  /* บรรทัดนี้ต้องติดไปกับกระดาษด้วย ไม่ใช่ no-print — คนถือใบออกไปเดินต้องรู้ว่า
+     ใบในมือไม่ใช่ยอดทั้งวัน ไม่งั้นหยิบขาดแล้วไม่มีใครรู้ว่าทำไม */
+  .ps-xnote{margin-top:6px;font-size:11.5px;color:#FECACA;font-weight:600}
   /* แถบดึงข้อมูล (.d*) และ .consign-no ย้ายไปอยู่ ../wms-theme.css แล้ว
      เพราะหน้าเทียบ Order ใช้ชุดเดียวกัน — สองสำเนาแปลว่าวันหนึ่งจะเพี้ยนกัน */
 
@@ -458,6 +483,117 @@ function supsInData(keys) {
   return list.length > 1 ? list : [];
 }
 
+// นับชิ้นตามตัวกรองที่เปิดอยู่ ใช้ทั้งยอดรวมของใบ ยอดแยกรายเจ้าในหัวใบ และแผงตัดออเดอร์
+const piecesOf = rows => Object.values(WmsPick.aggregateSKUDemand(rows))
+  .filter(x => pickFilter === 'all' || (pickFilter === 'bed') === (x.type === 'bed'))
+  .reduce((n, x) => n + x.qty, 0);
+
+/**
+ * ออเดอร์ที่ตัดออกจากยอด
+ *
+ * เก็บใน sessionStorage ไปกับข้อมูลของวัน ไม่ใช่ localStorage เหมือนล็อก Sup
+ * กับกลุ่มรถ — สองอันนั้นเป็นนิสัยการทำงานที่ควรจำข้ามวัน ส่วนการตัดออเดอร์เป็น
+ * ข้อเท็จจริงของวันนี้วันเดียว ถ้าจำข้ามวัน ของจะหายจากใบพรุ่งนี้เงียบ ๆ
+ * โดยไม่มีใครสั่ง ซึ่งเป็นความผิดพลาดชนิดที่ไม่มีอะไรบนจอชี้ให้เห็น
+ *
+ * ผูกไว้กับ at ของชุดข้อมูล: ดึงข้อมูลใหม่ = at เปลี่ยน = ที่ตัดไว้หมดอายุทันที
+ * โดยไม่ต้องให้หน้าอื่นมาสั่งล้าง
+ */
+const CUT_KEY = 'wms:pick:cut';
+let cutIds = new Set();
+let cutMode = 'split';   // 'split' = แยกเป็นใบต่อท้าย · 'drop' = ไม่พิมพ์เลย
+let cutOpen = false;     // แผงเลือกออเดอร์เปิดอยู่ไหม
+let cutQ = '';           // คำค้นในแผง
+
+function dataAt() {
+  const o = window.OrderIndex && OrderIndex.getCarriers();
+  return o ? o.at : 0;
+}
+
+function loadCuts() {
+  try {
+    const o = JSON.parse(sessionStorage.getItem(CUT_KEY) || 'null');
+    if (!o || o.at !== dataAt()) { cutIds = new Set(); return; }
+    cutIds = new Set(o.ids || []);
+    if (o.mode === 'drop' || o.mode === 'split') cutMode = o.mode;
+  } catch (e) {
+    cutIds = new Set();
+  }
+}
+
+function saveCuts() {
+  try {
+    sessionStorage.setItem(CUT_KEY, JSON.stringify({ at: dataAt(), ids: [...cutIds], mode: cutMode }));
+  } catch (e) {}
+}
+
+function toggleCut(id) {
+  cutIds.has(id) ? cutIds.delete(id) : cutIds.add(id);
+  saveCuts();
+  renderPickSum();
+}
+
+function setCutMode(m) { cutMode = m; saveCuts(); renderPickSum(); }
+function clearCuts() { cutIds = new Set(); saveCuts(); renderPickSum(); }
+function toggleCutPanel() { cutOpen = !cutOpen; renderPickSum(); }
+
+function setCutQ(v) {
+  cutQ = v;
+  renderPickSum();
+  // วาดใหม่แล้ว input ตัวเดิมหายไป ต้องคืนโฟกัสให้พิมพ์ต่อได้ไม่สะดุด
+  const el = document.getElementById('cutQ');
+  if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+}
+
+/**
+ * ออเดอร์ของวันนี้ พร้อมจำนวนชิ้น — ข้อมูลของแผงเลือกตัด
+ *
+ * ไล่จากทุกขนส่งเสมอ ไม่ใช่เฉพาะที่เลือกดูอยู่ เพราะถ้าลิสต์แคบตามขอบเขต
+ * ออเดอร์ที่ตัดไว้แล้วจะหายจากลิสต์ทันทีที่เปลี่ยนขอบเขต แล้วปลดไม่ได้อีกเลย
+ * กลายเป็นของที่หายจากใบโดยไม่มีทางเอากลับ
+ */
+function ordersOfDay() {
+  const by = new Map();
+  carriersOf().forEach(c => ((pickSource === 1 ? c.data1 : c.data2) || []).forEach(r => {
+    const id = String(r.orderID || '').trim();
+    if (!id) return;
+    if (!by.has(id)) {
+      by.set(id, { id, carrier: c.key, customer: r.customer || '—', truck: r.truck || '', rows: [] });
+    }
+    by.get(id).rows.push(r);
+  }));
+  /* เรียงตามเลขคัน คันที่ไม่มีเลข (งาน Event ที่เขียน "5 คัน") ไว้ท้ายสุด
+     ลำดับเดียวกับผังงานรถวันนี้ จะได้ไล่หาออเดอร์ด้วยสายตาแบบเดียวกัน */
+  return [...by.values()].map(o => ({ ...o, pieces: piecesOf(o.rows) }))
+    .sort((a, b) => {
+      const na = WmsTruck.numberOf(a.truck), nb = WmsTruck.numberOf(b.truck);
+      if (na == null && nb == null) return a.id.localeCompare(b.id, 'th');
+      if (na == null) return 1;
+      if (nb == null) return -1;
+      return na - nb || a.id.localeCompare(b.id, 'th');
+    });
+}
+
+/**
+ * งาน Event — ชีตเขียนชื่อรถเป็นจำนวนคัน ("5 คัน") ไม่ใช่ชื่อคัน เพราะงานเดียว
+ * ใช้รถหลายคันส่งลูกค้ารายเดียว ทีมอื่นรับไปจัดต่างหาก จึงเป็นเคสที่ต้องตัดออก
+ * บ่อยที่สุด — ปุ่มเดียวจบ ไม่ต้องไล่ติ๊กทีละใบ
+ *
+ * ใช้ isCount() ไม่ใช่ bucketOf() === 'none' เพราะ 'none' รวมแถวที่ไม่มีชื่อรถ
+ * เลยเข้าไปด้วย ซึ่งคือออเดอร์ของขนส่งเจ้าอื่นทั้งหมด — กดทีเดียวของหายทั้งวัน
+ */
+function eventOrders() {
+  return ordersOfDay().filter(o => WmsTruck.isCount(o.truck));
+}
+
+function cutEventOrders() {
+  const ev = eventOrders();
+  const allCut = ev.length && ev.every(o => cutIds.has(o.id));
+  ev.forEach(o => { allCut ? cutIds.delete(o.id) : cutIds.add(o.id); });
+  saveCuts();
+  renderPickSum();
+}
+
 /* ปุ่มสองอันท้ายขึ้นเฉพาะเมื่อมีงานตกอยู่ในนั้นจริง — ปุ่มที่กดแล้วได้ใบเปล่า
    คือปุ่มที่ทำให้คนสงสัยว่าตัวเองกดผิดหรือข้อมูลหาย */
 const SPARE_LOCKS = [
@@ -566,6 +702,8 @@ function renderPickSum() {
     return;
   }
 
+  loadCuts();   // ดึงข้อมูลรอบใหม่ = at เปลี่ยน = ที่ตัดไว้เมื่อกี้หมดอายุเอง
+
   const srcName = pickSource === 1 ? 'Sheet Daily Logis (รอบเช้า)' : 'Sheet Daily CRM';
   let html = '';
   let grand = 0;
@@ -589,10 +727,10 @@ function renderPickSum() {
      และต้องกรองที่ระดับแถวออเดอร์ ไม่ใช่ที่รายการที่รวมยอดแล้ว เพราะ SKU
      เดียวกันถูกสั่งได้ทั้งจาก Lunio และ JST ในวันเดียวกัน พอรวมยอดแล้วมันเป็น
      บรรทัดเดียวที่มีทั้งสองเจ้าปนอยู่ข้างใน แยกทีหลังไม่ได้ */
-  const rowsOf = c => {
-    const rows = (pickSource === 1 ? c.data1 : c.data2) || [];
-    return supNow ? rows.filter(r => String(r.sup || '').trim() === supNow) : rows;
-  };
+  const inSup = r => !supNow || String(r.sup || '').trim() === supNow;
+  const isCut = r => cutIds.has(String(r.orderID || '').trim());
+  const srcRows = c => (pickSource === 1 ? c.data1 : c.data2) || [];
+  const rowsOf = c => srcRows(c).filter(r => inSup(r) && !isCut(r));
   const sel = carriersOf().filter(c => keys.includes(c.key));
 
   /**
@@ -617,11 +755,6 @@ function renderPickSum() {
     return 'พิมพ์เมื่อ ' + new Date().toLocaleDateString('th-TH',
       { day:'numeric', month:'long', year:'numeric' });
   }
-
-  // นับชิ้นตามตัวกรองที่เปิดอยู่ ใช้ทั้งยอดรวมของใบและยอดแยกรายเจ้าในหัวใบ
-  const piecesOf = rows => Object.values(WmsPick.aggregateSKUDemand(rows))
-    .filter(x => pickFilter === 'all' || (pickFilter === 'bed') === (x.type === 'bed'))
-    .reduce((n, x) => n + x.qty, 0);
 
   // เลือกหลายเจ้า = ใบเดียวที่รวมยอดแล้ว ไม่ใช่หลายใบ
   const groups = keys.length > 1
@@ -670,7 +803,47 @@ function renderPickSum() {
       .map(b => ({ ...g, label: g.label + ' · ' + b.label, rows: b.rows }));
   });
 
-  groups2.forEach(g => {
+  /* แถวที่ถูกตัดออก แต่ยังอยู่ในขอบเขตที่กำลังพิมพ์ (ขนส่งที่เลือก · Sup · กลุ่มรถ)
+     คิดจากขอบเขตเดียวกับใบหลักเสมอ ใบหลักบวกใบนี้จึงเท่ายอดก่อนตัดพอดี
+     ซึ่งเป็นสิ่งที่ตรวจด้วยตาได้ว่าไม่มีอะไรหายไประหว่างทาง */
+  const cutByCarrier = new Map();
+  (keys.length ? sel : carriersOf()).forEach(c => {
+    const rs = srcRows(c).filter(r => inSup(r) && isCut(r) && inLockedTeam(r));
+    if (rs.length) cutByCarrier.set(c.key, rs);
+  });
+  const cutRows = [...cutByCarrier.values()].flat();
+  const cutPcs = piecesOf(cutRows);
+  const cutList = [...new Set(cutRows.map(r => String(r.orderID || '').trim()).filter(Boolean))];
+
+  /* บรรทัดเตือนบนหัวใบ ติดไปกับกระดาษด้วย — ใบที่ถูกตัดของออกไปแล้วแต่หน้าตา
+     เหมือนใบเต็ม คือใบที่ทำให้หยิบขาดโดยไม่มีใครรู้ว่าทำไม
+
+     คิดทีละใบตามขนส่งของใบนั้น ไม่ใช่แปะยอดรวมทั้งชุดลงทุกใบ — ใบ Kerry ที่ขึ้นว่า
+     "ตัดออก 2 ออเดอร์" ทั้งที่ตัดของรถบริษัท ทำให้คนอ่านออกไปตามหาออเดอร์ที่ไม่มีอยู่ */
+  const cutNoteFor = (cars) => {
+    const rows = (cars || []).flatMap(c => cutByCarrier.get(c.key) || []);
+    if (!rows.length) return '';
+    const ids = [...new Set(rows.map(r => String(r.orderID || '').trim()).filter(Boolean))];
+    return '<div class="ps-xnote">✂ ตัดออกจากใบนี้ <b>' + ids.length + '</b> ออเดอร์ · <b>' +
+      piecesOf(rows) + '</b> ชิ้น — ' + (cutMode === 'split' ? 'พิมพ์แยกไว้ใบท้าย' : 'ไม่ได้พิมพ์') +
+      '<br>' + esc(ids.join(', ')) + '</div>';
+  };
+
+  /* โหมดแยกใบ: ของที่ตัดออกไปโผล่เป็นใบของตัวเองต่อท้าย ไม่ใช่หายไปจากระบบ
+     ใบนี้เดินผ่านทางเดียวกับใบอื่นทุกอย่าง (จัดกลุ่ม เช็คสต๊อก แบ่งหน้า)
+     ต่างแค่ไม่ถูกนับเข้ายอดรวม เพราะมันคือของที่ตั้งใจไม่นับ */
+  /* หัวใบตัดต้องบอกขอบเขตเดียวกับใบหลัก — พิมพ์รถบริษัท+Lunio แล้วพิมพ์
+     รถบริษัท+JST ต่อ จะได้ใบตัดสองใบที่หน้าตาเหมือนกันเป๊ะถ้าไม่เขียนไว้ */
+  const cutScope = [keys.length ? keys.join(' + ') : null, supNow || null, lockLabel || null]
+    .filter(Boolean).join(' · ');
+  const sheets = (cutMode === 'split' && cutRows.length)
+    ? groups2.concat([{
+        label: '✂ ตัดออกจากยอด' + (cutScope ? ' · ' + cutScope : ''),
+        parts: null, rows: cutRows, cars: keys.length ? sel : carriersOf(), cut: true,
+      }])
+    : groups2;
+
+  sheets.forEach(g => {
     const items = Object.values(WmsPick.aggregateSKUDemand(g.rows)).sort((a, b) =>
       a.type === b.type ? b.qty - a.qty : (a.type === 'bed' ? -1 : 1));
 
@@ -678,7 +851,7 @@ function renderPickSum() {
     const gifts = pickFilter === 'bed'  ? [] : items.filter(x => x.type !== 'bed');
     const shown = beds.concat(gifts);
     const pieces = shown.reduce((n, x) => n + x.qty, 0);
-    grand += pieces;
+    if (!g.cut) grand += pieces;   // ใบที่ตัดออกคือของที่ตั้งใจไม่นับ
     const scope = pickFilter === 'bed' ? ' · เฉพาะที่นอน' : pickFilter === 'gift' ? ' · เฉพาะของแถม' : '';
     const when = sheetDate(g.cars);
 
@@ -698,6 +871,7 @@ function renderPickSum() {
         '<div><div class="ps-carrier" data-label="' + esc(g.label) + '">' + esc(g.label) +
         (g.parts ? '<span class="ps-mix">รวม ' + g.parts.length + ' ขนส่ง</span>' : '') + '</div>' +
         '<div class="ps-meta">' + esc(srcName) + ' · ' + esc(when) + esc(scope) + '</div>' + split +
+        (g.cut ? '' : cutNoteFor(g.cars)) +
         (() => {
           const short = shortLines(shown);
           short.forEach(x => {
@@ -740,6 +914,48 @@ function renderPickSum() {
       '<span class="ps-hint">แยกใบตามเจ้าของสินค้าในรถบริษัท · กดปุ่มเดิมซ้ำเพื่อปลด</span></div>';
   })();
 
+  /* แถวตัดออเดอร์อยู่ล่างสุดของแถบเครื่องมือ เพราะเป็นตัวเดียวที่ลบของออกจากใบ
+     ไม่ใช่แค่เลือกว่าจะดูก้อนไหน — ของที่ตัดต้องกดสองที (เปิดแผง แล้วติ๊ก)
+     ไม่ใช่ปุ่มเดียวที่เผลอโดนแล้วยอดเปลี่ยน */
+  const cutUI = (() => {
+    const all = ordersOfDay();
+    if (!all.length) return '';
+    const ev = eventOrders();
+    const evAllCut = ev.length > 0 && ev.every(o => cutIds.has(o.id));
+    const n = cutIds.size;
+
+    const head = '<div class="ps-carriers no-print"><span class="ps-lbl">ตัดออเดอร์</span>' +
+      '<button class="ps-chip' + (n ? ' active' : '') + '" onclick="toggleCutPanel()">' +
+      (cutOpen ? '▾ ' : '▸ ') + (n ? 'ตัดไว้ ' + n + ' ออเดอร์' : 'เลือกออเดอร์ที่ไม่นับ') + '</button>' +
+      (n ? '<button class="ps-chip ps-chip-alt" onclick="clearCuts()">↺ เอากลับทั้งหมด</button>' : '') +
+      '<span class="ps-hint">เฉพาะวันนี้ · ดึงข้อมูลใหม่แล้วกลับมาครบเอง</span></div>';
+    if (!cutOpen) return head;
+
+    const q = cutQ.trim().toLowerCase();
+    const list = !q ? all
+      : all.filter(o => (o.id + ' ' + o.customer + ' ' + o.truck).toLowerCase().indexOf(q) >= 0);
+    const line = o => '<label class="ps-xrow' + (cutIds.has(o.id) ? ' on' : '') + '">' +
+      '<input type="checkbox"' + (cutIds.has(o.id) ? ' checked' : '') +
+      ' onchange="toggleCut(' + attr(o.id) + ')">' +
+      '<span class="ps-xid">' + esc(o.id) + '</span>' +
+      '<span class="ps-xwho">' + esc(o.customer) + '</span>' +
+      '<span class="ps-xtruck">' + esc(o.truck || 'ไม่ระบุคัน') + '</span>' +
+      '<span class="ps-xpcs">' + o.pieces + '</span></label>';
+
+    return head + '<div class="ps-xpanel no-print"><div class="ps-xtop">' +
+      (ev.length ? '<button class="ps-chip' + (evAllCut ? ' active' : '') +
+        '" onclick="cutEventOrders()">🎪 งาน Event ' + ev.length + ' ออเดอร์</button>' : '') +
+      '<button class="ps-chip' + (cutMode === 'split' ? ' active' : '') +
+      '" onclick="setCutMode(\'split\')">แยกเป็นใบต่อท้าย</button>' +
+      '<button class="ps-chip' + (cutMode === 'drop' ? ' active' : '') +
+      '" onclick="setCutMode(\'drop\')">ไม่พิมพ์เลย</button>' +
+      '<input class="ps-xq" id="cutQ" value="' + esc(cutQ).replace(/"/g, '&quot;') + '" ' +
+      'placeholder="ค้นเลขออเดอร์ / ลูกค้า / คัน" oninput="setCutQ(this.value)">' +
+      '</div><div class="ps-xlist">' +
+      (list.length ? list.map(line).join('') : '<div class="ps-xnone">ไม่พบออเดอร์ที่ค้น</div>') +
+      '</div></div>';
+  })();
+
   const chips = '<div class="ps-carriers no-print"><span class="ps-lbl">พิมพ์ขนส่ง</span>' +
     '<button class="ps-chip' + (keys.length ? '' : ' active') + '" ' +
     'onclick="togglePickCarrier()">แยกทุกขนส่ง</button>' +
@@ -771,7 +987,7 @@ function renderPickSum() {
         'placeholder="เช่น 1-20, 21-60 — เว้นว่าง = ไม่แยก" ' +
         'oninput="setTruckGroups(this.value)">' +
         '<span class="ps-hint">แยกใบตามช่วงเลขคันที่กำหนดเอง</span></div>')
-      : '') + supRow;
+      : '') + supRow + cutUI;
 
   const scopeTxt = keys.length > 1 ? ('รวม ' + keys.length + ' ขนส่งเป็นใบเดียว')
                  : keys.length === 1 ? esc(keys[0])
@@ -779,7 +995,9 @@ function renderPickSum() {
   host.className = 'ps-papermode';
   host.innerHTML = chips +
     '<div class="ps-grand no-print">รวม <b>' + grand + '</b> ชิ้น · ' +
-    scopeTxt + ' · จาก ' + esc(srcName) + '</div>' + shortageBar() + html;
+    scopeTxt + ' · จาก ' + esc(srcName) +
+    (cutRows.length ? ' · ตัดออก <b>' + cutList.length + '</b> ออเดอร์ (' + cutPcs + ' ชิ้น)' : '') +
+    '</div>' + shortageBar() + html;
 
   // เรียกตรง ๆ ไม่ผ่าน requestAnimationFrame — rAF ถูก throttle เมื่อแท็บ/เฟรม
   // ไม่ได้อยู่หน้าจอ ทำให้เส้นแบ่งหน้าไม่ถูกวาด ส่วนการอ่าน scrollHeight
