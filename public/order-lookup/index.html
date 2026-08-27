@@ -59,7 +59,10 @@
 .oc-tag{padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:600;
   background:var(--wms-primary-light);color:var(--wms-primary-dark)}
 .oc-tag.crm{background:#FEF3C7;color:#92400E}
-.oc-tag.truck{background:#DCFCE7;color:#166534}
+/* ป้ายคันรถกับเวลานัดคือสองอย่างที่คนรับสายต้องตอบให้ได้ทันที
+   จึงใหญ่กว่าป้ายอื่นในการ์ดตั้งใจ ไม่ใช่ขนาดเดียวกันทั้งแถว */
+.oc-tag.truck{background:#DCFCE7;color:#166534;font-size:14.5px;font-weight:700;
+  padding:5px 13px}
 .oc-sp{flex:1}
 .oc-copy{padding:4px 11px;border-radius:var(--wms-radius-sm);border:1px solid var(--wms-border2);
   background:var(--wms-surface);font-family:var(--wms-font);font-size:11.5px;color:#334155;cursor:pointer}
@@ -72,6 +75,9 @@
 .oc-f .v{font-size:13.5px;color:var(--wms-text);line-height:1.5;word-break:break-word}
 .oc-f .v.mono{font-family:ui-monospace,Menlo,monospace;font-size:12.5px}
 .oc-f .v.dim{color:var(--wms-faint)}
+.oc-f .v.big{font-size:22px;font-weight:700;line-height:1.25;font-variant-numeric:tabular-nums}
+/* ไม่มีเวลานัดก็ไม่ต้องขยายขีด — ขีดตัวโตอ่านเหมือนมีข้อมูลอยู่ */
+.oc-f .v.big .dim{font-size:13.5px;font-weight:400}
 
 .oc-items{padding:11px 15px}
 .oc-items table{width:100%;border-collapse:collapse;font-size:13px}
@@ -449,7 +455,7 @@ function card(g, raw) {
       ${field('ลูกค้า', hi(r.customer, raw))}
       ${field('เบอร์โทร', [r.phone1, r.phone2].filter(Boolean).map(p => hi(p, raw)).join(' · '), 'mono')}
       ${field('เลข Consign', consigns.map(c => hi(c, raw)).join('<br>'), 'mono')}
-      ${field('เวลานัด', apptTime(g, t))}
+      ${field('เวลานัด', apptTime(g, t), 'big')}
       ${field('การเงิน', esc(r.payment || ''))}
       ${field('ที่อยู่', hi(r.address, raw))}
       ${r.remark ? field('หมายเหตุ', esc(r.remark)) : ''}
