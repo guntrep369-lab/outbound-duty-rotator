@@ -22,6 +22,7 @@ import {
   Compass,
   ClipboardList,
   Map as MapIcon,
+  ListChecks,
 } from 'lucide-react';
 import { MODULES, GROUPS, BRAND } from '../public/wms-modules.js';
 import { useApp } from './context/useApp.js';
@@ -95,7 +96,7 @@ function GateUser() {
 }
 
 /** Icon name (from wms-modules.js) → the lucide component that draws it. */
-const MODULE_ICONS = { calendar: CalendarRange, clipboard: ClipboardCheck, truck: Truck, warehouse: Warehouse, file: FileText, search: Search, settings: Settings2, boxes: Boxes, package: Package, sunrise: Sunrise, compass: Compass, clipboardList: ClipboardList, map: MapIcon, history: HistoryIcon };
+const MODULE_ICONS = { calendar: CalendarRange, clipboard: ClipboardCheck, truck: Truck, warehouse: Warehouse, file: FileText, search: Search, settings: Settings2, boxes: Boxes, package: Package, sunrise: Sunrise, compass: Compass, clipboardList: ClipboardList, map: MapIcon, history: HistoryIcon, listChecks: ListChecks };
 
 /**
  * Dark system chrome. Left sidebar on desktop, collapsing to a top bar on small

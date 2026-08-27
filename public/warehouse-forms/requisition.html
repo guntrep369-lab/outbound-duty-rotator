@@ -117,7 +117,7 @@ WhShared.buildRows('rows', 10, (n) => `
   <td class="num"><input class="wh-in" data-a inputmode="numeric"></td>
   <td class="num"><input class="wh-in" data-b inputmode="numeric"></td>
   <td class="num"><input data-total readonly></td>
-  <td><input class="wh-in"></td>
+  <td><input class="wh-in" data-order></td>
   <td><input class="wh-in"></td>
   <td><input class="wh-in"></td>`);
 WhForm.wire(document.getElementById('items'));
@@ -148,6 +148,10 @@ WhForm.wire(document.getElementById('items'));
     set('[data-sku]', it.sku);
     set('[data-a]', it.qty);
     set('[data-b]', 1);
+    /* เลขออเดอร์มากับรายการเฉพาะทางที่รู้ว่าของชิ้นนี้เบิกให้ออเดอร์ไหน
+       (หน้าเบิกตามออเดอร์) ทางอื่นมาจากยอดขาดรวมทั้งวัน ไม่มีออเดอร์เดียว
+       ที่จะเขียนลงไปได้ จึงเว้นไว้ให้กรอกเอง ไม่ใช่เดาให้ */
+    if (it.order) set('[data-order]', it.order);
   });
 
   if (d.meta.from) document.querySelectorAll('select.wh')[0].value = d.meta.from;
