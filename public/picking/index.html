@@ -504,10 +504,27 @@ function setSupLock(v) {
  * แล้วได้ใบเปล่า คือปุ่มที่ทำให้คนสงสัยว่าตัวเองกดผิดหรือข้อมูลหาย
  */
 function supsInData(keys) {
-  if (!keys || keys.length !== 1) return [];
+  if (!keys || !keys.length) return [];
+  const lock = teamNow(keys);
   const sel = carriersOf().filter(c => keys.includes(c.key));
-  const list = supsIn(sel, teamNow(keys));
-  return list.length > 1 ? list : [];
+  const per = sel.map(c => supsIn([c], lock));
+  /* ต้องมีสักเจ้าที่รับของมากกว่าหนึ่งเจ้าจริง ๆ ถึงจะมีอะไรให้แยก — เลือก KEX
+     กับ BEST ที่มี Sup เจ้าเดียวเท่ากันทั้งคู่ ปุ่มก็ไม่ควรขึ้น */
+  if (!per.some(l => l.length > 1)) return [];
+  const all = new Set();
+  per.forEach(l => l.forEach(x => all.add(x)));
+  return [...all].sort((a, b) => a.localeCompare(b, 'th'));
+}
+
+/**
+ * ขนส่งเจ้านี้มีคอลัมน์ Sup กรอกไว้ไหม (ในรอบที่เลือกอยู่)
+ *
+ * ใช้ตัดสินว่าการล็อก Sup จะไปแตะเจ้านั้นหรือไม่ — เจ้าที่ไม่มี Sup เลย ถ้าเอา
+ * กฎ "ต้องเท่ากับ Lunio" ไปจับ ของจะหายทั้งเจ้าเพราะช่องมันว่าง ซึ่งตรงข้ามกับ
+ * สิ่งที่คนกดต้องการ คือเอาเฉพาะ Lunio ของรถบริษัท ไปรวมกับเจ้าอื่นทั้งก้อน
+ */
+function carrierHasSup(c, src) {
+  return ((src === 1 ? c.data1 : c.data2) || []).some(r => String(r.sup || '').trim());
 }
 
 /** ชื่อ Sup ที่อยู่ในขนส่งกลุ่มนี้ ตามรอบและกลุ่มรถที่เลือกอยู่ */
@@ -775,11 +792,45 @@ function renderPickSum() {
      และต้องกรองที่ระดับแถวออเดอร์ ไม่ใช่ที่รายการที่รวมยอดแล้ว เพราะ SKU
      เดียวกันถูกสั่งได้ทั้งจาก Lunio และ JST ในวันเดียวกัน พอรวมยอดแล้วมันเป็น
      บรรทัดเดียวที่มีทั้งสองเจ้าปนอยู่ข้างใน แยกทีหลังไม่ได้ */
-  const inSup = r => !supNow || String(r.sup || '').trim() === supNow;
+  /* ล็อก Sup แตะเฉพาะขนส่งที่มีคอลัมน์นี้ — เจ้าที่ไม่มีผ่านมาทั้งก้อน
+     ไม่งั้นกด Lunio ตอนรวมหลายเจ้า แล้ว KEX/BEST/BI หายหมดเพราะช่อง Sup ว่าง */
+  const supAware = new Map();
+  carriersOf().forEach(c => supAware.set(c.key, carrierHasSup(c, pickSource)));
+  const inSup = (r, key) => !supNow || !supAware.get(key) ||
+    String(r.sup || '').trim() === supNow;
   const isCut = r => cutIds.has(String(r.orderID || '').trim());
   const srcRows = c => (pickSource === 1 ? c.data1 : c.data2) || [];
-  const rowsOf = c => srcRows(c).filter(r => inSup(r) && !isCut(r));
+  const rowsOf = c => srcRows(c).filter(r => inSup(r, c.key) && !isCut(r));
   const sel = carriersOf().filter(c => keys.includes(c.key));
+
+  /**
+   * บอกบนกระดาษว่าล็อก Sup ไปแตะอะไรบ้าง
+   *
+   * ใบที่หัวเขียนว่า "รถบริษัท + KEX HRZ · Lunio" อ่านได้ว่า KEX ถูกกรองด้วย
+   * ซึ่งไม่จริง — KEX ไม่มีคอลัมน์ Sup จึงเอามาทั้งก้อน ต้องเขียนไว้ ไม่งั้น
+   * คนอ่านจะเชื่อว่ายอด KEX บนใบนี้เป็นเฉพาะของ Lunio
+   *
+   * และแถวที่อยู่ในเจ้าที่มี Sup แต่ไม่ได้กรอก Sup จะไม่เข้าใบไหนเลย —
+   * ของหายเงียบ ๆ แบบที่ไม่มีอะไรบนใบบอก จึงต้องนับแล้วเขียนไว้ด้วย
+   */
+  const supNote = (() => {
+    if (!supNow) return '';
+    const cars = sel.length ? sel : carriersOf();
+    const aware = cars.filter(c => supAware.get(c.key));
+    const plain = cars.filter(c => !supAware.get(c.key));
+    /* นับเป็นชิ้น ไม่ใช่แถว เพราะชิ้นคือตัวเลขที่กระทบยอดได้ — ใบ Lunio 7 บวก
+       ใบ JST 3 ไม่เท่ารถบริษัท 15 ก็เพราะ 5 ชิ้นนี้ ถ้าบอกเป็น "1 แถว"
+       คนอ่านยังกระทบยอดไม่ได้อยู่ดี */
+    const blank = piecesOf(aware.reduce((a, c) => a.concat(srcRows(c)
+      .filter(r => !String(r.sup || '').trim() && !isCut(r) && inTeam(r, teamLock))), []));
+    const bits = [];
+    if (plain.length && aware.length) {
+      bits.push('Sup ' + supNow + ' ใช้กับ ' + aware.map(c => c.key).join(' · ') +
+        ' เท่านั้น — ' + plain.map(c => c.key).join(' · ') + ' เอามาทั้งหมด');
+    }
+    if (blank) bits.push('มีของ ' + blank + ' ชิ้นที่ไม่ได้กรอก Sup ไม่อยู่ในใบนี้');
+    return bits.length ? ' · ' + bits.join(' · ') : '';
+  })();
 
   /**
    * วันที่บนหัวใบ = วันของงานในใบ ไม่ใช่วันที่กดพิมพ์
@@ -856,7 +907,7 @@ function renderPickSum() {
      ซึ่งเป็นสิ่งที่ตรวจด้วยตาได้ว่าไม่มีอะไรหายไประหว่างทาง */
   const cutByCarrier = new Map();
   (keys.length ? sel : carriersOf()).forEach(c => {
-    const rs = srcRows(c).filter(r => inSup(r) && isCut(r) && inTeam(r, teamLock));
+    const rs = srcRows(c).filter(r => inSup(r, c.key) && isCut(r) && inTeam(r, teamLock));
     if (rs.length) cutByCarrier.set(c.key, rs);
   });
   const cutRows = [...cutByCarrier.values()].flat();
@@ -918,7 +969,8 @@ function renderPickSum() {
       '<div class="ps-head">' +
         '<div><div class="ps-carrier" data-label="' + esc(g.label) + '">' + esc(g.label) +
         (g.parts ? '<span class="ps-mix">รวม ' + g.parts.length + ' ขนส่ง</span>' : '') + '</div>' +
-        '<div class="ps-meta">' + esc(srcName) + ' · ' + esc(when) + esc(scope) + '</div>' + split +
+        '<div class="ps-meta">' + esc(srcName) + ' · ' + esc(when) + esc(scope) +
+          (g.cut ? '' : esc(supNote)) + '</div>' + split +
         (g.cut ? '' : cutNoteFor(g.cars)) +
         (() => {
           const short = shortLines(shown);
@@ -1018,9 +1070,9 @@ function renderPickSum() {
     '<span class="ps-hint">เลือกได้หลายเจ้า — ที่เลือกจะรวมเป็นใบเดียว' +
     (() => {
       const more = [];
-      if (!truckOn && hasTruck(carriersOf())) more.push('กลุ่มรถ');
       if (!sups.length && hasMultiSup()) more.push('Sup');
-      return more.length ? ' · กดขนส่งเจ้าเดียวเพื่อแยก' + more.join(' / ') : '';
+      if (!truckOn && hasTruck(carriersOf())) more.push('กลุ่มรถ (เจ้าเดียว)');
+      return more.length ? ' · เลือกขนส่งเพื่อแยก ' + more.join(' · ') : '';
     })() + '</span></div>' +
     /* สามแถวของรถขึ้นเฉพาะตอนเจาะจงมาที่ขนส่งเจ้าที่มีชื่อรถแล้ว — กางทุกเจ้าอยู่
        แล้วล็อกกลุ่มรถ เท่ากับตัดงานของเจ้าที่ไม่มีชื่อรถทิ้งทั้งหมด */
