@@ -478,15 +478,33 @@ function hasTruck(cars) {
   return cars.some(c => ((pickSource === 1 ? c.data1 : c.data2) || []).some(r => r.truck));
 }
 
-/* Sup ที่ล็อกอยู่ — ว่าง = ทุก Sup
-   ขนส่งรถบริษัทมีของสองเจ้าปนกันในรอบเดียว (Lunio กับ JST) ซึ่งหยิบแยกกัน
+/* Sup ที่ล็อกอยู่ — ลิสต์ว่าง = ทุกเจ้า
+   ขนส่งรถบริษัทมีของหลายเจ้าปนกันในรอบเดียว (Lunio กับ JST) ซึ่งหยิบแยกกัน
+   เลือกได้หลายเจ้าพร้อมกัน เพราะบางวันสองเจ้ารวมใบเดียวก็ได้ แต่ไม่อยากได้เจ้าที่สาม
    จำไว้ในเครื่องเหมือนล็อกกลุ่มรถ คนเดิมมักหยิบของเจ้าเดิมทุกวัน */
 const SUP_KEY = 'wms:pick:sup';
-let supLock = (() => { try { return localStorage.getItem(SUP_KEY) || ''; } catch (e) { return ''; } })();
+
+/* เคยเก็บเป็นสตริงเดี่ยว ("Lunio") ตอนที่เลือกได้ทีละเจ้า — เครื่องที่ใช้อยู่แล้ว
+   ยังมีค่าเก่าค้างใน localStorage อ่านให้ได้ทั้งสองแบบ ไม่งั้นเปิดมาวันแรก
+   หลังอัปเดตแล้วล็อกที่ตั้งไว้จะหายไปเฉย ๆ */
+let supLock = (() => {
+  try {
+    var raw = localStorage.getItem(SUP_KEY) || '';
+    if (!raw) return [];
+    if (raw.charAt(0) === '[') {
+      var a = JSON.parse(raw);
+      return Array.isArray(a) ? a.filter(Boolean) : [];
+    }
+    return [raw];
+  } catch (e) { return []; }
+})();
 
 function setSupLock(v) {
-  supLock = (supLock === v) ? '' : v;    // กดซ้ำที่ปุ่มเดิม = ปลดล็อก
-  try { localStorage.setItem(SUP_KEY, supLock); } catch (e) {}
+  // ปุ่ม "ทุกเจ้า" ส่ง '' มา = ปลดทั้งหมด · ปุ่มเจ้าอื่นสลับเข้า-ออกทีละเจ้า
+  supLock = !v ? []
+    : supLock.indexOf(v) >= 0 ? supLock.filter(x => x !== v)
+    : supLock.concat([v]);
+  try { localStorage.setItem(SUP_KEY, JSON.stringify(supLock)); } catch (e) {}
   renderPickSum();
 }
 
@@ -778,7 +796,9 @@ function renderPickSum() {
      ถ้าปลดล็อกกลุ่มรถแล้วแถว Sup หายไปแต่ยังกรองอยู่ ของจะหายจากใบโดยไม่มีอะไร
      บนจอบอกว่าทำไม ค่าที่จำไว้จึงมีผลเฉพาะตอนที่ปุ่มโผล่ให้กดปลดได้เท่านั้น */
   const sups = supsInData(keys);
-  const supNow = sups.indexOf(supLock) >= 0 ? supLock : '';
+  /* เรียงตามลำดับปุ่มที่เห็น ไม่ใช่ลำดับที่กด — หัวใบจะได้เขียนเหมือนกันทุกครั้ง
+     ไม่ว่าจะกด Lunio ก่อนหรือ JST ก่อน ใบที่พิมพ์ซ้ำจึงหน้าตาเหมือนเดิม */
+  const supNow = sups.filter(x => supLock.indexOf(x) >= 0);
 
   /* ทั้งสามแถวของรถขึ้นพร้อมกัน และมีผลพร้อมกัน — ค่าที่จำไว้ทั้งกลุ่มรถและช่วง
      เลขคันมีผลเฉพาะตอนที่ปุ่มโผล่ให้กดปลดได้ ไม่งั้นกด "แยกทุกขนส่ง" แล้วงานของ
@@ -796,8 +816,8 @@ function renderPickSum() {
      ไม่งั้นกด Lunio ตอนรวมหลายเจ้า แล้ว KEX/BEST/BI หายหมดเพราะช่อง Sup ว่าง */
   const supAware = new Map();
   carriersOf().forEach(c => supAware.set(c.key, carrierHasSup(c, pickSource)));
-  const inSup = (r, key) => !supNow || !supAware.get(key) ||
-    String(r.sup || '').trim() === supNow;
+  const inSup = (r, key) => !supNow.length || !supAware.get(key) ||
+    supNow.indexOf(String(r.sup || '').trim()) >= 0;
   const isCut = r => cutIds.has(String(r.orderID || '').trim());
   const srcRows = c => (pickSource === 1 ? c.data1 : c.data2) || [];
   const rowsOf = c => srcRows(c).filter(r => inSup(r, c.key) && !isCut(r));
@@ -814,7 +834,7 @@ function renderPickSum() {
    * ของหายเงียบ ๆ แบบที่ไม่มีอะไรบนใบบอก จึงต้องนับแล้วเขียนไว้ด้วย
    */
   const supNote = (() => {
-    if (!supNow) return '';
+    if (!supNow.length) return '';
     const cars = sel.length ? sel : carriersOf();
     const aware = cars.filter(c => supAware.get(c.key));
     const plain = cars.filter(c => !supAware.get(c.key));
@@ -825,7 +845,7 @@ function renderPickSum() {
       .filter(r => !String(r.sup || '').trim() && !isCut(r) && inTeam(r, teamLock))), []));
     const bits = [];
     if (plain.length && aware.length) {
-      bits.push('Sup ' + supNow + ' ใช้กับ ' + aware.map(c => c.key).join(' · ') +
+      bits.push('Sup ' + supNow.join(' + ') + ' ใช้กับ ' + aware.map(c => c.key).join(' · ') +
         ' เท่านั้น — ' + plain.map(c => c.key).join(' · ') + ' เอามาทั้งหมด');
     }
     if (blank) bits.push('มีของ ' + blank + ' ชิ้นที่ไม่ได้กรอก Sup ไม่อยู่ในใบนี้');
@@ -872,9 +892,9 @@ function renderPickSum() {
      ของสิ่งที่เหลือกลุ่มเดียวได้ใบเดิมกลับมาพร้อมหัวข้อที่ไม่ได้แบ่งอะไร */
   /* แถวถูกกรอง Sup ไปแล้วตั้งแต่ rowsOf — ตรงนี้เหลือแค่ติดชื่อ Sup บนหัวใบ
      และตัดขนส่งที่ไม่มีของเจ้านั้นเลยออก ไม่ให้เหลือใบเปล่า */
-  const groupsS = !supNow ? groups : groups
+  const groupsS = !supNow.length ? groups : groups
     .filter(g => g.rows.length)
-    .map(g => ({ ...g, label: g.label + ' · ' + supNow }));
+    .map(g => ({ ...g, label: g.label + ' · ' + supNow.join(' + ') }));
 
   const lockedTeam = WmsTruck.TRUCK_TEAMS.find(t => t.id === teamLock);
   const lockLabel = lockedTeam ? lockedTeam.label
@@ -933,7 +953,7 @@ function renderPickSum() {
      ต่างแค่ไม่ถูกนับเข้ายอดรวม เพราะมันคือของที่ตั้งใจไม่นับ */
   /* หัวใบตัดต้องบอกขอบเขตเดียวกับใบหลัก — พิมพ์รถบริษัท+Lunio แล้วพิมพ์
      รถบริษัท+JST ต่อ จะได้ใบตัดสองใบที่หน้าตาเหมือนกันเป๊ะถ้าไม่เขียนไว้ */
-  const cutScope = [keys.length ? keys.join(' + ') : null, supNow || null, lockLabel || null]
+  const cutScope = [keys.length ? keys.join(' + ') : null, supNow.join(' + ') || null, lockLabel || null]
     .filter(Boolean).join(' · ');
   const sheets = (cutMode === 'split' && cutRows.length)
     ? groups2.concat([{
@@ -1007,11 +1027,13 @@ function renderPickSum() {
      ตัวกรองอิสระ — วางไว้บนสุดแล้วมันจะอ่านเหมือนใช้ได้กับทุกขนส่ง
      supsInData() เป็นตัวเดียวที่ตัดสินว่าจะขึ้นหรือไม่ขึ้น */
   const supRow = !sups.length ? '' : (() => {
-    const chip = (v, label) => '<button class="ps-chip' + (supNow === v ? ' active' : '') + '" ' +
+    const on = v => v ? supNow.indexOf(v) >= 0 : !supNow.length;
+    const chip = (v, label) => '<button class="ps-chip' + (on(v) ? ' active' : '') + '" ' +
       'onclick="setSupLock(' + attr(v) + ')">' + esc(label) + '</button>';
     return '<div class="ps-carriers no-print"><span class="ps-lbl">Sup</span>' +
       chip('', 'ทุกเจ้า') + sups.map(x => chip(x, x)).join('') +
-      '<span class="ps-hint">แยกใบตามเจ้าของสินค้าในรถบริษัท · กดปุ่มเดิมซ้ำเพื่อปลด</span></div>';
+      '<span class="ps-hint">เลือกได้หลายเจ้า — ที่เลือกจะรวมเป็นใบเดียว · กดปุ่มเดิมซ้ำเพื่อปลด' +
+      '</span></div>';
   })();
 
   /* แถวตัดออเดอร์อยู่ล่างสุดของแถบเครื่องมือ เพราะเป็นตัวเดียวที่ลบของออกจากใบ
