@@ -62,8 +62,8 @@ The site root redirects to `roster/`, so the main link opens the shift schedule.
 ### Where the data lives
 
 Everything is stored in the browser under the localStorage key `wms:roster` and saved as soon
-as you change something. The same device and browser keeps it; another machine starts from the
-built-in team list until you bring the data over:
+as you change something. Without a shared sheet (below), the same device and browser keeps it,
+and another machine starts from the built-in team list until you bring the data over:
 
 - **⬇ ส่งออกไฟล์ / ⬆ นำเข้าไฟล์** on the page exports a `.json` file and reads it back.
   Import also accepts a `shift-program.html` saved from the old standalone schedule program
@@ -73,6 +73,42 @@ built-in team list until you bring the data over:
 
 Names are the identity of a person: manual edits and KPI values are keyed by name, so renaming
 someone moves their data along, and two people can't share a name.
+
+### Sharing the schedule across devices
+
+With a Google Sheet behind [`apps-script/roster-api.gs`](apps-script/roster-api.gs), every device
+that has its URL and passcode sees the same schedule. Each device still saves to its own browser
+first, so the page keeps working without a connection and sends the changes when it can.
+
+**Setup (once):**
+
+1. Create a new Google Sheet just for this. It can't share a script with the order, stock, or
+   transport sheets, because an Apps Script project has only one `doGet` / `doPost`.
+2. In the sheet: Extensions → Apps Script. Replace the sample code with `roster-api.gs`.
+3. Set `ROSTER_TOKEN` to a passcode of your own, long and hard to guess, then save. The script
+   refuses every request until it is set, because the schedule has staff names in it.
+4. Deploy → New deployment → Web app. Execute as **Me**, Who has access **Anyone**. Allow the
+   permissions it asks for, and copy the URL that ends in `/exec`.
+5. On each device: ตั้งค่า → **Apps Script URL — ตารางกะ**, paste the URL and the passcode, fill in
+   your name (it shows who saved last), press ทดสอบ, then บันทึก URL.
+6. Open ตารางกะ on the device that has the real data first. The sheet is empty, so it asks to send
+   this device's schedule up as the starting copy. Devices that connect after that take the
+   sheet's copy. A device that already has a schedule of its own asks first.
+
+**How it behaves:**
+
+- The status next to the buttons says what happened: บันทึกขึ้นชีตแล้ว, ตรงกับชีต, ดึงฉบับล่าสุดจากชีตแล้ว, or a
+  warning you can tap to try again.
+- The page checks for other devices' changes every minute while it's open, and right away when you
+  come back to its tab. It doesn't replace what's on screen while an edit popup or window is open.
+- The sheet numbers every save. A device that edited an older copy gets the newer one back and
+  merges before saving again, so nobody's work is overwritten silently. Edits to different cells
+  (manual edits, OS เสริม numbers, KPI, minimums) merge on their own; if both devices changed the same
+  cell, the one saving now wins. If both changed the same list (staff, outsource, periods, holidays,
+  extra promo days), the page asks which device's list to keep.
+- The `log` tab in the sheet records who saved and when.
+- After changing the script: Deploy → Manage deployments → edit → Version: New version. The URL
+  stays the same.
 
 > 🔒 The built-in team list is in the page source, and this repo is public. Anyone can read it
 > on GitHub.
@@ -121,9 +157,11 @@ public/
 ├─ wms-gate.js / .css      # opening animation + per-device sign-in (not access control)
 ├─ wms-settings.js         # settings backup / restore
 ├─ wms-*.js                # shared helpers (dates, stock, picking, trucks, search…)
-├─ roster/                 # ตารางกะ
+├─ roster/                 # ตารางกะ (+ roster-sync.js: sharing through the sheet)
 ├─ summary/ history/ order-compare/ order-lookup/ stock/ picking/ order-sheet/
 ├─ warehouse-forms/ jobs/ loadplan/ transport-docs/ transport-forms/ settings/
+apps-script/
+└─ roster-api.gs           # the shared schedule sheet's script (pasted into Apps Script, not served)
 src/
 ├─ data/                   # tests for the shared helpers + page-wide checks
 └─ transport/              # tests for the transport helpers

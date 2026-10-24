@@ -34,6 +34,7 @@
 .rs-saved{font-size:12px;color:var(--wms-muted);margin-right:4px}
 .rs-saved.ok{color:var(--wms-success)}
 .rs-saved.err{color:var(--wms-danger);font-weight:600}
+.rs-saved.act{cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}
 
 .rs-main{padding:16px 20px 40px}
 .page{display:none}
@@ -606,6 +607,9 @@ td.clickable:hover{filter:brightness(.92)}
 </div><!-- /.wms-shell -->
 
 <script type="module" src="../wms-shell.js"></script>
+<script src="../wms-settings.js"></script>
+<script src="../wms-gas.js"></script>
+<script src="roster-sync.js"></script>
 <script>
 var DOW=['อา','จ','อ','พ','พฤ','ศ','ส'];
 var DOW_FULL=['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัส','ศุกร์','เสาร์'];
@@ -699,9 +703,15 @@ var _osMigrated=useData(D);
 function _data(){return {employees:employees,outsource:outsource,periods:periods,holidays:holidays,extraPro:extraPro,overrides:overrides,kpiData:kpiData,minStaff:minStaff,osExtra:osExtra,savedAt:Date.now()};}
 function stamp(ts){return new Date(ts).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});}
 function setSaveState(cls,txt){var el=document.getElementById('save-state');el.className='rs-saved'+(cls?' '+cls:'');el.textContent=txt;}
+function saveLocal(){
+  try{localStorage.setItem(STORE_KEY,JSON.stringify(_data()));return true;}
+  catch(e){setSaveState('err','บันทึกไม่ได้ — กดส่งออกไฟล์เก็บไว้ก่อน');return false;}
+}
 function changed(){
-  try{localStorage.setItem(STORE_KEY,JSON.stringify(_data()));setSaveState('ok','✓ บันทึกแล้ว '+stamp(Date.now()));}
-  catch(e){setSaveState('err','บันทึกไม่ได้ — กดส่งออกไฟล์เก็บไว้ก่อน');}
+  var ok=saveLocal();
+  // ใช้ชีตส่วนกลางอยู่ — ข้อความบอกสถานะการส่งขึ้นชีตแทน
+  if(sync&&sync.on())sync.changed();
+  else if(ok)setSaveState('ok','✓ บันทึกแล้ว '+stamp(Date.now()));
 }
 
 // ── ส่งออก / นำเข้า ──
@@ -1426,11 +1436,55 @@ document.addEventListener('keydown',function(e){
   if(e.key==='Escape'){closeInline();closeKPIInp();closeModal('emp-modal');closeModal('os-modal');closeModal('per-modal');closeModal('ox-modal');}
 });
 
+// ── ตารางกะส่วนกลาง (Google Sheet) ──
+// ตั้ง URL กับรหัสในหน้าตั้งค่า ไม่ตั้งก็ใช้ได้เหมือนเดิม แค่ข้อมูลอยู่เครื่องเดียว
+var sync=window.RosterSync&&window.WmsSettings&&window.WmsGas?RosterSync.create({
+  key:'wms:roster:sync',
+  store:{getItem:function(k){try{return localStorage.getItem(k);}catch(e){return null;}},
+         setItem:function(k,v){try{localStorage.setItem(k,v);}catch(e){}}},
+  url:function(){return WmsSettings.rosterUrl();},
+  token:function(){return WmsSettings.rosterToken();},
+  me:function(){return WmsSettings.me();},
+  identify:function(u){return WmsGas.json(u,'roster',{retries:1,timeoutMs:60000}).then(function(r){return !!r&&r.app==='roster';});},
+  post:function(u,b){return WmsGas.post(u,b,{timeoutMs:60000});},
+  get:_data,
+  put:function(d){var m=useData(d);saveLocal();showPage(curPage);return {migrated:m};},
+  hasLocal:function(){try{return !!localStorage.getItem(STORE_KEY);}catch(e){return false;}},
+  describe:describe,
+  ask:function(m){return confirm(m);},
+  // ดึงฉบับใหม่ลงมาตอนมีช่องแก้ไขเปิดค้าง ตัวเลขที่กำลังพิมพ์จะไปลงคนละแถวกับที่เห็น
+  canApply:function(){return document.getElementById('ipop').style.display!=='block'&&!document.querySelector('.overlay.open');},
+  status:syncStatus
+}):null;
+function syncStatus(state,info){
+  var txt,cls='',act=false;
+  if(state==='pending')txt='บันทึกในเครื่องแล้ว · รอส่งขึ้นชีต';
+  else if(state==='saving')txt='⏳ กำลังส่งขึ้นชีต…';
+  else if(state==='saved'){cls='ok';txt='☁ บันทึกขึ้นชีตแล้ว '+stamp(info.at||Date.now());}
+  else if(state==='synced'){cls='ok';txt='☁ ตรงกับชีต'+(info.at?' · แก้ล่าสุด '+stamp(info.at)+(info.by?' โดย '+info.by:''):'');}
+  else if(state==='pulled'){cls='ok';txt='☁ ดึงฉบับล่าสุดจากชีตแล้ว'+(info.by?' · แก้โดย '+info.by:'')+(info.at?' '+stamp(info.at):'');}
+  else if(state==='declined'){act=true;txt='บันทึกในเครื่องนี้เท่านั้น · กดเพื่อใช้ชีตส่วนกลาง';}
+  else if(state==='offline'){cls='err';act=true;txt='⚠ ต่อชีตไม่ได้ เก็บในเครื่องไว้ก่อน · กดเพื่อลองใหม่';}
+  else if(state==='error'){cls='err';act=true;txt='⚠ '+(info.error||'ส่งขึ้นชีตไม่สำเร็จ')+' · กดเพื่อลองใหม่';}
+  else return;
+  setSaveState(cls,txt);
+  var el=document.getElementById('save-state');
+  el.classList.toggle('act',act);
+  el.onclick=act?function(){sync.retry();}:null;
+}
+if(sync){
+  // เครื่องอื่นแก้แล้วเครื่องนี้ต้องเห็น — เช็คทุกนาทีตอนเปิดดูอยู่ และทันทีที่กลับมาที่แท็บนี้
+  setInterval(function(){if(!document.hidden)sync.poll();},60000);
+  document.addEventListener('visibilitychange',function(){if(!document.hidden)sync.poll();});
+  window.addEventListener('online',function(){sync.poll();});
+}
+
 // ── Init ──
 curPer=currentPer();
 if(D.savedAt)setSaveState('','บันทึกล่าสุด '+stamp(D.savedAt));
 if(_osMigrated)changed();
 renderSchedule();
+if(sync)sync.start();
 </script>
 </body>
 </html>

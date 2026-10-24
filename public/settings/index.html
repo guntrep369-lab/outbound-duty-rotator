@@ -101,7 +101,7 @@
     <!-- ══════ การเชื่อมต่อข้อมูล ══════ -->
     <div class="card">
       <h3>🔗 การเชื่อมต่อข้อมูล
-        <span class="sub">ใช้โดย เทียบ Order · ค้นหาออเดอร์</span>
+        <span class="sub">ใช้โดย เทียบ Order · ค้นหาออเดอร์ · เอกสารขนส่ง · ตารางกะ</span>
       </h3>
       <div class="in">
         <div class="fld">
@@ -156,8 +156,28 @@
           </div>
           <div class="hint">
             ช่องขวาไม่ใช่การล็อกอิน แค่ให้คนที่มาเลือกไฟล์รู้ว่าใครอัปมา
-            เวลามีไฟล์สองไฟล์ของวันเดียวกันจะได้ไม่ต้องเดา
+            เวลามีไฟล์สองไฟล์ของวันเดียวกันจะได้ไม่ต้องเดา — ตารางกะส่วนกลางก็ใช้ชื่อนี้บอกว่าใครแก้ล่าสุด
           </div>
+        </div>
+
+        <div class="fld">
+          <label><span class="dot" id="dot-roster"></span> Apps Script URL — ตารางกะ</label>
+          <div class="row">
+            <input id="rosterUrl" type="url" spellcheck="false"
+                   placeholder="https://script.google.com/macros/s/.../exec">
+            <button class="btn2" onclick="testUrl('roster')">ทดสอบ</button>
+            <button class="btn2 danger" onclick="clearUrl('roster')">ล้าง</button>
+          </div>
+          <div class="row">
+            <input id="rosterToken" type="text" spellcheck="false" autocomplete="off"
+                   placeholder="รหัสตารางกะ — ต้องตรงกับ ROSTER_TOKEN ใน Apps Script">
+          </div>
+          <div class="hint">
+            ทำให้ทุกเครื่องที่ใส่ URL กับรหัสนี้<b>เห็นตารางกะชุดเดียวกัน</b> — ไม่ใส่ก็ใช้ได้ตามปกติ
+            แต่ตารางกะจะอยู่แค่ในเครื่องที่แก้ ใช้ <code>roster-api.gs</code> ในชีตของตัวเอง
+            แยกจากช่องอื่นข้างบน
+          </div>
+          <div class="msg" id="msg-roster"></div>
         </div>
 
         <div class="row">
@@ -257,6 +277,7 @@ function paintDots() {
   $('dot-order').className = 'dot ' + (WmsSettings.orderUrl() ? 'on' : 'off');
   $('dot-stock').className = 'dot ' + (WmsSettings.stockUrl() ? 'on' : 'off');
   $('dot-transport').className = 'dot ' + (WmsSettings.transportUrl() ? 'on' : 'off');
+  $('dot-roster').className = 'dot ' + (WmsSettings.rosterUrl() ? 'on' : 'off');
 }
 
 function saveUrls() {
@@ -265,14 +286,17 @@ function saveUrls() {
   const c = WmsSettings.setTransportUrl($('transportUrl').value);
   const d = WmsSettings.setTransportToken($('transportToken').value);
   const e = WmsSettings.setMe($('meName').value);
+  const f = WmsSettings.setRosterUrl($('rosterUrl').value);
+  const g = WmsSettings.setRosterToken($('rosterToken').value);
   paintDots();
-  if (a && b && c && d && e) say('msg-save', '✅ บันทึกแล้ว', 'ok');
+  if (a && b && c && d && e && f && g) say('msg-save', '✅ บันทึกแล้ว', 'ok');
   else say('msg-save', '❌ บันทึกไม่ได้ (เบราว์เซอร์โหมดส่วนตัวหรือพื้นที่เต็ม)', 'bad');
 }
 
 function clearUrl(kind) {
   if (kind === 'order') { WmsSettings.setOrderUrl(''); $('orderUrl').value = ''; }
   else if (kind === 'transport') { WmsSettings.setTransportUrl(''); $('transportUrl').value = ''; }
+  else if (kind === 'roster') { WmsSettings.setRosterUrl(''); $('rosterUrl').value = ''; }
   else { WmsSettings.setStockUrl(''); $('stockUrl').value = ''; }
   paintDots();
   say('msg-' + kind, 'ล้างแล้ว', '');
@@ -285,11 +309,12 @@ function clearUrl(kind) {
  * ที่ลบไปแล้ว จะเงียบจนถึงเช้าวันที่ต้องใช้จริง — ตอนนั้นแก้ไม่ทันแล้ว
  */
 async function testUrl(kind) {
-  const raw = $(kind === 'order' ? 'orderUrl' : kind === 'transport' ? 'transportUrl' : 'stockUrl').value.trim();
+  const raw = $({ order: 'orderUrl', transport: 'transportUrl', roster: 'rosterUrl' }[kind] || 'stockUrl').value.trim();
   if (!raw) { say('msg-' + kind, 'ใส่ URL ก่อน', 'bad'); return; }
 
   say('msg-' + kind, '⏳ กำลังทดสอบ…', 'busy');
   try {
+    if (kind === 'roster') { await testRoster(raw); return; }
     const resp = await OrderIndex.fetchWithRetry(OrderIndex.withApi(raw, kind), {
       retries: 0,
       onProgress: (sec) => say('msg-' + kind, `⏳ กำลังทดสอบ… ${sec} วินาที`, 'busy'),
@@ -321,6 +346,25 @@ async function testUrl(kind) {
   } catch (err) {
     say('msg-' + kind, '❌ ' + err.message, 'bad');
   }
+}
+
+/**
+ * ตารางกะเช็คสองขั้น: GET ดูว่าเป็นสคริปต์ตารางกะจริง แล้วค่อย POST พร้อมรหัส
+ * — ยิง POST ไปสคริปต์อื่นก่อน เช่นของไฟล์รถบริษัท อาจไปบันทึกอะไรแปลก ๆ ไว้ในชีตนั้น
+ */
+async function testRoster(raw) {
+  const progress = (sec) => say('msg-roster', `⏳ กำลังทดสอบ… ${sec} วินาที`, 'busy');
+  const id = await WmsGas.json(raw, 'roster', { retries: 0, onProgress: progress });
+  if (!id || id.app !== 'roster') {
+    throw new Error('ต่อได้ แต่ไม่ใช่สคริปต์ตารางกะ — ตัวนี้ต้องเป็น roster-api.gs ในชีตของตัวเอง');
+  }
+  const token = $('rosterToken').value.trim();
+  if (!token) throw new Error('ต่อได้ แต่ยังไม่ได้ใส่รหัส — ต้องตรงกับ ROSTER_TOKEN ใน Apps Script');
+  const r = await WmsGas.post(raw, { op: 'rev', token }, { onProgress: progress });
+  if (r.error) throw new Error(r.error);
+  say('msg-roster', r.rev
+    ? `✅ ต่อได้ — ตารางกะในชีตเป็นฉบับที่ ${r.rev}${r.by ? ' แก้ล่าสุดโดย ' + r.by : ''}`
+    : '✅ ต่อได้ — ชีตยังว่าง กดบันทึก URL แล้วเปิดหน้าตารางกะเพื่อส่งข้อมูลขึ้นไป', 'ok');
 }
 
 // ── โลโก้ ──────────────────────────────────────────────────────────────
@@ -432,7 +476,7 @@ function doExport(kind) {
 
 const line = (d) =>
   `<div class="li">🔗 URL ออเดอร์ <b>${d.orderUrl ? 'มี' : '—'}</b> · URL สต๊อก <b>${d.stockUrl ? 'มี' : '—'}</b>` +
-    ` · URL ไฟล์รถบริษัท <b>${d.transportUrl ? 'มี' : '—'}</b><br>` +
+    ` · URL ไฟล์รถบริษัท <b>${d.transportUrl ? 'มี' : '—'}</b> · URL ตารางกะ <b>${d.rosterUrl ? 'มี' : '—'}</b><br>` +
   `🖼️ โลโก้ <b>${d.logo ? 'มี' : '—'}</b><br>` +
   `👥 ผู้ใช้ <b>${d.users}</b> คน<br>` +
   `📚 สินค้า <b>${d.skus.toLocaleString()}</b> รายการ<br>` +
@@ -480,6 +524,8 @@ document.getElementById('bkFile').addEventListener('change', function () {
       $('stockUrl').value = WmsSettings.stockUrl();
       $('transportUrl').value = WmsSettings.transportUrl();
       $('transportToken').value = WmsSettings.transportToken();
+      $('rosterUrl').value = WmsSettings.rosterUrl();
+      $('rosterToken').value = WmsSettings.rosterToken();
       $('meName').value = WmsSettings.me();
       paintDots(); paintLogo(); paintUsers(); paintBackup();
     });
@@ -492,6 +538,8 @@ $('orderUrl').value = WmsSettings.orderUrl();
 $('stockUrl').value = WmsSettings.stockUrl();
 $('transportUrl').value = WmsSettings.transportUrl();
 $('transportToken').value = WmsSettings.transportToken();
+$('rosterUrl').value = WmsSettings.rosterUrl();
+$('rosterToken').value = WmsSettings.rosterToken();
 $('meName').value = WmsSettings.me();
 paintDots(); paintLogo(); paintUsers(); paintBackup();
 </script>

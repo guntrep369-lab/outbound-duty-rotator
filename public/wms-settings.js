@@ -21,6 +21,8 @@
     logo:     'wms:transport:logo',
     transportUrl:   'wms:transport:url',
     transportToken: 'wms:transport:token',
+    rosterUrl:      'wms:roster:url',
+    rosterToken:    'wms:roster:token',
     me:             'wms:me',
   };
 
@@ -73,6 +75,17 @@
     setTransportToken: function (v) { return write(KEYS.transportToken, v); },
 
     /**
+     * Apps Script URL ของตารางกะส่วนกลาง — ทุกเครื่องที่ใส่ URL กับรหัสเดียวกันเห็นตารางกะชุดเดียวกัน
+     * อยู่ในชีตแยกของตัวเองเหมือนไฟล์รถบริษัท ด้วยเหตุผลเดียวกัน (ดู apps-script/roster-api.gs)
+     */
+    rosterUrl: function () { return read(KEYS.rosterUrl); },
+    setRosterUrl: function (v) { return write(KEYS.rosterUrl, v); },
+
+    /** ต้องตรงกับ ROSTER_TOKEN ใน Apps Script — สคริปต์ไม่รับคำขอที่ไม่มีรหัส เพราะในตารางกะมีชื่อพนักงาน */
+    rosterToken: function () { return read(KEYS.rosterToken); },
+    setRosterToken: function (v) { return write(KEYS.rosterToken, v); },
+
+    /**
      * ชื่อคนที่ใช้เครื่องนี้ — ติดไปกับไฟล์ที่บันทึกขึ้นส่วนกลาง
      *
      * ไม่ใช่การล็อกอินและไม่ได้กันอะไร แค่ให้เด็กคลังที่มาเลือกไฟล์รู้ว่าใครอัปมา
@@ -99,13 +112,16 @@
      * wms:me คือชื่อคนที่นั่งเครื่องนี้ ไม่ใช่การตั้งค่าของระบบ — เอาไฟล์ไปกู้อีกเครื่อง
      * แล้วไฟล์ที่อัปจากเครื่องนั้นจะขึ้นชื่อคนอื่น ซึ่งแย่กว่าไม่มีชื่อเลย เพราะเด็กคลัง
      * ที่มาเลือกไฟล์จะเชื่อชื่อที่เห็น
+     *
+     * wms:roster:sync คือเครื่องนี้ซิงก์ตารางกะกับชีตถึงฉบับไหน — กู้ไปอีกเครื่องแล้ว
+     * เครื่องนั้นจะเข้าใจว่าตัวเองมีฉบับที่ตัวเองไม่เคยเห็น
      */
-    SKIP: ['wms:session', 'wms:orders', 'wms:stock', 'wms:transport:file', 'wms:me'],
+    SKIP: ['wms:session', 'wms:orders', 'wms:stock', 'wms:transport:file', 'wms:me', 'wms:roster:sync'],
 
     /**
      * ไฟล์สำรองแยกเป็นสองชนิด ตามสิ่งที่ "หลุดแล้วเสียหายต่างกัน"
      *
-     * KEY  — กุญแจ: Apps Script URL ทั้งสามตัว, รหัสเขียนไฟล์รถ, และรายชื่อผู้ใช้
+     * KEY  — กุญแจ: Apps Script URL ทุกตัว, รหัสเขียนไฟล์รถ, รหัสตารางกะ, และรายชื่อผู้ใช้
      *   พร้อมรหัสเข้าระบบ ใครได้ไฟล์นี้ไปอ่านออเดอร์ได้ทั้งหมด รวมชื่อ ที่อยู่
      *   เบอร์โทรลูกค้าทุกคน และเขียนทับรายการจัดส่งที่เด็กคลังจะทำตามได้ด้วย
      *   ไฟล์นี้เท่ากับสิทธิ์เข้าถึงระบบ ไม่ใช่แค่การตั้งค่า
@@ -161,13 +177,13 @@
       try { names = Object.keys((JSON.parse(d['wms:sku:names'] || 'null') || {}).names || {}).length; } catch (e) {}
       return {
         orderUrl: !!d[KEYS.orderUrl], stockUrl: !!d[KEYS.stockUrl],
-        transportUrl: !!d[KEYS.transportUrl], logo: !!d[KEYS.logo],
+        transportUrl: !!d[KEYS.transportUrl], rosterUrl: !!d[KEYS.rosterUrl], logo: !!d[KEYS.logo],
         token: !!d[KEYS.transportToken],
         users: users, skus: skus, names: names,
         /* มีกุญแจอยู่ในไฟล์ไหม — ใช้เตือนตอนคนกำลังจะส่งไฟล์ต่อ */
         hasKeys: Object.keys(d).some(function (k) { return window.WmsSettings.kindOf(k) === 'key'; }),
         others: Object.keys(d).filter(function (k) {
-          return [KEYS.orderUrl, KEYS.stockUrl, KEYS.transportUrl, KEYS.logo,
+          return [KEYS.orderUrl, KEYS.stockUrl, KEYS.transportUrl, KEYS.rosterUrl, KEYS.logo,
                   'wms:users', 'wms:wh:sku'].indexOf(k) === -1;
         }).length,
         keys: Object.keys(d).length,
