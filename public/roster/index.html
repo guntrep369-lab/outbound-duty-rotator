@@ -116,6 +116,12 @@ td.clickable:hover{filter:brightness(.92)}
 .ec{cursor:pointer;transition:background .12s}
 .ec:hover{background:#fef9e7!important;color:#92400e!important}
 .sep-row td{background:var(--bg)!important;height:8px;border:none!important;padding:0!important}
+.cnt-row td{background:#f8fafc;font-weight:700;color:var(--txt);border-top:2px solid var(--border2)!important;font-variant-numeric:tabular-nums}
+.cnt-row td.sc0{background:#f8fafc;font-size:12px}
+.cnt-min{font-weight:500;font-size:11px;color:var(--primary);margin-left:8px}
+.cnt-row td.cnt-ok{color:var(--txt2)}
+.cnt-row td.cnt-low{background:#fecaca;color:#991b1b}
+.cnt-row td.cnt-hol{color:var(--txt3);font-weight:400}
 
 /* ═══ BADGES ═══ */
 .bm{background:var(--morning-bg);color:var(--morning);border:1px solid var(--morning-border);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;display:inline-block}
@@ -337,7 +343,8 @@ td.clickable:hover{filter:brightness(.92)}
     <span class="leg-item"><span class="leg-dot" style="background:var(--last-bg);border:1px solid var(--last-border)"></span>วันสุดท้ายคาบ 10-19</span>
     <span class="leg-item"><span class="leg-dot" style="background:#fee2e2;box-shadow:inset 0 0 0 2px #f87171"></span>แก้ไขเป็น H</span>
     <span class="leg-item"><span class="leg-dot" style="background:#f0fdf4;box-shadow:inset 0 0 0 2px #4ade80"></span>แก้ไขเป็น W</span>
-    <span class="leg-hint">· คลิกช่อง W/H เพื่อสลับ · คลิกชื่อ/หยุด/กะ เพื่อแก้ไข</span>
+    <span class="leg-item"><span class="leg-dot" style="background:#fecaca"></span>คนไม่ถึงขั้นต่ำ</span>
+    <span class="leg-hint">· คลิกช่อง W/H เพื่อสลับ · คลิกชื่อ/หยุด/กะ เพื่อแก้ไข · คลิก "ตั้งขั้นต่ำ" ในแถวมาทำงาน</span>
   </div>
 
   <div id="schedule-out"></div>
@@ -415,7 +422,7 @@ td.clickable:hover{filter:brightness(.92)}
   </div>
   <div class="card">
     <div class="card-title">วันโปรฯเพิ่มเติม</div>
-    <div class="warn-box no-print">ไฮไลต์อัตโนมัติ: 2/2 · 3/3 · 4/4 · 5/5 · 6/6 และวันที่ 15 · 25 · 28 ทุกเดือน</div>
+    <div class="warn-box no-print">ไฮไลต์อัตโนมัติ: วันเลขเบิ้ล 2/2 ถึง 12/12 และวันที่ 15 · 25 · 28 ทุกเดือน</div>
     <div class="form-row no-print">
       <div class="fg"><label for="xp-date">วันที่เพิ่มเติม</label><input id="xp-date" type="date"></div>
       <div class="fg"><button type="button" class="btn-add" onclick="addExtraPro()">+ เพิ่ม</button></div>
@@ -611,7 +618,7 @@ var DEF_HOL=[
    ตั้งค่าพาตารางกะไปด้วย ย้ายเครื่องใช้ปุ่มส่งออก/นำเข้าไฟล์ */
 var STORE_KEY='wms:roster';
 var D={};try{D=JSON.parse(localStorage.getItem(STORE_KEY)||'null')||{};}catch(e){}
-var employees,outsource,periods,holidays,extraPro,overrides,kpiData;
+var employees,outsource,periods,holidays,extraPro,overrides,kpiData,minStaff;
 var curPer=0,curPage='schedule';
 
 function copy(v){return JSON.parse(JSON.stringify(v));}
@@ -620,11 +627,11 @@ function obj(v){return v&&typeof v==='object'&&!Array.isArray(v)?copy(v):{};}
 function useData(d){
   employees=arr(d.employees,DEF_EMP);outsource=arr(d.outsource,DEF_OS);
   periods=arr(d.periods,DEF_PER);holidays=arr(d.holidays,DEF_HOL);extraPro=arr(d.extraPro,[]);
-  overrides=obj(d.overrides);kpiData=obj(d.kpiData);
+  overrides=obj(d.overrides);kpiData=obj(d.kpiData);minStaff=obj(d.minStaff);
 }
 useData(D);
 
-function _data(){return {employees:employees,outsource:outsource,periods:periods,holidays:holidays,extraPro:extraPro,overrides:overrides,kpiData:kpiData,savedAt:Date.now()};}
+function _data(){return {employees:employees,outsource:outsource,periods:periods,holidays:holidays,extraPro:extraPro,overrides:overrides,kpiData:kpiData,minStaff:minStaff,savedAt:Date.now()};}
 function stamp(ts){return new Date(ts).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});}
 function setSaveState(cls,txt){var el=document.getElementById('save-state');el.className='rs-saved'+(cls?' '+cls:'');el.textContent=txt;}
 function changed(){
@@ -686,7 +693,8 @@ function pd(s){var p=s.split('-');return new Date(+p[0],+p[1]-1,+p[2]);}
 function fd(d){var y=d.getFullYear(),m=d.getMonth()+1,dd=d.getDate();return y+'-'+(m<10?'0'+m:m)+'-'+(dd<10?'0'+dd:dd);}
 function addD(s,n){var d=pd(s);d.setDate(d.getDate()+n);return fd(d);}
 function diff(a,b){return Math.round((pd(b)-pd(a))/86400000);}
-function isPro(s){var d=pd(s),day=d.getDate(),m=d.getMonth()+1;if(day===m&&m>=2&&m<=6)return true;if(day===15||day===25||day===28)return true;return false;}
+// วันเลขเบิ้ล 2/2 ถึง 12/12 (1/1 เป็นวันหยุดปีใหม่อยู่แล้ว) กับวันที่ 15 · 25 · 28 ทุกเดือน
+function isPro(s){var d=pd(s),day=d.getDate(),m=d.getMonth()+1;if(day===m&&m>=2)return true;if(day===15||day===25||day===28)return true;return false;}
 function isHol(s){return holidays.some(function(h){return h.date===s;});}
 function holN(s){var h=holidays.find(function(x){return x.date===s;});return h?h.name:'';}
 function isXP(s){return extraPro.some(function(p){return p.date===s;});}
@@ -789,13 +797,17 @@ function renderSchedule(){
     var bar=k.indexOf('|'),dk=k.slice(0,bar);
     if(dk>=p.start&&dk<=endS&&ns.indexOf(k.slice(bar+1))!==-1)ovCnt++;
   }
-  document.getElementById('per-sub').innerHTML=dates.length+' วัน · วันโปรฯ '+proCnt+' วัน'+(ovCnt?' · <span style="color:var(--pro)">แก้ไขช่อง '+ovCnt+' ช่อง</span>':'');
-
+  var short={morning:[],evening:[]};
   var h='<div class="tbl-wrap"><div class="tbl-scroll"><table>';
-  h+=buildSection('กะเช้า 07:00-16:00 — กลุ่ม '+mN,'morning',dates,endS,mG,mOS);
+  h+=buildSection('กะเช้า 07:00-16:00 — กลุ่ม '+mN,'morning',dates,endS,mG,mOS,short.morning);
   h+='<tr class="sep-row"><td colspan="'+(4+dates.length)+'"></td></tr>';
-  h+=buildSection('กะบ่าย 16:00-24:00 — กลุ่ม '+eN+' | วันสุดท้ายคาบ: 10:00-19:00 (ยกเว้นหยุดเสาร์)','evening',dates,endS,eG,eOS);
+  h+=buildSection('กะบ่าย 16:00-24:00 — กลุ่ม '+eN+' | วันสุดท้ายคาบ: 10:00-19:00 (ยกเว้นหยุดเสาร์)','evening',dates,endS,eG,eOS,short.evening);
   h+='</table></div></div>';
+
+  var shortTxt=[['morning','กะเช้า'],['evening','กะบ่าย']].filter(function(s){return short[s[0]].length;})
+    .map(function(s){return s[1]+' '+short[s[0]].length+' วัน';}).join(' · ');
+  document.getElementById('per-sub').innerHTML=dates.length+' วัน · วันโปรฯ '+proCnt+' วัน'+(ovCnt?' · <span style="color:var(--pro)">แก้ไขช่อง '+ovCnt+' ช่อง</span>':'')+
+    (shortTxt?' · <span style="color:var(--hol);font-weight:600">⚠ คนไม่ถึงขั้นต่ำ: '+shortTxt+'</span>':'');
 
   var pHols=holidays.filter(function(hh){return hh.date>=p.start&&hh.date<=endS;});
   if(pHols.length){
@@ -806,8 +818,9 @@ function renderSchedule(){
   document.getElementById('schedule-out').innerHTML=h;
 }
 
-function buildSection(title,shift,dates,endS,group,osGroup){
+function buildSection(title,shift,dates,endS,group,osGroup,short){
   var cols=4+dates.length;
+  var cnt=dates.map(function(){return {reg:0,os:0};});
   var shCls=shift==='morning'?'sh-morning':'sh-evening';
   var h='<thead>';
   h+='<tr><th colspan="'+cols+'" class="'+shCls+'">'+title+'</th></tr>';
@@ -856,6 +869,7 @@ function buildSection(title,shift,dates,endS,group,osGroup){
       var eveL=shift==='evening'&&ld&&emp.dayOff!==6;
       var av=hol?'H':off?'H':eveL?'10-19':'W';
       var ov=getOv(d,emp.name),dv=ov!==null?ov:av;
+      if(dv!=='H')cnt[i].reg++;
       var cls;
       if(ov!==null)cls=ov==='H'?'cOH':'cOW';
       else if(hol)cls='cH';
@@ -888,6 +902,7 @@ function buildSection(title,shift,dates,endS,group,osGroup){
         var eveL=shift==='evening'&&ld&&osOff!==6;
         var av=hol?'H':off?'H':eveL?'10-19':'W';
         var ov=getOv(d,os.name),dv=ov!==null?ov:av;
+        if(dv!=='H')cnt[i].os++;
         var cls;
         if(ov!==null)cls=ov==='H'?'cOH':'cOW';
         else if(hol||off)cls=ld&&shift==='evening'?'cLH':'cH';
@@ -899,6 +914,16 @@ function buildSection(title,shift,dates,endS,group,osGroup){
       h+='</tr>';
     }
   }
+  // คนที่มาทำงานต่อวัน (W กับ 10-19) — วันหยุดพิเศษทุกคนหยุดอยู่แล้วจึงไม่เตือน
+  var mn=typeof minStaff[shift]==='number'?minStaff[shift]:null;
+  h+='<tr class="cnt-row"><td colspan="4" class="sc0 ec" onclick="openMin(event,'+jsAttr(shift)+')" title="คลิกตั้งจำนวนคนขั้นต่ำของกะนี้">มาทำงาน (คน)'+
+    '<span class="cnt-min">'+(mn!==null?'ขั้นต่ำ '+mn+' ✎':'ตั้งขั้นต่ำ')+'</span></td>';
+  for(var i=0;i<dates.length;i++){
+    var d=dates[i],c=cnt[i],n=c.reg+c.os,hol=isHol(d),low=mn!==null&&!hol&&n<mn,wk=pd(d).getDay()===1;
+    if(low)short.push(d);
+    h+='<td class="'+(low?'cnt-low':hol?'cnt-hol':'cnt-ok')+(wk?' wk-s':'')+'" title="ประจำ '+c.reg+' · OS '+c.os+(mn!==null?' · ขั้นต่ำ '+mn:'')+'">'+n+'</td>';
+  }
+  h+='</tr>';
   h+='</tbody>';
   return h;
 }
@@ -912,9 +937,12 @@ function _showPop(e,title,isSelect,val){
   if(isSelect){inp.style.display='none';sel.style.display='block';}
   else{sel.style.display='none';inp.style.display='block';inp.value=val;setTimeout(function(){inp.focus();inp.select();},50);}
   var r=e.target.getBoundingClientRect();
-  pop.style.left=Math.max(8,Math.min(r.left,window.innerWidth-240))+'px';
-  pop.style.top=Math.min(r.bottom+4,window.innerHeight-160)+'px';
   pop.style.display='block';
+  // ข้างล่างไม่พอก็เปิดขึ้นข้างบนช่อง — แถวมาทำงานอยู่ท้ายตารางพอดี ถ้าบีบลงล่างจะโดนตัดขอบจอ
+  var ph=pop.offsetHeight,top=r.bottom+4;
+  if(top+ph>window.innerHeight-8)top=Math.max(8,r.top-ph-4);
+  pop.style.left=Math.max(8,Math.min(r.left,window.innerWidth-240))+'px';
+  pop.style.top=top+'px';
 }
 function iEdit(e,idx,field){
   e.stopPropagation();_iIdx=idx;_iField=field;_iType='emp';
@@ -928,7 +956,18 @@ function iEditOS(e,idx,field){
   if(field==='dayOff'){sel.innerHTML='<option value="-1">— ไม่มี —</option>'+DAY_OPTS;sel.value=os.dayOff!==undefined?os.dayOff:-1;_showPop(e,'วันหยุดประจำ OS',true);}
   else _showPop(e,field==='name'?'ชื่อ Outsource':'ชื่อเล่น',false,os[field]);
 }
+function openMin(e,shift){
+  e.stopPropagation();_iType='min';_iField=shift;
+  _showPop(e,'คนขั้นต่ำ'+(shift==='morning'?'กะเช้า':'กะบ่าย')+' · เว้นว่าง = ไม่เตือน',false,typeof minStaff[shift]==='number'?String(minStaff[shift]):'');
+}
 function saveInline(){
+  if(_iType==='min'){
+    var t=document.getElementById('ipop-input').value.trim();
+    if(t==='')delete minStaff[_iField];
+    else if(/^\d+$/.test(t))minStaff[_iField]=+t;
+    else{alert('ใส่เป็นจำนวนคน เช่น 6');return;}
+    changed();closeInline();renderSchedule();return;
+  }
   var p=_iType==='os'?outsource[_iIdx]:employees[_iIdx];
   if(!p){closeInline();return;}
   if(_iField==='dayOff')p.dayOff=+document.getElementById('ipop-select').value;

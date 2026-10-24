@@ -40,8 +40,11 @@ The site root redirects to `roster/`, so the main link opens the shift schedule.
   people whose day off is Saturday.
 - **Outsource** keep a fixed shift and never rotate. They can have a weekly day off.
 - **Days off.** Each person has one weekly day off. Holidays (วันหยุดพิเศษ) are `H` for everyone.
-- **Promo days** are highlighted automatically (2/2 to 6/6, and the 15th, 25th, and 28th of every
-  month), and you can add extra dates.
+- **Promo days** are highlighted automatically (the double dates 2/2 to 12/12, and the 15th, 25th,
+  and 28th of every month), and you can add extra dates.
+- **Headcount row.** Under each shift, a มาทำงาน row counts who works each day (staff + outsource;
+  W and 10-19). Click ตั้งขั้นต่ำ to set that shift's minimum. Days below it turn red, except
+  holidays, and the period summary says how many days are short.
 - **Manual edits.** Clicking a cell overrides it (W → H, or H / 10-19 → W); keep clicking to step
   back to the computed value. "ล้างแก้ไข" clears the edits in the current period.
   Click a name, nickname, day off, or shift badge to edit it in place.
