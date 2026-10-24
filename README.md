@@ -33,8 +33,9 @@ The site root redirects to `roster/`, so the main link opens the shift schedule.
 
 - **Two groups, two shifts.** Permanent staff are in group A or B. Each period (คาบ, normally
   28 days) puts one group on กะเช้า 07:00–16:00 and the other on กะบ่าย 16:00–24:00; the next
-  period swaps them. A period ends the day before the next one starts, and the last period runs
-  28 days.
+  period swaps them. A period ends on its end date (วันสุดท้ายคาบ) when one is set; otherwise it
+  ends the day before the next one starts, and a last period runs 28 days. Periods can't overlap,
+  and the period list warns about days that fall between two periods.
 - **Last day of a period:** the afternoon shift works 10:00–19:00 (shown as `10-19`), except
   people whose day off is Saturday.
 - **Outsource** keep a fixed shift and never rotate. They can have a weekly day off.

@@ -177,6 +177,9 @@ td.clickable:hover{filter:brightness(.92)}
 .per-dates{flex:1;min-width:180px;font-size:13px;font-weight:500}
 .per-days{font-size:11px;color:var(--txt3);margin-top:3px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .per-acts{display:flex;gap:6px;margin-left:auto}
+.per-gap{margin:0 16px;padding:7px 12px;border-radius:var(--radius-sm);background:#fffbeb;border:1px dashed var(--morning-border);font-size:12px;color:#92400e}
+.fg-hint{font-size:11px;color:var(--txt3);min-height:15px}
+.modal-hint{font-size:12px;color:var(--txt2);background:var(--bg);border-radius:var(--radius-sm);padding:8px 12px}
 .xpro-wrap{padding:12px 0;display:flex;flex-wrap:wrap;gap:6px}
 .xpro-tag{background:var(--pro-bg);border:1px solid var(--pro-border);border-radius:20px;padding:4px 12px;font-size:12px;color:var(--pro);font-weight:600}
 .xpro-x{background:none;border:none;cursor:pointer;color:var(--hol);font-weight:800;font-size:13px;padding:0 2px;margin-left:4px}
@@ -397,14 +400,16 @@ td.clickable:hover{filter:brightness(.92)}
 <div id="page-periods" class="page">
   <div class="card">
     <div class="card-title">คาบการเปลี่ยนกะ</div>
-    <div class="info-box no-print">ปกติ 28 วันต่อคาบ — ปรับได้เมื่อมีวันโปรฯ · คาบหนึ่งจบวันก่อนคาบถัดไปเริ่ม</div>
+    <div class="info-box no-print">ปกติ 28 วันต่อคาบ — ปรับได้เมื่อมีวันโปรฯ · กำหนดวันสุดท้ายเองได้ ถ้าไม่กำหนด คาบจะจบวันก่อนคาบถัดไปเริ่ม</div>
     <div class="form-row no-print">
-      <div class="fg"><label for="pi-start">วันเริ่มคาบใหม่</label><input id="pi-start" type="date"></div>
+      <div class="fg"><label for="pi-start">วันเริ่มคาบใหม่</label><input id="pi-start" type="date" onchange="onPerStart()"><span class="fg-hint">&nbsp;</span></div>
+      <div class="fg"><label for="pi-end">วันสุดท้ายคาบ</label><input id="pi-end" type="date" onchange="this.dataset.auto='';showPerLen()"><span class="fg-hint" id="pi-days">&nbsp;</span></div>
       <div class="fg"><label for="pi-grpa">กลุ่ม A อยู่กะ</label>
         <select id="pi-grpa"><option value="morning">กะเช้า (07:00-16:00)</option><option value="evening">กะบ่าย (16:00-24:00)</option></select>
+        <span class="fg-hint">&nbsp;</span>
       </div>
-      <div class="fg"><button type="button" class="btn-add" onclick="addPeriod()">+ เพิ่มคาบ</button></div>
-      <div class="fg"><button type="button" class="btn-warn" onclick="autoGen()">⚡ สร้างอัตโนมัติ 12 คาบ</button></div>
+      <div class="fg"><button type="button" class="btn-add" onclick="addPeriod()">+ เพิ่มคาบ</button><span class="fg-hint">&nbsp;</span></div>
+      <div class="fg"><button type="button" class="btn-warn" onclick="autoGen()">⚡ สร้างอัตโนมัติ 12 คาบ</button><span class="fg-hint">&nbsp;</span></div>
     </div>
     <div id="period-list"></div>
   </div>
@@ -516,6 +521,20 @@ td.clickable:hover{filter:brightness(.92)}
     <div class="modal-btns">
       <button type="button" class="btn-cancel" onclick="closeModal('os-modal')">ยกเลิก</button>
       <button type="button" class="btn-ok" onclick="saveOSEdit()">บันทึก</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="per-modal">
+  <div class="modal">
+    <div class="modal-title">✎ แก้ไขวันที่คาบ</div>
+    <input type="hidden" id="pm-id">
+    <div class="modal-row"><label for="pm-start">วันเริ่มคาบ</label><input id="pm-start" type="date" onchange="showPerLen()"></div>
+    <div class="modal-row"><label for="pm-end">วันสุดท้ายคาบ</label><input id="pm-end" type="date" onchange="showPerLen()"></div>
+    <div class="modal-hint" id="pm-hint"></div>
+    <div class="modal-btns">
+      <button type="button" class="btn-cancel" onclick="closeModal('per-modal')">ยกเลิก</button>
+      <button type="button" class="btn-ok" onclick="savePer()">บันทึก</button>
     </div>
   </div>
 </div>
@@ -673,7 +692,9 @@ function holN(s){var h=holidays.find(function(x){return x.date===s;});return h?h
 function isXP(s){return extraPro.some(function(p){return p.date===s;});}
 function isLD(s,e){return s===e;}
 function sorted(){return periods.slice().sort(function(a,b){return a.start<b.start?-1:1;});}
-function perEnd(p,sp){var i=sp.findIndex(function(x){return x.id===p.id;});if(i+1<sp.length)return addD(sp[i+1].start,-1);return addD(p.start,27);}
+// คาบที่กำหนดวันสุดท้ายไว้จบตามนั้น ไม่งั้นจบวันก่อนคาบถัดไป หรือครบ 28 วันถ้าเป็นคาบสุดท้าย
+function perEnd(p,sp){if(p.end)return p.end;var i=sp.findIndex(function(x){return x.id===p.id;});if(i+1<sp.length)return addD(sp[i+1].start,-1);return addD(p.start,27);}
+function thd(s){var d=pd(s);return d.getDate()+' '+MON[d.getMonth()]+' '+d.getFullYear();}
 function mSpans(dates){var sp=[],cur=null;for(var i=0;i<dates.length;i++){var d=pd(dates[i]),m=d.getMonth(),y=d.getFullYear();if(!cur||cur.m!==m||cur.y!==y){if(cur)sp.push(cur);cur={m:m,y:y,count:1};}else cur.count++;}if(cur)sp.push(cur);return sp;}
 function currentPer(){var today=fd(new Date()),sp=sorted(),best=0;for(var i=0;i<sp.length;i++){if(sp[i].start<=today)best=i;}return best;}
 
@@ -994,7 +1015,10 @@ function renderPeriods(){
     h+='<div class="per-item"><div class="per-num">'+(i+1)+'</div>';
     h+='<div class="per-dates"><strong>'+sd.getDate()+' '+MON_F[sd.getMonth()]+' '+sd.getFullYear()+'</strong> — <strong>'+ed.getDate()+' '+MON_F[ed.getMonth()]+' '+ed.getFullYear()+'</strong>';
     h+='<div class="per-days">'+days+' วัน · <span class="ga">A = '+shA+'</span> <span class="gb">B = '+shB+'</span></div></div>';
-    h+='<div class="no-print per-acts"><button type="button" class="btn-edit" onclick="editPer('+p.id+')">แก้วันเริ่ม</button><button type="button" class="btn-del" onclick="delPer('+p.id+')">ลบ</button></div></div>';}
+    h+='<div class="no-print per-acts"><button type="button" class="btn-edit" onclick="editPer('+p.id+')">แก้ไขวันที่</button><button type="button" class="btn-del" onclick="delPer('+p.id+')">ลบ</button></div></div>';
+    // คาบที่จบก่อนคาบถัดไปเริ่มทิ้งวันไว้กลางทาง — วันพวกนั้นจะไม่ขึ้นในตารางกะเลย
+    if(i+1<sp.length){var gs=addD(e,1),nx=sp[i+1].start;
+      if(gs<nx){var gd=diff(gs,nx);h+='<div class="per-gap">⚠ '+thd(gs)+(gd>1?' – '+thd(addD(nx,-1)):'')+' ไม่อยู่ในคาบไหน ('+gd+' วัน) — ตารางกะจะไม่มีวันเหล่านี้</div>';}}}
   if(!sp.length)h+='<p class="empty">ยังไม่มีคาบ</p>';
   h+='</div>';document.getElementById('period-list').innerHTML=h;
   var xh='<div class="xpro-wrap">';
@@ -1002,11 +1026,63 @@ function renderPeriods(){
   else xh+='<span class="empty">ยังไม่มี</span>';
   xh+='</div>';document.getElementById('xpro-list').innerHTML=xh;
 }
-function addPeriod(){var s=document.getElementById('pi-start').value;if(!s){alert('กรุณาเลือกวันเริ่ม');return;}
-  periods.push({id:Date.now(),start:s,groupA:document.getElementById('pi-grpa').value});changed();renderPeriods();}
+/* วันจบเมื่อไม่ได้กำหนด — ใช้เติมช่องให้ก่อน และบอกว่าเว้นว่างไว้แล้วจะจบวันไหน */
+function autoEnd(start,selfId){
+  var nx=sorted().filter(function(p){return p.id!==selfId&&p.start>start;})[0];
+  return nx?addD(nx.start,-1):addD(start,27);
+}
+/* วันที่ทับกันจะอยู่สองคาบพร้อมกัน แปลว่ากลุ่มเดียวต้องอยู่สองกะในวันเดียว จึงไม่ยอมให้ทับ
+   ส่วนช่องว่างระหว่างคาบยอมให้มีได้ แต่รายการคาบจะเตือนไว้ */
+function perCheck(start,end,selfId){
+  if(end&&end<start)return 'วันสุดท้ายต้องไม่ก่อนวันเริ่ม';
+  var others=sorted().filter(function(p){return p.id!==selfId;}),prev=null,next=null;
+  for(var i=0;i<others.length;i++){
+    var p=others[i];
+    if(p.start===start)return 'มีคาบที่เริ่มวันที่ '+thd(start)+' อยู่แล้ว';
+    if(p.start<start)prev=p;else if(!next)next=p;
+  }
+  if(prev&&prev.end&&prev.end>=start)return 'คาบที่เริ่ม '+thd(prev.start)+' กำหนดจบ '+thd(prev.end)+' ซึ่งทับวันเริ่มนี้\nแก้วันสุดท้ายของคาบนั้นก่อน';
+  if(next&&end&&end>=next.start)return 'วันสุดท้ายต้องอยู่ก่อนคาบถัดไปเริ่ม ('+thd(next.start)+')';
+  return '';
+}
+function perLen(start,end,selfId){
+  if(!start)return '';
+  var e=end||autoEnd(start,selfId);
+  if(e<start)return 'วันสุดท้ายอยู่ก่อนวันเริ่ม';
+  return 'รวม '+(diff(start,e)+1)+' วัน'+(end?'':' · เว้นว่างไว้ = จบ '+thd(e));
+}
+function showPerLen(){
+  document.getElementById('pi-days').textContent=perLen(document.getElementById('pi-start').value,document.getElementById('pi-end').value,null)||' ';
+  var id=+document.getElementById('pm-id').value;
+  document.getElementById('pm-hint').textContent=perLen(document.getElementById('pm-start').value,document.getElementById('pm-end').value,id)||'';
+}
+// เลือกวันเริ่มแล้วเติมวันสุดท้ายให้ จนกว่าคนจะแก้ช่องนั้นเอง
+function onPerStart(){
+  var s=document.getElementById('pi-start').value,e=document.getElementById('pi-end');
+  if(s&&(!e.value||e.dataset.auto==='1')){e.value=autoEnd(s,null);e.dataset.auto='1';}
+  showPerLen();
+}
+function addPeriod(){
+  var s=document.getElementById('pi-start').value,e=document.getElementById('pi-end').value;
+  if(!s){alert('กรุณาเลือกวันเริ่ม');return;}
+  var err=perCheck(s,e,null);if(err){alert(err);return;}
+  var p={id:Date.now(),start:s,groupA:document.getElementById('pi-grpa').value};if(e)p.end=e;
+  periods.push(p);
+  document.getElementById('pi-start').value='';document.getElementById('pi-end').value='';document.getElementById('pi-end').dataset.auto='';
+  showPerLen();changed();renderPeriods();
+}
 function editPer(id){var p=periods.find(function(x){return x.id===id;});if(!p)return;
-  var v=prompt('แก้ไขวันเริ่มคาบ (YYYY-MM-DD):',p.start);if(!v)return;
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(v)){alert('รูปแบบไม่ถูกต้อง');return;}p.start=v;changed();renderPeriods();}
+  document.getElementById('pm-id').value=id;
+  document.getElementById('pm-start').value=p.start;document.getElementById('pm-end').value=p.end||'';
+  showPerLen();document.getElementById('per-modal').classList.add('open');}
+function savePer(){
+  var id=+document.getElementById('pm-id').value,p=periods.find(function(x){return x.id===id;});if(!p)return closeModal('per-modal');
+  var s=document.getElementById('pm-start').value,e=document.getElementById('pm-end').value;
+  if(!s){alert('กรุณาเลือกวันเริ่ม');return;}
+  var err=perCheck(s,e,id);if(err){alert(err);return;}
+  p.start=s;if(e)p.end=e;else delete p.end;
+  changed();closeModal('per-modal');renderPeriods();
+}
 function delPer(id){if(!confirm('ลบคาบนี้?'))return;periods=periods.filter(function(p){return p.id!==id;});changed();renderPeriods();}
 function autoGen(){var sp=sorted();if(!sp.length){alert('กรุณาเพิ่มคาบแรกก่อน');return;}
   var last=sp[sp.length-1],le=perEnd(last,sp),nxt=addD(le,1),ng=last.groupA;
@@ -1169,7 +1245,7 @@ document.addEventListener('keydown',function(e){
     if(document.getElementById('ipop').style.display==='block')saveInline();
     else if(document.getElementById('kpi-overlay').classList.contains('open'))saveKPIInp();
   }
-  if(e.key==='Escape'){closeInline();closeKPIInp();closeModal('emp-modal');closeModal('os-modal');}
+  if(e.key==='Escape'){closeInline();closeKPIInp();closeModal('emp-modal');closeModal('os-modal');closeModal('per-modal');}
 });
 
 // ── Init ──
