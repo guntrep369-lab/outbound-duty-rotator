@@ -38,7 +38,10 @@ The site root redirects to `roster/`, so the main link opens the shift schedule.
   and the period list warns about days that fall between two periods.
 - **Last day of a period:** the afternoon shift works 10:00–19:00 (shown as `10-19`), except
   people whose day off is Saturday.
-- **Outsource** keep a fixed shift and never rotate. They can have a weekly day off.
+- **Outsource** come in two kinds. OS ประจำ belong to group A or B and rotate with their group,
+  like permanent staff. OS เสริม keep a fixed shift and never rotate. Either kind can have a weekly
+  day off. Data saved before the split treats every outsource as ประจำ, in the group that worked
+  their shift in the period running when the page first opens, so that period looks the same.
 - **Days off.** Each person has one weekly day off. Holidays (วันหยุดพิเศษ) are `H` for everyone.
 - **Promo days** are highlighted automatically (the double dates 2/2 to 12/12, and the 15th, 25th,
   and 28th of every month), and you can add extra dates.
