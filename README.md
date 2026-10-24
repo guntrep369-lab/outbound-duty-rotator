@@ -38,15 +38,20 @@ The site root redirects to `roster/`, so the main link opens the shift schedule.
   and the period list warns about days that fall between two periods.
 - **Last day of a period:** the afternoon shift works 10:00–19:00 (shown as `10-19`), except
   people whose day off is Saturday.
-- **Outsource** come in two kinds. OS ประจำ belong to group A or B and rotate with their group,
-  like permanent staff. OS เสริม keep a fixed shift and never rotate. Either kind can have a weekly
-  day off. Data saved before the split treats every outsource as ประจำ, in the group that worked
-  their shift in the period running when the page first opens, so that period looks the same.
+- **Outsource ประจำ** are named people in group A or B. They rotate with their group, like
+  permanent staff, and can have a weekly day off. Data from before groups existed (each outsource on
+  a fixed shift) puts each person in the group that works their shift in the period running when
+  the page first opens, so that period looks the same.
+- **Outsource เสริม** have no names, because who comes isn't known in advance. Each shift has two
+  rows of numbers per day: ขอ (how many were requested) and มาจริง (how many came, filled in later).
+  Click a number to change it, or use วางแผน OS เสริม to fill in a whole week (Monday to Sunday). It
+  can copy the requested numbers from the week before. A day where fewer came than were requested
+  turns red.
 - **Days off.** Each person has one weekly day off. Holidays (วันหยุดพิเศษ) are `H` for everyone.
 - **Promo days** are highlighted automatically (the double dates 2/2 to 12/12, and the 15th, 25th,
   and 28th of every month), and you can add extra dates.
-- **Headcount row.** Under each shift, a มาทำงาน row counts who works each day (staff + outsource;
-  W and 10-19). Click ตั้งขั้นต่ำ to set that shift's minimum. Days below it turn red, except
+- **Headcount row.** Under each shift, a มาทำงาน row counts who works each day: staff and
+  outsource ประจำ on W or 10-19, plus outsource เสริม (มาจริง once filled in, otherwise ขอ). Click ตั้งขั้นต่ำ to set that shift's minimum. Days below it turn red, except
   holidays, and the period summary says how many days are short.
 - **Manual edits.** Clicking a cell overrides it (W → H, or H / 10-19 → W); keep clicking to step
   back to the computed value. "ล้างแก้ไข" clears the edits in the current period.

@@ -54,6 +54,9 @@
 .btn-clear{background:var(--hol-bg);border:1px solid var(--hol-border);color:var(--hol);border-radius:var(--radius-sm);
   padding:8px 12px;cursor:pointer;font-size:12px;font-weight:600;transition:all .15s}
 .btn-clear:hover{background:var(--hol);color:#fff}
+.btn-plan{background:var(--os-bg);border:1px solid var(--os-border);color:var(--os);border-radius:var(--radius-sm);
+  padding:8px 12px;cursor:pointer;font-size:12px;font-weight:600;transition:all .15s}
+.btn-plan:hover{background:var(--os);color:#fff}
 
 /* ═══ LEGEND ═══ */
 .legend{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;font-size:11px;align-items:center;color:var(--txt2)}
@@ -101,6 +104,12 @@ td.sc0{font-weight:500;font-size:12px}
 .os-sep-row td.sc0,.os-sep-row td.sc1,.os-sep-row td.sc2,.os-sep-row td.sc3{background:#f0fdf9}
 .os-row td{background:#f7fffe}
 .os-row td.sc0,.os-row td.sc1,.os-row td.sc2,.os-row td.sc3{background:#f0fdf9}
+/* OS เสริม: ตัวเลขต่อวัน ไม่มีชื่อคน */
+.osx-row td{background:#f7fffe;cursor:pointer;font-variant-numeric:tabular-nums;font-weight:700;color:var(--os)}
+.osx-row td.sc0{background:#f0fdf9;font-size:11px;cursor:default}
+.osx-row td.sc0.ec{cursor:pointer}
+.osx-row td.ox-none{color:var(--txt3);font-weight:400}
+.osx-row td.ox-short{background:#fecaca;color:#991b1b}
 
 /* สถานะของแต่ละช่อง */
 .cW{background:#fff;color:#374151}
@@ -127,7 +136,6 @@ td.clickable:hover{filter:brightness(.92)}
 .bm{background:var(--morning-bg);color:var(--morning);border:1px solid var(--morning-border);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;display:inline-block}
 .be{background:var(--evening-bg);color:var(--evening);border:1px solid var(--evening-border);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;display:inline-block}
 .bo{background:var(--os-bg);color:var(--os);border:1px solid var(--os-border);border-radius:20px;padding:2px 8px;font-size:10px;font-weight:700;display:inline-block}
-.bx{background:var(--surface);color:var(--txt2);border:1px dashed var(--txt3);border-radius:20px;padding:2px 8px;font-size:10px;font-weight:700;display:inline-block}
 .ga{background:#fef9c3;color:#713f12;border:1px solid #fde047;border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;display:inline-block}
 .gb{background:#e0f2fe;color:#0c4a6e;border:1px solid #7dd3fc;border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;display:inline-block}
 
@@ -216,6 +224,21 @@ td.clickable:hover{filter:brightness(.92)}
 .btn-ok{background:var(--primary);color:#fff;border:none;border-radius:var(--radius-sm);padding:9px 20px;font-size:14px;font-weight:700;cursor:pointer;min-height:40px;font-family:inherit}
 .btn-ok:hover{background:var(--primary-h)}
 .ipop-btns .btn-cancel,.ipop-btns .btn-ok{font-size:12px;padding:5px 10px;min-height:0}
+
+/* ═══ วางแผน OS เสริม ═══ */
+.ox-modal{width:600px}
+.ox-week{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.ox-range{flex:1;text-align:center;font-weight:700;color:var(--txt)}
+.ox-tbl{border-collapse:collapse;width:100%}
+.ox-tbl th,.ox-tbl td{padding:3px;text-align:center;font-size:12px}
+.ox-tbl thead th{color:var(--txt2);font-weight:600;line-height:1.3}
+.ox-tbl thead th.ox-hol{color:var(--hol)}
+.ox-tbl tbody th{text-align:left;white-space:nowrap;color:var(--os);font-weight:700;padding-right:8px}
+.ox-tbl tr.ox-got th{color:var(--txt2);font-weight:600}
+.ox-tbl tr.ox-got td,.ox-tbl tr.ox-got th{padding-bottom:12px}
+.ox-tbl input{width:48px;text-align:center;padding:6px 4px}
+.ox-hint{font-size:11.5px;color:var(--txt3);margin-top:4px}
+.ox-copy{margin-right:auto}
 
 /* ═══ INLINE POPUP ═══ */
 #ipop{display:none;position:fixed;background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius);
@@ -334,6 +357,7 @@ td.clickable:hover{filter:brightness(.92)}
       <select id="sel-period" class="period-select" onchange="onPeriodChange()"></select>
       <button type="button" class="btn-nav" onclick="nextPeriod()" aria-label="คาบถัดไป">›</button>
     </div>
+    <button type="button" class="btn-plan" onclick="openOxPlan(event)">วางแผน OS เสริม</button>
     <button type="button" class="btn-clear" onclick="clearOverrides()">ล้างแก้ไข</button>
   </div>
 
@@ -344,8 +368,8 @@ td.clickable:hover{filter:brightness(.92)}
     <span class="leg-item"><span class="leg-dot" style="background:var(--last-bg);border:1px solid var(--last-border)"></span>วันสุดท้ายคาบ 10-19</span>
     <span class="leg-item"><span class="leg-dot" style="background:#fee2e2;box-shadow:inset 0 0 0 2px #f87171"></span>แก้ไขเป็น H</span>
     <span class="leg-item"><span class="leg-dot" style="background:#f0fdf4;box-shadow:inset 0 0 0 2px #4ade80"></span>แก้ไขเป็น W</span>
-    <span class="leg-item"><span class="leg-dot" style="background:#fecaca"></span>คนไม่ถึงขั้นต่ำ</span>
-    <span class="leg-hint">· คลิกช่อง W/H เพื่อสลับ · คลิกชื่อ/หยุด/กะ เพื่อแก้ไข · คลิก "ตั้งขั้นต่ำ" ในแถวมาทำงาน</span>
+    <span class="leg-item"><span class="leg-dot" style="background:#fecaca"></span>คนไม่ถึงขั้นต่ำ / OS เสริมมาไม่ครบ</span>
+    <span class="leg-hint">· คลิกช่อง W/H เพื่อสลับ · คลิกชื่อ/หยุด/กะ เพื่อแก้ไข · คลิกตัวเลข OS เสริม เพื่อใส่จำนวน · คลิก "ตั้งขั้นต่ำ" ในแถวมาทำงาน</span>
   </div>
 
   <div id="schedule-out"></div>
@@ -378,19 +402,14 @@ td.clickable:hover{filter:brightness(.92)}
   </div>
 
   <div class="card">
-    <div class="card-title">Outsource</div>
-    <div class="info-box no-print">OS ประจำ อยู่กลุ่ม A/B สลับกะตามกลุ่มทุกคาบเหมือนพนักงาน · OS เสริม กะคงที่ ไม่หมุน · มีวันหยุดประจำได้ · แสดง H เฉพาะวันหยุดพิเศษ / วันหยุดประจำ</div>
+    <div class="card-title">Outsource ประจำ</div>
+    <div class="info-box no-print">อยู่กลุ่ม A/B สลับกะตามกลุ่มทุกคาบเหมือนพนักงาน · มีวันหยุดประจำได้ · แสดง H เฉพาะวันหยุดพิเศษ / วันหยุดประจำ<br>
+      OS เสริม ไม่ต้องใส่ชื่อที่นี่ — ใส่จำนวนคนที่ขอ / มาจริงในแท็บตารางกะ (ปุ่ม วางแผน OS เสริม)</div>
     <div class="form-row no-print">
       <div class="fg"><label for="oi-name">ชื่อ / รหัส</label><input id="oi-name" type="text" placeholder="เช่น OS A1" style="width:160px"></div>
       <div class="fg"><label for="oi-nick">ชื่อเล่น</label><input id="oi-nick" type="text" placeholder="OS1" style="width:80px"></div>
-      <div class="fg"><label for="oi-type">ประเภท</label>
-        <select id="oi-type" onchange="osTypeUI('oi')"><option value="regular">ประจำ (ตามกลุ่ม)</option><option value="extra">เสริม (กะคงที่)</option></select>
-      </div>
-      <div class="fg" id="oi-grp-wrap"><label for="oi-grp">กลุ่ม</label>
+      <div class="fg"><label for="oi-grp">กลุ่ม</label>
         <select id="oi-grp"><option value="A">กลุ่ม A</option><option value="B">กลุ่ม B</option></select>
-      </div>
-      <div class="fg" id="oi-shift-wrap" style="display:none"><label for="oi-shift">กะ</label>
-        <select id="oi-shift"><option value="morning">กะเช้า (07-16)</option><option value="evening">กะบ่าย (16-24)</option></select>
       </div>
       <div class="fg"><label for="oi-off">วันหยุดประจำ</label>
         <select id="oi-off">
@@ -403,7 +422,7 @@ td.clickable:hover{filter:brightness(.92)}
     </div>
     <div class="tbl-x">
       <table class="mtbl">
-        <thead><tr><th>#</th><th>ชื่อ/รหัส</th><th>ชื่อเล่น</th><th>กลุ่ม / กะ</th><th>วันหยุด</th><th class="no-print"></th></tr></thead>
+        <thead><tr><th>#</th><th>ชื่อ/รหัส</th><th>ชื่อเล่น</th><th>กลุ่ม</th><th>วันหยุด</th><th class="no-print"></th></tr></thead>
         <tbody id="os-body"></tbody>
       </table>
     </div>
@@ -518,18 +537,12 @@ td.clickable:hover{filter:brightness(.92)}
 
 <div class="overlay" id="os-modal">
   <div class="modal">
-    <div class="modal-title">✎ แก้ไข Outsource</div>
+    <div class="modal-title">✎ แก้ไข Outsource ประจำ</div>
     <input type="hidden" id="osm-idx">
     <div class="modal-row"><label for="osm-name">ชื่อ/รหัส</label><input id="osm-name" type="text"></div>
     <div class="modal-row"><label for="osm-nick">ชื่อเล่น</label><input id="osm-nick" type="text"></div>
-    <div class="modal-row"><label for="osm-type">ประเภท</label>
-      <select id="osm-type" onchange="osTypeUI('osm')"><option value="regular">ประจำ (ตามกลุ่ม)</option><option value="extra">เสริม (กะคงที่)</option></select>
-    </div>
-    <div class="modal-row" id="osm-grp-wrap"><label for="osm-grp">กลุ่ม</label>
+    <div class="modal-row"><label for="osm-grp">กลุ่ม</label>
       <select id="osm-grp"><option value="A">กลุ่ม A</option><option value="B">กลุ่ม B</option></select>
-    </div>
-    <div class="modal-row" id="osm-shift-wrap"><label for="osm-shift">กะ</label>
-      <select id="osm-shift"><option value="morning">กะเช้า</option><option value="evening">กะบ่าย</option></select>
     </div>
     <div class="modal-row"><label for="osm-off">วันหยุดประจำ</label>
       <select id="osm-off">
@@ -555,6 +568,24 @@ td.clickable:hover{filter:brightness(.92)}
     <div class="modal-btns">
       <button type="button" class="btn-cancel" onclick="closeModal('per-modal')">ยกเลิก</button>
       <button type="button" class="btn-ok" onclick="savePer()">บันทึก</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="ox-modal">
+  <div class="modal ox-modal">
+    <div class="modal-title">วางแผน OS เสริม</div>
+    <div class="ox-week">
+      <button type="button" class="btn-nav" onclick="oxWeek(-7)" aria-label="สัปดาห์ก่อน">‹</button>
+      <div class="ox-range" id="ox-range"></div>
+      <button type="button" class="btn-nav" onclick="oxWeek(7)" aria-label="สัปดาห์ถัดไป">›</button>
+    </div>
+    <div class="tbl-x"><table class="ox-tbl" id="ox-tbl"></table></div>
+    <div class="ox-hint">ใส่จำนวนคน · เว้นว่าง = ไม่มี · มาจริงใส่ทีหลังได้ · เลื่อนสัปดาห์ได้เลย ตัวเลขยังอยู่จนกดบันทึก</div>
+    <div class="modal-btns">
+      <button type="button" class="btn-cancel ox-copy" onclick="oxCopyPrev()">คัดลอกจำนวนขอจากสัปดาห์ก่อน</button>
+      <button type="button" class="btn-cancel" onclick="closeModal('ox-modal')">ยกเลิก</button>
+      <button type="button" class="btn-ok" onclick="oxSave()">บันทึก</button>
     </div>
   </div>
 </div>
@@ -598,12 +629,12 @@ var DEF_EMP=[
   {name:'นายชูเกียรติ อินทร์จำปา',nick:'แก้ว',dayOff:0,group:'B'}
 ];
 var DEF_OS=[
-  {name:'Outsource A1',nick:'OS1',type:'regular',group:'A',dayOff:-1},
-  {name:'Outsource A2',nick:'OS2',type:'regular',group:'A',dayOff:-1},
-  {name:'Outsource A3',nick:'OS3',type:'regular',group:'A',dayOff:-1},
-  {name:'Outsource B1',nick:'OS4',type:'regular',group:'B',dayOff:-1},
-  {name:'Outsource B2',nick:'OS5',type:'regular',group:'B',dayOff:-1},
-  {name:'Outsource B3',nick:'OS6',type:'regular',group:'B',dayOff:-1}
+  {name:'Outsource A1',nick:'OS1',group:'A',dayOff:-1},
+  {name:'Outsource A2',nick:'OS2',group:'A',dayOff:-1},
+  {name:'Outsource A3',nick:'OS3',group:'A',dayOff:-1},
+  {name:'Outsource B1',nick:'OS4',group:'B',dayOff:-1},
+  {name:'Outsource B2',nick:'OS5',group:'B',dayOff:-1},
+  {name:'Outsource B3',nick:'OS6',group:'B',dayOff:-1}
 ];
 var DEF_PER=[
   {id:1,start:'2026-01-18',groupA:'morning'},
@@ -631,7 +662,7 @@ var DEF_HOL=[
    ตั้งค่าพาตารางกะไปด้วย ย้ายเครื่องใช้ปุ่มส่งออก/นำเข้าไฟล์ */
 var STORE_KEY='wms:roster';
 var D={};try{D=JSON.parse(localStorage.getItem(STORE_KEY)||'null')||{};}catch(e){}
-var employees,outsource,periods,holidays,extraPro,overrides,kpiData,minStaff;
+var employees,outsource,periods,holidays,extraPro,overrides,kpiData,minStaff,osExtra;
 var curPer=0,curPage='schedule';
 
 function copy(v){return JSON.parse(JSON.stringify(v));}
@@ -640,26 +671,32 @@ function obj(v){return v&&typeof v==='object'&&!Array.isArray(v)?copy(v):{};}
 function useData(d){
   employees=arr(d.employees,DEF_EMP);outsource=arr(d.outsource,DEF_OS);
   periods=arr(d.periods,DEF_PER);holidays=arr(d.holidays,DEF_HOL);extraPro=arr(d.extraPro,[]);
-  overrides=obj(d.overrides);kpiData=obj(d.kpiData);minStaff=obj(d.minStaff);
+  overrides=obj(d.overrides);kpiData=obj(d.kpiData);minStaff=obj(d.minStaff);osExtra=obj(d.osExtra);
   return normOS();
 }
-/* OS แบ่งเป็นสองแบบ: ประจำ (type regular) อยู่กลุ่ม A/B และสลับกะตามกลุ่มทุกคาบเหมือนพนักงาน
-   เสริม (type extra) อยู่กะคงที่ ไม่สลับ
-   ข้อมูลที่บันทึกก่อนแยกประเภทไม่มี type และทุกคนอยู่กะคงที่ — นับเป็น OS ประจำ แล้วใส่กลุ่มที่อยู่
-   กะนั้นในคาบปัจจุบัน ตารางคาบนี้จึงเหมือนเดิม คาบอื่นค่อยสลับตามกลุ่ม
+/* OS ที่มีชื่อในรายชื่อคือ OS ประจำ อยู่กลุ่ม A/B และสลับกะตามกลุ่มทุกคาบเหมือนพนักงาน
+   OS เสริมไม่รู้ล่วงหน้าว่าใครมา จึงไม่เก็บเป็นรายคน — เก็บแค่จำนวนต่อวันต่อกะใน osExtra
+   ข้อมูลรุ่นก่อนให้ OS อยู่กะคงที่ (shift) ไม่มีกลุ่ม — ใส่กลุ่มที่อยู่กะนั้นในคาบปัจจุบัน
+   ตารางคาบนี้จึงเหมือนเดิม คาบอื่นค่อยสลับตามกลุ่ม
    คืน true ถ้ามีการแปลง เพื่อให้เก็บลงเครื่องทันที — ไม่งั้นกลุ่มที่เดาจากคาบปัจจุบันจะเปลี่ยนไปตามวัน */
 function normOS(){
   var p=sorted()[currentPer()],gA=p?p.groupA:'morning',moved=false;
   outsource.forEach(function(o){
-    if(o.type!=='regular'&&o.type!=='extra'){o.type='regular';o.group=o.shift===gA?'A':'B';delete o.shift;moved=true;}
-    if(o.type==='regular'&&o.group!=='A'&&o.group!=='B'){o.group='A';moved=true;}
-    if(o.type==='extra'&&o.shift!=='morning'&&o.shift!=='evening'){o.shift='morning';moved=true;}
+    if(o.group!=='A'&&o.group!=='B'){o.group=(o.shift||'morning')===gA?'A':'B';moved=true;}
+    if('shift' in o||'type' in o){delete o.shift;delete o.type;moved=true;}
   });
   return moved;
 }
+/* OS เสริม: osExtra['วันที่|กะ'] = {req: ขอไว้กี่คน, got: มาจริงกี่คน} ไม่มีค่าไหนก็ไม่ใส่ key นั้น
+   s คือชุดข้อมูลที่จะอ่าน/เขียน — หน้าต่างวางแผนแก้ในชุดร่างก่อน กดบันทึกถึงจะใช้จริง */
+function oxK(d,sh){return d+'|'+sh;}
+function oxGet(d,sh,f,s){var e=(s||osExtra)[oxK(d,sh)];return e&&typeof e[f]==='number'?e[f]:null;}
+function oxSet(d,sh,f,v,s){s=s||osExtra;var k=oxK(d,sh),e=s[k]||{};
+  if(v===null)delete e[f];else e[f]=v;
+  if(e.req===undefined&&e.got===undefined)delete s[k];else s[k]=e;}
 var _osMigrated=useData(D);
 
-function _data(){return {employees:employees,outsource:outsource,periods:periods,holidays:holidays,extraPro:extraPro,overrides:overrides,kpiData:kpiData,minStaff:minStaff,savedAt:Date.now()};}
+function _data(){return {employees:employees,outsource:outsource,periods:periods,holidays:holidays,extraPro:extraPro,overrides:overrides,kpiData:kpiData,minStaff:minStaff,osExtra:osExtra,savedAt:Date.now()};}
 function stamp(ts){return new Date(ts).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});}
 function setSaveState(cls,txt){var el=document.getElementById('save-state');el.className='rs-saved'+(cls?' '+cls:'');el.textContent=txt;}
 function changed(){
@@ -698,7 +735,8 @@ function describe(d){
   var n=function(a){return Array.isArray(a)?a.length:0;},months={},k=obj(d.kpiData);
   for(var nm in k){if(k[nm]&&typeof k[nm]==='object')for(var m in k[nm])months[m]=1;}
   return 'พนักงาน '+n(d.employees)+' · OS '+n(d.outsource)+' · คาบ '+n(d.periods)+' · วันหยุด '+n(d.holidays)+
-    ' · แก้ไขช่อง '+Object.keys(obj(d.overrides)).length+' · KPI '+Object.keys(months).length+' เดือน';
+    ' · แก้ไขช่อง '+Object.keys(obj(d.overrides)).length+' · OS เสริม '+Object.keys(obj(d.osExtra)).length+' กะ'+
+    ' · KPI '+Object.keys(months).length+' เดือน';
 }
 function importFile(inp){
   var f=inp.files&&inp.files[0];inp.value='';if(!f)return;
@@ -814,9 +852,8 @@ function renderSchedule(){
   var gA=employees.filter(function(e){return e.group==='A';}),gB=employees.filter(function(e){return e.group==='B';});
   var mG=shA==='morning'?gA:gB,eG=shA==='morning'?gB:gA;
   var mN=shA==='morning'?'A':'B',eN=shA==='morning'?'B':'A';
-  // OS ประจำ อยู่กะเดียวกับกลุ่มของตัวเอง · OS เสริม อยู่กะที่ตั้งไว้ตลอด
-  var osIn=function(sh,g){return outsource.filter(function(o){return o.type==='regular'?o.group===g:o.shift===sh;});};
-  var mOS=osIn('morning',mN),eOS=osIn('evening',eN);
+  // OS ประจำ อยู่กะเดียวกับกลุ่มของตัวเอง
+  var mOS=outsource.filter(function(o){return o.group===mN;}),eOS=outsource.filter(function(o){return o.group===eN;});
   var sd=pd(p.start),ed=pd(endS);
 
   document.getElementById('per-title').textContent='คาบที่ '+(curPer+1)+' — '+sd.getDate()+' '+MON_F[sd.getMonth()]+' '+sd.getFullYear()+' ถึง '+ed.getDate()+' '+MON_F[ed.getMonth()]+' '+ed.getFullYear();
@@ -850,7 +887,7 @@ function renderSchedule(){
 
 function buildSection(title,shift,dates,endS,group,osGroup,short){
   var cols=4+dates.length;
-  var cnt=dates.map(function(){return {reg:0,osr:0,osx:0};});
+  var cnt=dates.map(function(){return {reg:0,osr:0,osx:0,oxReq:false};});
   var shCls=shift==='morning'?'sh-morning':'sh-evening';
   var h='<thead>';
   h+='<tr><th colspan="'+cols+'" class="'+shCls+'">'+title+'</th></tr>';
@@ -913,30 +950,26 @@ function buildSection(title,shift,dates,endS,group,osGroup,short){
     h+='</tr>';
   }
 
-  // Outsource — ประจำ (สลับกะตามกลุ่ม) แล้วต่อด้วย เสริม (กะคงที่)
-  var shTh=shift==='morning'?'เช้า':'บ่าย';
-  [['regular','Outsource ประจำ'],['extra','Outsource เสริม']].forEach(function(b){
-    var reg=b[0]==='regular',list=osGroup.filter(function(o){return o.type===b[0];});
-    if(!list.length)return;
-    h+='<tr class="os-sep-row"><td class="sc0" style="padding-left:14px">'+b[1]+' ('+list.length+' คน)</td><td class="sc1"></td><td class="sc2"></td><td class="sc3"></td>';
+  // Outsource ประจำ
+  if(osGroup.length){
+    h+='<tr class="os-sep-row"><td class="sc0" style="padding-left:14px">Outsource ประจำ ('+osGroup.length+' คน)</td><td class="sc1"></td><td class="sc2"></td><td class="sc3"></td>';
     for(var i=0;i<dates.length;i++){var wk=pd(dates[i]).getDay()===1;h+='<td class="'+(wk?'wk-s':'')+'" style="color:var(--txt3);background:#f0fdf9">—</td>';}
     h+='</tr>';
-    list.forEach(function(os){
-      var osIdx=outsource.indexOf(os);
+    for(var oi=0;oi<osGroup.length;oi++){
+      var os=osGroup[oi],osIdx=outsource.indexOf(os);
       var osOff=os.dayOff!==undefined?os.dayOff:-1;
-      var shB=reg?'<span class="bo">OS '+shTh+'</span>':'<span class="bx">เสริม '+shTh+'</span>';
-      var shT=reg?'กลุ่ม '+os.group+' — คลิกย้ายไปอีกกลุ่ม':'กะคงที่ — คลิกเปลี่ยนกะ';
+      var shB=shift==='morning'?'<span class="bo">OS เช้า</span>':'<span class="bo">OS บ่าย</span>';
       h+='<tr class="os-row">';
       h+='<td class="sc0 ec" onclick="iEditOS(event,'+osIdx+',\'name\')" title="แก้ไข">'+esc(os.name)+'</td>';
       h+='<td class="sc1 ec" onclick="iEditOS(event,'+osIdx+',\'nick\')" title="แก้ไข">'+esc(os.nick)+'</td>';
       h+='<td class="sc2 ec" onclick="iEditOS(event,'+osIdx+',\'dayOff\')" title="แก้ไขวันหยุด" style="font-size:11px;color:var(--txt2)">'+(osOff>=0?DOW[osOff]:'-')+'</td>';
-      h+='<td class="sc3 ec" onclick="toggleOS(event,'+osIdx+')" title="'+shT+'">'+shB+'</td>';
+      h+='<td class="sc3 ec" onclick="toggleOS(event,'+osIdx+')" title="กลุ่ม '+os.group+' — คลิกย้ายไปอีกกลุ่ม">'+shB+'</td>';
       for(var i=0;i<dates.length;i++){
         var d=dates[i],hol=isHol(d),off=osOff>=0&&pd(d).getDay()===osOff,ld=isLD(d,endS);
         var eveL=shift==='evening'&&ld&&osOff!==6;
         var av=hol?'H':off?'H':eveL?'10-19':'W';
         var ov=getOv(d,os.name),dv=ov!==null?ov:av;
-        if(dv!=='H')cnt[i][reg?'osr':'osx']++;
+        if(dv!=='H')cnt[i].osr++;
         var cls;
         if(ov!==null)cls=ov==='H'?'cOH':'cOW';
         else if(hol||off)cls=ld&&shift==='evening'?'cLH':'cH';
@@ -946,8 +979,20 @@ function buildSection(title,shift,dates,endS,group,osGroup,short){
         h+='<td class="'+cls+' clickable'+(wk?' wk-s':'')+'" onclick="cycleCell('+jsAttr(d)+','+jsAttr(os.name)+','+jsAttr(av)+')" title="'+dv+'">'+dv+'</td>';
       }
       h+='</tr>';
-    });
-  });
+    }
+  }
+  // OS เสริม ไม่มีชื่อ — แถวขอไว้กี่คน กับแถวมาจริงกี่คน คลิกช่องใส่ตัวเลข
+  // แถวมาทำงานนับจากมาจริงถ้าใส่แล้ว ไม่งั้นนับตามที่ขอ
+  var shTh=shift==='morning'?'กะเช้า':'กะบ่าย',rq='',gt='';
+  for(var i=0;i<dates.length;i++){
+    var d=dates[i],q=oxGet(d,shift,'req'),g=oxGet(d,shift,'got'),wk=pd(d).getDay()===1?' wk-s':'';
+    var dt=pd(d).getDate()+' '+MON[pd(d).getMonth()];
+    cnt[i].osx=g!==null?g:(q||0);cnt[i].oxReq=g===null&&q!==null;
+    rq+='<td class="'+(q?'ox-req':'ox-none')+wk+'" onclick="oxEdit(event,'+jsAttr(d)+','+jsAttr(shift)+',\'req\')" title="'+dt+' · ขอ '+(q===null?'—':q)+' คน">'+(q===null?'·':q)+'</td>';
+    gt+='<td class="'+(g===null?'ox-none':q!==null&&g<q?'ox-short':'ox-ok')+wk+'" onclick="oxEdit(event,'+jsAttr(d)+','+jsAttr(shift)+',\'got\')" title="'+dt+' · ขอ '+(q===null?'—':q)+' · มาจริง '+(g===null?'ยังไม่ใส่':g)+'">'+(g===null?'·':g)+'</td>';
+  }
+  h+='<tr class="osx-row"><td colspan="4" class="sc0 ec" onclick="openOxPlan(event)" title="วางแผนทีละสัปดาห์">OS เสริม · ขอ (คน)<span class="cnt-min">วางแผน ✎</span></td>'+rq+'</tr>';
+  h+='<tr class="osx-row"><td colspan="4" class="sc0">OS เสริม · มาจริง (คน)</td>'+gt+'</tr>';
   // คนที่มาทำงานต่อวัน (W กับ 10-19) — วันหยุดพิเศษทุกคนหยุดอยู่แล้วจึงไม่เตือน
   var mn=typeof minStaff[shift]==='number'?minStaff[shift]:null;
   h+='<tr class="cnt-row"><td colspan="4" class="sc0 ec" onclick="openMin(event,'+jsAttr(shift)+')" title="คลิกตั้งจำนวนคนขั้นต่ำของกะนี้">มาทำงาน (คน)'+
@@ -955,7 +1000,7 @@ function buildSection(title,shift,dates,endS,group,osGroup,short){
   for(var i=0;i<dates.length;i++){
     var d=dates[i],c=cnt[i],n=c.reg+c.osr+c.osx,hol=isHol(d),low=mn!==null&&!hol&&n<mn,wk=pd(d).getDay()===1;
     if(low)short.push(d);
-    h+='<td class="'+(low?'cnt-low':hol?'cnt-hol':'cnt-ok')+(wk?' wk-s':'')+'" title="พนักงาน '+c.reg+' · OS ประจำ '+c.osr+' · OS เสริม '+c.osx+(mn!==null?' · ขั้นต่ำ '+mn:'')+'">'+n+'</td>';
+    h+='<td class="'+(low?'cnt-low':hol?'cnt-hol':'cnt-ok')+(wk?' wk-s':'')+'" title="พนักงาน '+c.reg+' · OS ประจำ '+c.osr+' · OS เสริม '+c.osx+(c.oxReq?' (ตามที่ขอ)':'')+(mn!==null?' · ขั้นต่ำ '+mn:'')+'">'+n+'</td>';
   }
   h+='</tr>';
   h+='</tbody>';
@@ -964,7 +1009,7 @@ function buildSection(title,shift,dates,endS,group,osGroup,short){
 
 // ── Inline edit ──
 var DAY_OPTS='<option value="0">อาทิตย์</option><option value="1">จันทร์</option><option value="2">อังคาร</option><option value="3">พุธ</option><option value="4">พฤหัส</option><option value="5">ศุกร์</option><option value="6">เสาร์</option>';
-var _iIdx=-1,_iField='',_iType='emp';
+var _iIdx=-1,_iField='',_iType='emp',_iDate='',_iShift='';
 function _showPop(e,title,isSelect,val){
   var pop=document.getElementById('ipop'),inp=document.getElementById('ipop-input'),sel=document.getElementById('ipop-select');
   document.getElementById('ipop-title').textContent=title;
@@ -994,7 +1039,18 @@ function openMin(e,shift){
   e.stopPropagation();_iType='min';_iField=shift;
   _showPop(e,'คนขั้นต่ำ'+(shift==='morning'?'กะเช้า':'กะบ่าย')+' · เว้นว่าง = ไม่เตือน',false,typeof minStaff[shift]==='number'?String(minStaff[shift]):'');
 }
+function oxEdit(e,d,sh,f){
+  e.stopPropagation();_iType='ox';_iField=f;_iDate=d;_iShift=sh;
+  var dd=pd(d),v=oxGet(d,sh,f);
+  _showPop(e,'OS เสริม'+(sh==='morning'?'กะเช้า':'กะบ่าย')+' '+dd.getDate()+' '+MON[dd.getMonth()]+' · '+(f==='req'?'ขอกี่คน':'มาจริงกี่คน')+' · เว้นว่าง = ไม่มี',false,v===null?'':String(v));
+}
 function saveInline(){
+  if(_iType==='ox'){
+    var t=document.getElementById('ipop-input').value.trim();
+    if(t!==''&&!/^\d+$/.test(t)){alert('ใส่เป็นจำนวนคน เช่น 3');return;}
+    oxSet(_iDate,_iShift,_iField,t===''?null:+t);
+    changed();closeInline();renderSchedule();return;
+  }
   if(_iType==='min'){
     var t=document.getElementById('ipop-input').value.trim();
     if(t==='')delete minStaff[_iField];
@@ -1018,10 +1074,56 @@ function saveInline(){
 }
 function closeInline(){document.getElementById('ipop').style.display='none';}
 function toggleGrp(e,idx){e.stopPropagation();employees[idx].group=employees[idx].group==='A'?'B':'A';changed();renderSchedule();}
-// OS ประจำ ย้ายไปอีกกลุ่ม (คาบนี้จึงไปอยู่อีกกะ แล้วสลับตามกลุ่มใหม่) · OS เสริม เปลี่ยนกะคงที่
-function toggleOS(e,idx){e.stopPropagation();var o=outsource[idx];
-  if(o.type==='regular')o.group=o.group==='A'?'B':'A';else o.shift=o.shift==='morning'?'evening':'morning';
-  changed();renderSchedule();}
+function toggleOS(e,idx){e.stopPropagation();outsource[idx].group=outsource[idx].group==='A'?'B':'A';changed();renderSchedule();}
+
+// ── วางแผน OS เสริม ทีละสัปดาห์ (จันทร์–อาทิตย์) ──
+// แก้ในชุดร่างก่อน เลื่อนสัปดาห์ไปมาได้ กดบันทึกถึงจะใช้จริง กดยกเลิกก็ทิ้งทั้งหมด
+var _oxDraft=null,_oxMon='';
+var OX_ROWS=[['morning','req','กะเช้า · ขอ'],['morning','got','กะเช้า · มาจริง'],['evening','req','กะบ่าย · ขอ'],['evening','got','กะบ่าย · มาจริง']];
+function monOf(s){return addD(s,-((pd(s).getDay()+6)%7));}
+function openOxPlan(e){
+  if(e)e.stopPropagation();closeInline();
+  // เปิดที่สัปดาห์นี้ถ้ากำลังดูคาบที่มีวันนี้ ไม่งั้นเปิดที่สัปดาห์แรกของคาบที่ดูอยู่
+  var sp=sorted(),p=sp[curPer],base=fd(new Date());
+  if(p&&(base<p.start||base>perEnd(p,sp)))base=p.start;
+  _oxDraft=copy(osExtra);_oxMon=monOf(base);renderOxPlan();
+  document.getElementById('ox-modal').classList.add('open');
+}
+function renderOxPlan(){
+  var days=[];for(var i=0;i<7;i++)days.push(addD(_oxMon,i));
+  var a=pd(days[0]),b=pd(days[6]);
+  document.getElementById('ox-range').textContent=a.getDate()+' '+MON[a.getMonth()]+' – '+b.getDate()+' '+MON[b.getMonth()]+' '+(b.getFullYear()+543);
+  var h='<thead><tr><th></th>';
+  days.forEach(function(d){var dd=pd(d),hol=isHol(d);
+    h+='<th'+(hol?' class="ox-hol" title="'+esc(holN(d))+'"':'')+'>'+DOW[dd.getDay()]+'<br>'+dd.getDate()+'</th>';});
+  h+='</tr></thead><tbody>';
+  OX_ROWS.forEach(function(r){
+    h+='<tr'+(r[1]==='got'?' class="ox-got"':'')+'><th>'+r[2]+'</th>';
+    days.forEach(function(d){var v=oxGet(d,r[0],r[1],_oxDraft);
+      h+='<td><input type="number" min="0" step="1" inputmode="numeric" data-d="'+d+'" data-sh="'+r[0]+'" data-f="'+r[1]+'" value="'+(v===null?'':v)+'" aria-label="'+r[2]+' '+d+'"></td>';});
+    h+='</tr>';
+  });
+  document.getElementById('ox-tbl').innerHTML=h+'</tbody>';
+}
+// ตัวเลขในช่องเข้าชุดร่าง — ทำก่อนเลื่อนสัปดาห์และก่อนบันทึก
+function oxRead(){
+  var ok=true;
+  document.querySelectorAll('#ox-tbl input').forEach(function(inp){
+    var t=inp.value.trim(),v=t===''?null:+t;
+    if(v!==null&&!(v>=0&&v===Math.floor(v))){ok=false;return;}
+    oxSet(inp.dataset.d,inp.dataset.sh,inp.dataset.f,v,_oxDraft);
+  });
+  if(!ok)alert('ใส่เป็นจำนวนคนเต็ม ๆ เช่น 3');
+  return ok;
+}
+function oxWeek(n){if(!oxRead())return;_oxMon=addD(_oxMon,n);renderOxPlan();}
+function oxCopyPrev(){
+  document.querySelectorAll('#ox-tbl input').forEach(function(inp){
+    if(inp.dataset.f!=='req')return;
+    var v=oxGet(addD(inp.dataset.d,-7),inp.dataset.sh,'req',_oxDraft);inp.value=v===null?'':v;
+  });
+}
+function oxSave(){if(!oxRead())return;osExtra=_oxDraft;_oxDraft=null;changed();closeModal('ox-modal');renderSchedule();}
 document.addEventListener('click',function(e){if(!document.getElementById('ipop').contains(e.target))closeInline();});
 
 // ── Employees ──
@@ -1056,43 +1158,30 @@ function closeModal(id){document.getElementById(id).classList.remove('open');}
 // ── Outsource ──
 function renderOS(){
   var h='',n=0;
-  // ประจำ แยกตามกลุ่ม แล้วต่อด้วย เสริม แยกตามกะ — กลุ่มที่ไม่มีใครไม่ต้องแสดง
-  [['regular','group','A','OS ประจำ กลุ่ม A','bo'],['regular','group','B','OS ประจำ กลุ่ม B','bo'],
-   ['extra','shift','morning','OS เสริม กะเช้า','bx'],['extra','shift','evening','OS เสริม กะบ่าย','bx']].forEach(function(s){
-    var idx=[];outsource.forEach(function(o,j){if(o.type===s[0]&&o[s[1]]===s[2])idx.push(j);});
-    if(!idx.length)return;
-    h+='<tr class="grp-hdr"><td colspan="6"><span class="'+s[4]+'">'+s[3]+'</span> — '+idx.length+' คน</td></tr>';
-    idx.forEach(function(j){var os=outsource[j];
+  ['A','B'].forEach(function(g){
+    var cnt=outsource.filter(function(o){return o.group===g;}).length,badge=g==='A'?'ga':'gb';
+    h+='<tr class="grp-hdr"><td colspan="6"><span class="bo">OS ประจำ</span> <span class="'+badge+'">กลุ่ม '+g+'</span> — '+cnt+' คน</td></tr>';
+    for(var j=0;j<outsource.length;j++){var os=outsource[j];if(os.group!==g)continue;
       var dOff=os.dayOff!==undefined&&os.dayOff>=0?DOW_FULL[os.dayOff]:'—';
-      var tag=os.type==='regular'?'<span class="'+(os.group==='A'?'ga':'gb')+'">'+os.group+'</span>':'<span class="bx">'+(os.shift==='morning'?'เช้า':'บ่าย')+'</span>';
-      h+='<tr><td class="num">'+(++n)+'</td><td>'+esc(os.name)+'</td><td>'+esc(os.nick)+'</td><td>'+tag+'</td><td>'+dOff+'</td>';
-      h+='<td class="no-print acts"><button type="button" class="btn-edit" onclick="editOS('+j+')">แก้ไข</button> <button type="button" class="btn-del" onclick="delOS('+j+')">ลบ</button></td></tr>';});
+      h+='<tr><td class="num">'+(++n)+'</td><td>'+esc(os.name)+'</td><td>'+esc(os.nick)+'</td><td><span class="'+badge+'">'+g+'</span></td><td>'+dOff+'</td>';
+      h+='<td class="no-print acts"><button type="button" class="btn-edit" onclick="editOS('+j+')">แก้ไข</button> <button type="button" class="btn-del" onclick="delOS('+j+')">ลบ</button></td></tr>';}
   });
   document.getElementById('os-body').innerHTML=h;
 }
-// ประจำ เลือกกลุ่ม · เสริม เลือกกะ (p คือ 'oi' ฟอร์มเพิ่ม หรือ 'osm' หน้าต่างแก้ไข)
-function osTypeUI(p){var x=document.getElementById(p+'-type').value==='extra';
-  document.getElementById(p+'-grp-wrap').style.display=x?'none':'';
-  document.getElementById(p+'-shift-wrap').style.display=x?'':'none';}
-function osPick(p,o){
-  if(document.getElementById(p+'-type').value==='extra'){o.type='extra';o.shift=document.getElementById(p+'-shift').value;}
-  else{o.type='regular';o.group=document.getElementById(p+'-grp').value;}
-  return o;}
 function addOS(){var n=document.getElementById('oi-name').value.trim();if(!n){alert('กรุณากรอกชื่อ');return;}
   if(nameTaken(n,null)){alert('มีชื่อ "'+n+'" อยู่แล้ว');return;}
-  outsource.push(osPick('oi',{name:n,nick:document.getElementById('oi-nick').value.trim(),dayOff:+document.getElementById('oi-off').value}));
+  outsource.push({name:n,nick:document.getElementById('oi-nick').value.trim(),group:document.getElementById('oi-grp').value,dayOff:+document.getElementById('oi-off').value});
   document.getElementById('oi-name').value='';document.getElementById('oi-nick').value='';changed();renderOS();}
 function editOS(idx){var o=outsource[idx];
   document.getElementById('osm-idx').value=idx;document.getElementById('osm-name').value=o.name;
-  document.getElementById('osm-nick').value=o.nick;document.getElementById('osm-type').value=o.type;
-  document.getElementById('osm-grp').value=o.group||'A';document.getElementById('osm-shift').value=o.shift||'morning';
+  document.getElementById('osm-nick').value=o.nick;document.getElementById('osm-grp').value=o.group;
   document.getElementById('osm-off').value=o.dayOff!==undefined?o.dayOff:-1;
-  osTypeUI('osm');document.getElementById('os-modal').classList.add('open');}
+  document.getElementById('os-modal').classList.add('open');}
 function saveOSEdit(){var i=+document.getElementById('osm-idx').value,o=outsource[i],nm=document.getElementById('osm-name').value.trim();
   if(!nm){alert('กรุณากรอกชื่อ');return;}
   if(nameTaken(nm,o)){alert('มีชื่อ "'+nm+'" อยู่แล้ว');return;}
   rename(o.name,nm);
-  outsource[i]=osPick('osm',{name:nm,nick:document.getElementById('osm-nick').value.trim(),dayOff:+document.getElementById('osm-off').value});
+  outsource[i]={name:nm,nick:document.getElementById('osm-nick').value.trim(),group:document.getElementById('osm-grp').value,dayOff:+document.getElementById('osm-off').value};
   changed();closeModal('os-modal');renderOS();}
 function delOS(idx){if(!confirm('ลบ "'+outsource[idx].name+'"?'))return;outsource.splice(idx,1);changed();renderOS();}
 
@@ -1334,7 +1423,7 @@ document.addEventListener('keydown',function(e){
     if(document.getElementById('ipop').style.display==='block')saveInline();
     else if(document.getElementById('kpi-overlay').classList.contains('open'))saveKPIInp();
   }
-  if(e.key==='Escape'){closeInline();closeKPIInp();closeModal('emp-modal');closeModal('os-modal');closeModal('per-modal');}
+  if(e.key==='Escape'){closeInline();closeKPIInp();closeModal('emp-modal');closeModal('os-modal');closeModal('per-modal');closeModal('ox-modal');}
 });
 
 // ── Init ──
