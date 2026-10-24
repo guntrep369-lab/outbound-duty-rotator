@@ -28,7 +28,7 @@ The site root redirects to `roster/`, so the main link opens the shift schedule.
 
 ## 📅 Shift schedule (`/roster`)
 
-[`public/roster/index.html`](public/roster/index.html) has five tabs: ตารางกะ, พนักงาน,
+[`public/roster/index.html`](public/roster/index.html) has six tabs: ตารางกะ, พนักงาน, การลา,
 คาบเปลี่ยนกะ, วันหยุด, KPI.
 
 - **Two groups, two shifts.** Permanent staff are in group A or B. Each period (คาบ, normally
@@ -48,14 +48,25 @@ The site root redirects to `roster/`, so the main link opens the shift schedule.
   can copy the requested numbers from the week before. A day where fewer came than were requested
   turns red.
 - **Days off.** Each person has one weekly day off. Holidays (วันหยุดพิเศษ) are `H` for everyone.
+- **Moving group or changing a day off from a date.** A move or a new day off applies from the
+  date you choose, and the periods before it stay as they were. In the edit window (พนักงาน →
+  แก้ไข), pick the date under มีผลตั้งแต่. It starts at the period running today, and the window
+  lists earlier changes, each with a delete button. Tick แก้ย้อนหลังทุกคาบ to fix a value that was
+  wrong from the start. Clicking the day off or the shift badge in the schedule applies from the
+  period on screen. Each change records only what changed, so moving someone's group doesn't undo
+  a day-off change already planned for later. Someone who moves group mid-period shows in both
+  shifts that period, with striped cells on the days they belong to the other group.
 - **Promo days** are highlighted automatically (the double dates 2/2 to 12/12, and the 15th, 25th,
   and 28th of every month), and you can add extra dates.
 - **Headcount row.** Under each shift, a มาทำงาน row counts who works each day: staff and
-  outsource ประจำ on W or 10-19, plus outsource เสริม (มาจริง once filled in, otherwise ขอ). Click ตั้งขั้นต่ำ to set that shift's minimum. Days below it turn red, except
+  outsource ประจำ on W or 10-19 (not on leave), plus outsource เสริม (มาจริง once filled in, otherwise ขอ). Click ตั้งขั้นต่ำ to set that shift's minimum. Days below it turn red, except
   holidays, and the period summary says how many days are short.
-- **Manual edits.** Clicking a cell overrides it (W → H, or H / 10-19 → W); keep clicking to step
-  back to the computed value. "ล้างแก้ไข" clears the edits in the current period.
-  Click a name, nickname, day off, or shift badge to edit it in place.
+- **Manual edits and leave.** Clicking a cell opens a menu: W ทำงาน, H หยุด, ลาป่วย (ลป), ลากิจ
+  (ลก), พักร้อน (ลพ), or ↺ ตามตาราง to go back to the computed value. Each leave type has its own
+  color. "ล้างแก้ไข" clears the W / H edits in the current period and keeps leave, which counts
+  toward the year. Click a name, nickname, day off, or shift badge to edit it in place.
+- **การลา:** for the chosen month, how many days of each leave type each person took, the team
+  total, the year's total per person, and which dates.
 - **KPI:** 8 monthly metrics per person, each with a target, plus team pass rate and a
   per-person score chart.
 
@@ -71,7 +82,7 @@ and another machine starts from the built-in team list until you bring the data 
 - **ตั้งค่า → สำรอง** includes `wms:roster` in the key backup file, along with every other
   `wms:` setting.
 
-Names are the identity of a person: manual edits and KPI values are keyed by name, so renaming
+Names are the identity of a person: manual edits, leave, and KPI values are keyed by name, so renaming
 someone moves their data along, and two people can't share a name.
 
 ### Sharing the schedule across devices
@@ -157,7 +168,8 @@ public/
 ├─ wms-gate.js / .css      # opening animation + per-device sign-in (not access control)
 ├─ wms-settings.js         # settings backup / restore
 ├─ wms-*.js                # shared helpers (dates, stock, picking, trucks, search…)
-├─ roster/                 # ตารางกะ (+ roster-sync.js: sharing through the sheet)
+├─ roster/                 # ตารางกะ (+ roster-sync.js: sharing through the sheet,
+│                          #   roster-people.js: group / day off by date, leave counts)
 ├─ summary/ history/ order-compare/ order-lookup/ stock/ picking/ order-sheet/
 ├─ warehouse-forms/ jobs/ loadplan/ transport-docs/ transport-forms/ settings/
 apps-script/
