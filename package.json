@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Weekly job assignment & fair rotation manager for an Outbound logistics team",
+  "description": "WMS Management — outbound warehouse tools: shift schedule, orders, picking, transport documents",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -11,17 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
-  "dependencies": {
-    "@octokit/rest": "^21.0.2",
-    "lucide-react": "^0.454.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
-  },
   "devDependencies": {
-    "@vitejs/plugin-react": "^4.3.4",
-    "autoprefixer": "^10.4.20",
-    "postcss": "^8.4.49",
-    "tailwindcss": "^3.4.15",
     "vite": "^6.0.3",
     "vitest": "^4.1.10"
   }

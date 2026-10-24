@@ -2,7 +2,7 @@
    wms-gate.css — the opening animation and sign-in card shown before the app.
 
    Everything here paints a full-screen overlay ABOVE the app, so it needs no
-   cooperation from React or from the static tools. See wms-gate.js.
+   cooperation from the pages underneath. See wms-gate.js.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* Set by wms-gate.js before the app paints, so nothing flashes behind the gate.

@@ -1,5 +1,5 @@
 /**
- * @file wms-shell.js — renders the system sidebar on the STATIC modules.
+ * @file wms-shell.js — renders the system sidebar on every module page.
  *
  * Usage in a page:
  *   <div data-wms-shell="transport" data-root="../../"></div>
@@ -8,9 +8,7 @@
  *   data-wms-shell = id of the active module (see wms-modules.js)
  *   data-root      = relative path from this page back to the site root
  *
- * The React module renders its own sidebar in JSX, but from the SAME module
- * list, so labels/links/icons cannot drift between them. Styles for everything
- * emitted here live in wms-theme.css.
+ * Styles for everything emitted here live in wms-theme.css.
  */
 
 import { MODULES, GROUPS, BRAND, ICON_PATHS } from './wms-modules.js';
@@ -34,7 +32,7 @@ const esc = (s) =>
 export function sidebarHTML(activeId, root) {
   const link = (m) => {
     const on = m.id === activeId;
-    // The active module is not a link — same as aria-current in the React sidebar.
+    // The active module is not a link — you are already on it.
     const attrs = on ? 'class="sysmod active" aria-current="page"' : `class="sysmod" href="${root}${m.path}"`;
     return `<a ${attrs}>${icon(m.icon, 'sysmod-ic')}<span>${esc(m.label)}</span><em>${esc(m.labelEn)}</em></a>`;
   };

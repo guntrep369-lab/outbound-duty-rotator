@@ -1,12 +1,10 @@
 /**
  * @file wms-modules.js — the ONE list of top-level modules in the system.
  *
- * Read by both sidebar renderers:
- *   • static pages  → wms-shell.js  (plain DOM)
- *   • React module  → src/App.jsx   (lucide components)
+ * Read by wms-shell.js, which renders the sidebar on every page.
  *
  * Adding a module means editing this file only. It lives in public/ because the
- * static pages load it directly over HTTP; Vite bundles it for React as well.
+ * pages load it directly over HTTP.
  *
  * `path` is relative to the SITE ROOT, so every consumer just prefixes its own
  * way back up ('./' from the root page, '../../' from /transport-docs/kex/).
@@ -45,7 +43,7 @@ export const MODULES = [
   { id: 'loadplan', label: 'ผังงานรถวันนี้', labelEn: 'Load Plan', path: 'loadplan/', icon: 'map', group: 'transport' },
   { id: 'transport', label: 'ทำใบงานขนส่ง', labelEn: 'Transport Docs', path: 'transport-docs/', icon: 'truck', group: 'transport' },
   { id: 'forms', label: 'เอกสารขนส่ง', labelEn: 'Transport Forms', path: 'transport-forms/', icon: 'file', group: 'transport' },
-  { id: 'roster', label: 'จัดตารางงาน', labelEn: 'Duty Roster', path: '', icon: 'calendar', group: 'system' },
+  { id: 'roster', label: 'ตารางกะ', labelEn: 'Shift Schedule', path: 'roster/', icon: 'calendar', group: 'system' },
   { id: 'settings', label: 'ตั้งค่า', labelEn: 'Settings', path: 'settings/', icon: 'settings', group: 'system' },
 ];
 
@@ -58,8 +56,8 @@ export const BRAND = {
 };
 
 /**
- * Inner markup of the lucide icons used by the sidebar, so the static pages
- * render the exact same glyphs React does without pulling in a library.
+ * Inner markup of the lucide icons used by the sidebar, so the pages render
+ * them without pulling in a library.
  * Source: node_modules/lucide-react (warehouse, calendar-range, clipboard-check, truck).
  */
 export const ICON_PATHS = {

@@ -9,8 +9,9 @@
  *  stored in localStorage, which means they live PER DEVICE PER BROWSER: a code
  *  created on the office PC does not exist on someone's phone.
  *
- *  What actually keeps the roster private is the GitHub token: without a valid
- *  PAT the app shows local demo data and no real employee records. Treat this
+ *  Nothing on the site is private because of this screen: the shift schedule
+ *  ships its staff list in the page source of a public repo, and whatever a
+ *  browser stores is readable by whoever sits at that machine. Treat this
  *  screen as "who is using this machine", not as access control. Real
  *  protection needs something in FRONT of the site (Cloudflare Access or
  *  similar) — it cannot be built inside a static page.
@@ -21,7 +22,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  *
  * Loaded as a classic script in <head> so it can lock the page before the app
- * paints. Works for the React module and the static tools alike, because it
+ * paints. Works on every page without the page's help, because it
  * paints an overlay above them rather than integrating with either.
  */
 (function () {

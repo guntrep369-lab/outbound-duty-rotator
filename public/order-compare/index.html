@@ -675,7 +675,7 @@ td{padding:9px 12px;vertical-align:middle}
 /* Escape sheet/file values before they reach innerHTML. Rows come from an
    uploaded Excel or a Google Apps Script response, so an unescaped
    "<img onerror=…>" would execute — and this page shares an origin with the
-   roster module, whose GitHub token lives in localStorage. */
+   Apps Script URLs and transport token kept in localStorage. */
 const esc = v => String(v ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;').replace(/'/g, '&#39;');

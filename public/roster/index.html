@@ -1,0 +1,1181 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>ตารางกะ — WMS</title>
+<link rel="stylesheet" href="../wms-theme.css">
+<link rel="stylesheet" href="../wms-gate.css">
+<script src="../wms-gate.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:var(--wms-bg); --surface:var(--wms-surface);
+  --border:var(--wms-border); --border2:var(--wms-border2);
+  --txt:var(--wms-text); --txt2:#475569; --txt3:var(--wms-faint);
+  --primary:var(--wms-primary); --primary-h:var(--wms-primary-dark); --primary-l:var(--wms-primary-light);
+
+  --morning:#b45309; --morning-bg:#fef3c7; --morning-border:#fcd34d;
+  --evening:#5b21b6; --evening-bg:#f5f3ff; --evening-border:#c4b5fd;
+  --os:#065f46; --os-bg:#ecfdf5; --os-border:#6ee7b7;
+  --hol:#dc2626; --hol-bg:#fef2f2; --hol-border:#fca5a5;
+  --pro:#c2410c; --pro-bg:#fff7ed; --pro-border:#fed7aa;
+  --last:#6d28d9; --last-bg:#f5f3ff; --last-border:#ddd6fe;
+
+  --radius:12px; --radius-sm:8px;
+  --shadow:var(--wms-shadow);
+  --shadow-md:0 4px 12px rgba(15,23,42,.08),0 2px 4px rgba(15,23,42,.05);
+}
+
+/* ═══ HEADER ═══ */
+.rs-headrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.rs-headrow .mod-title{flex:1;min-width:220px}
+.rs-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.rs-saved{font-size:12px;color:var(--wms-muted);margin-right:4px}
+.rs-saved.ok{color:var(--wms-success)}
+.rs-saved.err{color:var(--wms-danger);font-weight:600}
+
+.rs-main{padding:16px 20px 40px}
+.page{display:none}
+.page.active{display:block}
+
+/* ═══ PERIOD BAR ═══ */
+.period-bar{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:14px 18px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;box-shadow:var(--shadow)}
+.period-info{flex:1;min-width:200px}
+.period-title{font-size:16px;font-weight:700;color:var(--txt)}
+.period-sub{font-size:13px;color:var(--txt2);margin-top:3px}
+.period-nav{display:flex;gap:6px;align-items:center;max-width:100%}
+.period-select{border:1px solid var(--border2);border-radius:var(--radius-sm);padding:8px 12px;font-size:13px;
+  background:var(--surface);color:var(--txt);cursor:pointer;min-width:0;width:290px;max-width:100%}
+.btn-nav{background:var(--surface);border:1px solid var(--border2);color:var(--txt2);border-radius:var(--radius-sm);
+  padding:8px 12px;cursor:pointer;font-size:13px;transition:all .15s}
+.btn-nav:hover{border-color:var(--primary);color:var(--primary)}
+.btn-clear{background:var(--hol-bg);border:1px solid var(--hol-border);color:var(--hol);border-radius:var(--radius-sm);
+  padding:8px 12px;cursor:pointer;font-size:12px;font-weight:600;transition:all .15s}
+.btn-clear:hover{background:var(--hol);color:#fff}
+
+/* ═══ LEGEND ═══ */
+.legend{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;font-size:11px;align-items:center;color:var(--txt2)}
+.leg-item{display:flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:4px 10px}
+.leg-dot{width:12px;height:12px;border-radius:3px;flex-shrink:0}
+.leg-hint{font-size:11px;color:var(--txt3);padding:4px 0}
+
+/* ═══ SCHEDULE TABLE ═══ */
+.tbl-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;
+  margin-bottom:16px;box-shadow:var(--shadow-md)}
+.tbl-scroll{overflow-x:auto}
+.tbl-wrap table{border-collapse:collapse;font-size:12px;width:100%}
+.tbl-wrap th,.tbl-wrap td{border:1px solid var(--border);padding:6px 7px;text-align:center;white-space:nowrap}
+
+.sc0{position:sticky;left:0;z-index:3;min-width:140px;text-align:left!important}
+.sc1{position:sticky;left:140px;z-index:3;min-width:46px}
+.sc2{position:sticky;left:186px;z-index:3;min-width:38px}
+.sc3{position:sticky;left:224px;z-index:3;min-width:64px}
+.sc-hdr{position:sticky;left:0;z-index:4;min-width:288px;background:#0f172a}
+
+.sh-morning{background:linear-gradient(90deg,#78350f,#92400e);color:#fff;padding:10px 16px!important;text-align:left!important;
+  font-size:13px;font-weight:700;border-bottom:2px solid #b45309!important}
+.sh-evening{background:linear-gradient(90deg,#3b0764,#4c1d95);color:#fff;padding:10px 16px!important;text-align:left!important;
+  font-size:13px;font-weight:700;border-bottom:2px solid #6d28d9!important}
+
+.mh{font-size:11px;font-weight:700;padding:5px 6px;color:#fff;letter-spacing:.3px}
+th.mh-label{background:#0f172a;color:#64748b;font-size:10px;padding:4px 6px;letter-spacing:.3px;text-transform:uppercase;border:1px solid #1e293b}
+
+th.date-hdr{font-size:13px;font-weight:800;color:#e2e8f0;padding:5px 6px;background:#1e293b;border-color:#334155!important}
+th.date-hdr.wk-s{border-left:2px solid #475569!important}
+th.date-hdr.is-hol{background:#1a1f2e;color:#fca5a5}
+th.date-hdr.is-last{background:#1e1040;color:#c4b5fd}
+th.date-hdr.is-pro{background:#1a1500;color:#fbbf24}
+
+.dh-row th{background:#0f172a;color:#64748b;font-size:10px;padding:3px 5px;border-color:#1e293b!important}
+.dh-row th.wk-s{border-left:2px solid #334155!important}
+.dh-row .sc0,.dh-row .sc1,.dh-row .sc2,.dh-row .sc3{background:#0f172a}
+th.dow-we{color:#f87171!important}
+th.dow-mon{color:#60a5fa!important}
+
+td.sc0,td.sc1,td.sc2,td.sc3{background:#fff}
+td.sc0{font-weight:500;font-size:12px}
+
+.os-sep-row td{background:#f0fdf9;color:var(--os);font-size:11px;font-weight:700;border-top:2px solid #a7f3d0!important}
+.os-sep-row td.sc0,.os-sep-row td.sc1,.os-sep-row td.sc2,.os-sep-row td.sc3{background:#f0fdf9}
+.os-row td{background:#f7fffe}
+.os-row td.sc0,.os-row td.sc1,.os-row td.sc2,.os-row td.sc3{background:#f0fdf9}
+
+/* สถานะของแต่ละช่อง */
+.cW{background:#fff;color:#374151}
+.cH{background:#fef2f2;color:var(--hol);font-weight:700}
+.cP{background:#fffbeb;color:#92400e}
+.cL{background:#f5f3ff;color:var(--last);font-weight:700;font-size:10px}
+.cLH{background:#fef2f2;color:var(--hol);font-weight:700}
+.cOH{background:#fee2e2;color:#991b1b;font-weight:700;box-shadow:inset 0 0 0 2px #f87171}
+.cOW{background:#f0fdf4;color:#166534;font-weight:700;box-shadow:inset 0 0 0 2px #4ade80}
+td.clickable{cursor:pointer;transition:filter .12s}
+td.clickable:hover{filter:brightness(.92)}
+.wk-s{border-left:2px solid var(--border2)!important}
+.ec{cursor:pointer;transition:background .12s}
+.ec:hover{background:#fef9e7!important;color:#92400e!important}
+.sep-row td{background:var(--bg)!important;height:8px;border:none!important;padding:0!important}
+
+/* ═══ BADGES ═══ */
+.bm{background:var(--morning-bg);color:var(--morning);border:1px solid var(--morning-border);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;display:inline-block}
+.be{background:var(--evening-bg);color:var(--evening);border:1px solid var(--evening-border);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;display:inline-block}
+.bo{background:var(--os-bg);color:var(--os);border:1px solid var(--os-border);border-radius:20px;padding:2px 8px;font-size:10px;font-weight:700;display:inline-block}
+.ga{background:#fef9c3;color:#713f12;border:1px solid #fde047;border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;display:inline-block}
+.gb{background:#e0f2fe;color:#0c4a6e;border:1px solid #7dd3fc;border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;display:inline-block}
+
+/* ═══ CARD ═══ */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;margin-bottom:16px;box-shadow:var(--shadow)}
+.card-title{font-size:15px;font-weight:700;color:var(--txt);margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.info-box{background:var(--primary-l);border:1px solid #c7d2fe;border-left:3px solid var(--primary);border-radius:var(--radius-sm);
+  padding:10px 14px;margin-bottom:14px;font-size:12px;color:#3730a3}
+.warn-box{background:#fffbeb;border:1px solid var(--morning-border);border-left:3px solid var(--morning);border-radius:var(--radius-sm);
+  padding:10px 14px;margin-bottom:14px;font-size:12px;color:#92400e}
+
+/* ═══ FORMS ═══ */
+.form-row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px}
+.fg{display:flex;flex-direction:column;gap:5px;max-width:100%}
+.fg label{font-size:12px;font-weight:600;color:var(--txt2)}
+.rs-main input[type=text],.rs-main input[type=date],.rs-main input[type=month],.rs-main select{
+  border:1px solid var(--border2);border-radius:var(--radius-sm);padding:8px 10px;font-size:13px;color:var(--txt);
+  background:var(--surface);font-family:inherit;max-width:100%}
+.rs-main input[type=text]:focus,.rs-main input[type=date]:focus,.rs-main input[type=month]:focus,.rs-main select:focus{
+  outline:2px solid var(--primary);border-color:transparent}
+
+.btn-add{background:var(--primary);color:#fff;border-radius:var(--radius-sm);padding:8px 16px;font-size:13px;font-weight:600;
+  cursor:pointer;border:none;display:inline-flex;align-items:center;gap:5px;transition:background .15s;font-family:inherit}
+.btn-add:hover{background:var(--primary-h)}
+.btn-edit{background:var(--primary-l);color:var(--primary);border:1px solid #c7d2fe;border-radius:var(--radius-sm);padding:7px 13px;
+  font-size:13px;font-weight:600;cursor:pointer;min-height:34px;font-family:inherit}
+.btn-edit:hover{background:var(--primary);color:#fff}
+.btn-del{background:var(--hol-bg);color:var(--hol);border:1px solid var(--hol-border);border-radius:var(--radius-sm);padding:7px 12px;
+  font-size:13px;font-weight:600;cursor:pointer;min-height:34px;font-family:inherit}
+.btn-del:hover{background:var(--hol);color:#fff}
+.btn-sec{background:var(--surface);color:var(--txt2);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:7px 12px;
+  font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-family:inherit;transition:all .15s}
+.btn-sec:hover{border-color:var(--primary);color:var(--primary)}
+.btn-warn{background:#fffbeb;color:#92400e;border:1px solid var(--morning-border);border-radius:var(--radius-sm);padding:8px 14px;
+  font-size:13px;cursor:pointer;font-weight:600;font-family:inherit}
+.btn-warn:hover{background:var(--morning);color:#fff}
+
+/* ═══ MANAGEMENT TABLES ═══ */
+.tbl-x{overflow-x:auto}
+.mtbl{width:100%;border-collapse:collapse;font-size:14px}
+.mtbl th{background:#f8fafc;color:var(--txt2);font-size:11px;font-weight:600;padding:10px 14px;border-bottom:2px solid var(--border);text-align:left;white-space:nowrap}
+.mtbl td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--txt)}
+.mtbl tr:last-child td{border-bottom:none}
+.mtbl tr:hover td{background:#f8fafc}
+.mtbl .grp-hdr td{background:#f8fafc;font-weight:700;color:var(--primary);font-size:12px;padding:7px 14px;border-top:2px solid var(--border)}
+.mtbl .num{color:var(--txt3)}
+.mtbl .acts{white-space:nowrap}
+
+/* ═══ PERIOD / HOLIDAY LISTS ═══ */
+.per-item{display:flex;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.per-item:last-child{border-bottom:none}
+.per-item:hover{background:#f8fafc}
+.per-num{background:var(--primary);color:#fff;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0}
+.per-dates{flex:1;min-width:180px;font-size:13px;font-weight:500}
+.per-days{font-size:11px;color:var(--txt3);margin-top:3px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.per-acts{display:flex;gap:6px;margin-left:auto}
+.xpro-wrap{padding:12px 0;display:flex;flex-wrap:wrap;gap:6px}
+.xpro-tag{background:var(--pro-bg);border:1px solid var(--pro-border);border-radius:20px;padding:4px 12px;font-size:12px;color:var(--pro);font-weight:600}
+.xpro-x{background:none;border:none;cursor:pointer;color:var(--hol);font-weight:800;font-size:13px;padding:0 2px;margin-left:4px}
+.hol-item{display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid var(--border)}
+.hol-item:last-child{border-bottom:none}
+.hol-item:hover{background:#f8fafc}
+.hol-date{width:108px;font-size:12px;font-weight:700;color:var(--hol);flex-shrink:0}
+.hol-name{flex:1;font-size:13px}
+.hol-dow{font-size:11px;color:var(--txt3);width:60px;flex-shrink:0}
+.empty{color:var(--txt3);padding:14px 16px;font-size:13px}
+.period-hols{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;margin-bottom:16px;box-shadow:var(--shadow)}
+.period-hols h3{font-size:12px;font-weight:700;color:var(--txt2);margin-bottom:10px}
+.hol-tag{display:inline-flex;align-items:center;gap:5px;background:var(--hol-bg);border:1px solid var(--hol-border);border-radius:20px;padding:4px 12px;font-size:11px;color:var(--hol);margin:2px;font-weight:600}
+
+/* ═══ MODAL ═══ */
+.overlay{display:none;position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:500;justify-content:center;align-items:center}
+.overlay.open{display:flex}
+.modal{background:var(--surface);border-radius:var(--radius);padding:24px;width:400px;max-width:95vw;box-shadow:0 25px 60px rgba(0,0,0,.25)}
+.modal-title{font-size:17px;font-weight:700;margin-bottom:18px;color:var(--txt)}
+.modal-row{margin-bottom:14px}
+.modal-row label{display:block;font-size:12px;font-weight:600;color:var(--txt2);margin-bottom:6px}
+.modal-row input,.modal-row select{width:100%}
+.modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)}
+.btn-cancel{background:var(--surface);border:1px solid var(--border2);color:var(--txt2);border-radius:var(--radius-sm);padding:9px 18px;font-size:14px;cursor:pointer;min-height:40px;font-family:inherit}
+.btn-cancel:hover{background:var(--bg)}
+.btn-cancel.danger{color:var(--hol);border-color:var(--hol-border)}
+.btn-ok{background:var(--primary);color:#fff;border:none;border-radius:var(--radius-sm);padding:9px 20px;font-size:14px;font-weight:700;cursor:pointer;min-height:40px;font-family:inherit}
+.btn-ok:hover{background:var(--primary-h)}
+.ipop-btns .btn-cancel,.ipop-btns .btn-ok{font-size:12px;padding:5px 10px;min-height:0}
+
+/* ═══ INLINE POPUP ═══ */
+#ipop{display:none;position:fixed;background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius);
+  padding:14px 16px;box-shadow:0 10px 30px rgba(0,0,0,.15);z-index:600;min-width:220px}
+#ipop-title{font-size:12px;font-weight:700;color:var(--txt2);margin-bottom:10px}
+#ipop input,#ipop select{width:100%;margin-bottom:10px}
+.ipop-btns{display:flex;gap:6px;justify-content:flex-end}
+
+/* ═══ KPI ═══ */
+.kpi-month-bar{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 18px;margin-bottom:16px;
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;box-shadow:var(--shadow)}
+.kpi-key{flex:1;display:flex;justify-content:flex-end;gap:6px;flex-wrap:wrap;font-size:12px}
+.kpi-chip{border-radius:4px;padding:2px 8px;font-weight:700}
+.kpi-chip.pass{background:#dcfce7;color:#166534}
+.kpi-chip.fail{background:#fee2e2;color:#991b1b}
+.kpi-chip.na{background:#f1f5f9;color:#94a3b8;font-weight:400}
+.kpi-stat-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.kpi-stat-tile{flex:1;min-width:140px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:4px}
+.kpi-stat-label{font-size:11.5px;font-weight:600;color:var(--wms-muted)}
+.kpi-stat-val{font-size:26px;font-weight:700;line-height:1.1;color:var(--txt);font-variant-numeric:tabular-nums}
+.kpi-stat-sub{font-size:12px;color:var(--txt2)}
+.kpi-stat-tile.good .kpi-stat-val{color:#16a34a}
+.kpi-stat-tile.warn .kpi-stat-val{color:#b45309}
+.kpi-bar-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;margin-bottom:16px;box-shadow:var(--shadow)}
+.kpi-bar-title{font-size:12px;font-weight:700;color:var(--txt2);margin-bottom:14px}
+.kpi-bar-row{display:flex;align-items:center;gap:10px;margin-bottom:7px}
+.kpi-bar-name{width:130px;font-size:12px;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right;flex-shrink:0}
+.kpi-bar-track{flex:1;height:20px;background:#f1f5f9;border-radius:4px;overflow:hidden;display:flex}
+.kpi-bar-pass{background:#4ade80;height:100%}
+.kpi-bar-fail{background:#f87171;height:100%}
+.kpi-bar-score{width:36px;font-size:12px;font-weight:700;color:var(--txt);flex-shrink:0;font-variant-numeric:tabular-nums}
+.kpi-wrap{overflow-x:auto;border-radius:var(--radius-sm)}
+.kpi-tbl{width:100%;border-collapse:collapse;font-size:13px}
+.kpi-tbl th{background:#1e293b;color:#94a3b8;font-size:11px;font-weight:700;padding:12px 14px;border:1px solid #1e293b;white-space:nowrap;text-align:center;line-height:1.4}
+.kpi-tbl th.kpi-name-col{text-align:left;min-width:180px;position:sticky;left:0;z-index:2;background:#1e293b}
+.kpi-tbl th .kpi-th-label{color:#e2e8f0;font-size:12px;font-weight:700;display:block}
+.kpi-tbl th .kpi-th-target{font-size:10px;font-weight:400;color:#94a3b8;margin-top:3px;display:block}
+.kpi-tbl td{border:1px solid var(--border);padding:8px 10px;text-align:center;white-space:nowrap;vertical-align:middle}
+.kpi-tbl td.kpi-name{position:sticky;left:0;z-index:1;background:#fff;font-weight:600;text-align:left;min-width:180px;padding:10px 14px}
+.kpi-tbl td.kpi-name .nick{font-size:11px;color:var(--txt3);font-weight:400;margin-top:2px}
+.kpi-tbl tr:hover td{background:#f8fafc}
+.kpi-tbl td[onclick]{cursor:pointer}
+.kpi-tbl td[onclick]:hover{background:#eef2ff!important}
+.kpi-cell{border-radius:8px;padding:6px 10px;min-width:80px;display:inline-flex;align-items:center;justify-content:center;gap:5px;font-weight:700;font-size:12px}
+.kpi-pass{background:#dcfce7;color:#166534;border:1px solid #86efac}
+.kpi-fail{background:#fee2e2;color:#991b1b;border:1px solid #fca5a5}
+.kpi-na{background:#f1f5f9;color:#94a3b8;border:1px solid #e2e8f0;font-weight:400}
+.kpi-icon{font-size:11px}
+.kpi-inp-overlay{display:none;position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:700;justify-content:center;align-items:center}
+.kpi-inp-overlay.open{display:flex}
+.kpi-inp-box{background:#fff;border-radius:14px;padding:26px 26px 20px;width:360px;max-width:95vw;box-shadow:0 24px 64px rgba(0,0,0,.28)}
+.kpi-inp-box h3{font-size:17px;font-weight:700;margin-bottom:3px;color:var(--txt)}
+.kpi-inp-box .sub{font-size:12px;color:var(--txt2);margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)}
+.kpi-num-wrap{margin-bottom:8px}
+.kpi-inp-box input[type=number]{width:100%;padding:12px 16px;font-size:24px;font-weight:700;border:2px solid var(--border2);border-radius:10px;
+  color:var(--txt);text-align:center;font-family:inherit;-moz-appearance:textfield}
+.kpi-inp-box input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
+.kpi-inp-box input[type=number]:focus{border-color:var(--primary);outline:none}
+.target-hint{font-size:12px;color:var(--txt2);margin-bottom:16px;background:var(--bg);border-radius:var(--radius-sm);padding:8px 12px;border-left:3px solid var(--primary)}
+
+@media(prefers-reduced-motion:reduce){*{transition-duration:.01ms!important}}
+
+/* ═══ PRINT ═══ */
+@media print{
+  .no-print,.legend,.period-bar{display:none!important}
+  .rs-main{padding:0}
+  .tbl-wrap{box-shadow:none;border:1px solid #ccc;border-radius:0}
+  .tbl-scroll{overflow:visible}
+  .sc0,.sc1,.sc2,.sc3,.sc-hdr{position:static}
+}
+</style>
+</head>
+<body data-wms-module="roster">
+
+<div class="wms-shell">
+<div data-wms-shell="roster" data-root="../"></div>
+<div class="wms-main">
+
+  <div class="mod-head">
+    <div class="rs-headrow">
+      <div class="mod-title">
+        <div class="ic">📅</div>
+        <div>
+          <h2>ตารางกะ · Shift Schedule</h2>
+          <p>กลุ่ม A/B สลับกะเช้า–บ่ายทุกคาบ · วันหยุด · วันโปรฯ · KPI รายเดือน</p>
+        </div>
+      </div>
+      <div class="rs-actions">
+        <span id="save-state" class="rs-saved"></span>
+        <button type="button" class="btn-sec" onclick="exportFile()" title="เก็บข้อมูลตารางกะเป็นไฟล์ ไว้ย้ายเครื่องหรือสำรอง">⬇ ส่งออกไฟล์</button>
+        <button type="button" class="btn-sec" onclick="document.getElementById('import-file').click()" title="รับไฟล์ที่ส่งออกจากหน้านี้ หรือ shift-program.html ที่บันทึกจากโปรแกรมเดิม">⬆ นำเข้าไฟล์</button>
+        <input type="file" id="import-file" accept=".json,.html,.htm" hidden onchange="importFile(this)">
+        <button type="button" class="btn-sec" onclick="window.print()">🖨 พิมพ์</button>
+      </div>
+    </div>
+    <nav class="mod-subnav">
+      <button type="button" class="mod-tab active" data-page="schedule" onclick="showPage('schedule',this)">📅 ตารางกะ</button>
+      <button type="button" class="mod-tab" data-page="employees" onclick="showPage('employees',this)">👥 พนักงาน</button>
+      <button type="button" class="mod-tab" data-page="periods" onclick="showPage('periods',this)">🔄 คาบเปลี่ยนกะ</button>
+      <button type="button" class="mod-tab" data-page="holidays" onclick="showPage('holidays',this)">🏖️ วันหยุด</button>
+      <button type="button" class="mod-tab" data-page="kpi" onclick="showPage('kpi',this)">📊 KPI</button>
+    </nav>
+  </div>
+
+  <div class="rs-main">
+
+<!-- ═══ SCHEDULE ═══ -->
+<div id="page-schedule" class="page active">
+  <div class="period-bar">
+    <div class="period-info">
+      <div class="period-title" id="per-title">—</div>
+      <div class="period-sub" id="per-sub">—</div>
+    </div>
+    <div class="period-nav">
+      <button type="button" class="btn-nav" onclick="prevPeriod()" aria-label="คาบก่อนหน้า">‹</button>
+      <select id="sel-period" class="period-select" onchange="onPeriodChange()"></select>
+      <button type="button" class="btn-nav" onclick="nextPeriod()" aria-label="คาบถัดไป">›</button>
+    </div>
+    <button type="button" class="btn-clear" onclick="clearOverrides()">ล้างแก้ไข</button>
+  </div>
+
+  <div class="legend">
+    <span class="leg-item"><span class="leg-dot" style="background:#fff;border:1px solid #ccc"></span>W ทำงาน</span>
+    <span class="leg-item"><span class="leg-dot" style="background:var(--hol-bg);border:1px solid var(--hol-border)"></span>H หยุด</span>
+    <span class="leg-item"><span class="leg-dot" style="background:#fffbeb;border:1px solid #fcd34d"></span>วันโปรฯ</span>
+    <span class="leg-item"><span class="leg-dot" style="background:var(--last-bg);border:1px solid var(--last-border)"></span>วันสุดท้ายคาบ 10-19</span>
+    <span class="leg-item"><span class="leg-dot" style="background:#fee2e2;box-shadow:inset 0 0 0 2px #f87171"></span>แก้ไขเป็น H</span>
+    <span class="leg-item"><span class="leg-dot" style="background:#f0fdf4;box-shadow:inset 0 0 0 2px #4ade80"></span>แก้ไขเป็น W</span>
+    <span class="leg-hint">· คลิกช่อง W/H เพื่อสลับ · คลิกชื่อ/หยุด/กะ เพื่อแก้ไข</span>
+  </div>
+
+  <div id="schedule-out"></div>
+</div>
+
+<!-- ═══ EMPLOYEES ═══ -->
+<div id="page-employees" class="page">
+  <div class="card">
+    <div class="card-title">พนักงานประจำ</div>
+    <div class="form-row no-print">
+      <div class="fg"><label for="ei-name">ชื่อ-สกุล</label><input id="ei-name" type="text" placeholder="นายชื่อ นามสกุล" style="width:200px"></div>
+      <div class="fg"><label for="ei-nick">ชื่อเล่น</label><input id="ei-nick" type="text" placeholder="ชื่อเล่น" style="width:90px"></div>
+      <div class="fg"><label for="ei-off">วันหยุดประจำ</label>
+        <select id="ei-off">
+          <option value="0">อาทิตย์</option><option value="1">จันทร์</option><option value="2">อังคาร</option>
+          <option value="3">พุธ</option><option value="4">พฤหัส</option><option value="5">ศุกร์</option><option value="6">เสาร์</option>
+        </select>
+      </div>
+      <div class="fg"><label for="ei-grp">กลุ่ม</label>
+        <select id="ei-grp"><option value="A">กลุ่ม A</option><option value="B">กลุ่ม B</option></select>
+      </div>
+      <div class="fg"><button type="button" class="btn-add" onclick="addEmp()">+ เพิ่ม</button></div>
+    </div>
+    <div class="tbl-x">
+      <table class="mtbl">
+        <thead><tr><th>#</th><th>ชื่อ-สกุล</th><th>ชื่อเล่น</th><th>วันหยุด</th><th>กลุ่ม</th><th class="no-print"></th></tr></thead>
+        <tbody id="emp-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Outsource</div>
+    <div class="info-box no-print">กะคงที่ ไม่หมุน · มีวันหยุดประจำได้ · แสดง H เฉพาะวันหยุดพิเศษ / วันหยุดประจำ</div>
+    <div class="form-row no-print">
+      <div class="fg"><label for="oi-name">ชื่อ / รหัส</label><input id="oi-name" type="text" placeholder="เช่น OS เช้า 1" style="width:160px"></div>
+      <div class="fg"><label for="oi-nick">ชื่อเล่น</label><input id="oi-nick" type="text" placeholder="OS1" style="width:80px"></div>
+      <div class="fg"><label for="oi-shift">กะประจำ</label>
+        <select id="oi-shift"><option value="morning">กะเช้า (07-16)</option><option value="evening">กะบ่าย (16-24)</option></select>
+      </div>
+      <div class="fg"><label for="oi-off">วันหยุดประจำ</label>
+        <select id="oi-off">
+          <option value="-1">— ไม่มี —</option>
+          <option value="0">อาทิตย์</option><option value="1">จันทร์</option><option value="2">อังคาร</option>
+          <option value="3">พุธ</option><option value="4">พฤหัส</option><option value="5">ศุกร์</option><option value="6">เสาร์</option>
+        </select>
+      </div>
+      <div class="fg"><button type="button" class="btn-add" onclick="addOS()">+ เพิ่ม</button></div>
+    </div>
+    <div class="tbl-x">
+      <table class="mtbl">
+        <thead><tr><th>#</th><th>ชื่อ/รหัส</th><th>ชื่อเล่น</th><th>กะ</th><th>วันหยุด</th><th class="no-print"></th></tr></thead>
+        <tbody id="os-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PERIODS ═══ -->
+<div id="page-periods" class="page">
+  <div class="card">
+    <div class="card-title">คาบการเปลี่ยนกะ</div>
+    <div class="info-box no-print">ปกติ 28 วันต่อคาบ — ปรับได้เมื่อมีวันโปรฯ · คาบหนึ่งจบวันก่อนคาบถัดไปเริ่ม</div>
+    <div class="form-row no-print">
+      <div class="fg"><label for="pi-start">วันเริ่มคาบใหม่</label><input id="pi-start" type="date"></div>
+      <div class="fg"><label for="pi-grpa">กลุ่ม A อยู่กะ</label>
+        <select id="pi-grpa"><option value="morning">กะเช้า (07:00-16:00)</option><option value="evening">กะบ่าย (16:00-24:00)</option></select>
+      </div>
+      <div class="fg"><button type="button" class="btn-add" onclick="addPeriod()">+ เพิ่มคาบ</button></div>
+      <div class="fg"><button type="button" class="btn-warn" onclick="autoGen()">⚡ สร้างอัตโนมัติ 12 คาบ</button></div>
+    </div>
+    <div id="period-list"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">วันโปรฯเพิ่มเติม</div>
+    <div class="warn-box no-print">ไฮไลต์อัตโนมัติ: 2/2 · 3/3 · 4/4 · 5/5 · 6/6 และวันที่ 15 · 25 · 28 ทุกเดือน</div>
+    <div class="form-row no-print">
+      <div class="fg"><label for="xp-date">วันที่เพิ่มเติม</label><input id="xp-date" type="date"></div>
+      <div class="fg"><button type="button" class="btn-add" onclick="addExtraPro()">+ เพิ่ม</button></div>
+    </div>
+    <div id="xpro-list"></div>
+  </div>
+</div>
+
+<!-- ═══ HOLIDAYS ═══ -->
+<div id="page-holidays" class="page">
+  <div class="card">
+    <div class="card-title">วันหยุดพิเศษ</div>
+    <div class="info-box no-print">วันหยุดนักขัตฤกษ์ / วันหยุดบริษัท — แสดงเป็น H ทุกคน</div>
+    <div class="form-row no-print">
+      <div class="fg"><label for="hi-date">วันที่</label><input id="hi-date" type="date"></div>
+      <div class="fg"><label for="hi-name">ชื่อวันหยุด</label><input id="hi-name" type="text" placeholder="เช่น วันสงกรานต์" style="width:180px"></div>
+      <div class="fg"><button type="button" class="btn-add" onclick="addHol()">+ เพิ่ม</button></div>
+    </div>
+    <div id="hol-list"></div>
+  </div>
+</div>
+
+<!-- ═══ KPI ═══ -->
+<div id="page-kpi" class="page">
+  <div class="kpi-month-bar no-print">
+    <div class="fg"><label for="kpi-month">เดือน</label><input id="kpi-month" type="month" onchange="renderKPI()"></div>
+    <div class="kpi-key">
+      <span class="kpi-chip pass">✓ ผ่าน</span>
+      <span class="kpi-chip fail">✗ ไม่ผ่าน</span>
+      <span class="kpi-chip na">— ยังไม่กรอก</span>
+    </div>
+  </div>
+  <div id="kpi-stat-row" class="kpi-stat-row"></div>
+  <div id="kpi-bar-card" class="kpi-bar-card" style="display:none">
+    <div class="kpi-bar-title">คะแนน KPI รายคน (กี่ตัวผ่านเป้า)</div>
+    <div id="kpi-bar-body"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">KPI พนักงาน — คลิกช่องเพื่อกรอกข้อมูล</div>
+    <div class="kpi-wrap">
+      <table class="kpi-tbl">
+        <thead id="kpi-thead"></thead>
+        <tbody id="kpi-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- KPI input -->
+<div class="kpi-inp-overlay" id="kpi-overlay">
+  <div class="kpi-inp-box">
+    <h3 id="kpi-inp-title"></h3>
+    <div class="sub" id="kpi-inp-sub"></div>
+    <div class="kpi-num-wrap"><input id="kpi-inp-val" type="number" step="0.01" placeholder="0"></div>
+    <div class="target-hint" id="kpi-inp-hint"></div>
+    <div class="modal-btns">
+      <button type="button" class="btn-cancel" onclick="closeKPIInp()">ยกเลิก</button>
+      <button type="button" class="btn-cancel danger" onclick="clearKPICell()">ล้าง</button>
+      <button type="button" class="btn-ok" onclick="saveKPIInp()">บันทึก</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MODALS ═══ -->
+<div class="overlay" id="emp-modal">
+  <div class="modal">
+    <div class="modal-title">✎ แก้ไขพนักงาน</div>
+    <input type="hidden" id="em-idx">
+    <div class="modal-row"><label for="em-name">ชื่อ-สกุล</label><input id="em-name" type="text"></div>
+    <div class="modal-row"><label for="em-nick">ชื่อเล่น</label><input id="em-nick" type="text"></div>
+    <div class="modal-row"><label for="em-off">วันหยุดประจำ</label>
+      <select id="em-off">
+        <option value="0">อาทิตย์</option><option value="1">จันทร์</option><option value="2">อังคาร</option>
+        <option value="3">พุธ</option><option value="4">พฤหัส</option><option value="5">ศุกร์</option><option value="6">เสาร์</option>
+      </select>
+    </div>
+    <div class="modal-row"><label for="em-grp">กลุ่ม</label>
+      <select id="em-grp"><option value="A">กลุ่ม A</option><option value="B">กลุ่ม B</option></select>
+    </div>
+    <div class="modal-btns">
+      <button type="button" class="btn-cancel" onclick="closeModal('emp-modal')">ยกเลิก</button>
+      <button type="button" class="btn-ok" onclick="saveEdit()">บันทึก</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="os-modal">
+  <div class="modal">
+    <div class="modal-title">✎ แก้ไข Outsource</div>
+    <input type="hidden" id="osm-idx">
+    <div class="modal-row"><label for="osm-name">ชื่อ/รหัส</label><input id="osm-name" type="text"></div>
+    <div class="modal-row"><label for="osm-nick">ชื่อเล่น</label><input id="osm-nick" type="text"></div>
+    <div class="modal-row"><label for="osm-shift">กะประจำ</label>
+      <select id="osm-shift"><option value="morning">กะเช้า</option><option value="evening">กะบ่าย</option></select>
+    </div>
+    <div class="modal-row"><label for="osm-off">วันหยุดประจำ</label>
+      <select id="osm-off">
+        <option value="-1">— ไม่มี —</option>
+        <option value="0">อาทิตย์</option><option value="1">จันทร์</option><option value="2">อังคาร</option>
+        <option value="3">พุธ</option><option value="4">พฤหัส</option><option value="5">ศุกร์</option><option value="6">เสาร์</option>
+      </select>
+    </div>
+    <div class="modal-btns">
+      <button type="button" class="btn-cancel" onclick="closeModal('os-modal')">ยกเลิก</button>
+      <button type="button" class="btn-ok" onclick="saveOSEdit()">บันทึก</button>
+    </div>
+  </div>
+</div>
+
+<!-- inline popup -->
+<div id="ipop">
+  <div id="ipop-title"></div>
+  <input id="ipop-input" type="text">
+  <select id="ipop-select" style="display:none"></select>
+  <div class="ipop-btns">
+    <button type="button" class="btn-cancel" onclick="closeInline()">ยกเลิก</button>
+    <button type="button" class="btn-ok" onclick="saveInline()">บันทึก</button>
+  </div>
+</div>
+
+  </div><!-- /.rs-main -->
+</div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+
+<script type="module" src="../wms-shell.js"></script>
+<script>
+var DOW=['อา','จ','อ','พ','พฤ','ศ','ส'];
+var DOW_FULL=['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัส','ศุกร์','เสาร์'];
+var MON=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+var MON_F=['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+
+var DEF_EMP=[
+  {name:'นายวุฒิชัย นะรานรัมย์',nick:'ปู',dayOff:1,group:'A'},
+  {name:'นายวัชระ ถาลี',nick:'โทน',dayOff:2,group:'A'},
+  {name:'นายธิติ บุญเชิด',nick:'นนท์',dayOff:2,group:'A'},
+  {name:'นายอภิชัย อัคฮาด',nick:'จ่อย',dayOff:3,group:'A'},
+  {name:'นายเสกสรรค์ ไปแดน',nick:'เบ้น',dayOff:5,group:'A'},
+  {name:'นายณัฐพล ชูศรีทอง',nick:'เบียร์',dayOff:6,group:'A'},
+  {name:'นายขจรศักดิ์ หอมหวาน',nick:'จร',dayOff:0,group:'A'},
+  {name:'นายไชยวัฒน์ จำปาเณร',nick:'นิว',dayOff:1,group:'B'},
+  {name:'นายประเวศ ต้นมลคลวัฒนา',nick:'ตาม',dayOff:2,group:'B'},
+  {name:'นายนที โพธิ์ทอง',nick:'บิว',dayOff:3,group:'B'},
+  {name:'นายอภิวัฒน์ วิเชียรเครือ',nick:'เมตร',dayOff:5,group:'B'},
+  {name:'นายสร้อยแก้ว ตาวงค์',nick:'เดท',dayOff:5,group:'B'},
+  {name:'นายรุ่งโรจน์ ศรีใส',nick:'โรจน์',dayOff:6,group:'B'},
+  {name:'นายชูเกียรติ อินทร์จำปา',nick:'แก้ว',dayOff:0,group:'B'}
+];
+var DEF_OS=[
+  {name:'Outsource เช้า 1',nick:'OS1',shift:'morning',dayOff:-1},
+  {name:'Outsource เช้า 2',nick:'OS2',shift:'morning',dayOff:-1},
+  {name:'Outsource เช้า 3',nick:'OS3',shift:'morning',dayOff:-1},
+  {name:'Outsource บ่าย 1',nick:'OS4',shift:'evening',dayOff:-1},
+  {name:'Outsource บ่าย 2',nick:'OS5',shift:'evening',dayOff:-1},
+  {name:'Outsource บ่าย 3',nick:'OS6',shift:'evening',dayOff:-1}
+];
+var DEF_PER=[
+  {id:1,start:'2026-01-18',groupA:'morning'},
+  {id:2,start:'2026-02-15',groupA:'evening'},
+  {id:3,start:'2026-03-15',groupA:'morning'},
+  {id:4,start:'2026-04-13',groupA:'evening'},
+  {id:5,start:'2026-05-23',groupA:'morning'}
+];
+var DEF_HOL=[
+  {date:'2026-01-01',name:'วันขึ้นปีใหม่'},
+  {date:'2026-02-02',name:'โปรฯ 2/2'},{date:'2026-03-03',name:'โปรฯ 3/3'},
+  {date:'2026-04-04',name:'โปรฯ 4/4'},{date:'2026-04-06',name:'วันจักรี'},
+  {date:'2026-04-13',name:'วันสงกรานต์'},{date:'2026-04-14',name:'วันสงกรานต์'},{date:'2026-04-15',name:'วันสงกรานต์'},
+  {date:'2026-05-01',name:'วันแรงงาน'},{date:'2026-05-05',name:'โปรฯ 5/5'},
+  {date:'2026-06-03',name:'วันเฉลิมพระชนมพรรษา ร.10'},{date:'2026-06-06',name:'โปรฯ 6/6'},
+  {date:'2026-07-28',name:'วันเฉลิมพระชนมพรรษา ร.10'},
+  {date:'2026-08-12',name:'วันแม่แห่งชาติ'},{date:'2026-10-13',name:'วันนวมินทรมหาราช'},
+  {date:'2026-10-23',name:'วันปิยมหาราช'},{date:'2026-12-05',name:'วันพ่อแห่งชาติ'},
+  {date:'2026-12-10',name:'วันรัฐธรรมนูญ'},{date:'2026-12-31',name:'วันสิ้นปี'}
+];
+
+/* ── เก็บข้อมูล ──
+   โปรแกรมตารางกะตัวเดิมเก็บข้อมูลฝังไว้ในไฟล์ HTML ที่ต้องกดบันทึกเอง ในระบบนี้
+   ทุกโมดูลเก็บในเบราว์เซอร์ จึงเก็บทันทีที่แก้ ใต้คีย์ wms: เพื่อให้ไฟล์สำรองในหน้า
+   ตั้งค่าพาตารางกะไปด้วย ย้ายเครื่องใช้ปุ่มส่งออก/นำเข้าไฟล์ */
+var STORE_KEY='wms:roster';
+var D={};try{D=JSON.parse(localStorage.getItem(STORE_KEY)||'null')||{};}catch(e){}
+var employees,outsource,periods,holidays,extraPro,overrides,kpiData;
+var curPer=0,curPage='schedule';
+
+function copy(v){return JSON.parse(JSON.stringify(v));}
+function arr(v,def){return Array.isArray(v)?copy(v):copy(def);}
+function obj(v){return v&&typeof v==='object'&&!Array.isArray(v)?copy(v):{};}
+function useData(d){
+  employees=arr(d.employees,DEF_EMP);outsource=arr(d.outsource,DEF_OS);
+  periods=arr(d.periods,DEF_PER);holidays=arr(d.holidays,DEF_HOL);extraPro=arr(d.extraPro,[]);
+  overrides=obj(d.overrides);kpiData=obj(d.kpiData);
+}
+useData(D);
+
+function _data(){return {employees:employees,outsource:outsource,periods:periods,holidays:holidays,extraPro:extraPro,overrides:overrides,kpiData:kpiData,savedAt:Date.now()};}
+function stamp(ts){return new Date(ts).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});}
+function setSaveState(cls,txt){var el=document.getElementById('save-state');el.className='rs-saved'+(cls?' '+cls:'');el.textContent=txt;}
+function changed(){
+  try{localStorage.setItem(STORE_KEY,JSON.stringify(_data()));setSaveState('ok','✓ บันทึกแล้ว '+stamp(Date.now()));}
+  catch(e){setSaveState('err','บันทึกไม่ได้ — กดส่งออกไฟล์เก็บไว้ก่อน');}
+}
+
+// ── ส่งออก / นำเข้า ──
+function exportFile(){
+  var file={app:'WMS Management by gun',kind:'roster',at:Date.now(),data:_data()};
+  var u=URL.createObjectURL(new Blob([JSON.stringify(file)],{type:'application/json'}));
+  var a=document.createElement('a');
+  a.href=u;a.download='ตารางกะ-'+fd(new Date())+'.json';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(u);
+}
+/* รับได้สามแบบ: ไฟล์ที่ส่งออกจากหน้านี้, ไฟล์สำรองจากหน้าตั้งค่า, และ shift-program.html
+   ที่กดบันทึกจากโปรแกรมตัวเดิม — ตัวนั้นฝังข้อมูลไว้ในบรรทัด var SAVED_DATA = {...}; */
+function parseImport(text){
+  var t=text.replace(/^﻿/,'').trim(),f;
+  if(t.charAt(0)==='<'){
+    var m=t.match(/^var SAVED_DATA = (.*);$/m);
+    if(!m)return {error:'ไม่พบข้อมูลตารางกะในไฟล์ HTML นี้'};
+    if(m[1]==='null')return {error:'ไฟล์นี้เป็นโปรแกรมเปล่าที่ยังไม่เคยกดบันทึก จึงไม่มีข้อมูลข้างใน'};
+    try{return {data:JSON.parse(m[1])};}catch(e){return {error:'อ่านข้อมูลในไฟล์ไม่ได้'};}
+  }
+  try{f=JSON.parse(t);}catch(e){return {error:'ไฟล์นี้ไม่ใช่ไฟล์ตารางกะ'};}
+  if(f&&f.kind==='roster'&&f.data)return {data:f.data};
+  if(f&&f.kind==='settings-backup'&&f.data&&f.data[STORE_KEY]){
+    try{return {data:JSON.parse(f.data[STORE_KEY])};}catch(e){return {error:'อ่านข้อมูลตารางกะในไฟล์สำรองไม่ได้'};}
+  }
+  if(f&&f.kind==='settings-backup')return {error:'ไฟล์สำรองนี้ไม่มีข้อมูลตารางกะ'};
+  if(f&&Array.isArray(f.employees))return {data:f};
+  return {error:'ไฟล์นี้ไม่ใช่ไฟล์ตารางกะ'};
+}
+function describe(d){
+  var n=function(a){return Array.isArray(a)?a.length:0;},months={},k=obj(d.kpiData);
+  for(var nm in k){if(k[nm]&&typeof k[nm]==='object')for(var m in k[nm])months[m]=1;}
+  return 'พนักงาน '+n(d.employees)+' · OS '+n(d.outsource)+' · คาบ '+n(d.periods)+' · วันหยุด '+n(d.holidays)+
+    ' · แก้ไขช่อง '+Object.keys(obj(d.overrides)).length+' · KPI '+Object.keys(months).length+' เดือน';
+}
+function importFile(inp){
+  var f=inp.files&&inp.files[0];inp.value='';if(!f)return;
+  var r=new FileReader();
+  r.onload=function(){
+    var res=parseImport(String(r.result||''));
+    if(res.error){alert(res.error);return;}
+    var d=res.data||{};
+    if(!Array.isArray(d.employees)){alert('ไฟล์นี้ไม่มีรายชื่อพนักงาน');return;}
+    if(!confirm('นำเข้าตารางกะจากไฟล์ "'+f.name+'"?\n\nในไฟล์: '+describe(d)+'\nในเครื่องตอนนี้: '+describe(_data())+
+      '\n\nข้อมูลตารางกะในเครื่องนี้จะถูกแทนที่ทั้งหมด'))return;
+    useData(d);curPer=currentPer();changed();showPage(curPage);
+  };
+  r.onerror=function(){alert('เปิดไฟล์ไม่ได้');};
+  r.readAsText(f);
+}
+
+// ── Date helpers ──
+function pd(s){var p=s.split('-');return new Date(+p[0],+p[1]-1,+p[2]);}
+function fd(d){var y=d.getFullYear(),m=d.getMonth()+1,dd=d.getDate();return y+'-'+(m<10?'0'+m:m)+'-'+(dd<10?'0'+dd:dd);}
+function addD(s,n){var d=pd(s);d.setDate(d.getDate()+n);return fd(d);}
+function diff(a,b){return Math.round((pd(b)-pd(a))/86400000);}
+function isPro(s){var d=pd(s),day=d.getDate(),m=d.getMonth()+1;if(day===m&&m>=2&&m<=6)return true;if(day===15||day===25||day===28)return true;return false;}
+function isHol(s){return holidays.some(function(h){return h.date===s;});}
+function holN(s){var h=holidays.find(function(x){return x.date===s;});return h?h.name:'';}
+function isXP(s){return extraPro.some(function(p){return p.date===s;});}
+function isLD(s,e){return s===e;}
+function sorted(){return periods.slice().sort(function(a,b){return a.start<b.start?-1:1;});}
+function perEnd(p,sp){var i=sp.findIndex(function(x){return x.id===p.id;});if(i+1<sp.length)return addD(sp[i+1].start,-1);return addD(p.start,27);}
+function mSpans(dates){var sp=[],cur=null;for(var i=0;i<dates.length;i++){var d=pd(dates[i]),m=d.getMonth(),y=d.getFullYear();if(!cur||cur.m!==m||cur.y!==y){if(cur)sp.push(cur);cur={m:m,y:y,count:1};}else cur.count++;}if(cur)sp.push(cur);return sp;}
+function currentPer(){var today=fd(new Date()),sp=sorted(),best=0;for(var i=0;i<sp.length;i++){if(sp[i].start<=today)best=i;}return best;}
+
+// ── Text into HTML ──
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+// JSON value made safe inside a double-quoted onclick="..." attribute
+function jsAttr(v){return JSON.stringify(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;');}
+
+// ── Overrides ──
+function ovK(d,n){return d+'|'+n;}
+function getOv(d,n){return overrides.hasOwnProperty(ovK(d,n))?overrides[ovK(d,n)]:null;}
+function setOv(d,n,v){var k=ovK(d,n);if(v===null)delete overrides[k];else overrides[k]=v;}
+function cycleCell(ds,nm,av){
+  var c=getOv(ds,nm),nx;
+  if(c===null)nx=av==='W'?'H':'W';
+  else if(c==='H')nx='W';
+  else nx=null;
+  setOv(ds,nm,nx);changed();renderSchedule();
+}
+
+/* ชื่อคือตัวระบุคนในตาราง — ช่องที่แก้ไขกับ KPI ผูกอยู่กับชื่อ
+   เปลี่ยนชื่อแล้วต้องย้ายตามไปด้วย ไม่งั้นข้อมูลของคนนั้นหายเงียบ ๆ
+   และชื่อซ้ำกันไม่ได้ เพราะสองคนจะใช้ช่องแก้ไขกับ KPI ชุดเดียวกัน */
+function nameTaken(nm,self){return employees.concat(outsource).some(function(p){return p!==self&&p.name===nm;});}
+function rename(from,to){
+  if(from===to)return;
+  Object.keys(overrides).forEach(function(k){
+    var i=k.indexOf('|');
+    if(k.slice(i+1)===from){overrides[k.slice(0,i+1)+to]=overrides[k];delete overrides[k];}
+  });
+  if(kpiData[from]){kpiData[to]=kpiData[from];delete kpiData[from];}
+}
+
+// ── Navigation ──
+function showPage(id,btn){
+  curPage=id;
+  document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active');});
+  document.querySelectorAll('.mod-tab').forEach(function(t){t.classList.toggle('active',btn?t===btn:t.getAttribute('data-page')===id);});
+  document.getElementById('page-'+id).classList.add('active');
+  if(id==='schedule')renderSchedule();
+  else if(id==='employees'){renderEmps();renderOS();}
+  else if(id==='periods')renderPeriods();
+  else if(id==='holidays')renderHols();
+  else if(id==='kpi')renderKPI();
+}
+function namesNow(){return employees.map(function(x){return x.name;}).concat(outsource.map(function(x){return x.name;}));}
+function clearOverrides(){
+  if(!confirm('ล้างการแก้ไขช่องทั้งหมดในคาบนี้?'))return;
+  var sp=sorted();if(curPer>=sp.length)return;
+  var p=sp[curPer],e=perEnd(p,sp),c=p.start,ns=namesNow();
+  while(c<=e){ns.forEach(function(n){delete overrides[ovK(c,n)];});c=addD(c,1);}
+  changed();renderSchedule();
+}
+
+// ── Schedule ──
+function buildSel(){
+  var sp=sorted(),h='';
+  for(var i=0;i<sp.length;i++){
+    var p=sp[i],e=perEnd(p,sp),sd=pd(p.start),ed=pd(e);
+    h+='<option value="'+i+'">คาบที่ '+(i+1)+'  ('+sd.getDate()+' '+MON[sd.getMonth()]+' — '+ed.getDate()+' '+MON[ed.getMonth()]+' '+(ed.getFullYear()+543)+')</option>';
+  }
+  document.getElementById('sel-period').innerHTML=h;
+  document.getElementById('sel-period').value=curPer;
+}
+function onPeriodChange(){curPer=+document.getElementById('sel-period').value;renderSchedule();}
+function prevPeriod(){if(curPer>0){curPer--;renderSchedule();}}
+function nextPeriod(){var sp=sorted();if(curPer<sp.length-1){curPer++;renderSchedule();}}
+
+function renderSchedule(){
+  var sp=sorted();
+  if(!sp.length){
+    document.getElementById('per-title').textContent='ยังไม่มีคาบ';
+    document.getElementById('per-sub').textContent='เพิ่มคาบแรกได้ที่แท็บ คาบเปลี่ยนกะ';
+    document.getElementById('schedule-out').innerHTML='';buildSel();return;
+  }
+  if(curPer>=sp.length)curPer=sp.length-1;
+  if(curPer<0)curPer=0;
+  buildSel();
+  var p=sp[curPer],endS=perEnd(p,sp),shA=p.groupA;
+  var dates=[],c=p.start;while(c<=endS){dates.push(c);c=addD(c,1);}
+  var gA=employees.filter(function(e){return e.group==='A';}),gB=employees.filter(function(e){return e.group==='B';});
+  var mG=shA==='morning'?gA:gB,eG=shA==='morning'?gB:gA;
+  var mN=shA==='morning'?'A':'B',eN=shA==='morning'?'B':'A';
+  var mOS=outsource.filter(function(o){return o.shift==='morning';}),eOS=outsource.filter(function(o){return o.shift==='evening';});
+  var sd=pd(p.start),ed=pd(endS);
+
+  document.getElementById('per-title').textContent='คาบที่ '+(curPer+1)+' — '+sd.getDate()+' '+MON_F[sd.getMonth()]+' '+sd.getFullYear()+' ถึง '+ed.getDate()+' '+MON_F[ed.getMonth()]+' '+ed.getFullYear();
+  var proCnt=0;for(var i=0;i<dates.length;i++){if(isPro(dates[i])||isXP(dates[i]))proCnt++;}
+  // นับเฉพาะช่องของคาบนี้ ให้ตรงกับที่ปุ่ม "ล้างแก้ไข" จะล้าง
+  var ns=namesNow(),ovCnt=0;
+  for(var k in overrides){
+    var bar=k.indexOf('|'),dk=k.slice(0,bar);
+    if(dk>=p.start&&dk<=endS&&ns.indexOf(k.slice(bar+1))!==-1)ovCnt++;
+  }
+  document.getElementById('per-sub').innerHTML=dates.length+' วัน · วันโปรฯ '+proCnt+' วัน'+(ovCnt?' · <span style="color:var(--pro)">แก้ไขช่อง '+ovCnt+' ช่อง</span>':'');
+
+  var h='<div class="tbl-wrap"><div class="tbl-scroll"><table>';
+  h+=buildSection('กะเช้า 07:00-16:00 — กลุ่ม '+mN,'morning',dates,endS,mG,mOS);
+  h+='<tr class="sep-row"><td colspan="'+(4+dates.length)+'"></td></tr>';
+  h+=buildSection('กะบ่าย 16:00-24:00 — กลุ่ม '+eN+' | วันสุดท้ายคาบ: 10:00-19:00 (ยกเว้นหยุดเสาร์)','evening',dates,endS,eG,eOS);
+  h+='</table></div></div>';
+
+  var pHols=holidays.filter(function(hh){return hh.date>=p.start&&hh.date<=endS;});
+  if(pHols.length){
+    h+='<div class="period-hols no-print"><h3>วันหยุดพิเศษในคาบนี้</h3>';
+    for(var i=0;i<pHols.length;i++){var hd=pd(pHols[i].date);h+='<span class="hol-tag">'+hd.getDate()+' '+MON[hd.getMonth()]+' — '+esc(pHols[i].name)+'</span>';}
+    h+='</div>';
+  }
+  document.getElementById('schedule-out').innerHTML=h;
+}
+
+function buildSection(title,shift,dates,endS,group,osGroup){
+  var cols=4+dates.length;
+  var shCls=shift==='morning'?'sh-morning':'sh-evening';
+  var h='<thead>';
+  h+='<tr><th colspan="'+cols+'" class="'+shCls+'">'+title+'</th></tr>';
+
+  // Month row
+  var ms=mSpans(dates);
+  h+='<tr><th colspan="4" class="mh-label sc-hdr">เดือน</th>';
+  for(var mi=0;mi<ms.length;mi++){
+    var bg=mi%2===0?'#1e3a8a':'#1d4ed8';
+    h+='<th colspan="'+ms[mi].count+'" class="mh" style="background:'+bg+'">'+MON[ms[mi].m]+' '+(ms[mi].y+543)+'</th>';
+  }
+  h+='</tr>';
+
+  // Date row
+  h+='<tr><th colspan="4" class="mh-label sc-hdr">วันที่</th>';
+  for(var i=0;i<dates.length;i++){
+    var d=dates[i],dd=pd(d),ld=isLD(d,endS),hol=isHol(d),pro=isPro(d)||isXP(d),wk=dd.getDay()===1;
+    var cls='date-hdr'+(hol?' is-hol':ld?' is-last':pro?' is-pro':'')+(wk?' wk-s':'');
+    var tt=hol?holN(d):ld?'วันสุดท้าย 10-19':pro?'วันโปรฯ':'';
+    h+='<th class="'+cls+'"'+(tt?' title="'+esc(tt)+'"':'')+'>'+dd.getDate()+'</th>';
+  }
+  h+='</tr>';
+
+  // DOW row
+  h+='<tr class="dh-row"><th class="sc0">ชื่อ-สกุล</th><th class="sc1">เล่น</th><th class="sc2">หยุด</th><th class="sc3">กะ</th>';
+  for(var i=0;i<dates.length;i++){
+    var d=dates[i],dd=pd(d),ld=isLD(d,endS),hol=isHol(d),wk=dd.getDay()===1,we=dd.getDay()===0||dd.getDay()===6,mon=dd.getDay()===1;
+    var bg=hol?'background:#1a1f2e;':ld?'background:#1e1040;':'';
+    var cls=(wk?'wk-s ':'')+(we?'dow-we':mon?'dow-mon':'');
+    h+='<th class="'+cls+'" style="'+bg+'">'+DOW[dd.getDay()]+'</th>';
+  }
+  h+='</tr>';
+  h+='</thead><tbody>';
+
+  // Employee rows
+  for(var ei=0;ei<group.length;ei++){
+    var emp=group[ei],empIdx=employees.indexOf(emp);
+    var shB=shift==='morning'?'<span class="bm">เช้า</span>':'<span class="be">บ่าย</span>';
+    h+='<tr>';
+    h+='<td class="sc0 ec" onclick="iEdit(event,'+empIdx+',\'name\')" title="แก้ไขชื่อ">'+esc(emp.name)+'</td>';
+    h+='<td class="sc1 ec" onclick="iEdit(event,'+empIdx+',\'nick\')" title="แก้ไขชื่อเล่น">'+esc(emp.nick)+'</td>';
+    h+='<td class="sc2 ec" onclick="iEdit(event,'+empIdx+',\'dayOff\')" title="แก้ไขวันหยุด">'+DOW[emp.dayOff]+'</td>';
+    h+='<td class="sc3 ec" onclick="toggleGrp(event,'+empIdx+')" title="คลิกเปลี่ยนกลุ่ม">'+shB+'</td>';
+    for(var i=0;i<dates.length;i++){
+      var d=dates[i],hol=isHol(d),off=pd(d).getDay()===emp.dayOff,pro=isPro(d)||isXP(d),ld=isLD(d,endS);
+      var eveL=shift==='evening'&&ld&&emp.dayOff!==6;
+      var av=hol?'H':off?'H':eveL?'10-19':'W';
+      var ov=getOv(d,emp.name),dv=ov!==null?ov:av;
+      var cls;
+      if(ov!==null)cls=ov==='H'?'cOH':'cOW';
+      else if(hol)cls='cH';
+      else if(off)cls=ld&&shift==='evening'?'cLH':'cH';
+      else if(eveL)cls='cL';
+      else if(pro)cls='cP';
+      else cls='cW';
+      var wk=pd(d).getDay()===1;
+      h+='<td class="'+cls+' clickable'+(wk?' wk-s':'')+'" onclick="cycleCell('+jsAttr(d)+','+jsAttr(emp.name)+','+jsAttr(av)+')" title="'+dv+'">'+dv+'</td>';
+    }
+    h+='</tr>';
+  }
+
+  // Outsource
+  if(osGroup.length){
+    h+='<tr class="os-sep-row"><td class="sc0" style="padding-left:14px">Outsource ('+osGroup.length+' คน)</td><td class="sc1"></td><td class="sc2"></td><td class="sc3"></td>';
+    for(var i=0;i<dates.length;i++){var wk=pd(dates[i]).getDay()===1;h+='<td class="'+(wk?'wk-s':'')+'" style="color:var(--txt3);background:#f0fdf9">—</td>';}
+    h+='</tr>';
+    for(var oi=0;oi<osGroup.length;oi++){
+      var os=osGroup[oi],osIdx=outsource.indexOf(os);
+      var osOff=os.dayOff!==undefined?os.dayOff:-1;
+      var shB=shift==='morning'?'<span class="bo">OS เช้า</span>':'<span class="bo">OS บ่าย</span>';
+      h+='<tr class="os-row">';
+      h+='<td class="sc0 ec" onclick="iEditOS(event,'+osIdx+',\'name\')" title="แก้ไข">'+esc(os.name)+'</td>';
+      h+='<td class="sc1 ec" onclick="iEditOS(event,'+osIdx+',\'nick\')" title="แก้ไข">'+esc(os.nick)+'</td>';
+      h+='<td class="sc2 ec" onclick="iEditOS(event,'+osIdx+',\'dayOff\')" title="แก้ไขวันหยุด" style="font-size:11px;color:var(--txt2)">'+(osOff>=0?DOW[osOff]:'-')+'</td>';
+      h+='<td class="sc3 ec" onclick="toggleOS(event,'+osIdx+')" title="คลิกเปลี่ยนกะ">'+shB+'</td>';
+      for(var i=0;i<dates.length;i++){
+        var d=dates[i],hol=isHol(d),off=osOff>=0&&pd(d).getDay()===osOff,ld=isLD(d,endS);
+        var eveL=shift==='evening'&&ld&&osOff!==6;
+        var av=hol?'H':off?'H':eveL?'10-19':'W';
+        var ov=getOv(d,os.name),dv=ov!==null?ov:av;
+        var cls;
+        if(ov!==null)cls=ov==='H'?'cOH':'cOW';
+        else if(hol||off)cls=ld&&shift==='evening'?'cLH':'cH';
+        else if(eveL)cls='cL';
+        else cls='cW';
+        var wk=pd(d).getDay()===1;
+        h+='<td class="'+cls+' clickable'+(wk?' wk-s':'')+'" onclick="cycleCell('+jsAttr(d)+','+jsAttr(os.name)+','+jsAttr(av)+')" title="'+dv+'">'+dv+'</td>';
+      }
+      h+='</tr>';
+    }
+  }
+  h+='</tbody>';
+  return h;
+}
+
+// ── Inline edit ──
+var DAY_OPTS='<option value="0">อาทิตย์</option><option value="1">จันทร์</option><option value="2">อังคาร</option><option value="3">พุธ</option><option value="4">พฤหัส</option><option value="5">ศุกร์</option><option value="6">เสาร์</option>';
+var _iIdx=-1,_iField='',_iType='emp';
+function _showPop(e,title,isSelect,val){
+  var pop=document.getElementById('ipop'),inp=document.getElementById('ipop-input'),sel=document.getElementById('ipop-select');
+  document.getElementById('ipop-title').textContent=title;
+  if(isSelect){inp.style.display='none';sel.style.display='block';}
+  else{sel.style.display='none';inp.style.display='block';inp.value=val;setTimeout(function(){inp.focus();inp.select();},50);}
+  var r=e.target.getBoundingClientRect();
+  pop.style.left=Math.max(8,Math.min(r.left,window.innerWidth-240))+'px';
+  pop.style.top=Math.min(r.bottom+4,window.innerHeight-160)+'px';
+  pop.style.display='block';
+}
+function iEdit(e,idx,field){
+  e.stopPropagation();_iIdx=idx;_iField=field;_iType='emp';
+  var emp=employees[idx],sel=document.getElementById('ipop-select');
+  if(field==='dayOff'){sel.innerHTML=DAY_OPTS;sel.value=emp.dayOff;_showPop(e,'วันหยุดประจำ',true);}
+  else _showPop(e,field==='name'?'ชื่อ-สกุล':'ชื่อเล่น',false,emp[field]);
+}
+function iEditOS(e,idx,field){
+  e.stopPropagation();_iIdx=idx;_iField=field;_iType='os';
+  var os=outsource[idx],sel=document.getElementById('ipop-select');
+  if(field==='dayOff'){sel.innerHTML='<option value="-1">— ไม่มี —</option>'+DAY_OPTS;sel.value=os.dayOff!==undefined?os.dayOff:-1;_showPop(e,'วันหยุดประจำ OS',true);}
+  else _showPop(e,field==='name'?'ชื่อ Outsource':'ชื่อเล่น',false,os[field]);
+}
+function saveInline(){
+  var p=_iType==='os'?outsource[_iIdx]:employees[_iIdx];
+  if(!p){closeInline();return;}
+  if(_iField==='dayOff')p.dayOff=+document.getElementById('ipop-select').value;
+  else{
+    var v=document.getElementById('ipop-input').value.trim();
+    if(!v){closeInline();return;}
+    if(_iField==='name'){
+      if(nameTaken(v,p)){alert('มีชื่อ "'+v+'" อยู่แล้ว');return;}
+      rename(p.name,v);
+    }
+    p[_iField]=v;
+  }
+  changed();closeInline();renderSchedule();
+}
+function closeInline(){document.getElementById('ipop').style.display='none';}
+function toggleGrp(e,idx){e.stopPropagation();employees[idx].group=employees[idx].group==='A'?'B':'A';changed();renderSchedule();}
+function toggleOS(e,idx){e.stopPropagation();outsource[idx].shift=outsource[idx].shift==='morning'?'evening':'morning';changed();renderSchedule();}
+document.addEventListener('click',function(e){if(!document.getElementById('ipop').contains(e.target))closeInline();});
+
+// ── Employees ──
+function renderEmps(){
+  var h='',n=0;
+  ['A','B'].forEach(function(g){
+    var cnt=employees.filter(function(e){return e.group===g;}).length,badge=g==='A'?'ga':'gb';
+    h+='<tr class="grp-hdr"><td colspan="6"><span class="'+badge+'">กลุ่ม '+g+'</span> — '+cnt+' คน</td></tr>';
+    for(var j=0;j<employees.length;j++){var emp=employees[j];if(emp.group!==g)continue;
+      h+='<tr><td class="num">'+(++n)+'</td><td>'+esc(emp.name)+'</td><td>'+esc(emp.nick)+'</td><td>'+DOW_FULL[emp.dayOff]+'</td><td><span class="'+badge+'">'+g+'</span></td>';
+      h+='<td class="no-print acts"><button type="button" class="btn-edit" onclick="editEmp('+j+')">แก้ไข</button> <button type="button" class="btn-del" onclick="delEmp('+j+')">ลบ</button></td></tr>';}
+  });
+  document.getElementById('emp-body').innerHTML=h;
+}
+function addEmp(){var n=document.getElementById('ei-name').value.trim();if(!n){alert('กรุณากรอกชื่อ');return;}
+  if(nameTaken(n,null)){alert('มีชื่อ "'+n+'" อยู่แล้ว');return;}
+  employees.push({name:n,nick:document.getElementById('ei-nick').value.trim(),dayOff:+document.getElementById('ei-off').value,group:document.getElementById('ei-grp').value});
+  document.getElementById('ei-name').value='';document.getElementById('ei-nick').value='';changed();renderEmps();}
+function editEmp(idx){var e=employees[idx];
+  document.getElementById('em-idx').value=idx;document.getElementById('em-name').value=e.name;
+  document.getElementById('em-nick').value=e.nick;document.getElementById('em-off').value=e.dayOff;
+  document.getElementById('em-grp').value=e.group;document.getElementById('emp-modal').classList.add('open');}
+function saveEdit(){var i=+document.getElementById('em-idx').value,e=employees[i],nm=document.getElementById('em-name').value.trim();
+  if(!nm){alert('กรุณากรอกชื่อ');return;}
+  if(nameTaken(nm,e)){alert('มีชื่อ "'+nm+'" อยู่แล้ว');return;}
+  rename(e.name,nm);
+  employees[i]={name:nm,nick:document.getElementById('em-nick').value.trim(),dayOff:+document.getElementById('em-off').value,group:document.getElementById('em-grp').value};
+  changed();closeModal('emp-modal');renderEmps();}
+function delEmp(idx){if(!confirm('ลบ "'+employees[idx].name+'"?'))return;employees.splice(idx,1);changed();renderEmps();}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+
+// ── Outsource ──
+function renderOS(){
+  var h='',n=0;
+  [['morning','OS เช้า','เช้า'],['evening','OS บ่าย','บ่าย']].forEach(function(s){
+    var cnt=outsource.filter(function(o){return o.shift===s[0];}).length;
+    h+='<tr class="grp-hdr"><td colspan="6"><span class="bo">'+s[1]+'</span> — '+cnt+' คน</td></tr>';
+    for(var j=0;j<outsource.length;j++){var os=outsource[j];if(os.shift!==s[0])continue;
+      var dOff=os.dayOff!==undefined&&os.dayOff>=0?DOW_FULL[os.dayOff]:'—';
+      h+='<tr><td class="num">'+(++n)+'</td><td>'+esc(os.name)+'</td><td>'+esc(os.nick)+'</td><td><span class="bo">'+s[2]+'</span></td><td>'+dOff+'</td>';
+      h+='<td class="no-print acts"><button type="button" class="btn-edit" onclick="editOS('+j+')">แก้ไข</button> <button type="button" class="btn-del" onclick="delOS('+j+')">ลบ</button></td></tr>';}
+  });
+  document.getElementById('os-body').innerHTML=h;
+}
+function addOS(){var n=document.getElementById('oi-name').value.trim();if(!n){alert('กรุณากรอกชื่อ');return;}
+  if(nameTaken(n,null)){alert('มีชื่อ "'+n+'" อยู่แล้ว');return;}
+  outsource.push({name:n,nick:document.getElementById('oi-nick').value.trim(),shift:document.getElementById('oi-shift').value,dayOff:+document.getElementById('oi-off').value});
+  document.getElementById('oi-name').value='';document.getElementById('oi-nick').value='';changed();renderOS();}
+function editOS(idx){var o=outsource[idx];
+  document.getElementById('osm-idx').value=idx;document.getElementById('osm-name').value=o.name;
+  document.getElementById('osm-nick').value=o.nick;document.getElementById('osm-shift').value=o.shift;
+  document.getElementById('osm-off').value=o.dayOff!==undefined?o.dayOff:-1;
+  document.getElementById('os-modal').classList.add('open');}
+function saveOSEdit(){var i=+document.getElementById('osm-idx').value,o=outsource[i],nm=document.getElementById('osm-name').value.trim();
+  if(!nm){alert('กรุณากรอกชื่อ');return;}
+  if(nameTaken(nm,o)){alert('มีชื่อ "'+nm+'" อยู่แล้ว');return;}
+  rename(o.name,nm);
+  outsource[i]={name:nm,nick:document.getElementById('osm-nick').value.trim(),shift:document.getElementById('osm-shift').value,dayOff:+document.getElementById('osm-off').value};
+  changed();closeModal('os-modal');renderOS();}
+function delOS(idx){if(!confirm('ลบ "'+outsource[idx].name+'"?'))return;outsource.splice(idx,1);changed();renderOS();}
+
+// ── Periods ──
+function renderPeriods(){
+  var sp=sorted(),h='<div>';
+  for(var i=0;i<sp.length;i++){var p=sp[i],e=perEnd(p,sp),sd=pd(p.start),ed=pd(e),days=diff(p.start,e)+1;
+    var shA=p.groupA==='morning'?'กะเช้า':'กะบ่าย',shB=p.groupA==='morning'?'กะบ่าย':'กะเช้า';
+    h+='<div class="per-item"><div class="per-num">'+(i+1)+'</div>';
+    h+='<div class="per-dates"><strong>'+sd.getDate()+' '+MON_F[sd.getMonth()]+' '+sd.getFullYear()+'</strong> — <strong>'+ed.getDate()+' '+MON_F[ed.getMonth()]+' '+ed.getFullYear()+'</strong>';
+    h+='<div class="per-days">'+days+' วัน · <span class="ga">A = '+shA+'</span> <span class="gb">B = '+shB+'</span></div></div>';
+    h+='<div class="no-print per-acts"><button type="button" class="btn-edit" onclick="editPer('+p.id+')">แก้วันเริ่ม</button><button type="button" class="btn-del" onclick="delPer('+p.id+')">ลบ</button></div></div>';}
+  if(!sp.length)h+='<p class="empty">ยังไม่มีคาบ</p>';
+  h+='</div>';document.getElementById('period-list').innerHTML=h;
+  var xh='<div class="xpro-wrap">';
+  if(extraPro.length){for(var i=0;i<extraPro.length;i++){var d=pd(extraPro[i].date);xh+='<span class="xpro-tag">'+d.getDate()+' '+MON[d.getMonth()]+' '+d.getFullYear()+' <button type="button" class="xpro-x" onclick="delXP('+i+')" aria-label="ลบ">×</button></span>';}}
+  else xh+='<span class="empty">ยังไม่มี</span>';
+  xh+='</div>';document.getElementById('xpro-list').innerHTML=xh;
+}
+function addPeriod(){var s=document.getElementById('pi-start').value;if(!s){alert('กรุณาเลือกวันเริ่ม');return;}
+  periods.push({id:Date.now(),start:s,groupA:document.getElementById('pi-grpa').value});changed();renderPeriods();}
+function editPer(id){var p=periods.find(function(x){return x.id===id;});if(!p)return;
+  var v=prompt('แก้ไขวันเริ่มคาบ (YYYY-MM-DD):',p.start);if(!v)return;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(v)){alert('รูปแบบไม่ถูกต้อง');return;}p.start=v;changed();renderPeriods();}
+function delPer(id){if(!confirm('ลบคาบนี้?'))return;periods=periods.filter(function(p){return p.id!==id;});changed();renderPeriods();}
+function autoGen(){var sp=sorted();if(!sp.length){alert('กรุณาเพิ่มคาบแรกก่อน');return;}
+  var last=sp[sp.length-1],le=perEnd(last,sp),nxt=addD(le,1),ng=last.groupA;
+  for(var i=0;i<12;i++){ng=ng==='morning'?'evening':'morning';periods.push({id:Date.now()+i,start:nxt,groupA:ng});nxt=addD(nxt,28);}
+  changed();renderPeriods();alert('สร้าง 12 คาบใหม่เรียบร้อย');}
+function addExtraPro(){var d=document.getElementById('xp-date').value;if(!d)return;
+  if(extraPro.some(function(p){return p.date===d;})){alert('มีวันนี้แล้ว');return;}extraPro.push({date:d});changed();renderPeriods();}
+function delXP(i){extraPro.splice(i,1);changed();renderPeriods();}
+
+// ── Holidays ──
+function renderHols(){
+  var s=holidays.slice().sort(function(a,b){return a.date<b.date?-1:1;}),h='<div>';
+  for(var i=0;i<s.length;i++){var hh=s[i],d=pd(hh.date),ri=holidays.indexOf(hh);
+    h+='<div class="hol-item"><span class="hol-date">'+d.getDate()+' '+MON[d.getMonth()]+' '+d.getFullYear()+'</span><span class="hol-dow">'+DOW_FULL[d.getDay()]+'</span><span class="hol-name">'+esc(hh.name)+'</span><button type="button" class="btn-del no-print" onclick="delHol('+ri+')">ลบ</button></div>';}
+  if(!s.length)h+='<p class="empty">ยังไม่มีวันหยุด</p>';
+  h+='</div>';document.getElementById('hol-list').innerHTML=h;
+}
+function addHol(){var d=document.getElementById('hi-date').value,n=document.getElementById('hi-name').value.trim();
+  if(!d||!n){alert('กรุณากรอกให้ครบ');return;}holidays.push({date:d,name:n});changed();renderHols();
+  document.getElementById('hi-date').value='';document.getElementById('hi-name').value='';}
+function delHol(idx){if(!confirm('ลบ "'+holidays[idx].name+'"?'))return;holidays.splice(idx,1);changed();renderHols();}
+
+// ── KPI ──
+var KPI_DEF=[
+  {key:'pickRate', label:'Order Picking Rate', unit:'orders/hr', hint:'จำนวน orders ÷ Man-hour', target:25, target2:35, dir:'gte', fmt:1},
+  {key:'packRate', label:'Packing Rate',       unit:'กล่อง/hr',  hint:'จำนวนกล่อง ÷ ชั่วโมง',  target:30, target2:40, dir:'gte', fmt:1},
+  {key:'cycleTime',label:'Order Cycle Time',   unit:'นาที',      hint:'รับออเดอร์ → ส่ง (นาที)',target:180,           dir:'lte', fmt:0},
+  {key:'otd',      label:'On-Time Dispatch',   unit:'%',         hint:'ส่งทัน ÷ ทั้งหมด × 100', target:99,            dir:'gte', fmt:1},
+  {key:'accuracy', label:'Picking Accuracy',   unit:'%',         hint:'ถูกต้อง ÷ ทั้งหมด × 100',target:99.7,          dir:'gte', fmt:2},
+  {key:'retRate',  label:'Return (WH Error)',  unit:'%',         hint:'คืนเพราะคลัง ÷ ทั้งหมด', target:0.3,           dir:'lte', fmt:2},
+  {key:'otRate',   label:'OT Rate',            unit:'%',         hint:'OT ÷ ชั่วโมงรวม × 100',  target:10,            dir:'lte', fmt:1},
+  {key:'attend',   label:'Attendance',         unit:'%',         hint:'(1 - ขาด/สาย ÷ วันรวม)',  target:97,            dir:'gte', fmt:1}
+];
+
+var _kpiEmp='',_kpiKey='',_kpiMonth='';
+
+function kpiPass(k,val){
+  if(val===null||val===undefined||val==='')return null;
+  val=parseFloat(val);
+  if(isNaN(val))return null;
+  return k.dir==='gte'?val>=k.target:val<=k.target;
+}
+function kpiFmt(k,val){
+  if(val===null||val===undefined||val==='')return '—';
+  val=parseFloat(val);
+  if(isNaN(val))return '—';
+  return val.toFixed(k.fmt)+' '+k.unit;
+}
+function kpiTargetStr(k){
+  var s=k.dir==='gte'?'≥':'≤';
+  if(k.target2)return s+k.target+' – '+k.target2+' '+k.unit;
+  return s+k.target+(k.unit==='%'?' %':' '+k.unit);
+}
+
+function renderKPISummary(allEmp,mon){
+  var total=allEmp.length,totalKPI=KPI_DEF.length;
+  var empScores=[],teamPass=0,teamTotal=0;
+  for(var ei=0;ei<allEmp.length;ei++){
+    var nm=allEmp[ei].name,row=(kpiData[nm]&&kpiData[nm][mon])||{};
+    var pass=0,fail=0,empty=0;
+    for(var i=0;i<KPI_DEF.length;i++){
+      var k=KPI_DEF[i],p=kpiPass(k,row[k.key]);
+      if(p===null)empty++;else if(p){pass++;teamPass++;}else fail++;
+      if(p!==null)teamTotal++;
+    }
+    empScores.push({name:allEmp[ei].nick||allEmp[ei].name.split(' ')[0],pass:pass,fail:fail,empty:empty});
+  }
+  empScores.sort(function(a,b){return(b.pass-b.fail)-(a.pass-a.fail);});
+  var passRate=teamTotal?Math.round(teamPass/teamTotal*100):null;
+  var avgScore=total?Math.round(empScores.reduce(function(s,e){return s+e.pass;},0)/total*10)/10:0;
+
+  var tiles='';
+  tiles+='<div class="kpi-stat-tile"><div class="kpi-stat-label">พนักงานทั้งหมด</div><div class="kpi-stat-val">'+total+'</div><div class="kpi-stat-sub">คน</div></div>';
+  tiles+='<div class="kpi-stat-tile '+(passRate===null?'':(passRate>=80?'good':'warn'))+'"><div class="kpi-stat-label">ทีม Pass Rate</div><div class="kpi-stat-val">'+(passRate===null?'—':passRate+'%')+'</div><div class="kpi-stat-sub">ของ KPI ที่กรอกแล้ว</div></div>';
+  tiles+='<div class="kpi-stat-tile '+(avgScore>=6?'good':avgScore>0?'warn':'')+'"><div class="kpi-stat-label">คะแนนเฉลี่ย</div><div class="kpi-stat-val">'+(avgScore||'—')+'</div><div class="kpi-stat-sub">จาก '+totalKPI+' KPI</div></div>';
+  document.getElementById('kpi-stat-row').innerHTML=tiles;
+
+  if(!empScores.some(function(e){return e.pass+e.fail>0;})){
+    document.getElementById('kpi-bar-card').style.display='none';return;
+  }
+  document.getElementById('kpi-bar-card').style.display='';
+  var bars='';
+  for(var j=0;j<empScores.length;j++){
+    var e=empScores[j],pct=Math.round(e.pass/totalKPI*100),fpct=Math.round(e.fail/totalKPI*100);
+    bars+='<div class="kpi-bar-row" title="'+esc(e.name)+': ผ่าน '+e.pass+' / ไม่ผ่าน '+e.fail+' / ยังไม่กรอก '+e.empty+'">';
+    bars+='<div class="kpi-bar-name">'+esc(e.name)+'</div>';
+    bars+='<div class="kpi-bar-track"><div class="kpi-bar-pass" style="width:'+pct+'%"></div><div class="kpi-bar-fail" style="width:'+fpct+'%"></div></div>';
+    bars+='<div class="kpi-bar-score">'+e.pass+'/'+totalKPI+'</div>';
+    bars+='</div>';
+  }
+  document.getElementById('kpi-bar-body').innerHTML=bars;
+}
+
+function renderKPI(){
+  var mon=document.getElementById('kpi-month').value;
+  if(!mon){
+    var now=new Date();
+    mon=now.getFullYear()+'-'+(now.getMonth()<9?'0':'')+(now.getMonth()+1);
+    document.getElementById('kpi-month').value=mon;
+  }
+  _kpiMonth=mon;
+  var allEmp=employees.concat(outsource.map(function(o){return {name:o.name,nick:o.nick,_os:true};}));
+  renderKPISummary(allEmp,mon);
+
+  var th='<tr><th class="kpi-name-col"><span class="kpi-th-label">ชื่อ-สกุล</span></th>';
+  for(var i=0;i<KPI_DEF.length;i++){
+    var k=KPI_DEF[i];
+    th+='<th style="min-width:120px"><span class="kpi-th-label">'+k.label+'</span><span class="kpi-th-target">'+kpiTargetStr(k)+'</span></th>';
+  }
+  th+='</tr>';
+  document.getElementById('kpi-thead').innerHTML=th;
+
+  var h='';
+  for(var ei=0;ei<allEmp.length;ei++){
+    var emp=allEmp[ei],nm=emp.name,row=(kpiData[nm]&&kpiData[nm][mon])||{};
+    h+='<tr><td class="kpi-name">'+esc(nm)+'<div class="nick">'+esc(emp.nick)+'</div></td>';
+    for(var i=0;i<KPI_DEF.length;i++){
+      var k=KPI_DEF[i],val=row[k.key],pass=kpiPass(k,val);
+      var cls=pass===null?'kpi-na':pass?'kpi-pass':'kpi-fail';
+      var icon=pass===null?'':pass?'<span class="kpi-icon">✓</span>':'<span class="kpi-icon">✗</span>';
+      var lbl=pass===null?'—':kpiFmt(k,val);
+      h+='<td onclick="openKPIInp('+jsAttr(nm)+','+jsAttr(k.key)+')"><span class="kpi-cell '+cls+'">'+icon+lbl+'</span></td>';
+    }
+    h+='</tr>';
+  }
+  document.getElementById('kpi-tbody').innerHTML=h;
+}
+
+function openKPIInp(nm,kkey){
+  _kpiEmp=nm;_kpiKey=kkey;
+  var k=KPI_DEF.find(function(x){return x.key===kkey;});
+  var row=(kpiData[nm]&&kpiData[nm][_kpiMonth])||{},cur=row[kkey];
+  document.getElementById('kpi-inp-title').textContent=k.label;
+  document.getElementById('kpi-inp-sub').textContent=nm+' — '+_kpiMonth;
+  document.getElementById('kpi-inp-hint').textContent='เป้าหมาย: '+kpiTargetStr(k)+' · '+k.hint;
+  var inp=document.getElementById('kpi-inp-val');
+  inp.value=cur!==undefined&&cur!==null?cur:'';
+  document.getElementById('kpi-overlay').classList.add('open');
+  setTimeout(function(){inp.focus();inp.select();},80);
+}
+function saveKPIInp(){
+  var v=document.getElementById('kpi-inp-val').value.trim();
+  if(!kpiData[_kpiEmp])kpiData[_kpiEmp]={};
+  if(!kpiData[_kpiEmp][_kpiMonth])kpiData[_kpiEmp][_kpiMonth]={};
+  if(v==='')delete kpiData[_kpiEmp][_kpiMonth][_kpiKey];
+  else kpiData[_kpiEmp][_kpiMonth][_kpiKey]=parseFloat(v);
+  changed();closeKPIInp();renderKPI();
+}
+function clearKPICell(){
+  if(!kpiData[_kpiEmp]||!kpiData[_kpiEmp][_kpiMonth])return closeKPIInp();
+  delete kpiData[_kpiEmp][_kpiMonth][_kpiKey];
+  changed();closeKPIInp();renderKPI();
+}
+function closeKPIInp(){document.getElementById('kpi-overlay').classList.remove('open');}
+
+document.addEventListener('keydown',function(e){
+  // เก็บให้อัตโนมัติอยู่แล้ว แต่คนที่ชินกับ Ctrl+S ของโปรแกรมเดิมจะไม่เจอหน้าต่าง Save As ของเบราว์เซอร์
+  if((e.ctrlKey||e.metaKey)&&e.key==='s'){e.preventDefault();changed();return;}
+  if(e.key==='Enter'){
+    if(document.getElementById('ipop').style.display==='block')saveInline();
+    else if(document.getElementById('kpi-overlay').classList.contains('open'))saveKPIInp();
+  }
+  if(e.key==='Escape'){closeInline();closeKPIInp();closeModal('emp-modal');closeModal('os-modal');}
+});
+
+// ── Init ──
+curPer=currentPer();
+if(D.savedAt)setSaveState('','บันทึกล่าสุด '+stamp(D.savedAt));
+renderSchedule();
+</script>
+</body>
+</html>

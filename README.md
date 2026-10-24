@@ -1,105 +1,69 @@
-# 📦 Outbound Duty Rotator
+# 📦 WMS Management by Gun
 
-A web app for managing **weekly job assignments** for an Outbound logistics team, with a
-**fair, history-aware rotation algorithm** — no random shuffling. Built with **React (Vite)**,
-**Tailwind CSS**, **Lucide** icons, and **Octokit**, using a **GitHub repository as the database**
-(with an automatic LocalStorage fallback for offline/demo use).
+Web tools for an outbound warehouse team, hosted free on GitHub Pages: the shift schedule,
+order checks, picking sheets, warehouse forms, and transport documents. Every module is a plain
+HTML/CSS/JS page in [`public/`](public/) with no framework, and they share one sidebar, theme, and
+sign-in screen.
 
-ระบบจัดตารางหมุนเวียนงานพนักงานคลังสินค้าขาออก แบบ “ยุติธรรม–ดูประวัติย้อนหลัง”
-เก็บข้อมูลผ่าน GitHub repo และทำงานออฟไลน์ได้ด้วย LocalStorage
-
----
-
-## ✨ Features
-
-| Area | What it does |
-| --- | --- |
-| **Employees** | Add / edit / archive (soft-delete) / reactivate. Primary shift + status (Active / On Leave / Resigned). Built for high turnover. |
-| **Duties & Shifts** | Two shifts (กะเช้า / กะบ่าย). Configurable Outbound tasks (Pick, Pack, Manifest/Audit, Loading, Replenishment, Sorting…) with **per-shift head-count limits**. Configurable working days + rotation look-back window. |
-| **Fair rotation engine** | Looks back over the last _N_ weeks of history and prioritises duties each person **hasn't done recently**, while **balancing total workload** within each shift. Deterministic (stable) but varies as history grows. Handles head-count changes gracefully. |
-| **Weekly schedule** | Pick any ISO week/year → generate a **Days × Tasks × Employees** grid. **Manual swaps / overrides** by clicking any name. **Standby/rest** rotates automatically. |
-| **Export** | CSV (Excel-friendly, UTF-8 BOM so Thai renders), copy text summary, and a print-friendly view. |
-| **Dashboard** | Today's assignments per shift, plus team stats. |
-| **History** | Browse past weeks and a **duty-distribution heat-table** (employee × task) — the exact signal the engine uses. |
-| **GitHub persistence** | Stores `employees.json`, `duties.json`, `history.json` in a repo via a Personal Access Token. Offline/demo fallback to LocalStorage. |
+ระบบบริหารคลังสินค้าขาออก — ตารางกะ เทียบออเดอร์ สรุปหยิบของ เอกสารคลัง และเอกสารขนส่ง
 
 ---
 
-## 🧮 How the fair rotation works
+## 🧭 Modules
 
-For every **working day** and **shift** the engine assigns employees by minimising a cost:
+The list lives in [`public/wms-modules.js`](public/wms-modules.js) (the one place to add a module).
 
-1. **Recency of duty** — for each employee it counts how often (recency-weighted) they've done
-   each task over the last `lookbackWeeks` weeks. Tasks done recently cost more, so people are
-   steered toward tasks they **haven't** done lately.
-2. **Workload balance** — a running per-employee workload counter (shared across the whole week)
-   means busy people are picked last and **rest (standby) rotates fairly**.
-3. **Deterministic tie-breaks** — a seeded hash keeps results stable across regenerations of the
-   same week, yet naturally different week-to-week.
+| Group | Module | Path |
+| --- | --- | --- |
+| — | สรุปเช้า · Morning Brief | `summary/` |
+| — | ย้อนหลัง · History | `history/` |
+| ออเดอร์ | เทียบ Order · ค้นหาออเดอร์ | `order-compare/` · `order-lookup/` |
+| คลังสินค้า | สต๊อกคงเหลือ · สรุปหยิบของ · เบิกตามออเดอร์ · เอกสารคลังสินค้า | `stock/` · `picking/` · `order-sheet/` · `warehouse-forms/` |
+| ขนส่ง | ประเภทงานรถ · ผังงานรถวันนี้ · ทำใบงานขนส่ง · เอกสารขนส่ง | `jobs/` · `loadplan/` · `transport-docs/` · `transport-forms/` |
+| ทีมและระบบ | **ตารางกะ · Shift Schedule** · ตั้งค่า | `roster/` · `settings/` |
 
-**Employment types** (ประเภทพนักงาน): each employee is `inhouse`, `outsource ประจำ`, or
-`outsource เสริม`. The first two rotate as the core workforce; **outsource เสริม are surge
-staff** — they only receive duties on days when the core staff can't fill every slot, and
-otherwise sit on standby. Two policy controls refine this:
+The site root redirects to `roster/`, so the main link opens the shift schedule.
 
-- **Task type restrictions** — each task can be limited to specific employment types
-  (e.g. QC ที่นอน → inhouse only). Restricted tasks are only offered to allowed types, in both
-  auto-generation and the manual swap dialog. No restriction = any type may do it.
-- **Weekly min / max days for outsource เสริม** — `extraRules.minDays` guarantees each surge
-  worker at least _N_ working days (the engine force-schedules them on the days they'd otherwise
-  miss the target), and `extraRules.maxDays` caps them at most _N_ days. If min > max, the cap wins.
+---
 
-**Fixed position** (`employee.fixedDutyId`): pin a specialist to a single duty — e.g. an outsource
-เสริม who is great at Pick. A fixed employee only ever works that one task (never rotates), and
-gets first priority for that station. Unset = rotate normally. Restricted by `allowedTypes` too
-(you can't pin someone to a task their type isn't allowed to do — they'd be benched instead).
+## 📅 Shift schedule (`/roster`)
 
-**Task requirements by type**: each task's per-shift requirement is `{ inhouse, outsource }` —
-how many **inhouse** and how many **outsource ประจำ** that duty needs. The engine fills each type's
-quota from its own pool. เสริม are not part of the base requirement; they top up gaps as surge.
+[`public/roster/index.html`](public/roster/index.html) has five tabs: ตารางกะ, พนักงาน,
+คาบเปลี่ยนกะ, วันหยุด, KPI.
 
-**Daily head-count overrides** (ปรับจำนวนคนรายวัน): for a specific week you can override any
-task's requirement **per day** (Schedule tab → "ปรับจำนวนคนรายวัน") — for promo weeks like 7.7 / 8.8
-where each day differs. Blank cells fall back to the base; overridden cells are highlighted. Stored
-per ISO week in `reqOverrides.json`, with copy-from-previous-week and clear-week actions. The
-generator resolves the requirement per calendar day, so a single week can ramp up midweek and drop
-a duty entirely on another day.
+- **Two groups, two shifts.** Permanent staff are in group A or B. Each period (คาบ, normally
+  28 days) puts one group on กะเช้า 07:00–16:00 and the other on กะบ่าย 16:00–24:00; the next
+  period swaps them. A period ends the day before the next one starts, and the last period runs
+  28 days.
+- **Last day of a period:** the afternoon shift works 10:00–19:00 (shown as `10-19`), except
+  people whose day off is Saturday.
+- **Outsource** keep a fixed shift and never rotate. They can have a weekly day off.
+- **Days off.** Each person has one weekly day off. Holidays (วันหยุดพิเศษ) are `H` for everyone.
+- **Promo days** are highlighted automatically (2/2 to 6/6, and the 15th, 25th, and 28th of every
+  month), and you can add extra dates.
+- **Manual edits.** Clicking a cell overrides it (W → H, or H / 10-19 → W); keep clicking to step
+  back to the computed value. "ล้างแก้ไข" clears the edits in the current period.
+  Click a name, nickname, day off, or shift badge to edit it in place.
+- **KPI:** 8 monthly metrics per person, each with a target, plus team pass rate and a
+  per-person score chart.
 
-**Surge Plan** (แผนกำลังเสริม): a per-week grid (on the Schedule tab) showing, per day and shift,
-the auto-computed inhouse / outsource-ประจำ availability (accounting for day-off & leave) and an
-editable planned เสริม head-count. It's a planning reference; with the **"ใช้แผนนี้คุมจำนวนเสริม"**
-toggle on (`config.useSurgePlan`), the generator fills any slots the core staff can't cover with
-**anonymous เสริม** (เสริมนิรนาม) up to the planned number — so you can plan surge head-count for
-promo periods (7.7, 8.8…) **without creating names in advance**. They render as dashed "เสริม" chips
-and are not tracked in history (they're placeholders). Named เสริม, if any, are placed first and
-count toward the plan. Stored per ISO week in `plans.json`. After generating, a **จริง (actual)** row
-compares the เสริม actually scheduled against the plan (green = on plan, amber = under, red = over),
-and a **copy-from-previous-week** button reuses last week's plan.
+### Where the data lives
 
-**Warehouse holidays** (วันหยุดคลัง): mark any date as closed (`config.holidays`) from the Calendar
-tab. On a closed day the engine schedules nothing — the roster shows a **🔒 ปิด** column and the
-Dashboard shows a "คลังปิด" banner. Company-wide, not per-employee.
+Everything is stored in the browser under the localStorage key `wms:roster` and saved as soon
+as you change something. The same device and browser keeps it; another machine starts from the
+built-in team list until you bring the data over:
 
-**Shift rotation** (สลับกะ): only **inhouse + outsource ประจำ** swap between morning and afternoon.
-The supervisor defines rotation **rounds** in **Settings → Shift Rotation**, each with an
-**effective-from date** — so a changeover can happen on any day (mid-week is fine), not just month
-boundaries. Each round is a full snapshot (with a one-click "สลับทั้งหมด"); the engine resolves each
-person's shift **per calendar day** using the latest round in effect on that date, so a week that
-straddles a changeover shows the old shift before it and the new shift after. Stored as an array in
-`shiftRotations.json`. เสริม never swap.
+- **⬇ ส่งออกไฟล์ / ⬆ นำเข้าไฟล์** on the page exports a `.json` file and reads it back.
+  Import also accepts a `shift-program.html` saved from the old standalone schedule program
+  (its data is embedded on the `var SAVED_DATA = …;` line) and a Settings backup file.
+- **ตั้งค่า → สำรอง** includes `wms:roster` in the key backup file, along with every other
+  `wms:` setting.
 
-**Availability — day-off & leave**: each employee has `weeklyOffDays` (recurring days off, e.g.
-an inhouse person who is off every Sunday) and `leaves` (dated ranges: vacation / sick / personal).
-The engine checks availability **per calendar day** and skips anyone off or on leave that day; the
-roster shows a "หยุด/ลา · Off/Leave" row explaining each gap. Manage leaves visually in the
-**Calendar** tab (month view — click any day to add a leave, plus an upcoming-leaves list).
+Names are the identity of a person: manual edits and KPI values are keyed by name, so renaming
+someone moves their data along, and two people can't share a name.
 
-If there are **more required slots than eligible staff**, the shortfall is flagged (empty slots)
-instead of silently dropping tasks. If there are **more staff than slots**, the extras go to
-Standby, and who rests rotates by workload. New hires and resignations are handled automatically
-because the pool is recomputed from current `Active` employees every time.
-
-The core lives in [`src/engine/rotationEngine.js`](src/engine/rotationEngine.js).
+> 🔒 The built-in team list is in the page source, and this repo is public. Anyone can read it
+> on GitHub.
 
 ---
 
@@ -107,98 +71,48 @@ The core lives in [`src/engine/rotationEngine.js`](src/engine/rotationEngine.js)
 
 ```bash
 npm install
-npm run dev      # http://localhost:5173
+npm run dev      # http://localhost:5173 → redirects to /roster/
+npm test         # vitest — includes checks that run over every page in public/
 npm run build    # production build → dist/
-npm run preview  # preview the production build
 ```
 
-Open the app → **Settings → Employees → “Load a sample team”** to explore immediately, then
-**Schedule → Generate roster**. Everything is saved to your browser until you connect GitHub.
+Vite serves `public/` as-is; there is no bundling step for the modules.
 
 ---
 
-## 🔗 Connecting GitHub (using a repo as the database)
+## ☁️ Deploying to GitHub Pages
 
-1. Create a **data repository** (can be private), e.g. `outbound-duty-data`.
-2. Create a **fine-grained Personal Access Token** with **Contents: Read and write** on that repo
-   (or a classic token with the `repo` scope).
-3. In the app: **Settings → GitHub Sync** → paste the token, owner, repo, branch (`main`),
-   and data folder (`data`) → **Test connection** → **Connect & enable sync**.
-
-The app reads/writes `data/employees.json`, `data/duties.json`, and `data/history.json`,
-tracking file SHAs and retrying on conflicts.
-
-> 🔒 **Security:** the token is stored **only in your browser's LocalStorage** and is sent
-> directly to GitHub's API — it never touches any third-party server, and it's git-ignored so it
-> can't be committed. Revoke it any time from GitHub settings.
-
----
-
-## ☁️ Deploying to GitHub Pages (free)
-
-This repo ships a workflow at [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml):
-
-1. Push the project to a GitHub repo.
-2. **Settings → Pages → Build and deployment → Source: GitHub Actions.**
-3. Push to `main` — the action builds and publishes `dist/`.
-
-`vite.config.js` uses `base: './'`, so the build works whether it's served from a **user page**
-(`user.github.io`) or a **project page** (`user.github.io/repo/`) — no extra config needed.
-
-> Tip: keep the app repo and the **data repo** separate. The public Pages site never contains your
-> token; each user enters their own in their browser.
+[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) builds and publishes `dist/` on
+every push to `main` (Settings → Pages → Source: **GitHub Actions**). `vite.config.js` uses
+`base: './'`, so the build works from a user page or a project page.
 
 ---
 
 ## 📋 Order Compare (`/order-compare`)
 
-A separate, self-contained tool for the Logistics team lives at
-[`public/order-compare/index.html`](public/order-compare/index.html) and is served as a static page
-at **`<site>/order-compare/`** (linked from the main nav). It is plain HTML/CSS/JS — no build step,
-no React — so it is copied to `dist/` verbatim by Vite.
-
-It compares the Daily Logis vs CRM order sheets, checks stock, compares customer details and finds
+Compares the Daily Logis vs CRM order sheets, checks stock, compares customer details and finds
 duplicate Order IDs / consignment numbers, reading from Google Sheets via a Google Apps Script web
 app (or an uploaded `.xlsx`). **The Apps Script URL is entered by the user and kept in
-localStorage — it is not stored in this repo.** See `HANDOFF.md` (kept with that tool) for its
-internals.
+localStorage — it is not stored in this repo.** See
+[`HANDOFF.md`](public/order-compare/HANDOFF.md) for its internals.
+
+---
 
 ## 🗂️ Project structure
 
 ```
+index.html                 # redirects to roster/
+public/
+├─ wms-modules.js          # the module list + brand + sidebar icons
+├─ wms-shell.js            # renders the sidebar from that list
+├─ wms-theme.css           # shared look
+├─ wms-gate.js / .css      # opening animation + per-device sign-in (not access control)
+├─ wms-settings.js         # settings backup / restore
+├─ wms-*.js                # shared helpers (dates, stock, picking, trucks, search…)
+├─ roster/                 # ตารางกะ
+├─ summary/ history/ order-compare/ order-lookup/ stock/ picking/ order-sheet/
+├─ warehouse-forms/ jobs/ loadplan/ transport-docs/ transport-forms/ settings/
 src/
-├─ data/models.js            # enums, factories, defaults, demo data
-├─ engine/rotationEngine.js  # the fair, history-aware algorithm
-├─ services/
-│  ├─ githubService.js       # Octokit wrapper (repo-as-DB, UTF-8/base64, SHAs)
-│  └─ dataStore.js           # GitHub ⇄ LocalStorage persistence + fallback
-├─ context/AppContext.jsx    # single source of truth + all actions
-├─ utils/                    # ISO-week math, schedule edits, CSV/text export
-└─ components/
-   ├─ Dashboard.jsx          # today's assignments
-   ├─ ScheduleGenerator.jsx  # generate / preview / swap / export
-   ├─ HistoryViewer.jsx      # past weeks + distribution heat-table
-   ├─ Settings.jsx           # tabs → Employees / Duties / GitHub
-   ├─ settings/…             # EmployeeManager, DutyManager, GitHubSync
-   ├─ schedule/ScheduleGrid.jsx
-   └─ ui/…                   # Badge, Modal, Toasts, WeekPicker
+├─ data/                   # tests for the shared helpers + page-wide checks
+└─ transport/              # tests for the transport helpers
 ```
-
----
-
-## 🧾 Data files (the "database")
-
-- **`employees.json`** — array of `{ id, name, nickname, primaryShift, status, type, fixedDutyId, weeklyOffDays, leaves, createdAt }`
-  (`type`: `inhouse` | `outsource_regular` | `outsource_extra`; older records without `type` count as inhouse.
-  `fixedDutyId`: a task id to pin the person to, or `null` to rotate.
-  `weeklyOffDays`: ISO weekday numbers (Mon=1…Sun=7).
-  `leaves`: `[{ id, start, end, type: vacation|sick|personal, note }]`)
-- **`duties.json`** — `{ tasks: [{ id, name, nameTh, color, req:{ morning:{inhouse,outsource}, afternoon:{…} }, active, allowedTypes[] }], workingDays, lookbackWeeks, extraRules:{ minDays, maxDays } }`
-- **`reqOverrides.json`** — per-week, per-day requirement overrides: `{ "2026-W31": { "<taskId>": { morning: { "3": { inhouse: 4 } } } } }` (ISO weekday keys; missing values fall back to the base task requirement)
-  (`allowedTypes`: empty = any type; `extraRules` applies to `outsource_extra` only)
-- **`history.json`** — array of `{ id, weekKey, year, week, dayKey, date, shift, dutyId, employeeId }`
-- **`plans.json`** — surge plan keyed by ISO week: `{ "2026-W30": { morning: { "1": 5, … }, afternoon: { … } } }` (numbers are planned เสริม head-count per ISO weekday)
-- **`shiftRotations.json`** — array of rotation rounds: `[{ id, effectiveFrom: "2026-08-05", shifts: { "<empId>": "afternoon", … } }]` (latest round on/before a date wins; only inhouse + outsource ประจำ; missing = primaryShift)
-- Warehouse holidays live in **`duties.json`** under `holidays: [{ date, name }]`
-
-All three are plain JSON you can read, diff, and edit directly on GitHub.
