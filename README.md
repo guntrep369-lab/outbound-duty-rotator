@@ -134,10 +134,14 @@ stuck orders. It has two tabs: ต่องาน and สรุปเดือ�
 
 **Two kinds of entry:**
 
-- **ออเดอร์ติดปัญหา:** type the Order ID and the page fills in the carrier (ขนส่ง), consign number,
-  product, size, quantity, and SKU from today's pulled orders. An order with several products
-  shows them as buttons to pick from. If the SKU is in today's stock, it shows คลัง / QA counts.
-  Older orders that aren't in today's pull are typed in by hand.
+- **ออเดอร์ติดปัญหา:** type the Order ID and the page fills in the carrier (ขนส่ง) and consign
+  number from today's pulled orders. It lists the order's products with size, quantity, and SKU,
+  and you tick the ones that are stuck. Nothing is ticked for you, even when the order has only
+  one product, and you can tick several. If a SKU is in today's stock, its row shows คลัง / QA
+  counts. Saving with nothing ticked asks first. That case is for a problem with the whole order,
+  such as ไม่มีใบปะหน้า.
+- Older orders that aren't in today's pull: type the product under **เพิ่มสินค้าเอง**. For one
+  product, just save. For more, press **+ เพิ่มสินค้านี้** after each one.
 - **เรื่องอื่น:** anything else the next shift has to follow up. It's just a note.
 
 **Reasons (ติดเพราะ), grouped:**

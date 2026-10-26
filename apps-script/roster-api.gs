@@ -93,7 +93,8 @@ function save_(req) {
  * ออเดอร์ที่ยังค้าง กับที่เพิ่งปิดไปไม่เกิน 3 วัน — ตัดในสคริปต์ก่อนส่ง รหัสดูจึงไม่เคยได้
  * รายชื่อพนักงาน วันลา หรือเรื่องอื่นในสมุดกะที่เป็นเรื่องภายในทีม
  */
-var VIEW_FIELDS = ['date', 'shift', 'sup', 'order', 'consign', 'product', 'size', 'qty', 'sku',
+// product size qty sku — รายการรุ่นแรกที่มีสินค้าตัวเดียว · items — สินค้าที่ติ๊กไว้ (ได้หลายตัว)
+var VIEW_FIELDS = ['date', 'shift', 'sup', 'order', 'consign', 'items', 'product', 'size', 'qty', 'sku',
   'reason', 'logis', 'text', 'updates', 'open', 'result', 'by', 'at', 'closedBy', 'closedAt'];
 var VIEW_DAYS = 3;
 

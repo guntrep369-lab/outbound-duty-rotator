@@ -30,8 +30,9 @@ const DATA = {
   employees: [{ name: 'นายวุฒิชัย นะรานรัมย์', nick: 'ปู' }],
   overrides: { '2026-10-24|นายวุฒิชัย นะรานรัมย์': 'SL' },
   shiftLog: {
-    a: { kind: 'order', order: 'CR-1', reason: 'split', logis: true, open: true, by: 'กัน', secret: 'x' },
-    b: { kind: 'order', order: 'CR-2', open: false, result: 'shipped', closedAt: now - 3600000 },
+    a: { kind: 'order', order: 'CR-1', reason: 'split', logis: true, open: true, by: 'กัน', secret: 'x',
+      items: [{ product: 'หมอน', qty: 2 }, { sku: 'LEG0000000032' }] },
+    b: { kind: 'order', order: 'CR-2', open: false, result: 'shipped', closedAt: now - 3600000, product: 'ผ้าหุ้ม', sku: 'LEG0000000032' },
     c: { kind: 'order', order: 'CR-3', open: false, result: 'shipped', closedAt: now - 5 * 86400000 },
     d: { kind: 'handover', text: 'คนไม่พอ', open: true },
   },
@@ -43,8 +44,12 @@ describe('หน้าดูของ Logis', () => {
     expect(r.app).toBe('roster');
     expect(r.items.map((e) => e.id).sort()).toEqual(['a', 'b']);
     // ช่องที่ไม่ได้อยู่ในรายการที่อนุญาต (secret) ไม่ถูกส่งออกไป
-    expect(r.items.find((e) => e.id === 'a')).toEqual(
-      { id: 'a', order: 'CR-1', reason: 'split', logis: true, open: true, by: 'กัน' });
+    expect(r.items.find((e) => e.id === 'a')).toEqual({
+      id: 'a', order: 'CR-1', reason: 'split', logis: true, open: true, by: 'กัน',
+      items: [{ product: 'หมอน', qty: 2 }, { sku: 'LEG0000000032' }],
+    });
+    // รายการรุ่นแรกที่มีสินค้าตัวเดียวก็ยังเห็นสินค้า
+    expect(r.items.find((e) => e.id === 'b')).toMatchObject({ product: 'ผ้าหุ้ม', sku: 'LEG0000000032' });
     const text = JSON.stringify(r);
     expect(text).not.toContain('นายวุฒิชัย');
     expect(text).not.toContain('คนไม่พอ');

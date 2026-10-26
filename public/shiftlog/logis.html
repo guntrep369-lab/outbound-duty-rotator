@@ -67,6 +67,7 @@ body{background:var(--wms-bg)}
 .otbl td{padding:9px 10px;border-bottom:1px solid var(--wms-border);vertical-align:top;color:var(--wms-text)}
 .otbl td .sub{display:block;font-size:12px;color:var(--txt2);word-break:break-word}
 .otbl td .mono{font-family:ui-monospace,Consolas,monospace;font-size:11.5px}
+.it + .it{margin-top:8px;padding-top:8px;border-top:1px dashed var(--wms-border)}
 /* ตารางเรียงเป็นการ์ดเมื่อกล่องของมันแคบ (มือถือ) */
 #out{container-type:inline-size}
 /* ความกว้างคอลัมน์คงที่ ตารางของแต่ละกองจะได้ตรงกัน — สินค้ากับหมายเหตุแบ่งที่เหลือ */
@@ -197,8 +198,16 @@ function updatesHtml(e){
   return (Array.isArray(e.updates)?e.updates:[]).map(function(x){
     return '<div class="upd"><b>'+esc(x.by||'—')+'</b> '+(x.at?stamp(x.at):'')+' · '+esc(x.text)+'</div>';}).join('');
 }
+function itemsHtml(e){
+  var items=L.itemsOf(e);
+  if(!items.length)return '—';
+  return items.map(function(i){
+    var sz=[i.size,i.qty?'×'+i.qty:''].filter(Boolean).join(' ');
+    return '<div class="it">'+esc(i.product||'—')+(sz?'<span class="sub">'+esc(sz)+'</span>':'')+(i.sku?'<span class="sub mono">'+esc(i.sku)+'</span>':'')+'</div>';
+  }).join('');
+}
 function row(e,today){
-  var a=L.age(e,today),sz=[e.size,e.qty?'×'+e.qty:''].filter(Boolean).join(' ');
+  var a=L.age(e,today);
   var when=e.open?'<b>'+(a?'ค้าง '+a+' วัน':'วันนี้')+'</b>':
     (e.result==='cancelled'?'<span class="st st-void">✕ ยกเลิกออเดอร์</span>':'<span class="st st-done">✓ ส่งออกแล้ว</span>')+
     '<span class="sub">'+(e.closedAt?stamp(e.closedAt):'')+'</span>';
@@ -206,7 +215,7 @@ function row(e,today){
     '<td data-l="'+(e.open?'ค้าง':'ผล')+'" class="c-when"><div>'+when+'<span class="sub">'+L.dayText(e.date).replace(/ \d{4}$/,'')+' · '+L.SHIFTS[e.shift]+'</span></div></td>'+
     '<td data-l="ออเดอร์"><div><span class="oid">'+esc(e.order)+'</span>'+(e.sup?'<span class="sup">'+esc(e.sup)+'</span>':'')+
       (e.consign?'<span class="sub mono">'+esc(e.consign)+'</span>':'')+'</div></td>'+
-    '<td data-l="สินค้า"><div>'+esc(e.product||'—')+(sz?'<span class="sub">'+esc(sz)+'</span>':'')+(e.sku?'<span class="sub mono">'+esc(e.sku)+'</span>':'')+'</div></td>'+
+    '<td data-l="สินค้า"><div>'+itemsHtml(e)+'</div></td>'+
     '<td data-l="ติดเพราะ"><div>'+reasonHtml(e)+'</div></td>'+
     '<td data-l="หมายเหตุ"><div>'+(e.text?'<div class="note">'+esc(e.text)+'</div>':'')+updatesHtml(e)+'</div></td></tr>';
 }
@@ -220,7 +229,9 @@ function render(){
   if(!ITEMS)return;
   var q=el('q').value.trim().toLowerCase(),today=L.shiftAt(new Date()).date;
   var list=ITEMS.filter(function(e){
-    return !q||[e.order,e.consign,e.product,e.sku,e.sup].some(function(v){return String(v||'').toLowerCase().indexOf(q)>=0;});
+    var words=[e.order,e.consign,e.sup];
+    L.itemsOf(e).forEach(function(i){words.push(i.product,i.sku);});
+    return !q||words.some(function(v){return String(v||'').toLowerCase().indexOf(q)>=0;});
   });
   var mine=list.filter(function(e){return e.open&&e.logis;}).sort(byWhen);
   var other=list.filter(function(e){return e.open&&!e.logis;}).sort(byWhen);

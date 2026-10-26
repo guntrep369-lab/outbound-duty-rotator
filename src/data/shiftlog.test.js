@@ -57,11 +57,29 @@ describe('สาเหตุ', () => {
   });
 });
 
+describe('สินค้าที่ติดของรายการ', () => {
+  it('ติ๊กได้หลายตัว — ตัวที่ว่างทุกช่องไม่นับ', () => {
+    const e = { items: [{ product: 'หมอน', qty: 2 }, {}, { sku: 'LEG0000000032' }, { product: '' }] };
+    expect(L.itemsOf(e)).toEqual([{ product: 'หมอน', qty: 2 }, { sku: 'LEG0000000032' }]);
+  });
+
+  it('รายการรุ่นแรกที่เก็บสินค้าตัวเดียวไว้ที่ตัวรายการ ได้เป็นรายการเดียว', () => {
+    expect(L.itemsOf({ product: 'ผ้าหุ้ม', size: '', qty: 1, sku: 'LEG0000000032', order: 'CR-1' }))
+      .toEqual([{ product: 'ผ้าหุ้ม', qty: 1, sku: 'LEG0000000032' }]);
+  });
+
+  it('ไม่ระบุสินค้า (ติดทั้งออเดอร์) ได้รายการว่าง', () => {
+    expect(L.itemsOf({ order: 'CR-1', reason: 'nolabel' })).toEqual([]);
+    expect(L.itemsOf({ items: [] })).toEqual([]);
+    expect(L.itemsOf(null)).toEqual([]);
+  });
+});
+
 const LOG = {
   a: { date: '2026-10-23', shift: 'evening', kind: 'order', order: 'CR-1', sup: 'KEX HRZ', sku: 'LEG0000000032', product: 'ผ้าหุ้ม', reason: 'out', open: true, at: 3 },
-  b: { date: '2026-10-24', shift: 'morning', kind: 'order', order: 'AA-2', sup: 'KEX HRZ', sku: 'LEG0000000032', reason: 'at_in', open: false, result: 'shipped', at: 5, closedAt: new Date(2026, 9, 26, 10).getTime() },
+  b: { date: '2026-10-24', shift: 'morning', kind: 'order', order: 'AA-2', sup: 'KEX HRZ', items: [{ sku: 'LEG0000000032' }, { sku: 'LEG0000000032', size: 'King' }, { product: 'ผ้าห่ม' }], reason: 'at_in', open: false, result: 'shipped', at: 5, closedAt: new Date(2026, 9, 26, 10).getTime() },
   c: { date: '2026-10-24', shift: 'morning', kind: 'handover', text: 'รถ Kerry ยังไม่มารับ', open: true, at: 2 },
-  d: { date: '2026-10-24', shift: 'evening', kind: 'order', order: 'TP-3', sup: 'Flash', product: 'หมอน', reason: 'split', logis: true, open: true, at: 9 },
+  d: { date: '2026-10-24', shift: 'evening', kind: 'order', order: 'TP-3', sup: 'Flash', items: [{ product: 'หมอน' }], reason: 'split', logis: true, open: true, at: 9 },
   e: { date: '2026-10-10', shift: 'evening', kind: 'order', order: 'CR-4', sup: 'KEX HRZ', product: 'หมอน', reason: 'carrier', open: false, result: 'cancelled', at: 1, closedAt: new Date(2026, 9, 10, 20).getTime() },
   f: { date: '2026-09-30', shift: 'morning', kind: 'order', order: 'CR-5', reason: 'damaged', open: false, at: 1 },
 };
@@ -98,8 +116,10 @@ describe('สรุปเดือน', () => {
 
   it('สินค้าที่ติดบ่อยขึ้นก่อน — SKU เดียวกันรวมกัน ชื่อมาจากแถวที่มีชื่อ', () => {
     const s = L.month(LOG, '2026-10');
+    // ออเดอร์ AA-2 ติ๊ก LEG สองแถว (คนละขนาด) นับเป็นหนึ่งออเดอร์
     expect(s.products[0]).toEqual({ key: 'LEG0000000032', sku: 'LEG0000000032', product: 'ผ้าหุ้ม', n: 2 });
     expect(s.products.find((p) => p.key === 'หมอน').n).toBe(2);
+    expect(s.products.find((p) => p.key === 'ผ้าห่ม').n).toBe(1);
   });
 
   it('เวลาจนปิดงาน — ปิดวันเดียวกันนับ 0 วัน', () => {

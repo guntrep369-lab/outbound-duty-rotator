@@ -9,10 +9,13 @@
  * รวมกันได้ทีละรายการโดยไม่ต้องถาม (roster-sync.js รวม shiftLog ทีละช่อง)
  *
  * รายการ: { date, shift: 'morning'|'evening', kind: 'order'|'handover', text?,
- *           — kind 'order': sup?, order, consign?, product?, size?, qty?, sku?, reason, logis,
+ *           — kind 'order': sup?, order, consign?, items?: [{product?, size?, qty?, sku?}],
+ *           reason, logis,
  *           open, result?: 'shipped'|'cancelled', updates?: [{by, at, text}],
  *           by, at, closedBy?, closedAt?, editedBy?, editedAt? }
  * - order: ออเดอร์ติดปัญหา — เปิดค้างจนกดส่งออกแล้ว หรือออเดอร์ถูกยกเลิก
+ *   items คือสินค้าที่ติดในออเดอร์นั้น คนติ๊กเองว่าตัวไหน ไม่ระบุก็ได้ (ติดทั้งออเดอร์ เช่น ไม่มีใบปะหน้า)
+ *   รายการรุ่นแรกเก็บสินค้าตัวเดียวเป็น product/size/qty/sku ที่ตัวรายการ — อ่านผ่าน itemsOf()
  * - handover: เรื่องอื่นที่ไม่ใช่ออเดอร์ (รถไม่มา คนไม่พอ) — เปิดค้างจนกดเสร็จ
  * - logis: ต้องให้ทีม Logis ทำอะไรต่อ (แก้บิล ออกใบปะหน้าใหม่) — ขึ้นก่อนในหน้าดูของ Logis
  *
@@ -123,6 +126,18 @@
     return out;
   }
 
+  var ITEM_FIELDS = ['product', 'size', 'qty', 'sku'];
+  function hasItem(i) { return !!i && ITEM_FIELDS.some(function (k) { return i[k] != null && i[k] !== ''; }); }
+  /** สินค้าที่ติดของรายการนี้ — รายการรุ่นแรกที่มีสินค้าตัวเดียวก็ได้เป็นรายการเดียว */
+  function itemsOf(e) {
+    if (!e) return [];
+    if (Array.isArray(e.items)) return e.items.filter(hasItem);
+    if (!hasItem(e)) return [];
+    var one = {};
+    ITEM_FIELDS.forEach(function (k) { if (e[k] != null && e[k] !== '') one[k] = e[k]; });
+    return [one];
+  }
+
   function bump(o, k) { o[k] = (o[k] || 0) + 1; }
 
   /**
@@ -130,6 +145,7 @@
    * open: ออเดอร์ที่ยังไม่ได้ส่ง · openOther: เรื่องอื่นที่ยังค้าง
    * closeDays: ออเดอร์ที่ปิดแล้วใช้เวลากี่วันจนส่งออก/ยกเลิก (วันเดียวกัน = 0)
    * products: สินค้าที่ติดบ่อยสุดก่อน — ใช้ SKU ถ้ามี ไม่มีก็ใช้ชื่อสินค้า
+   *   นับเป็นจำนวนออเดอร์ — ตัวเดียวกันซ้ำในออเดอร์เดียวนับครั้งเดียว
    */
   function month(log, ym) {
     var s = {
@@ -149,12 +165,15 @@
       if (s.byShift[e.shift] !== undefined) s.byShift[e.shift]++;
       if (e.result === 'shipped') s.shipped++;
       if (e.result === 'cancelled') s.cancelled++;
-      var key = e.sku || e.product;
-      if (key) {
-        var p = prod[key] || (prod[key] = { key: key, sku: e.sku || '', product: e.product || '', n: 0 });
+      var counted = {};
+      itemsOf(e).forEach(function (i) {
+        var key = i.sku || i.product;
+        if (!key || counted[key]) return;
+        counted[key] = 1;
+        var p = prod[key] || (prod[key] = { key: key, sku: i.sku || '', product: i.product || '', n: 0 });
         p.n++;
-        if (!p.product && e.product) p.product = e.product;
-      }
+        if (!p.product && i.product) p.product = i.product;
+      });
       if (!e.open && e.closedAt) {
         s.closeDays.n++;
         days += age(e, ymd(new Date(e.closedAt)));
@@ -170,7 +189,7 @@
   /**
    * สินค้าของออเดอร์นี้จากข้อมูลออเดอร์ที่ดึงมาแล้ว (OrderIndex.get().rows) — ใส่เลขออเดอร์
    * แล้วได้ Sup เลข consign สินค้า ขนาด จำนวน โดยไม่ต้องพิมพ์ซ้ำจากชีตออเดอร์
-   * ออเดอร์หนึ่งมีหลายสินค้าได้ คนเลือกว่าตัวไหนติด
+   * ออเดอร์หนึ่งมีหลายสินค้าได้ คนติ๊กเองว่าตัวไหนติด (ได้หลายตัว)
    * SKU อยู่ในวงเล็บท้ายชื่อสินค้า (ใช้ตัวแยกของ wms-pick.js ถ้าโหลดไว้)
    * @returns {Array<{sup, consign, product, size, qty, sku}>}
    */
@@ -198,6 +217,7 @@
     GROUPS: GROUPS, REASONS: REASONS, SHIFTS: SHIFTS, RESULTS: RESULTS,
     reasonOf: reasonOf, reasonLabel: reasonLabel,
     shiftAt: shiftAt, age: age, dayText: dayText, newId: newId,
+    ITEM_FIELDS: ITEM_FIELDS, itemsOf: itemsOf,
     openItems: openItems, day: day, month: month, orderLines: orderLines,
   };
 })();

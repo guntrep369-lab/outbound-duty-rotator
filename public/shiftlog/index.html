@@ -51,11 +51,17 @@
 .f-note{font-size:12px;color:var(--txt2);line-height:1.5}
 .f-note:empty{display:none}
 .f-note.warn{color:var(--open)}
-.f-lines{display:flex;flex-direction:column;gap:6px}
+.f-lines{display:flex;flex-direction:column;gap:6px;margin-top:4px}
 .f-lines:empty{display:none}
-.line-b{text-align:left;border:1px solid var(--border2);background:var(--surface);border-radius:var(--radius-sm);padding:7px 10px;font-size:13px;cursor:pointer;font-family:inherit;color:var(--txt)}
-.line-b:hover{border-color:var(--primary)}
-.line-b.on{border-color:var(--primary);background:var(--primary-l);font-weight:600}
+.lines-h{font-size:12px;font-weight:600;color:var(--txt2)}
+.line-c{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--border2);background:var(--surface);border-radius:var(--radius-sm);padding:8px 10px;font-size:13px;cursor:pointer;color:var(--txt)}
+.line-c:hover{border-color:var(--primary)}
+.line-c.on{border-color:var(--primary);background:var(--primary-l)}
+.line-c input{width:18px;height:18px;flex-shrink:0;margin:1px 0 0;cursor:pointer}
+.line-t{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0;word-break:break-word}
+.line-t .sub{font-size:12px;color:var(--txt2)}
+.f-sub2{font-size:12px;font-weight:700;color:var(--txt2);margin:2px 0 8px}
+.f-add{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
 .sl-main input[type=text],.sl-main input[type=date],.sl-main input[type=month],.sl-main select,.sl-main textarea{
   border:1px solid var(--border2);border-radius:var(--radius-sm);padding:9px 10px;font-size:14px;color:var(--txt);
   background:var(--surface);font-family:inherit;width:100%;max-width:100%;min-width:0}
@@ -109,6 +115,7 @@
 .otbl td{padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:top;color:var(--txt)}
 .otbl td .sub{display:block;font-size:12px;color:var(--txt2);word-break:break-word}
 .otbl td .mono{font-family:ui-monospace,Consolas,monospace;font-size:11.5px}
+.it + .it{margin-top:8px;padding-top:8px;border-top:1px dashed var(--border)}
 /* ตารางเรียงเป็นการ์ดเมื่อกล่องของมันแคบ — วัดจากกล่อง ไม่ใช่จากจอ เพราะจอ 1024 ที่มีเมนูข้าง
    เหลือที่ให้ตารางแคบกว่าจอ 900 ที่เมนูย้ายไปอยู่ด้านบน */
 #open-list{container-type:inline-size}
@@ -262,13 +269,17 @@
           <div class="fg"><label for="f-sup">Sup (ขนส่ง)</label><input id="f-sup" type="text" autocomplete="off" list="sup-list"></div>
           <div class="fg"><label for="f-consign">เลข consign</label><input id="f-consign" type="text" autocomplete="off"></div>
         </div>
+        <div class="f-sub2">เพิ่มสินค้าเอง <span class="hint">— ไม่มีในรายการ หรือออเดอร์เก่าที่ดึงมาไม่เจอ</span></div>
         <div class="fg"><label for="f-product">สินค้า</label><input id="f-product" type="text" autocomplete="off" oninput="skuFromProduct()"></div>
         <div class="f-row3">
           <div class="fg"><label for="f-size">ขนาด</label><input id="f-size" type="text" autocomplete="off"></div>
           <div class="fg"><label for="f-qty">จำนวน</label><input id="f-qty" type="text" inputmode="numeric" autocomplete="off"></div>
           <div class="fg"><label for="f-sku">SKU</label><input id="f-sku" type="text" autocomplete="off" oninput="showStock()"></div>
         </div>
-        <div class="f-note" id="f-stock"></div>
+        <div class="f-add">
+          <button type="button" class="btn-s" onclick="addLine()">+ เพิ่มสินค้านี้</button>
+          <span class="f-note" id="f-stock"></span>
+        </div>
         <datalist id="sup-list"></datalist>
       </div>
 
@@ -346,8 +357,8 @@
 <script>
 var L=window.ShiftLog;
 var MON_F=['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
-// ช่องข้อมูลออเดอร์ในฟอร์ม — id ของช่องคือ f-<ชื่อ>
-var ORDER_FIELDS=['sup','consign','product','size','qty','sku'];
+// ช่องในฟอร์ม — id ของช่องคือ f-<ชื่อ> · ช่องสินค้าไว้กรอกสินค้าที่ไม่มีในรายการเองทีละตัว
+var ORDER_FIELDS=['sup','consign'],ITEM_FIELDS=L.ITEM_FIELDS;
 
 /* ── ข้อมูล ──
    สมุดกะอยู่ใน shiftLog ของข้อมูลตารางกะ (wms:roster) ชุดเดียวกับหน้าตารางกะ
@@ -389,8 +400,8 @@ function flat(s){return String(s||'').replace(/\s*\n\s*/g,' ');}
 function stockOf(sku){var o=sku&&window.WmsStock?WmsStock.read():null;return o&&o.map[sku]||null;}
 function num(n){return (Math.round((Number(n)||0)*100)/100).toLocaleString();}
 // มีของใน NEW WH แล้ว = ออเดอร์ที่รอของน่าจะส่งได้แล้ว ให้เห็นเป็นสีเขียว
-function stockTag(e){
-  var s=stockOf(e.sku);if(!s)return '';
+function stockTag(sku){
+  var s=stockOf(sku);if(!s)return '';
   return '<span class="stk'+(s.newwh>0?' ok':'')+'">คลัง '+num(s.newwh)+' · QA '+num(s.qa)+'</span>';
 }
 
@@ -423,14 +434,23 @@ function actsHtml(e){
 }
 
 function shortDay(d){return L.dayText(d).replace(/ \d{4}$/,'');}   // ในตารางไม่ต้องมีปี
+function itemsHtml(e){
+  var items=L.itemsOf(e);
+  if(!items.length)return '—';
+  return items.map(function(i){
+    var sz=[i.size,i.qty?'×'+i.qty:''].filter(Boolean).join(' ');
+    return '<div class="it">'+esc(i.product||'—')+(sz?'<span class="sub">'+esc(sz)+'</span>':'')+
+      (i.sku?'<span class="sub mono">'+esc(i.sku)+'</span>':'')+stockTag(i.sku)+'</div>';
+  }).join('');
+}
+function itemText(i){return flat(i.product||i.sku)+(i.qty>1?' ×'+i.qty:'');}
 function orderRow(e,today){
-  var a=L.age(e,today),sz=[e.size,e.qty?'×'+e.qty:''].filter(Boolean).join(' ');
+  var a=L.age(e,today);
   return '<tr'+(a>=2?' class="old"':'')+'>'+
     '<td data-l="ค้าง" class="c-when"><div><b>'+(a?'ค้าง '+a+' วัน':'วันนี้')+'</b>'+shortDay(e.date)+'<span class="sub">'+L.SHIFTS[e.shift]+'</span></div></td>'+
     '<td data-l="ออเดอร์"><div><span class="oid">'+esc(e.order)+'</span>'+(e.sup?'<span class="sup">'+esc(e.sup)+'</span>':'')+
       (e.consign?'<span class="sub mono">'+esc(e.consign)+'</span>':'')+'</div></td>'+
-    '<td data-l="สินค้า"><div>'+esc(e.product||'—')+(sz?'<span class="sub">'+esc(sz)+'</span>':'')+
-      (e.sku?'<span class="sub mono">'+esc(e.sku)+'</span>':'')+stockTag(e)+'</div></td>'+
+    '<td data-l="สินค้า"><div>'+itemsHtml(e)+'</div></td>'+
     '<td data-l="ติดเพราะ"><div>'+reasonHtml(e)+'</div></td>'+
     '<td data-l="หมายเหตุ"><div>'+(e.text?'<div class="note">'+esc(e.text)+'</div>':'')+updatesHtml(e)+byHtml(e)+'</div></td>'+
     '<td class="c-acts no-print"><div class="acts">'+actsHtml(e)+'</div></td></tr>';
@@ -446,7 +466,8 @@ function entHtml(e,today,when){
   if(when)h+='<span class="ent-when">'+L.dayText(e.date)+' · '+L.SHIFTS[e.shift]+'</span>';
   h+=statusHtml(e,today)+'</div>';
   if(isO){
-    var meta=[e.product,e.size,e.qty?'×'+e.qty:'',e.consign?'consign '+e.consign:''].filter(Boolean);
+    var meta=L.itemsOf(e).map(function(i){return [i.product||i.sku,i.size,i.qty?'×'+i.qty:''].filter(Boolean).join(' ');});
+    if(e.consign)meta.push('consign '+e.consign);
     if(meta.length)h+='<div class="ent-meta">'+meta.map(esc).join(' · ')+'</div>';
   }
   if(e.text)h+='<div class="ent-text">'+esc(e.text)+'</div>';
@@ -499,7 +520,8 @@ function openText(){
     var a=L.age(e,now.date),age=a?' (ค้าง '+a+' วัน)':'';
     var last=Array.isArray(e.updates)&&e.updates.length?e.updates[e.updates.length-1]:null;
     if(e.kind!=='order')return '- '+flat(e.text)+age;
-    return '- '+e.order+(e.sup?' · '+e.sup:'')+(e.product?' · '+flat(e.product):'')+' — '+L.reasonLabel(e.reason)+age+
+    var items=L.itemsOf(e).map(itemText).join(', ');
+    return '- '+e.order+(e.sup?' · '+e.sup:'')+(items?' · '+items:'')+' — '+L.reasonLabel(e.reason)+age+
       (e.text?': '+flat(e.text):'')+(last?' [ล่าสุด: '+flat(last.text)+']':'');
   };
   var part=function(t,arr){return arr.length?'\n\n'+t+' ('+arr.length+'):\n'+arr.map(line).join('\n'):'';};
@@ -534,7 +556,9 @@ function logisLink(){
 }
 
 // ── ฟอร์ม ──
-var _kind='order',_editId=null,_lines=[],_lookTimer=null,_pulling=false,_looked='';
+/* _lines: สินค้าให้ติ๊กในฟอร์ม {product, size, qty, sku, on: ติ๊กไว้, own: กรอกเองหรือบันทึกไว้แล้ว}
+   _linesFor: เลขออเดอร์ของรายการสินค้าชุดนี้ */
+var _kind='order',_editId=null,_lines=[],_linesFor='',_lookTimer=null,_pulling=false,_looked='';
 function setKind(k){
   _kind=k;
   document.querySelectorAll('.seg-b').forEach(function(b){b.classList.toggle('on',b.getAttribute('data-kind')===k);});
@@ -559,7 +583,7 @@ function lookupOrder(user,force){
   clearTimeout(_lookTimer);
   var id=el('f-order').value.trim(),note=el('f-order-note');
   if(!force&&id&&id.toUpperCase()===_looked)return;
-  el('f-lines').innerHTML='';_lines=[];_looked='';note.className='f-note';
+  keepLines(id.toUpperCase());_looked='';note.className='f-note';
   if(!id){note.textContent='';return;}
   var o=window.OrderIndex&&OrderIndex.get();
   if(!o){
@@ -571,8 +595,8 @@ function lookupOrder(user,force){
       'ยังไม่ได้ตั้งที่ดึงออเดอร์ในหน้าตั้งค่า — กรอกข้อมูลเองด้านล่าง';
     return;
   }
-  _lines=L.orderLines(o.rows,id);
-  if(!_lines.length){
+  var found=L.orderLines(o.rows,id);
+  if(!found.length){
     if(!user){note.textContent='';return;}
     _looked=id.toUpperCase();
     note.className='f-note warn';
@@ -581,18 +605,57 @@ function lookupOrder(user,force){
     return;
   }
   _looked=id.toUpperCase();
-  el('f-sup').value=_lines[0].sup;el('f-consign').value=_lines[0].consign;
-  if(_lines.length===1){fillLine(0);note.textContent='✓ เจอออเดอร์ · เติมข้อมูลให้แล้ว';return;}
-  note.textContent='✓ เจอออเดอร์ มี '+_lines.length+' สินค้า — กดเลือกตัวที่ติด';
-  el('f-lines').innerHTML=_lines.map(function(l,i){
-    return '<button type="button" class="line-b" onclick="fillLine('+i+')">'+esc(l.product||'(ไม่มีชื่อสินค้า)')+
-      (l.size?' · '+esc(l.size):'')+(l.qty?' ×'+esc(l.qty):'')+'</button>';}).join('');
+  el('f-sup').value=found[0].sup;el('f-consign').value=found[0].consign;
+  mergeLines(found);
+  note.textContent='✓ เจอออเดอร์ มี '+found.length+' สินค้า — ติ๊กตัวที่ติด';
 }
-function fillLine(i){
+
+/* สินค้าให้ติ๊ก — ไม่ติ๊กให้ก่อนแม้ออเดอร์มีตัวเดียว คนหน้างานรู้ว่าตัวไหนส่งไม่ได้ */
+function lineKey(l){return [l.product,l.size,l.qty,l.sku].join('|');}
+function itemOnly(l){var o={};ITEM_FIELDS.forEach(function(k){if(l[k]!=null&&l[k]!=='')o[k]=l[k];});return o;}
+// ค้นเลขใหม่ — สินค้าที่กรอกเองหรือบันทึกไว้แล้วอยู่ต่อ ตัวที่ติ๊กไว้อยู่ต่อถ้ายังเป็นออเดอร์เดิม
+function keepLines(id){
+  var same=id===_linesFor;_linesFor=id;
+  _lines=_lines.filter(function(l){return l.own||(same&&l.on);});
+  renderLines();
+}
+// สินค้าจากออเดอร์ที่ดึงมา — ตัวที่มีในรายการอยู่แล้วคงที่ติ๊กไว้
+function mergeLines(found){
+  var old=_lines,used={};
+  _lines=found.map(function(f){
+    var k=lineKey(f),m=old.filter(function(l){return lineKey(l)===k;})[0];
+    if(m){used[k]=1;return m;}
+    var l=itemOnly(f);l.on=false;return l;
+  }).concat(old.filter(function(l){return !used[lineKey(l)];}));
+  renderLines();
+}
+function renderLines(){
+  var box=el('f-lines');
+  if(!_lines.length){box.innerHTML='';return;}
+  box.innerHTML='<div class="lines-h">สินค้าที่ติด <span class="hint">— ติ๊กตัวที่ส่งไม่ได้ ติ๊กได้หลายตัว</span></div>'+
+    _lines.map(function(l,i){
+      var sub=[l.size,l.qty?'×'+l.qty:'',l.sku&&String(l.product||'').indexOf(l.sku)<0?l.sku:''].filter(Boolean).join(' · ');
+      return '<label class="line-c'+(l.on?' on':'')+'"><input type="checkbox"'+(l.on?' checked':'')+' onchange="tickLine('+i+',this)">'+
+        '<span class="line-t">'+esc(l.product||l.sku||'(ไม่มีชื่อสินค้า)')+(sub?'<span class="sub">'+esc(sub)+'</span>':'')+stockTag(l.sku)+'</span></label>';
+    }).join('');
+}
+function tickLine(i,cb){
   var l=_lines[i];if(!l)return;
-  ORDER_FIELDS.forEach(function(k){el('f-'+k).value=l[k]==null?'':l[k];});
-  document.querySelectorAll('.line-b').forEach(function(b,j){b.classList.toggle('on',j===i);});
-  showStock();
+  l.on=cb.checked;cb.closest('.line-c').classList.toggle('on',l.on);
+}
+// ช่องกรอกสินค้าเอง — ไม่มีชื่อหรือ SKU ถือว่าไม่ได้กรอก
+function typedLine(){
+  var l={};
+  ITEM_FIELDS.forEach(function(k){var v=el('f-'+k).value.trim();if(v)l[k]=k==='qty'&&/^\d+$/.test(v)?Number(v):v;});
+  return l.product||l.sku?l:null;
+}
+function addLine(){
+  var l=typedLine();
+  if(!l){alert('ใส่ชื่อสินค้าหรือ SKU');el('f-product').focus();return;}
+  if(!_lines.some(function(x){return lineKey(x)===lineKey(l);})){l.on=true;l.own=true;_lines.push(l);}
+  else _lines.forEach(function(x){if(lineKey(x)===lineKey(l))x.on=true;});
+  ITEM_FIELDS.forEach(function(k){el('f-'+k).value='';});
+  showStock();renderLines();
 }
 function pullOrders(){
   if(_pulling||!OrderIndex.savedUrl())return;
@@ -614,9 +677,9 @@ function showStock(){
 
 function resetForm(){
   var now=nowShift();
-  _editId=null;_lines=[];_looked='';
+  _editId=null;_lines=[];_linesFor='';_looked='';
   el('f-date').value=now.date;el('f-shift').value=now.shift;
-  ['f-order','f-text'].concat(ORDER_FIELDS.map(function(k){return 'f-'+k;})).forEach(function(id){el(id).value='';});
+  ['f-order','f-text'].concat(ORDER_FIELDS.concat(ITEM_FIELDS).map(function(k){return 'f-'+k;})).forEach(function(id){el(id).value='';});
   el('f-reason').value=L.REASONS[0].id;reasonPicked();
   el('f-order-note').textContent='';el('f-lines').innerHTML='';el('f-stock').textContent='';
   el('form-title').textContent='บันทึกใหม่';
@@ -632,20 +695,23 @@ function saveEntry(){
   if(_kind==='order'){
     var order=el('f-order').value.trim().toUpperCase();   // เลขในชีตออเดอร์เป็นตัวใหญ่ พิมพ์เล็กมาก็ให้ตรงกัน
     if(!order){alert('ใส่เลขออเดอร์');el('f-order').focus();return;}
+    // ตัวที่กรอกไว้แต่ยังไม่ได้กด + เพิ่ม ก็นับด้วย — ออเดอร์เก่ามีสินค้าตัวเดียว กรอกแล้วบันทึกได้เลย
+    var items=_lines.filter(function(l){return l.on;}).map(itemOnly),typed=typedLine();
+    if(typed&&!items.some(function(i){return lineKey(i)===lineKey(typed);}))items.push(typed);
+    if(!items.length&&_lines.length&&!confirm('ยังไม่ได้ติ๊กสินค้าที่ติด\n\nกด OK = บันทึกทั้งออเดอร์โดยไม่ระบุสินค้า (เช่น ไม่มีใบปะหน้า)\nกด ยกเลิก = กลับไปติ๊กก่อน'))return;
     // ออเดอร์เดียวกันค้างอยู่แล้ว — ส่วนใหญ่คือความคืบหน้าของเรื่องเดิม ไม่ใช่เรื่องใหม่
     if(!old){
       var dup=L.openItems(log()).find(function(x){return x.kind==='order'&&String(x.order).toUpperCase()===order.toUpperCase();});
       if(dup&&!confirm('ออเดอร์ '+order+' ค้างอยู่แล้ว ('+L.reasonLabel(dup.reason)+')\n\n'+
-        'ถ้าจะบอกความคืบหน้า กด ยกเลิก แล้วใช้ 📝 อัปเดต ที่รายการเดิม\nกด OK = บันทึกเป็นอีกรายการ (เช่น สินค้าอีกตัวในออเดอร์เดียวกัน)'))return;
+        'ถ้าจะบอกความคืบหน้า กด ยกเลิก แล้วใช้ 📝 อัปเดต ที่รายการเดิม (เพิ่มสินค้าได้ที่ แก้ไข)\nกด OK = บันทึกเป็นอีกรายการ (เช่น ติดอีกเรื่องหนึ่ง)'))return;
     }
     e.order=order;e.reason=el('f-reason').value;e.logis=el('f-logis').checked;
-    ORDER_FIELDS.forEach(function(f){
-      var v=el('f-'+f).value.trim();
-      if(v)e[f]=f==='qty'&&/^\d+$/.test(v)?Number(v):v;else delete e[f];
-    });
+    ORDER_FIELDS.forEach(function(f){var v=el('f-'+f).value.trim();if(v)e[f]=v;else delete e[f];});
+    ITEM_FIELDS.forEach(function(f){delete e[f];});   // รุ่นแรกเก็บสินค้าตัวเดียวไว้ที่ตัวรายการ
+    if(items.length)e.items=items;else delete e.items;
   }else{
     if(!text){alert('ใส่เรื่องที่ต้องตามต่อ');el('f-text').focus();return;}
-    ['order','reason','logis','result'].concat(ORDER_FIELDS).forEach(function(f){delete e[f];});
+    ['order','reason','logis','result','items'].concat(ORDER_FIELDS,ITEM_FIELDS).forEach(function(f){delete e[f];});
   }
   if(old){e.editedBy=author();e.editedAt=Date.now();}
   else{e.open=true;e.by=author();e.at=Date.now();}
@@ -660,8 +726,12 @@ function editEntry(id){
   el('f-text').value=e.text||'';el('f-order').value=e.order||'';
   el('f-reason').value=L.reasonOf(e.reason).id;el('f-logis').checked=!!e.logis;
   ORDER_FIELDS.forEach(function(k){el('f-'+k).value=e[k]==null?'':e[k];});
-  _looked=String(e.order||'').toUpperCase();   // เปิดแก้แล้วไม่ต้องค้นทับช่องที่เคยแก้ไว้
-  el('f-order-note').textContent='';el('f-lines').innerHTML='';showStock();
+  ITEM_FIELDS.forEach(function(k){el('f-'+k).value='';});
+  _lines=L.itemsOf(e).map(function(i){var l=itemOnly(i);l.on=true;l.own=true;return l;});
+  _looked=_linesFor=String(e.order||'').toUpperCase();   // เปิดแก้แล้วไม่ต้องค้นทับช่องที่เคยแก้ไว้
+  el('f-order-note').className='f-note';
+  el('f-order-note').textContent=e.kind==='order'?'จะติ๊กสินค้าตัวอื่นในออเดอร์นี้เพิ่ม กด ค้นหา':'';
+  renderLines();showStock();
   el('form-title').textContent='แก้ไขรายการ';
   el('f-cancel').style.display='';el('f-del').style.display='';
   el('f-void').style.display=e.kind==='order'&&e.open?'':'none';
@@ -721,7 +791,7 @@ function renderMonth(){
   el('m-list').innerHTML=s.list.length?s.list.map(function(e){
     var res=e.open?'<span class="st st-open">ค้าง</span>':e.result==='cancelled'?'<span class="st st-void">ยกเลิก</span>':'<span class="st st-done">ส่งออกแล้ว</span>';
     return '<tr><td class="nw">'+L.dayText(e.date)+'</td><td class="nw">'+L.SHIFTS[e.shift]+'</td><td class="nw">'+esc(e.sup||'')+'</td>'+
-      '<td class="nw">'+esc(e.order||'')+'</td><td>'+esc(e.product||'')+'</td><td class="nw">'+esc(L.reasonLabel(e.reason))+'</td>'+
+      '<td class="nw">'+esc(e.order||'')+'</td><td>'+L.itemsOf(e).map(function(i){return esc(i.product||i.sku);}).join('<br>')+'</td><td class="nw">'+esc(L.reasonLabel(e.reason))+'</td>'+
       '<td class="nw">'+res+'</td><td class="txt">'+esc(e.text||'')+'</td></tr>';}).join(''):
     '<tr><td colspan="8" class="empty">—</td></tr>';
 }
@@ -795,7 +865,7 @@ el('f-reason').innerHTML=L.GROUPS.map(function(g){
 resetForm();fillSups();render();
 if(sync)sync.start();
 // ช่องสต๊อกในตารางงานค้างใช้ยอดของวันนี้ — ยังไม่มีในเครื่องก็ดึงให้ครั้งเดียว
-if(window.WmsStock&&!WmsStock.read()&&WmsStock.savedUrl()&&L.openItems(log()).some(function(e){return e.sku;})&&WmsGas.firstTry('stock:shiftlog')){
+if(window.WmsStock&&!WmsStock.read()&&WmsStock.savedUrl()&&L.openItems(log()).some(function(e){return L.itemsOf(e).some(function(i){return i.sku;});})&&WmsGas.firstTry('stock:shiftlog')){
   WmsStock.pull(WmsStock.savedUrl()).then(render).catch(function(){});
 }
 </script>
