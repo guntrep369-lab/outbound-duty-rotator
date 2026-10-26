@@ -750,7 +750,7 @@ var DEF_HOL=[
    ตั้งค่าพาตารางกะไปด้วย ย้ายเครื่องใช้ปุ่มส่งออก/นำเข้าไฟล์ */
 var STORE_KEY='wms:roster';
 var D={};try{D=JSON.parse(localStorage.getItem(STORE_KEY)||'null')||{};}catch(e){}
-var employees,outsource,periods,holidays,extraPro,overrides,kpiData,minStaff,osExtra;
+var employees,outsource,periods,holidays,extraPro,overrides,kpiData,minStaff,osExtra,shiftLog;
 var curPer=0,curPage='schedule';
 
 function copy(v){return JSON.parse(JSON.stringify(v));}
@@ -760,6 +760,8 @@ function useData(d){
   employees=arr(d.employees,DEF_EMP);outsource=arr(d.outsource,DEF_OS);
   periods=arr(d.periods,DEF_PER);holidays=arr(d.holidays,DEF_HOL);extraPro=arr(d.extraPro,[]);
   overrides=obj(d.overrides);kpiData=obj(d.kpiData);minStaff=obj(d.minStaff);osExtra=obj(d.osExtra);
+  // สมุดกะ (หน้า shiftlog/) เก็บอยู่ในข้อมูลชุดเดียวกัน หน้านี้ไม่ได้แสดง แต่ต้องพาไปด้วยทุกครั้งที่บันทึก
+  shiftLog=obj(d.shiftLog);
   return normOS();
 }
 /* OS ที่มีชื่อในรายชื่อคือ OS ประจำ อยู่กลุ่ม A/B และสลับกะตามกลุ่มทุกคาบเหมือนพนักงาน
@@ -784,7 +786,7 @@ function oxSet(d,sh,f,v,s){s=s||osExtra;var k=oxK(d,sh),e=s[k]||{};
   if(e.req===undefined&&e.got===undefined)delete s[k];else s[k]=e;}
 var _osMigrated=useData(D);
 
-function _data(){return {employees:employees,outsource:outsource,periods:periods,holidays:holidays,extraPro:extraPro,overrides:overrides,kpiData:kpiData,minStaff:minStaff,osExtra:osExtra,savedAt:Date.now()};}
+function _data(){return {employees:employees,outsource:outsource,periods:periods,holidays:holidays,extraPro:extraPro,overrides:overrides,kpiData:kpiData,minStaff:minStaff,osExtra:osExtra,shiftLog:shiftLog,savedAt:Date.now()};}
 function stamp(ts){return new Date(ts).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});}
 function setSaveState(cls,txt){var el=document.getElementById('save-state');el.className='rs-saved'+(cls?' '+cls:'');el.textContent=txt;}
 function saveLocal(){
@@ -830,7 +832,7 @@ function describe(d){
   for(var nm in k){if(k[nm]&&typeof k[nm]==='object')for(var m in k[nm])months[m]=1;}
   return 'พนักงาน '+n(d.employees)+' · OS '+n(d.outsource)+' · คาบ '+n(d.periods)+' · วันหยุด '+n(d.holidays)+
     ' · แก้ไขช่อง '+Object.keys(obj(d.overrides)).length+' · OS เสริม '+Object.keys(obj(d.osExtra)).length+' กะ'+
-    ' · KPI '+Object.keys(months).length+' เดือน';
+    ' · KPI '+Object.keys(months).length+' เดือน · สมุดกะ '+Object.keys(obj(d.shiftLog)).length+' รายการ';
 }
 function importFile(inp){
   var f=inp.files&&inp.files[0];inp.value='';if(!f)return;
@@ -1675,6 +1677,12 @@ function syncStatus(state,info){
   el.classList.toggle('act',act);
   el.onclick=act?function(){sync.retry();}:null;
 }
+/* หน้าสมุดกะเปิดอยู่อีกแท็บแล้วเขียนลงเครื่อง — รับสมุดกะของแท็บนั้นมา
+   ไม่งั้นครั้งหน้าที่หน้านี้บันทึก จะเขียนสมุดกะชุดเก่าในหน่วยความจำทับของใหม่หายไป */
+window.addEventListener('storage',function(e){
+  if(e.key!==STORE_KEY||!e.newValue)return;
+  try{shiftLog=obj(JSON.parse(e.newValue).shiftLog);}catch(x){}
+});
 if(sync){
   // เครื่องอื่นแก้แล้วเครื่องนี้ต้องเห็น — เช็คทุกนาทีตอนเปิดดูอยู่ และทันทีที่กลับมาที่แท็บนี้
   setInterval(function(){if(!document.hidden)sync.poll();},60000);

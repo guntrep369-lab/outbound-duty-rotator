@@ -58,6 +58,7 @@ function device(sh, data, opts = {}) {
     get: () => ({ ...clone(d.data), savedAt: Date.now() }),
     put: (x) => { d.data = clone(x); return { migrated: false }; },
     hasLocal: () => d.local,
+    seed: opts.seed,
     describe: (x) => (x.employees || []).length + ' คน',
     ask: (m) => { d.asked.push(m); return d.answers.length ? d.answers.shift() : true; },
     canApply: () => !d.uiBusy,
@@ -119,6 +120,16 @@ describe('merge3 — รวมสิ่งที่สองเครื่อ�
     expect(both.data.employees.map((e) => e.name)).toEqual(['ก', 'ข', 'ค']);
   });
 
+  it('สมุดกะ: เครื่องหนึ่งเพิ่มรายการ อีกเครื่องปิดงานค้าง — ได้ทั้งสองอย่าง ไม่ต้องถาม', () => {
+    const base = { ...START, shiftLog: { a1: { kind: 'handover', text: 'รถ Kerry ยังไม่มา', open: true } } };
+    const r = merge3(base,
+      { ...base, shiftLog: { ...base.shiftLog, b2: { kind: 'issue', type: 'pick', text: 'หยิบผิดสี' } } },
+      { ...base, shiftLog: { a1: { ...base.shiftLog.a1, open: false, closedBy: 'B' } } });
+    expect(r.data.shiftLog.a1.open).toBe(false);
+    expect(r.data.shiftLog.b2.type).toBe('pick');
+    expect(r.clash).toEqual([]);
+  });
+
   it('แก้รายการเหมือนกันทั้งสองฝั่ง ไม่นับว่าชนกัน', () => {
     const same = { ...START, periods: [...START.periods, { id: 2, start: '2026-06-20', groupA: 'evening' }] };
     expect(merge3(START, same, clone(same)).clash).toEqual([]);
@@ -146,6 +157,25 @@ describe('เชื่อมชีตครั้งแรก', () => {
     a.edit((x) => { x.minStaff.morning = 5; });
     await a.sync.sync();
     expect(sh.ops).not.toContain('save');
+  });
+
+  it('ชีตว่าง แต่เครื่องนี้มีแต่สมุดกะ ไม่มีรายชื่อ — ไม่ถามและไม่ส่งขึ้นไปเป็นชุดตั้งต้น', async () => {
+    const sh = sheet();
+    const a = device(sh, { shiftLog: { a1: { text: 'x' } } }, { seed: (x) => Array.isArray(x.employees) });
+    await a.sync.sync();
+    expect(a.asked).toEqual([]);
+    expect(sh.ops).not.toContain('save');
+    expect(a.last()).toContain('เปิดหน้าตารางกะ');
+  });
+
+  it('ไม่ใช้ของชีต และข้อมูลในเครื่องเป็นชุดตั้งต้นไม่ได้ — ไม่ถามว่าจะส่งขึ้นไปแทน', async () => {
+    const sh = sheet();
+    await device(sh, START).sync.sync();
+    const b = device(sh, { shiftLog: {} }, { answers: [false], seed: (x) => Array.isArray(x.employees) });
+    await b.sync.sync();
+    expect(b.asked).toHaveLength(1);
+    expect(sh.rev).toBe(1);
+    expect(b.last()).toBe('declined');
   });
 
   it('เครื่องใหม่ที่ยังไม่มีข้อมูล ใช้ของชีตเลยโดยไม่ถาม', async () => {

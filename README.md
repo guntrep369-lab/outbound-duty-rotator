@@ -20,7 +20,7 @@ The list lives in [`public/wms-modules.js`](public/wms-modules.js) (the one plac
 | ออเดอร์ | เทียบ Order · ค้นหาออเดอร์ | `order-compare/` · `order-lookup/` |
 | คลังสินค้า | สต๊อกคงเหลือ · สรุปหยิบของ · เบิกตามออเดอร์ · เอกสารคลังสินค้า | `stock/` · `picking/` · `order-sheet/` · `warehouse-forms/` |
 | ขนส่ง | ประเภทงานรถ · ผังงานรถวันนี้ · ทำใบงานขนส่ง · เอกสารขนส่ง | `jobs/` · `loadplan/` · `transport-docs/` · `transport-forms/` |
-| ทีมและระบบ | **ตารางกะ · Shift Schedule** · ตั้งค่า | `roster/` · `settings/` |
+| ทีมและระบบ | สมุดกะ · Shift Log · **ตารางกะ · Shift Schedule** · ตั้งค่า | `shiftlog/` · `roster/` · `settings/` |
 
 The site root redirects to `roster/`, so the main link opens the shift schedule.
 
@@ -126,6 +126,91 @@ first, so the page keeps working without a connection and sends the changes when
 
 ---
 
+## 📓 Shift log (`/shiftlog`)
+
+[`public/shiftlog/index.html`](public/shiftlog/index.html) is where one shift hands unfinished
+work to the next: mostly orders that couldn't ship yet. It replaces the team's Google Sheet of
+stuck orders. It has two tabs: ต่องาน and สรุปเดือน.
+
+**Two kinds of entry:**
+
+- **ออเดอร์ติดปัญหา:** type the Order ID and the page fills in the carrier (ขนส่ง), consign number,
+  product, size, quantity, and SKU from today's pulled orders. An order with several products
+  shows them as buttons to pick from. If the SKU is in today's stock, it shows คลัง / QA counts.
+  Older orders that aren't in today's pull are typed in by hand.
+- **เรื่องอื่น:** anything else the next shift has to follow up. It's just a note.
+
+**Reasons (ติดเพราะ), grouped:**
+
+| Group | Reasons |
+|---|---|
+| ของ / สต๊อก | หมด / รอเติม · สินค้าจอง · เสียหาย · ไม่มี SKU · แปลงสินค้า |
+| ต้องไปรับของ | รับที่ IN · รับที่ QA · รับที่บัญชี · รับสินค้าจาก return |
+| ต้องแจ้ง Logis | แจ้งแตกล็อต · เพิ่ม / เปลี่ยนกล่อง · เพิ่ม / เปลี่ยนสินค้า · ยกเลิกของแถม · ไม่มีใบปะหน้า · ขนส่งแจ้งยกเลิก |
+| อื่น ๆ | อื่น ๆ |
+
+A reason from the ต้องแจ้ง Logis group ticks **Logis** on its own. แจ้งแตกล็อต is for a bill that
+Logis made for 1 box when packing actually needs 2.
+
+**The ค้างอยู่ list:**
+
+- Everything still open, grouped as รอ Logis ดำเนินการ, รอของ / กำลังตาม, and เรื่องอื่น. Oldest
+  comes first, with how many days it has waited. Two days or more is marked red.
+- **📝 อัปเดต** adds a dated line (for example "โทรแจ้ง Logis แล้ว") without changing the entry.
+- **✓ ส่งออกแล้ว** closes an order. **ยกเลิกออเดอร์** (in แก้ไข) closes it as cancelled. **↺
+  ยังไม่เสร็จ** opens it again.
+- **📋 คัดลอกส่ง LINE** copies the open list as text for the team chat.
+- New entries start on the shift running now: กะเช้า 07:00–16:00, กะบ่าย 16:00 onwards. Between
+  midnight and 07:00 counts as the previous day's กะบ่าย. The day view below shows each shift's
+  entries.
+- Each entry records who wrote it and when (the name in ตั้งค่า, or the sign-in name). It also
+  records who updated, edited, or closed it.
+
+**สรุปเดือน:** stuck orders by reason group, reason, carrier, and shift. It also shows the products
+that got stuck most, how many orders shipped or were cancelled, how many are still waiting, and
+how many days an order takes to close on average. It prints.
+
+**สรุปเช้า** shows a งานค้างในสมุดกะ card with the open count, how many wait on Logis, and the
+oldest item's age. When the schedule sheet is set up, it reads the sheet's copy (read-only).
+
+### Storage
+
+The log is stored in the schedule's data (`shiftLog` in `wms:roster`). It travels with the
+schedule's shared sheet, export file, and backup, so there's no separate sheet to set up. Two
+devices adding or closing entries at the same time merge without asking. A device that has never
+had the schedule can't start the sheet with only log entries. Open ตารางกะ on a device with the
+real data first.
+
+> After updating the site, reload ตารางกะ on every device. A schedule page still open from before
+> the log existed doesn't know about it, and its next save would remove the log entries.
+
+### Logis view (`/shiftlog/logis.html`)
+
+[`public/shiftlog/logis.html`](public/shiftlog/logis.html) is a read-only page for the Logis team.
+It shows three lists: what Logis has to act on, other open orders (for their information), and
+orders closed in the last 3 days. It has a search box and refreshes every 2 minutes.
+
+It uses its own passcode, `VIEW_TOKEN`, not the schedule's `ROSTER_TOKEN`. The script filters
+before sending: Logis gets only order entries. It gets no staff schedule and no เรื่องอื่น
+notes.
+
+**One-time setup:**
+
+1. Open the schedule sheet's Apps Script and paste in the current
+   [`roster-api.gs`](apps-script/roster-api.gs).
+2. Set `VIEW_TOKEN` to a passcode of its own. It must be different from `ROSTER_TOKEN`. Leaving it
+   empty turns the Logis page off.
+3. Save, then Deploy → Manage deployments → edit → Version: **New version**. The URL stays the
+   same.
+4. In สมุดกะ, press **🔗 หน้าสำหรับ Logis** and enter the `VIEW_TOKEN`. The page copies a link to
+   send to Logis. The URL and passcode are in the part after `#`, which the browser doesn't send
+   to any server. The Logis page saves them on that device and removes them from the address bar.
+
+To stop sharing, change `VIEW_TOKEN` and deploy a new version. Old links then ask for the new
+passcode.
+
+---
+
 ## 🚀 Getting started (local)
 
 ```bash
@@ -171,6 +256,7 @@ public/
 ├─ roster/                 # ตารางกะ (+ roster-sync.js: sharing through the sheet,
 │                          #   roster-people.js: group / day off by date, leave counts)
 ├─ summary/ history/ order-compare/ order-lookup/ stock/ picking/ order-sheet/
+├─ shiftlog/               # สมุดกะ (+ logis.html: the read-only page for Logis)
 ├─ warehouse-forms/ jobs/ loadplan/ transport-docs/ transport-forms/ settings/
 apps-script/
 └─ roster-api.gs           # the shared schedule sheet's script (pasted into Apps Script, not served)

@@ -16,8 +16,8 @@
 
   // ส่วนที่เป็นรายการทั้งก้อน — สองเครื่องแก้ส่วนเดียวกันต้องถามคนว่าเอาของใคร
   var LISTS = ['employees', 'outsource', 'periods', 'holidays', 'extraPro'];
-  // ส่วนที่เป็นช่อง ๆ แยกกัน (วัน|ชื่อ, วัน|กะ, ชื่อคน) — รวมทีละช่องได้
-  var MAPS = ['overrides', 'kpiData', 'minStaff', 'osExtra'];
+  // ส่วนที่เป็นช่อง ๆ แยกกัน (วัน|ชื่อ, วัน|กะ, ชื่อคน, รหัสรายการสมุดกะ) — รวมทีละช่องได้
+  var MAPS = ['overrides', 'kpiData', 'minStaff', 'osExtra', 'shiftLog'];
   var LABEL = {
     employees: 'รายชื่อพนักงาน', outsource: 'รายชื่อ OS ประจำ', periods: 'คาบเปลี่ยนกะ',
     holidays: 'วันหยุดพิเศษ', extraPro: 'วันโปรฯ ที่เพิ่มเอง',
@@ -80,6 +80,8 @@
    *   get()                       ข้อมูลตอนนี้
    *   put(data) → {migrated}      ใช้ข้อมูลชุดนี้แทนของในเครื่อง (เก็บลงเครื่องด้วย)
    *   hasLocal()                  เครื่องนี้มีตารางกะที่เคยบันทึกไว้ไหม
+   *   seed(data) → boolean        ส่งข้อมูลชุดนี้ขึ้นไปเป็นชุดหลักของชีตได้ไหม (ไม่ส่ง = ได้เสมอ)
+   *                               หน้าสมุดกะในเครื่องที่ยังไม่เคยเปิดตารางกะมีแต่สมุดกะ ไม่มีรายชื่อ
    *   describe(data) ask(msg)     สรุปข้อมูลให้คนอ่าน / ถามคน (true = ตกลง)
    *   canApply()                  แทนข้อมูลบนจอตอนนี้ได้ไหม — มีหน้าต่างแก้ไขเปิดค้าง = ยัง
    *   status(state, info)         local pending saving saved synced pulled declined offline error
@@ -114,6 +116,7 @@
     }
 
     function decline() { declined = true; say('declined'); return false; }
+    function canSeed(d) { return !o.seed || o.seed(d); }
     function apply(L) {
       var r = o.put(L.data) || {};
       synced(L, !!r.migrated);
@@ -126,6 +129,7 @@
       if (!L.data) {
         // ชีตยังว่าง (เพิ่งติดตั้ง หรือมีคนล้างชีต) — ถามก่อน เครื่องใหม่ที่มีแต่รายชื่อตั้งต้น
         // จะได้ไม่ส่งขึ้นไปเป็นชุดหลักโดยไม่มีใครตั้งใจ
+        if (!canSeed(mine)) throw fail('ชีตส่วนกลางยังว่าง — เปิดหน้าตารางกะในเครื่องที่มีข้อมูลจริงก่อน');
         if (!o.ask('ตารางกะในชีตส่วนกลางยังว่าง\n\nส่งตารางกะในเครื่องนี้ขึ้นไปเป็นชุดตั้งต้นไหม?\n' +
           'ในเครื่องนี้: ' + o.describe(mine))) return decline();
         st = { url: o.url(), rev: L.rev, base: '{}', dirty: true }; keep();
@@ -138,7 +142,7 @@
         if (!o.hasLocal() || o.ask('ในชีตส่วนกลางมีตารางกะอยู่แล้ว' + who + '\n\n' +
           'ในชีต: ' + o.describe(L.data) + '\nในเครื่องนี้: ' + o.describe(mine) + '\n\n' +
           'กด OK = ใช้ตารางกะจากชีต (ของในเครื่องนี้จะถูกแทนที่)')) { apply(L); return true; }
-        if (o.ask('ส่งตารางกะในเครื่องนี้ขึ้นไปแทนที่ของในชีตไหม?\n\nทุกเครื่องที่ใช้ชีตนี้จะเห็นข้อมูลของเครื่องนี้แทน')) {
+        if (canSeed(mine) && o.ask('ส่งตารางกะในเครื่องนี้ขึ้นไปแทนที่ของในชีตไหม?\n\nทุกเครื่องที่ใช้ชีตนี้จะเห็นข้อมูลของเครื่องนี้แทน')) {
           synced(L, true);
           return true;
         }

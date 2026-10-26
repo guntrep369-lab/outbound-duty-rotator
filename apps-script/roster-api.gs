@@ -12,6 +12,11 @@
 // ในตารางกะมีชื่อพนักงาน คนที่รู้แค่ URL จึงต้องอ่านหรือแก้ไม่ได้
 var ROSTER_TOKEN = '';
 
+// รหัสของหน้าดูสำหรับทีม Logis (public/shiftlog/logis.html) — ต้องไม่ซ้ำกับ ROSTER_TOKEN
+// รหัสนี้เห็นได้แค่ออเดอร์ที่ติดปัญหาในสมุดกะ ไม่เห็นรายชื่อหรือตารางกะ และแก้อะไรไม่ได้
+// ว่างไว้ = ปิดหน้าดูของ Logis
+var VIEW_TOKEN = '';
+
 var DATA_SHEET = 'roster';  // ข้อมูลล่าสุด แบ่งเป็นท่อน ท่อนละแถว
 var LOG_SHEET = 'log';      // ใครบันทึกเมื่อไหร่ ไว้ไล่ดูตอนข้อมูลแปลก
 var CHUNK = 40000;          // ช่องหนึ่งเก็บได้ 50,000 ตัวอักษร เผื่อไว้
@@ -26,10 +31,12 @@ function doGet() {
  *   rev  — ฉบับล่าสุดเป็นฉบับที่เท่าไหร่ (เบา ใช้เช็คทุกนาที)
  *   load — ข้อมูลทั้งชุด
  *   save — บันทึก ถ้าเครื่องนั้นแก้จากฉบับล่าสุด
+ *   view — ออเดอร์ติดปัญหาในสมุดกะ สำหรับหน้าดูของ Logis (ใช้ VIEW_TOKEN)
  */
 function doPost(e) {
   var req;
   try { req = JSON.parse(e.postData.contents); } catch (err) { return out_({ error: 'คำขอไม่ใช่ JSON' }); }
+  if (req.op === 'view') return out_(view_(req));
   if (!ROSTER_TOKEN) return out_({ error: 'ยังไม่ได้ตั้ง ROSTER_TOKEN ใน Apps Script' });
   if (req.token !== ROSTER_TOKEN) return out_({ error: 'รหัสไม่ตรงกับ ROSTER_TOKEN ใน Apps Script' });
   if (req.op === 'rev') return out_(pub_(meta_()));
@@ -80,6 +87,30 @@ function save_(req) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/**
+ * ออเดอร์ที่ยังค้าง กับที่เพิ่งปิดไปไม่เกิน 3 วัน — ตัดในสคริปต์ก่อนส่ง รหัสดูจึงไม่เคยได้
+ * รายชื่อพนักงาน วันลา หรือเรื่องอื่นในสมุดกะที่เป็นเรื่องภายในทีม
+ */
+var VIEW_FIELDS = ['date', 'shift', 'sup', 'order', 'consign', 'product', 'size', 'qty', 'sku',
+  'reason', 'logis', 'text', 'updates', 'open', 'result', 'by', 'at', 'closedBy', 'closedAt'];
+var VIEW_DAYS = 3;
+
+function view_(req) {
+  if (!VIEW_TOKEN) return { error: 'ยังไม่ได้เปิดหน้าดูของ Logis — ตั้ง VIEW_TOKEN ใน Apps Script' };
+  if (req.token !== VIEW_TOKEN) return { error: 'รหัสดูไม่ถูกต้อง' };
+  var m = meta_(), d = read_(m) || {}, log = d.shiftLog || {}, items = [];
+  var cut = Date.now() - VIEW_DAYS * 86400000;
+  for (var id in log) {
+    var e = log[id];
+    if (!e || e.kind !== 'order') continue;
+    if (!e.open && !(Number(e.closedAt) > cut)) continue;
+    var o = { id: id };
+    VIEW_FIELDS.forEach(function (k) { if (e[k] !== undefined) o[k] = e[k]; });
+    items.push(o);
+  }
+  return { app: 'roster', view: true, at: m.at, items: items };
 }
 
 function meta_() {

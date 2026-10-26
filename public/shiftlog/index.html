@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>สมุดกะ — WMS</title>
+<link rel="stylesheet" href="../wms-theme.css">
+<link rel="stylesheet" href="../wms-gate.css">
+<script src="../wms-gate.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:var(--wms-bg); --surface:var(--wms-surface);
+  --border:var(--wms-border); --border2:var(--wms-border2);
+  --txt:var(--wms-text); --txt2:#475569; --txt3:var(--wms-faint);
+  --primary:var(--wms-primary); --primary-h:var(--wms-primary-dark); --primary-l:var(--wms-primary-light);
+  --open:#b45309; --open-bg:#fffbeb; --open-border:#fcd34d;
+  --done:#15803d; --done-bg:#f0fdf4;
+  --void:#64748b; --void-bg:#f1f5f9;
+  --logis:#1d4ed8; --logis-bg:#eff6ff; --logis-border:#bfdbfe;
+  --radius:12px; --radius-sm:8px; --shadow:var(--wms-shadow);
+}
+
+/* ═══ HEADER ═══ */
+.sl-headrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.sl-headrow .mod-title{flex:1;min-width:220px}
+.sl-saved{font-size:12px;color:var(--wms-muted)}
+.sl-saved.ok{color:var(--wms-success)}
+.sl-saved.err{color:var(--wms-danger);font-weight:600}
+.sl-saved.act{cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}
+.sl-main{padding:16px 20px 40px}
+.page{display:none}
+.page.active{display:block}
+.sp{flex:1}
+
+/* ═══ CARD / FORM ═══ */
+.sl-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
+@media(max-width:960px){.sl-grid{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;margin-bottom:16px;box-shadow:var(--shadow)}
+.card-title{font-size:15px;font-weight:700;color:var(--txt);margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cnt{background:var(--open-bg);color:var(--open);border:1px solid var(--open-border);border-radius:20px;padding:1px 9px;font-size:12px}
+.hint{font-size:12px;color:var(--txt3);font-weight:400}
+.empty{color:var(--txt3);font-size:13px;padding:8px 0}
+.fg{display:flex;flex-direction:column;gap:5px;margin-bottom:12px;min-width:0}
+.fg label{font-size:12px;font-weight:600;color:var(--txt2)}
+.f-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+.f-row3{display:grid;grid-template-columns:minmax(0,1fr) 80px minmax(0,1.3fr);gap:10px}
+.f-inline{display:flex;gap:6px}
+.f-inline input{flex:1}
+.f-sub{font-size:12px;font-weight:700;color:var(--txt2);margin:4px 0 8px;padding-top:10px;border-top:1px dashed var(--border2)}
+.f-note{font-size:12px;color:var(--txt2);line-height:1.5}
+.f-note:empty{display:none}
+.f-note.warn{color:var(--open)}
+.f-lines{display:flex;flex-direction:column;gap:6px}
+.f-lines:empty{display:none}
+.line-b{text-align:left;border:1px solid var(--border2);background:var(--surface);border-radius:var(--radius-sm);padding:7px 10px;font-size:13px;cursor:pointer;font-family:inherit;color:var(--txt)}
+.line-b:hover{border-color:var(--primary)}
+.line-b.on{border-color:var(--primary);background:var(--primary-l);font-weight:600}
+.sl-main input[type=text],.sl-main input[type=date],.sl-main input[type=month],.sl-main select,.sl-main textarea{
+  border:1px solid var(--border2);border-radius:var(--radius-sm);padding:9px 10px;font-size:14px;color:var(--txt);
+  background:var(--surface);font-family:inherit;width:100%;max-width:100%;min-width:0}
+.sl-main textarea{resize:vertical;line-height:1.5}
+.sl-main input:focus,.sl-main select:focus,.sl-main textarea:focus{outline:2px solid var(--primary);border-color:transparent}
+#f-order{font-size:16px;font-weight:600}
+.f-check{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--txt2);margin-bottom:12px;cursor:pointer}
+.f-check input{width:18px;height:18px}
+.f-btns{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.seg{display:flex;gap:6px;margin-bottom:14px}
+.seg-b{flex:1;border:1px solid var(--border2);background:var(--surface);color:var(--txt2);border-radius:var(--radius-sm);
+  padding:9px 10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
+.seg-b.on{background:var(--primary-l);border-color:var(--primary);color:var(--primary-h)}
+.is-hand .order-only{display:none}
+
+.btn-ok{background:var(--primary);color:#fff;border:none;border-radius:var(--radius-sm);padding:9px 20px;font-size:14px;font-weight:700;cursor:pointer;min-height:40px;font-family:inherit}
+.btn-ok:hover{background:var(--primary-h)}
+.btn-cancel{background:var(--surface);border:1px solid var(--border2);color:var(--txt2);border-radius:var(--radius-sm);padding:9px 16px;font-size:14px;cursor:pointer;min-height:40px;font-family:inherit}
+.btn-cancel:hover{background:var(--bg)}
+.btn-del{background:var(--surface);border:1px solid #fecaca;color:var(--wms-danger);border-radius:var(--radius-sm);padding:9px 14px;font-size:14px;cursor:pointer;min-height:40px;font-family:inherit}
+.btn-s{background:var(--surface);border:1px solid var(--border2);color:var(--txt2);border-radius:var(--radius-sm);padding:5px 10px;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap}
+.btn-s:hover{border-color:var(--primary);color:var(--primary)}
+.btn-s.done{background:var(--done-bg);border-color:#86efac;color:var(--done);font-weight:700}
+.btn-link{background:none;border:none;color:var(--primary);text-decoration:underline;cursor:pointer;font-size:inherit;font-family:inherit;padding:0}
+.btn-nav{background:var(--surface);border:1px solid var(--border2);color:var(--txt2);border-radius:var(--radius-sm);padding:7px 12px;cursor:pointer;font-size:14px}
+.btn-nav:hover{border-color:var(--primary);color:var(--primary)}
+
+/* ═══ ชิป ═══ */
+.oid{font-weight:700;color:var(--txt);font-variant-numeric:tabular-nums}
+.sup{display:inline-block;background:#fee2e2;color:#b91c1c;border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700;margin-left:4px}
+.rchip{display:inline-block;border-radius:20px;padding:2px 9px;font-size:12px;font-weight:700;border:1px solid}
+.g-stock{background:#fef2f2;color:#b91c1c;border-color:#fecaca}
+.g-fetch{background:#f5f3ff;color:#6d28d9;border-color:#ddd6fe}
+.g-logis{background:var(--logis-bg);color:var(--logis);border-color:var(--logis-border)}
+.g-other{background:#f8fafc;color:var(--txt2);border-color:var(--border2)}
+.lchip{display:inline-block;background:var(--logis);color:#fff;border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700;margin-left:4px}
+.kchip{display:inline-block;background:#f8fafc;color:var(--txt2);border:1px solid var(--border2);border-radius:20px;padding:2px 9px;font-size:11px;font-weight:700}
+.st{display:inline-block;font-size:11px;font-weight:700;border-radius:20px;padding:2px 8px}
+.st-open{background:var(--open-bg);color:var(--open)}
+.st-done{background:var(--done-bg);color:var(--done)}
+.st-void{background:var(--void-bg);color:var(--void)}
+.stk{display:inline-block;margin-top:3px;font-size:11px;color:var(--txt2);background:#f1f5f9;border-radius:4px;padding:1px 6px}
+.stk.ok{background:var(--done-bg);color:var(--done);font-weight:700}
+
+/* ═══ ตารางงานค้าง — หน้าตาเหมือนชีตที่ทีมใช้ จอแคบเรียงเป็นการ์ด ═══ */
+.grp-h{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--txt2);margin:14px 0 6px}
+.grp-h:first-child{margin-top:0}
+.grp-h .n{font-weight:500;color:var(--txt3)}
+.otbl{width:100%;border-collapse:collapse;font-size:13px}
+.otbl th{background:#f8fafc;color:var(--txt2);font-size:11px;font-weight:600;padding:7px 10px;border-bottom:2px solid var(--border);text-align:left;white-space:nowrap}
+.otbl td{padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:top;color:var(--txt)}
+.otbl td .sub{display:block;font-size:12px;color:var(--txt2);word-break:break-word}
+.otbl td .mono{font-family:ui-monospace,Consolas,monospace;font-size:11.5px}
+/* ตารางเรียงเป็นการ์ดเมื่อกล่องของมันแคบ — วัดจากกล่อง ไม่ใช่จากจอ เพราะจอ 1024 ที่มีเมนูข้าง
+   เหลือที่ให้ตารางแคบกว่าจอ 900 ที่เมนูย้ายไปอยู่ด้านบน */
+#open-list{container-type:inline-size}
+/* ความกว้างคอลัมน์คงที่ ตารางของแต่ละกองจะได้ตรงกัน — สินค้ากับหมายเหตุแบ่งที่เหลือ */
+@container (min-width:861px){
+  .otbl{table-layout:fixed}
+  .otbl th:nth-child(1){width:92px}
+  .otbl th:nth-child(2){width:150px}
+  .otbl th:nth-child(4){width:150px}
+  .otbl th:nth-child(6){width:120px}
+}
+.oid,.sup,.rchip,.lchip{white-space:nowrap}
+.otbl .c-when{white-space:nowrap}
+.otbl .c-when b{display:block;color:var(--open)}
+.otbl tr.old .c-when b{color:var(--wms-danger)}
+.otbl .c-acts{white-space:nowrap}
+.otbl .c-acts .acts{display:flex;flex-direction:column;gap:5px;align-items:stretch}
+.note{white-space:pre-wrap;word-break:break-word;line-height:1.5}
+.upd{font-size:12px;color:var(--txt2);margin-top:4px;padding-left:8px;border-left:2px solid var(--border2);word-break:break-word}
+.upd b{font-weight:600}
+.by{font-size:11px;color:var(--txt3);margin-top:4px}
+@container (max-width:860px){
+  .otbl thead{display:none}
+  .otbl,.otbl tbody,.otbl tr,.otbl td{display:block;width:100%}
+  .otbl tr{border:1px solid var(--border);border-left:4px solid var(--open);border-radius:var(--radius-sm);margin-bottom:10px;padding:6px 0}
+  .otbl tr.old{border-left-color:var(--wms-danger)}
+  .otbl td{border:none;padding:4px 12px;display:flex;gap:10px}
+  .otbl td::before{content:attr(data-l);flex:0 0 64px;font-size:11px;color:var(--txt3);font-weight:600;padding-top:2px}
+  .otbl td > div{flex:1;min-width:0}
+  .otbl td:has(> div:empty){display:none}
+  .otbl .c-acts::before{content:none}
+  .otbl .c-acts .acts{flex-direction:row;flex-wrap:wrap;padding-top:4px}
+}
+
+/* ═══ รายการ (เรื่องอื่น · รายวัน) ═══ */
+.ent{border:1px solid var(--border);border-left:4px solid var(--border2);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px;background:var(--surface)}
+.ent.ent-open{border-left-color:var(--open)}
+.ent-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:4px}
+.ent-when{font-size:12px;color:var(--txt2);font-weight:600}
+.ent-meta{font-size:12px;color:var(--txt2);margin-top:2px;word-break:break-word}
+.ent-text{font-size:14px;color:var(--txt);white-space:pre-wrap;word-break:break-word;line-height:1.5;margin-top:4px}
+.ent-acts{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+
+.day-bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.day-bar input{width:auto!important}
+.day-txt{font-weight:700;color:var(--txt);margin-left:4px}
+.sh-block{margin-bottom:14px}
+.sh-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;font-weight:700;padding:7px 10px;border-radius:var(--radius-sm);margin-bottom:8px}
+.sh-morning{background:#fef3c7;color:#92400e}
+.sh-evening{background:#f5f3ff;color:#5b21b6}
+.sh-sum{font-weight:500;font-size:12px}
+
+/* ═══ สรุปเดือน ═══ */
+.m-bar{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.m-bar .fg{margin-bottom:0}
+.tiles{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.tile{flex:1;min-width:130px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;box-shadow:var(--shadow)}
+.tile-l{font-size:11.5px;font-weight:600;color:var(--wms-muted)}
+.tile-v{font-size:26px;font-weight:700;line-height:1.15;color:var(--txt);font-variant-numeric:tabular-nums}
+.tile-s{font-size:12px;color:var(--txt2)}
+.tile.warn .tile-v{color:var(--open)}
+.m-cols{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:16px;align-items:start}
+@media(max-width:900px){.m-cols{grid-template-columns:minmax(0,1fr)}}
+.m-groups{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:7px;font-size:13px}
+.bar-l{width:170px;flex-shrink:0}
+.bar-t{flex:1;height:16px;background:#f1f5f9;border-radius:4px;overflow:hidden}
+.bar-f{display:block;height:100%;background:#f87171}
+.bar-n{width:32px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
+@media(max-width:560px){.bar-l{width:120px}}
+.tbl-x{overflow-x:auto}
+.mtbl{width:100%;border-collapse:collapse;font-size:13px}
+.mtbl th{background:#f8fafc;color:var(--txt2);font-size:11px;font-weight:600;padding:8px 10px;border-bottom:2px solid var(--border);text-align:left;white-space:nowrap}
+.mtbl td{padding:8px 10px;border-bottom:1px solid var(--border);color:var(--txt);vertical-align:top}
+.mtbl td.n{text-align:center;font-weight:700;font-variant-numeric:tabular-nums}
+.mtbl td.nw{white-space:nowrap}
+.mtbl td.txt{min-width:180px;white-space:pre-wrap}
+
+@media(max-width:560px){.sl-main{padding:12px 12px 32px}.card{padding:14px 14px}}
+@media print{
+  .no-print,.mod-subnav{display:none!important}
+  .sl-main{padding:0}
+  .card,.tile{box-shadow:none}
+}
+</style>
+</head>
+<body data-wms-module="shiftlog">
+
+<div class="wms-shell">
+<div data-wms-shell="shiftlog" data-root="../"></div>
+<div class="wms-main">
+
+  <div class="mod-head">
+    <div class="sl-headrow">
+      <div class="mod-title">
+        <div class="ic">📓</div>
+        <div>
+          <h2>สมุดกะ · Shift Log</h2>
+          <p>ต่องานออเดอร์ที่ติดปัญหาให้กะถัดไป · เรื่องอื่นที่ต้องตามต่อ · สรุปรายเดือน</p>
+        </div>
+      </div>
+      <span id="save-state" class="sl-saved"></span>
+    </div>
+    <nav class="mod-subnav">
+      <button type="button" class="mod-tab active" data-page="log" onclick="showPage('log',this)">📓 ต่องาน</button>
+      <button type="button" class="mod-tab" data-page="month" onclick="showPage('month',this)">📊 สรุปเดือน</button>
+    </nav>
+  </div>
+
+  <div class="sl-main">
+
+<!-- ═══ ต่องาน ═══ -->
+<div id="page-log" class="page active">
+  <section class="card">
+    <div class="card-title">
+      ค้างอยู่ <span class="cnt" id="open-count">0</span>
+      <span class="sp"></span>
+      <button type="button" class="btn-s no-print" onclick="copyOpen()">📋 คัดลอกส่ง LINE</button>
+      <button type="button" class="btn-s no-print" onclick="logisLink()">🔗 หน้าสำหรับ Logis</button>
+    </div>
+    <div id="open-list"></div>
+  </section>
+
+  <div class="sl-grid">
+    <section class="card no-print" id="form-card">
+      <div class="card-title" id="form-title">บันทึกใหม่</div>
+      <div class="seg" role="group" aria-label="ประเภทรายการ">
+        <button type="button" class="seg-b on" data-kind="order" onclick="setKind('order')">ออเดอร์ติดปัญหา</button>
+        <button type="button" class="seg-b" data-kind="handover" onclick="setKind('handover')">เรื่องอื่น</button>
+      </div>
+
+      <div class="order-only">
+        <div class="fg">
+          <label for="f-order">Order ID</label>
+          <div class="f-inline">
+            <input id="f-order" type="text" autocomplete="off" placeholder="เช่น CR-94576" oninput="lookupSoon()" onchange="lookupOrder(true)" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupOrder(true);}">
+            <button type="button" class="btn-s" onclick="lookupOrder(true,true)">ค้นหา</button>
+          </div>
+          <div class="f-note" id="f-order-note"></div>
+          <div class="f-lines" id="f-lines"></div>
+        </div>
+        <div class="fg"><label for="f-reason">ติดเพราะ</label><select id="f-reason" onchange="reasonPicked()"></select></div>
+        <label class="f-check"><input type="checkbox" id="f-logis"> ต้องแจ้ง Logis ให้ดำเนินการ</label>
+      </div>
+
+      <div class="fg"><label for="f-text" id="f-text-l">หมายเหตุ (ถ้ามี)</label><textarea id="f-text" rows="2"></textarea></div>
+
+      <div class="order-only">
+        <div class="f-sub">ข้อมูลออเดอร์ <span class="hint">— เติมให้เองเมื่อเจอเลขออเดอร์ แก้ได้</span></div>
+        <div class="f-row">
+          <div class="fg"><label for="f-sup">Sup (ขนส่ง)</label><input id="f-sup" type="text" autocomplete="off" list="sup-list"></div>
+          <div class="fg"><label for="f-consign">เลข consign</label><input id="f-consign" type="text" autocomplete="off"></div>
+        </div>
+        <div class="fg"><label for="f-product">สินค้า</label><input id="f-product" type="text" autocomplete="off" oninput="skuFromProduct()"></div>
+        <div class="f-row3">
+          <div class="fg"><label for="f-size">ขนาด</label><input id="f-size" type="text" autocomplete="off"></div>
+          <div class="fg"><label for="f-qty">จำนวน</label><input id="f-qty" type="text" inputmode="numeric" autocomplete="off"></div>
+          <div class="fg"><label for="f-sku">SKU</label><input id="f-sku" type="text" autocomplete="off" oninput="showStock()"></div>
+        </div>
+        <div class="f-note" id="f-stock"></div>
+        <datalist id="sup-list"></datalist>
+      </div>
+
+      <div class="f-row">
+        <div class="fg"><label for="f-date">วันที่</label><input id="f-date" type="date"></div>
+        <div class="fg"><label for="f-shift">กะ</label>
+          <select id="f-shift"><option value="morning">กะเช้า 07–16</option><option value="evening">กะบ่าย 16–24</option></select>
+        </div>
+      </div>
+      <div class="f-btns">
+        <button type="button" class="btn-del" id="f-del" onclick="delEntry(_editId)" style="display:none">ลบ</button>
+        <button type="button" class="btn-cancel" id="f-void" onclick="voidOrder(_editId)" style="display:none">ยกเลิกออเดอร์</button>
+        <span class="sp"></span>
+        <button type="button" class="btn-cancel" id="f-cancel" onclick="resetForm()" style="display:none">ปิด</button>
+        <button type="button" class="btn-ok" onclick="saveEntry()">บันทึก</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="day-bar">
+        <button type="button" class="btn-nav no-print" onclick="dayStep(-1)" aria-label="วันก่อน">‹</button>
+        <input id="day" type="date" class="no-print" onchange="renderDay()" aria-label="วันที่">
+        <button type="button" class="btn-nav no-print" onclick="dayStep(1)" aria-label="วันถัดไป">›</button>
+        <button type="button" class="btn-s no-print" onclick="dayToday()">วันนี้</button>
+        <span class="day-txt" id="day-txt"></span>
+      </div>
+      <div id="day-out"></div>
+    </section>
+  </div>
+</div>
+
+<!-- ═══ สรุปเดือน ═══ -->
+<div id="page-month" class="page">
+  <div class="m-bar no-print">
+    <div class="fg"><label for="m-month">เดือน</label><input id="m-month" type="month" onchange="renderMonth()"></div>
+    <button type="button" class="btn-cancel" onclick="window.print()">🖨 พิมพ์</button>
+  </div>
+  <div class="tiles" id="m-tiles"></div>
+  <div class="m-cols">
+    <div class="card">
+      <div class="card-title">ติดเพราะอะไร</div>
+      <div class="m-groups" id="m-groups"></div>
+      <div id="m-reasons"></div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-title">แยกตามขนส่ง</div>
+        <div class="tbl-x"><table class="mtbl"><thead><tr><th>Sup</th><th>ออเดอร์</th></tr></thead><tbody id="m-sups"></tbody></table></div>
+      </div>
+      <div class="card">
+        <div class="card-title">สินค้าที่ติดบ่อย</div>
+        <div class="tbl-x"><table class="mtbl"><thead><tr><th>สินค้า</th><th>ครั้ง</th></tr></thead><tbody id="m-products"></tbody></table></div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">ออเดอร์ติดปัญหาทั้งเดือน</div>
+    <div class="tbl-x"><table class="mtbl"><thead><tr><th>วันที่</th><th>กะ</th><th>Sup</th><th>Order ID</th><th>สินค้า</th><th>ติดเพราะ</th><th>ผล</th><th>หมายเหตุ</th></tr></thead><tbody id="m-list"></tbody></table></div>
+  </div>
+</div>
+
+  </div><!-- /.sl-main -->
+</div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+
+<script type="module" src="../wms-shell.js"></script>
+<script src="../wms-settings.js"></script>
+<script src="../wms-gas.js"></script>
+<script src="../wms-phone.js"></script>
+<script src="../wms-order-index.js"></script>
+<script src="../wms-pick.js"></script>
+<script src="../wms-stock.js"></script>
+<script src="../roster/roster-sync.js"></script>
+<script src="shiftlog.js"></script>
+<script>
+var L=window.ShiftLog;
+var MON_F=['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+// ช่องข้อมูลออเดอร์ในฟอร์ม — id ของช่องคือ f-<ชื่อ>
+var ORDER_FIELDS=['sup','consign','product','size','qty','sku'];
+
+/* ── ข้อมูล ──
+   สมุดกะอยู่ใน shiftLog ของข้อมูลตารางกะ (wms:roster) ชุดเดียวกับหน้าตารางกะ
+   หน้านี้แก้แค่ shiftLog แต่เก็บทั้งชุดกลับลงไป ส่วนอื่นต้องอยู่ครบเหมือนเดิม */
+var STORE_KEY='wms:roster';
+function obj(v){return v&&typeof v==='object'&&!Array.isArray(v)?v:{};}
+function readLocal(){try{return obj(JSON.parse(localStorage.getItem(STORE_KEY)||'null'));}catch(e){return {};}}
+var data=readLocal();
+function log(){if(!data.shiftLog||typeof data.shiftLog!=='object'||Array.isArray(data.shiftLog))data.shiftLog={};return data.shiftLog;}
+// คนที่บันทึก — ชื่อในหน้าตั้งค่า ไม่มีก็ใช้ชื่อที่เข้าระบบ
+function author(){return (window.WmsSettings&&WmsSettings.me())||(window.wmsGate&&wmsGate.user())||'';}
+
+function el(id){return document.getElementById(id);}
+function stamp(ts){return new Date(ts).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});}
+function hm(ts){return new Date(ts).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});}
+function setSaveState(cls,txt){var s=el('save-state');s.className='sl-saved'+(cls?' '+cls:'');s.textContent=txt;}
+function saveLocal(){
+  data.savedAt=Date.now();
+  try{localStorage.setItem(STORE_KEY,JSON.stringify(data));return true;}
+  catch(e){setSaveState('err','บันทึกไม่ได้ — พื้นที่ในเบราว์เซอร์เต็ม');return false;}
+}
+function changed(){
+  var ok=saveLocal();
+  if(sync&&sync.on())sync.changed();
+  else if(ok)setSaveState('ok','✓ บันทึกแล้ว '+stamp(Date.now()));
+  render();
+}
+
+// ── วันที่ ──
+function pd(s){var p=s.split('-');return new Date(+p[0],+p[1]-1,+p[2]);}
+function fd(d){var m=d.getMonth()+1,dd=d.getDate();return d.getFullYear()+'-'+(m<10?'0'+m:m)+'-'+(dd<10?'0'+dd:dd);}
+function addD(s,n){var d=pd(s);d.setDate(d.getDate()+n);return fd(d);}
+function nowShift(){return L.shiftAt(new Date());}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function jsAttr(v){return JSON.stringify(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;');}
+function flat(s){return String(s||'').replace(/\s*\n\s*/g,' ');}
+
+// ── สต๊อก: ของที่หน้าสต๊อกดึงมาแล้ววันนี้ ──
+function stockOf(sku){var o=sku&&window.WmsStock?WmsStock.read():null;return o&&o.map[sku]||null;}
+function num(n){return (Math.round((Number(n)||0)*100)/100).toLocaleString();}
+// มีของใน NEW WH แล้ว = ออเดอร์ที่รอของน่าจะส่งได้แล้ว ให้เห็นเป็นสีเขียว
+function stockTag(e){
+  var s=stockOf(e.sku);if(!s)return '';
+  return '<span class="stk'+(s.newwh>0?' ok':'')+'">คลัง '+num(s.newwh)+' · QA '+num(s.qa)+'</span>';
+}
+
+// ── แสดงผล ──
+function statusHtml(e,today){
+  if(e.open){var a=L.age(e,today);return '<span class="st st-open">ค้าง'+(a?' '+a+' วัน':'')+'</span>';}
+  var who=(e.closedBy?' · '+esc(e.closedBy):'')+(e.closedAt?' '+stamp(e.closedAt):'');
+  if(e.result==='cancelled')return '<span class="st st-void">✕ ยกเลิกออเดอร์'+who+'</span>';
+  return '<span class="st st-done">✓ '+(e.kind==='order'?'ส่งออกแล้ว':'เสร็จ')+who+'</span>';
+}
+function updatesHtml(e){
+  var u=Array.isArray(e.updates)?e.updates:[];
+  return u.map(function(x){return '<div class="upd"><b>'+esc(x.by||'—')+'</b> '+(x.at?stamp(x.at):'')+' · '+esc(x.text)+'</div>';}).join('');
+}
+function byHtml(e){
+  return '<div class="by">บันทึก'+(e.by?'โดย '+esc(e.by):'')+(e.at?' '+stamp(e.at):'')+
+    (e.editedAt?' · แก้ไข'+(e.editedBy?'โดย '+esc(e.editedBy):'')+' '+stamp(e.editedAt):'')+'</div>';
+}
+function reasonHtml(e){
+  var r=L.reasonOf(e.reason);
+  return '<span class="rchip g-'+r.group+'">'+esc(r.label)+'</span>'+(e.logis?'<span class="lchip">Logis</span>':'');
+}
+function actsHtml(e){
+  var id=jsAttr(e.id),h='';
+  if(e.open){
+    h+='<button type="button" class="btn-s done" onclick="closeEntry('+id+')">✓ '+(e.kind==='order'?'ส่งออกแล้ว':'เสร็จแล้ว')+'</button>';
+    h+='<button type="button" class="btn-s" onclick="addUpdate('+id+')">📝 อัปเดต</button>';
+  }else h+='<button type="button" class="btn-s" onclick="reopenEntry('+id+')">↺ ยังไม่เสร็จ</button>';
+  return h+'<button type="button" class="btn-s" onclick="editEntry('+id+')">แก้ไข</button>';
+}
+
+function shortDay(d){return L.dayText(d).replace(/ \d{4}$/,'');}   // ในตารางไม่ต้องมีปี
+function orderRow(e,today){
+  var a=L.age(e,today),sz=[e.size,e.qty?'×'+e.qty:''].filter(Boolean).join(' ');
+  return '<tr'+(a>=2?' class="old"':'')+'>'+
+    '<td data-l="ค้าง" class="c-when"><div><b>'+(a?'ค้าง '+a+' วัน':'วันนี้')+'</b>'+shortDay(e.date)+'<span class="sub">'+L.SHIFTS[e.shift]+'</span></div></td>'+
+    '<td data-l="ออเดอร์"><div><span class="oid">'+esc(e.order)+'</span>'+(e.sup?'<span class="sup">'+esc(e.sup)+'</span>':'')+
+      (e.consign?'<span class="sub mono">'+esc(e.consign)+'</span>':'')+'</div></td>'+
+    '<td data-l="สินค้า"><div>'+esc(e.product||'—')+(sz?'<span class="sub">'+esc(sz)+'</span>':'')+
+      (e.sku?'<span class="sub mono">'+esc(e.sku)+'</span>':'')+stockTag(e)+'</div></td>'+
+    '<td data-l="ติดเพราะ"><div>'+reasonHtml(e)+'</div></td>'+
+    '<td data-l="หมายเหตุ"><div>'+(e.text?'<div class="note">'+esc(e.text)+'</div>':'')+updatesHtml(e)+byHtml(e)+'</div></td>'+
+    '<td class="c-acts no-print"><div class="acts">'+actsHtml(e)+'</div></td></tr>';
+}
+function orderTable(list,today){
+  return '<table class="otbl"><thead><tr><th>ค้าง</th><th>ออเดอร์</th><th>สินค้า</th><th>ติดเพราะ</th><th>หมายเหตุ / อัปเดต</th><th class="no-print"></th></tr></thead><tbody>'+
+    list.map(function(e){return orderRow(e,today);}).join('')+'</tbody></table>';
+}
+function entHtml(e,today,when){
+  var isO=e.kind==='order',h='<div class="ent'+(e.open?' ent-open':'')+'"><div class="ent-head">';
+  if(isO)h+='<span class="oid">'+esc(e.order)+'</span>'+(e.sup?'<span class="sup">'+esc(e.sup)+'</span>':'')+reasonHtml(e);
+  else h+='<span class="kchip">เรื่องอื่น</span>';
+  if(when)h+='<span class="ent-when">'+L.dayText(e.date)+' · '+L.SHIFTS[e.shift]+'</span>';
+  h+=statusHtml(e,today)+'</div>';
+  if(isO){
+    var meta=[e.product,e.size,e.qty?'×'+e.qty:'',e.consign?'consign '+e.consign:''].filter(Boolean);
+    if(meta.length)h+='<div class="ent-meta">'+meta.map(esc).join(' · ')+'</div>';
+  }
+  if(e.text)h+='<div class="ent-text">'+esc(e.text)+'</div>';
+  return h+updatesHtml(e)+byHtml(e)+'<div class="ent-acts no-print">'+actsHtml(e)+'</div></div>';
+}
+
+/* งานค้างแบ่งเป็นสามกอง ตามว่าใครต้องขยับ — รอ Logis แก้บิล / รอของหรือกำลังตาม / เรื่องอื่น
+   กะที่มารับงานจะได้รู้ทันทีว่าต้องโทรหาใคร ไม่ต้องไล่อ่านทั้งตาราง */
+function openGroups(){
+  var list=L.openItems(log());
+  return {
+    all:list,
+    logis:list.filter(function(e){return e.kind==='order'&&e.logis;}),
+    wait:list.filter(function(e){return e.kind==='order'&&!e.logis;}),
+    hand:list.filter(function(e){return e.kind!=='order';}),
+  };
+}
+function renderOpen(){
+  var g=openGroups(),today=nowShift().date,h='';
+  el('open-count').textContent=g.all.length;
+  var head=function(t,n){return '<div class="grp-h">'+t+' <span class="n">'+n+'</span></div>';};
+  if(g.logis.length)h+=head('รอ Logis ดำเนินการ',g.logis.length)+orderTable(g.logis,today);
+  if(g.wait.length)h+=head('รอของ / กำลังตาม',g.wait.length)+orderTable(g.wait,today);
+  if(g.hand.length)h+=head('เรื่องอื่น',g.hand.length)+g.hand.map(function(e){return entHtml(e,today,true);}).join('');
+  el('open-list').innerHTML=h||'<div class="empty">ไม่มีงานค้าง 👍</div>';
+}
+
+function renderDay(){
+  var inp=el('day'),d=inp.value||nowShift().date,today=nowShift().date,h='';inp.value=d;
+  el('day-txt').textContent=L.dayText(d);
+  var g=L.day(log(),d);
+  ['morning','evening'].forEach(function(sh){
+    var list=g[sh],no=list.filter(function(e){return e.kind==='order';}).length;
+    h+='<div class="sh-block"><div class="sh-head sh-'+sh+'"><span>'+L.SHIFTS[sh]+'</span>'+
+      '<span class="sh-sum">ออเดอร์ติดปัญหา '+no+' · เรื่องอื่น '+(list.length-no)+'</span></div>';
+    h+=list.length?list.map(function(e){return entHtml(e,today,false);}).join(''):'<div class="empty">ยังไม่มีบันทึก</div>';
+    h+='</div>';
+  });
+  el('day-out').innerHTML=h;
+}
+function dayStep(n){var inp=el('day');inp.value=addD(inp.value||nowShift().date,n);renderDay();}
+function dayToday(){el('day').value='';renderDay();}
+
+function render(){renderOpen();renderDay();if(curPage==='month')renderMonth();}
+
+/* งานค้างทั้งหมดเป็นข้อความ ไว้วางในกลุ่ม LINE ตอนส่งกะ หรือส่งให้ทีม Logis */
+function openText(){
+  var g=openGroups(),now=nowShift();
+  var line=function(e){
+    var a=L.age(e,now.date),age=a?' (ค้าง '+a+' วัน)':'';
+    var last=Array.isArray(e.updates)&&e.updates.length?e.updates[e.updates.length-1]:null;
+    if(e.kind!=='order')return '- '+flat(e.text)+age;
+    return '- '+e.order+(e.sup?' · '+e.sup:'')+(e.product?' · '+flat(e.product):'')+' — '+L.reasonLabel(e.reason)+age+
+      (e.text?': '+flat(e.text):'')+(last?' [ล่าสุด: '+flat(last.text)+']':'');
+  };
+  var part=function(t,arr){return arr.length?'\n\n'+t+' ('+arr.length+'):\n'+arr.map(line).join('\n'):'';};
+  return '📓 งานค้าง '+L.dayText(now.date)+' · '+L.SHIFTS[now.shift]+
+    (g.all.length?part('รอ Logis',g.logis)+part('รอของ / กำลังตาม',g.wait)+part('เรื่องอื่น',g.hand):'\n\nไม่มีงานค้าง 👍');
+}
+function copyOpen(){copyText(openText(),'📋 คัดลอกแล้ว — วางในแชทได้เลย');}
+function copyText(t,msg){
+  var done=function(){setSaveState('ok',msg);};
+  if(navigator.clipboard&&window.isSecureContext)navigator.clipboard.writeText(t).then(done,function(){copyOld(t);done();});
+  else{copyOld(t);done();}
+}
+function copyOld(t){
+  var a=document.createElement('textarea');a.value=t;a.style.position='fixed';a.style.opacity='0';
+  document.body.appendChild(a);a.select();try{document.execCommand('copy');}catch(e){}document.body.removeChild(a);
+}
+
+/* ลิงก์หน้าดูของทีม Logis — มี URL ชีตกับรหัสดู (VIEW_TOKEN) ติดไปด้วย เขากดเปิดได้เลย
+   รหัสดูเห็นได้แค่ออเดอร์ติดปัญหา จึงต้องไม่ใช่รหัสเดียวกับตารางกะ */
+var VIEW_KEY='wms:shiftlog:viewCode';
+function logisLink(){
+  var url=window.WmsSettings?WmsSettings.rosterUrl():'';
+  if(!url){alert('ต้องเชื่อมชีตส่วนกลางของตารางกะก่อน\n\nตั้งค่า → Apps Script URL — ตารางกะ');return;}
+  var code='';try{code=localStorage.getItem(VIEW_KEY)||'';}catch(e){}
+  code=prompt('รหัสดูของ Logis — ค่า VIEW_TOKEN ที่ตั้งไว้ใน Apps Script ของตารางกะ',code);
+  if(code===null)return;
+  code=code.trim();if(!code)return;
+  if(code===WmsSettings.rosterToken()){alert('รหัสนี้คือรหัสตารางกะ (ROSTER_TOKEN)\n\nตั้ง VIEW_TOKEN เป็นอีกรหัสหนึ่ง ไม่งั้นทีม Logis จะเปิดตารางกะทั้งหมดได้');return;}
+  try{localStorage.setItem(VIEW_KEY,code);}catch(e){}
+  var link=new URL('logis.html',location.href).href.split('#')[0]+'#u='+encodeURIComponent(url)+'&k='+encodeURIComponent(code);
+  copyText(link,'🔗 คัดลอกลิงก์หน้าสำหรับ Logis แล้ว — ส่งในแชทของทีม Logis ได้เลย');
+}
+
+// ── ฟอร์ม ──
+var _kind='order',_editId=null,_lines=[],_lookTimer=null,_pulling=false,_looked='';
+function setKind(k){
+  _kind=k;
+  document.querySelectorAll('.seg-b').forEach(function(b){b.classList.toggle('on',b.getAttribute('data-kind')===k);});
+  el('form-card').classList.toggle('is-hand',k!=='order');
+  el('f-text-l').textContent=k==='order'?'หมายเหตุ (ถ้ามี)':'เรื่องที่ต้องตามต่อ';
+}
+function reasonPicked(){el('f-logis').checked=!!L.reasonOf(el('f-reason').value).logis;}
+function fillSups(){
+  var seen={},o=window.OrderIndex&&OrderIndex.get();
+  (o?o.rows:[]).forEach(function(r){if(r.sup)seen[r.sup]=1;});
+  L.openItems(log()).forEach(function(e){if(e.sup)seen[e.sup]=1;});
+  el('sup-list').innerHTML=Object.keys(seen).sort().map(function(s){return '<option value="'+esc(s)+'">';}).join('');
+}
+
+/* ใส่เลขออเดอร์แล้วเติม Sup เลข consign สินค้า ขนาด จำนวน SKU ให้เอง — จากออเดอร์ที่ระบบ
+   ดึงมาแล้ววันนี้ (หน้าเทียบ Order) ไม่ต้องก๊อปจากชีตออเดอร์มาวางทีละช่องเหมือนในชีตต่องาน
+   ยังไม่มีออเดอร์ในเครื่องนี้ก็ดึงให้ครั้งเดียว (ใช้เวลาเป็นสิบวินาที) */
+function lookupSoon(){clearTimeout(_lookTimer);_lookTimer=setTimeout(function(){lookupOrder(false);},500);}
+/* เลขเดิมที่ค้นไปแล้วไม่ต้องค้นซ้ำ — กดเลือกสินค้าทันทีหลังพิมพ์ ช่องเลขออเดอร์หลุดโฟกัส
+   แล้วยิง change ถ้าวาดปุ่มสินค้าใหม่ตรงนั้น ปุ่มที่กำลังกดจะหายไปก่อนคลิกถึง */
+function lookupOrder(user,force){
+  clearTimeout(_lookTimer);
+  var id=el('f-order').value.trim(),note=el('f-order-note');
+  if(!force&&id&&id.toUpperCase()===_looked)return;
+  el('f-lines').innerHTML='';_lines=[];_looked='';note.className='f-note';
+  if(!id){note.textContent='';return;}
+  var o=window.OrderIndex&&OrderIndex.get();
+  if(!o){
+    if(_pulling){note.textContent='⏳ กำลังดึงออเดอร์…';return;}
+    if(OrderIndex.savedUrl()&&(user||WmsGas.firstTry('order:shiftlog'))){pullOrders();return;}
+    _looked=id.toUpperCase();
+    note.innerHTML=OrderIndex.savedUrl()?
+      'ยังไม่ได้ดึงออเดอร์วันนี้ในเครื่องนี้ · <button type="button" class="btn-link" onclick="pullOrders()">ดึงออเดอร์</button> หรือกรอกเองด้านล่าง':
+      'ยังไม่ได้ตั้งที่ดึงออเดอร์ในหน้าตั้งค่า — กรอกข้อมูลเองด้านล่าง';
+    return;
+  }
+  _lines=L.orderLines(o.rows,id);
+  if(!_lines.length){
+    if(!user){note.textContent='';return;}
+    _looked=id.toUpperCase();
+    note.className='f-note warn';
+    note.innerHTML='ไม่เจอในออเดอร์ที่ดึงมาเมื่อ '+hm(o.at)+' — กรอกเองด้านล่าง'+
+      (OrderIndex.savedUrl()?' หรือ <button type="button" class="btn-link" onclick="pullOrders()">ดึงใหม่</button>':'');
+    return;
+  }
+  _looked=id.toUpperCase();
+  el('f-sup').value=_lines[0].sup;el('f-consign').value=_lines[0].consign;
+  if(_lines.length===1){fillLine(0);note.textContent='✓ เจอออเดอร์ · เติมข้อมูลให้แล้ว';return;}
+  note.textContent='✓ เจอออเดอร์ มี '+_lines.length+' สินค้า — กดเลือกตัวที่ติด';
+  el('f-lines').innerHTML=_lines.map(function(l,i){
+    return '<button type="button" class="line-b" onclick="fillLine('+i+')">'+esc(l.product||'(ไม่มีชื่อสินค้า)')+
+      (l.size?' · '+esc(l.size):'')+(l.qty?' ×'+esc(l.qty):'')+'</button>';}).join('');
+}
+function fillLine(i){
+  var l=_lines[i];if(!l)return;
+  ORDER_FIELDS.forEach(function(k){el('f-'+k).value=l[k]==null?'':l[k];});
+  document.querySelectorAll('.line-b').forEach(function(b,j){b.classList.toggle('on',j===i);});
+  showStock();
+}
+function pullOrders(){
+  if(_pulling||!OrderIndex.savedUrl())return;
+  var note=el('f-order-note');
+  _pulling=true;note.className='f-note';note.textContent='⏳ กำลังดึงออเดอร์… ครั้งแรกของวันใช้เวลาสักครู่';
+  OrderIndex.pull(OrderIndex.savedUrl(),{onProgress:function(s){note.textContent='⏳ กำลังดึงออเดอร์… '+s+' วินาที';}})
+    .then(function(){_pulling=false;fillSups();lookupOrder(true,true);})
+    .catch(function(err){_pulling=false;note.className='f-note warn';note.textContent='⚠ ดึงออเดอร์ไม่สำเร็จ ('+err.message+') — กรอกเองด้านล่างได้';});
+}
+function skuFromProduct(){
+  if(el('f-sku').value||!window.WmsPick)return;
+  var s=WmsPick.extractSKU(el('f-product').value);
+  if(s){el('f-sku').value=s;showStock();}
+}
+function showStock(){
+  var s=stockOf(el('f-sku').value.trim()),out=el('f-stock');
+  out.textContent=s?'สต๊อกตอนนี้: คลัง (NEW WH) '+num(s.newwh)+' · QA '+num(s.qa)+' · รวม '+num(s.total):'';
+}
+
+function resetForm(){
+  var now=nowShift();
+  _editId=null;_lines=[];_looked='';
+  el('f-date').value=now.date;el('f-shift').value=now.shift;
+  ['f-order','f-text'].concat(ORDER_FIELDS.map(function(k){return 'f-'+k;})).forEach(function(id){el(id).value='';});
+  el('f-reason').value=L.REASONS[0].id;reasonPicked();
+  el('f-order-note').textContent='';el('f-lines').innerHTML='';el('f-stock').textContent='';
+  el('form-title').textContent='บันทึกใหม่';
+  ['f-cancel','f-del','f-void'].forEach(function(id){el(id).style.display='none';});
+}
+function saveEntry(){
+  var text=el('f-text').value.trim(),date=el('f-date').value;
+  if(!date){alert('เลือกวันที่');return;}
+  var old=_editId?log()[_editId]:null,e={},k;
+  if(old)for(k in old)e[k]=old[k];
+  e.date=date;e.shift=el('f-shift').value;e.kind=_kind;
+  if(text)e.text=text;else delete e.text;
+  if(_kind==='order'){
+    var order=el('f-order').value.trim().toUpperCase();   // เลขในชีตออเดอร์เป็นตัวใหญ่ พิมพ์เล็กมาก็ให้ตรงกัน
+    if(!order){alert('ใส่เลขออเดอร์');el('f-order').focus();return;}
+    // ออเดอร์เดียวกันค้างอยู่แล้ว — ส่วนใหญ่คือความคืบหน้าของเรื่องเดิม ไม่ใช่เรื่องใหม่
+    if(!old){
+      var dup=L.openItems(log()).find(function(x){return x.kind==='order'&&String(x.order).toUpperCase()===order.toUpperCase();});
+      if(dup&&!confirm('ออเดอร์ '+order+' ค้างอยู่แล้ว ('+L.reasonLabel(dup.reason)+')\n\n'+
+        'ถ้าจะบอกความคืบหน้า กด ยกเลิก แล้วใช้ 📝 อัปเดต ที่รายการเดิม\nกด OK = บันทึกเป็นอีกรายการ (เช่น สินค้าอีกตัวในออเดอร์เดียวกัน)'))return;
+    }
+    e.order=order;e.reason=el('f-reason').value;e.logis=el('f-logis').checked;
+    ORDER_FIELDS.forEach(function(f){
+      var v=el('f-'+f).value.trim();
+      if(v)e[f]=f==='qty'&&/^\d+$/.test(v)?Number(v):v;else delete e[f];
+    });
+  }else{
+    if(!text){alert('ใส่เรื่องที่ต้องตามต่อ');el('f-text').focus();return;}
+    ['order','reason','logis','result'].concat(ORDER_FIELDS).forEach(function(f){delete e[f];});
+  }
+  if(old){e.editedBy=author();e.editedAt=Date.now();}
+  else{e.open=true;e.by=author();e.at=Date.now();}
+  log()[_editId||L.newId(new Date())]=e;
+  el('day').value=date;
+  resetForm();changed();
+}
+function editEntry(id){
+  var e=log()[id];if(!e)return;
+  _editId=id;setKind(e.kind==='order'?'order':'handover');
+  el('f-date').value=e.date;el('f-shift').value=e.shift;
+  el('f-text').value=e.text||'';el('f-order').value=e.order||'';
+  el('f-reason').value=L.reasonOf(e.reason).id;el('f-logis').checked=!!e.logis;
+  ORDER_FIELDS.forEach(function(k){el('f-'+k).value=e[k]==null?'':e[k];});
+  _looked=String(e.order||'').toUpperCase();   // เปิดแก้แล้วไม่ต้องค้นทับช่องที่เคยแก้ไว้
+  el('f-order-note').textContent='';el('f-lines').innerHTML='';showStock();
+  el('form-title').textContent='แก้ไขรายการ';
+  el('f-cancel').style.display='';el('f-del').style.display='';
+  el('f-void').style.display=e.kind==='order'&&e.open?'':'none';
+  el('form-card').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function closeEntry(id,result){
+  var e=log()[id];if(!e)return;
+  e.open=false;e.closedBy=author();e.closedAt=Date.now();
+  if(e.kind==='order')e.result=result||'shipped';else delete e.result;
+  if(_editId===id)resetForm();
+  changed();
+}
+function voidOrder(id){
+  var e=log()[id];if(!e)return;
+  if(!confirm('ออเดอร์ '+e.order+' ถูกยกเลิก ไม่ต้องส่งแล้ว?'))return;
+  closeEntry(id,'cancelled');
+}
+function reopenEntry(id){var e=log()[id];if(!e)return;e.open=true;delete e.closedBy;delete e.closedAt;delete e.result;changed();}
+function addUpdate(id){
+  var e=log()[id];if(!e)return;
+  var t=prompt('อัปเดตความคืบหน้า'+(e.order?' — '+e.order:'')+'\nเช่น แจ้ง Logis แล้ว รอบิลใหม่ · ของมาแล้ว รอแพ็ค');
+  if(t===null||!t.trim())return;
+  e.updates=(Array.isArray(e.updates)?e.updates:[]).concat([{by:author(),at:Date.now(),text:t.trim()}]);
+  changed();
+}
+function delEntry(id){
+  var e=log()[id];if(!e)return;
+  if(!confirm('ลบรายการนี้ทิ้ง?\n\n'+(e.order?e.order+' — ':'')+flat(e.text||L.reasonLabel(e.reason)).slice(0,80)+
+    '\n\nถ้าส่งออกได้แล้วหรือออเดอร์ถูกยกเลิก ให้ปิดงานแทน สรุปเดือนจะได้นับถูก'))return;
+  delete log()[id];if(_editId===id)resetForm();changed();
+}
+
+// ── สรุปเดือน ──
+function renderMonth(){
+  var inp=el('m-month');
+  if(!inp.value)inp.value=nowShift().date.slice(0,7);
+  var ym=inp.value,s=L.month(log(),ym),y=+ym.slice(0,4),m=+ym.slice(5,7);
+  el('m-tiles').innerHTML=
+    '<div class="tile"><div class="tile-l">ออเดอร์ติดปัญหา '+MON_F[m-1]+' '+(y+543)+'</div><div class="tile-v">'+s.orders+'</div><div class="tile-s">กะเช้า '+s.byShift.morning+' · กะบ่าย '+s.byShift.evening+'</div></div>'+
+    '<div class="tile"><div class="tile-l">ส่งออกได้แล้ว</div><div class="tile-v">'+s.shipped+'</div><div class="tile-s">ยกเลิกออเดอร์ '+s.cancelled+'</div></div>'+
+    '<div class="tile'+(s.open?' warn':'')+'"><div class="tile-l">ยังไม่ได้ส่ง</div><div class="tile-v">'+s.open+'</div><div class="tile-s">ออเดอร์ของเดือนนี้ · เรื่องอื่นค้าง '+s.openOther+'</div></div>'+
+    '<div class="tile"><div class="tile-l">ปิดงานได้ในเฉลี่ย</div><div class="tile-v">'+(!s.closeDays.n?'—':s.closeDays.avg?s.closeDays.avg+' วัน':'วันเดียว')+'</div>'+
+      '<div class="tile-s">'+(s.closeDays.n?'นับจากวันที่บันทึก · '+s.closeDays.n+' ออเดอร์':'ยังไม่มีออเดอร์ที่ปิด')+'</div></div>';
+  el('m-groups').innerHTML=s.orders?L.GROUPS.filter(function(g){return s.byGroup[g.id];}).map(function(g){
+    return '<span class="rchip g-'+g.id+'">'+esc(g.label)+' '+s.byGroup[g.id]+'</span>';}).join(''):'';
+  var rs=L.REASONS.filter(function(r){return s.byReason[r.id];}).sort(function(a,b){return s.byReason[b.id]-s.byReason[a.id];});
+  var max=rs.length?s.byReason[rs[0].id]:0;
+  el('m-reasons').innerHTML=rs.length?rs.map(function(r){var n=s.byReason[r.id];
+    return '<div class="bar-row"><span class="bar-l"><span class="rchip g-'+r.group+'">'+esc(r.label)+'</span></span><span class="bar-t"><span class="bar-f" style="width:'+Math.round(n/max*100)+'%"></span></span><span class="bar-n">'+n+'</span></div>';}).join(''):
+    '<div class="empty">เดือนนี้ยังไม่มีออเดอร์ติดปัญหา</div>';
+  var sups=Object.keys(s.bySup).sort(function(a,b){return s.bySup[b]-s.bySup[a];});
+  el('m-sups').innerHTML=sups.length?sups.map(function(k){return '<tr><td>'+esc(k)+'</td><td class="n">'+s.bySup[k]+'</td></tr>';}).join(''):
+    '<tr><td colspan="2" class="empty">—</td></tr>';
+  el('m-products').innerHTML=s.products.length?s.products.slice(0,10).map(function(p){
+    return '<tr><td>'+esc(p.product||p.sku)+(p.sku&&p.product?' <span class="hint">'+esc(p.sku)+'</span>':'')+'</td><td class="n">'+p.n+'</td></tr>';}).join(''):
+    '<tr><td colspan="2" class="empty">—</td></tr>';
+  el('m-list').innerHTML=s.list.length?s.list.map(function(e){
+    var res=e.open?'<span class="st st-open">ค้าง</span>':e.result==='cancelled'?'<span class="st st-void">ยกเลิก</span>':'<span class="st st-done">ส่งออกแล้ว</span>';
+    return '<tr><td class="nw">'+L.dayText(e.date)+'</td><td class="nw">'+L.SHIFTS[e.shift]+'</td><td class="nw">'+esc(e.sup||'')+'</td>'+
+      '<td class="nw">'+esc(e.order||'')+'</td><td>'+esc(e.product||'')+'</td><td class="nw">'+esc(L.reasonLabel(e.reason))+'</td>'+
+      '<td class="nw">'+res+'</td><td class="txt">'+esc(e.text||'')+'</td></tr>';}).join(''):
+    '<tr><td colspan="8" class="empty">—</td></tr>';
+}
+
+// ── แท็บ ──
+var curPage='log';
+function showPage(id,btn){
+  curPage=id;
+  document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active');});
+  document.querySelectorAll('.mod-tab').forEach(function(t){t.classList.toggle('active',btn?t===btn:t.getAttribute('data-page')===id);});
+  el('page-'+id).classList.add('active');
+  if(id==='month')renderMonth();else render();
+}
+
+// ── ชีตส่วนกลาง: ใช้ชีตของตารางกะ (ตั้งในหน้าตั้งค่า → Apps Script URL — ตารางกะ) ──
+var sync=window.RosterSync&&window.WmsSettings&&window.WmsGas?RosterSync.create({
+  key:'wms:roster:sync',
+  store:{getItem:function(k){try{return localStorage.getItem(k);}catch(e){return null;}},
+         setItem:function(k,v){try{localStorage.setItem(k,v);}catch(e){}}},
+  url:function(){return WmsSettings.rosterUrl();},
+  token:function(){return WmsSettings.rosterToken();},
+  me:author,
+  identify:function(u){return WmsGas.json(u,'roster',{retries:1,timeoutMs:60000}).then(function(r){return !!r&&r.app==='roster';});},
+  post:function(u,b){return WmsGas.post(u,b,{timeoutMs:60000});},
+  get:function(){return data;},
+  put:function(d){data=obj(JSON.parse(JSON.stringify(d||{})));saveLocal();render();return {migrated:false};},
+  hasLocal:function(){return Array.isArray(data.employees)||Object.keys(obj(data.shiftLog)).length>0;},
+  // เครื่องที่ยังไม่เคยเปิดตารางกะมีแต่สมุดกะ — ห้ามส่งขึ้นไปเป็นชุดหลัก ตารางกะทุกเครื่องจะไม่มีรายชื่อ
+  seed:function(d){return Array.isArray(d.employees);},
+  describe:function(d){return 'พนักงาน '+(Array.isArray(d.employees)?d.employees.length:0)+' คน · สมุดกะ '+Object.keys(obj(d.shiftLog)).length+' รายการ';},
+  ask:function(m){return confirm(m);},
+  // กำลังแก้รายการอยู่ — ดึงฉบับใหม่ทีหลัง ไม่งั้นกดบันทึกแล้วทับของที่เครื่องอื่นเพิ่งแก้
+  canApply:function(){return !_editId;},
+  status:syncStatus
+}):null;
+function syncStatus(state,info){
+  var txt,cls='',act=false;
+  if(state==='pending')txt='บันทึกในเครื่องแล้ว · รอส่งขึ้นชีต';
+  else if(state==='saving')txt='⏳ กำลังส่งขึ้นชีต…';
+  else if(state==='saved'){cls='ok';txt='☁ บันทึกขึ้นชีตแล้ว '+stamp(info.at||Date.now());}
+  else if(state==='synced'){cls='ok';txt='☁ ตรงกับชีต'+(info.at?' · แก้ล่าสุด '+stamp(info.at)+(info.by?' โดย '+info.by:''):'');}
+  else if(state==='pulled'){cls='ok';txt='☁ ดึงฉบับล่าสุดจากชีตแล้ว'+(info.by?' · แก้โดย '+info.by:'')+(info.at?' '+stamp(info.at):'');}
+  else if(state==='declined'){act=true;txt='บันทึกในเครื่องนี้เท่านั้น · กดเพื่อใช้ชีตส่วนกลาง';}
+  else if(state==='offline'){cls='err';act=true;txt='⚠ ต่อชีตไม่ได้ เก็บในเครื่องไว้ก่อน · กดเพื่อลองใหม่';}
+  else if(state==='error'){cls='err';act=true;txt='⚠ '+(info.error||'ส่งขึ้นชีตไม่สำเร็จ')+' · กดเพื่อลองใหม่';}
+  else if(state==='local')txt='เก็บในเครื่องนี้ · ตั้งชีตส่วนกลางในหน้าตั้งค่า แล้วอีกกะจะเห็นด้วย';
+  else return;
+  setSaveState(cls,txt);
+  var s=el('save-state');
+  s.classList.toggle('act',act);
+  s.onclick=act?function(){sync.retry();}:null;
+}
+if(sync){
+  // อีกกะบันทึกจากเครื่องอื่น — เช็คทุกนาทีตอนเปิดดูอยู่ และทันทีที่กลับมาที่แท็บนี้
+  setInterval(function(){if(!document.hidden)sync.poll();},60000);
+  document.addEventListener('visibilitychange',function(){if(!document.hidden)sync.poll();});
+  window.addEventListener('online',function(){sync.poll();});
+}
+/* หน้าตารางกะเปิดอยู่อีกแท็บแล้วบันทึก — ใช้ข้อมูลชุดใหม่ ไม่งั้นครั้งหน้าที่หน้านี้บันทึก
+   จะเขียนรายชื่อ/ตารางชุดเก่าทับของที่เพิ่งแก้ไป */
+window.addEventListener('storage',function(e){
+  if(e.key!==STORE_KEY||!e.newValue)return;
+  try{data=obj(JSON.parse(e.newValue));}catch(x){return;}
+  render();
+});
+
+// ── เริ่ม ──
+el('f-reason').innerHTML=L.GROUPS.map(function(g){
+  return '<optgroup label="'+esc(g.label)+'">'+L.REASONS.filter(function(r){return r.group===g.id;})
+    .map(function(r){return '<option value="'+r.id+'">'+esc(r.label)+'</option>';}).join('')+'</optgroup>';}).join('');
+resetForm();fillSups();render();
+if(sync)sync.start();
+// ช่องสต๊อกในตารางงานค้างใช้ยอดของวันนี้ — ยังไม่มีในเครื่องก็ดึงให้ครั้งเดียว
+if(window.WmsStock&&!WmsStock.read()&&WmsStock.savedUrl()&&L.openItems(log()).some(function(e){return e.sku;})&&WmsGas.firstTry('stock:shiftlog')){
+  WmsStock.pull(WmsStock.savedUrl()).then(render).catch(function(){});
+}
+</script>
+</body>
+</html>

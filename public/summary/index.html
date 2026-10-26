@@ -89,6 +89,7 @@ a.sm-card:hover{border-color:var(--wms-primary);transform:translateY(-1px)}
 <script src="../wms-history.js"></script>
 <script src="../wms-stock.js"></script>
 <script src="../transport-docs/transport-file.js"></script>
+<script src="../shiftlog/shiftlog.js"></script>
 <script>
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
@@ -172,6 +173,40 @@ function orderChurn(o) {
   return seen ? { added, removed, carriers: seen } : null;
 }
 
+/**
+ * งานที่กะก่อนส่งต่อมาในสมุดกะ — เปิดมาตอนเช้าต้องเห็นก่อนอย่างอื่น
+ *
+ * ของในเครื่องอาจค้างมาจากเมื่อวาน (กะบ่ายบันทึกจากอีกเครื่อง) จึงอ่านจากชีตส่วนกลาง
+ * ของตารางกะแบบอ่านอย่างเดียว ไม่เก็บลงเครื่องและไม่ส่งอะไรขึ้นไป — การซิงก์จริงเป็นงาน
+ * ของหน้าสมุดกะกับหน้าตารางกะ ยกเว้นเครื่องนี้มีของที่ยังไม่ได้ส่งขึ้นชีต ของในเครื่องใหม่กว่า
+ */
+let SHIFT_LOG = null;
+function localShiftLog() {
+  try { const d = JSON.parse(localStorage.getItem('wms:roster') || 'null'); return (d && d.shiftLog) || {}; }
+  catch (e) { return {}; }
+}
+async function pullShiftLog() {
+  const url = WmsSettings.rosterUrl();
+  if (!url) return;
+  let dirty = false;
+  try { dirty = !!(JSON.parse(localStorage.getItem('wms:roster:sync') || 'null') || {}).dirty; } catch (e) {}
+  if (dirty) return;
+  const r = await WmsGas.post(url, { op: 'load', token: WmsSettings.rosterToken() }, { timeoutMs: 60000 });
+  if (r && r.app === 'roster' && r.data) { SHIFT_LOG = r.data.shiftLog || {}; render(); }
+}
+function shiftCard() {
+  const list = ShiftLog.openItems(SHIFT_LOG || localShiftLog());
+  const today = ShiftLog.shiftAt(new Date()).date;
+  const logis = list.filter(e => e.kind === 'order' && e.logis).length;
+  const orders = list.filter(e => e.kind === 'order').length;
+  const oldest = list.length ? Math.max(...list.map(e => ShiftLog.age(e, today))) : 0;
+  return card('../shiftlog/', '📓', 'งานค้างในสมุดกะ', list.length,
+    list.length ? `ออเดอร์ติดปัญหา ${orders} (รอ Logis ${logis}) · เรื่องอื่น ${list.length - orders}` +
+                  (oldest ? `<br>เก่าสุดค้างมา ${oldest} วัน` : '')
+                : 'ไม่มีงานที่กะก่อนส่งต่อมา',
+    oldest >= 2 ? 'bad' : list.length ? 'hot' : '');
+}
+
 const card = (href, icon, label, value, sub, cls) =>
   `<a class="sm-card ${cls || ''}" href="${href}">
      <div class="k">${icon} ${esc(label)}</div>
@@ -189,7 +224,8 @@ function render() {
     const noUrl = !OrderIndex.savedUrl() && !WmsStock.savedUrl();
     body.innerHTML = `<div class="sm-empty">${noUrl
       ? 'ยังไม่ได้ตั้ง Apps Script URL — <a href="../settings/">ไปที่หน้าตั้งค่า</a> ก่อน'
-      : 'ยังไม่มีข้อมูลของวันนี้ — กด <b>🔄 ดึงใหม่ทั้งหมด</b> ที่แถบด้านบน'}</div>`;
+      : 'ยังไม่มีข้อมูลของวันนี้ — กด <b>🔄 ดึงใหม่ทั้งหมด</b> ที่แถบด้านบน'}</div>` +
+      `<div class="sm-sec">ต่องานจากกะก่อน</div><div class="sm-grid">${shiftCard()}</div>`;
     return;
   }
 
@@ -253,6 +289,8 @@ function render() {
   body.innerHTML =
     (alerts.length ? `<div class="sm-alert">${alerts.map(a => `<div>⚠️ ${a}</div>`).join('')}</div>` : '') +
 
+    '<div class="sm-sec">ต่องานจากกะก่อน</div><div class="sm-grid">' + shiftCard() + '</div>' +
+
     '<div class="sm-sec">งานของวันนี้</div><div class="sm-grid">' +
     card('../order-compare/', '📋', 'ออเดอร์ที่ดึงมา',
       orderRows === null ? null : orderRows.toLocaleString(),
@@ -299,6 +337,7 @@ if (!carriers() && OrderIndex.savedUrl() && WmsGas.firstTry('order:summary')) {
 if (!stockRows() && WmsStock.savedUrl() && WmsGas.firstTry('stock:summary')) {
   WmsStock.pull(WmsStock.savedUrl()).then(render).catch(() => {});
 }
+pullShiftLog().catch(() => {});   // อ่านไม่ได้ก็ใช้ของในเครื่องไปก่อน
 </script>
 </body>
 </html>
