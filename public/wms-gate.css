@@ -71,9 +71,7 @@ html.wms-locked body > *:not(#wms-gate) { visibility: hidden; }
 
 /* ── Act 2: sign in ──────────────────────────────────────────────────────── */
 .gate-login { animation: gate-rise .5s ease both; }
-.gate-login .logo { width: 46px; height: 46px; border-radius: 13px; background: #6366F1;
-                    display: flex; align-items: center; justify-content: center; margin: 0 auto 14px; }
-.gate-login .logo svg { width: 24px; height: 24px; }
+.gate-login .logo { width: 46px; height: 46px; border-radius: 11px; display: block; margin: 0 auto 14px; }
 .gate-login h1 { font-size: 19px; font-weight: 700; letter-spacing: -.02em; }
 .gate-login h1 span { color: #A5B4FC; font-size: 13px; font-weight: 500; }
 .gate-login .hello { font-size: 12.5px; color: #94A3B8; margin: 6px 0 22px; }

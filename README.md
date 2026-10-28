@@ -307,6 +307,8 @@ public/
 ├─ wms-shell.js            # renders the sidebar from that list
 ├─ wms-theme.css           # shared look
 ├─ wms-gate.js / .css      # opening animation + per-device sign-in (not access control)
+├─ wms-logo.png            # app logo (sidebar, sign-in); wms-icon-32 / -180.png are the tab and home-screen icons
+│                          # every page links all three in its <head>, checked by src/data/icons.test.js
 ├─ wms-settings.js         # settings backup / restore
 ├─ wms-*.js                # shared helpers (dates, stock, picking, trucks, search…)
 ├─ roster/                 # ตารางกะ (+ roster-sync.js: sharing through the sheet,

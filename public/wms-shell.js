@@ -63,7 +63,7 @@ export function sidebarHTML(activeId, root) {
 
   return `<aside class="sysbar">
   <div class="sysbar-brand">
-    <div class="sysbar-logo">${icon(BRAND.logo, 'sysbar-logo-ic')}</div>
+    <img class="sysbar-logo" src="${root}${BRAND.logo}" alt="" width="32" height="32">
     <div class="sysbar-titles">
       <div class="sysbar-title">${esc(BRAND.name)} <span class="sysbar-by">${esc(BRAND.by)}</span></div>
       <div class="sysbar-sub">${esc(BRAND.sub)}</div>

@@ -50,9 +50,7 @@ body {
           font-family:var(--wms-font); }
 .sysbar * { color:inherit; }
 .sysbar-brand { display:flex; align-items:center; gap:10px; padding:12px 16px; }
-.sysbar-logo { width:32px; height:32px; border-radius:8px; background:#6366F1; flex-shrink:0;
-               display:flex; align-items:center; justify-content:center; }
-.sysbar-logo-ic { width:16px; height:16px; }
+.sysbar-logo { width:32px; height:32px; border-radius:8px; flex-shrink:0; display:block; }
 .sysbar-titles { min-width:0; line-height:1.25; }
 .sysbar-title { font-size:15px; font-weight:700; letter-spacing:-.01em; }
 .sysbar-by { font-size:11px; font-weight:500; color:#A5B4FC; margin-left:4px; }
