@@ -19,12 +19,13 @@ The list lives in [`public/wms-modules.js`](public/wms-modules.js) (the one plac
 | — (hidden) | สรุปเช้า · Morning Brief · ย้อนหลัง · History | `summary/` · `history/` |
 | ออเดอร์ | เทียบ Order · ค้นหาออเดอร์ | `order-compare/` · `order-lookup/` |
 | คลังสินค้า | สต๊อกคงเหลือ · สรุปหยิบของ · เบิกตามออเดอร์ · เอกสารคลังสินค้า | `stock/` · `picking/` · `order-sheet/` · `warehouse-forms/` |
-| ขนส่ง | ประเภทงานรถ · ผังงานรถวันนี้ · ทำใบงานขนส่ง · เอกสารขนส่ง | `jobs/` · `loadplan/` · `transport-docs/` · `transport-forms/` |
+| ขนส่ง | ทำใบงานขนส่ง · เอกสารขนส่ง | `transport-docs/` · `transport-forms/` |
+| ขนส่ง (hidden) | ประเภทงานรถ · ผังงานรถวันนี้ | `jobs/` · `loadplan/` |
 | ทีมและระบบ | **ตารางกะ · Shift Schedule** · ตั้งค่า | `roster/` · `settings/` |
 
 The site root redirects to `roster/`, so the main link opens the shift schedule.
 
-สรุปเช้า and ย้อนหลัง are marked `hidden: true`. They're left out of the sidebar, but the pages still
+สรุปเช้า, ย้อนหลัง, ประเภทงานรถ, and ผังงานรถวันนี้ are marked `hidden: true`. They're left out of the sidebar, but the pages still
 work by their links, and the sidebar shows them while you're on them. Remove `hidden` to put them
 back.
 

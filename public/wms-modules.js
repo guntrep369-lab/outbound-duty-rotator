@@ -46,8 +46,9 @@ export const MODULES = [
   { id: 'picking', label: 'สรุปหยิบของ', labelEn: 'Picking Sheet', path: 'picking/', icon: 'clipboardList', group: 'warehouse' },
   { id: 'reqpick', label: 'เบิกตามออเดอร์', labelEn: 'Order Requisition', path: 'order-sheet/', icon: 'listChecks', group: 'warehouse' },
   { id: 'warehouse', label: 'เอกสารคลังสินค้า', labelEn: 'Warehouse Forms', path: 'warehouse-forms/', icon: 'boxes', group: 'warehouse' },
-  { id: 'jobs', label: 'ประเภทงานรถ', labelEn: 'Job Types', path: 'jobs/', icon: 'compass', group: 'transport' },
-  { id: 'loadplan', label: 'ผังงานรถวันนี้', labelEn: 'Load Plan', path: 'loadplan/', icon: 'map', group: 'transport' },
+  /* ประเภทงานรถกับผังงานรถวันนี้ยังไม่ได้ใช้ในงานจริง ซ่อนไว้เหมือนสรุปเช้า */
+  { id: 'jobs', label: 'ประเภทงานรถ', labelEn: 'Job Types', path: 'jobs/', icon: 'compass', group: 'transport', hidden: true },
+  { id: 'loadplan', label: 'ผังงานรถวันนี้', labelEn: 'Load Plan', path: 'loadplan/', icon: 'map', group: 'transport', hidden: true },
   { id: 'transport', label: 'ทำใบงานขนส่ง', labelEn: 'Transport Docs', path: 'transport-docs/', icon: 'truck', group: 'transport' },
   { id: 'forms', label: 'เอกสารขนส่ง', labelEn: 'Transport Forms', path: 'transport-forms/', icon: 'file', group: 'transport' },
   { id: 'roster', label: 'ตารางกะ', labelEn: 'Shift Schedule', path: 'roster/', icon: 'calendar', group: 'system' },
