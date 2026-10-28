@@ -27,6 +27,19 @@ html.wms-locked body > *:not(#wms-gate) { visibility: hidden; }
 }
 @keyframes gate-breathe { 0%, 100% { transform: scale(1); opacity: .85 } 50% { transform: scale(1.12); opacity: 1 } }
 
+/* Warehouse photo behind the sign-in card. It starts loading with the gate but
+   stays hidden through the intro, so the parcel animation keeps its plain dark
+   stage, then fades in as the intro leaves (wms-gate.js adds .at-login).
+   The vignette keeps the middle dark enough for the card. */
+#wms-gate::after {
+  content: ''; position: absolute; inset: 0; z-index: -1;
+  background:
+    radial-gradient(ellipse at center, rgba(15, 23, 42, .35), rgba(15, 23, 42, .88) 78%),
+    url('wms-gate-bg.jpg') center / cover no-repeat;
+  opacity: 0; transition: opacity .9s ease;
+}
+#wms-gate.at-login::after { opacity: 1; }
+
 #wms-gate .stage { position: relative; text-align: center; width: 100%; max-width: 380px; padding: 24px; }
 
 /* ── Act 1: the intro ────────────────────────────────────────────────────── */
@@ -70,7 +83,15 @@ html.wms-locked body > *:not(#wms-gate) { visibility: hidden; }
              font-size: 11px; color: #475569; opacity: 0; animation: gate-fade-in .5s ease 1.9s both; }
 
 /* ── Act 2: sign in ──────────────────────────────────────────────────────── */
-.gate-login { animation: gate-rise .5s ease both; }
+/* Over the photo the form needs its own surface to stay readable. */
+.gate-login {
+  animation: gate-rise .5s ease both;
+  padding: 28px 24px 22px; border-radius: 18px;
+  background: rgba(15, 23, 42, .64);
+  border: 1px solid rgba(148, 163, 184, .16);
+  box-shadow: 0 24px 60px rgba(2, 6, 23, .55);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+}
 .gate-login .logo { width: 46px; height: 46px; border-radius: 11px; display: block; margin: 0 auto 14px; }
 .gate-login h1 { font-size: 19px; font-weight: 700; letter-spacing: -.02em; }
 .gate-login h1 span { color: #A5B4FC; font-size: 13px; font-weight: 500; }

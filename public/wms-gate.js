@@ -316,6 +316,7 @@
       advanced = true;
       var intro = stage.querySelector('.gate-intro');
       intro.classList.add('leaving');
+      gate.classList.add('at-login');
       setTimeout(showLogin, 380);
       gate.removeEventListener('click', advance);
       document.removeEventListener('keydown', advance);
