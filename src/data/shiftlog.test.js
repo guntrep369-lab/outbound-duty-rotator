@@ -156,3 +156,68 @@ describe('เติมข้อมูลจากเลขออเดอร์'
     expect(L.orderLines(rows, '')).toEqual([]);
   });
 });
+
+describe('รับทราบงานต่อ', () => {
+  // กะเช้า 28 ต.ค. 08:00 — งานจากกะบ่ายเมื่อวานกับก่อนหน้า ส่งต่อมาถึงกะนี้
+  const now = new Date(2026, 9, 28, 8);
+  const T = (d, h) => new Date(2026, 9, d, h).getTime();
+  const base = () => ({
+    a: { kind: 'order', date: '2026-10-27', shift: 'evening', open: true, at: T(27, 17) },
+    b: { kind: 'handover', date: '2026-10-26', shift: 'morning', open: true, at: T(26, 9) },
+    c: { kind: 'order', date: '2026-10-27', shift: 'morning', open: false, at: T(27, 9) },
+    d: { kind: 'order', date: '2026-10-28', shift: 'morning', open: true, at: T(28, 7) },
+  });
+  const ack = (at, by = 'สมชาย') => ({ kind: 'ack', date: '2026-10-28', shift: 'morning', by, at });
+
+  it('งานค้างจากกะก่อน ๆ คืองานส่งต่อ — งานที่กะนี้เพิ่งบันทึกเองกับงานที่ปิดแล้วไม่นับ', () => {
+    const s = L.handover(base(), now);
+    expect(s).toMatchObject({ date: '2026-10-28', shift: 'morning', ack: null, needs: true });
+    expect(s.items.map((e) => e.id)).toEqual(['b', 'a']);
+  });
+
+  it('กดรับทราบแล้ว — ไม่ต้องเตือน · ใครกด กดเมื่อไหร่ เก็บไว้ที่กะนั้น', () => {
+    const log = base();
+    log[L.ackId('2026-10-28', 'morning')] = ack(T(28, 7));
+    const s = L.handover(log, now);
+    expect(s.needs).toBe(false);
+    expect(s.ack.by).toBe('สมชาย');
+    expect(L.ackOf(log, '2026-10-28', 'evening')).toBe(null);
+  });
+
+  it('มีงานของกะก่อนเข้ามาหลังกดรับทราบ (อีกเครื่องเพิ่งส่งขึ้นชีต) — ต้องรับทราบใหม่', () => {
+    const log = base();
+    log[L.ackId('2026-10-28', 'morning')] = ack(T(27, 16));
+    expect(L.handover(log, now).needs).toBe(true);
+  });
+
+  it('ไม่มีงานส่งต่อมา — ไม่ต้องกดอะไร', () => {
+    const log = { d: base().d };
+    expect(L.handover(log, now)).toMatchObject({ items: [], needs: false });
+  });
+
+  it('กะบ่ายรับงานของกะเช้าวันเดียวกันด้วย — และหลังเที่ยงคืนยังเป็นกะบ่าย', () => {
+    const s = L.handover(base(), new Date(2026, 9, 28, 16, 5));
+    expect(s.shift).toBe('evening');
+    expect(s.items.map((e) => e.id)).toEqual(['b', 'a', 'd']);
+    expect(L.handover(base(), new Date(2026, 9, 29, 1)).date).toBe('2026-10-28');
+  });
+
+  it('รายการรับทราบไม่ใช่งาน — ไม่ขึ้นในงานค้าง รายวัน หรือสรุปเดือน', () => {
+    const log = base();
+    log[L.ackId('2026-10-28', 'morning')] = ack(T(28, 7));
+    expect(L.openItems(log).map((e) => e.id)).toEqual(['b', 'a', 'd']);
+    expect(L.day(log, '2026-10-28').morning.map((e) => e.id)).toEqual(['d']);
+    expect(L.month(log, '2026-10')).toMatchObject({ orders: 3, handovers: 1 });
+  });
+
+  it('เลขบนเมนูใช้กฎเดียวกับหน้าสมุดกะ', async () => {
+    const { needsAck } = await import('../../public/wms-badges.js');
+    const late = base(); late[L.ackId('2026-10-28', 'morning')] = ack(T(27, 16));
+    const done = base(); done[L.ackId('2026-10-28', 'morning')] = ack(T(28, 7));
+    const cases = [base(), late, done, { d: base().d }, {}];
+    const times = [now, new Date(2026, 9, 28, 16, 5), new Date(2026, 9, 29, 1), new Date(2026, 9, 28, 6, 59)];
+    for (const log of cases) for (const t of times) {
+      expect(needsAck(log, t)).toBe(L.handover(log, t).needs);
+    }
+  });
+});

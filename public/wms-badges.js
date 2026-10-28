@@ -22,11 +22,31 @@ const pad = (n) => (n < 10 ? '0' : '') + n;
 const ymd = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
 const pd = (s) => { const p = String(s).split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); };
 
-/** วันของกะตอนนี้ — ก่อน 7 โมงยังเป็นกะบ่ายของเมื่อวาน (แบบเดียวกับ ShiftLog.shiftAt) */
-export function shiftDay(now) {
-  const d = now.getHours() < 7 ? new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1) : now;
-  return ymd(d);
+/** กะตอนนี้ — 07:00–16:00 กะเช้า หลังจากนั้นกะบ่าย ก่อน 7 โมงยังเป็นกะบ่ายของเมื่อวาน (แบบเดียวกับ ShiftLog.shiftAt) */
+export function shiftNow(now) {
+  const h = now.getHours();
+  if (h < 7) return { date: ymd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)), shift: 'evening' };
+  return { date: ymd(now), shift: h < 16 ? 'morning' : 'evening' };
 }
+export function shiftDay(now) { return shiftNow(now).date; }
+
+/**
+ * กะนี้ยังไม่มีใครกดรับทราบงานที่กะก่อนส่งต่อมา — กฎเดียวกับ ShiftLog.handover() ในหน้าสมุดกะ
+ * งานส่งต่อ = งานค้างที่บันทึกในกะก่อน ๆ · มีงานเข้ามาหลังกดรับทราบแล้ว นับว่ายังไม่ได้รับ
+ */
+export function needsAck(log, now) {
+  const cur = shiftNow(now);
+  const ack = (log || {})['ack-' + cur.date + '-' + cur.shift];
+  const ackAt = ack && ack.kind === 'ack' ? ack.at || 0 : -1;
+  for (const id in log || {}) {
+    const e = log[id];
+    if (!e || typeof e !== 'object' || !e.open || e.kind === 'ack') continue;
+    const before = e.date < cur.date || (e.date === cur.date && e.shift === 'morning' && cur.shift === 'evening');
+    if (before && (ackAt < 0 || (e.at || 0) > ackAt)) return true;
+  }
+  return false;
+}
+const shiftKey = (now) => { const s = shiftNow(now); return s.date + '-' + s.shift; };
 
 /** งานที่ยังเปิดอยู่กี่รายการ กับวันที่ของรายการที่เก่าสุด */
 export function countOpen(log) {
@@ -50,16 +70,17 @@ export function ageDays(oldest, today) {
  * เลขที่จะโชว์ — ข้อมูลในเครื่อง หรือตัวเลขจากชีต ถ้าชีตมีฉบับที่ใหม่กว่าที่เครื่องนี้มี
  * เครื่องนี้แก้ค้างไว้ยังไม่ได้ส่งขึ้นชีต (dirty) ใช้ของในเครื่อง — มีงานที่เพิ่งบันทึกอยู่ในนั้น
  * @param {{log:object, sync:object|null}} local
- * @param {{url, rev, n, oldest}|null} cache
+ * @param {{url, rev, n, oldest, shift, needs}|null} cache — needs ใช้ได้เฉพาะกะที่เช็คไว้ (shift)
  * @param {string} url ชีตตารางกะที่ตั้งไว้ตอนนี้
+ * @returns {{n, oldest, needs}}
  */
-export function pickCount(local, cache, url) {
-  const mine = countOpen(local.log);
+export function pickCount(local, cache, url, now = new Date()) {
   const s = local.sync || {};
-  if (!cache || !url || cache.url !== url || s.dirty) return mine;
   const localRev = s.url === url ? Number(s.rev) || 0 : 0;
-  if (Number(cache.rev) > localRev) return { n: Number(cache.n) || 0, oldest: cache.oldest || '' };
-  return mine;
+  if (cache && url && cache.url === url && !s.dirty && Number(cache.rev) > localRev) {
+    return { n: Number(cache.n) || 0, oldest: cache.oldest || '', needs: cache.shift === shiftKey(now) && !!cache.needs };
+  }
+  return { ...countOpen(local.log), needs: needsAck(local.log, now) };
 }
 
 function readJSON(key) {
@@ -77,14 +98,17 @@ function settings() {
   return S ? { url: S.rosterUrl(), token: S.rosterToken() } : { url: '', token: '' };
 }
 
-/** วาดเลขบนเมนูสมุดกะ — 0 ไม่โชว์ · ค้าง 2 วันขึ้นไปเป็นสีแดงเหมือนในรายการค้าง */
+/**
+ * วาดเลขบนเมนูสมุดกะ — 0 ไม่โชว์ · ค้าง 2 วันขึ้นไปเป็นสีแดงเหมือนในรายการค้าง
+ * กะนี้ยังไม่มีใครกดรับทราบงานต่อ เลขจะกะพริบ (class ask) จนกว่าจะมีคนกดในหน้าสมุดกะ
+ */
 export function renderBadge(doc = document, now = new Date()) {
   const links = doc.querySelectorAll('.sysmod[data-mod="shiftlog"]');
   if (!links.length) return;
   const cache = readJSON(CACHE_KEY);
   // หน้าที่ไม่ได้โหลด wms-settings.js (ย้อนหลัง, เอกสารขนส่ง) ไม่รู้ว่าตั้งชีตไหนไว้ — ใช้ชีตที่เช็คล่าสุด
   const url = window.WmsSettings ? settings().url : (cache && cache.url) || '';
-  const { n, oldest } = pickCount(readLocal(), cache, url);
+  const { n, oldest, needs } = pickCount(readLocal(), cache, url, now);
   const age = ageDays(oldest, shiftDay(now));
   links.forEach((a) => {
     let b = a.querySelector('.sysmod-badge');
@@ -92,7 +116,9 @@ export function renderBadge(doc = document, now = new Date()) {
     if (!b) { b = doc.createElement('b'); b.className = 'sysmod-badge'; a.appendChild(b); }
     b.textContent = n > 99 ? '99+' : String(n);
     b.classList.toggle('old', age >= 2);
-    a.title = 'งานค้างในสมุดกะ ' + n + ' รายการ' + (age ? ' · เก่าสุดค้างมา ' + age + ' วัน' : '');
+    b.classList.toggle('ask', needs);
+    a.title = 'งานค้างในสมุดกะ ' + n + ' รายการ' + (age ? ' · เก่าสุดค้างมา ' + age + ' วัน' : '') +
+      (needs ? ' · กะนี้ยังไม่มีใครกดรับทราบงานต่อ' : '');
   });
 }
 
@@ -107,16 +133,18 @@ export async function refreshFromSheet(force) {
   try {
     const r = await window.WmsGas.post(url, { op: 'rev', token }, { timeoutMs: 30000 });
     if (!r || r.app !== 'roster' || r.error) return;
-    const local = readLocal(), s = local.sync || {};
+    const local = readLocal(), s = local.sync || {}, now = new Date(), key = shiftKey(now);
+    const count = (log) => ({ ...countOpen(log), needs: needsAck(log, now) });
     let c;
-    if (s.url === url && Number(s.rev) === Number(r.rev) && !s.dirty) c = countOpen(local.log);
-    else if (cache && cache.url === url && Number(cache.rev) === Number(r.rev)) c = cache;
+    if (s.url === url && Number(s.rev) === Number(r.rev) && !s.dirty) c = count(local.log);
+    // ฉบับเดิม กะเดิม — ใช้ที่นับไว้ · เปลี่ยนกะแล้วต้องโหลดมาดูใหม่ว่ากะนี้มีงานส่งต่อมาไหม
+    else if (cache && cache.url === url && Number(cache.rev) === Number(r.rev) && cache.shift === key) c = cache;
     else {
       const full = await window.WmsGas.post(url, { op: 'load', token }, { timeoutMs: 60000 });
       if (!full || full.app !== 'roster' || full.error) return;
-      c = countOpen((full.data && full.data.shiftLog) || {});
+      c = count((full.data && full.data.shiftLog) || {});
     }
-    writeJSON(CACHE_KEY, { url, rev: Number(r.rev) || 0, n: c.n, oldest: c.oldest, at: Date.now() });
+    writeJSON(CACHE_KEY, { url, rev: Number(r.rev) || 0, n: c.n, oldest: c.oldest, shift: key, needs: !!c.needs, at: Date.now() });
     renderBadge();
   } catch (e) {
     // เน็ตหลุดหรือชีตช้า — ใช้เลขเดิมไปก่อน รอบหน้าค่อยลองใหม่
@@ -135,8 +163,10 @@ export function mountBadges(activeId) {
   window.addEventListener('storage', (e) => {
     if (e.key === LOG_KEY || e.key === SYNC_KEY || e.key === CACHE_KEY) renderBadge();
   });
-  if (SELF_SYNCED.includes(activeId)) return;
-  refreshFromSheet();
-  setInterval(() => { if (!document.hidden) refreshFromSheet(); }, FRESH_MS);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) { renderBadge(); refreshFromSheet(); } });
+  // วาดใหม่เป็นระยะด้วย — เปิดค้างไว้ข้ามเวลาเปลี่ยนกะ เลขต้องกะพริบให้กะใหม่เอง
+  const self = SELF_SYNCED.includes(activeId);
+  const tick = () => { if (document.hidden) return; renderBadge(); if (!self) refreshFromSheet(); };
+  if (!self) refreshFromSheet();
+  setInterval(tick, FRESH_MS);
+  document.addEventListener('visibilitychange', tick);
 }

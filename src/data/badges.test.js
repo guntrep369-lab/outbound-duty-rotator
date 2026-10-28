@@ -1,7 +1,7 @@
 /**
  * public/wms-badges.js — เลขงานค้างของสมุดกะบนเมนูข้าง
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { shiftDay, countOpen, ageDays, pickCount, refreshFromSheet, renderBadge } from '../../public/wms-badges.js';
 
 const URL = 'https://script.google.com/macros/s/x/exec';
@@ -32,7 +32,20 @@ describe('ใช้เลขจากที่ไหน', () => {
   const cache = { url: URL, rev: 12, n: 5, oldest: '2026-10-22' };
 
   it('ชีตมีฉบับใหม่กว่าเครื่องนี้ — ใช้เลขจากชีต', () => {
-    expect(pickCount(local(11), cache, URL)).toEqual({ n: 5, oldest: '2026-10-22' });
+    expect(pickCount(local(11), cache, URL)).toEqual({ n: 5, oldest: '2026-10-22', needs: false });
+  });
+
+  it('ยังไม่มีใครรับทราบงานต่อ — เชื่อเลขจากชีตเฉพาะกะที่เช็คไว้ เปลี่ยนกะแล้วรอเช็คใหม่', () => {
+    const c = { ...cache, shift: '2026-10-28-morning', needs: true };
+    expect(pickCount(local(11), c, URL, new Date(2026, 9, 28, 10)).needs).toBe(true);
+    expect(pickCount(local(11), c, URL, new Date(2026, 9, 28, 16)).needs).toBe(false);
+  });
+
+  it('นับจากในเครื่อง — ดูว่ากะนี้รับทราบงานต่อแล้วหรือยังจากในเครื่องด้วย', () => {
+    const at = new Date(2026, 9, 28, 10);
+    expect(pickCount(local(12), cache, URL, at).needs).toBe(true);
+    const log = { ...LOG, 'ack-2026-10-28-morning': { kind: 'ack', date: '2026-10-28', shift: 'morning', at: at.getTime() } };
+    expect(pickCount({ log, sync: null }, null, URL, at)).toEqual({ n: 2, oldest: '2026-10-24', needs: false });
   });
 
   it('เครื่องนี้มีฉบับเดียวกันหรือใหม่กว่า — นับจากในเครื่อง', () => {
@@ -57,7 +70,10 @@ describe('ใช้เลขจากที่ไหน', () => {
 describe('เช็คชีต', () => {
   let store, calls;
   const post = (replies) => async (url, body) => { calls.push(body.op); return replies[body.op]; };
+  afterEach(() => vi.useRealTimers());
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 9, 28, 10));
     store = {};
     calls = [];
     globalThis.localStorage = {
@@ -78,7 +94,18 @@ describe('เช็คชีต', () => {
     window.WmsGas = { post: post({ rev: { app: 'roster', rev: 7 } }) };
     await refreshFromSheet();
     expect(calls).toEqual(['rev']);
-    expect(cached()).toMatchObject({ url: URL, rev: 7, n: 2, oldest: '2026-10-24' });
+    expect(cached()).toMatchObject({ url: URL, rev: 7, n: 2, oldest: '2026-10-24', shift: '2026-10-28-morning', needs: true });
+  });
+
+  it('ฉบับเดิมแต่เปลี่ยนกะแล้ว — โหลดมาดูว่ากะใหม่มีคนรับทราบงานต่อหรือยัง', async () => {
+    store['wms:shiftlog:badge'] = JSON.stringify({ url: URL, rev: 9, n: 1, shift: '2026-10-27-evening', needs: false, at: 0 });
+    window.WmsGas = { post: post({
+      rev: { app: 'roster', rev: 9 },
+      load: { app: 'roster', rev: 9, data: { shiftLog: { x: { date: '2026-10-27', shift: 'evening', open: true, at: 1 } } } },
+    }) };
+    await refreshFromSheet();
+    expect(calls).toEqual(['rev', 'load']);
+    expect(cached()).toMatchObject({ rev: 9, n: 1, shift: '2026-10-28-morning', needs: true });
   });
 
   it('อีกเครื่องบันทึกฉบับใหม่ — โหลดมานับ แต่ไม่เขียนทับตารางกะในเครื่อง', async () => {
@@ -145,7 +172,19 @@ describe('วาดเลขบนเมนู', () => {
     const a = draw();
     expect(a.badge.textContent).toBe('2');
     expect(a.badge.classList.contains('old')).toBe(true);
-    expect(a.title).toBe('งานค้างในสมุดกะ 2 รายการ · เก่าสุดค้างมา 4 วัน');
+    expect(a.title).toBe('งานค้างในสมุดกะ 2 รายการ · เก่าสุดค้างมา 4 วัน · กะนี้ยังไม่มีใครกดรับทราบงานต่อ');
+  });
+
+  it('กะนี้ยังไม่มีใครรับทราบงานต่อ — เลขกะพริบ กดรับทราบแล้วหยุด', () => {
+    const doc = fakeDoc();
+    renderBadge(doc, now);
+    expect(link.badge.classList.contains('ask')).toBe(true);
+    const log = { ...LOG, 'ack-2026-10-28-morning': { kind: 'ack', date: '2026-10-28', shift: 'morning', by: 'สมชาย', at: now.getTime() } };
+    store['wms:roster'] = JSON.stringify({ shiftLog: log });
+    renderBadge(doc, now);
+    expect(link.badge.classList.contains('ask')).toBe(false);
+    expect(link.badge.textContent).toBe('2');
+    expect(link.title).toBe('งานค้างในสมุดกะ 2 รายการ · เก่าสุดค้างมา 4 วัน');
   });
 
   it('ปิดงานค้างหมดแล้ว — เอาเลขออก', () => {

@@ -166,6 +166,17 @@ date and shift it's saved under. Esc or ✕ closes it, and it asks first if you'
 A reason from the ต้องแจ้ง Logis group ticks **Logis** on its own. แจ้งแตกล็อต is for a bill that
 Logis made for 1 box when packing actually needs 2.
 
+**รับทราบงานต่อ:** when open items from earlier shifts are waiting, ต่องาน shows an amber bar at the
+top with how many were handed over and a **✓ รับทราบงานต่อ** button. The person starting the shift
+reads the list and presses it. The bar turns green and shows who took the handover and when.
+ย้อนดูรายวัน shows the same next to each shift.
+
+- It's one record per shift (`ack-<date>-<shift>` in `shiftLog`), so it goes through the shared
+  sheet like the other entries. It isn't an item: it never shows in the lists or the month summary.
+- If an earlier shift's item arrives after the press (another device saved it late), the bar comes
+  back and asks again.
+- The name is the one in ตั้งค่า, or the sign-in name. With neither, it asks.
+
 **The ค้างอยู่ list:**
 
 - Everything still open, grouped as รอ Logis ดำเนินการ, รอของ / กำลังตาม, and เรื่องอื่น. Oldest
@@ -187,13 +198,14 @@ how many days an order takes to close on average. It prints.
 oldest item's age. When the schedule sheet is set up, it reads the sheet's copy (read-only).
 
 **Sidebar count:** สมุดกะ sits near the top of the sidebar on every page, with the open count next
-to it (amber; red once the oldest item has waited two days or more). Hover it for the oldest
-item's age. The count comes from [`public/wms-badges.js`](public/wms-badges.js):
+to it (amber; red once the oldest item has waited two days or more). It pulses while nobody on the
+current shift has pressed รับทราบงานต่อ. Hover it for the oldest item's age. The count comes from
+[`public/wms-badges.js`](public/wms-badges.js):
 
 - It updates as soon as an entry is saved on this device.
 - On other pages it asks the schedule sheet for its version every 3 minutes while the tab is open.
-  It downloads the log only when another device has saved something newer, and it never changes
-  this device's schedule.
+  It downloads the log only when another device has saved something newer, or once after the
+  shift changes. It never changes this device's schedule.
 - Pages that don't load the sheet settings (ย้อนหลัง, the transport and warehouse forms) don't
   check the sheet. They show the newer of this device's count and the last sheet check.
 

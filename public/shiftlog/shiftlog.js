@@ -19,6 +19,10 @@
  * - handover: เรื่องอื่นที่ไม่ใช่ออเดอร์ (รถไม่มา คนไม่พอ) — เปิดค้างจนกดเสร็จ
  * - logis: ต้องให้ทีม Logis ทำอะไรต่อ (แก้บิล ออกใบปะหน้าใหม่) — ขึ้นก่อนในหน้าดูของ Logis
  *
+ * รับทราบงานต่อ: { kind: 'ack', date, shift, by, at } รหัส ack-<วันที่>-<กะ> กะละหนึ่งรายการ
+ * คนเข้ากะกดหลังอ่านงานที่กะก่อนส่งต่อมา อยู่ใน shiftLog ด้วยกัน จึงไปกับชีตส่วนกลางโดยไม่ต้อง
+ * แก้หน้าตารางกะ — ไม่ใช่งาน จึงไม่ขึ้นในรายการค้าง รายวัน หรือสรุปเดือน (rows() ข้ามไว้)
+ *
  * โหลดเป็น classic script เปิดเป็น window.ShiftLog
  */
 (function () {
@@ -98,7 +102,7 @@
     var out = [];
     for (var id in log) {
       var e = log[id];
-      if (!e || typeof e !== 'object') continue;
+      if (!e || typeof e !== 'object' || e.kind === 'ack') continue;
       var r = { id: id };
       for (var k in e) r[k] = e[k];
       out.push(r);
@@ -124,6 +128,29 @@
       (out[e.shift] || out.evening).push(e);
     });
     return out;
+  }
+
+  function ackId(date, shift) { return 'ack-' + date + '-' + shift; }
+  function ackOf(log, date, shift) {
+    var a = log && log[ackId(date, shift)];
+    return a && a.kind === 'ack' ? a : null;
+  }
+  /** (date, shift) มาก่อนกะ cur ไหม */
+  function before(e, cur) {
+    return e.date < cur.date || (e.date === cur.date && e.shift === 'morning' && cur.shift === 'evening');
+  }
+
+  /**
+   * งานที่ส่งต่อมาถึงกะตอนนี้ — งานค้างที่บันทึกไว้ในกะก่อน ๆ กับว่ามีคนรับทราบแล้วหรือยัง
+   * needs: มีงานส่งต่อมาแต่ยังไม่มีใครกดรับทราบ หรือมีงานเข้ามาหลังกดไปแล้ว (อีกเครื่องเพิ่งส่งขึ้นชีต)
+   * กฎเดียวกับ wms-badges.js ที่ใช้วาดเลขบนเมนู
+   */
+  function handover(log, now) {
+    var cur = shiftAt(now);
+    var items = openItems(log).filter(function (e) { return before(e, cur); });
+    var ack = ackOf(log, cur.date, cur.shift);
+    var needs = items.length > 0 && (!ack || items.some(function (e) { return (e.at || 0) > (ack.at || 0); }));
+    return { date: cur.date, shift: cur.shift, items: items, ack: ack, needs: needs };
   }
 
   var ITEM_FIELDS = ['product', 'size', 'qty', 'sku'];
@@ -219,5 +246,6 @@
     shiftAt: shiftAt, age: age, dayText: dayText, newId: newId,
     ITEM_FIELDS: ITEM_FIELDS, itemsOf: itemsOf,
     openItems: openItems, day: day, month: month, orderLines: orderLines,
+    ackId: ackId, ackOf: ackOf, handover: handover,
   };
 })();

@@ -41,6 +41,17 @@
 .btn-add2:hover{background:var(--primary-l)}
 @media(max-width:560px){.act-bar button{flex:1}}
 
+/* ═══ รับทราบงานต่อ — คนเข้ากะกดหลังอ่านงานที่กะก่อนส่งมา ═══ */
+.ack-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;border-radius:var(--radius);padding:12px 16px;margin-bottom:16px;font-size:14px}
+.ack-bar:empty{display:none}
+.ack-bar.ask{background:var(--open-bg);border:1px solid var(--open-border);color:var(--open)}
+.ack-bar.ok{background:var(--done-bg);border:1px solid #bbf7d0;color:var(--done);padding:8px 14px;font-size:13px}
+.ack-t{flex:1;min-width:200px;line-height:1.5}
+.ack-t b{font-weight:700}
+.btn-ack{background:var(--wms-success);color:#fff;border:none;border-radius:var(--radius-sm);padding:10px 18px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;min-height:44px}
+.btn-ack:hover{filter:brightness(.92)}
+@media(max-width:560px){.btn-ack{width:100%}}
+
 /* ═══ ฟอร์มแบบป๊อปอัป — มือถือเต็มจอ ปุ่มบันทึกอยู่ล่างเสมอ ═══ */
 .sheet-bg{position:fixed;inset:0;z-index:1000;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;padding:16px}
 .sheet-bg[hidden],.sheet [hidden]{display:none!important}
@@ -274,6 +285,7 @@ body.sheet-open{overflow:hidden}
 
 <!-- ═══ ต่องาน ═══ -->
 <div id="page-log" class="page active">
+  <div id="ack-bar" class="ack-bar no-print" role="status"></div>
   <div class="act-bar no-print">
     <button type="button" class="btn-add" onclick="openForm('order')">＋ ออเดอร์ติดปัญหา</button>
     <button type="button" class="btn-add2" onclick="openForm('handover')">＋ เรื่องอื่น</button>
@@ -550,6 +562,30 @@ function renderOpen(){
   if(g.wait.length)h+=head('รอของ / กำลังตาม',g.wait.length)+orderTable(g.wait,today);
   if(g.hand.length)h+=head('เรื่องอื่น',g.hand.length)+g.hand.map(function(e){return entHtml(e,today,true);}).join('');
   el('open-list').innerHTML=h||'<div class="empty">ไม่มีงานค้าง 👍</div>';
+  renderAck();
+}
+
+/* รับทราบงานต่อ — กะก่อนส่งงานค้างมา คนเข้ากะอ่านแล้วกด หัวหน้าย้อนดูได้ว่ากะไหนใครรับ
+   ยังไม่มีใครกด เลขบนเมนูข้างจะกะพริบ (wms-badges.js) */
+function renderAck(){
+  var s=L.handover(log(),new Date()),bar=el('ack-bar'),sh=L.SHIFTS[s.shift];
+  if(s.needs){
+    var late=s.ack?s.items.filter(function(e){return (e.at||0)>(s.ack.at||0);}).length:0;
+    bar.className='ack-bar ask no-print';
+    bar.innerHTML='<div class="ack-t">📥 '+(late?'<b>มีงานส่งต่อมาเพิ่ม '+late+' รายการ</b> หลัง '+esc(s.ack.by||'—')+' กดรับทราบไปเมื่อ '+hm(s.ack.at):
+        '<b>กะก่อนส่งงานต่อมา '+s.items.length+' รายการ</b> — อ่านด้านล่างแล้วกดรับทราบ')+'</div>'+
+      '<button type="button" class="btn-ack" onclick="ackHandover()">✓ รับทราบงานต่อ</button>';
+  }else if(s.ack){
+    bar.className='ack-bar ok no-print';
+    bar.innerHTML='<div class="ack-t">✓ <b>'+sh+'รับงานต่อแล้ว</b> · โดย '+esc(s.ack.by||'—')+' '+hm(s.ack.at)+'</div>';
+  }else{bar.className='ack-bar no-print';bar.innerHTML='';}
+}
+function ackHandover(){
+  var who=author();
+  if(!who){who=prompt('ชื่อคนรับงานต่อ');if(who===null||!who.trim())return;who=who.trim();}
+  var s=L.handover(log(),new Date());
+  log()[L.ackId(s.date,s.shift)]={kind:'ack',date:s.date,shift:s.shift,by:who,at:Date.now()};
+  changed();
 }
 
 function renderDay(){
@@ -557,9 +593,10 @@ function renderDay(){
   el('day-txt').textContent=L.dayText(d);
   var g=L.day(log(),d);
   ['morning','evening'].forEach(function(sh){
-    var list=g[sh],no=list.filter(function(e){return e.kind==='order';}).length;
+    var list=g[sh],no=list.filter(function(e){return e.kind==='order';}).length,ack=L.ackOf(log(),d,sh);
     h+='<div class="sh-block"><div class="sh-head sh-'+sh+'"><span>'+L.SHIFTS[sh]+'</span>'+
-      '<span class="sh-sum">ออเดอร์ติดปัญหา '+no+' · เรื่องอื่น '+(list.length-no)+'</span></div>';
+      '<span class="sh-sum">ออเดอร์ติดปัญหา '+no+' · เรื่องอื่น '+(list.length-no)+
+      (ack?' · ✓ รับงานต่อโดย '+esc(ack.by||'—')+' '+hm(ack.at):'')+'</span></div>';
     h+=list.length?list.map(function(e){return entHtml(e,today,false);}).join(''):'<div class="empty">ยังไม่มีบันทึก</div>';
     h+='</div>';
   });
@@ -978,6 +1015,9 @@ renderReasons();resetForm();fillSups();render();
 el('sheet').addEventListener('input',function(){_dirty=true;});
 el('sheet').addEventListener('change',function(){_dirty=true;});
 document.addEventListener('keydown',function(e){if(e.key==='Escape'&&!el('sheet').hidden)closeForm();});
+// เปิดค้างไว้ข้ามเวลาเปลี่ยนกะ (07:00 · 16:00) — แถบรับทราบต้องเปลี่ยนเป็นของกะใหม่เอง
+setInterval(function(){if(!document.hidden)renderAck();},60000);
+document.addEventListener('visibilitychange',function(){if(!document.hidden)renderAck();});
 if(sync)sync.start();
 // ช่องสต๊อกในตารางงานค้างใช้ยอดของวันนี้ — ยังไม่มีในเครื่องก็ดึงให้ครั้งเดียว
 if(window.WmsStock&&!WmsStock.read()&&WmsStock.savedUrl()&&L.openItems(log()).some(function(e){return L.itemsOf(e).some(function(i){return i.sku;});})&&WmsGas.firstTry('stock:shiftlog')){
