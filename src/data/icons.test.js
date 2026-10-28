@@ -24,3 +24,27 @@ describe('ไอคอนของทุกหน้า', () => {
     });
   }
 });
+
+/**
+ * ไอคอนหัวโมดูล (public/icons/) ที่หน้าเว็บกับสคริปต์หัวโมดูลชี้ไป ต้องมีไฟล์จริง
+ * ชี้ผิดชื่อแล้วหัวหน้าจะเป็นกรอบว่าง ไม่มีอะไรเตือน
+ */
+const PUB = path.resolve(__dirname, '../../public');
+const NAVS = ['transport-docs/transport-nav.js', 'transport-forms/forms-nav.js', 'warehouse-forms/wh-nav.js'];
+
+describe('ไอคอนหัวโมดูล', () => {
+  for (const p of htmlPages()) {
+    const srcs = [...fs.readFileSync(p.file, 'utf8').matchAll(/<img src="([^"]*icons\/[^"]+)"/g)].map((m) => m[1]);
+    if (!srcs.length) continue;
+    it(p.name, () => {
+      for (const s of srcs) expect(fs.existsSync(path.resolve(path.dirname(p.file), s)), `${p.name} ชี้ไป ${s} ที่ไม่มีอยู่`).toBe(true);
+    });
+  }
+  for (const nav of NAVS) {
+    it(nav, () => {
+      const m = fs.readFileSync(path.join(PUB, nav), 'utf8').match(/new URL\('([^']+)', import\.meta\.url\)/);
+      expect(m, `${nav} ไม่ได้ใช้ไอคอนรูป`).not.toBe(null);
+      expect(fs.existsSync(path.resolve(path.dirname(path.join(PUB, nav)), m[1])), `${nav} ชี้ไป ${m[1]} ที่ไม่มีอยู่`).toBe(true);
+    });
+  }
+});

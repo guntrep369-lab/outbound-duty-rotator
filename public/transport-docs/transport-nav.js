@@ -12,6 +12,9 @@
 
 import { CARRIERS as ALL } from '../wms-carriers.js';
 
+/** Header tile icon — resolved from this file, since the pages that load it sit at different depths. */
+const ICON = new URL('../icons/truck.png', import.meta.url).href;
+
 /** Carriers under this module. Every one has a label tool, so all are ready. */
 export const CARRIERS = ALL.map((c) => ({ ...c, ready: true }));
 
@@ -60,7 +63,7 @@ export function navHTML(activeCarrier, depth, activeDoc = null) {
 
   return `<div class="mod-head">
     <div class="mod-title">
-      <div class="ic">🚚</div>
+      <div class="ic"><img src="${ICON}" alt="" width="38" height="38"></div>
       <div>
         <h2>ทำใบงานขนส่ง · Transport Documents</h2>
         <p>เลือกขนส่ง แล้วสร้างเอกสารจากไฟล์ Excel</p>

@@ -12,6 +12,9 @@
  */
 import { CARRIERS as ALL } from '../wms-carriers.js';
 
+/** Header tile icon — resolved from this file, since the pages that load it sit at different depths. */
+const ICON = new URL('../icons/file.png', import.meta.url).href;
+
 /**
  * Which carriers have forms stored here. Only รถบริษัท does — the other three
  * are third-party carriers whose paperwork comes from the carrier, not from us.
@@ -95,7 +98,7 @@ export function navHTML(activeCarrier, depth, activeForm = null) {
 
   return `<div class="mod-head">
       <div class="mod-title">
-        <div class="ic">📁</div>
+        <div class="ic"><img src="${ICON}" alt="" width="38" height="38"></div>
         <div>
           <h2>เอกสารขนส่ง · Transport Forms</h2>
           <p>ฟอร์มเปล่าที่ใช้ประจำ เปิดดูแล้วสั่งพิมพ์ได้จากเว็บ ไม่ต้องเปิด Word/Excel</p>

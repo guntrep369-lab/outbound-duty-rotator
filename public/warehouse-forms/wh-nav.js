@@ -6,6 +6,9 @@
  *   <script type="module" src="./wh-nav.js"></script>
  */
 
+/** ไอคอนหัวโมดูล — หาจากที่อยู่ของไฟล์นี้ เพราะหน้าที่โหลดไฟล์นี้อยู่คนละชั้นโฟลเดอร์ */
+const ICON = new URL('../icons/boxes.png', import.meta.url).href;
+
 /**
  * ฟอร์มที่ทำแล้ว — `rows` คือจำนวนช่องต่อแผ่น (บรรทัดรายการ / ป้าย / ใบ)
  *
@@ -83,7 +86,7 @@ export function navHTML(activeForm = null) {
 
   return `<div class="mod-head">
       <div class="mod-title">
-        <div class="ic">🏬</div>
+        <div class="ic"><img src="${ICON}" alt="" width="38" height="38"></div>
         <div>
           <h2>เอกสารคลังสินค้า · Warehouse Forms</h2>
           <p>กรอกในเว็บแล้วสั่งพิมพ์ — ใส่รหัส SKU แล้วชื่อสินค้าขึ้นเอง</p>

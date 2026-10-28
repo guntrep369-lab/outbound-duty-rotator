@@ -125,6 +125,10 @@ body {
 .mod-title .ic { width:38px; height:38px; border-radius:12px; flex-shrink:0;
                  display:flex; align-items:center; justify-content:center;
                  background:var(--wms-primary-light); color:var(--wms-primary); font-size:19px; }
+/* Module icon image (public/icons/). It is its own gradient tile, so the light
+   tile behind it would show at the rounded corners. Emoji tiles keep it. */
+.mod-title .ic:has(> img) { background:none; }
+.mod-title .ic > img { width:100%; height:100%; display:block; }
 .mod-title h2 { font-size:16px; font-weight:700; color:var(--wms-text); margin:0; }
 .mod-title p  { font-size:12px; color:var(--wms-muted); margin:2px 0 0; }
 /* Document tabs. LAYOUT LIVES HERE, not in the pages: the header markup comes
