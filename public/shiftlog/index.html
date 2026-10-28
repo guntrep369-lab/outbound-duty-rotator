@@ -33,9 +33,31 @@
 .page.active{display:block}
 .sp{flex:1}
 
+/* ═══ ปุ่มบันทึก — อยู่บนสุด กดได้ทันทีที่เปิดหน้า ═══ */
+.act-bar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.btn-add{background:var(--primary);color:#fff;border:none;border-radius:var(--radius);padding:12px 22px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;min-height:48px}
+.btn-add:hover{background:var(--primary-h)}
+.btn-add2{background:var(--surface);color:var(--primary-h);border:1px solid var(--primary);border-radius:var(--radius);padding:12px 18px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;min-height:48px}
+.btn-add2:hover{background:var(--primary-l)}
+@media(max-width:560px){.act-bar button{flex:1}}
+
+/* ═══ ฟอร์มแบบป๊อปอัป — มือถือเต็มจอ ปุ่มบันทึกอยู่ล่างเสมอ ═══ */
+.sheet-bg{position:fixed;inset:0;z-index:1000;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;padding:16px}
+.sheet-bg[hidden],.sheet [hidden]{display:none!important}
+.sheet{background:var(--surface);border-radius:var(--radius);width:560px;max-width:100%;max-height:calc(100vh - 32px);display:flex;flex-direction:column;box-shadow:0 25px 60px rgba(0,0,0,.25)}
+.sheet-h{display:flex;align-items:center;gap:8px;padding:14px 18px;border-bottom:1px solid var(--border);font-size:16px;font-weight:700;color:var(--txt)}
+.sheet-h span{flex:1;min-width:0}
+.sheet-x{background:none;border:none;font-size:18px;line-height:1;color:var(--txt3);cursor:pointer;padding:6px 8px;border-radius:6px}
+.sheet-x:hover{background:var(--bg);color:var(--txt)}
+.sheet-b{padding:16px 18px 6px;overflow-y:auto;flex:1;min-height:0}
+.sheet-f{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:12px 18px;border-top:1px solid var(--border)}
+body.sheet-open{overflow:hidden}
+@media(max-width:560px){
+  .sheet-bg{padding:0;align-items:stretch}
+  .sheet{border-radius:0;width:100%;max-height:none;height:100%}
+}
+
 /* ═══ CARD / FORM ═══ */
-.sl-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
-@media(max-width:960px){.sl-grid{grid-template-columns:minmax(0,1fr)}}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;margin-bottom:16px;box-shadow:var(--shadow)}
 .card-title{font-size:15px;font-weight:700;color:var(--txt);margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .cnt{background:var(--open-bg);color:var(--open);border:1px solid var(--open-border);border-radius:20px;padding:1px 9px;font-size:12px}
@@ -47,7 +69,7 @@
 .f-row3{display:grid;grid-template-columns:minmax(0,1fr) 80px minmax(0,1.3fr);gap:10px}
 .f-inline{display:flex;gap:6px}
 .f-inline input{flex:1}
-.f-sub{font-size:12px;font-weight:700;color:var(--txt2);margin:4px 0 8px;padding-top:10px;border-top:1px dashed var(--border2)}
+.fg-l{font-size:12px;font-weight:600;color:var(--txt2)}
 .f-note{font-size:12px;color:var(--txt2);line-height:1.5}
 .f-note:empty{display:none}
 .f-note.warn{color:var(--open)}
@@ -60,21 +82,41 @@
 .line-c input{width:18px;height:18px;flex-shrink:0;margin:1px 0 0;cursor:pointer}
 .line-t{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0;word-break:break-word}
 .line-t .sub{font-size:12px;color:var(--txt2)}
-.f-sub2{font-size:12px;font-weight:700;color:var(--txt2);margin:2px 0 8px}
-.f-add{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
-.sl-main input[type=text],.sl-main input[type=date],.sl-main input[type=month],.sl-main select,.sl-main textarea{
+.f-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px;color:var(--txt2)}
+.f-meta:empty{display:none}
+.f-meta .mono{font-family:ui-monospace,Consolas,monospace;font-size:11.5px}
+.f-more{font-size:13px;margin:8px 0 14px;display:block}
+/* ยังไม่ได้ใส่เลขออเดอร์ — ไม่ต้องเห็นลิงก์ขนส่งกับเพิ่มสินค้าเอง */
+.sheet:not(.has-order) .f-more,.sheet:not(.has-order) .f-meta{display:none}
+.f-manual{border:1px dashed var(--border2);border-radius:var(--radius-sm);padding:10px 12px 0;margin:8px 0 14px}
+.f-sub2{font-size:12px;font-weight:700;color:var(--txt2);margin:0 0 8px}
+.f-add{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+/* ติดเพราะ — ปุ่มกดเลือกจัดเป็นหมวด แทนดรอปดาวน์ 17 ตัวเลือกที่ต้องเปิดไล่อ่านทุกครั้ง */
+.f-reasons{display:flex;flex-direction:column;gap:8px}
+.rg-h{font-size:11px;font-weight:600;color:var(--txt3);margin-bottom:4px}
+.rg-c{display:flex;flex-wrap:wrap;gap:6px}
+.rc{position:relative;display:inline-flex;align-items:center;border:1px solid var(--border2);background:var(--surface);color:var(--txt);
+  border-radius:20px;padding:7px 13px;font-size:13px;cursor:pointer;user-select:none}
+.rc input{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
+.rc:hover{border-color:var(--primary)}
+.rc:focus-within{outline:2px solid var(--primary);outline-offset:1px}
+.rc.on{font-weight:700}
+.rc.on[data-g=stock]{background:#fef2f2;color:#b91c1c;border-color:#f87171}
+.rc.on[data-g=fetch]{background:#f5f3ff;color:#6d28d9;border-color:#a78bfa}
+.rc.on[data-g=logis]{background:var(--logis-bg);color:var(--logis);border-color:#60a5fa}
+.rc.on[data-g=other]{background:#f1f5f9;color:var(--txt);border-color:#94a3b8}
+.f-when{font-size:12px;color:var(--txt2);margin:2px 0 12px}
+.f-when b{color:var(--txt)}
+.sl-main input[type=text],.sl-main input[type=date],.sl-main input[type=month],.sl-main select,.sl-main textarea,
+.sheet input[type=text],.sheet input[type=date],.sheet select,.sheet textarea{
   border:1px solid var(--border2);border-radius:var(--radius-sm);padding:9px 10px;font-size:14px;color:var(--txt);
   background:var(--surface);font-family:inherit;width:100%;max-width:100%;min-width:0}
-.sl-main textarea{resize:vertical;line-height:1.5}
-.sl-main input:focus,.sl-main select:focus,.sl-main textarea:focus{outline:2px solid var(--primary);border-color:transparent}
+.sheet textarea{resize:vertical;line-height:1.5}
+.sl-main input:focus,.sl-main select:focus,.sl-main textarea:focus,
+.sheet input:focus,.sheet select:focus,.sheet textarea:focus{outline:2px solid var(--primary);border-color:transparent}
 #f-order{font-size:16px;font-weight:600}
 .f-check{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--txt2);margin-bottom:12px;cursor:pointer}
 .f-check input{width:18px;height:18px}
-.f-btns{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.seg{display:flex;gap:6px;margin-bottom:14px}
-.seg-b{flex:1;border:1px solid var(--border2);background:var(--surface);color:var(--txt2);border-radius:var(--radius-sm);
-  padding:9px 10px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
-.seg-b.on{background:var(--primary-l);border-color:var(--primary);color:var(--primary-h)}
 .is-hand .order-only{display:none}
 
 .btn-ok{background:var(--primary);color:#fff;border:none;border-radius:var(--radius-sm);padding:9px 20px;font-size:14px;font-weight:700;cursor:pointer;min-height:40px;font-family:inherit}
@@ -125,14 +167,16 @@
   .otbl th:nth-child(1){width:92px}
   .otbl th:nth-child(2){width:150px}
   .otbl th:nth-child(4){width:150px}
-  .otbl th:nth-child(6){width:120px}
+  .otbl th:nth-child(6){width:164px}
 }
 .oid,.sup,.rchip,.lchip{white-space:nowrap}
 .otbl .c-when{white-space:nowrap}
 .otbl .c-when b{display:block;color:var(--open)}
 .otbl tr.old .c-when b{color:var(--wms-danger)}
 .otbl .c-acts{white-space:nowrap}
-.otbl .c-acts .acts{display:flex;flex-direction:column;gap:5px;align-items:stretch}
+/* ส่งออกแล้วเป็นปุ่มหลักเต็มแถว อัปเดตกับแก้ไขอยู่คู่กันข้างล่าง — แถวไม่สูงเป็นสามปุ่มซ้อน */
+.otbl .c-acts .acts{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.otbl .c-acts .acts .done{grid-column:1/-1}
 .note{white-space:pre-wrap;word-break:break-word;line-height:1.5}
 .upd{font-size:12px;color:var(--txt2);margin-top:4px;padding-left:8px;border-left:2px solid var(--border2);word-break:break-word}
 .upd b{font-weight:600}
@@ -147,7 +191,7 @@
   .otbl td > div{flex:1;min-width:0}
   .otbl td:has(> div:empty){display:none}
   .otbl .c-acts::before{content:none}
-  .otbl .c-acts .acts{flex-direction:row;flex-wrap:wrap;padding-top:4px}
+  .otbl .c-acts .acts{display:flex;flex-wrap:wrap;padding-top:4px}
 }
 
 /* ═══ รายการ (เรื่องอื่น · รายวัน) ═══ */
@@ -221,6 +265,7 @@
     </div>
     <nav class="mod-subnav">
       <button type="button" class="mod-tab active" data-page="log" onclick="showPage('log',this)">📓 ต่องาน</button>
+      <button type="button" class="mod-tab" data-page="day" onclick="showPage('day',this)">📅 ย้อนดูรายวัน</button>
       <button type="button" class="mod-tab" data-page="month" onclick="showPage('month',this)">📊 สรุปเดือน</button>
     </nav>
   </div>
@@ -229,6 +274,10 @@
 
 <!-- ═══ ต่องาน ═══ -->
 <div id="page-log" class="page active">
+  <div class="act-bar no-print">
+    <button type="button" class="btn-add" onclick="openForm('order')">＋ ออเดอร์ติดปัญหา</button>
+    <button type="button" class="btn-add2" onclick="openForm('handover')">＋ เรื่องอื่น</button>
+  </div>
   <section class="card">
     <div class="card-title">
       ค้างอยู่ <span class="cnt" id="open-count">0</span>
@@ -238,77 +287,20 @@
     </div>
     <div id="open-list"></div>
   </section>
+</div>
 
-  <div class="sl-grid">
-    <section class="card no-print" id="form-card">
-      <div class="card-title" id="form-title">บันทึกใหม่</div>
-      <div class="seg" role="group" aria-label="ประเภทรายการ">
-        <button type="button" class="seg-b on" data-kind="order" onclick="setKind('order')">ออเดอร์ติดปัญหา</button>
-        <button type="button" class="seg-b" data-kind="handover" onclick="setKind('handover')">เรื่องอื่น</button>
-      </div>
-
-      <div class="order-only">
-        <div class="fg">
-          <label for="f-order">Order ID</label>
-          <div class="f-inline">
-            <input id="f-order" type="text" autocomplete="off" placeholder="เช่น CR-94576" oninput="lookupSoon()" onchange="lookupOrder(true)" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupOrder(true);}">
-            <button type="button" class="btn-s" onclick="lookupOrder(true,true)">ค้นหา</button>
-          </div>
-          <div class="f-note" id="f-order-note"></div>
-          <div class="f-lines" id="f-lines"></div>
-        </div>
-        <div class="fg"><label for="f-reason">ติดเพราะ</label><select id="f-reason" onchange="reasonPicked()"></select></div>
-        <label class="f-check"><input type="checkbox" id="f-logis"> ต้องแจ้ง Logis ให้ดำเนินการ</label>
-      </div>
-
-      <div class="fg"><label for="f-text" id="f-text-l">หมายเหตุ (ถ้ามี)</label><textarea id="f-text" rows="2"></textarea></div>
-
-      <div class="order-only">
-        <div class="f-sub">ข้อมูลออเดอร์ <span class="hint">— เติมให้เองเมื่อเจอเลขออเดอร์ แก้ได้</span></div>
-        <div class="f-row">
-          <div class="fg"><label for="f-sup">Sup (ขนส่ง)</label><input id="f-sup" type="text" autocomplete="off" list="sup-list"></div>
-          <div class="fg"><label for="f-consign">เลข consign</label><input id="f-consign" type="text" autocomplete="off"></div>
-        </div>
-        <div class="f-sub2">เพิ่มสินค้าเอง <span class="hint">— ไม่มีในรายการ หรือออเดอร์เก่าที่ดึงมาไม่เจอ</span></div>
-        <div class="fg"><label for="f-product">สินค้า</label><input id="f-product" type="text" autocomplete="off" oninput="skuFromProduct()"></div>
-        <div class="f-row3">
-          <div class="fg"><label for="f-size">ขนาด</label><input id="f-size" type="text" autocomplete="off"></div>
-          <div class="fg"><label for="f-qty">จำนวน</label><input id="f-qty" type="text" inputmode="numeric" autocomplete="off"></div>
-          <div class="fg"><label for="f-sku">SKU</label><input id="f-sku" type="text" autocomplete="off" oninput="showStock()"></div>
-        </div>
-        <div class="f-add">
-          <button type="button" class="btn-s" onclick="addLine()">+ เพิ่มสินค้านี้</button>
-          <span class="f-note" id="f-stock"></span>
-        </div>
-        <datalist id="sup-list"></datalist>
-      </div>
-
-      <div class="f-row">
-        <div class="fg"><label for="f-date">วันที่</label><input id="f-date" type="date"></div>
-        <div class="fg"><label for="f-shift">กะ</label>
-          <select id="f-shift"><option value="morning">กะเช้า 07–16</option><option value="evening">กะบ่าย 16–24</option></select>
-        </div>
-      </div>
-      <div class="f-btns">
-        <button type="button" class="btn-del" id="f-del" onclick="delEntry(_editId)" style="display:none">ลบ</button>
-        <button type="button" class="btn-cancel" id="f-void" onclick="voidOrder(_editId)" style="display:none">ยกเลิกออเดอร์</button>
-        <span class="sp"></span>
-        <button type="button" class="btn-cancel" id="f-cancel" onclick="resetForm()" style="display:none">ปิด</button>
-        <button type="button" class="btn-ok" onclick="saveEntry()">บันทึก</button>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="day-bar">
-        <button type="button" class="btn-nav no-print" onclick="dayStep(-1)" aria-label="วันก่อน">‹</button>
-        <input id="day" type="date" class="no-print" onchange="renderDay()" aria-label="วันที่">
-        <button type="button" class="btn-nav no-print" onclick="dayStep(1)" aria-label="วันถัดไป">›</button>
-        <button type="button" class="btn-s no-print" onclick="dayToday()">วันนี้</button>
-        <span class="day-txt" id="day-txt"></span>
-      </div>
-      <div id="day-out"></div>
-    </section>
-  </div>
+<!-- ═══ ย้อนดูรายวัน ═══ -->
+<div id="page-day" class="page">
+  <section class="card">
+    <div class="day-bar">
+      <button type="button" class="btn-nav no-print" onclick="dayStep(-1)" aria-label="วันก่อน">‹</button>
+      <input id="day" type="date" class="no-print" onchange="renderDay()" aria-label="วันที่">
+      <button type="button" class="btn-nav no-print" onclick="dayStep(1)" aria-label="วันถัดไป">›</button>
+      <button type="button" class="btn-s no-print" onclick="dayToday()">วันนี้</button>
+      <span class="day-txt" id="day-txt"></span>
+    </div>
+    <div id="day-out"></div>
+  </section>
 </div>
 
 <!-- ═══ สรุปเดือน ═══ -->
@@ -344,6 +336,70 @@
   </div><!-- /.sl-main -->
 </div><!-- /.wms-main -->
 </div><!-- /.wms-shell -->
+
+<!-- ═══ ฟอร์มบันทึก — เปิดจากปุ่ม ＋ หรือ แก้ไข ═══
+     โชว์แค่ช่องที่ต้องใช้ทุกครั้ง (เลขออเดอร์ สินค้าที่ติด ติดเพราะ หมายเหตุ)
+     ที่ระบบเติมให้แล้วหรือแทบไม่ต้องแก้ (ขนส่ง consign วันที่ กะ) ซ่อนไว้หลังลิงก์ -->
+<div class="sheet-bg no-print" id="sheet" hidden>
+  <div class="sheet" id="form-card" role="dialog" aria-modal="true" aria-labelledby="form-title">
+    <div class="sheet-h"><span id="form-title">ออเดอร์ติดปัญหา</span><button type="button" class="sheet-x" onclick="closeForm()" aria-label="ปิด">✕</button></div>
+    <div class="sheet-b">
+      <div class="order-only">
+        <div class="fg">
+          <label for="f-order">Order ID</label>
+          <div class="f-inline">
+            <input id="f-order" type="text" autocomplete="off" placeholder="เช่น CR-94576" oninput="lookupSoon()" onchange="lookupOrder(true)" onkeydown="if(event.key==='Enter'){event.preventDefault();lookupOrder(true);}">
+            <button type="button" class="btn-s" onclick="lookupOrder(true,true)">ค้นหา</button>
+          </div>
+          <div class="f-note" id="f-order-note"></div>
+          <div class="f-meta" id="f-meta"></div>
+          <div class="f-row" id="f-meta-edit" hidden>
+            <div class="fg"><label for="f-sup">Sup (ขนส่ง)</label><input id="f-sup" type="text" autocomplete="off" list="sup-list"></div>
+            <div class="fg"><label for="f-consign">เลข consign</label><input id="f-consign" type="text" autocomplete="off"></div>
+          </div>
+        </div>
+        <div class="f-lines" id="f-lines"></div>
+        <button type="button" class="btn-link f-more" id="f-manual-btn" onclick="showManual(true)">＋ เพิ่มสินค้าเอง</button>
+        <div class="f-manual" id="f-manual" hidden>
+          <div class="f-sub2">เพิ่มสินค้าเอง <span class="hint">— ไม่มีในรายการ หรือออเดอร์เก่าที่ดึงมาไม่เจอ</span></div>
+          <div class="fg"><label for="f-product">สินค้า</label><input id="f-product" type="text" autocomplete="off" oninput="skuFromProduct()"></div>
+          <div class="f-row3">
+            <div class="fg"><label for="f-size">ขนาด</label><input id="f-size" type="text" autocomplete="off"></div>
+            <div class="fg"><label for="f-qty">จำนวน</label><input id="f-qty" type="text" inputmode="numeric" autocomplete="off"></div>
+            <div class="fg"><label for="f-sku">SKU</label><input id="f-sku" type="text" autocomplete="off" oninput="showStock()"></div>
+          </div>
+          <div class="f-add">
+            <button type="button" class="btn-s" onclick="addLine()">+ เพิ่มสินค้านี้</button>
+            <span class="f-note" id="f-stock"></span>
+          </div>
+        </div>
+        <div class="fg">
+          <div class="fg-l">ติดเพราะ</div>
+          <div class="f-reasons" id="f-reasons" role="radiogroup" aria-label="ติดเพราะ"></div>
+        </div>
+        <label class="f-check"><input type="checkbox" id="f-logis"> ต้องแจ้ง Logis ให้ดำเนินการ</label>
+      </div>
+
+      <div class="fg"><label for="f-text" id="f-text-l">หมายเหตุ (ถ้ามี)</label><textarea id="f-text" rows="2"></textarea></div>
+
+      <div class="f-when">บันทึกเป็น <b id="f-when-txt"></b> <button type="button" class="btn-link" id="f-when-btn" onclick="showWhen()">เปลี่ยน</button></div>
+      <div class="f-row" id="f-when-edit" hidden>
+        <div class="fg"><label for="f-date">วันที่</label><input id="f-date" type="date" onchange="whenText()"></div>
+        <div class="fg"><label for="f-shift">กะ</label>
+          <select id="f-shift" onchange="whenText()"><option value="morning">กะเช้า 07–16</option><option value="evening">กะบ่าย 16–24</option></select>
+        </div>
+      </div>
+      <datalist id="sup-list"></datalist>
+    </div>
+    <div class="sheet-f">
+      <button type="button" class="btn-del" id="f-del" onclick="delEntry(_editId)" hidden>ลบ</button>
+      <button type="button" class="btn-cancel" id="f-void" onclick="voidOrder(_editId)" hidden>ยกเลิกออเดอร์</button>
+      <span class="sp"></span>
+      <button type="button" class="btn-cancel" onclick="closeForm()">ปิด</button>
+      <button type="button" class="btn-ok" onclick="saveEntry()">บันทึก</button>
+    </div>
+  </div>
+</div>
 
 <script type="module" src="../wms-shell.js"></script>
 <script src="../wms-settings.js"></script>
@@ -430,7 +486,7 @@ function actsHtml(e){
     h+='<button type="button" class="btn-s done" onclick="closeEntry('+id+')">✓ '+(e.kind==='order'?'ส่งออกแล้ว':'เสร็จแล้ว')+'</button>';
     h+='<button type="button" class="btn-s" onclick="addUpdate('+id+')">📝 อัปเดต</button>';
   }else h+='<button type="button" class="btn-s" onclick="reopenEntry('+id+')">↺ ยังไม่เสร็จ</button>';
-  return h+'<button type="button" class="btn-s" onclick="editEntry('+id+')">แก้ไข</button>';
+  return h+'<button type="button" class="btn-s" onclick="editEntry('+id+')">✎ แก้ไข</button>';
 }
 
 function shortDay(d){return L.dayText(d).replace(/ \d{4}$/,'');}   // ในตารางไม่ต้องมีปี
@@ -558,14 +614,61 @@ function logisLink(){
 // ── ฟอร์ม ──
 /* _lines: สินค้าให้ติ๊กในฟอร์ม {product, size, qty, sku, on: ติ๊กไว้, own: กรอกเองหรือบันทึกไว้แล้ว}
    _linesFor: เลขออเดอร์ของรายการสินค้าชุดนี้ */
-var _kind='order',_editId=null,_lines=[],_linesFor='',_lookTimer=null,_pulling=false,_looked='';
+var _kind='order',_editId=null,_lines=[],_linesFor='',_lookTimer=null,_pulling=false,_looked='',_dirty=false;
 function setKind(k){
   _kind=k;
-  document.querySelectorAll('.seg-b').forEach(function(b){b.classList.toggle('on',b.getAttribute('data-kind')===k);});
   el('form-card').classList.toggle('is-hand',k!=='order');
+  el('form-title').textContent=k==='order'?'ออเดอร์ติดปัญหา':'เรื่องอื่นที่ต้องตามต่อ';
   el('f-text-l').textContent=k==='order'?'หมายเหตุ (ถ้ามี)':'เรื่องที่ต้องตามต่อ';
 }
-function reasonPicked(){el('f-logis').checked=!!L.reasonOf(el('f-reason').value).logis;}
+
+function openForm(kind){resetForm();setKind(kind);showSheet(kind==='order'?'f-order':'f-text');}
+function showSheet(focusId){
+  el('sheet').hidden=false;document.body.classList.add('sheet-open');_dirty=false;
+  setTimeout(function(){var f=el(focusId);if(f)f.focus();},30);
+}
+// ปิดโดยยังไม่ได้บันทึก — ถามก่อนถ้ากรอกอะไรไว้แล้ว
+function closeForm(saved){
+  if(!saved&&_dirty&&!confirm('ปิดโดยไม่บันทึก?'))return;
+  el('sheet').hidden=true;document.body.classList.remove('sheet-open');
+  resetForm();
+}
+
+/* ติดเพราะ — ปุ่มกดจัดเป็นหมวด ไม่เลือกไว้ให้ก่อน สิ้นเดือนจะได้นับตามที่คนเลือกจริง */
+function renderReasons(){
+  el('f-reasons').innerHTML=L.GROUPS.map(function(g){
+    return '<div class="rg"><div class="rg-h">'+esc(g.label)+'</div><div class="rg-c">'+
+      L.REASONS.filter(function(r){return r.group===g.id;}).map(function(r){
+        return '<label class="rc" data-g="'+g.id+'"><input type="radio" name="f-reason" value="'+r.id+'" onchange="reasonPicked()">'+esc(r.label)+'</label>';
+      }).join('')+'</div></div>';
+  }).join('');
+}
+function reasonVal(){var r=document.querySelector('#f-reasons input:checked');return r?r.value:'';}
+function setReason(id){
+  document.querySelectorAll('#f-reasons input').forEach(function(r){r.checked=r.value===id;});
+  markReasons();
+}
+function markReasons(){document.querySelectorAll('#f-reasons .rc').forEach(function(c){c.classList.toggle('on',c.querySelector('input').checked);});}
+function reasonPicked(){markReasons();el('f-logis').checked=!!L.reasonOf(reasonVal()).logis;}
+
+// ขนส่งกับเลข consign — ระบบเติมให้จากเลขออเดอร์ โชว์เป็นบรรทัดเดียว กดแก้ถึงเปิดช่อง
+function renderMeta(open){
+  var box=el('f-meta-edit'),sup=el('f-sup').value.trim(),con=el('f-consign').value.trim();
+  if(open)box.hidden=false;
+  if(!box.hidden){el('f-meta').innerHTML='';return;}
+  el('f-meta').innerHTML=(sup?'<span class="sup">'+esc(sup)+'</span>':'')+(con?'<span class="mono">'+esc(con)+'</span>':'')+
+    '<button type="button" class="btn-link" onclick="renderMeta(true)">'+(sup||con?'แก้':'＋ ขนส่ง / เลข consign')+'</button>';
+}
+function showManual(on){
+  el('f-manual').hidden=!on;el('f-manual-btn').hidden=on;
+  if(on&&!el('sheet').hidden)el('f-product').focus();
+}
+// วันที่กับกะ — ใช้กะตอนนี้ แทบไม่ต้องเปลี่ยน
+function whenText(){
+  var d=el('f-date').value;
+  el('f-when-txt').textContent=d?L.dayText(d)+' · '+L.SHIFTS[el('f-shift').value]:'—';
+}
+function showWhen(){el('f-when-edit').hidden=false;el('f-when-btn').hidden=true;}
 function fillSups(){
   var seen={},o=window.OrderIndex&&OrderIndex.get();
   (o?o.rows:[]).forEach(function(r){if(r.sup)seen[r.sup]=1;});
@@ -584,6 +687,7 @@ function lookupOrder(user,force){
   var id=el('f-order').value.trim(),note=el('f-order-note');
   if(!force&&id&&id.toUpperCase()===_looked)return;
   keepLines(id.toUpperCase());_looked='';note.className='f-note';
+  el('form-card').classList.toggle('has-order',!!id);
   if(!id){note.textContent='';return;}
   var o=window.OrderIndex&&OrderIndex.get();
   if(!o){
@@ -593,6 +697,7 @@ function lookupOrder(user,force){
     note.innerHTML=OrderIndex.savedUrl()?
       'ยังไม่ได้ดึงออเดอร์วันนี้ในเครื่องนี้ · <button type="button" class="btn-link" onclick="pullOrders()">ดึงออเดอร์</button> หรือกรอกเองด้านล่าง':
       'ยังไม่ได้ตั้งที่ดึงออเดอร์ในหน้าตั้งค่า — กรอกข้อมูลเองด้านล่าง';
+    if(user){renderMeta(true);showManual(true);}
     return;
   }
   var found=L.orderLines(o.rows,id);
@@ -602,10 +707,12 @@ function lookupOrder(user,force){
     note.className='f-note warn';
     note.innerHTML='ไม่เจอในออเดอร์ที่ดึงมาเมื่อ '+hm(o.at)+' — กรอกเองด้านล่าง'+
       (OrderIndex.savedUrl()?' หรือ <button type="button" class="btn-link" onclick="pullOrders()">ดึงใหม่</button>':'');
+    renderMeta(true);showManual(true);
     return;
   }
   _looked=id.toUpperCase();
   el('f-sup').value=found[0].sup;el('f-consign').value=found[0].consign;
+  el('f-meta-edit').hidden=true;renderMeta();
   mergeLines(found);
   note.textContent='✓ เจอออเดอร์ มี '+found.length+' สินค้า — ติ๊กตัวที่ติด';
 }
@@ -680,10 +787,12 @@ function resetForm(){
   _editId=null;_lines=[];_linesFor='';_looked='';
   el('f-date').value=now.date;el('f-shift').value=now.shift;
   ['f-order','f-text'].concat(ORDER_FIELDS.concat(ITEM_FIELDS).map(function(k){return 'f-'+k;})).forEach(function(id){el(id).value='';});
-  el('f-reason').value=L.REASONS[0].id;reasonPicked();
+  setReason('');el('f-logis').checked=false;
   el('f-order-note').textContent='';el('f-lines').innerHTML='';el('f-stock').textContent='';
-  el('form-title').textContent='บันทึกใหม่';
-  ['f-cancel','f-del','f-void'].forEach(function(id){el(id).style.display='none';});
+  ['f-meta-edit','f-manual','f-when-edit','f-del','f-void'].forEach(function(id){el(id).hidden=true;});
+  el('f-manual-btn').hidden=false;el('f-when-btn').hidden=false;
+  el('form-card').classList.remove('has-order');
+  renderMeta();whenText();
 }
 function saveEntry(){
   var text=el('f-text').value.trim(),date=el('f-date').value;
@@ -695,6 +804,8 @@ function saveEntry(){
   if(_kind==='order'){
     var order=el('f-order').value.trim().toUpperCase();   // เลขในชีตออเดอร์เป็นตัวใหญ่ พิมพ์เล็กมาก็ให้ตรงกัน
     if(!order){alert('ใส่เลขออเดอร์');el('f-order').focus();return;}
+    var reason=reasonVal();
+    if(!reason){alert('เลือกว่าติดเพราะอะไร');return;}
     // ตัวที่กรอกไว้แต่ยังไม่ได้กด + เพิ่ม ก็นับด้วย — ออเดอร์เก่ามีสินค้าตัวเดียว กรอกแล้วบันทึกได้เลย
     var items=_lines.filter(function(l){return l.on;}).map(itemOnly),typed=typedLine();
     if(typed&&!items.some(function(i){return lineKey(i)===lineKey(typed);}))items.push(typed);
@@ -705,7 +816,7 @@ function saveEntry(){
       if(dup&&!confirm('ออเดอร์ '+order+' ค้างอยู่แล้ว ('+L.reasonLabel(dup.reason)+')\n\n'+
         'ถ้าจะบอกความคืบหน้า กด ยกเลิก แล้วใช้ 📝 อัปเดต ที่รายการเดิม (เพิ่มสินค้าได้ที่ แก้ไข)\nกด OK = บันทึกเป็นอีกรายการ (เช่น ติดอีกเรื่องหนึ่ง)'))return;
     }
-    e.order=order;e.reason=el('f-reason').value;e.logis=el('f-logis').checked;
+    e.order=order;e.reason=reason;e.logis=el('f-logis').checked;
     ORDER_FIELDS.forEach(function(f){var v=el('f-'+f).value.trim();if(v)e[f]=v;else delete e[f];});
     ITEM_FIELDS.forEach(function(f){delete e[f];});   // รุ่นแรกเก็บสินค้าตัวเดียวไว้ที่ตัวรายการ
     if(items.length)e.items=items;else delete e.items;
@@ -717,31 +828,33 @@ function saveEntry(){
   else{e.open=true;e.by=author();e.at=Date.now();}
   log()[_editId||L.newId(new Date())]=e;
   el('day').value=date;
-  resetForm();changed();
+  closeForm(true);changed();
 }
 function editEntry(id){
   var e=log()[id];if(!e)return;
+  resetForm();
   _editId=id;setKind(e.kind==='order'?'order':'handover');
-  el('f-date').value=e.date;el('f-shift').value=e.shift;
+  el('form-title').textContent=e.kind==='order'?'แก้ไข '+e.order:'แก้ไขเรื่องอื่น';
+  el('f-date').value=e.date;el('f-shift').value=e.shift;whenText();
   el('f-text').value=e.text||'';el('f-order').value=e.order||'';
-  el('f-reason').value=L.reasonOf(e.reason).id;el('f-logis').checked=!!e.logis;
+  el('form-card').classList.toggle('has-order',!!e.order);
+  if(e.kind==='order')setReason(L.reasonOf(e.reason).id);
+  el('f-logis').checked=!!e.logis;
   ORDER_FIELDS.forEach(function(k){el('f-'+k).value=e[k]==null?'':e[k];});
-  ITEM_FIELDS.forEach(function(k){el('f-'+k).value='';});
+  renderMeta();
   _lines=L.itemsOf(e).map(function(i){var l=itemOnly(i);l.on=true;l.own=true;return l;});
   _looked=_linesFor=String(e.order||'').toUpperCase();   // เปิดแก้แล้วไม่ต้องค้นทับช่องที่เคยแก้ไว้
   el('f-order-note').className='f-note';
   el('f-order-note').textContent=e.kind==='order'?'จะติ๊กสินค้าตัวอื่นในออเดอร์นี้เพิ่ม กด ค้นหา':'';
   renderLines();showStock();
-  el('form-title').textContent='แก้ไขรายการ';
-  el('f-cancel').style.display='';el('f-del').style.display='';
-  el('f-void').style.display=e.kind==='order'&&e.open?'':'none';
-  el('form-card').scrollIntoView({behavior:'smooth',block:'start'});
+  el('f-del').hidden=false;el('f-void').hidden=!(e.kind==='order'&&e.open);
+  showSheet(e.kind==='order'?'':'f-text');
 }
 function closeEntry(id,result){
   var e=log()[id];if(!e)return;
   e.open=false;e.closedBy=author();e.closedAt=Date.now();
   if(e.kind==='order')e.result=result||'shipped';else delete e.result;
-  if(_editId===id)resetForm();
+  if(_editId===id)closeForm(true);
   changed();
 }
 function voidOrder(id){
@@ -761,7 +874,7 @@ function delEntry(id){
   var e=log()[id];if(!e)return;
   if(!confirm('ลบรายการนี้ทิ้ง?\n\n'+(e.order?e.order+' — ':'')+flat(e.text||L.reasonLabel(e.reason)).slice(0,80)+
     '\n\nถ้าส่งออกได้แล้วหรือออเดอร์ถูกยกเลิก ให้ปิดงานแทน สรุปเดือนจะได้นับถูก'))return;
-  delete log()[id];if(_editId===id)resetForm();changed();
+  delete log()[id];if(_editId===id)closeForm(true);changed();
 }
 
 // ── สรุปเดือน ──
@@ -859,10 +972,11 @@ window.addEventListener('storage',function(e){
 });
 
 // ── เริ่ม ──
-el('f-reason').innerHTML=L.GROUPS.map(function(g){
-  return '<optgroup label="'+esc(g.label)+'">'+L.REASONS.filter(function(r){return r.group===g.id;})
-    .map(function(r){return '<option value="'+r.id+'">'+esc(r.label)+'</option>';}).join('')+'</optgroup>';}).join('');
-resetForm();fillSups();render();
+renderReasons();resetForm();fillSups();render();
+// กรอกอะไรในฟอร์มแล้ว ปิดต้องถามก่อน · Esc ปิดฟอร์ม
+el('sheet').addEventListener('input',function(){_dirty=true;});
+el('sheet').addEventListener('change',function(){_dirty=true;});
+document.addEventListener('keydown',function(e){if(e.key==='Escape'&&!el('sheet').hidden)closeForm();});
 if(sync)sync.start();
 // ช่องสต๊อกในตารางงานค้างใช้ยอดของวันนี้ — ยังไม่มีในเครื่องก็ดึงให้ครั้งเดียว
 if(window.WmsStock&&!WmsStock.read()&&WmsStock.savedUrl()&&L.openItems(log()).some(function(e){return L.itemsOf(e).some(function(i){return i.sku;});})&&WmsGas.firstTry('stock:shiftlog')){

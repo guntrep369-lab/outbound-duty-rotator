@@ -130,9 +130,13 @@ first, so the page keeps working without a connection and sends the changes when
 
 [`public/shiftlog/index.html`](public/shiftlog/index.html) is where one shift hands unfinished
 work to the next: mostly orders that couldn't ship yet. It replaces the team's Google Sheet of
-stuck orders. It has two tabs: ต่องาน and สรุปเดือน.
+stuck orders. It has three tabs: ต่องาน (what's still open), ย้อนดูรายวัน (each shift's entries for
+a day), and สรุปเดือน.
 
-**Two kinds of entry:**
+**Adding an entry:** the two buttons at the top of ต่องาน, **＋ ออเดอร์ติดปัญหา** and **＋ เรื่องอื่น**,
+open a form in a popup (full screen on a phone). It shows only what you fill in every time. What
+the page already knows is one line you can tap to change: the carrier and consign number, and the
+date and shift it's saved under. Esc or ✕ closes it, and it asks first if you've typed something.
 
 - **ออเดอร์ติดปัญหา:** type the Order ID and the page fills in the carrier (ขนส่ง) and consign
   number from today's pulled orders. It lists the order's products with size, quantity, and SKU,
@@ -140,8 +144,10 @@ stuck orders. It has two tabs: ต่องาน and สรุปเดือ�
   one product, and you can tick several. If a SKU is in today's stock, its row shows คลัง / QA
   counts. Saving with nothing ticked asks first. That case is for a problem with the whole order,
   such as ไม่มีใบปะหน้า.
-- Older orders that aren't in today's pull: type the product under **เพิ่มสินค้าเอง**. For one
-  product, just save. For more, press **+ เพิ่มสินค้านี้** after each one.
+- Older orders that aren't in today's pull: the form opens **เพิ่มสินค้าเอง** and the carrier
+  fields on its own. For one product, type it and save. For more, press **+ เพิ่มสินค้านี้** after
+  each one.
+- **ติดเพราะ** is a set of buttons in four groups. Tap one; nothing is picked for you.
 - **เรื่องอื่น:** anything else the next shift has to follow up. It's just a note.
 
 **Reasons (ติดเพราะ), grouped:**
@@ -160,13 +166,12 @@ Logis made for 1 box when packing actually needs 2.
 
 - Everything still open, grouped as รอ Logis ดำเนินการ, รอของ / กำลังตาม, and เรื่องอื่น. Oldest
   comes first, with how many days it has waited. Two days or more is marked red.
-- **📝 อัปเดต** adds a dated line (for example "โทรแจ้ง Logis แล้ว") without changing the entry.
-- **✓ ส่งออกแล้ว** closes an order. **ยกเลิกออเดอร์** (in แก้ไข) closes it as cancelled. **↺
-  ยังไม่เสร็จ** opens it again.
+- **✓ ส่งออกแล้ว** closes an order. **📝 อัปเดต** adds a dated line (for example "โทรแจ้ง Logis
+  แล้ว") without changing the entry. **✎ แก้ไข** opens it in the form, where **ยกเลิกออเดอร์**
+  closes it as cancelled. **↺ ยังไม่เสร็จ** opens a closed entry again.
 - **📋 คัดลอกส่ง LINE** copies the open list as text for the team chat.
 - New entries start on the shift running now: กะเช้า 07:00–16:00, กะบ่าย 16:00 onwards. Between
-  midnight and 07:00 counts as the previous day's กะบ่าย. The day view below shows each shift's
-  entries.
+  midnight and 07:00 counts as the previous day's กะบ่าย.
 - Each entry records who wrote it and when (the name in ตั้งค่า, or the sign-in name). It also
   records who updated, edited, or closed it.
 
