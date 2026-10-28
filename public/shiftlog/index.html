@@ -433,7 +433,8 @@ function hm(ts){return new Date(ts).toLocaleTimeString('th-TH',{hour:'2-digit',m
 function setSaveState(cls,txt){var s=el('save-state');s.className='sl-saved'+(cls?' '+cls:'');s.textContent=txt;}
 function saveLocal(){
   data.savedAt=Date.now();
-  try{localStorage.setItem(STORE_KEY,JSON.stringify(data));return true;}
+  // เลขงานค้างบนเมนูข้าง (wms-badges.js) วาดใหม่ทันที ไม่ต้องรอเปลี่ยนหน้า
+  try{localStorage.setItem(STORE_KEY,JSON.stringify(data));window.dispatchEvent(new Event('wms:shiftlog'));return true;}
   catch(e){setSaveState('err','บันทึกไม่ได้ — พื้นที่ในเบราว์เซอร์เต็ม');return false;}
 }
 function changed(){

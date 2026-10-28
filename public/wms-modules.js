@@ -19,6 +19,11 @@
  *
  * โมดูลที่ไม่มี group จะอยู่บนสุดโดยไม่มีหัวข้อ — ตอนนี้คือสรุปเช้า ซึ่งเป็นหน้า
  * ที่เปิดเป็นอันแรกของวันและพาไปที่อื่นต่อ จึงไม่ควรถูกยัดอยู่ในหมวดใดหมวดหนึ่ง
+ * กับสมุดกะ ซึ่งมีเลขงานค้างติดอยู่ (wms-badges.js) — ถ้าอยู่ท้ายหมวดทีมและระบบ
+ * จอโน้ตบุ๊กต้องเลื่อนเมนูลงถึงจะเห็นเลข และแถบบนมือถือก็ต้องปัดไปจนสุด
+ *
+ * `hidden: true` เอาออกจากเมนูแต่หน้ายังอยู่ เปิดตามลิงก์ได้ และพอเปิดอยู่เมนูก็ยังโชว์
+ * ว่าอยู่หน้าไหน — ลบ hidden ออกเมื่ออยากให้กลับมาในเมนู
  */
 export const GROUPS = [
   { id: 'order',     label: 'ออเดอร์',     labelEn: 'Orders' },
@@ -31,8 +36,10 @@ export const MODULES = [
   /* สรุปเช้ามาก่อนทุกอย่าง เพราะเป็นหน้าที่ตอบว่า "วันนี้ต้องดูอะไรก่อน" — พอมี
      เก้าโมดูล การเปิดมาแล้วต้องไล่กดดูทีละอันเพื่อหาว่ามีอะไรผิดปกติคือภาระที่
      ระบบควรรับไปเอง */
-  { id: 'summary', label: 'สรุปเช้า', labelEn: 'Morning Brief', path: 'summary/', icon: 'sunrise' },
-  { id: 'history', label: 'ย้อนหลัง', labelEn: 'History', path: 'history/', icon: 'history' },
+  /* สรุปเช้ากับย้อนหลังยังไม่ได้ใช้ในงานจริง ซ่อนไว้ก่อนให้เมนูสั้นลง */
+  { id: 'summary', label: 'สรุปเช้า', labelEn: 'Morning Brief', path: 'summary/', icon: 'sunrise', hidden: true },
+  { id: 'shiftlog', label: 'สมุดกะ', labelEn: 'Shift Log', path: 'shiftlog/', icon: 'notebook' },
+  { id: 'history', label: 'ย้อนหลัง', labelEn: 'History', path: 'history/', icon: 'history', hidden: true },
   { id: 'order', label: 'เทียบ Order', labelEn: 'Order Compare', path: 'order-compare/', icon: 'clipboard', group: 'order' },
   { id: 'lookup', label: 'ค้นหาออเดอร์', labelEn: 'Order Lookup', path: 'order-lookup/', icon: 'search', group: 'order' },
   { id: 'stock', label: 'สต๊อกคงเหลือ', labelEn: 'Stock on Hand', path: 'stock/', icon: 'package', group: 'warehouse' },
@@ -43,7 +50,6 @@ export const MODULES = [
   { id: 'loadplan', label: 'ผังงานรถวันนี้', labelEn: 'Load Plan', path: 'loadplan/', icon: 'map', group: 'transport' },
   { id: 'transport', label: 'ทำใบงานขนส่ง', labelEn: 'Transport Docs', path: 'transport-docs/', icon: 'truck', group: 'transport' },
   { id: 'forms', label: 'เอกสารขนส่ง', labelEn: 'Transport Forms', path: 'transport-forms/', icon: 'file', group: 'transport' },
-  { id: 'shiftlog', label: 'สมุดกะ', labelEn: 'Shift Log', path: 'shiftlog/', icon: 'notebook', group: 'system' },
   { id: 'roster', label: 'ตารางกะ', labelEn: 'Shift Schedule', path: 'roster/', icon: 'calendar', group: 'system' },
   { id: 'settings', label: 'ตั้งค่า', labelEn: 'Settings', path: 'settings/', icon: 'settings', group: 'system' },
 ];

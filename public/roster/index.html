@@ -790,7 +790,8 @@ function _data(){return {employees:employees,outsource:outsource,periods:periods
 function stamp(ts){return new Date(ts).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});}
 function setSaveState(cls,txt){var el=document.getElementById('save-state');el.className='rs-saved'+(cls?' '+cls:'');el.textContent=txt;}
 function saveLocal(){
-  try{localStorage.setItem(STORE_KEY,JSON.stringify(_data()));return true;}
+  // ดึงฉบับใหม่จากชีตมาแล้วสมุดกะอาจเปลี่ยน — เลขงานค้างบนเมนูข้าง (wms-badges.js) วาดใหม่
+  try{localStorage.setItem(STORE_KEY,JSON.stringify(_data()));window.dispatchEvent(new Event('wms:shiftlog'));return true;}
   catch(e){setSaveState('err','บันทึกไม่ได้ — กดส่งออกไฟล์เก็บไว้ก่อน');return false;}
 }
 function changed(){

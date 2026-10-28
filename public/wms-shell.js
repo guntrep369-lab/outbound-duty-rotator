@@ -12,6 +12,7 @@
  */
 
 import { MODULES, GROUPS, BRAND, ICON_PATHS } from './wms-modules.js';
+import { mountBadges } from './wms-badges.js';
 
 /** Inline SVG for one lucide icon name. */
 function icon(name, cls) {
@@ -33,15 +34,18 @@ export function sidebarHTML(activeId, root) {
   const link = (m) => {
     const on = m.id === activeId;
     // The active module is not a link — you are already on it.
-    const attrs = on ? 'class="sysmod active" aria-current="page"' : `class="sysmod" href="${root}${m.path}"`;
+    const attrs = (on ? 'class="sysmod active" aria-current="page"' : `class="sysmod" href="${root}${m.path}"`) +
+      ` data-mod="${esc(m.id)}"`;
     return `<a ${attrs}>${icon(m.icon, 'sysmod-ic')}<span>${esc(m.label)}</span><em>${esc(m.labelEn)}</em></a>`;
   };
 
   /* โมดูลที่ไม่มีหมวดขึ้นก่อนโดยไม่มีหัวข้อ แล้วค่อยไล่ทีละหมวดตามลำดับใน GROUPS
-     หมวดที่ไม่มีโมดูลเหลืออยู่จะไม่ขึ้นหัวข้อค้างไว้ */
-  const parts = MODULES.filter((m) => !m.group).map(link);
+     หมวดที่ไม่มีโมดูลเหลืออยู่จะไม่ขึ้นหัวข้อค้างไว้
+     โมดูลที่ซ่อน (hidden) ไม่ขึ้น ยกเว้นตอนเปิดหน้านั้นอยู่ จะได้รู้ว่าอยู่ตรงไหน */
+  const shown = MODULES.filter((m) => !m.hidden || m.id === activeId);
+  const parts = shown.filter((m) => !m.group).map(link);
   for (const g of GROUPS) {
-    const inGroup = MODULES.filter((m) => m.group === g.id);
+    const inGroup = shown.filter((m) => m.group === g.id);
     if (!inGroup.length) continue;
     parts.push(`<p class="sysbar-modlabel">${esc(g.label)} · ${esc(g.labelEn)}</p>`);
     parts.push(...inGroup.map(link));
@@ -74,14 +78,17 @@ export function sidebarHTML(activeId, root) {
 
 /** Replace every <div data-wms-shell> marker on the page with the sidebar. */
 export function mountShell(doc = document) {
+  let active = '';
   for (const slot of doc.querySelectorAll('[data-wms-shell]')) {
-    const active = slot.getAttribute('data-wms-shell') || '';
+    active = slot.getAttribute('data-wms-shell') || '';
     const root = slot.getAttribute('data-root') ?? './';
     slot.outerHTML = sidebarHTML(active, root);
   }
   for (const btn of doc.querySelectorAll('[data-wms-signout]')) {
     btn.addEventListener('click', () => window.wmsGate?.signOut());
   }
+  // Open-item count on สมุดกะ, see wms-badges.js.
+  mountBadges(active);
 }
 
 // Module scripts are deferred, so the DOM is already parsed by the time we run.

@@ -15,14 +15,18 @@ The list lives in [`public/wms-modules.js`](public/wms-modules.js) (the one plac
 
 | Group | Module | Path |
 | --- | --- | --- |
-| — | สรุปเช้า · Morning Brief | `summary/` |
-| — | ย้อนหลัง · History | `history/` |
+| — | สมุดกะ · Shift Log | `shiftlog/` |
+| — (hidden) | สรุปเช้า · Morning Brief · ย้อนหลัง · History | `summary/` · `history/` |
 | ออเดอร์ | เทียบ Order · ค้นหาออเดอร์ | `order-compare/` · `order-lookup/` |
 | คลังสินค้า | สต๊อกคงเหลือ · สรุปหยิบของ · เบิกตามออเดอร์ · เอกสารคลังสินค้า | `stock/` · `picking/` · `order-sheet/` · `warehouse-forms/` |
 | ขนส่ง | ประเภทงานรถ · ผังงานรถวันนี้ · ทำใบงานขนส่ง · เอกสารขนส่ง | `jobs/` · `loadplan/` · `transport-docs/` · `transport-forms/` |
-| ทีมและระบบ | สมุดกะ · Shift Log · **ตารางกะ · Shift Schedule** · ตั้งค่า | `shiftlog/` · `roster/` · `settings/` |
+| ทีมและระบบ | **ตารางกะ · Shift Schedule** · ตั้งค่า | `roster/` · `settings/` |
 
 The site root redirects to `roster/`, so the main link opens the shift schedule.
+
+สรุปเช้า and ย้อนหลัง are marked `hidden: true`. They're left out of the sidebar, but the pages still
+work by their links, and the sidebar shows them while you're on them. Remove `hidden` to put them
+back.
 
 ---
 
@@ -181,6 +185,17 @@ how many days an order takes to close on average. It prints.
 
 **สรุปเช้า** shows a งานค้างในสมุดกะ card with the open count, how many wait on Logis, and the
 oldest item's age. When the schedule sheet is set up, it reads the sheet's copy (read-only).
+
+**Sidebar count:** สมุดกะ sits near the top of the sidebar on every page, with the open count next
+to it (amber; red once the oldest item has waited two days or more). Hover it for the oldest
+item's age. The count comes from [`public/wms-badges.js`](public/wms-badges.js):
+
+- It updates as soon as an entry is saved on this device.
+- On other pages it asks the schedule sheet for its version every 3 minutes while the tab is open.
+  It downloads the log only when another device has saved something newer, and it never changes
+  this device's schedule.
+- Pages that don't load the sheet settings (ย้อนหลัง, the transport and warehouse forms) don't
+  check the sheet. They show the newer of this device's count and the last sheet check.
 
 ### Storage
 
