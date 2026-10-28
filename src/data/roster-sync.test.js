@@ -100,6 +100,16 @@ describe('merge3 — รวมสิ่งที่สองเครื่อ�
     expect(r.clash).toEqual([]);
   });
 
+  it('มาสาย / OT รวมทีละช่อง — เครื่องหนึ่งใส่สาย อีกเครื่องใส่ OT ของวันเดียวกัน ได้ทั้งคู่', () => {
+    const r = merge3(START,
+      { ...START, overrides: { '2026-06-02|ข': 'AB' }, late: { '2026-06-01|ก': 15 } },
+      { ...START, ot: { '2026-06-01|ก': 2 } });
+    expect(r.data.overrides).toEqual({ '2026-06-02|ข': 'AB' });
+    expect(r.data.late).toEqual({ '2026-06-01|ก': 15 });
+    expect(r.data.ot).toEqual({ '2026-06-01|ก': 2 });
+    expect(r.clash).toEqual([]);
+  });
+
   it('ฝั่งหนึ่งลบช่อง อีกฝั่งไม่ได้แตะ — ช่องนั้นหายไป', () => {
     const base = { ...START, osExtra: { 'x|morning': { req: 2 }, 'y|morning': { req: 4 } } };
     const r = merge3(base,

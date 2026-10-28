@@ -66,13 +66,29 @@ back.
   outsource ประจำ on W or 10-19 (not on leave), plus outsource เสริม (มาจริง once filled in, otherwise ขอ). Click ตั้งขั้นต่ำ to set that shift's minimum. Days below it turn red, except
   holidays, and the period summary says how many days are short.
 - **Manual edits and leave.** Clicking a cell opens a menu: W ทำงาน, H หยุด, ลาป่วย (ลป), ลากิจ
-  (ลก), พักร้อน (ลพ), or ↺ ตามตาราง to go back to the computed value. Each leave type has its own
-  color. "ล้างแก้ไข" clears the W / H edits in the current period and keeps leave, which counts
+  (ลก), พักร้อน (ลพ), ขาดงาน (ขาด), or ↺ ตามตาราง to go back to the computed value. Each leave type has its own
+  color. "ล้างแก้ไข" clears the W / H edits in the current period and keeps leave and ขาดงาน, which count
   toward the year. Click a name, nickname, day off, or shift badge to edit it in place.
+- **มาสาย and OT.** The same menu has two number fields: minutes late and OT hours for that day.
+  A value saves when you leave the field or press Enter. Late only applies to a work day (the field
+  is greyed out otherwise, and choosing หยุด, a leave type, or ขาด clears it); OT works on any day,
+  including a day off. The cell gets an amber corner for late and a blue corner for OT, and its
+  tooltip gives the numbers. They're stored apart from the W / H edits (`late` and `ot`, keyed
+  `date|name`), so two devices can record late and OT for the same day without overwriting each
+  other.
 - **การลา:** for the chosen month, how many days of each leave type each person took, the team
-  total, the year's total per person, and which dates.
+  total, the year's total per person, and which dates. It also counts each person's ขาดงาน days,
+  late days (with total minutes), and OT hours.
 - **KPI:** 8 monthly metrics per person, each with a target, plus team pass rate and a
-  per-person score chart.
+  per-person score chart. **Attendance** and **OT Rate** fill in from the schedule:
+  - Attendance = (1 − (ขาด days + late days) ÷ days due) × 100. Days due are work days plus ขาด
+    days. Leave and days off don't count.
+  - OT Rate = OT hours ÷ (work days × 8 hours) × 100.
+  - Both count up to today, so the current month is the month so far.
+  - A computed value has a dashed border, and its tooltip and the input box say what it came from.
+    A value typed in by hand still wins. Clear it (ล้าง) to go back to the computed one.
+  - Months before the first ขาด / late mark (for Attendance) or the first OT entry (for OT Rate)
+    stay empty. Nobody recorded those then, so a computed 100% / 0% would be wrong.
 
 ### Where the data lives
 
@@ -118,12 +134,15 @@ first, so the page keeps working without a connection and sends the changes when
   come back to its tab. It doesn't replace what's on screen while an edit popup or window is open.
 - The sheet numbers every save. A device that edited an older copy gets the newer one back and
   merges before saving again, so nobody's work is overwritten silently. Edits to different cells
-  (manual edits, OS เสริม numbers, KPI, minimums) merge on their own; if both devices changed the same
+  (manual edits, late / OT, OS เสริม numbers, KPI, minimums) merge on their own; if both devices changed the same
   cell, the one saving now wins. If both changed the same list (staff, outsource, periods, holidays,
   extra promo days), the page asks which device's list to keep.
 - The `log` tab in the sheet records who saved and when.
 - After changing the script: Deploy → Manage deployments → edit → Version: New version. The URL
   stays the same.
+- After a site update that adds a new kind of data (like late / OT), reload ตารางกะ and สมุดกะ on
+  every device. A page still open from before doesn't know the new data, and its next save would
+  drop it.
 
 > 🔒 The built-in team list is in the page source, and this repo is public. Anyone can read it
 > on GitHub.

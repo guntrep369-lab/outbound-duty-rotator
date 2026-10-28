@@ -123,6 +123,13 @@ td.sc0{font-weight:500;font-size:12px}
 .cSL{background:#ffedd5;color:#c2410c;font-weight:700;box-shadow:inset 0 0 0 2px #fb923c}
 .cPL{background:#dbeafe;color:#1d4ed8;font-weight:700;box-shadow:inset 0 0 0 2px #60a5fa}
 .cVL{background:#ccfbf1;color:#0f766e;font-weight:700;box-shadow:inset 0 0 0 2px #2dd4bf}
+.cAB{background:#fce7f3;color:#be185d;font-weight:700;box-shadow:inset 0 0 0 2px #ec4899}
+/* มาสาย / OT ของวันนั้น — มุมสามเหลี่ยมบนช่อง ไม่ทับตัวอักษร
+   td. นำหน้า ให้ชนะ .os-row td ที่ตั้ง background ทั้งก้อน (แถว OS ประจำ) */
+td.mLate,.leg-dot.mLate{background-image:linear-gradient(135deg,#f59e0b 0 7px,transparent 7px)}
+td.mOT,.leg-dot.mOT{background-image:linear-gradient(225deg,#2563eb 0 7px,transparent 7px)}
+td.mLate.mOT{background-image:linear-gradient(135deg,#f59e0b 0 7px,transparent 7px),linear-gradient(225deg,#2563eb 0 7px,transparent 7px)}
+.leg-dot.mLate,.leg-dot.mOT{background-color:#fff;border:1px solid #ccc}
 /* วันที่คนนี้อยู่อีกกลุ่ม — ย้ายกลุ่มกลางคาบ จึงมีชื่อทั้งสองกะ */
 .cOut{background:repeating-linear-gradient(135deg,#f8fafc 0 4px,#e2e8f0 4px 6px)}
 td.clickable{cursor:pointer;transition:filter .12s}
@@ -263,13 +270,18 @@ td.clickable:hover{filter:brightness(.92)}
 .cpop-grid button.on{outline:2px solid var(--primary);outline-offset:1px}
 .cpop-reset{width:100%;text-align:center;background:var(--surface);color:var(--txt2)}
 .cpop-reset:disabled{opacity:.45;cursor:default}
+.cpop-num{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px}
+.cpop-num label{display:flex;flex-direction:column;gap:3px;font-size:11px;font-weight:600;color:var(--txt2)}
+/* 16px — เล็กกว่านี้ iPhone ซูมหน้าทั้งหน้าตอนแตะช่อง */
+.cpop-num input{width:100%;min-width:0;padding:6px 8px;font-size:16px;font-family:inherit;border:1px solid var(--border2);border-radius:var(--radius-sm)}
+.cpop-num input:disabled{background:var(--bg);opacity:.55}
 
 /* ═══ การลา ═══ */
 .lv-tbl td.lv-n{text-align:center;font-variant-numeric:tabular-nums;font-weight:700}
 .lv-tbl td.lv-0{color:var(--txt3);font-weight:400}
 .lv-tbl th.lv-n{text-align:center}
 .lv-tbl .lv-sum td{background:#f8fafc;font-weight:700;border-top:2px solid var(--border2)}
-.lv-yr small{display:block;font-size:10.5px;color:var(--txt3);font-weight:400;white-space:nowrap}
+.lv-yr small,.lv-tbl td.lv-n small{display:block;font-size:10.5px;color:var(--txt3);font-weight:400;white-space:nowrap}
 .lv-tbl td.lv-days{min-width:120px}
 .lv-day{display:inline-block;min-width:24px;padding:2px 5px;margin:1px 2px;border-radius:4px;font-size:11px;text-align:center}
 
@@ -323,6 +335,9 @@ td.clickable:hover{filter:brightness(.92)}
 .kpi-fail{background:#fee2e2;color:#991b1b;border:1px solid #fca5a5}
 .kpi-na{background:#f1f5f9;color:#94a3b8;border:1px solid #e2e8f0;font-weight:400}
 .kpi-icon{font-size:11px}
+/* ค่าที่คิดเองจากตารางกะ (Attendance / OT Rate) — กรอบประ แยกจากค่าที่คนกรอก */
+.kpi-cell.kpi-auto{border-style:dashed}
+.kpi-chip.auto{background:var(--surface);color:var(--txt2);border:1px dashed #94a3b8;font-weight:400}
 .kpi-inp-overlay{display:none;position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:700;justify-content:center;align-items:center}
 .kpi-inp-overlay.open{display:flex}
 .kpi-inp-box{background:#fff;border-radius:14px;padding:26px 26px 20px;width:360px;max-width:95vw;box-shadow:0 24px 64px rgba(0,0,0,.28)}
@@ -408,9 +423,12 @@ td.clickable:hover{filter:brightness(.92)}
     <span class="leg-item"><span class="leg-dot cSL"></span>ลป ลาป่วย</span>
     <span class="leg-item"><span class="leg-dot cPL"></span>ลก ลากิจ</span>
     <span class="leg-item"><span class="leg-dot cVL"></span>ลพ พักร้อน</span>
+    <span class="leg-item"><span class="leg-dot cAB"></span>ขาด ขาดงาน</span>
+    <span class="leg-item"><span class="leg-dot mLate"></span>มาสาย</span>
+    <span class="leg-item"><span class="leg-dot mOT"></span>OT</span>
     <span class="leg-item"><span class="leg-dot cOut"></span>อยู่อีกกลุ่ม (ย้ายกลางคาบ)</span>
     <span class="leg-item"><span class="leg-dot" style="background:#fecaca"></span>คนไม่ถึงขั้นต่ำ / OS เสริมมาไม่ครบ</span>
-    <span class="leg-hint">· คลิกช่องเพื่อเลือก ทำงาน / หยุด / ลา · คลิกชื่อ/หยุด/กะ เพื่อแก้ไข (วันหยุดกับกลุ่มมีผลตั้งแต่คาบที่ดูอยู่) · คลิกตัวเลข OS เสริม เพื่อใส่จำนวน · คลิก "ตั้งขั้นต่ำ" ในแถวมาทำงาน</span>
+    <span class="leg-hint">· คลิกช่องเพื่อเลือก ทำงาน / หยุด / ลา / ขาด หรือใส่มาสาย / OT · คลิกชื่อ/หยุด/กะ เพื่อแก้ไข (วันหยุดกับกลุ่มมีผลตั้งแต่คาบที่ดูอยู่) · คลิกตัวเลข OS เสริม เพื่อใส่จำนวน · คลิก "ตั้งขั้นต่ำ" ในแถวมาทำงาน</span>
   </div>
 
   <div id="schedule-out"></div>
@@ -478,12 +496,13 @@ td.clickable:hover{filter:brightness(.92)}
       <span class="kpi-chip cSL">ลป ลาป่วย</span>
       <span class="kpi-chip cPL">ลก ลากิจ</span>
       <span class="kpi-chip cVL">ลพ พักร้อน</span>
+      <span class="kpi-chip cAB">ขาด ขาดงาน</span>
     </div>
   </div>
   <div id="lv-stat-row" class="kpi-stat-row"></div>
   <div class="card">
     <div class="card-title" id="lv-title">การลา</div>
-    <div class="info-box no-print">บันทึกวันลาที่แท็บตารางกะ — คลิกช่องของคนนั้นในวันที่ลา แล้วเลือกประเภท · ปุ่ม "ล้างแก้ไข" ไม่ลบวันลา</div>
+    <div class="info-box no-print">บันทึกที่แท็บตารางกะ — คลิกช่องของคนนั้นในวันนั้น แล้วเลือกประเภทการลา / ขาดงาน หรือใส่นาทีที่มาสาย / ชั่วโมง OT · ปุ่ม "ล้างแก้ไข" ไม่ลบสิ่งเหล่านี้</div>
     <div class="tbl-x">
       <table class="mtbl lv-tbl">
         <thead id="lv-thead"></thead>
@@ -543,6 +562,7 @@ td.clickable:hover{filter:brightness(.92)}
       <span class="kpi-chip pass">✓ ผ่าน</span>
       <span class="kpi-chip fail">✗ ไม่ผ่าน</span>
       <span class="kpi-chip na">— ยังไม่กรอก</span>
+      <span class="kpi-chip auto">กรอบประ = คิดจากตารางกะ</span>
     </div>
   </div>
   <div id="kpi-stat-row" class="kpi-stat-row"></div>
@@ -552,6 +572,7 @@ td.clickable:hover{filter:brightness(.92)}
   </div>
   <div class="card">
     <div class="card-title">KPI พนักงาน — คลิกช่องเพื่อกรอกข้อมูล</div>
+    <div class="info-box no-print">Attendance กับ OT Rate คิดเองจาก ขาด / มาสาย / OT ที่บันทึกในตารางกะ (นับถึงวันนี้ · ชั่วโมงปกติวันละ 8 ชม.) · กรอกเองทับได้ ล้างช่องแล้วกลับไปใช้ค่าที่คิด</div>
     <div class="kpi-wrap">
       <table class="kpi-tbl">
         <thead id="kpi-thead"></thead>
@@ -681,6 +702,11 @@ td.clickable:hover{filter:brightness(.92)}
     <button type="button" class="cSL" data-v="SL" onclick="cellSet('SL')"><b>ลป</b>ลาป่วย</button>
     <button type="button" class="cPL" data-v="PL" onclick="cellSet('PL')"><b>ลก</b>ลากิจ</button>
     <button type="button" class="cVL" data-v="VL" onclick="cellSet('VL')"><b>ลพ</b>พักร้อน</button>
+    <button type="button" class="cAB" data-v="AB" onclick="cellSet('AB')"><b>ขาด</b>ขาดงาน</button>
+  </div>
+  <div class="cpop-num">
+    <label>มาสาย (นาที)<input id="cpop-late" type="number" min="0" step="1" inputmode="numeric" placeholder="—" onchange="cellNum('late',this)" onkeydown="cellNumKey(event)"></label>
+    <label>OT (ชั่วโมง)<input id="cpop-ot" type="number" min="0" step="0.5" inputmode="decimal" placeholder="—" onchange="cellNum('ot',this)" onkeydown="cellNumKey(event)"></label>
   </div>
   <button type="button" class="cpop-reset" id="cpop-reset" onclick="cellSet(null)">↺ ตามตาราง</button>
 </div>
@@ -750,7 +776,7 @@ var DEF_HOL=[
    ตั้งค่าพาตารางกะไปด้วย ย้ายเครื่องใช้ปุ่มส่งออก/นำเข้าไฟล์ */
 var STORE_KEY='wms:roster';
 var D={};try{D=JSON.parse(localStorage.getItem(STORE_KEY)||'null')||{};}catch(e){}
-var employees,outsource,periods,holidays,extraPro,overrides,kpiData,minStaff,osExtra,shiftLog;
+var employees,outsource,periods,holidays,extraPro,overrides,kpiData,minStaff,osExtra,shiftLog,late,ot;
 var curPer=0,curPage='schedule';
 
 function copy(v){return JSON.parse(JSON.stringify(v));}
@@ -760,6 +786,8 @@ function useData(d){
   employees=arr(d.employees,DEF_EMP);outsource=arr(d.outsource,DEF_OS);
   periods=arr(d.periods,DEF_PER);holidays=arr(d.holidays,DEF_HOL);extraPro=arr(d.extraPro,[]);
   overrides=obj(d.overrides);kpiData=obj(d.kpiData);minStaff=obj(d.minStaff);osExtra=obj(d.osExtra);
+  // มาสายกี่นาที / OT กี่ชั่วโมง ของวัน|ชื่อ — ดู roster-people.js
+  late=obj(d.late);ot=obj(d.ot);
   // สมุดกะ (หน้า shiftlog/) เก็บอยู่ในข้อมูลชุดเดียวกัน หน้านี้ไม่ได้แสดง แต่ต้องพาไปด้วยทุกครั้งที่บันทึก
   shiftLog=obj(d.shiftLog);
   return normOS();
@@ -786,7 +814,7 @@ function oxSet(d,sh,f,v,s){s=s||osExtra;var k=oxK(d,sh),e=s[k]||{};
   if(e.req===undefined&&e.got===undefined)delete s[k];else s[k]=e;}
 var _osMigrated=useData(D);
 
-function _data(){return {employees:employees,outsource:outsource,periods:periods,holidays:holidays,extraPro:extraPro,overrides:overrides,kpiData:kpiData,minStaff:minStaff,osExtra:osExtra,shiftLog:shiftLog,savedAt:Date.now()};}
+function _data(){return {employees:employees,outsource:outsource,periods:periods,holidays:holidays,extraPro:extraPro,overrides:overrides,kpiData:kpiData,minStaff:minStaff,osExtra:osExtra,shiftLog:shiftLog,late:late,ot:ot,savedAt:Date.now()};}
 function stamp(ts){return new Date(ts).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});}
 function setSaveState(cls,txt){var el=document.getElementById('save-state');el.className='rs-saved'+(cls?' '+cls:'');el.textContent=txt;}
 function saveLocal(){
@@ -832,7 +860,8 @@ function describe(d){
   var n=function(a){return Array.isArray(a)?a.length:0;},months={},k=obj(d.kpiData);
   for(var nm in k){if(k[nm]&&typeof k[nm]==='object')for(var m in k[nm])months[m]=1;}
   return 'พนักงาน '+n(d.employees)+' · OS '+n(d.outsource)+' · คาบ '+n(d.periods)+' · วันหยุด '+n(d.holidays)+
-    ' · แก้ไขช่อง '+Object.keys(obj(d.overrides)).length+' · OS เสริม '+Object.keys(obj(d.osExtra)).length+' กะ'+
+    ' · แก้ไขช่อง '+Object.keys(obj(d.overrides)).length+' · สาย/OT '+(Object.keys(obj(d.late)).length+Object.keys(obj(d.ot)).length)+' ช่อง'+
+    ' · OS เสริม '+Object.keys(obj(d.osExtra)).length+' กะ'+
     ' · KPI '+Object.keys(months).length+' เดือน · สมุดกะ '+Object.keys(obj(d.shiftLog)).length+' รายการ';
 }
 function importFile(inp){
@@ -875,31 +904,54 @@ function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){retur
 function jsAttr(v){return JSON.stringify(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;');}
 
 // ── Overrides ──
-// ช่องแก้ไขเก็บ W / H หรือรหัสการลา SL / PL / VL — ดู roster-people.js
+// ช่องแก้ไขเก็บ W / H หรือรหัสการลา SL / PL / VL และขาดงาน AB — ดู roster-people.js
 var RP=window.RosterPeople;
 function ovK(d,n){return d+'|'+n;}
 function getOv(d,n){return overrides.hasOwnProperty(ovK(d,n))?overrides[ovK(d,n)]:null;}
 function setOv(d,n,v){var k=ovK(d,n);if(v===null)delete overrides[k];else overrides[k]=v;}
 function cellLabel(v){return RP.isLeave(v)?RP.LEAVE[v].label:v;}
-/* คลิกช่องแล้วเลือกเอง: ทำงาน / หยุด / ลาแต่ละแบบ หรือกลับเป็นตามตาราง
-   เลือกค่าเดียวกับที่ตารางคิดให้อยู่แล้ว ก็ไม่ต้องเก็บเป็นช่องแก้ไข */
-var _cDate='',_cName='',_cAv='';
+/* คลิกช่องแล้วเลือกเอง: ทำงาน / หยุด / ลาแต่ละแบบ / ขาดงาน หรือกลับเป็นตามตาราง
+   เลือกค่าเดียวกับที่ตารางคิดให้อยู่แล้ว ก็ไม่ต้องเก็บเป็นช่องแก้ไข
+   ใต้ปุ่มใส่นาทีที่มาสายกับชั่วโมง OT ของวันนั้นได้ — สายใส่ได้เฉพาะวันที่มาทำงาน OT ใส่ได้ทุกวัน */
+var _cDate='',_cName='',_cAv='',_cDirty=false;
 function cellMenu(e,d,nm,av){
   e.stopPropagation();closeInline();
   _cDate=d;_cName=nm;_cAv=av;
-  var cur=getOv(d,nm),dv=cur!==null?cur:av,dd=pd(d);
+  var cur=getOv(d,nm),dv=cur!==null?cur:av,dd=pd(d),k=ovK(d,nm);
   var p=employees.concat(outsource).find(function(x){return x.name===nm;});
   document.getElementById('cpop-title').textContent=(p&&p.nick?p.nick:nm)+' · '+DOW_FULL[dd.getDay()]+' '+dd.getDate()+' '+MON[dd.getMonth()];
   document.querySelectorAll('#cpop .cpop-grid button').forEach(function(b){b.classList.toggle('on',b.getAttribute('data-v')===dv);});
+  var li=document.getElementById('cpop-late'),oi=document.getElementById('cpop-ot');
+  li.value=late[k]>0?late[k]:'';oi.value=ot[k]>0?ot[k]:'';
+  li.disabled=!RP.isWork(dv);
   var rs=document.getElementById('cpop-reset');
   rs.disabled=cur===null;rs.textContent='↺ ตามตาราง ('+av+')';
   placePop(document.getElementById('cpop'),e.target);
+  // ช่องก่อนหน้าเพิ่งใส่สาย / OT ไว้ — วาดหลังวางเมนูแล้ว เพราะช่องที่เพิ่งคลิกจะถูกแทนที่
+  if(_cDirty){_cDirty=false;renderSchedule();}
 }
 function cellSet(v){
   setOv(_cDate,_cName,v===_cAv?null:v);
-  closeCell();changed();renderSchedule();
+  // ไม่ได้มาทำงานวันนั้นแล้ว (หยุด / ลา / ขาด) — นาทีที่มาสายไม่มีความหมาย
+  if(!RP.isWork(v===null?_cAv:v))delete late[ovK(_cDate,_cName)];
+  changed();_cDirty=true;closeCell();
 }
-function closeCell(){document.getElementById('cpop').style.display='none';}
+/* มาสาย (นาที) / OT (ชั่วโมง) — เก็บทันทีที่พิมพ์เสร็จ (ออกจากช่องหรือกด Enter) · ว่างหรือ 0 = ไม่มี */
+function cellNum(f,inp){
+  var m=f==='late'?late:ot,k=ovK(_cDate,_cName),v=parseFloat(inp.value);
+  v=v>0?(f==='late'?Math.round(v):Math.round(v*100)/100):null;
+  inp.value=v===null?'':v;
+  if((m[k]||null)===v)return;
+  if(v===null)delete m[k];else m[k]=v;
+  changed();
+  // เมนูยังเปิดอยู่ — วาดตารางตอนปิด ถ้าวาดตอนนี้ ช่องที่กำลังจะคลิกต่อจะถูกแทนที่จนคลิกไม่ติด
+  if(document.getElementById('cpop').style.display==='block')_cDirty=true;else renderSchedule();
+}
+function cellNumKey(e){if(e.key==='Enter'){e.preventDefault();e.target.blur();closeCell();}}
+function closeCell(){
+  document.getElementById('cpop').style.display='none';
+  if(_cDirty){_cDirty=false;renderSchedule();}
+}
 
 /* ชื่อคือตัวระบุคนในตาราง — ช่องที่แก้ไขกับ KPI ผูกอยู่กับชื่อ
    เปลี่ยนชื่อแล้วต้องย้ายตามไปด้วย ไม่งั้นข้อมูลของคนนั้นหายเงียบ ๆ
@@ -907,9 +959,11 @@ function closeCell(){document.getElementById('cpop').style.display='none';}
 function nameTaken(nm,self){return employees.concat(outsource).some(function(p){return p!==self&&p.name===nm;});}
 function rename(from,to){
   if(from===to)return;
-  Object.keys(overrides).forEach(function(k){
-    var i=k.indexOf('|');
-    if(k.slice(i+1)===from){overrides[k.slice(0,i+1)+to]=overrides[k];delete overrides[k];}
+  [overrides,late,ot].forEach(function(m){
+    Object.keys(m).forEach(function(k){
+      var i=k.indexOf('|');
+      if(k.slice(i+1)===from){m[k.slice(0,i+1)+to]=m[k];delete m[k];}
+    });
   });
   if(kpiData[from]){kpiData[to]=kpiData[from];delete kpiData[from];}
 }
@@ -928,9 +982,9 @@ function showPage(id,btn){
   else if(id==='kpi')renderKPI();
 }
 function namesNow(){return employees.map(function(x){return x.name;}).concat(outsource.map(function(x){return x.name;}));}
-// วันลาเป็นประวัติที่นับไปทั้งปี ไม่ใช่การแก้ตารางชั่วคราว จึงไม่ล้างไปด้วย
+// วันลา ขาด สาย OT เป็นประวัติที่นับไปทั้งปี ไม่ใช่การแก้ตารางชั่วคราว จึงไม่ล้างไปด้วย
 function clearOverrides(){
-  if(!confirm('ล้างการแก้ไข W / H ทั้งหมดในคาบนี้?\nวันลาไม่ถูกล้าง — ลบวันลาได้ที่ช่องนั้น เลือก ↺ ตามตาราง'))return;
+  if(!confirm('ล้างการแก้ไข W / H ทั้งหมดในคาบนี้?\nวันลา ขาดงาน มาสาย และ OT ไม่ถูกล้าง — ลบได้ที่ช่องนั้น'))return;
   var sp=sorted();if(curPer>=sp.length)return;
   var p=sp[curPer],e=perEnd(p,sp),c=p.start,ns=namesNow();
   while(c<=e){ns.forEach(function(n){var k=ovK(c,n);if(!RP.isLeave(overrides[k]))delete overrides[k];});c=addD(c,1);}
@@ -975,11 +1029,11 @@ function renderSchedule(){
 
   document.getElementById('per-title').textContent='คาบที่ '+(curPer+1)+' — '+sd.getDate()+' '+MON_F[sd.getMonth()]+' '+sd.getFullYear()+' ถึง '+ed.getDate()+' '+MON_F[ed.getMonth()]+' '+ed.getFullYear();
   var proCnt=0;for(var i=0;i<dates.length;i++){if(isPro(dates[i])||isXP(dates[i]))proCnt++;}
-  // นับเฉพาะช่องของคาบนี้ ให้ตรงกับที่ปุ่ม "ล้างแก้ไข" จะล้าง — วันลานับแยก เพราะไม่ถูกล้าง
-  var ns=namesNow(),ovCnt=0,lvCnt=0;
+  // นับเฉพาะช่องของคาบนี้ ให้ตรงกับที่ปุ่ม "ล้างแก้ไข" จะล้าง — วันลากับขาดงานนับแยก เพราะไม่ถูกล้าง
+  var ns=namesNow(),ovCnt=0,lvCnt=0,abCnt=0;
   for(var k in overrides){
-    var bar=k.indexOf('|'),dk=k.slice(0,bar);
-    if(dk>=p.start&&dk<=endS&&ns.indexOf(k.slice(bar+1))!==-1){if(RP.isLeave(overrides[k]))lvCnt++;else ovCnt++;}
+    var bar=k.indexOf('|'),dk=k.slice(0,bar),ov=overrides[k];
+    if(dk>=p.start&&dk<=endS&&ns.indexOf(k.slice(bar+1))!==-1){if(ov==='AB')abCnt++;else if(RP.isLeave(ov))lvCnt++;else ovCnt++;}
   }
   var short={morning:[],evening:[]};
   var h='<div class="tbl-wrap"><div class="tbl-scroll"><table>';
@@ -990,7 +1044,7 @@ function renderSchedule(){
 
   var shortTxt=[['morning','กะเช้า'],['evening','กะบ่าย']].filter(function(s){return short[s[0]].length;})
     .map(function(s){return s[1]+' '+short[s[0]].length+' วัน';}).join(' · ');
-  document.getElementById('per-sub').innerHTML=dates.length+' วัน · วันโปรฯ '+proCnt+' วัน'+(ovCnt?' · <span style="color:var(--pro)">แก้ไขช่อง '+ovCnt+' ช่อง</span>':'')+(lvCnt?' · ลา '+lvCnt+' วัน':'')+
+  document.getElementById('per-sub').innerHTML=dates.length+' วัน · วันโปรฯ '+proCnt+' วัน'+(ovCnt?' · <span style="color:var(--pro)">แก้ไขช่อง '+ovCnt+' ช่อง</span>':'')+(lvCnt?' · ลา '+lvCnt+' วัน':'')+(abCnt?' · ขาด '+abCnt+' วัน':'')+
     (shortTxt?' · <span style="color:var(--hol);font-weight:600">⚠ คนไม่ถึงขั้นต่ำ: '+shortTxt+'</span>':'');
 
   var pHols=holidays.filter(function(hh){return hh.date>=p.start&&hh.date<=endS;});
@@ -1000,6 +1054,27 @@ function renderSchedule(){
     h+='</div>';
   }
   document.getElementById('schedule-out').innerHTML=h;
+}
+
+/* ค่าช่องตามตาราง (ก่อนแก้เอง) — วันหยุดพิเศษ / วันหยุดประจำ = H
+   กะบ่ายวันสุดท้ายคาบ = 10-19 ยกเว้นคนหยุดเสาร์ · นอกนั้น W
+   v = กลุ่มกับวันหยุด ณ วันนั้น (RP.at) · endS = วันสุดท้ายของคาบ */
+function avOf(v,d,shift,endS){
+  if(isHol(d)||(v.dayOff>=0&&pd(d).getDay()===v.dayOff))return 'H';
+  return shift==='evening'&&isLD(d,endS)&&v.dayOff!==6?'10-19':'W';
+}
+/* ค่าที่เห็นในตารางของ p ทุกวันใน from..to — [[วันที่, ค่าช่อง]] วันที่ไม่อยู่ในคาบไหนข้ามไป
+   ใช้นับวันทำงาน / ขาด ให้ KPI โดยไม่ต้องวาดตาราง */
+function dayVals(p,from,to){
+  var sp=sorted(),out=[];
+  sp.forEach(function(per){
+    var e=perEnd(per,sp),c=per.start>from?per.start:from,last=e<to?e:to;
+    for(;c<=last;c=addD(c,1)){
+      var v=RP.at(p,c),sh=(v.group==='A')===(per.groupA==='morning')?'morning':'evening',ov=getOv(c,p.name);
+      out.push([c,ov!==null?ov:avOf(v,c,sh,e)]);
+    }
+  });
+  return out;
 }
 
 function buildSection(title,shift,g,dates,endS,group,osGroup,short){
@@ -1016,9 +1091,10 @@ function buildSection(title,shift,g,dates,endS,group,osGroup,short){
       if(offs.indexOf(v.dayOff)===-1)offs.push(v.dayOff);
       var hol=isHol(d),off=v.dayOff>=0&&pd(d).getDay()===v.dayOff,ld=isLD(d,endS);
       var eveL=shift==='evening'&&ld&&v.dayOff!==6;
-      var av=hol||off?'H':eveL?'10-19':'W';
-      var ov=getOv(d,p.name),dv=ov!==null?ov:av,lv=RP.isLeave(dv);
-      if(RP.isWork(dv))cnt[i][key]++;
+      var av=avOf(v,d,shift,endS);
+      var ov=getOv(d,p.name),dv=ov!==null?ov:av,lv=RP.isLeave(dv),wkd=RP.isWork(dv);
+      var lt=wkd?late[ovK(d,p.name)]:0,o=ot[ovK(d,p.name)];
+      if(wkd)cnt[i][key]++;
       var cls;
       if(lv)cls='c'+dv;
       else if(ov!==null)cls=ov==='H'?'cOH':'cOW';
@@ -1026,7 +1102,8 @@ function buildSection(title,shift,g,dates,endS,group,osGroup,short){
       else if(eveL)cls='cL';
       else if(!isOS&&(isPro(d)||isXP(d)))cls='cP';
       else cls='cW';
-      out+='<td class="'+cls+' clickable'+wk+'" onclick="cellMenu(event,'+jsAttr(d)+','+jsAttr(p.name)+','+jsAttr(av)+')" title="'+esc(cellLabel(dv))+'">'+(lv?RP.LEAVE[dv].short:esc(dv))+'</td>';
+      var mk=(lt>0?' mLate':'')+(o>0?' mOT':''),tt=cellLabel(dv)+(lt>0?' · มาสาย '+lt+' นาที':'')+(o>0?' · OT '+o+' ชม.':'');
+      out+='<td class="'+cls+mk+' clickable'+wk+'" onclick="cellMenu(event,'+jsAttr(d)+','+jsAttr(p.name)+','+jsAttr(av)+')" title="'+esc(tt)+'">'+(lv?RP.LEAVE[dv].short:esc(dv))+'</td>';
     }
     return {h:out,off:offs.map(function(o){return o>=0?DOW[o]:'-';}).join('→')};
   }
@@ -1467,39 +1544,50 @@ function addHol(){var d=document.getElementById('hi-date').value,n=document.getE
   document.getElementById('hi-date').value='';document.getElementById('hi-name').value='';}
 function delHol(idx){if(!confirm('ลบ "'+holidays[idx].name+'"?'))return;holidays.splice(idx,1);changed();renderHols();}
 
-// ── การลา ──
-// นับจากช่องที่เลือกประเภทการลาไว้ในตารางกะ รายเดือน และรวมทั้งปีของเดือนนั้น
+// ── การลา · ขาด · สาย · OT ──
+// นับจากช่องที่เลือกไว้ในตารางกะ รายเดือน และรวมทั้งปีของเดือนนั้น
 function monthNow(){var n=new Date();return n.getFullYear()+'-'+(n.getMonth()<9?'0':'')+(n.getMonth()+1);}
-function lvNum(v){return '<td class="lv-n'+(v?'':' lv-0')+'">'+(v||'·')+'</td>';}
+function lvNum(v,sub){return '<td class="lv-n'+(v?'':' lv-0')+'">'+(v||'·')+(v&&sub?'<small>'+sub+'</small>':'')+'</td>';}
+function hrs(v){return Math.round(v*100)/100;}
 function renderLeave(){
   var el=document.getElementById('lv-month'),mon=el.value||monthNow();el.value=mon;
-  var y=+mon.slice(0,4),m=+mon.slice(5,7),K=['SL','PL','VL'];
-  var t=RP.tally(overrides,mon+'-01',mon+'-'+new Date(y,m,0).getDate()),ty=RP.tally(overrides,y+'-01-01',y+'-12-31');
-  var sum={SL:0,PL:0,VL:0},ppl={SL:0,PL:0,VL:0},who=0;
-  document.getElementById('lv-title').textContent='การลา '+MON_F[m-1]+' '+(y+543);
+  var y=+mon.slice(0,4),m=+mon.slice(5,7),K=['SL','PL','VL'],from=mon+'-01',to=fd(new Date(y,m,0));
+  var t=RP.tally(overrides,from,to),ty=RP.tally(overrides,y+'-01-01',y+'-12-31');
+  var lt=RP.sum(late,from,to),o=RP.sum(ot,from,to);
+  var sum={SL:0,PL:0,VL:0,AB:0,late:0,lateMin:0,ot:0},ppl={SL:0,PL:0,VL:0,AB:0,late:0,ot:0},who=0;
+  document.getElementById('lv-title').textContent='การลา · ขาด · สาย · OT — '+MON_F[m-1]+' '+(y+543);
   var th='<tr><th>#</th><th>ชื่อ-สกุล</th><th>ชื่อเล่น</th>';
   K.forEach(function(k){th+='<th class="lv-n">'+RP.LEAVE[k].label+'</th>';});
-  document.getElementById('lv-thead').innerHTML=th+'<th class="lv-n">รวม</th><th class="lv-n">ทั้งปี '+(y+543)+'</th><th>วันที่ลา</th></tr>';
-  var h='',n=0,none={SL:0,PL:0,VL:0,days:[]};
+  document.getElementById('lv-thead').innerHTML=th+'<th class="lv-n">รวมลา</th><th class="lv-n">ลาทั้งปี '+(y+543)+'</th>'+
+    '<th class="lv-n">ขาดงาน</th><th class="lv-n">มาสาย</th><th class="lv-n">OT</th><th>วันที่ลา / ขาด</th></tr>';
+  var h='',n=0,none={SL:0,PL:0,VL:0,AB:0,days:[]},zero={days:0,total:0};
   [['พนักงานประจำ',employees],['Outsource ประจำ',outsource]].forEach(function(sec){
     if(!sec[1].length)return;
-    h+='<tr class="grp-hdr"><td colspan="9">'+sec[0]+' — '+sec[1].length+' คน</td></tr>';
+    h+='<tr class="grp-hdr"><td colspan="12">'+sec[0]+' — '+sec[1].length+' คน</td></tr>';
     sec[1].forEach(function(p){
       var r=t[p.name]||none,yr=ty[p.name]||none,tot=r.SL+r.PL+r.VL,yt=yr.SL+yr.PL+yr.VL;
+      var pl=lt[p.name]||zero,po=o[p.name]||zero;
       if(tot)who++;
       h+='<tr><td class="num">'+(++n)+'</td><td>'+esc(p.name)+'</td><td>'+esc(p.nick)+'</td>';
       K.forEach(function(k){sum[k]+=r[k];if(r[k])ppl[k]++;h+=lvNum(r[k]);});
       h+=lvNum(tot);
       h+='<td class="lv-n lv-yr'+(yt?'':' lv-0')+'">'+(yt||'·')+(yt?'<small>'+K.filter(function(k){return yr[k];}).map(function(k){return RP.LEAVE[k].short+' '+yr[k];}).join(' · ')+'</small>':'')+'</td>';
+      sum.AB+=r.AB;if(r.AB)ppl.AB++;
+      sum.late+=pl.days;sum.lateMin+=pl.total;if(pl.days)ppl.late++;
+      sum.ot+=po.total;if(po.days)ppl.ot++;
+      h+=lvNum(r.AB,yr.AB>r.AB?'ทั้งปี '+yr.AB:'')+lvNum(pl.days,pl.total+' นาที')+lvNum(hrs(po.total),'ชม. · '+po.days+' วัน');
       h+='<td class="lv-days">'+r.days.map(function(x){var dd=pd(x[0]);
         return '<span class="lv-day c'+x[1]+'" title="'+RP.LEAVE[x[1]].label+' '+DOW_FULL[dd.getDay()]+' '+dd.getDate()+' '+MON[dd.getMonth()]+'">'+dd.getDate()+'</span>';}).join('')+'</td></tr>';
     });
   });
   var all=sum.SL+sum.PL+sum.VL;
-  h+='<tr class="lv-sum"><td></td><td colspan="2">รวมทั้งทีม</td>'+K.map(function(k){return lvNum(sum[k]);}).join('')+lvNum(all)+'<td></td><td></td></tr>';
+  h+='<tr class="lv-sum"><td></td><td colspan="2">รวมทั้งทีม</td>'+K.map(function(k){return lvNum(sum[k]);}).join('')+lvNum(all)+'<td></td>'+
+    lvNum(sum.AB)+lvNum(sum.late,sum.lateMin+' นาที')+lvNum(hrs(sum.ot),'ชม.')+'<td></td></tr>';
   document.getElementById('lv-body').innerHTML=h;
-  var tiles='<div class="kpi-stat-tile"><div class="kpi-stat-label">ลารวมเดือนนี้</div><div class="kpi-stat-val">'+all+'</div><div class="kpi-stat-sub">วัน · '+who+' คน</div></div>';
-  K.forEach(function(k){tiles+='<div class="kpi-stat-tile"><div class="kpi-stat-label">'+RP.LEAVE[k].label+'</div><div class="kpi-stat-val">'+sum[k]+'</div><div class="kpi-stat-sub">วัน · '+ppl[k]+' คน</div></div>';});
+  var tile=function(label,val,sub){return '<div class="kpi-stat-tile"><div class="kpi-stat-label">'+label+'</div><div class="kpi-stat-val">'+val+'</div><div class="kpi-stat-sub">'+sub+'</div></div>';};
+  var tiles=tile('ลารวมเดือนนี้',all,'วัน · '+who+' คน');
+  K.forEach(function(k){tiles+=tile(RP.LEAVE[k].label,sum[k],'วัน · '+ppl[k]+' คน');});
+  tiles+=tile('ขาดงาน',sum.AB,'วัน · '+ppl.AB+' คน')+tile('มาสาย',sum.late,'ครั้ง · '+ppl.late+' คน')+tile('OT',hrs(sum.ot),'ชม. · '+ppl.ot+' คน');
   document.getElementById('lv-stat-row').innerHTML=tiles;
 }
 
@@ -1515,7 +1603,36 @@ var KPI_DEF=[
   {key:'attend',   label:'Attendance',         unit:'%',         hint:'(1 - ขาด/สาย ÷ วันรวม)',  target:97,            dir:'gte', fmt:1}
 ];
 
-var _kpiEmp='',_kpiKey='',_kpiMonth='';
+var _kpiEmp='',_kpiKey='',_kpiMonth='',_kpiCx=null;
+
+/* KPI ที่คิดเองจากตารางกะ — Attendance จากขาด / สาย · OT Rate จากชั่วโมง OT (ค่า = ชนิดใน RP.firstMark)
+   ช่องที่กรอกเองยังใช้ค่าที่กรอก ล้างช่องแล้วกลับมาใช้ค่าที่คิด
+   เดือนก่อนเริ่มบันทึกไม่คิดให้ — ยังไม่มีใครบันทึก ทุกคนจะได้ 100% / OT 0% ซึ่งไม่จริง */
+var KPI_AUTO={attend:'attend',otRate:'ot'};
+/* ขาด / สาย / OT ของทุกคนในเดือน mon นับถึงวันนี้ */
+function kpiCtx(mon){
+  var y=+mon.slice(0,4),m=+mon.slice(5,7),from=mon+'-01',to=fd(new Date(y,m,0)),a={};
+  if(to>today())to=today();
+  if(from<=to)employees.concat(outsource).forEach(function(p){a[p.name]=RP.attend(p.name,dayVals(p,from,to),late,ot);});
+  return {mon:mon,a:a,first:RP.firstMark(overrides,late,ot)};
+}
+/* ค่าที่คิดจากตาราง — {v, why} หรือ null ถ้าเดือนนี้คิดให้ไม่ได้ */
+function kpiAutoVal(cx,nm,k){
+  var f=KPI_AUTO[k.key],a=cx.a[nm];
+  if(!f||!a||!cx.first[f]||cx.mon<cx.first[f].slice(0,7))return null;
+  var x=f==='attend'?a.attend:a.otRate,p=Math.pow(10,k.fmt);
+  if(x===null)return null;
+  return {v:Math.round(x*p)/p,why:f==='attend'?
+    'ขาด '+a.absent+' วัน · สาย '+a.lateDays+' วัน จากที่ต้องมา '+a.due+' วัน':
+    'OT '+hrs(a.otHours)+' ชม. ÷ ชั่วโมงปกติ '+a.worked*RP.HOURS+' ชม. ('+a.worked+' วัน × '+RP.HOURS+')'};
+}
+/* ค่า KPI ที่ใช้ — ที่กรอกเองก่อน ไม่มีค่อยใช้ค่าที่คิด (auto = คำอธิบาย) */
+function kpiVal(cx,nm,k){
+  var row=(kpiData[nm]&&kpiData[nm][cx.mon])||{},v=row[k.key];
+  if(v!==undefined&&v!==null&&v!=='')return {v:v};
+  var au=kpiAutoVal(cx,nm,k);
+  return au?{v:au.v,auto:au.why}:{v:null};
+}
 
 function kpiPass(k,val){
   if(val===null||val===undefined||val==='')return null;
@@ -1535,14 +1652,14 @@ function kpiTargetStr(k){
   return s+k.target+(k.unit==='%'?' %':' '+k.unit);
 }
 
-function renderKPISummary(allEmp,mon){
+function renderKPISummary(allEmp,cx){
   var total=allEmp.length,totalKPI=KPI_DEF.length;
   var empScores=[],teamPass=0,teamTotal=0;
   for(var ei=0;ei<allEmp.length;ei++){
-    var nm=allEmp[ei].name,row=(kpiData[nm]&&kpiData[nm][mon])||{};
+    var nm=allEmp[ei].name;
     var pass=0,fail=0,empty=0;
     for(var i=0;i<KPI_DEF.length;i++){
-      var k=KPI_DEF[i],p=kpiPass(k,row[k.key]);
+      var k=KPI_DEF[i],p=kpiPass(k,kpiVal(cx,nm,k).v);
       if(p===null)empty++;else if(p){pass++;teamPass++;}else fail++;
       if(p!==null)teamTotal++;
     }
@@ -1554,7 +1671,7 @@ function renderKPISummary(allEmp,mon){
 
   var tiles='';
   tiles+='<div class="kpi-stat-tile"><div class="kpi-stat-label">พนักงานทั้งหมด</div><div class="kpi-stat-val">'+total+'</div><div class="kpi-stat-sub">คน</div></div>';
-  tiles+='<div class="kpi-stat-tile '+(passRate===null?'':(passRate>=80?'good':'warn'))+'"><div class="kpi-stat-label">ทีม Pass Rate</div><div class="kpi-stat-val">'+(passRate===null?'—':passRate+'%')+'</div><div class="kpi-stat-sub">ของ KPI ที่กรอกแล้ว</div></div>';
+  tiles+='<div class="kpi-stat-tile '+(passRate===null?'':(passRate>=80?'good':'warn'))+'"><div class="kpi-stat-label">ทีม Pass Rate</div><div class="kpi-stat-val">'+(passRate===null?'—':passRate+'%')+'</div><div class="kpi-stat-sub">ของ KPI ที่มีค่าแล้ว</div></div>';
   tiles+='<div class="kpi-stat-tile '+(avgScore>=6?'good':avgScore>0?'warn':'')+'"><div class="kpi-stat-label">คะแนนเฉลี่ย</div><div class="kpi-stat-val">'+(avgScore||'—')+'</div><div class="kpi-stat-sub">จาก '+totalKPI+' KPI</div></div>';
   document.getElementById('kpi-stat-row').innerHTML=tiles;
 
@@ -1577,9 +1694,9 @@ function renderKPISummary(allEmp,mon){
 function renderKPI(){
   var mon=document.getElementById('kpi-month').value;
   if(!mon){mon=monthNow();document.getElementById('kpi-month').value=mon;}
-  _kpiMonth=mon;
+  _kpiMonth=mon;_kpiCx=kpiCtx(mon);
   var allEmp=employees.concat(outsource.map(function(o){return {name:o.name,nick:o.nick,_os:true};}));
-  renderKPISummary(allEmp,mon);
+  renderKPISummary(allEmp,_kpiCx);
 
   var th='<tr><th class="kpi-name-col"><span class="kpi-th-label">ชื่อ-สกุล</span></th>';
   for(var i=0;i<KPI_DEF.length;i++){
@@ -1591,14 +1708,14 @@ function renderKPI(){
 
   var h='';
   for(var ei=0;ei<allEmp.length;ei++){
-    var emp=allEmp[ei],nm=emp.name,row=(kpiData[nm]&&kpiData[nm][mon])||{};
+    var emp=allEmp[ei],nm=emp.name;
     h+='<tr><td class="kpi-name">'+esc(nm)+'<div class="nick">'+esc(emp.nick)+'</div></td>';
     for(var i=0;i<KPI_DEF.length;i++){
-      var k=KPI_DEF[i],val=row[k.key],pass=kpiPass(k,val);
-      var cls=pass===null?'kpi-na':pass?'kpi-pass':'kpi-fail';
+      var k=KPI_DEF[i],r=kpiVal(_kpiCx,nm,k),val=r.v,pass=kpiPass(k,val);
+      var cls=(pass===null?'kpi-na':pass?'kpi-pass':'kpi-fail')+(r.auto?' kpi-auto':'');
       var icon=pass===null?'':pass?'<span class="kpi-icon">✓</span>':'<span class="kpi-icon">✗</span>';
       var lbl=pass===null?'—':kpiFmt(k,val);
-      h+='<td onclick="openKPIInp('+jsAttr(nm)+','+jsAttr(k.key)+')"><span class="kpi-cell '+cls+'">'+icon+lbl+'</span></td>';
+      h+='<td onclick="openKPIInp('+jsAttr(nm)+','+jsAttr(k.key)+')"'+(r.auto?' title="คิดจากตารางกะ: '+esc(r.auto)+'"':'')+'><span class="kpi-cell '+cls+'">'+icon+lbl+'</span></td>';
     }
     h+='</tr>';
   }
@@ -1611,9 +1728,13 @@ function openKPIInp(nm,kkey){
   var row=(kpiData[nm]&&kpiData[nm][_kpiMonth])||{},cur=row[kkey];
   document.getElementById('kpi-inp-title').textContent=k.label;
   document.getElementById('kpi-inp-sub').textContent=nm+' — '+_kpiMonth;
-  document.getElementById('kpi-inp-hint').textContent='เป้าหมาย: '+kpiTargetStr(k)+' · '+k.hint;
+  var au=KPI_AUTO[kkey]&&_kpiCx?kpiAutoVal(_kpiCx,nm,k):null;
+  document.getElementById('kpi-inp-hint').textContent='เป้าหมาย: '+kpiTargetStr(k)+' · '+k.hint+
+    (au?' · เว้นว่าง = ใช้ค่าที่คิดจากตารางกะ '+kpiFmt(k,au.v)+' ('+au.why+')':
+     KPI_AUTO[kkey]?' · เว้นว่าง = คิดจากตารางกะ เมื่อเริ่มบันทึก ขาด / สาย / OT ในช่องของแต่ละวัน':'');
   var inp=document.getElementById('kpi-inp-val');
   inp.value=cur!==undefined&&cur!==null?cur:'';
+  inp.placeholder=au?String(au.v):'0';
   document.getElementById('kpi-overlay').classList.add('open');
   setTimeout(function(){inp.focus();inp.select();},80);
 }

@@ -9,17 +9,24 @@
  *
  * วันลาเก็บในช่องแก้ไขเหมือน W / H (overrides['วันที่|ชื่อ']) ด้วยรหัส SL / PL / VL
  * จึงรวมข้ามเครื่องทีละช่องได้เหมือนเดิม และเปลี่ยนชื่อคนแล้ววันลาย้ายตามไปด้วย
+ * ขาดงาน (AB) เก็บแบบเดียวกัน ส่วนมาสายกับ OT เป็นของวันที่มาทำงาน จึงเก็บแยก
+ * late['วันที่|ชื่อ'] = นาที · ot['วันที่|ชื่อ'] = ชั่วโมง
  *
  * โหลดเป็น classic script เปิดเป็น window.RosterPeople
  */
 (function () {
   'use strict';
 
+  /* ขาดงานไม่ใช่วันลา แต่ใช้แบบเดียวกันทุกอย่าง: ไม่นับเป็นคนมาทำงาน ปุ่มล้างแก้ไขไม่ล้าง
+     และนับไว้ทั้งปี — หน้าการลานับแยกคอลัมน์ ไม่รวมกับยอดลา */
   var LEAVE = {
     SL: { short: 'ลป', label: 'ลาป่วย' },
     PL: { short: 'ลก', label: 'ลากิจ' },
     VL: { short: 'ลพ', label: 'พักร้อน' },
+    AB: { short: 'ขาด', label: 'ขาดงาน' },
   };
+  // ชั่วโมงทำงานปกติต่อวัน — ตัวหารของ OT Rate
+  var HOURS = 8;
   var FIELDS = ['group', 'dayOff'];
 
   function has(c, f) { return Object.prototype.hasOwnProperty.call(c, f); }
@@ -82,8 +89,8 @@
   }
 
   /**
-   * นับวันลาในช่วง from..to (รวมหัวท้าย) แยกตามชื่อ
-   * @returns {Object<string,{SL:number,PL:number,VL:number,days:Array<[string,string]>}>}
+   * นับวันลาและวันขาดงานในช่วง from..to (รวมหัวท้าย) แยกตามชื่อ
+   * @returns {Object<string,{SL:number,PL:number,VL:number,AB:number,days:Array<[string,string]>}>}
    */
   function tally(overrides, from, to) {
     var out = {};
@@ -92,7 +99,7 @@
       if (!isLeave(v)) continue;
       var b = k.indexOf('|'), d = k.slice(0, b), n = k.slice(b + 1);
       if (d < from || d > to) continue;
-      var t = out[n] || (out[n] = { SL: 0, PL: 0, VL: 0, days: [] });
+      var t = out[n] || (out[n] = { SL: 0, PL: 0, VL: 0, AB: 0, days: [] });
       t[v]++;
       t.days.push([d, v]);
     }
@@ -100,5 +107,63 @@
     return out;
   }
 
-  window.RosterPeople = { LEAVE: LEAVE, isWork: isWork, isLeave: isLeave, at: at, setFrom: setFrom, unset: unset, tally: tally };
+  /**
+   * มาทำงาน / ขาด / สาย / OT ของคนหนึ่ง — ใช้คิด KPI Attendance กับ OT Rate
+   * days = [[วันที่, ค่าช่อง]] ค่าที่เห็นในตาราง (ตามตารางหรือที่แก้ไว้) เฉพาะวันที่ผ่านมาแล้ว
+   * วันที่ต้องมา = วันมาทำงาน + วันขาด · วันลากับวันหยุดไม่นับ
+   * สายนับเฉพาะวันที่มาทำงาน · OT นับทุกวัน รวมวันหยุดที่มาทำ OT
+   * @returns {{due, worked, absent, lateDays, lateMins, otHours, attend:number|null, otRate:number|null}}
+   */
+  function attend(name, days, late, ot) {
+    var r = { due: 0, worked: 0, absent: 0, lateDays: 0, lateMins: 0, otHours: 0 };
+    late = late || {}; ot = ot || {};
+    days.forEach(function (x) {
+      var k = x[0] + '|' + name, m = Number(late[k]) || 0;
+      if (isWork(x[1])) {
+        r.worked++;
+        if (m > 0) { r.lateDays++; r.lateMins += m; }
+      } else if (x[1] === 'AB') r.absent++;
+      r.otHours += Number(ot[k]) || 0;
+    });
+    r.due = r.worked + r.absent;
+    // Attendance = (1 − (ขาด + สาย) ÷ วันที่ต้องมา) × 100 · OT Rate = OT ÷ ชั่วโมงปกติของวันที่มา × 100
+    r.attend = r.due ? (1 - (r.absent + r.lateDays) / r.due) * 100 : null;
+    r.otRate = r.worked ? r.otHours / (r.worked * HOURS) * 100 : null;
+    return r;
+  }
+
+  /**
+   * รวม late หรือ ot ในช่วง from..to แยกตามชื่อ — กี่วัน และรวมกี่นาที / ชั่วโมง
+   * @returns {Object<string,{days:number,total:number}>}
+   */
+  function sum(map, from, to) {
+    var out = {};
+    for (var k in map || {}) {
+      var v = Number(map[k]) || 0, b = k.indexOf('|'), d = k.slice(0, b), n = k.slice(b + 1);
+      if (v <= 0 || d < from || d > to) continue;
+      var t = out[n] || (out[n] = { days: 0, total: 0 });
+      t.days++;
+      t.total += v;
+    }
+    return out;
+  }
+
+  /**
+   * วันแรกที่บันทึกขาด / สาย และวันแรกที่บันทึก OT ('' = ยังไม่เคย)
+   * เดือนก่อนหน้านั้นยังไม่มีใครบันทึก — ถ้าคิด KPI ให้ ทุกคนจะได้ 100% / OT 0% ซึ่งไม่จริง
+   */
+  function firstMark(overrides, late, ot) {
+    var r = { attend: '', ot: '' };
+    function seen(f, k) { var d = k.slice(0, k.indexOf('|')); if (!r[f] || d < r[f]) r[f] = d; }
+    var k;
+    for (k in overrides || {}) if (overrides[k] === 'AB') seen('attend', k);
+    for (k in late || {}) if (Number(late[k]) > 0) seen('attend', k);
+    for (k in ot || {}) if (Number(ot[k]) > 0) seen('ot', k);
+    return r;
+  }
+
+  window.RosterPeople = {
+    LEAVE: LEAVE, HOURS: HOURS, isWork: isWork, isLeave: isLeave, at: at, setFrom: setFrom, unset: unset,
+    tally: tally, sum: sum, attend: attend, firstMark: firstMark,
+  };
 })();

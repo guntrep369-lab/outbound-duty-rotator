@@ -17,7 +17,8 @@
   // ส่วนที่เป็นรายการทั้งก้อน — สองเครื่องแก้ส่วนเดียวกันต้องถามคนว่าเอาของใคร
   var LISTS = ['employees', 'outsource', 'periods', 'holidays', 'extraPro'];
   // ส่วนที่เป็นช่อง ๆ แยกกัน (วัน|ชื่อ, วัน|กะ, ชื่อคน, รหัสรายการสมุดกะ) — รวมทีละช่องได้
-  var MAPS = ['overrides', 'kpiData', 'minStaff', 'osExtra', 'shiftLog'];
+  // late / ot (มาสายกี่นาที / OT กี่ชั่วโมง ต่อวัน|ชื่อ) แยกจาก overrides — สองเครื่องบันทึกคนละอย่างของวันเดียวกันได้ไม่ทับกัน
+  var MAPS = ['overrides', 'kpiData', 'minStaff', 'osExtra', 'shiftLog', 'late', 'ot'];
   var LABEL = {
     employees: 'รายชื่อพนักงาน', outsource: 'รายชื่อ OS ประจำ', periods: 'คาบเปลี่ยนกะ',
     holidays: 'วันหยุดพิเศษ', extraPro: 'วันโปรฯ ที่เพิ่มเอง',

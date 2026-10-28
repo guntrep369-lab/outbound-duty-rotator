@@ -109,8 +109,51 @@ describe('วันลา', () => {
   });
 
   it('ลาไม่นับเป็นคนมาทำงาน', () => {
-    const v = ['W', '10-19', 'H', 'SL', 'PL', 'VL', 'toString'];
-    expect(v.map(P.isWork)).toEqual([true, true, false, false, false, false, false]);
-    expect(v.map(P.isLeave)).toEqual([false, false, false, true, true, true, false]);
+    const v = ['W', '10-19', 'H', 'SL', 'PL', 'VL', 'AB', 'toString'];
+    expect(v.map(P.isWork)).toEqual([true, true, false, false, false, false, false, false]);
+    expect(v.map(P.isLeave)).toEqual([false, false, false, true, true, true, true, false]);
+  });
+
+  it('ขาดงานนับแยกจากวันลา', () => {
+    const t = P.tally({ ...ov, '2026-06-20|ก': 'AB', '2026-06-21|ก': 'AB' }, '2026-06-01', '2026-06-30');
+    expect(t['ก']).toMatchObject({ SL: 1, PL: 2, VL: 0, AB: 2 });
+    expect(t['ข'].AB).toBe(0);
+    expect(t['ก'].days.slice(-2)).toEqual([['2026-06-20', 'AB'], ['2026-06-21', 'AB']]);
+  });
+});
+
+describe('ขาด / สาย / OT', () => {
+  const late = { '2026-06-02|ก': 15, '2026-06-03|ก': 40, '2026-06-04|ก': 10, '2026-06-02|ข': 5, '2026-07-01|ก': 9 };
+  const ot = { '2026-06-02|ก': 2, '2026-06-07|ก': 4.5, '2026-06-02|ข': 0 };
+
+  it('รวมสาย / OT ตามคนในเดือน — กี่วัน รวมกี่นาที / ชั่วโมง', () => {
+    expect(P.sum(late, '2026-06-01', '2026-06-30')).toEqual({ 'ก': { days: 3, total: 65 }, 'ข': { days: 1, total: 5 } });
+    expect(P.sum(ot, '2026-06-01', '2026-06-30')).toEqual({ 'ก': { days: 2, total: 6.5 } });
+    expect(P.sum(undefined, '2026-06-01', '2026-06-30')).toEqual({});
+  });
+
+  it('Attendance = 1 − (ขาด + สาย) ÷ วันที่ต้องมา · วันลากับวันหยุดไม่นับ', () => {
+    const days = [
+      ['2026-06-01', 'W'], ['2026-06-02', 'W'], ['2026-06-03', '10-19'], ['2026-06-04', 'SL'],
+      ['2026-06-05', 'AB'], ['2026-06-06', 'W'], ['2026-06-07', 'H'], ['2026-06-08', 'W'],
+    ];
+    const r = P.attend('ก', days, late, ot);
+    // มาทำงาน 5 วัน + ขาด 1 = ต้องมา 6 · สาย 2 วัน (วันที่ 4 ลาป่วย ไม่นับสาย)
+    expect(r).toMatchObject({ due: 6, worked: 5, absent: 1, lateDays: 2, lateMins: 55, otHours: 6.5 });
+    expect(r.attend).toBeCloseTo(50, 6);
+    // OT ทั้งวันหยุดที่มาทำ ÷ ชั่วโมงปกติ 5 วัน × 8
+    expect(r.otRate).toBeCloseTo(6.5 / 40 * 100, 6);
+  });
+
+  it('มาครบไม่สาย 100% · ยังไม่มีวันที่ต้องมา คิดไม่ได้', () => {
+    expect(P.attend('ค', [['2026-06-01', 'W'], ['2026-06-02', 'W']], late, ot)).toMatchObject({ attend: 100, otRate: 0 });
+    expect(P.attend('ค', [['2026-06-01', 'H'], ['2026-06-02', 'VL']], late, ot)).toMatchObject({ attend: null, otRate: null });
+    expect(P.attend('ค', [], undefined, undefined).attend).toBe(null);
+  });
+
+  it('วันแรกที่เริ่มบันทึก — เดือนก่อนหน้านั้นไม่คิด KPI ให้', () => {
+    expect(P.firstMark({ '2026-06-09|ก': 'AB', '2026-05-01|ก': 'SL' }, late, ot)).toEqual({ attend: '2026-06-02', ot: '2026-06-02' });
+    expect(P.firstMark({ '2026-05-20|ข': 'AB' }, {}, { '2026-06-02|ข': 0 })).toEqual({ attend: '2026-05-20', ot: '' });
+    expect(P.firstMark({}, {}, {})).toEqual({ attend: '', ot: '' });
   });
 });
