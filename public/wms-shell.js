@@ -76,17 +76,51 @@ export function sidebarHTML(activeId, root) {
 </aside>`;
 }
 
-/** Replace every <div data-wms-shell> marker on the page with the sidebar. */
+const MENU_SCROLL = 'wms:menu-scroll';
+
+/**
+ * Keep the menu's scroll position from page to page. Each module is its own
+ * page, so the menu is rebuilt on every click and would snap back to the top —
+ * on a laptop the list is taller than the screen (and on a phone wider), and
+ * with page transitions the snap shows as a jump when the old menu's picture
+ * lifts off at the end.
+ */
+function keepMenuScroll(doc) {
+  const bar = doc.querySelector?.('.sysbar');
+  if (!bar) return;
+  const mods = bar.querySelector('.sysbar-mods');
+  try {
+    const [y, x] = JSON.parse(sessionStorage.getItem(MENU_SCROLL) || '[0,0]');
+    bar.scrollTop = y;
+    mods.scrollLeft = x;
+  } catch {}
+  window.addEventListener('pagehide', () => {
+    try { sessionStorage.setItem(MENU_SCROLL, JSON.stringify([bar.scrollTop, mods.scrollLeft])); } catch {}
+  });
+}
+
+/** Turn every <div data-wms-shell> marker on the page into the sidebar. */
 export function mountShell(doc = document) {
   let active = '';
   for (const slot of doc.querySelectorAll('[data-wms-shell]')) {
     active = slot.getAttribute('data-wms-shell') || '';
     const root = slot.getAttribute('data-root') ?? './';
-    slot.outerHTML = sidebarHTML(active, root);
+    // Fill the placeholder itself instead of swapping it out. A page transition
+    // may already have captured it as the menu (see wms-theme.css), and removing
+    // a captured element cuts the transition off halfway.
+    const tpl = doc.createElement('template');
+    tpl.innerHTML = sidebarHTML(active, root);
+    const bar = tpl.content.firstElementChild;
+    slot.removeAttribute('data-wms-shell');
+    slot.removeAttribute('data-root');
+    slot.className = bar.className;
+    slot.setAttribute('role', 'complementary'); // what the <aside> would have been
+    slot.replaceChildren(...bar.childNodes);
   }
   for (const btn of doc.querySelectorAll('[data-wms-signout]')) {
     btn.addEventListener('click', () => window.wmsGate?.signOut());
   }
+  keepMenuScroll(doc);
   // Open-item count on สมุดกะ, see wms-badges.js.
   mountBadges(active);
 }

@@ -118,6 +118,32 @@ body {
   .wms-shell, .wms-main { display:block !important; min-height:0 !important; }
 }
 
+/* ── Page transitions ─────────────────────────────────────────────────────
+   Every module is its own HTML page, so a menu click used to blank the screen
+   for a moment. Browsers with cross-document view transitions (Chrome, Edge,
+   Safari 18.2+) now keep the menu still and bring the new page up under it;
+   other browsers navigate exactly as before.
+   The new page usually paints before wms-shell.js has drawn its menu, so the
+   placeholder carries the menu's name too (wms-shell.js fills it in place) and
+   the old page's menu picture is held still on top until the end — the new
+   menu looks the same anyway, bar which item is highlighted.                */
+@media (prefers-reduced-motion:no-preference) {
+  @view-transition { navigation:auto; }
+}
+.sysbar, [data-wms-shell] { view-transition-name:wms-menu; }
+::view-transition-old(wms-menu) { animation:none; }
+::view-transition-new(wms-menu) { animation:none; opacity:0; }
+/* Old and new fade on the same timing and are added together (plus-lighter),
+   so between them they always make one whole page. The browser's own fade
+   does the adding, but setting `animation` here replaces it, and without it
+   the blank canvas shows through mid-way — a grey flash on the dark sign-in
+   screen, whose intro → card switch uses these too (wms-gate.js). */
+::view-transition-old(root), ::view-transition-new(root) { mix-blend-mode:plus-lighter; }
+::view-transition-old(root) { animation:wms-page-out .3s cubic-bezier(.2,.8,.2,1) both; }
+::view-transition-new(root) { animation:wms-page-in .3s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes wms-page-out { to { opacity:0; } }
+@keyframes wms-page-in  { from { opacity:0; transform:translateY(12px); } }
+
 /* ── Module header (icon tile + title + sub-nav) ─────────────────────────── */
 .mod-head { background:var(--wms-surface); border-bottom:1px solid var(--wms-border);
             padding:14px 20px 0; flex-shrink:0; font-family:var(--wms-font); }

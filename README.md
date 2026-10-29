@@ -29,6 +29,12 @@ The site root redirects to `roster/`, so the main link opens the shift schedule.
 work by their links, and the sidebar shows them while you're on them. Remove `hidden` to put them
 back.
 
+Moving between modules uses a page transition in Chrome, Edge, and Safari 18.2+. The sidebar stays
+still while the new page fades and slides in, and the sidebar keeps its scroll position. Other
+browsers, and devices set to reduce motion, switch pages the normal way. The styles are in
+`wms-theme.css`. `wms-shell.js` fills the sidebar placeholder in place rather than replacing it,
+because replacing it cuts the transition off halfway.
+
 ---
 
 ## 📅 Shift schedule (`/roster`)
