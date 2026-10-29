@@ -48,39 +48,73 @@ html.wms-locked body > *:not(#wms-gate) { visibility: hidden; }
 @keyframes gate-fade-in { from { opacity: 0 } to { opacity: 1 } }
 @keyframes gate-fade-out { to { opacity: 0; transform: translateY(-14px) } }
 
-.gate-svg { width: 210px; height: 150px; margin: 0 auto; display: block; }
-
-/* Parcels ride in along the belt, then settle into a stack. */
-.gate-box { opacity: 0; }
-.gate-box-1 { animation: gate-ride 1.05s cubic-bezier(.3, .8, .4, 1) .15s both; }
-.gate-box-2 { animation: gate-ride 1.05s cubic-bezier(.3, .8, .4, 1) .45s both; }
-.gate-box-3 { animation: gate-ride 1.05s cubic-bezier(.3, .8, .4, 1) .75s both; }
-@keyframes gate-ride {
-  0%   { opacity: 0; transform: translateX(-120px) }
-  25%  { opacity: 1 }
-  100% { opacity: 1; transform: translateX(0) }
+/* The app logo springs in, with sonar rings pulsing out behind it and a band of
+   light sweeping across it once. */
+.gate-hero { position: relative; width: 92px; height: 92px; margin: 0 auto; }
+.gate-hero::before, .gate-hero::after {
+  content: ''; position: absolute; inset: 0; border-radius: 24px;
+  border: 2px solid rgba(129, 140, 248, .7); opacity: 0;
+  animation: gate-sonar 2.2s ease-out .7s infinite;
 }
+.gate-hero::after { animation-delay: 1.4s; }
+@keyframes gate-sonar { 0% { opacity: .8; transform: scale(1) } 100% { opacity: 0; transform: scale(1.8) } }
 
-/* The belt draws itself left to right. */
-.gate-belt { stroke-dasharray: 200; stroke-dashoffset: 200; animation: gate-draw .8s ease-out both; }
+/* The corner radius matches the rounding drawn into wms-logo.png (about 20%),
+   so the sweep stays inside the tile. */
+.gate-logo-box {
+  position: relative; width: 92px; height: 92px; border-radius: 20%; overflow: hidden;
+  box-shadow: 0 14px 40px rgba(79, 70, 229, .5);
+  animation: gate-pop .75s cubic-bezier(.34, 1.56, .64, 1) .15s both;
+}
+.gate-logo-box img { width: 100%; height: 100%; display: block; }
+@keyframes gate-pop { from { opacity: 0; transform: scale(.3) rotate(-12deg) } to { opacity: 1; transform: none } }
+.gate-shine {
+  position: absolute; inset: 0; transform: translateX(-130%);
+  background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, .6) 50%, transparent 70%);
+  animation: gate-shine .9s ease-in-out 1.05s both;
+}
+@keyframes gate-shine { to { transform: translateX(130%) } }
+
+/* Under it the belt draws itself, then parcels keep riding across it
+   left to right (outbound) until the intro ends. */
+.gate-svg { width: 210px; height: 46px; margin: 18px auto 0; display: block; overflow: visible; }
+.gate-belt { stroke-dasharray: 200; stroke-dashoffset: 200; animation: gate-draw .7s ease-out both; }
 @keyframes gate-draw { to { stroke-dashoffset: 0 } }
-
-/* The warehouse mark strokes on, matching the sidebar logo. */
-.gate-mark path, .gate-mark rect {
-  stroke-dasharray: 120; stroke-dashoffset: 120;
-  animation: gate-draw 1s ease-out 1.15s both;
+.gate-roller line { transform-box: fill-box; transform-origin: center; animation: gate-spin .9s linear infinite; }
+@keyframes gate-spin { to { transform: rotate(360deg) } }
+.gate-boxes { opacity: 0; animation: gate-fade-in .4s ease .35s both; }
+/* The transforms are where the parcels rest when motion is reduced. */
+.gate-box { animation: gate-ride 2.4s linear infinite; }
+.gate-box-1 { transform: translateX(44px); }
+.gate-box-2 { transform: translateX(89px); animation-delay: -.8s; }
+.gate-box-3 { transform: translateX(134px); animation-delay: -1.6s; }
+@keyframes gate-ride {
+  0%   { opacity: 0; transform: translateX(-10px) }
+  12%  { opacity: 1 }
+  88%  { opacity: 1 }
+  100% { opacity: 0; transform: translateX(188px) }
 }
-.gate-mark { opacity: 0; animation: gate-fade-in .5s ease 1.15s both; }
 
-.gate-title { font-size: 21px; font-weight: 700; letter-spacing: -.02em; margin-top: 20px;
-              opacity: 0; animation: gate-rise .6s ease 1.5s both; }
+.gate-title { font-size: 21px; font-weight: 700; letter-spacing: -.02em; margin-top: 16px;
+              opacity: 0; animation: gate-rise .6s ease .8s both; }
 .gate-title span { color: #A5B4FC; font-size: 14px; font-weight: 500; }
 .gate-sub { font-size: 12px; color: #64748B; margin-top: 5px;
-            opacity: 0; animation: gate-rise .6s ease 1.7s both; }
+            opacity: 0; animation: gate-rise .6s ease 1s both; }
 @keyframes gate-rise { from { opacity: 0; transform: translateY(12px) } to { opacity: 1; transform: translateY(0) } }
 
-.gate-skip { position: absolute; bottom: 28px; left: 0; right: 0;
-             font-size: 11px; color: #475569; opacity: 0; animation: gate-fade-in .5s ease 1.9s both; }
+/* Fixed, so it sits at the foot of the screen rather than over the line above. */
+.gate-skip { position: fixed; bottom: 28px; left: 0; right: 0;
+             font-size: 11px; color: #475569; opacity: 0; animation: gate-fade-in .5s ease 1.4s both; }
+
+/* Intro → sign-in (wms-gate.js runs this as a view transition where it can):
+   the logo and the name glide from the intro into the card's header while the
+   rest cross-fades. The card skips its own rise so it doesn't move twice. */
+.gate-logo-box, .gate-login .logo { view-transition-name: gate-logo; }
+.gate-title, .gate-login h1 { view-transition-name: gate-name; }
+::view-transition-group(gate-logo), ::view-transition-group(gate-name) {
+  animation-duration: .7s; animation-timing-function: cubic-bezier(.2, .8, .2, 1);
+}
+.gate-login.morphed { animation: none; }
 
 /* ── Act 2: sign in ──────────────────────────────────────────────────────── */
 /* Over the photo the form needs its own surface to stay readable. */
@@ -139,5 +173,7 @@ html.wms-locked body > *:not(#wms-gate) { visibility: hidden; }
 @keyframes gate-open { to { opacity: 0; transform: scale(1.04); visibility: hidden } }
 
 @media (prefers-reduced-motion: reduce) {
-  #wms-gate *, #wms-gate::before { animation-duration: .01ms !important; animation-delay: 0ms !important; }
+  #wms-gate *, #wms-gate::before, #wms-gate *::before, #wms-gate *::after {
+    animation-duration: .01ms !important; animation-delay: 0ms !important; animation-iteration-count: 1 !important;
+  }
 }

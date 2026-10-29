@@ -313,8 +313,9 @@ public/
 ├─ wms-shell.js            # renders the sidebar from that list
 ├─ wms-theme.css           # shared look
 ├─ wms-gate.js / .css      # opening animation + per-device sign-in (not access control)
+│                          #   intro: the logo springs in over a parcel belt, then glides into the card's header
 │                          #   (wms-gate-bg.jpg: the photo behind the sign-in card)
-├─ wms-logo.png            # app logo (sidebar, sign-in); wms-icon-32 / -180.png are the tab and home-screen icons
+├─ wms-logo.png            # app logo (sidebar, sign-in, intro); wms-icon-32 / -180.png are the tab and home-screen icons
 │                          # every page links all three in its <head>, checked by src/data/icons.test.js
 ├─ icons/                  # module header icons (same style as the logo); hidden modules still use emoji
 ├─ wms-settings.js         # settings backup / restore

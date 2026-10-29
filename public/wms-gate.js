@@ -31,7 +31,7 @@
   var USERS_KEY = 'wms:users';
   var SESSION_KEY = 'wms:session';
   var SESSION_HOURS = 12; // a shift's length — a shared PC shouldn't stay open overnight
-  var INTRO_MS = 2200;
+  var INTRO_MS = 2500; // long enough for the logo's light sweep to finish
   var MIN_CODE = 4;
 
   /* ── Storage ───────────────────────────────────────────────────────────── */
@@ -161,9 +161,17 @@
   /* ── Markup ────────────────────────────────────────────────────────────── */
   // The app logo sits next to this script at the site root, whatever page loaded it.
   var LOGO = new URL('wms-logo.png', document.currentScript.src).href;
-  var WAREHOUSE_ICON =
-    '<path d="M22 8.35V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8.35A2 2 0 0 1 3.26 6.5l8-3.2a2 2 0 0 1 1.48 0l8 3.2A2 2 0 0 1 22 8.35Z"/>' +
-    '<path d="M6 18h12"/><path d="M6 14h12"/><rect width="12" height="12" x="6" y="10"/>';
+
+  // One parcel on the belt: a box with a tape line, drawn at the belt's left end.
+  function parcel(n, fill, tape) {
+    return '<g class="gate-box gate-box-' + n + '"><rect x="0" y="8" width="22" height="20" rx="3" fill="' + fill + '"/>' +
+      '<line x1="11" y1="8" x2="11" y2="28" stroke="' + tape + '" stroke-width="2"/></g>';
+  }
+  // A belt roller with one spoke, so you can see it turn.
+  function roller(cx) {
+    return '<g class="gate-roller"><circle cx="' + cx + '" cy="37" r="5" stroke="#334155" stroke-width="2.5"/>' +
+      '<line x1="' + cx + '" y1="33" x2="' + cx + '" y2="41" stroke="#475569" stroke-width="2"/></g>';
+  }
 
   var esc = function (s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -174,17 +182,13 @@
   function introHTML() {
     return (
       '<div class="gate-intro">' +
-      '<svg class="gate-svg" viewBox="0 0 200 140" fill="none" xmlns="http://www.w3.org/2000/svg">' +
-      '<line class="gate-belt" x1="20" y1="112" x2="180" y2="112" stroke="#334155" stroke-width="3" stroke-linecap="round"/>' +
-      '<circle cx="38" cy="122" r="7" fill="none" stroke="#334155" stroke-width="2.5"/>' +
-      '<circle cx="100" cy="122" r="7" fill="none" stroke="#334155" stroke-width="2.5"/>' +
-      '<circle cx="162" cy="122" r="7" fill="none" stroke="#334155" stroke-width="2.5"/>' +
-      '<g class="gate-box gate-box-1"><rect x="52" y="84" width="26" height="24" rx="3" fill="#4F46E5"/><line x1="65" y1="84" x2="65" y2="108" stroke="#A5B4FC" stroke-width="2"/></g>' +
-      '<g class="gate-box gate-box-2"><rect x="86" y="84" width="26" height="24" rx="3" fill="#6366F1"/><line x1="99" y1="84" x2="99" y2="108" stroke="#C7D2FE" stroke-width="2"/></g>' +
-      '<g class="gate-box gate-box-3"><rect x="120" y="84" width="26" height="24" rx="3" fill="#818CF8"/><line x1="133" y1="84" x2="133" y2="108" stroke="#E0E7FF" stroke-width="2"/></g>' +
-      '<g class="gate-mark" transform="translate(76 8) scale(2)" stroke="#A5B4FC" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">' +
-      WAREHOUSE_ICON +
-      '</g>' +
+      '<div class="gate-hero"><div class="gate-logo-box">' +
+      '<img src="' + LOGO + '" alt="" width="92" height="92"><span class="gate-shine"></span>' +
+      '</div></div>' +
+      '<svg class="gate-svg" viewBox="0 0 200 44" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+      '<line class="gate-belt" x1="10" y1="30" x2="190" y2="30" stroke="#334155" stroke-width="3" stroke-linecap="round"/>' +
+      roller(30) + roller(100) + roller(170) +
+      '<g class="gate-boxes">' + parcel(1, '#4F46E5', '#A5B4FC') + parcel(2, '#6366F1', '#C7D2FE') + parcel(3, '#818CF8', '#E0E7FF') + '</g>' +
       '</svg>' +
       '<div class="gate-title">WMS Management <span>by Gun</span></div>' +
       '<div class="gate-sub">ระบบบริหารคลังสินค้า</div>' +
@@ -314,12 +318,21 @@
     function advance() {
       if (advanced) return;
       advanced = true;
-      var intro = stage.querySelector('.gate-intro');
-      intro.classList.add('leaving');
-      gate.classList.add('at-login');
-      setTimeout(showLogin, 380);
       gate.removeEventListener('click', advance);
       document.removeEventListener('keydown', advance);
+      // Where the browser can, the intro's logo and name glide up into the card's
+      // header (a view transition, see wms-gate.css). Elsewhere the intro fades out first.
+      if (document.startViewTransition && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        document.startViewTransition(function () {
+          gate.classList.add('at-login');
+          showLogin();
+          stage.querySelector('.gate-login').classList.add('morphed');
+        });
+        return;
+      }
+      stage.querySelector('.gate-intro').classList.add('leaving');
+      gate.classList.add('at-login');
+      setTimeout(showLogin, 380);
     }
 
     gate.addEventListener('click', advance);
