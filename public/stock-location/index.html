@@ -56,6 +56,9 @@
 .tx-empty{padding:44px 20px;text-align:center;color:var(--wms-muted);font-size:14px;line-height:1.7}
 .tx-empty b{color:var(--wms-text)}
 .tx-note{margin-top:10px;font-size:12px;color:var(--wms-muted);line-height:1.6}
+.tx-warn{margin-bottom:12px;padding:10px 13px;border-radius:var(--wms-radius-sm);background:#FEF3C7;
+  border:1px solid #FDE68A;color:#92400E;font-size:13px;line-height:1.6}
+.tx-warn b{font-weight:700}
 .tx-h{margin:18px 0 8px;font-size:13.5px;font-weight:700;color:var(--wms-text)}
 .tx-h:first-child{margin-top:0}
 .tx-line{margin-bottom:10px;font-size:13.5px;color:var(--wms-text);line-height:1.5}
@@ -210,7 +213,9 @@ function renderSrc() {
   } else if (RAW) {
     const when = new Date(RAW.at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
     html += `<span class="pill">📋 <b>${f(RAW.rows)}</b> แถว</span>`;
-    if (RAW.lastDate) html += `<span class="pill">📅 ขายถึง <b>${esc(WmsTx.shortDate(RAW.lastDate))}</b></span>`;
+    html += RAW.lastDate
+      ? `<span class="pill">📅 ขายถึง <b>${esc(WmsTx.shortDate(RAW.lastDate))}</b></span>`
+      : `<span class="pill warn">⚠️ อ่านวันที่ขายไม่ออก</span>`;
     html += `<span class="pill">🕐 ดึงเมื่อ <b>${esc(when)}</b></span>` + backupPill();
   } else {
     html += `<span class="pill warn">⚠️ ยังไม่มีข้อมูล</span>`;
@@ -271,8 +276,10 @@ function issueTotal() {
 function renderTabs() {
   const count = {};
   if (DATA) {
-    const r = WmsTx.refill(DATA, DAYS);
-    count.fill = r.ready.length + r.none.length;
+    if (RAW.saleDays) {
+      const r = WmsTx.refill(DATA, DAYS);
+      count.fill = r.ready.length + r.none.length;
+    }
     count.bad = issueTotal();
   }
   const list = [['fill', 'ต้องเติม'], ['find', 'หาของ'], ['bad', 'ข้อมูลผิด'], ['log', 'ประวัติ']];
@@ -303,6 +310,15 @@ function jobList(list, todo) {
 }
 
 function renderFill() {
+  const toBad = `<button class="tx-link" data-go-tab="bad">แท็บข้อมูลผิด</button>`;
+  /* ไม่มียอดขายให้คิด รายการว่างไม่ได้แปลว่าไม่มีของต้องเติม ปล่อยไว้จะดูเหมือนเรื่องดีทั้งที่คิดไม่ได้ */
+  if (!RAW.saleDays) {
+    $('body').innerHTML = `<div class="tx-warn"><b>ยังคิดรายการต้องเติมไม่ได้</b> เพราะไม่พบวันที่ขายที่อ่านออกในชีต
+      จึงไม่รู้ว่าแต่ละ SKU ขายวันละเท่าไหร่<br>
+      ตรวจว่าวาง tx-api.gs รุ่นล่าสุดและ Deploy เป็น New version แล้ว ถ้ายังขึ้นข้อความนี้ ดูรูปแบบที่อ่านไม่ออกใน ${toBad}</div>`;
+    return;
+  }
+  const unread = RAW.issues.list.filter(i => i.kind === 'baddate').reduce((a, i) => a + i.rowCount, 0);
   const r = WmsTx.refill(DATA, DAYS);
   const pull = (x) => {
     const s = WmsTx.source(x);
@@ -310,6 +326,7 @@ function renderFill() {
   };
   const hidden = r.hiddenReady + r.hiddenNone;
   $('body').innerHTML =
+    (unread ? `<div class="tx-warn">มีแถวขาย ${f(unread)} แถวที่อ่านวันที่ไม่ออก ยอดขายของแถวพวกนี้ไม่ถูกนับ รายการด้านล่างจึงอาจขาดไป ดูใน ${toBad}</div>` : '') +
     `<div class="tx-bar">แสดงของที่พอขายไม่ถึง ${[2, 3].map(n =>
       `<button class="tx-opt ${n === DAYS ? 'on' : ''}" data-days="${n}">${n} วัน</button>`).join('')}</div>` +
 
@@ -364,7 +381,7 @@ function renderFound() {
 
 function skuDetail(x) {
   const card = (label, v, cls) => `<div class="tx-card"><small>${label}</small><b class="${cls || ''}">${v}</b></div>`;
-  const cover = x.perDay > 0 ? x.cover.toFixed(1) + ' วัน' : 'ไม่มียอดขาย';
+  const cover = x.perDay > 0 ? x.cover.toFixed(1) + ' วัน' : (RAW.saleDays ? 'ไม่มียอดขาย' : 'ไม่ทราบ');
   const rows = x.rows.map(r => `<tr>
       <td class="nw"><button class="tx-link" data-open-loc="${esc(r.loc)}">${esc(r.loc)}</button></td>
       <td>${tag(r.bucket)}</td><td class="num">${esc(r.lot)}</td>
@@ -542,6 +559,7 @@ $('body').addEventListener('click', (e) => {
   else if (d.onlyLoc) { Q = d.onlyLoc; SEL = { loc: d.onlyLoc }; OPENLOC = ''; renderFind(); }
   else if (d.openLoc) { OPENLOC = d.openLoc; renderFound(); }
   else if (d.closeLoc) { OPENLOC = ''; renderFound(); }
+  else if (d.goTab) goTab(d.goTab);
   else if (d.kind !== undefined) { KIND = d.kind; renderBad(); }
   else if (d.hist) { goTab('log'); openHistory(d.hist); $('hq').value = d.hist; }
 });

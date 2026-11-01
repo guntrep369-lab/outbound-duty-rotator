@@ -7,6 +7,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import vm from 'node:vm';
 
 const GS = fs.readFileSync(path.resolve(__dirname, '../../apps-script/tx-api.gs'), 'utf8');
 const JS = fs.readFileSync(path.resolve(__dirname, '../../public/wms-tx.js'), 'utf8');
@@ -168,6 +169,50 @@ describe('tx-api.gs — ยอดขาย', () => {
       sale({ from: 'S-01-01', qty: 4, note: day('2026-01-04') }),
     ]);
     expect(s.saleDays).toBe(4);
+  });
+
+  it.each([
+    '30/01/2026', '30/1/26', '30-01-2026', '30.01.2026', '2026-01-30', '30/01/2569', '30/1/69',
+    '30/01/2026 14:05:00', ' 30/01/2026 ', '1/30/2026',
+  ])('วันที่ขายที่เป็นข้อความ "%s" อ่านได้และนับยอดขาย', (text) => {
+    const s = summary([row({ to: 'S-01-01', qty: 9, status: 'เปิด' }), sale({ from: 'S-01-01', qty: 4, note: text })]);
+    expect(s.lastDate).toBe('2026-01-30');
+    expect(s.sold[0][1]).toBe(4);
+    expect(s.issues.counts.incomplete).toBeUndefined();
+    expect(s.issues.counts.baddate).toBeUndefined();
+  });
+
+  it('วันที่จริงที่ instanceof Date ไม่ผ่าน และวันที่จริงที่เก็บปี พ.ศ. ก็อ่านได้', () => {
+    const other = vm.runInNewContext('new Date("2026-01-30T12:00:00Z")');
+    expect(other instanceof Date).toBe(false);
+    for (const note of [other, new Date('2569-01-30T12:00:00Z')]) {
+      const s = summary([row({ to: 'S-01-01', qty: 9, status: 'เปิด' }), sale({ from: 'S-01-01', qty: 4, note })]);
+      expect(s.lastDate).toBe('2026-01-30');
+      expect(s.sold[0][1]).toBe(4);
+    }
+  });
+
+  it('วันที่อ่านไม่ออกจับกลุ่มตามรูปแบบ มีตัวอย่างให้ดู และไม่ไหลเป็นรายการต่อแถว', () => {
+    const s = summary([
+      row({ to: 'S-01-01', qty: 9, status: 'เปิด' }),
+      sale({ from: 'S-01-01', qty: 1, note: '30 ต.ค.' }),
+      sale({ from: 'S-01-01', qty: 1, note: '29 ต.ค.' }),
+      sale({ from: 'S-01-01', qty: 1, note: 'เมื่อวาน' }),
+    ]);
+    expect(s.saleDays).toBe(0);
+    expect(s.issues.counts).toEqual({ baddate: 2 });
+    expect(s.issues.list.find((i) => i.note === '30 ต.ค.')).toMatchObject({ kind: 'baddate', rows: [3, 4], rowCount: 2 });
+  });
+
+  it('ช่องวันที่ขายว่างคือแถวไม่ครบ ไม่ใช่วันที่อ่านไม่ออก', () => {
+    const s = summary([sale({ from: 'S-01-01', qty: 1, note: '' })]);
+    expect(s.issues.counts.baddate).toBeUndefined();
+    expect(s.issues.list.find((i) => i.kind === 'incomplete').what).toContain('วันที่ขาย');
+  });
+
+  it('วันที่ไม่ไปซ้ำในช่องหมายเหตุของประวัติ แต่ GR ยังอยู่', () => {
+    const r = script([row({ to: 'S-01-01', qty: 9, note: 'GR 02-01-26' }), sale({ from: 'S-01-01', qty: 1, note: '30/01/2026' })])({ api: 'tx-history', sku: 'AAA001' });
+    expect(r.items.map((i) => [i.note, i.date])).toEqual([['', '2026-01-30'], ['GR 02-01-26', '2026-01-02']]);
   });
 
   it('วันที่ขายที่พิมพ์ปีผิดไปข้างหน้า ไม่ทำให้ยอดขายทั้งหมดหลุดช่วง และถูกรายงาน', () => {
@@ -488,6 +533,7 @@ describe('wms-tx.js', () => {
     expect(WmsTx.describeIssue({ ...base, kind: 'mixed', blank: 20, open: 400, out: 420, bal: 0 }))
       .toBe('AAA001 lot 8 PO 100 ที่ A-01-01 เข้าแบบว่าง 20 แบบเปิด 400 ออก 420 ยอดจริงคือ 0');
     expect(WmsTx.describeIssue({ ...base, po: '0', kind: 'outonly', bal: -70 })).toBe('AAA001 lot 8 ที่ A-01-01 ติดลบ 70');
+    expect(WmsTx.describeIssue({ kind: 'baddate', note: '30 ต.ค.', rowCount: 1200 })).toBe('กรอกว่า "30 ต.ค." รูปแบบนี้ 1,200 แถว');
     expect(WmsTx.describeIssue({ kind: 'locname', name: 'R-1', like: 'R1' })).toBe('R-1 น่าจะเป็นที่เดียวกับ R1');
     expect(WmsTx.describeIssue({ kind: 'locname', name: 'จุดแปลก', like: '', rowCount: 3 })).toBe('จุดแปลก ใช้แค่ 3 แถว');
     expect(WmsTx.describeIssue({ kind: 'date', note: 'GR 05-03-26', rowCount: 9, near: '2026-08-02' })).toContain('02/08');

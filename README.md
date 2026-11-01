@@ -341,6 +341,10 @@ as open, using its latest in-row. QA, IQA, and RIB never count as open or as res
 The URL works like a key: anyone who has it can read the balances, so keep it out of this repo. Keep
 the balance sheet running until the two agree, and compare the spots listed under "Status ปนกัน" first.
 
+**After changing the script:** saving isn't enough, because the web app keeps running the old version.
+Go to Deploy → Manage deployments → the pencil icon → Version: **New version** → Deploy. The URL stays
+the same.
+
 ---
 
 ## 🗂️ Project structure

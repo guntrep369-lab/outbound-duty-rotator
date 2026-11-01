@@ -84,7 +84,7 @@ function readRows_(sheet, tz) {
       qty: typeof c[7] === 'number' ? c[7] : 0,
       badQty: typeof c[7] === 'number' ? null : String(c[7]),
       type: text_(c[8]),
-      note: c[9] instanceof Date ? '' : text_(c[9]),
+      note: plainDate_(c[9], tz) ? '' : text_(c[9]),
       date: own,
       near: near,
       open: text_(c[10]) === 'เปิด',
@@ -104,9 +104,37 @@ function same_(v) { return String(v).trim().toUpperCase(); }
  * ที่เหลือ (RETURN, โอนย้าย, Stock Count) ไม่มีวันที่
  */
 function ownDate_(note, tz) {
-  if (note instanceof Date) return Utilities.formatDate(note, tz, 'yyyy-MM-dd');
+  var plain = plainDate_(note, tz);
+  if (plain) return plain;
   var m = /^GR\s*(\d{1,2})-(\d{1,2})-(\d{2})$/.exec(text_(note));
-  return m ? '20' + m[3] + '-' + pad_(m[2]) + '-' + pad_(m[1]) : '';
+  return m ? ymd_(m[3], m[2], m[1]) : '';
+}
+
+/**
+ * ช่องที่มีแต่วันที่ล้วน ๆ ในชีตอาจเป็นวันที่จริงหรือข้อความก็ได้ ขึ้นกับการตั้งค่าของไฟล์ จึงต้องอ่านได้ทั้งคู่
+ * ข้อความอ่านแบบ วัน/เดือน/ปี ตามที่ทีมกรอก จะสลับเป็น เดือน/วัน/ปี ก็ต่อเมื่อช่องเดือนเกิน 12
+ */
+function plainDate_(v, tz) {
+  if (v && typeof v.getTime === 'function') {
+    if (isNaN(v.getTime())) return '';
+    var p = Utilities.formatDate(v, tz, 'yyyy-MM-dd').split('-');
+    return ymd_(p[0], p[1], p[2]);
+  }
+  var s = text_(v).replace(/\s+\d{1,2}:\d{2}.*$/, '');
+  var m = /^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/.exec(s);
+  if (m) return ymd_(m[1], m[2], m[3]);
+  m = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2}|\d{4})$/.exec(s);
+  if (!m) return '';
+  return +m[2] > 12 ? ymd_(m[3], m[1], m[2]) : ymd_(m[3], m[2], m[1]);
+}
+
+/** ปี พ.ศ. แปลงเป็น ค.ศ. ทั้งแบบเต็ม (2569) และแบบย่อ (69) ค่าที่เป็นวันที่ไม่ได้จะได้ค่าว่าง */
+function ymd_(y, m, d) {
+  y = +y;
+  if (y < 100) y += y >= 60 ? 1957 : 2000;
+  else if (y >= 2400) y -= 543;
+  if (+m < 1 || +m > 12 || +d < 1 || +d > 31) return '';
+  return y + '-' + pad_(+m) + '-' + pad_(+d);
 }
 
 function pad_(v) { return ('0' + v).slice(-2); }
@@ -210,6 +238,7 @@ function issues_(rows, bals, today) {
   var closed = {};
   var locs = {};
   var lastIn = {};   // Status ของแถวเข้าล่าสุด ณ แถวที่อ่านถึง ขายไปก่อนที่โลจะปิดไม่ถือว่าผิด
+  var unread = {};   // วันที่ขายที่อ่านไม่ออก จับกลุ่มตามรูปแบบ ไม่งั้นรูปแบบเดียวจะกลายเป็นหมื่นรายการ
   rows.forEach(function (r) {
     [r.from, r.to].forEach(function (l) {
       if (l) (locs[l] = locs[l] || []).push(r.row);
@@ -223,7 +252,11 @@ function issues_(rows, bals, today) {
     if (r.type !== 'รับ' && r.type !== 'เบิก' && r.type !== 'ขาย') miss.push('ประเภท');
     if (r.type === 'รับ' && !r.to) miss.push('Location รับ');
     if ((r.type === 'เบิก' || r.type === 'ขาย') && !r.from) miss.push('Location เบิก');
-    if (r.type === 'ขาย' && !r.date) miss.push('วันที่ขาย');
+    if (r.type === 'ขาย' && !r.date && !r.note) miss.push('วันที่ขาย');
+    if (r.type === 'ขาย' && !r.date && r.note) {
+      var shape = r.note.replace(/\d/g, '9');
+      (unread[shape] = unread[shape] || { note: r.note, list: [] }).list.push(r.row);
+    }
     if (r.type !== 'ขาย' && !r.date && !r.note) miss.push('Note');
     if (!r.who) miss.push('ชื่อคนกรอก');
     if (miss.length) add('incomplete', { sku: r.sku, what: miss.join(', '), rows: [r.row], rowCount: 1 });
@@ -241,6 +274,9 @@ function issues_(rows, bals, today) {
   Object.keys(closed).forEach(function (k) {
     var c = closed[k];
     add('closedsale', merge_({ sku: c.sku, lot: c.lot, po: c.po, loc: c.loc, sold: c.sold }, someRows_(c.list)));
+  });
+  Object.keys(unread).forEach(function (k) {
+    add('baddate', merge_({ note: unread[k].note }, someRows_(unread[k].list)));
   });
 
   locationIssues_(locs, add);
