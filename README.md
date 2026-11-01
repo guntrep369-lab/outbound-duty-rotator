@@ -18,7 +18,7 @@ The list lives in [`public/wms-modules.js`](public/wms-modules.js) (the one plac
 | — | สมุดกะ · Shift Log | `shiftlog/` |
 | — (hidden) | สรุปเช้า · Morning Brief · ย้อนหลัง · History | `summary/` · `history/` |
 | ออเดอร์ | เทียบ Order · ค้นหาออเดอร์ | `order-compare/` · `order-lookup/` |
-| คลังสินค้า | สต๊อกคงเหลือ · สรุปหยิบของ · เบิกตามออเดอร์ · เอกสารคลังสินค้า | `stock/` · `picking/` · `order-sheet/` · `warehouse-forms/` |
+| คลังสินค้า | สต๊อกคงเหลือ · สต๊อกราย Location · สรุปหยิบของ · เบิกตามออเดอร์ · เอกสารคลังสินค้า | `stock/` · `stock-location/` · `picking/` · `order-sheet/` · `warehouse-forms/` |
 | ขนส่ง | ทำใบงานขนส่ง · เอกสารขนส่ง | `transport-docs/` · `transport-forms/` |
 | ขนส่ง (hidden) | ประเภทงานรถ · ผังงานรถวันนี้ | `jobs/` · `loadplan/` |
 | ทีมและระบบ | **ตารางกะ · Shift Schedule** · ตั้งค่า | `roster/` · `settings/` |
@@ -304,6 +304,45 @@ localStorage — it is not stored in this repo.** See
 
 ---
 
+## 📍 Stock by Location (`/stock-location`)
+
+Reads the team's hand-entered Transaction sheet through
+[`apps-script/tx-api.gs`](apps-script/tx-api.gs) and works out balances by SKU, LOT, PO, and Location.
+The script only reads. It never writes to the sheet, so the worst a bug can do is show a wrong number.
+
+| Tab | What it answers |
+| --- | --- |
+| ต้องเติม | Which SKUs will run out of the open locations within 2 or 3 days, and where to pull from (oldest LOT first, LOT 0 last) |
+| หาของ | Where a SKU is, or what is in a Location |
+| ข้อมูลผิด | Rows that look wrong, each linking to that row in the sheet |
+| ประวัติ | Every movement of one SKU, with a running total |
+
+**How balances are worked out.** Same as the balance sheet's SUMIFS, keyed on column B + LOT + PO +
+Location: in = any row with a Location รับ, out = rows with a Location เบิก and type เบิก or ขาย. There is
+one deliberate difference: Status isn't part of the key. The sheet's formula splits the in-side by
+Status but not the out-side, so a spot that was received both blank and เปิด subtracts its out-rows
+twice. These spots show up under ข้อมูลผิด as "Status ปนกัน". Status only decides whether a spot counts
+as open, using its latest in-row. QA, IQA, and RIB never count as open or as reserve.
+
+**Setup (once):**
+
+1. Open the Transaction file, then Extensions → Apps Script. Replace the sample code with `tx-api.gs`.
+   If the file's script already has a `doGet`, create a new project from
+   [script.google.com](https://script.google.com) instead and change `getActiveSpreadsheet()` to
+   `openById(...)`, because a project has only one `doGet`.
+2. Choose `installBackup` in the toolbar and press Run. Allow the Drive and Sheets permissions. This
+   sets a nightly copy of the whole file into the Drive folder `WMS Transaction Backup` and makes the
+   first copy right away. The newest 30 are kept; older ones go to the Drive trash.
+3. Deploy → New deployment → Web app. Execute as **Me**, Who has access **Anyone**. Copy the URL that
+   ends in `/exec`.
+4. On each device: ตั้งค่า → **Apps Script URL — Transaction**, paste the URL, press ทดสอบ, then
+   บันทึก URL.
+
+The URL works like a key: anyone who has it can read the balances, so keep it out of this repo. Keep
+the balance sheet running until the two agree, and compare the spots listed under "Status ปนกัน" first.
+
+---
+
 ## 🗂️ Project structure
 
 ```
@@ -322,11 +361,13 @@ public/
 ├─ wms-*.js                # shared helpers (dates, stock, picking, trucks, search…)
 ├─ roster/                 # ตารางกะ (+ roster-sync.js: sharing through the sheet,
 │                          #   roster-people.js: group / day off by date, leave counts)
+├─ stock-location/         # สต๊อกราย Location, from the Transaction sheet (+ wms-tx.js: grouping, refill list)
 ├─ summary/ history/ order-compare/ order-lookup/ stock/ picking/ order-sheet/
 ├─ shiftlog/               # สมุดกะ (+ logis.html: the read-only page for Logis)
 ├─ warehouse-forms/ jobs/ loadplan/ transport-docs/ transport-forms/ settings/
 apps-script/
-└─ roster-api.gs           # the shared schedule sheet's script (pasted into Apps Script, not served)
+├─ roster-api.gs           # the shared schedule sheet's script (pasted into Apps Script, not served)
+└─ tx-api.gs               # read-only balances from the Transaction sheet, plus its nightly backup
 src/
 ├─ data/                   # tests for the shared helpers + page-wide checks
 └─ transport/              # tests for the transport helpers

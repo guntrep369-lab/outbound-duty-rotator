@@ -43,6 +43,7 @@ export const MODULES = [
   { id: 'order', label: 'เทียบ Order', labelEn: 'Order Compare', path: 'order-compare/', icon: 'clipboard', group: 'order' },
   { id: 'lookup', label: 'ค้นหาออเดอร์', labelEn: 'Order Lookup', path: 'order-lookup/', icon: 'search', group: 'order' },
   { id: 'stock', label: 'สต๊อกคงเหลือ', labelEn: 'Stock on Hand', path: 'stock/', icon: 'package', group: 'warehouse' },
+  { id: 'txstock', label: 'สต๊อกราย Location', labelEn: 'Stock by Location', path: 'stock-location/', icon: 'mapPin', group: 'warehouse' },
   { id: 'picking', label: 'สรุปหยิบของ', labelEn: 'Picking Sheet', path: 'picking/', icon: 'clipboardList', group: 'warehouse' },
   { id: 'reqpick', label: 'เบิกตามออเดอร์', labelEn: 'Order Requisition', path: 'order-sheet/', icon: 'listChecks', group: 'warehouse' },
   { id: 'warehouse', label: 'เอกสารคลังสินค้า', labelEn: 'Warehouse Forms', path: 'warehouse-forms/', icon: 'boxes', group: 'warehouse' },
@@ -81,6 +82,8 @@ export const ICON_PATHS = {
     '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
   map:
     '<path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"/><path d="M15 5.764v15"/><path d="M9 3.236v15"/>',
+  mapPin:
+    '<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>',
   search:
     '<path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/>',
   listChecks:

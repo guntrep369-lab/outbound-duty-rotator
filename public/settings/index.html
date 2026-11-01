@@ -183,6 +183,21 @@
           <div class="msg" id="msg-roster"></div>
         </div>
 
+        <div class="fld">
+          <label><span class="dot" id="dot-tx"></span> Apps Script URL — Transaction</label>
+          <div class="row">
+            <input id="txUrl" type="url" spellcheck="false"
+                   placeholder="https://script.google.com/macros/s/.../exec">
+            <button class="btn2" onclick="testUrl('tx')">ทดสอบ</button>
+            <button class="btn2 danger" onclick="clearUrl('tx')">ล้าง</button>
+          </div>
+          <div class="hint">
+            ใช้กับหน้า<b>สต๊อกราย Location</b> — ใช้ <code>tx-api.gs</code> ที่ผูกกับไฟล์ชีต Transaction เอง
+            สคริปต์อ่านอย่างเดียว ไม่แก้ชีต
+          </div>
+          <div class="msg" id="msg-tx"></div>
+        </div>
+
         <div class="row">
           <button class="btn2 p" onclick="saveUrls()">💾 บันทึก URL</button>
           <span class="msg" id="msg-save" style="align-self:center"></span>
@@ -281,6 +296,7 @@ function paintDots() {
   $('dot-stock').className = 'dot ' + (WmsSettings.stockUrl() ? 'on' : 'off');
   $('dot-transport').className = 'dot ' + (WmsSettings.transportUrl() ? 'on' : 'off');
   $('dot-roster').className = 'dot ' + (WmsSettings.rosterUrl() ? 'on' : 'off');
+  $('dot-tx').className = 'dot ' + (WmsSettings.txUrl() ? 'on' : 'off');
 }
 
 function saveUrls() {
@@ -291,8 +307,9 @@ function saveUrls() {
   const e = WmsSettings.setMe($('meName').value);
   const f = WmsSettings.setRosterUrl($('rosterUrl').value);
   const g = WmsSettings.setRosterToken($('rosterToken').value);
+  const h = WmsSettings.setTxUrl($('txUrl').value);
   paintDots();
-  if (a && b && c && d && e && f && g) say('msg-save', '✅ บันทึกแล้ว', 'ok');
+  if (a && b && c && d && e && f && g && h) say('msg-save', '✅ บันทึกแล้ว', 'ok');
   else say('msg-save', '❌ บันทึกไม่ได้ (เบราว์เซอร์โหมดส่วนตัวหรือพื้นที่เต็ม)', 'bad');
 }
 
@@ -300,6 +317,7 @@ function clearUrl(kind) {
   if (kind === 'order') { WmsSettings.setOrderUrl(''); $('orderUrl').value = ''; }
   else if (kind === 'transport') { WmsSettings.setTransportUrl(''); $('transportUrl').value = ''; }
   else if (kind === 'roster') { WmsSettings.setRosterUrl(''); $('rosterUrl').value = ''; }
+  else if (kind === 'tx') { WmsSettings.setTxUrl(''); $('txUrl').value = ''; }
   else { WmsSettings.setStockUrl(''); $('stockUrl').value = ''; }
   paintDots();
   say('msg-' + kind, 'ล้างแล้ว', '');
@@ -312,12 +330,13 @@ function clearUrl(kind) {
  * ที่ลบไปแล้ว จะเงียบจนถึงเช้าวันที่ต้องใช้จริง — ตอนนั้นแก้ไม่ทันแล้ว
  */
 async function testUrl(kind) {
-  const raw = $({ order: 'orderUrl', transport: 'transportUrl', roster: 'rosterUrl' }[kind] || 'stockUrl').value.trim();
+  const raw = $({ order: 'orderUrl', transport: 'transportUrl', roster: 'rosterUrl', tx: 'txUrl' }[kind] || 'stockUrl').value.trim();
   if (!raw) { say('msg-' + kind, 'ใส่ URL ก่อน', 'bad'); return; }
 
   say('msg-' + kind, '⏳ กำลังทดสอบ…', 'busy');
   try {
     if (kind === 'roster') { await testRoster(raw); return; }
+    if (kind === 'tx') { await testTx(raw); return; }
     const resp = await OrderIndex.fetchWithRetry(OrderIndex.withApi(raw, kind), {
       retries: 0,
       onProgress: (sec) => say('msg-' + kind, `⏳ กำลังทดสอบ… ${sec} วินาที`, 'busy'),
@@ -368,6 +387,22 @@ async function testRoster(raw) {
   say('msg-roster', r.rev
     ? `✅ ต่อได้ — ตารางกะในชีตเป็นฉบับที่ ${r.rev}${r.by ? ' แก้ล่าสุดโดย ' + r.by : ''}`
     : '✅ ต่อได้ — ชีตยังว่าง กดบันทึก URL แล้วเปิดหน้าตารางกะเพื่อส่งข้อมูลขึ้นไป', 'ok');
+}
+
+/**
+ * Transaction เช็คสองขั้นเช่นกัน: ขั้นแรกแค่ดูว่าใส่ URL ถูกตัว ขั้นสองคิดยอดจริงทั้งชีต
+ * เพื่อให้รู้ตอนนี้เลยว่าสคริปต์หาชีตเจอ และเห็นจำนวนแถวไว้เทียบกับในไฟล์
+ */
+async function testTx(raw) {
+  const progress = (sec) => say('msg-tx', `⏳ กำลังทดสอบ… ${sec} วินาที`, 'busy');
+  const id = await WmsGas.json(raw, 'transaction', { retries: 0, onProgress: progress });
+  if (!id || id.app !== 'transaction') {
+    throw new Error('ต่อได้ แต่ไม่ใช่สคริปต์ Transaction — ตัวนี้ต้องเป็น tx-api.gs ที่ผูกกับไฟล์ชีต Transaction');
+  }
+  const s = await WmsGas.json(raw, 'tx-summary', { retries: 0, onProgress: progress });
+  if (s.error) throw new Error(s.error);
+  const rows = Number(s.rows || 0).toLocaleString('en-US');
+  say('msg-tx', `✅ ต่อได้ — ${rows} แถว${s.backup ? '' : ' · ยังไม่ได้ตั้ง Backup รัน installBackup ในสคริปต์หนึ่งครั้ง'}`, 'ok');
 }
 
 // ── โลโก้ ──────────────────────────────────────────────────────────────
@@ -479,7 +514,8 @@ function doExport(kind) {
 
 const line = (d) =>
   `<div class="li">🔗 URL ออเดอร์ <b>${d.orderUrl ? 'มี' : '—'}</b> · URL สต๊อก <b>${d.stockUrl ? 'มี' : '—'}</b>` +
-    ` · URL ไฟล์รถบริษัท <b>${d.transportUrl ? 'มี' : '—'}</b> · URL ตารางกะ <b>${d.rosterUrl ? 'มี' : '—'}</b><br>` +
+    ` · URL ไฟล์รถบริษัท <b>${d.transportUrl ? 'มี' : '—'}</b> · URL ตารางกะ <b>${d.rosterUrl ? 'มี' : '—'}</b>` +
+    ` · URL Transaction <b>${d.txUrl ? 'มี' : '—'}</b><br>` +
   `🖼️ โลโก้ <b>${d.logo ? 'มี' : '—'}</b><br>` +
   `👥 ผู้ใช้ <b>${d.users}</b> คน<br>` +
   `📚 สินค้า <b>${d.skus.toLocaleString()}</b> รายการ<br>` +
@@ -529,6 +565,7 @@ document.getElementById('bkFile').addEventListener('change', function () {
       $('transportToken').value = WmsSettings.transportToken();
       $('rosterUrl').value = WmsSettings.rosterUrl();
       $('rosterToken').value = WmsSettings.rosterToken();
+      $('txUrl').value = WmsSettings.txUrl();
       $('meName').value = WmsSettings.me();
       paintDots(); paintLogo(); paintUsers(); paintBackup();
     });
@@ -543,6 +580,7 @@ $('transportUrl').value = WmsSettings.transportUrl();
 $('transportToken').value = WmsSettings.transportToken();
 $('rosterUrl').value = WmsSettings.rosterUrl();
 $('rosterToken').value = WmsSettings.rosterToken();
+$('txUrl').value = WmsSettings.txUrl();
 $('meName').value = WmsSettings.me();
 paintDots(); paintLogo(); paintUsers(); paintBackup();
 </script>

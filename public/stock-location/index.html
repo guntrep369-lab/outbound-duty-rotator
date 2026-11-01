@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>สต๊อกราย Location — WMS</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../wms-icon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="../wms-logo.png">
+<link rel="apple-touch-icon" href="../wms-icon-180.png">
+<link rel="stylesheet" href="../wms-theme.css">
+<link rel="stylesheet" href="../wms-gate.css">
+<script src="../wms-gate.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+
+/* ── แถบแหล่งข้อมูล ── */
+.tx-src{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 20px;
+  background:var(--wms-surface2);border-bottom:1px solid var(--wms-border);font-size:12px}
+.tx-src .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;
+  background:var(--wms-surface);border:1px solid var(--wms-border);color:var(--wms-muted)}
+.tx-src .pill b{color:var(--wms-text);font-weight:600}
+.tx-src .pill.warn{background:#FEF3C7;border-color:#FDE68A;color:#92400E}
+.tx-src .sp{flex:1}
+.tx-src button{padding:4px 12px;border-radius:999px;border:1px solid var(--wms-border2);
+  background:var(--wms-surface);font-family:var(--wms-font);font-size:12px;color:#334155;cursor:pointer}
+.tx-src button:hover:not(:disabled){background:var(--wms-primary-light);border-color:var(--wms-primary);
+  color:var(--wms-primary-dark)}
+.tx-src button.p{background:var(--wms-primary);border-color:var(--wms-primary);color:#fff}
+.tx-src button.p:hover:not(:disabled){filter:brightness(1.08);color:#fff}
+.tx-src button:disabled{opacity:.6;cursor:default}
+.tx-err{width:100%;font-size:12.5px;color:#B91C1C;font-weight:600}
+
+/* ── ยอดรวมทั้งคลัง ── */
+.tx-sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:8px;padding:12px 20px;
+  background:var(--wms-surface);border-bottom:1px solid var(--wms-border)}
+.tx-sum:empty{display:none}
+.tx-stat{padding:8px 11px;border-radius:var(--wms-radius-sm);background:var(--wms-surface2)}
+.tx-stat small{display:block;font-size:11.5px;color:var(--wms-muted)}
+.tx-stat b{font-size:18px;font-weight:700;color:var(--wms-text);font-variant-numeric:tabular-nums}
+.tx-stat i{display:block;font-style:normal;font-size:11px;color:var(--wms-muted)}
+
+/* ── แท็บ ── */
+.tx-tabs{display:flex;gap:7px;overflow-x:auto;padding:11px 20px;background:var(--wms-surface);
+  border-bottom:1px solid var(--wms-border)}
+.tx-tab{flex-shrink:0;white-space:nowrap;display:inline-flex;align-items:center;gap:7px;
+  padding:7px 14px;border-radius:999px;border:1px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:13px;color:#334155;cursor:pointer;transition:all .13s}
+.tx-tab:hover{border-color:var(--wms-primary);color:var(--wms-primary-dark)}
+.tx-tab.on{background:var(--wms-primary);border-color:var(--wms-primary);color:#fff;font-weight:600}
+.tx-tab .n{padding:1px 7px;border-radius:999px;background:var(--wms-surface2);
+  font-size:11.5px;font-weight:700;color:var(--wms-muted)}
+.tx-tab.on .n{background:rgba(255,255,255,.22);color:#fff}
+
+/* ── เนื้อหา ── */
+.tx-body{padding:14px 20px 60px}
+.tx-empty{padding:44px 20px;text-align:center;color:var(--wms-muted);font-size:14px;line-height:1.7}
+.tx-empty b{color:var(--wms-text)}
+.tx-note{margin-top:10px;font-size:12px;color:var(--wms-muted);line-height:1.6}
+.tx-h{margin:18px 0 8px;font-size:13.5px;font-weight:700;color:var(--wms-text)}
+.tx-h:first-child{margin-top:0}
+.tx-line{margin-bottom:10px;font-size:13.5px;color:var(--wms-text);line-height:1.5}
+.tx-line b{font-family:ui-monospace,Menlo,monospace}
+
+/* ตารางกว้างกว่าจอมือถือ เลื่อนเฉพาะตาราง หน้าทั้งหน้าไม่ต้องเลื่อนตาม */
+.tx-wrap{overflow-x:auto;background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:var(--wms-radius)}
+.tx-tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tx-tbl th{text-align:left;padding:9px 11px;background:var(--wms-surface2);font-size:11.5px;
+  font-weight:600;color:var(--wms-muted);border-bottom:1px solid var(--wms-border);white-space:nowrap}
+.tx-tbl td{padding:8px 11px;border-bottom:1px solid #F1F5F9;vertical-align:top}
+.tx-tbl tr:last-child td{border-bottom:0}
+.tx-tbl .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tx-tbl .nw{white-space:nowrap}
+.tx-sub{display:block;font-size:11.5px;color:var(--wms-muted);line-height:1.4}
+.tx-name{min-width:150px}  /* จอมือถือบีบคอลัมน์ SKU จนชื่อสินค้าเรียงทีละคำ ให้ตารางเลื่อนข้างแทน */
+.tx-link{padding:0;border:0;background:none;font-family:inherit;font-size:inherit;font-weight:600;
+  color:var(--wms-primary-dark);cursor:pointer;text-align:left}
+.tx-link:hover{text-decoration:underline}
+a.tx-row{color:var(--wms-primary-dark)}
+.tx-neg{color:#B91C1C;font-weight:600}
+.tx-low{color:#B91C1C;font-weight:600}
+.tx-mid{color:#B45309;font-weight:600}
+
+.tx-tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;white-space:nowrap}
+.tx-tag.open{background:#DCFCE7;color:#166534}
+.tx-tag.reserve{background:var(--wms-surface2);color:var(--wms-muted)}
+.tx-tag.QA,.tx-tag.IQA{background:#EDE9FE;color:#5B21B6}
+.tx-tag.RIB{background:#FEF3C7;color:#92400E}
+
+/* ── ตัวเลือก ── */
+.tx-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px;font-size:13px;color:var(--wms-muted)}
+.tx-opt{padding:5px 13px;border-radius:999px;border:1px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:12.5px;color:#334155;cursor:pointer}
+.tx-opt:hover{border-color:var(--wms-primary);color:var(--wms-primary-dark)}
+.tx-opt.on{background:var(--wms-primary-light);border-color:var(--wms-primary);color:var(--wms-primary-dark);font-weight:600}
+.tx-input{flex:1;min-width:180px;max-width:460px;padding:9px 13px;border-radius:10px;border:1.5px solid var(--wms-border2);
+  background:var(--wms-surface);font-family:var(--wms-font);font-size:13.5px;color:var(--wms-text);outline:none}
+.tx-input:focus{border-color:var(--wms-primary)}
+
+/* ── การ์ดของ SKU / รายการผิด ── */
+.tx-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:8px;margin-bottom:12px}
+.tx-card{padding:9px 12px;border-radius:var(--wms-radius-sm);background:var(--wms-surface);
+  border:1px solid var(--wms-border);text-align:left;font-family:var(--wms-font)}
+.tx-card small{display:block;font-size:11.5px;color:var(--wms-muted)}
+.tx-card b{font-size:18px;font-weight:700;color:var(--wms-text);font-variant-numeric:tabular-nums}
+.tx-card b.tx-low{color:#B91C1C}
+.tx-card b.tx-mid{color:#B45309}
+button.tx-card{cursor:pointer}
+button.tx-card:hover{border-color:var(--wms-primary)}
+button.tx-card.on{border-color:var(--wms-primary);background:var(--wms-primary-light)}
+
+.tx-panel{margin-bottom:12px;padding:12px;border-radius:var(--wms-radius);background:var(--wms-surface2);
+  border:1px solid var(--wms-border)}
+.tx-panel .top{display:flex;align-items:center;gap:8px;margin-bottom:9px;font-size:13.5px;color:var(--wms-text)}
+.tx-panel .top .sp{flex:1}
+
+@media (max-width:640px){
+  .tx-body{padding:12px 12px 60px}
+  .tx-src,.tx-sum,.tx-tabs{padding-left:12px;padding-right:12px}
+}
+</style>
+</head>
+<body data-wms-module="txstock">
+
+<div class="wms-shell">
+<div data-wms-shell="txstock" data-root="../"></div>
+<div class="wms-main">
+
+  <div class="mod-head">
+    <div class="mod-title">
+      <div class="ic"><img src="../icons/boxes.png" alt="" width="38" height="38"></div>
+      <div>
+        <h2>สต๊อกราย Location · Stock by Location</h2>
+        <p>โลเปิดไหนต้องเติม ของอยู่ตรงไหน และแถวไหนในชีต Transaction ที่กรอกผิด — อ่านอย่างเดียว ไม่แก้ชีต</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="tx-src" id="src"></div>
+  <div class="tx-sum" id="sum"></div>
+  <div class="tx-tabs" id="tabs" role="tablist"></div>
+  <div class="tx-body" id="body"></div>
+
+</div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+
+<script type="module" src="../wms-shell.js"></script>
+<script src="../wms-settings.js"></script>
+<script src="../wms-gas.js"></script>
+<script src="../wms-tx.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+/* ค่าทุกตัวมาจากชีตที่คนกรอกเอง และบางตัวไปอยู่ใน data-* จึงต้องหนีเครื่องหมายคำพูดด้วย */
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const f = n => Math.round(n).toLocaleString('en-US');
+
+let RAW = null;       // คำตอบจาก Apps Script
+let DATA = null;      // RAW ที่จัดกลุ่มแล้ว
+let PULLING = '';
+let ERR = '';
+/* เปิดมาเจอต้องเติมก่อน เพราะเป็นงานที่ต้องทำทุกวัน ส่วนหาของเปิดเมื่อมีคนถาม */
+let TAB = 'fill';
+let DAYS = 3;
+let Q = '';           // คำค้นในแท็บหาของ
+let SEL = null;       // { sku } | { loc } ที่กดเลือกจากรายการ
+let OPENLOC = '';     // Location ที่เปิดดูอยู่ในหน้า SKU
+let KIND = '';        // ตัวกรองแท็บข้อมูลผิด
+const HIST = { sku: '', busy: '', err: '', data: null };
+const HCACHE = new Map();   // ประวัติที่ดูแล้วในรอบนี้ กดกลับไปดูซ้ำไม่ต้องรอสคริปต์อ่านทั้งชีตอีกรอบ
+
+const MAX = 300;   // มากกว่านี้เบราว์เซอร์เริ่มหน่วง เหมือนหน้าสต๊อกคงเหลือ
+const TAG = { open: 'เปิด', reserve: 'สำรอง', QA: 'QA', IQA: 'IQA', RIB: 'RIB' };
+const tag = b => `<span class="tx-tag ${b}">${TAG[b]}</span>`;
+
+const load = (s) => {
+  RAW = s; DATA = null;
+  if (!s) return;
+  /* แคชจากโค้ดรุ่นก่อนอาจมีรูปไม่ตรงกับตัวจัดกลุ่มรุ่นนี้ ดึงใหม่ดีกว่าให้หน้าพังทั้งหน้า */
+  try { DATA = WmsTx.expand(s); } catch (e) { RAW = null; console.warn('แคชใช้ไม่ได้ —', e.message); }
+};
+
+/* ── แถบแหล่งข้อมูล ─────────────────────────────────────────────────────── */
+
+function backupPill() {
+  const b = WmsTx.backupState(RAW.backup, Date.now());
+  if (b.days === null) return `<span class="pill warn">⚠️ ยังไม่ได้ตั้ง Backup — รัน installBackup ในสคริปต์</span>`;
+  if (!b.ok) return `<span class="pill warn">⚠️ Backup ล่าสุด ${b.days} วันก่อน</span>`;
+  const when = new Date(RAW.backup.at).toLocaleString('th-TH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  return `<span class="pill">💾 Backup ล่าสุด <b>${esc(when)}</b></span>`;
+}
+
+function renderSrc() {
+  const url = WmsTx.savedUrl();
+  let html = '';
+  if (PULLING) {
+    html += `<span class="pill">⏳ ${esc(PULLING)}</span>`;
+  } else if (RAW) {
+    const when = new Date(RAW.at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+    html += `<span class="pill">📋 <b>${f(RAW.rows)}</b> แถว</span>`;
+    if (RAW.lastDate) html += `<span class="pill">📅 ขายถึง <b>${esc(WmsTx.shortDate(RAW.lastDate))}</b></span>`;
+    html += `<span class="pill">🕐 ดึงเมื่อ <b>${esc(when)}</b></span>` + backupPill();
+  } else {
+    html += `<span class="pill warn">⚠️ ยังไม่มีข้อมูล</span>`;
+  }
+  html += `<span class="sp"></span>`;
+  if (url) {
+    html += `<button id="pullBtn" class="${RAW ? '' : 'p'}" ${PULLING ? 'disabled' : ''}>${PULLING ? 'กำลังดึง…' : (RAW ? '🔄 ดึงใหม่' : '⬇️ ดึงข้อมูล')}</button>`;
+  } else {
+    html += `<span class="pill">ยังไม่ได้ตั้ง Apps Script URL — <a href="../settings/">ตั้งที่หน้าตั้งค่า</a></span>`;
+  }
+  if (ERR) html += `<div class="tx-err">${esc(ERR)}</div>`;
+  $('src').innerHTML = html;
+  const btn = $('pullBtn');
+  if (btn) btn.onclick = pullNow;
+}
+
+async function pullNow() {
+  const url = WmsTx.savedUrl();
+  if (PULLING || !url) return;
+  ERR = '';
+  PULLING = 'กำลังดึงข้อมูล…';
+  renderSrc();
+  try {
+    const s = await WmsTx.pull(url, {
+      onProgress: (sec) => { PULLING = `กำลังดึงข้อมูล… ${sec} วินาที`; renderSrc(); },
+      onRetry: () => { PULLING = 'ไม่สำเร็จ กำลังลองใหม่…'; renderSrc(); },
+    });
+    PULLING = '';
+    HCACHE.clear();
+    HIST.data = null;
+    load(s);
+    renderAll();
+    if (TAB === 'log' && HIST.sku) openHistory(HIST.sku);
+  } catch (err) {
+    PULLING = '';
+    ERR = 'ดึงข้อมูลไม่สำเร็จ — ' + err.message;
+    renderSrc();
+  }
+}
+
+/* ── ยอดรวม + แท็บ ──────────────────────────────────────────────────────── */
+
+function renderSum() {
+  if (!DATA) { $('sum').innerHTML = ''; return; }
+  const t = DATA.totals;
+  const stat = (label, v, sub) => `<div class="tx-stat"><small>${label}</small><b>${f(v)}</b>${sub ? `<i>${sub}</i>` : ''}</div>`;
+  $('sum').innerHTML =
+    /* ยอดรวมหักจุดติดลบแล้ว ถ้าไม่บอก คนเอาการ์ดข้าง ๆ มาบวกกันจะได้เลขไม่ตรงแล้วเลิกเชื่อทั้งแถว */
+    stat('ยอดรวม', t.net, t.neg ? `หักจุดติดลบ ${f(-t.neg)} แล้ว` : 'ชิ้น') + stat('SKU', t.skus, 'มีของ') + stat('Location', t.locs, 'มีของ') +
+    stat('โลเปิด', t.open, `${f(t.openLocs)} Location`) + stat('สำรอง', t.reserve, `${f(t.reserveLocs)} Location`) +
+    stat('QA', t.QA) + stat('IQA', t.IQA) + stat('RIB', t.RIB);
+}
+
+function issueTotal() {
+  return Object.values(RAW.issues.counts).reduce((a, n) => a + n, 0);
+}
+
+function renderTabs() {
+  const count = {};
+  if (DATA) {
+    const r = WmsTx.refill(DATA, DAYS);
+    count.fill = r.ready.length + r.none.length;
+    count.bad = issueTotal();
+  }
+  const list = [['fill', 'ต้องเติม'], ['find', 'หาของ'], ['bad', 'ข้อมูลผิด'], ['log', 'ประวัติ']];
+  $('tabs').innerHTML = list.map(([id, label]) =>
+    `<button class="tx-tab ${id === TAB ? 'on' : ''}" role="tab" aria-selected="${id === TAB}" data-tab="${id}">${label}` +
+    `${count[id] !== undefined ? ` <span class="n">${f(count[id])}</span>` : ''}</button>`
+  ).join('');
+}
+
+/* ── ต้องเติม ───────────────────────────────────────────────────────────── */
+
+const skuCell = (x) => `<button class="tx-link" data-sku="${esc(x.sku)}">${esc(x.sku)}</button><span class="tx-sub tx-name">${esc(x.name)}</span>`;
+const coverCls = (c) => c < 1 ? 'tx-low' : c < 2 ? 'tx-mid' : '';
+const coverCell = (c) => `<span class="${coverCls(c)}">${c.toFixed(1)} วัน</span>`;
+const special = (x) => x.QA + x.IQA + x.RIB;
+
+function renderFill() {
+  const r = WmsTx.refill(DATA, DAYS);
+  const from = (x) => {
+    const s = WmsTx.source(x);
+    return s ? `<button class="tx-link" data-sku="${esc(x.sku)}" data-loc="${esc(s.loc)}">${esc(s.loc)}</button> lot ${esc(s.lot)} <span class="tx-sub">${f(s.qty)} ชิ้น</span>` : '—';
+  };
+  const hidden = r.hiddenReady + r.hiddenNone;
+  $('body').innerHTML =
+    `<div class="tx-bar">โลเปิดพอขายไม่ถึง ${[2, 3].map(n =>
+      `<button class="tx-opt ${n === DAYS ? 'on' : ''}" data-days="${n}">${n} วัน</button>`).join('')}</div>` +
+
+    `<div class="tx-h">ดึงจากสำรองได้ (${r.ready.length} SKU)</div>` +
+    (r.ready.length ? `<div class="tx-wrap"><table class="tx-tbl"><thead><tr>
+        <th>SKU</th><th class="num">ขาย/วัน</th><th class="num">โลเปิด</th><th class="num">พอขาย</th><th class="num">สำรอง</th><th>ดึงจาก</th>
+      </tr></thead><tbody>${r.ready.map(x => `<tr>
+        <td>${skuCell(x)}</td><td class="num">${x.perDay.toFixed(1)}</td><td class="num">${f(x.open)}</td>
+        <td class="num">${coverCell(x.cover)}</td><td class="num">${f(x.reserve)}</td><td class="nw">${from(x)}</td>
+      </tr>`).join('')}</tbody></table></div>` : `<div class="tx-note">ไม่มีรายการ — เป็นเรื่องดี</div>`) +
+
+    `<div class="tx-h">ไม่มีสำรองให้เติม (${r.none.length} SKU)</div>` +
+    (r.none.length ? `<div class="tx-wrap"><table class="tx-tbl"><thead><tr>
+        <th>SKU</th><th class="num">ขาย/วัน</th><th class="num">โลเปิด</th><th class="num">พอขาย</th><th class="num">QA, IQA, RIB</th>
+      </tr></thead><tbody>${r.none.map(x => `<tr>
+        <td>${skuCell(x)}</td><td class="num">${x.perDay.toFixed(1)}</td><td class="num">${f(x.open)}</td>
+        <td class="num">${coverCell(x.cover)}</td><td class="num">${f(special(x))}</td>
+      </tr>`).join('')}</tbody></table></div>` : `<div class="tx-note">ไม่มีรายการ — เป็นเรื่องดี</div>`) +
+
+    `<p class="tx-note">พอขาย = ของในโลเปิด ÷ ยอดขายเฉลี่ย ${RAW.saleDays} วันล่าสุด (ถึง ${esc(WmsTx.shortDate(RAW.lastDate))})
+      · สำรอง = ชั้นวางที่ไม่เปิด ไม่นับ QA, IQA, RIB
+      · ดึงจาก = LOT เก่าก่อน LOT 0 ไว้ท้ายสุด ถ้า LOT เท่ากันเอาจุดที่มีมากสุด
+      ${hidden ? `· ซ่อนรายการที่ขายไม่ถึงวันละ ${WmsTx.MIN_PER_DAY} ชิ้นไว้ ${hidden} SKU` : ''}</p>`;
+}
+
+/* ── หาของ ──────────────────────────────────────────────────────────────── */
+
+function renderFind() {
+  $('body').innerHTML =
+    `<div class="tx-bar"><input class="tx-input" id="q" type="search" autocomplete="off" spellcheck="false"
+       placeholder="รหัส SKU, ชื่อสินค้า หรือ Location" value="${esc(Q)}"></div><div id="found"></div>`;
+  $('q').addEventListener('input', (e) => { Q = e.target.value; SEL = null; OPENLOC = ''; renderFound(); });
+  renderFound();
+}
+
+function renderFound() {
+  const box = $('found');
+  if (!box) return;
+  if (SEL && SEL.sku && DATA.skus[SEL.sku]) { box.innerHTML = skuDetail(DATA.skus[SEL.sku]); return; }
+  if (SEL && SEL.loc && DATA.locs[SEL.loc]) { box.innerHTML = locDetail(DATA.locs[SEL.loc]); return; }
+
+  const q = Q.trim();
+  if (!q) { box.innerHTML = `<div class="tx-empty">พิมพ์รหัส SKU, ชื่อสินค้า หรือ Location เพื่อดูว่าของอยู่ตรงไหน</div>`; return; }
+  const up = q.toUpperCase();
+  const r = WmsTx.search(DATA, q);
+  const exactSku = r.skus.find(x => x.sku.toUpperCase() === up || String(x.long).toUpperCase() === up);
+  const exactLoc = r.locs.find(l => l.loc.toUpperCase() === up);
+  if (exactSku || (r.skus.length === 1 && !r.locs.length)) { box.innerHTML = skuDetail(exactSku || r.skus[0]); return; }
+  if (exactLoc || (r.locs.length === 1 && !r.skus.length)) { box.innerHTML = locDetail(exactLoc || r.locs[0]); return; }
+  if (!r.skus.length && !r.locs.length) { box.innerHTML = `<div class="tx-empty">ไม่พบ "<b>${esc(q)}</b>" ที่ยังมียอดคงเหลือ</div>`; return; }
+
+  box.innerHTML =
+    (r.skus.length ? `<div class="tx-h">SKU (${r.skus.length})</div><div class="tx-wrap"><table class="tx-tbl"><thead><tr>
+        <th>SKU</th><th class="num">ทั้งหมด</th><th class="num">โลเปิด</th><th class="num">สำรอง</th>
+      </tr></thead><tbody>${r.skus.slice(0, MAX).map(x => `<tr>
+        <td>${skuCell(x)}</td><td class="num">${f(x.total)}</td><td class="num">${f(x.open)}</td><td class="num">${f(x.reserve)}</td>
+      </tr>`).join('')}</tbody></table></div>` : '') +
+    (r.locs.length ? `<div class="tx-h">Location (${r.locs.length})</div><div class="tx-wrap"><table class="tx-tbl"><thead><tr>
+        <th>Location</th><th class="num">จำนวนแถว</th><th class="num">รวม</th>
+      </tr></thead><tbody>${r.locs.slice(0, MAX).map(l => `<tr>
+        <td><button class="tx-link" data-only-loc="${esc(l.loc)}">${esc(l.loc)}</button></td>
+        <td class="num">${f(l.rows.length)}</td><td class="num ${l.qty < 0 ? 'tx-neg' : ''}">${f(l.qty)}</td>
+      </tr>`).join('')}</tbody></table></div>` : '');
+}
+
+function skuDetail(x) {
+  const card = (label, v, cls) => `<div class="tx-card"><small>${label}</small><b class="${cls || ''}">${v}</b></div>`;
+  const cover = x.perDay > 0 ? x.cover.toFixed(1) + ' วัน' : 'ไม่มียอดขาย';
+  const rows = x.rows.map(r => `<tr>
+      <td class="nw"><button class="tx-link" data-open-loc="${esc(r.loc)}">${esc(r.loc)}</button></td>
+      <td>${tag(r.bucket)}</td><td class="num">${esc(r.lot)}</td>
+      <td class="nw">${r.po && r.po !== '0' ? esc(r.po) : '—'}</td>
+      <td class="num ${r.qty < 0 ? 'tx-neg' : ''}">${f(r.qty)}</td>
+    </tr>`).join('');
+  return `<div class="tx-line"><b>${esc(x.sku)}</b> ${esc(x.name)}${x.perDay > 0 ? ` · ขายวันละ ${x.perDay.toFixed(1)}` : ''}
+      · <button class="tx-link" data-hist="${esc(x.sku)}">ดูประวัติ</button></div>
+    <div class="tx-cards">${card('ทั้งหมด', f(x.total))}${card('โลเปิด', f(x.open))}${card('สำรอง', f(x.reserve))}
+      ${card('QA, IQA, RIB', f(special(x)))}${card('โลเปิดพอขาย', cover, x.perDay > 0 ? coverCls(x.cover) : '')}</div>
+    ${OPENLOC && DATA.locs[OPENLOC] ? locPanel(DATA.locs[OPENLOC]) : ''}
+    ${x.rows.length ? `<div class="tx-wrap"><table class="tx-tbl"><thead><tr>
+        <th>Location</th><th>สถานะ</th><th class="num">LOT</th><th>PO</th><th class="num">จำนวน</th>
+      </tr></thead><tbody>${rows}</tbody></table></div>
+      <p class="tx-note">เรียงจากโลเปิด แล้วตาม LOT เก่าไปใหม่ · กดชื่อ Location เพื่อดูว่าที่นั่นมีอะไรอีก</p>`
+      : `<div class="tx-empty">SKU นี้ไม่มียอดคงเหลือแล้ว</div>`}`;
+}
+
+/** ของทั้งหมดในหนึ่ง Location */
+function locTable(l) {
+  return `<div class="tx-wrap"><table class="tx-tbl"><thead><tr>
+      <th>SKU</th><th>สถานะ</th><th class="num">LOT</th><th>PO</th><th class="num">จำนวน</th>
+    </tr></thead><tbody>${l.rows.slice(0, MAX).map(r => `<tr>
+      <td>${skuCell(DATA.skus[r.sku])}</td><td>${tag(r.bucket)}</td><td class="num">${esc(r.lot)}</td>
+      <td class="nw">${r.po && r.po !== '0' ? esc(r.po) : '—'}</td><td class="num ${r.qty < 0 ? 'tx-neg' : ''}">${f(r.qty)}</td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+
+function locSummary(l) {
+  const skus = new Set(l.rows.map(r => r.sku)).size;
+  return `<b>${esc(l.loc)}</b> มี ${f(skus)} SKU รวม ${f(l.qty)} ชิ้น`;
+}
+
+function locDetail(l) { return `<div class="tx-line">${locSummary(l)}</div>${locTable(l)}`; }
+
+function locPanel(l) {
+  return `<div class="tx-panel"><div class="top"><span>${locSummary(l)}</span><span class="sp"></span>
+      <button class="tx-opt" data-close-loc="1">ปิด</button></div>${locTable(l)}</div>`;
+}
+
+/* ── ข้อมูลผิด ──────────────────────────────────────────────────────────── */
+
+function rowLink(row) {
+  const u = WmsTx.rowUrl(RAW.sheet, row);
+  return u ? `<a class="tx-row" href="${esc(u)}" target="_blank" rel="noopener">${row}</a>` : String(row);
+}
+
+function rowLinks(i) {
+  if (i.kind === 'date') return `${rowLink(i.first)}–${rowLink(i.last)}`;
+  const more = i.rowCount - i.rows.length;
+  return i.rows.map(rowLink).join(', ') + (more > 0 ? ` <span class="tx-sub">และอีก ${f(more)} แถว</span>` : '');
+}
+
+function renderBad() {
+  const counts = RAW.issues.counts;
+  const kinds = WmsTx.ISSUES.filter(k => counts[k.kind]);
+  if (!kinds.length) { $('body').innerHTML = `<div class="tx-empty">ไม่พบจุดผิด — <b>เป็นเรื่องดี</b></div>`; return; }
+  if (!counts[KIND]) KIND = '';
+
+  const list = kinds.filter(k => !KIND || k.kind === KIND);
+  const rows = list.flatMap(k => RAW.issues.list.filter(i => i.kind === k.kind).map(i => `<tr>
+      <td class="nw">${esc(k.label)}</td><td>${esc(WmsTx.describeIssue(i))}</td><td>${rowLinks(i)}</td>
+    </tr>`)).join('');
+  const shown = list.reduce((a, k) => a + RAW.issues.list.filter(i => i.kind === k.kind).length, 0);
+  const total = list.reduce((a, k) => a + counts[k.kind], 0);
+
+  $('body').innerHTML =
+    `<div class="tx-cards">${kinds.map(k =>
+      `<button class="tx-card ${k.kind === KIND ? 'on' : ''}" data-kind="${k.kind}"><small>${esc(k.label)}</small><b>${f(counts[k.kind])}</b></button>`
+    ).join('')}</div>` +
+    (KIND ? `<div class="tx-line">${esc(list[0].note)} · <button class="tx-link" data-kind="">ดูทุกเรื่อง</button></div>` : '') +
+    `<div class="tx-wrap"><table class="tx-tbl"><thead><tr><th>เรื่อง</th><th>รายละเอียด</th><th>แถวในชีต</th></tr></thead><tbody>${rows}</tbody></table></div>` +
+    (shown < total ? `<p class="tx-note">แสดง ${f(shown)} จาก ${f(total)} รายการ เรียงจากยอดที่กระทบมากสุด</p>` : '') +
+    `<p class="tx-note">กดเลขแถวเพื่อเปิดชีตตรงแถวนั้น หน้านี้ไม่แก้ชีต แก้ในชีตแล้วกดดึงใหม่ รายการจะหายไปเอง</p>`;
+}
+
+/* ── ประวัติ ────────────────────────────────────────────────────────────── */
+
+function renderLog() {
+  $('body').innerHTML =
+    `<div class="tx-bar"><input class="tx-input" id="hq" type="search" autocomplete="off" spellcheck="false"
+       placeholder="รหัส SKU" value="${esc(HIST.sku)}"><button class="tx-opt on" id="hgo">ดูประวัติ</button></div><div id="hres"></div>`;
+  $('hgo').onclick = () => openHistory($('hq').value);
+  $('hq').addEventListener('keydown', (e) => { if (e.key === 'Enter') openHistory(e.target.value); });
+  renderHist();
+}
+
+function renderHist() {
+  const box = $('hres');
+  if (!box) return;
+  if (HIST.busy) { box.innerHTML = `<div class="tx-empty">⏳ ${esc(HIST.busy)}</div>`; return; }
+  if (HIST.err) { box.innerHTML = `<div class="tx-err">${esc(HIST.err)}</div>`; return; }
+  const h = HIST.data;
+  if (!h) { box.innerHTML = `<div class="tx-empty">ใส่รหัส SKU เพื่อดูว่าของเข้าออกเมื่อไหร่ ใครกรอก และยอดเปลี่ยนตรงแถวไหน</div>`; return; }
+  if (!h.count) { box.innerHTML = `<div class="tx-empty">ไม่พบ SKU "<b>${esc(h.sku)}</b>" ในชีต</div>`; return; }
+
+  const signed = (i) => i.change > 0 ? '+' + f(i.change) : i.change < 0 ? '−' + f(-i.change) : f(i.qty);
+  const label = (i) => i.type === 'เบิก' && i.from && i.to ? 'โอน' : (i.type || '—');
+  const where = (i) => i.from && i.to ? `${esc(i.from)} → ${esc(i.to)}` : esc(i.to || i.from);
+  const note = (i) => !i.note ? '' : `<span class="tx-sub">${WmsTx.isEvent(i.note) ? 'Event · ' : ''}${esc(i.note)}</span>`;
+  const link = h.sheet ? (r) => { const u = WmsTx.rowUrl(h.sheet, r); return `<a class="tx-row" href="${esc(u)}" target="_blank" rel="noopener">${r}</a>`; } : String;
+
+  box.innerHTML =
+    `<div class="tx-line"><b>${esc(h.sku)}</b> ${esc(h.name)} · ` +
+    `${h.items.length < h.count ? `${f(h.items.length)} รายการล่าสุดจาก ${f(h.count)}` : `${f(h.count)} รายการ`} · คงเหลือ ${f(h.left)}</div>` +
+    `<div class="tx-wrap"><table class="tx-tbl"><thead><tr>
+      <th>วันที่</th><th>รายการ</th><th>Location</th><th class="num">LOT</th><th class="num">จำนวน</th><th class="num">คงเหลือ</th><th>คนกรอก</th><th class="num">แถว</th>
+    </tr></thead><tbody>${h.items.map(i => `<tr>
+      <td class="nw">${i.approx && i.date ? '≈' : ''}${esc(WmsTx.shortDate(i.date))}</td>
+      <td>${esc(label(i))}${note(i)}</td><td class="nw">${where(i)}</td><td class="num">${esc(i.lot)}</td>
+      <td class="num ${i.change < 0 ? 'tx-neg' : ''}">${signed(i)}</td><td class="num">${f(i.left)}</td>
+      <td class="nw">${esc(i.who)}</td><td class="num">${link(i.row)}</td>
+    </tr>`).join('')}</tbody></table></div>
+    <p class="tx-note">≈ คือแถวนี้ไม่มีวันที่ของตัวเอง จึงยืมจากแถวก่อนหน้า · โอนย้ายไม่เปลี่ยนยอดรวมของ SKU</p>`;
+}
+
+async function openHistory(sku) {
+  const want = String(sku || '').trim();
+  if (!want) return;
+  HIST.sku = want; HIST.err = '';
+  const key = want.toUpperCase();
+  if (HCACHE.has(key)) { HIST.data = HCACHE.get(key); HIST.busy = ''; renderHist(); return; }
+  HIST.data = null;
+  HIST.busy = 'กำลังอ่านประวัติจากชีต…';
+  renderHist();
+  try {
+    const h = await WmsTx.pullHistory(WmsTx.savedUrl(), want, {
+      onProgress: (sec) => { HIST.busy = `กำลังอ่านประวัติจากชีต… ${sec} วินาที`; renderHist(); },
+    });
+    /* ผู้ใช้อาจกดดู SKU อื่นระหว่างรอ คำตอบเก่าที่มาทีหลังต้องไม่ทับตัวที่ดูอยู่ */
+    HCACHE.set(key, h);
+    if (HIST.sku.toUpperCase() !== key) return;
+    HIST.data = h;
+  } catch (err) {
+    if (HIST.sku.toUpperCase() !== key) return;
+    HIST.err = 'ดึงประวัติไม่สำเร็จ — ' + err.message;
+  }
+  HIST.busy = '';
+  renderHist();
+}
+
+/* ── รวม ────────────────────────────────────────────────────────────────── */
+
+function renderBody() {
+  if (!DATA) {
+    $('body').innerHTML = WmsTx.savedUrl()
+      ? `<div class="tx-empty">ยังไม่มีข้อมูล<br>กด <b>⬇️ ดึงข้อมูล</b> ที่แถบด้านบน</div>`
+      : `<div class="tx-empty">ยังไม่ได้เชื่อมกับชีต Transaction<br>
+          ติดตั้ง <b>apps-script/tx-api.gs</b> ในไฟล์ชีต แล้วใส่ URL ที่ <a href="../settings/">หน้าตั้งค่า</a></div>`;
+    return;
+  }
+  ({ fill: renderFill, find: renderFind, bad: renderBad, log: renderLog })[TAB]();
+}
+
+function renderAll() { renderSrc(); renderSum(); renderTabs(); renderBody(); }
+
+function goTab(id) { TAB = id; renderTabs(); renderBody(); }
+
+function goSku(sku, loc) {
+  Q = sku; SEL = { sku }; OPENLOC = loc || '';
+  goTab('find');
+}
+
+$('tabs').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-tab]');
+  if (b) goTab(b.dataset.tab);
+});
+
+$('body').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  const d = b.dataset;
+  if (d.days) { DAYS = +d.days; renderTabs(); renderFill(); }
+  else if (d.sku) goSku(d.sku, d.loc);
+  else if (d.onlyLoc) { Q = d.onlyLoc; SEL = { loc: d.onlyLoc }; OPENLOC = ''; renderFind(); }
+  else if (d.openLoc) { OPENLOC = d.openLoc; renderFound(); }
+  else if (d.closeLoc) { OPENLOC = ''; renderFound(); }
+  else if (d.kind !== undefined) { KIND = d.kind; renderBad(); }
+  else if (d.hist) { goTab('log'); openHistory(d.hist); $('hq').value = d.hist; }
+});
+
+load(WmsTx.read());
+renderAll();
+
+/* ปิดเบราว์เซอร์แล้วแคชหาย เปิดมาใหม่ควรเห็นของเลย ไม่ใช่ต้องกดปุ่มก่อนทุกเช้า
+   ลองครั้งเดียวต่อรอบเบราว์เซอร์ด้วยกติกาเดียวกับหน้าอื่น ปุ่มดึงใหม่ยังกดเองได้ */
+if (!RAW && WmsTx.savedUrl() && WmsGas.firstTry('tx:module')) pullNow();
+</script>
+</body>
+</html>

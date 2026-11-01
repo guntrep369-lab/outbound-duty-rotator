@@ -23,6 +23,7 @@
     transportToken: 'wms:transport:token',
     rosterUrl:      'wms:roster:url',
     rosterToken:    'wms:roster:token',
+    txUrl:          'wms:tx:url',
     me:             'wms:me',
   };
 
@@ -84,6 +85,13 @@
     /** ต้องตรงกับ ROSTER_TOKEN ใน Apps Script — สคริปต์ไม่รับคำขอที่ไม่มีรหัส เพราะในตารางกะมีชื่อพนักงาน */
     rosterToken: function () { return read(KEYS.rosterToken); },
     setRosterToken: function (v) { return write(KEYS.rosterToken, v); },
+
+    /**
+     * Apps Script URL ของชีต Transaction — ต้องเป็นสคริปต์ที่ผูกกับไฟล์ Transaction เอง
+     * เพราะคิดยอดจากทุกแถวในไฟล์นั้น (ดู apps-script/tx-api.gs) ไม่ต้องมีรหัส สคริปต์อ่านอย่างเดียว
+     */
+    txUrl: function () { return read(KEYS.txUrl); },
+    setTxUrl: function (v) { return write(KEYS.txUrl, v); },
 
     /**
      * ชื่อคนที่ใช้เครื่องนี้ — ติดไปกับไฟล์ที่บันทึกขึ้นส่วนกลาง
@@ -177,13 +185,13 @@
       try { names = Object.keys((JSON.parse(d['wms:sku:names'] || 'null') || {}).names || {}).length; } catch (e) {}
       return {
         orderUrl: !!d[KEYS.orderUrl], stockUrl: !!d[KEYS.stockUrl],
-        transportUrl: !!d[KEYS.transportUrl], rosterUrl: !!d[KEYS.rosterUrl], logo: !!d[KEYS.logo],
+        transportUrl: !!d[KEYS.transportUrl], rosterUrl: !!d[KEYS.rosterUrl], txUrl: !!d[KEYS.txUrl], logo: !!d[KEYS.logo],
         token: !!d[KEYS.transportToken],
         users: users, skus: skus, names: names,
         /* มีกุญแจอยู่ในไฟล์ไหม — ใช้เตือนตอนคนกำลังจะส่งไฟล์ต่อ */
         hasKeys: Object.keys(d).some(function (k) { return window.WmsSettings.kindOf(k) === 'key'; }),
         others: Object.keys(d).filter(function (k) {
-          return [KEYS.orderUrl, KEYS.stockUrl, KEYS.transportUrl, KEYS.rosterUrl, KEYS.logo,
+          return [KEYS.orderUrl, KEYS.stockUrl, KEYS.transportUrl, KEYS.rosterUrl, KEYS.txUrl, KEYS.logo,
                   'wms:users', 'wms:wh:sku'].indexOf(k) === -1;
         }).length,
         keys: Object.keys(d).length,
