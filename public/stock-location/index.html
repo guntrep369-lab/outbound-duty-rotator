@@ -106,6 +106,11 @@ a.tx-row{color:var(--wms-primary-dark)}
 .tx-csend button:disabled{opacity:.5;cursor:default}
 .tx-ok{color:#166534;font-weight:600}
 
+/* เทียบสต๊อก: จอแคบบีบช่องเบาะแสจนเรียงทีละคำ แถวจะสูงเกินจริง ให้ตารางเลื่อนข้างแทน */
+.tx-dif th:last-child,.tx-dif td:last-child{min-width:190px}
+.tx-dif .tx-link{font-weight:inherit}
+.tx-dif td:first-child .tx-link{font-weight:600}
+
 .tx-tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;white-space:nowrap}
 .tx-tag.open{background:#DCFCE7;color:#166534}
 .tx-tag.reserve{background:var(--wms-surface2);color:var(--wms-muted)}
@@ -170,7 +175,7 @@ button.tx-card.on{border-color:var(--wms-primary);background:var(--wms-primary-l
       <div class="ic"><img src="../icons/boxes.png" alt="" width="38" height="38"></div>
       <div>
         <h2>สต๊อกราย Location · Stock by Location</h2>
-        <p>โลเปิดไหนต้องเติม ของอยู่ตรงไหน แถวไหนในชีต Transaction ที่กรอกผิด และนับของจริงเทียบยอด — ไม่แก้ชีต Transaction</p>
+        <p>โลเปิดไหนต้องเติม ของอยู่ตรงไหน แถวไหนในชีต Transaction ที่กรอกผิด นับของจริงเทียบยอด และชนยอดกับระบบบริษัท — ไม่แก้ชีต Transaction</p>
       </div>
     </div>
   </div>
@@ -186,6 +191,7 @@ button.tx-card.on{border-color:var(--wms-primary);background:var(--wms-primary-l
 <script type="module" src="../wms-shell.js"></script>
 <script src="../wms-settings.js"></script>
 <script src="../wms-gas.js"></script>
+<script src="../wms-stock.js"></script>
 <script src="../wms-tx.js"></script>
 <script>
 const $ = id => document.getElementById(id);
@@ -209,13 +215,19 @@ const HIST = { sku: '', busy: '', err: '', data: null };
 const HCACHE = new Map();   // ประวัติที่ดูแล้วในรอบนี้ กดกลับไปดูซ้ำไม่ต้องรอสคริปต์อ่านทั้งชีตอีกรอบ
 const COUNT = { busy: '', err: '', data: null };   // ใบนับสต๊อก ดึงตอนเปิดแท็บ
 let DRAFT = {};       // ตัวเลขที่กรอกแล้วแต่ยังไม่ส่ง
+const STOCK = { busy: '', err: '', data: WmsStock.read() };   // ยอดจากระบบบริษัท แคชกองเดียวกับหน้าสต๊อกคงเหลือ
+let CMP = null;       // ผลเทียบ คิดครั้งเดียวต่อข้อมูลหนึ่งชุด
+let DKIND = '';       // ตัวกรองแท็บเทียบสต๊อก
+let DQ = '';          // คำค้นในแท็บเทียบสต๊อก
 
 const MAX = 300;   // มากกว่านี้เบราว์เซอร์เริ่มหน่วง เหมือนหน้าสต๊อกคงเหลือ
+const GAP_MS = 3600000;   // ดึงสองฝั่งห่างกันเกินนี้ ยอดที่ต่างอาจเป็นแค่งานที่ลงไปในระหว่างนั้น
+const MIN_FOUND = 0.5;    // รหัสเจอกันไม่ถึงครึ่ง น่าจะเป็นเพราะใช้รหัสคนละแบบ ไม่ใช่ยอดผิด
 const TAG = { open: 'เปิด', reserve: 'สำรอง', QA: 'QA', IQA: 'IQA', RIB: 'RIB' };
 const tag = b => `<span class="tx-tag ${b}">${TAG[b]}</span>`;
 
 const load = (s) => {
-  RAW = s; DATA = null;
+  RAW = s; DATA = null; CMP = null;
   if (!s) return;
   /* แคชจากโค้ดรุ่นก่อนอาจมีรูปไม่ตรงกับตัวจัดกลุ่มรุ่นนี้ ดึงใหม่ดีกว่าให้หน้าพังทั้งหน้า */
   try { DATA = WmsTx.expand(s); } catch (e) { RAW = null; console.warn('แคชใช้ไม่ได้ —', e.message); }
@@ -285,8 +297,8 @@ async function pullNow() {
 /* ── ยอดรวม + แท็บ ──────────────────────────────────────────────────────── */
 
 function renderSum() {
-  /* คนนับยืนหน้าชั้นด้วยมือถือ ยอดรวมทั้งคลังไม่ช่วยอะไรและดันรายการนับตกจอ */
-  if (!DATA || TAB === 'count') { $('sum').innerHTML = ''; return; }
+  /* คนนับยืนหน้าชั้นด้วยมือถือ ยอดรวมทั้งคลังไม่ช่วยอะไรและดันรายการนับตกจอ ส่วนแท็บเทียบสต๊อกมียอดรวมของตัวเอง */
+  if (!DATA || TAB === 'count' || TAB === 'diff') { $('sum').innerHTML = ''; return; }
   const t = DATA.totals;
   const stat = (label, v, sub) => `<div class="tx-stat"><small>${label}</small><b>${f(v)}</b>${sub ? `<i>${sub}</i>` : ''}</div>`;
   $('sum').innerHTML =
@@ -310,7 +322,8 @@ function renderTabs() {
     count.bad = issueTotal();
   }
   if (COUNT.data) count.count = WmsTx.countStats(COUNT.data).todo.length;
-  const list = [['fill', 'ต้องเติม'], ['count', 'นับสต๊อก'], ['find', 'หาของ'], ['bad', 'ข้อมูลผิด'], ['log', 'ประวัติ']];
+  if (comparison()) count.diff = comparison().rows.length;
+  const list = [['fill', 'ต้องเติม'], ['count', 'นับสต๊อก'], ['diff', 'เทียบสต๊อก'], ['find', 'หาของ'], ['bad', 'ข้อมูลผิด'], ['log', 'ประวัติ']];
   $('tabs').innerHTML = list.map(([id, label]) =>
     `<button class="tx-tab ${id === TAB ? 'on' : ''}" role="tab" aria-selected="${id === TAB}" data-tab="${id}">${label}` +
     `${count[id] !== undefined ? ` <span class="n">${f(count[id])}</span>` : ''}</button>`
@@ -683,6 +696,122 @@ $('body').addEventListener('keydown', (e) => {
   if (next) next.focus(); else e.target.blur();
 });
 
+/* ── เทียบสต๊อก ─────────────────────────────────────────────────────────── */
+
+function comparison() {
+  if (!CMP && RAW && STOCK.data) CMP = WmsTx.compareStock(RAW, STOCK.data.map);
+  return CMP;
+}
+
+const clock = (at) => new Date(at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+
+function clueCell(r) {
+  const out = r.breaks.map(b => `${esc(b.label)} แถว ${b.rows.slice(0, 2).map(rowLink).join(', ')}`);
+  if (r.neg) out.push(`ติดลบ ${f(r.neg)} จุด`);
+  if (r.equalsAt.length) {
+    out.push(`ต่างเท่ายอดที่ ${r.equalsAt.map(l => r.ledger
+      ? `<button class="tx-link" data-sku="${esc(r.ledger)}" data-loc="${esc(l)}">${esc(l)}</button>` : esc(l)).join(', ')} พอดี`);
+  }
+  return out.length ? out.map(x => `<span class="tx-sub">${x}</span>`).join('') : '–';
+}
+
+function renderDiffRows() {
+  const box = $('dres');
+  if (!box) return;
+  const c = comparison();
+  const list = WmsTx.filterDiff(c.rows, DKIND, DQ);
+  if (!list.length) {
+    box.innerHTML = `<div class="tx-empty">${DQ.trim() ? `ไม่พบ "<b>${esc(DQ)}</b>" ใน SKU ที่ไม่ตรง SKU นี้อาจตรงกันอยู่แล้ว` : 'ไม่มีรายการ — <b>เป็นเรื่องดี</b>'}</div>`;
+    return;
+  }
+  const kind = WmsTx.DIFFS.find(k => k.kind === DKIND);
+  box.innerHTML =
+    (kind ? `<p class="tx-why">${esc(kind.note)}</p>` : '') +
+    /* ช่องต่างอยู่ติด SKU เพราะเป็นเลขที่มาดู บนมือถือจะได้เห็นโดยไม่ต้องเลื่อนตาราง */
+    `<div class="tx-wrap"><table class="tx-tbl tx-dif"><thead><tr>
+      <th>SKU</th><th class="num">ต่าง</th><th class="num">ระบบบริษัท</th><th class="num">Transaction</th><th>เบาะแส</th>
+    </tr></thead><tbody>${list.slice(0, MAX).map(r => `<tr>
+      <td>${r.ledger ? `<button class="tx-link" data-sku="${esc(r.ledger)}">${esc(r.sku)}</button>` : esc(r.sku)}<span class="tx-sub tx-name">${esc(r.name)}</span></td>
+      <td class="num tx-neg">${esc(WmsTx.diffText(r.diff))}</td>
+      <td class="num">${f(r.sys)}${r.sys ? `<span class="tx-sub">QA ${f(r.qa)} · NEW WH ${f(r.newwh)}</span>` : ''}</td>
+      <td class="num">${f(r.tx)}</td>
+      <td>${clueCell(r)}</td>
+    </tr>`).join('')}</tbody></table></div>` +
+    (list.length > MAX ? `<p class="tx-note">แสดง ${f(MAX)} จาก ${f(list.length)} รายการ เรียงจากต่างมากสุด</p>` : '');
+}
+
+function renderDiff() {
+  if (!STOCK.data) {
+    $('body').innerHTML = !WmsStock.savedUrl()
+      ? `<div class="tx-empty">ยังไม่ได้ตั้ง URL ของสต๊อกคงเหลือ<br>ใส่ได้ที่ <a href="../settings/">หน้าตั้งค่า</a></div>`
+      : STOCK.err
+        ? `<div class="tx-warn">${esc(STOCK.err)}</div><button class="tx-opt" data-diff-pull="1">ลองใหม่</button>`
+        : `<div class="tx-empty">⏳ <span id="dbusy">${esc(STOCK.busy || 'กำลังดึงยอดจากระบบบริษัท…')}</span></div>`;
+    return;
+  }
+  const c = comparison();
+  if (DKIND && !c.counts[DKIND]) DKIND = '';
+  const total = c.same + c.rows.length;
+  const gap = Math.abs(STOCK.data.at - RAW.at);
+  const busy = !!(STOCK.busy || PULLING);
+  const stockWhen = `${STOCK.data.source === 'file' ? 'จากไฟล์' : 'ดึงเมื่อ'} <b>${esc(clock(STOCK.data.at))}</b>`;
+  const card = (id, label, n) =>
+    `<button class="tx-card ${id === DKIND ? 'on' : ''}" data-diff-kind="${id}"><small>${esc(label)}</small><b>${f(n)}</b></button>`;
+
+  $('body').innerHTML =
+    `<div class="tx-bar"><span>ระบบบริษัท ${stockWhen} · Transaction ดึงเมื่อ <b>${esc(clock(RAW.at))}</b>${RAW.lastDate ? ` ขายถึง <b>${esc(WmsTx.shortDate(RAW.lastDate))}</b>` : ''}</span>
+      <button class="tx-opt" data-diff-pull="1" ${busy ? 'disabled' : ''}>${busy ? 'กำลังดึง…' : '🔄 ดึงใหม่ทั้งสองฝั่ง'}</button>
+      <span id="dbusy">${esc(STOCK.busy)}</span></div>` +
+    (STOCK.err ? `<div class="tx-warn">${esc(STOCK.err)} ตัวเลขด้านล่างเป็นยอดที่ดึงไว้รอบก่อน</div>` : '') +
+    (gap > GAP_MS ? `<div class="tx-warn">ดึงสองฝั่งห่างกันราว <b>${f(Math.max(1, gap / 3600000))} ชั่วโมง</b> ยอดที่ต่างอาจมาจากเวลาที่ดึงไม่พร้อมกัน กดดึงใหม่ทั้งสองฝั่งก่อนเชื่อผล</div>` : '') +
+    (c.ledger && c.found / c.ledger < MIN_FOUND ? `<div class="tx-warn">รหัสสินค้าสองฝั่งตรงกันแค่ <b>${f(c.found)} จาก ${f(c.ledger)} SKU</b> สองฝั่งอาจใช้รหัสคนละแบบ ผลด้านล่างจึงยังเชื่อไม่ได้</div>` : '') +
+    `<div class="tx-cards">
+      <div class="tx-card"><small>ตรงกัน</small><b>${total ? Math.round(c.same / total * 100) : 0}%</b><small>${f(c.same)} จาก ${f(total)} SKU</small></div>
+      ${card('', 'ไม่ตรงทั้งหมด', c.rows.length)}
+      ${WmsTx.DIFFS.filter(k => c.counts[k.kind]).map(k => card(k.kind, k.label, c.counts[k.kind])).join('')}
+    </div>` +
+    `<p class="tx-why">รวมทั้งคลัง ระบบบริษัท ${f(c.sys)} · Transaction ${f(c.tx)} · ต่างกันรวม ${f(c.off)} ชิ้น (ถ้าหักบวกลบกันเหลือ ${esc(WmsTx.diffText(c.sys - c.tx))})</p>` +
+    `<div class="tx-bar"><input class="tx-input" id="dq" type="search" autocomplete="off" spellcheck="false"
+       placeholder="หารหัส SKU หรือชื่อสินค้าในรายการที่ไม่ตรง" value="${esc(DQ)}"></div><div id="dres"></div>` +
+    `<p class="tx-note">ต่าง = ระบบบริษัท − Transaction · ระบบบริษัทรู้แค่ยอดรวม จึงเทียบได้ระดับ SKU ไม่ใช่ Location
+      · ยอด Transaction หักจุดติดลบแล้ว · เวลาดึงคือเวลาที่แอปอ่าน ไม่ใช่เวลาที่ระบบบริษัทอัปเดต
+      · กด SKU เพื่อดูว่าของอยู่ Location ไหนแล้วไปนับ ของจริงตรงกับฝั่งไหน อีกฝั่งคือฝั่งที่ต้องแก้ หน้านี้ไม่แก้ข้อมูลทั้งสองฝั่ง</p>`;
+  $('dq').addEventListener('input', (e) => { DQ = e.target.value; renderDiffRows(); });
+  renderDiffRows();
+}
+
+/** วาดเฉพาะตรงนี้ตอนนับวินาที วาดใหม่ทั้งแท็บแล้วช่องค้นจะหลุด */
+function showStockBusy() {
+  const el = $('dbusy');
+  if (el) el.textContent = STOCK.busy;
+}
+
+async function pullStock() {
+  const url = WmsStock.savedUrl();
+  if (!url || STOCK.busy) return;
+  STOCK.err = '';
+  STOCK.busy = 'กำลังดึงยอดจากระบบบริษัท…';
+  if (TAB === 'diff') renderBody();
+  try {
+    await WmsStock.pull(url, {
+      onProgress: (sec) => { STOCK.busy = `กำลังดึงยอดจากระบบบริษัท… ${sec} วินาที`; showStockBusy(); },
+      onRetry: () => { STOCK.busy = 'ไม่สำเร็จ กำลังลองใหม่…'; showStockBusy(); },
+    });
+    STOCK.data = WmsStock.read();
+    CMP = null;
+  } catch (err) {
+    STOCK.err = 'ดึงยอดจากระบบบริษัทไม่สำเร็จ — ' + err.message;
+  }
+  STOCK.busy = '';
+  renderTabs();
+  if (TAB === 'diff') renderBody();
+}
+
+async function pullBoth() {
+  await Promise.all([pullNow(), pullStock()]);
+  if (TAB === 'diff') renderBody();
+}
+
 /* ── รวม ────────────────────────────────────────────────────────────────── */
 
 function renderBody() {
@@ -695,7 +824,7 @@ function renderBody() {
           ติดตั้ง <b>apps-script/tx-api.gs</b> ในไฟล์ชีต แล้วใส่ URL ที่ <a href="../settings/">หน้าตั้งค่า</a></div>`;
     return;
   }
-  ({ fill: renderFill, find: renderFind, bad: renderBad, log: renderLog })[TAB]();
+  ({ fill: renderFill, diff: renderDiff, find: renderFind, bad: renderBad, log: renderLog })[TAB]();
 }
 
 function renderAll() { renderSrc(); renderSum(); renderTabs(); renderBody(); }
@@ -706,6 +835,7 @@ function goTab(id) {
   renderTabs();
   renderBody();
   if (id === 'count' && !COUNT.data) loadCount();
+  if (id === 'diff' && !STOCK.data && !STOCK.err) pullStock();
 }
 
 function goSku(sku, loc) {
@@ -730,6 +860,8 @@ $('body').addEventListener('click', (e) => {
   else if (d.goTab) goTab(d.goTab);
   else if (d.countSend) sendCount();
   else if (d.countReload) loadCount();
+  else if (d.diffPull) pullBoth();
+  else if (d.diffKind !== undefined) { DKIND = d.diffKind; renderDiff(); }
   else if (d.kind !== undefined) { KIND = d.kind; renderBad(); }
   else if (d.hist) { goTab('log'); openHistory(d.hist); $('hq').value = d.hist; }
 });

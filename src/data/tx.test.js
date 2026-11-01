@@ -851,6 +851,154 @@ describe('wms-tx.js', () => {
   });
 });
 
+describe('wms-tx.js — เทียบกับระบบบริษัท', () => {
+  let WmsTx;
+
+  beforeEach(() => {
+    const win = {};
+    new Function('window', 'sessionStorage', 'console', JS)(win, { getItem: () => null, setItem: () => {} }, { warn: () => {} });
+    WmsTx = win.WmsTx;
+  });
+
+  const co = (sku, total, qa = 0, newwh = total) => ({ sku, description: `ชื่อ ${sku}`, qa, newwh, total });
+  const map = (...list) => Object.fromEntries(list.map((s) => [s.sku, s]));
+  const raw = (o) => ({
+    skus: [['AAA001', 'LONG-1', 'หมอน'], ['BBB002', 'LONG-2', 'ที่นอน'], ['CCC003', 'LONG-3', 'ผ้านวม']],
+    locs: ['A-01-01', 'A-01-02', 'จุดรอส่ง', 'QA'],
+    keys: [],
+    issues: { counts: {}, list: [] },
+    ...o,
+  });
+  const LEDGER = raw({ keys: [[0, 8, '1', 0, 100, 0], [1, 8, '2', 0, 50, 0], [2, 8, '3', 0, 30, 0]] });
+  const rowOf = (r, sku) => r.rows.find((x) => x.sku === sku);
+
+  it('ต่าง = ระบบบริษัท − Transaction เรียงจากต่างมากสุด และตัวที่ตรงไม่อยู่ในรายการ', () => {
+    const r = WmsTx.compareStock(LEDGER, map(co('LONG-1', 100), co('LONG-2', 55), co('LONG-3', 10)));
+    expect(r.rows.map((x) => [x.sku, x.sys, x.tx, x.diff])).toEqual([['CCC003', 10, 30, -20], ['BBB002', 55, 50, 5]]);
+    expect(r.same).toBe(1);
+    expect(r).toMatchObject({ sys: 165, tx: 180, off: 25 });
+  });
+
+  it('แยกทิศทาง: ฝั่งไหนมากกว่า และตัวที่มีแค่ฝั่งเดียว', () => {
+    const r = WmsTx.compareStock(LEDGER, map(co('LONG-1', 120), co('LONG-2', 40), co('ZZZ999', 7)));
+    expect(Object.fromEntries(r.rows.map((x) => [x.sku, x.kind]))).toEqual({
+      AAA001: 'more', BBB002: 'less', CCC003: 'txonly', ZZZ999: 'sysonly',
+    });
+    expect(r.counts).toEqual({ more: 1, less: 1, sysonly: 1, txonly: 1 });
+  });
+
+  it('จุดติดลบหักในยอด SKU เพราะกรอก LOT ผิดจะบวกจุดหนึ่ง ลบอีกจุดหนึ่ง', () => {
+    const s = raw({ keys: [[0, 8, '1', 0, 100, 0], [0, 9, '1', 1, -10, 0]] });
+    const r = WmsTx.compareStock(s, map(co('LONG-1', 90)));
+    expect(r.rows).toEqual([]);
+    expect(r.same).toBe(1);
+  });
+
+  it('จับคู่ด้วยรหัสเต็มหรือรหัสสั้นก็ได้ ตัวพิมพ์เล็กใหญ่และเว้นวรรคไม่มีผล', () => {
+    expect(WmsTx.compareStock(LEDGER, map(co('AAA001', 100), co('bbb 002', 50), co('long-3', 30))).same).toBe(3);
+  });
+
+  it('รหัสสั้นเดียวมีรหัสเต็มสองตัว ถ้าระบบบริษัทใช้รหัสสั้นต้องรวมเป็นแถวเดียว', () => {
+    const s = raw({ skus: [['AAA001', 'LONG-1', 'หมอน'], ['AAA001', 'LONG-9', 'หมอน']], keys: [[0, 8, '1', 0, 10, 0], [1, 8, '1', 1, 5, 0]] });
+    const r = WmsTx.compareStock(s, map(co('AAA001', 15)));
+    expect(r.rows).toEqual([]);
+    expect(r.same).toBe(1);
+  });
+
+  it('SKU ที่ขายอยู่แต่ชีตเหลือ 0 แล้วระบบบริษัทยังมีของ ต้องขึ้นรายการและกดดูในชีตได้', () => {
+    const r = WmsTx.compareStock(raw({ skus: [['AAA001', 'LONG-1', 'หมอน']] }), map(co('LONG-1', 4)));
+    expect(r.rows[0]).toMatchObject({ sku: 'AAA001', ledger: 'AAA001', name: 'หมอน', sys: 4, tx: 0, kind: 'sysonly' });
+  });
+
+  it('SKU ที่มีแค่ในระบบบริษัท ใช้รหัสและชื่อจากระบบบริษัท และไม่มีให้กดดูในชีต', () => {
+    const r = WmsTx.compareStock(raw(), map(co('ZZZ999', 4)));
+    expect(r.rows[0]).toMatchObject({ sku: 'ZZZ999', ledger: '', name: 'ชื่อ ZZZ999' });
+  });
+
+  it('ศูนย์ทั้งสองฝั่งไม่นับเป็นตรงกัน ไม่งั้นเปอร์เซ็นต์ความตรงจะสูงเกินจริง', () => {
+    const r = WmsTx.compareStock(raw(), map(co('ZZZ999', 0)));
+    expect(r.same).toBe(0);
+    expect(r.rows).toEqual([]);
+  });
+
+  it('แสดงยอดแยก QA / NEW WH ของระบบบริษัท และไฟล์ที่ไม่มีช่อง Total ใช้ผลบวกแทน', () => {
+    const r = WmsTx.compareStock(raw(), map(co('ZZZ999', 0, 3, 4)));
+    expect(r.rows[0]).toMatchObject({ sys: 7, qa: 3, newwh: 4 });
+  });
+
+  it('นับว่ารหัสสองฝั่งเจอกันกี่ตัว เพื่อเตือนเมื่อสองฝั่งใช้รหัสคนละแบบ', () => {
+    const r = WmsTx.compareStock(LEDGER, map(co('LONG-1', 100), co('XXX', 5)));
+    expect(r).toMatchObject({ found: 1, ledger: 3 });
+  });
+
+  describe('เบาะแส', () => {
+    it('นับจุดติดลบของ SKU', () => {
+      const s = raw({ keys: [[0, 8, '1', 0, 100, 0], [0, 9, '1', 1, -3, 0], [0, 7, '1', 3, -2, 0]] });
+      expect(WmsTx.compareStock(s, map(co('LONG-1', 60))).rows[0].neg).toBe(2);
+    });
+
+    it('แถวที่ทำให้ยอดเพี้ยนจริงติดมาด้วยพร้อมเลขแถว เรื่องที่ไม่กระทบยอดรวมไม่เอามา', () => {
+      const s = raw({
+        keys: LEDGER.keys,
+        issues: { counts: {}, list: [
+          { kind: 'qty', sku: 'AAA001', rows: [12], rowCount: 1 },
+          { kind: 'incomplete', sku: 'aaa001', what: 'QTY', rows: [13], rowCount: 1 },
+          { kind: 'closedsale', sku: 'AAA001', rows: [14], rowCount: 1 },
+          { kind: 'qty', sku: 'ไม่มีใน skus', rows: [15], rowCount: 1 },
+        ] },
+      });
+      expect(rowOf(WmsTx.compareStock(s, map(co('LONG-1', 90))), 'AAA001').breaks).toEqual([
+        { label: 'QTY ไม่ใช่ตัวเลข', rows: [12] }, { label: 'แถวไม่ครบ', rows: [13] },
+      ]);
+    });
+
+    it('ชีตมากกว่าเท่ากับยอดของ Location หนึ่งพอดี บอกว่าเป็นที่ไหน', () => {
+      const s = raw({ keys: [[0, 8, '1', 0, 100, 0], [0, 8, '1', 2, 6, 0]] });
+      expect(WmsTx.compareStock(s, map(co('LONG-1', 100))).rows[0].equalsAt).toEqual(['จุดรอส่ง']);
+    });
+
+    it('ระบบบริษัทมากกว่าเท่ากับจุดติดลบพอดี ก็บอกเหมือนกัน', () => {
+      const s = raw({ keys: [[0, 8, '1', 0, 100, 0], [0, 9, '1', 1, -6, 0]] });
+      expect(WmsTx.compareStock(s, map(co('LONG-1', 100))).rows[0].equalsAt).toEqual(['A-01-02']);
+    });
+
+    it('หลาย LOT รวมกันใน Location เดียวเท่ายอดที่ต่าง ก็นับ', () => {
+      const s = raw({ keys: [[0, 8, '1', 0, 100, 0], [0, 8, '1', 2, 4, 0], [0, 9, '1', 2, 2, 0]] });
+      expect(WmsTx.compareStock(s, map(co('LONG-1', 100))).rows[0].equalsAt).toEqual(['จุดรอส่ง']);
+    });
+
+    it('ทิศทางไม่เข้ากันไม่นับ: ระบบบริษัทมากกว่า 6 ไม่ได้แปลว่าเกี่ยวกับจุดที่มีของ 6 ชิ้น', () => {
+      const s = raw({ keys: [[0, 8, '1', 0, 100, 0], [0, 8, '1', 2, 6, 0]] });
+      expect(WmsTx.compareStock(s, map(co('LONG-1', 112))).rows[0].equalsAt).toEqual([]);
+    });
+
+    it('ระบบบริษัทเป็น 0 ทุกจุดในชีตคือส่วนที่ต่าง ไม่ต้องบอกว่าเท่าจุดไหน', () => {
+      const s = raw({ keys: [[0, 8, '1', 0, 6, 0]] });
+      expect(WmsTx.compareStock(s, map(co('LONG-1', 0))).rows[0].equalsAt).toEqual([]);
+    });
+
+    it('ต่าง 1 ชิ้นเท่ากันได้ทุกที่ ไม่แสดง', () => {
+      const s = raw({ keys: [[0, 8, '1', 0, 10, 0], [0, 8, '1', 2, 1, 0]] });
+      expect(WmsTx.compareStock(s, map(co('LONG-1', 10))).rows[0].equalsAt).toEqual([]);
+    });
+
+    it('เท่ากันหลายจุดเกินไปบอกไม่ได้ว่าจุดไหน ไม่แสดง', () => {
+      const s = raw({ keys: [[0, 8, '1', 0, 5, 0], [0, 8, '1', 1, 5, 0], [0, 8, '1', 2, 5, 0]] });
+      expect(WmsTx.compareStock(s, map(co('LONG-1', 10))).rows[0].equalsAt).toEqual([]);
+    });
+  });
+
+  it('กรองตามแบบและคำค้น ค้นได้ทั้งรหัสสองแบบและชื่อ', () => {
+    const { rows } = WmsTx.compareStock(LEDGER, map(co('LONG-1', 120), co('LONG-2', 40)));
+    expect(WmsTx.filterDiff(rows, '', '').length).toBe(3);
+    expect(WmsTx.filterDiff(rows, 'more', '').map((r) => r.sku)).toEqual(['AAA001']);
+    expect(WmsTx.filterDiff(rows, '', 'long-2').map((r) => r.sku)).toEqual(['BBB002']);
+    expect(WmsTx.filterDiff(rows, '', 'ccc003').map((r) => r.sku)).toEqual(['CCC003']);
+    expect(WmsTx.filterDiff(rows, '', 'ที่ นอน').map((r) => r.sku)).toEqual(['BBB002']);
+    expect(WmsTx.filterDiff(rows, 'more', 'ที่นอน')).toEqual([]);
+  });
+});
+
 describe('wms-tx.js — นับสต๊อก', () => {
   let WmsTx, win, store;
 

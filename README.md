@@ -315,6 +315,7 @@ number. The one thing it writes is its own `นับสต๊อก` tab, which
 | --- | --- |
 | ต้องเติม | Which SKUs will run out of the open locations within 2 or 3 days, and where to pull from (oldest LOT first, LOT 0 last) |
 | นับสต๊อก | Today's 20 lines to count, and how accurate the stock is |
+| เทียบสต๊อก | Which SKUs differ between the company system and this sheet, and by how much |
 | หาของ | Where a SKU is, or what is in a Location |
 | ข้อมูลผิด | Rows that look wrong, each linking to that row in the sheet |
 | ประวัติ | Every movement of one SKU, with a running total |
@@ -340,6 +341,21 @@ a counter's phone, use `/stock-location/?tab=count`.
 - Stock accuracy counts only the random lines, because risky lines were picked for being likely wrong.
 - A result can be written once. Anyone with the URL can fill in today's blank results, but can't add lines
   or change a result that's already saved.
+
+**How the stock comparison works.** The company system knows one number per SKU, not the Location, so the
+เทียบสต๊อก tab compares the two sides per SKU. It reads the same URL as สต๊อกคงเหลือ (`/stock`), so the
+script doesn't need redeploying, and it changes neither side.
+
+- Difference = company system − Transaction. The Transaction side includes negative spots, because a wrong
+  LOT shows as plus in one spot and minus in another while the SKU total stays right.
+- SKUs match on the sheet's long code first, then its short code. If fewer than half of the sheet's SKUs are
+  found, the tab warns that the two sides may use different codes.
+- Each row can show clues: rows that change the SKU's total (QTY that isn't a number, incomplete rows),
+  negative spots, and a Location whose balance equals the difference.
+- A warning appears when the two sides were pulled more than an hour apart. The times shown are when the app
+  read the data, not when the company system last updated it.
+- QA and NEW WH are shown but not compared, because the company's QA warehouse may not line up with the
+  sheet's QA Location.
 
 **Setup (once):**
 

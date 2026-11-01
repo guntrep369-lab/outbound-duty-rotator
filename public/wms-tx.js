@@ -359,7 +359,120 @@
     catch (e) { return ''; }
   }
 
+  /* ── เทียบกับระบบบริษัท ──────────────────────────────────────────────────── */
+
+  /** ทิศทางของยอดที่ต่าง พร้อมสาเหตุที่น่าจะเป็น ลำดับนี้คือลำดับที่แสดงบนหน้าเว็บ */
+  var DIFFS = [
+    { kind: 'more',    label: 'ระบบบริษัทมากกว่า',   note: 'ชีตตัดออกเกินหรือรับเข้าไม่ครบ หรือระบบบริษัทยังไม่ได้ตัด' },
+    { kind: 'less',    label: 'Transaction มากกว่า', note: 'ระบบบริษัทตัดไปแล้วแต่ชีตยังไม่ลง หรือชีตรับเข้าซ้ำ' },
+    { kind: 'sysonly', label: 'มีแค่ในระบบบริษัท',   note: 'ชีตเหลือ 0 หรือไม่มี SKU นี้ ทั้งที่ระบบบริษัทยังมีของ' },
+    { kind: 'txonly',  label: 'มีแค่ใน Transaction', note: 'ชีตยังมีของ แต่ระบบบริษัทเหลือ 0 หรือไม่มีรหัสนี้' },
+  ];
+
+  /** ปัญหาในชีตที่ทำให้ยอดรวมของ SKU เพี้ยนได้จริง เรื่องอื่นใน ISSUES ไม่กระทบยอดรวม */
+  var BREAKS = ['qty', 'incomplete'];
+
+  /** ต่างแค่ 1 ชิ้น มีจุดที่เหลือ 1 ชิ้นเท่ากันได้ทุก SKU เบาะแสจึงไม่มีความหมาย */
+  var MIN_CLUE = 2;
+  /** ถ้าเท่ากันหลายจุดเกินนี้ก็บอกไม่ได้ว่าจุดไหน ไม่ต้องแสดง */
+  var MAX_CLUE_LOCS = 2;
+
+  /** Location ที่ถ้าตัดออกจากยอดชีตแล้วสองฝั่งเท่ากันพอดี เช่นของที่ระบบบริษัทตัดแล้วแต่ในชีตยังวางอยู่จุดรอส่ง */
+  function equalsAt(lines, diff) {
+    if (Math.abs(diff) < MIN_CLUE) return [];
+    var sums = {}, hit = {};
+    lines.forEach(function (l) {
+      sums[l.loc] = (sums[l.loc] || 0) + l.qty;
+      if (l.qty === -diff) hit[l.loc] = 1;
+    });
+    Object.keys(sums).forEach(function (loc) { if (sums[loc] === -diff) hit[loc] = 1; });
+    var list = Object.keys(hit);
+    return list.length > MAX_CLUE_LOCS ? [] : list;
+  }
+
+  /**
+   * ชนยอดสต๊อกคงเหลือจากระบบบริษัทกับยอดจากชีต Transaction ราย SKU
+   *
+   * ระบบบริษัทรู้แค่ตัวเลข ไม่รู้ Location จึงเทียบได้แค่ยอดรวมของ SKU และต้องหักจุดติดลบด้วย
+   * เพราะกรอก LOT ผิดจะเป็นบวกจุดหนึ่ง ลบอีกจุดหนึ่งของของชิ้นเดียวกัน ยอดรวมยังถูก
+   *
+   * ชีตมีรหัสสองคอลัมน์ จึงจับคู่ทีละ SKU ลองรหัสเต็มก่อนแล้วค่อยรหัสสั้น
+   * ยังไม่เทียบแยก QA / NEW WH เพราะคลัง QA ในระบบบริษัทไม่ได้ตรงกับ Location QA ในชีตเสมอไป
+   *
+   * @param raw คำตอบ tx-summary
+   * @param stock map จาก WmsStock คือ sku → {sku,description,qa,newwh,total}
+   * @returns {{rows:Array, same:number, counts:Object, sys:number, tx:number, off:number, found:number, ledger:number}}
+   *   rows คือ SKU ที่ไม่ตรง เรียงจากต่างมากสุด ส่วน found / ledger คือ SKU ที่มียอดในชีตและหาเจอในระบบบริษัท
+   */
+  function compareStock(raw, stock) {
+    function code(s) { return String(s === null || s === undefined ? '' : s).toUpperCase().replace(/\s+/g, ''); }
+
+    var sys = {};
+    Object.keys(stock).forEach(function (k) { sys[code(k)] = stock[k]; });
+
+    var groups = {};
+    function groupOf(t) {
+      var c = sys[code(t[1])] ? code(t[1]) : sys[code(t[0])] ? code(t[0]) : code(t[0] || t[1]);
+      return groups[c] || (groups[c] = { ledger: t[0] || t[1], long: t[1], name: t[2], tx: 0, neg: 0, lines: [], breaks: [] });
+    }
+
+    var byShort = {};
+    raw.skus.forEach(function (t) { byShort[code(t[0] || t[1])] = groupOf(t); });
+    raw.keys.forEach(function (k) {
+      var g = groupOf(raw.skus[k[0]]);
+      g.tx += k[4];
+      if (k[4] < 0) g.neg++;
+      g.lines.push({ loc: raw.locs[k[3]], qty: k[4] });
+    });
+    raw.issues.list.forEach(function (i) {
+      var g = byShort[code(i.sku)];
+      if (!g || BREAKS.indexOf(i.kind) === -1) return;
+      var def = ISSUES.filter(function (x) { return x.kind === i.kind; })[0];
+      g.breaks.push({ label: def.label, rows: i.rows });
+    });
+    Object.keys(sys).forEach(function (c) {
+      if (!groups[c]) groups[c] = { ledger: '', long: '', name: '', tx: 0, neg: 0, lines: [], breaks: [] };
+    });
+
+    var out = { rows: [], same: 0, counts: { more: 0, less: 0, sysonly: 0, txonly: 0 }, sys: 0, tx: 0, off: 0, found: 0, ledger: 0 };
+    Object.keys(groups).forEach(function (c) {
+      var g = groups[c], s = sys[c];
+      var n = s ? (s.total || s.qa + s.newwh) : 0;
+      out.sys += n;
+      out.tx += g.tx;
+      if (g.tx !== 0) { out.ledger++; if (s) out.found++; }
+      if (!n && !g.tx) return;
+      var diff = n - g.tx;
+      if (!diff) { out.same++; return; }
+      var kind = !g.tx ? 'sysonly' : !n ? 'txonly' : diff > 0 ? 'more' : 'less';
+      out.counts[kind]++;
+      out.off += Math.abs(diff);
+      out.rows.push({
+        sku: g.ledger || s.sku, ledger: g.ledger, long: g.long, name: g.name || (s ? s.description : ''),
+        sys: n, qa: s ? s.qa : 0, newwh: s ? s.newwh : 0, tx: g.tx, diff: diff, kind: kind,
+        /* ระบบบริษัทเป็น 0 ทุกจุดในชีตคือส่วนที่ต่าง การบอกว่าเท่าจุดไหนจึงไม่ได้ช่วยแคบลง */
+        neg: g.neg, breaks: g.breaks, equalsAt: n ? equalsAt(g.lines, diff) : [],
+      });
+    });
+    out.rows.sort(function (a, b) {
+      return Math.abs(b.diff) - Math.abs(a.diff) || String(a.sku).localeCompare(String(b.sku));
+    });
+    return out;
+  }
+
+  /** กรองรายการที่ไม่ตรงตามแบบและคำค้น ค้นได้ทั้งรหัสสองแบบและชื่อสินค้า */
+  function filterDiff(rows, kind, q) {
+    var n = norm(q);
+    return rows.filter(function (r) {
+      if (kind && r.kind !== kind) return false;
+      return !n || norm(r.sku).indexOf(n) !== -1 || norm(r.long).indexOf(n) !== -1 || norm(r.name).indexOf(n) !== -1;
+    });
+  }
+
   window.WmsTx = {
+    DIFFS: DIFFS,
+    compareStock: compareStock,
+    filterDiff: filterDiff,
     countStats: countStats,
     diffText: diffText,
     readDraft: readDraft,
