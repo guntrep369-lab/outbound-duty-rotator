@@ -174,40 +174,51 @@
 
   /* ── จุดที่ข้อมูลผิด ──────────────────────────────────────────────────── */
 
-  /** เรียงตามที่กระทบยอดมากไปน้อย ลำดับนี้คือลำดับที่แสดงบนหน้าเว็บด้วย */
-  var ISSUES = [
-    { kind: 'baddate',    label: 'วันที่ขายอ่านไม่ออก', note: 'ยอดขายของแถวพวกนี้ไม่ถูกนับ รายการต้องเติมจึงอาจขาดไป' },
-    { kind: 'mixed',     label: 'Status ปนกัน',       note: 'จุดเดียวกันเคยรับเข้าทั้งแบบว่างและแบบเปิด สูตรในชีตยอดจะหักแถวออกซ้ำ ยอดในแอปรวมให้ถูกแล้ว' },
-    { kind: 'outonly',    label: 'มีแต่แถวออก',        note: 'เบิกหรือขายออกจากจุดที่ไม่เคยมีแถวรับเข้าเลย ชีตยอดอาจไม่แสดงจุดนี้' },
-    { kind: 'negative',   label: 'ยอดติดลบ',           note: 'ออกมากกว่าเข้า มักเป็นเบิกผิด Location หรือยังไม่ได้กรอกโอนเข้า' },
-    { kind: 'qty',        label: 'QTY ไม่ใช่ตัวเลข',   note: 'SUMIFS ไม่นับแถวพวกนี้ ยอดจึงขาดไป' },
-    { kind: 'incomplete', label: 'แถวไม่ครบ',          note: 'ช่องที่จำเป็นว่างอยู่ ถ้าเป็นแถวที่กำลังกรอกอยู่ก็ข้ามได้' },
-    { kind: 'closedsale', label: 'ขายจากโลไม่เปิด',    note: 'ขายจากจุดที่ตอนนั้นไม่ได้เปิดขาย หรือจาก QA, IQA, RIB' },
-    { kind: 'locname',    label: 'ชื่อ Location แปลก', note: 'ชื่อที่เขียนต่างจากชื่ออื่นแค่ขีดหรือเว้นวรรค หรือชื่อที่ไม่ตรงรูปแบบชั้นวางและใช้น้อยมาก' },
-    { kind: 'date',       label: 'วันที่น่าสงสัย',     note: 'วันที่ GR ห่างจากแถวขายรอบข้างมากผิดปกติ มักเป็นเดือนหรือปีที่พิมพ์ผิด' },
-  ];
-
   function fmt(n) { return Number(n || 0).toLocaleString('en-US'); }
 
-  function where(i) {
-    return i.sku + ' lot ' + i.lot + (i.po && i.po !== '0' ? ' PO ' + i.po : '') + ' ที่ ' + i.loc;
+  /** แต่ละเรื่องมีคอลัมน์ของตัวเอง ให้กวาดตาลงทีละช่องได้ ไม่ต้องไล่อ่านทีละประโยค ช่องที่ไม่มีค่าแสดงเป็นขีด */
+  function col(label, pick, num) {
+    return {
+      label: label,
+      num: !!num,
+      value: function (i) {
+        var v = pick(i);
+        return v === '' || v === undefined || v === null ? '–' : String(v);
+      },
+    };
   }
+  function field(label, key) { return col(label, function (i) { return i[key]; }); }
+  function amount(label, key) { return col(label, function (i) { return fmt(i[key]); }, true); }
 
-  /** ข้อความของรายการหนึ่งบรรทัด */
-  function describeIssue(i) {
-    switch (i.kind) {
-      case 'baddate': return 'กรอกว่า "' + i.note + '" รูปแบบนี้ ' + fmt(i.rowCount) + ' แถว';
-      case 'mixed': return where(i) + ' เข้าแบบว่าง ' + fmt(i.blank) + ' แบบเปิด ' + fmt(i.open) + ' ออก ' + fmt(i.out) + ' ยอดจริงคือ ' + fmt(i.bal);
-      case 'outonly':
-      case 'negative': return where(i) + ' ติดลบ ' + fmt(Math.abs(i.bal));
-      case 'qty': return i.sku + ' lot ' + i.lot + ' ที่ ' + i.loc + ' กรอกว่า "' + i.value + '"';
-      case 'incomplete': return (i.sku || 'ไม่มีรหัส') + ' ไม่มี ' + i.what;
-      case 'closedsale': return where(i) + ' ขายออก ' + fmt(i.sold);
-      case 'locname': return i.like ? i.name + ' น่าจะเป็นที่เดียวกับ ' + i.like : i.name + ' ใช้แค่ ' + i.rowCount + ' แถว';
-      case 'date': return i.note + ' ' + i.rowCount + ' แถว อยู่ปนกับแถวขายวันที่ ' + shortDate(i.near);
-      default: return '';
-    }
-  }
+  var SKU = field('SKU', 'sku');
+  var LOT = field('Lot', 'lot');
+  var LOC = field('Location', 'loc');
+  var WHERE = [SKU, LOT, col('PO', function (i) { return i.po === '0' ? '' : i.po; }), LOC];
+  var NEGATIVE = WHERE.concat(col('ติดลบ', function (i) { return fmt(Math.abs(i.bal)); }, true));
+
+  /** เรียงตามที่กระทบยอดมากไปน้อย ลำดับนี้คือลำดับที่แสดงบนหน้าเว็บด้วย */
+  var ISSUES = [
+    { kind: 'baddate',    label: 'วันที่ขายอ่านไม่ออก', note: 'ยอดขายของแถวพวกนี้ไม่ถูกนับ รายการต้องเติมจึงอาจขาดไป',
+      cols: [field('กรอกว่า', 'note'), amount('จำนวนแถว', 'rowCount')] },
+    { kind: 'mixed',     label: 'Status ปนกัน',       note: 'จุดเดียวกันเคยรับเข้าทั้งแบบว่างและแบบเปิด สูตรในชีตยอดจะหักแถวออกซ้ำ ยอดในแอปรวมให้ถูกแล้ว',
+      cols: WHERE.concat(amount('เข้าแบบว่าง', 'blank'), amount('เข้าแบบเปิด', 'open'), amount('ออก', 'out'), amount('ยอดจริง', 'bal')) },
+    { kind: 'outonly',    label: 'มีแต่แถวออก',        note: 'เบิกหรือขายออกจากจุดที่ไม่เคยมีแถวรับเข้าเลย ชีตยอดอาจไม่แสดงจุดนี้',
+      cols: NEGATIVE },
+    { kind: 'negative',   label: 'ยอดติดลบ',           note: 'ออกมากกว่าเข้า มักเป็นเบิกผิด Location หรือยังไม่ได้กรอกโอนเข้า',
+      cols: NEGATIVE },
+    { kind: 'qty',        label: 'QTY ไม่ใช่ตัวเลข',   note: 'SUMIFS ไม่นับแถวพวกนี้ ยอดจึงขาดไป',
+      cols: [SKU, LOT, LOC, field('กรอกว่า', 'value')] },
+    { kind: 'incomplete', label: 'แถวไม่ครบ',          note: 'ช่องที่จำเป็นว่างอยู่ ถ้าเป็นแถวที่กำลังกรอกอยู่ก็ข้ามได้',
+      cols: [col('SKU', function (i) { return i.sku || 'ไม่มีรหัส'; }), field('ช่องที่ขาด', 'what')] },
+    { kind: 'closedsale', label: 'ขายจากโลไม่เปิด',    note: 'ขายจากจุดที่ตอนนั้นไม่ได้เปิดขาย หรือจาก QA, IQA, RIB',
+      cols: WHERE.concat(amount('ขายออก', 'sold')) },
+    { kind: 'locname',    label: 'ชื่อ Location แปลก', note: 'ชื่อที่เขียนต่างจากชื่ออื่นแค่ขีดหรือเว้นวรรค หรือชื่อที่ไม่ตรงรูปแบบชั้นวางและใช้น้อยมาก',
+      cols: [field('ชื่อ', 'name'), col('พบว่า', function (i) {
+        return i.like ? 'น่าจะเป็นที่เดียวกับ ' + i.like : 'ใช้แค่ ' + fmt(i.rowCount) + ' แถว';
+      })] },
+    { kind: 'date',       label: 'วันที่น่าสงสัย',     note: 'วันที่ GR ห่างจากแถวขายรอบข้างมากผิดปกติ มักเป็นเดือนหรือปีที่พิมพ์ผิด',
+      cols: [field('Note', 'note'), amount('จำนวนแถว', 'rowCount'), col('แถวขายรอบข้าง', function (i) { return shortDate(i.near); })] },
+  ];
 
   /** ลิงก์เปิดชีตตรงแถวนั้น แปะ #range ต่อท้าย URL ของไฟล์ได้โดยไม่ต้องรู้รหัสอื่น */
   function rowUrl(sheet, row) {
@@ -262,7 +273,99 @@
     return r;
   }
 
+  /* ── นับสต๊อก ───────────────────────────────────────────────────────────── */
+
+  function isCounted(l) { return typeof l.qty === 'number'; }
+
+  /**
+   * สรุปผลนับ
+   *
+   * ความแม่นยำคิดจากรายการสุ่มเท่านั้น รายการเสี่ยงเลือกมาจากจุดที่น่าจะผิดอยู่แล้ว ส่วนรายการนับซ้ำ
+   * คือของที่เคยไม่ตรง เอามารวมตัวเลขจะต่ำกว่าความจริงของทั้งคลัง
+   *
+   * off คือรายการวันก่อนที่ผลล่าสุดยังไม่ตรง ถ้าส่ง raw มาด้วยและยอดตอนนี้เท่าที่นับได้แล้ว
+   * แปลว่าแก้ในชีตเรียบร้อย จึงเอาออกจากรายการที่ต้องตาม
+   */
+  function countStats(data, raw) {
+    var lines = data.lines;
+    var todays = lines.filter(function (l) { return l.date === data.today; });
+    var sample = lines.filter(function (l) { return isCounted(l) && l.src === 'สุ่ม'; });
+    var match = sample.filter(function (l) { return l.diff === 0; }).length;
+
+    var latest = {};
+    lines.filter(isCounted).forEach(function (l) { latest[l.k] = l; });
+    var now = raw ? balanceMap(raw) : null;
+    var off = Object.keys(latest).map(function (k) { return latest[k]; }).filter(function (l) {
+      if (l.diff === 0 || l.date === data.today) return false;
+      return !now || (now[l.k] || 0) !== l.qty;
+    }).sort(function (a, b) { return Math.abs(b.diff) - Math.abs(a.diff); });
+
+    return {
+      total: todays.length,
+      todo: todays.filter(function (l) { return !isCounted(l); }),
+      done: todays.filter(isCounted),
+      sample: sample.length,
+      match: match,
+      accuracy: sample.length ? Math.round(match / sample.length * 100) : null,
+      off: off,
+    };
+  }
+
+  /** ยอดปัจจุบันตามคีย์เดียวกับสคริปต์ คีย์ที่ยอดเป็นศูนย์ไม่ถูกส่งมา จึงไม่มีในตารางนี้ */
+  function balanceMap(raw) {
+    var map = {};
+    function same(v) { return String(v === null || v === undefined ? '' : v).trim().toUpperCase(); }
+    raw.keys.forEach(function (x) {
+      map[[same(raw.skus[x[0]][1]), same(x[1]), same(x[2]), same(raw.locs[x[3]])].join('|')] = x[4];
+    });
+    return map;
+  }
+
+  /** 3 → +3, -3 → -3, 0 → ตรง */
+  function diffText(n) { return n === 0 ? 'ตรง' : (n > 0 ? '+' : '') + fmt(n); }
+
+  /** ตัวเลขที่กรอกค้างไว้ อยู่ข้ามการรีเฟรชหรือมือถือปิดแท็บเอง แต่ใช้ได้แค่กับรายการของวันเดียวกัน */
+  var DRAFT_KEY = 'wms:tx:count:draft';
+
+  function readDraft(date) {
+    try {
+      var o = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+      return o && o.date === date && o.items ? o.items : {};
+    } catch (e) { return {}; }
+  }
+
+  function saveDraft(date, items) {
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ date: date, items: items })); }
+    catch (e) { console.warn('เก็บตัวเลขที่กรอกค้างไม่ได้ —', e.message); }
+  }
+
+  function countReply(r) {
+    if (r && r.error) throw new Error('Apps Script error: ' + r.error);
+    if (!r || !Array.isArray(r.lines)) throw new Error('สคริปต์ยังเป็นรุ่นเก่า — วาง tx-api.gs รุ่นล่าสุดแล้ว Deploy เป็น New version');
+    return r;
+  }
+
+  async function pullCount(url, opts) {
+    return countReply(await window.WmsGas.json(url, 'tx-count', opts));
+  }
+
+  async function saveCount(url, date, items, opts) {
+    return countReply(await window.WmsGas.post(url, { op: 'count-save', date: date, who: counterName(), items: items }, opts));
+  }
+
+  /** ชื่อที่ลงชื่อเข้าระบบไว้บนเครื่องนี้ ตัวจับเวลาหมดอายุเป็นเรื่องของ wms-gate */
+  function counterName() {
+    try { return JSON.parse(localStorage.getItem('wms:session') || '{}').name || ''; }
+    catch (e) { return ''; }
+  }
+
   window.WmsTx = {
+    countStats: countStats,
+    diffText: diffText,
+    readDraft: readDraft,
+    saveDraft: saveDraft,
+    pullCount: pullCount,
+    saveCount: saveCount,
     SPECIAL: SPECIAL,
     MIN_PER_DAY: MIN_PER_DAY,
     ISSUES: ISSUES,
@@ -276,7 +379,6 @@
     coverText: coverText,
     noReserveText: noReserveText,
     search: search,
-    describeIssue: describeIssue,
     rowUrl: rowUrl,
     shortDate: shortDate,
     isEvent: isEvent,

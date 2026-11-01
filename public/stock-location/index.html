@@ -83,6 +83,29 @@ a.tx-row{color:var(--wms-primary-dark)}
 .tx-low{color:#B91C1C;font-weight:600}
 .tx-mid{color:#B45309;font-weight:600}
 
+/* ตารางข้อมูลผิด: ช่องข้อมูลเกาะกันทางซ้าย ช่องเลขแถวกินที่เหลือ จอกว้างแค่ไหนตาก็ไม่ต้องเดินไกล */
+.tx-why{margin:-4px 0 8px;font-size:12.5px;color:var(--wms-muted);line-height:1.5}
+.tx-iss th:last-child,.tx-iss td:last-child{width:100%;min-width:190px}  /* จอแคบบีบเลขแถวจนเรียงทีละบรรทัด แถวจะสูงเกินจริง */
+.tx-iss th:not(:last-child),.tx-iss td:not(:last-child){padding-right:22px}
+.tx-iss td:not(:last-child){white-space:nowrap;max-width:300px;overflow:hidden;text-overflow:ellipsis}
+.tx-iss td:first-child{font-weight:600}
+
+/* ใบนับสต๊อก: ช่องกรอกใหญ่พอให้กดด้วยนิ้วขณะยืนหน้าชั้น และตัวอักษร 16px ขึ้นไปกันมือถือซูมเองตอนแตะ */
+.tx-cline{align-items:center}
+.tx-qty{flex-shrink:0;width:88px;height:46px;padding:0 11px;border-radius:10px;border:1.5px solid var(--wms-border2);
+  background:var(--wms-surface);font-family:var(--wms-font);font-size:18px;font-weight:700;text-align:right;
+  color:var(--wms-text);font-variant-numeric:tabular-nums;outline:none}
+.tx-qty:focus{border-color:var(--wms-primary)}
+.tx-qty::placeholder{font-size:13px;font-weight:500;color:var(--wms-muted)}
+.tx-csend{position:sticky;bottom:8px;display:flex;align-items:center;gap:10px;margin-top:12px;padding:10px 12px;
+  background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:var(--wms-radius);
+  box-shadow:0 4px 14px rgba(15,23,42,.1);font-size:13px;color:var(--wms-muted)}
+.tx-csend .sp{flex:1}
+.tx-csend button{padding:10px 18px;border-radius:999px;border:0;background:var(--wms-primary);color:#fff;
+  font-family:var(--wms-font);font-size:14px;font-weight:600;cursor:pointer}
+.tx-csend button:disabled{opacity:.5;cursor:default}
+.tx-ok{color:#166534;font-weight:600}
+
 .tx-tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;white-space:nowrap}
 .tx-tag.open{background:#DCFCE7;color:#166534}
 .tx-tag.reserve{background:var(--wms-surface2);color:var(--wms-muted)}
@@ -147,7 +170,7 @@ button.tx-card.on{border-color:var(--wms-primary);background:var(--wms-primary-l
       <div class="ic"><img src="../icons/boxes.png" alt="" width="38" height="38"></div>
       <div>
         <h2>สต๊อกราย Location · Stock by Location</h2>
-        <p>โลเปิดไหนต้องเติม ของอยู่ตรงไหน และแถวไหนในชีต Transaction ที่กรอกผิด — อ่านอย่างเดียว ไม่แก้ชีต</p>
+        <p>โลเปิดไหนต้องเติม ของอยู่ตรงไหน แถวไหนในชีต Transaction ที่กรอกผิด และนับของจริงเทียบยอด — ไม่แก้ชีต Transaction</p>
       </div>
     </div>
   </div>
@@ -174,8 +197,9 @@ let RAW = null;       // คำตอบจาก Apps Script
 let DATA = null;      // RAW ที่จัดกลุ่มแล้ว
 let PULLING = '';
 let ERR = '';
-/* เปิดมาเจอต้องเติมก่อน เพราะเป็นงานที่ต้องทำทุกวัน ส่วนหาของเปิดเมื่อมีคนถาม */
-let TAB = 'fill';
+/* เปิดมาเจอต้องเติมก่อน เพราะเป็นงานที่ต้องทำทุกวัน ส่วนหาของเปิดเมื่อมีคนถาม
+   ?tab=count เอาไว้ส่งลิงก์ให้คนนับ เปิดมาเจอรายการของตัวเองเลย */
+let TAB = new URLSearchParams(location.search).get('tab') === 'count' ? 'count' : 'fill';
 let DAYS = 3;
 let Q = '';           // คำค้นในแท็บหาของ
 let SEL = null;       // { sku } | { loc } ที่กดเลือกจากรายการ
@@ -183,6 +207,8 @@ let OPENLOC = '';     // Location ที่เปิดดูอยู่ใน�
 let KIND = '';        // ตัวกรองแท็บข้อมูลผิด
 const HIST = { sku: '', busy: '', err: '', data: null };
 const HCACHE = new Map();   // ประวัติที่ดูแล้วในรอบนี้ กดกลับไปดูซ้ำไม่ต้องรอสคริปต์อ่านทั้งชีตอีกรอบ
+const COUNT = { busy: '', err: '', data: null };   // ใบนับสต๊อก ดึงตอนเปิดแท็บ
+let DRAFT = {};       // ตัวเลขที่กรอกแล้วแต่ยังไม่ส่ง
 
 const MAX = 300;   // มากกว่านี้เบราว์เซอร์เริ่มหน่วง เหมือนหน้าสต๊อกคงเหลือ
 const TAG = { open: 'เปิด', reserve: 'สำรอง', QA: 'QA', IQA: 'IQA', RIB: 'RIB' };
@@ -259,7 +285,8 @@ async function pullNow() {
 /* ── ยอดรวม + แท็บ ──────────────────────────────────────────────────────── */
 
 function renderSum() {
-  if (!DATA) { $('sum').innerHTML = ''; return; }
+  /* คนนับยืนหน้าชั้นด้วยมือถือ ยอดรวมทั้งคลังไม่ช่วยอะไรและดันรายการนับตกจอ */
+  if (!DATA || TAB === 'count') { $('sum').innerHTML = ''; return; }
   const t = DATA.totals;
   const stat = (label, v, sub) => `<div class="tx-stat"><small>${label}</small><b>${f(v)}</b>${sub ? `<i>${sub}</i>` : ''}</div>`;
   $('sum').innerHTML =
@@ -282,7 +309,8 @@ function renderTabs() {
     }
     count.bad = issueTotal();
   }
-  const list = [['fill', 'ต้องเติม'], ['find', 'หาของ'], ['bad', 'ข้อมูลผิด'], ['log', 'ประวัติ']];
+  if (COUNT.data) count.count = WmsTx.countStats(COUNT.data).todo.length;
+  const list = [['fill', 'ต้องเติม'], ['count', 'นับสต๊อก'], ['find', 'หาของ'], ['bad', 'ข้อมูลผิด'], ['log', 'ประวัติ']];
   $('tabs').innerHTML = list.map(([id, label]) =>
     `<button class="tx-tab ${id === TAB ? 'on' : ''}" role="tab" aria-selected="${id === TAB}" data-tab="${id}">${label}` +
     `${count[id] !== undefined ? ` <span class="n">${f(count[id])}</span>` : ''}</button>`
@@ -435,26 +463,30 @@ function rowLinks(i) {
   return i.rows.map(rowLink).join(', ') + (more > 0 ? ` <span class="tx-sub">และอีก ${f(more)} แถว</span>` : '');
 }
 
+function issueSection(k) {
+  const items = RAW.issues.list.filter(i => i.kind === k.kind);
+  const total = RAW.issues.counts[k.kind];
+  const align = (c) => (c.num ? 'num' : '');
+  return `<div class="tx-h">${esc(k.label)} (${f(total)})</div><p class="tx-why">${esc(k.note)}</p>` +
+    `<div class="tx-wrap"><table class="tx-tbl tx-iss"><thead><tr>` +
+    k.cols.map(c => `<th class="${align(c)}">${esc(c.label)}</th>`).join('') + `<th>แถวในชีต</th></tr></thead><tbody>` +
+    items.map(i => `<tr>${k.cols.map(c => `<td class="${align(c)}" title="${esc(c.value(i))}">${esc(c.value(i))}</td>`).join('')}<td>${rowLinks(i)}</td></tr>`).join('') +
+    `</tbody></table></div>` +
+    (items.length < total ? `<p class="tx-note">แสดง ${f(items.length)} จาก ${f(total)} รายการ เรียงจากยอดที่กระทบมากสุด</p>` : '');
+}
+
 function renderBad() {
   const counts = RAW.issues.counts;
   const kinds = WmsTx.ISSUES.filter(k => counts[k.kind]);
   if (!kinds.length) { $('body').innerHTML = `<div class="tx-empty">ไม่พบจุดผิด — <b>เป็นเรื่องดี</b></div>`; return; }
   if (!counts[KIND]) KIND = '';
 
-  const list = kinds.filter(k => !KIND || k.kind === KIND);
-  const rows = list.flatMap(k => RAW.issues.list.filter(i => i.kind === k.kind).map(i => `<tr>
-      <td class="nw">${esc(k.label)}</td><td>${esc(WmsTx.describeIssue(i))}</td><td>${rowLinks(i)}</td>
-    </tr>`)).join('');
-  const shown = list.reduce((a, k) => a + RAW.issues.list.filter(i => i.kind === k.kind).length, 0);
-  const total = list.reduce((a, k) => a + counts[k.kind], 0);
-
   $('body').innerHTML =
     `<div class="tx-cards">${kinds.map(k =>
       `<button class="tx-card ${k.kind === KIND ? 'on' : ''}" data-kind="${k.kind}"><small>${esc(k.label)}</small><b>${f(counts[k.kind])}</b></button>`
     ).join('')}</div>` +
-    (KIND ? `<div class="tx-line">${esc(list[0].note)} · <button class="tx-link" data-kind="">ดูทุกเรื่อง</button></div>` : '') +
-    `<div class="tx-wrap"><table class="tx-tbl"><thead><tr><th>เรื่อง</th><th>รายละเอียด</th><th>แถวในชีต</th></tr></thead><tbody>${rows}</tbody></table></div>` +
-    (shown < total ? `<p class="tx-note">แสดง ${f(shown)} จาก ${f(total)} รายการ เรียงจากยอดที่กระทบมากสุด</p>` : '') +
+    (KIND ? `<button class="tx-link" data-kind="">ดูทุกเรื่อง</button>` : '') +
+    kinds.filter(k => !KIND || k.kind === KIND).map(issueSection).join('') +
     `<p class="tx-note">กดเลขแถวเพื่อเปิดชีตตรงแถวนั้น หน้านี้ไม่แก้ชีต แก้ในชีตแล้วกดดึงใหม่ รายการจะหายไปเอง</p>`;
 }
 
@@ -523,10 +555,140 @@ async function openHistory(sku) {
   renderHist();
 }
 
+/* ── นับสต๊อก ───────────────────────────────────────────────────────────── */
+
+const poText = (l) => (l.po && l.po !== '0' ? l.po : '–');
+const diffCell = (l) => `<td class="num ${l.diff === 0 ? 'tx-ok' : 'tx-neg'}">${esc(WmsTx.diffText(l.diff))}</td>`;
+
+/** ไม่แสดงยอดในระบบตอนนับ ถ้าเห็นเลขก่อน คนจะนับให้ได้เท่าเลขนั้น และความแม่นยำที่วัดได้จะไม่จริง */
+function countForm(todo) {
+  return `<ol class="tx-jobs">${todo.map(l => `<li class="tx-job tx-cline">
+      <div class="main">
+        <div class="what">${esc(l.loc)}</div>
+        <div class="do"><b>${esc(l.sku)}</b> ${esc(l.name)}</div>
+        <span class="tx-sub">Lot ${esc(l.lot === '' ? '–' : l.lot)} · PO ${esc(poText(l))}</span>
+      </div>
+      <input class="tx-qty" type="text" inputmode="numeric" enterkeyhint="next" autocomplete="off"
+        aria-label="จำนวนที่นับได้ ${esc(l.loc)} ${esc(l.sku)}" placeholder="นับได้" data-count="${esc(l.k)}" value="${esc(DRAFT[l.k] ?? '')}">
+    </li>`).join('')}</ol>
+    <div class="tx-csend"><span id="csum"></span><span class="sp"></span><button id="csend" data-count-send="1"></button></div>`;
+}
+
+/** ปุ่มส่งบอกจำนวนที่จะส่งจริง อัปเดตเฉพาะตรงนี้ตอนพิมพ์ วาดใหม่ทั้งหน้าแล้วคีย์บอร์ดมือถือจะหุบ */
+function renderSend() {
+  const btn = $('csend');
+  if (!btn) return;
+  const n = Object.keys(DRAFT).length;
+  btn.disabled = !n || !!COUNT.busy;
+  btn.textContent = COUNT.busy || (n ? `ส่งผลนับ ${f(n)} รายการ` : 'ส่งผลนับ');
+  $('csum').textContent = `กรอกแล้ว ${f(n)} จาก ${f(WmsTx.countStats(COUNT.data).todo.length)}`;
+}
+
+function countResults(list, title, note, extraHead, extra) {
+  return `<div class="tx-h">${title} (${f(list.length)})</div>${note ? `<p class="tx-why">${note}</p>` : ''}
+    <div class="tx-wrap"><table class="tx-tbl tx-iss"><thead><tr><th>Location</th><th>SKU</th><th>Lot</th><th>PO</th>
+      <th class="num">นับได้</th><th class="num">ในระบบ</th><th class="num">ต่าง</th>${extraHead}</tr></thead><tbody>
+      ${list.map(l => `<tr><td>${esc(l.loc)}</td><td>${esc(l.sku)}</td><td>${esc(l.lot === '' ? '–' : l.lot)}</td><td>${esc(poText(l))}</td>
+        <td class="num">${f(l.qty)}</td><td class="num">${f(l.exp)}</td>${diffCell(l)}${extra(l)}</tr>`).join('')}
+    </tbody></table></div>`;
+}
+
+function renderCount() {
+  if (!COUNT.data) {
+    $('body').innerHTML = COUNT.err
+      ? `<div class="tx-warn">${esc(COUNT.err)}</div><button class="tx-opt" data-count-reload="1">ลองใหม่</button>`
+      : `<div class="tx-empty">⏳ กำลังเตรียมรายการนับ…</div>`;
+    return;
+  }
+  const s = WmsTx.countStats(COUNT.data, RAW);
+  const card = (label, v, sub) => `<div class="tx-card"><small>${label}</small><b>${v}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
+  $('body').innerHTML =
+    `<div class="tx-cards">` +
+      card('ความแม่นยำสต๊อก', s.accuracy === null ? '–' : `${s.accuracy}%`, s.sample ? `ตรง ${f(s.match)} จาก ${f(s.sample)} รายการสุ่ม` : 'ยังไม่มีผลนับ') +
+      card('นับแล้ววันนี้', `${f(s.done.length)}/${f(s.total)}`) +
+      card('ไม่ตรงค้างอยู่', f(s.off.length)) +
+    `</div>` +
+    (COUNT.err ? `<div class="tx-warn">${esc(COUNT.err)}</div>` : '') +
+    (s.todo.length
+      ? `<div class="tx-h">รายการที่ต้องนับวันนี้ (${f(s.todo.length)})</div>
+         <p class="tx-why">ไปดูของจริงแล้วกรอกจำนวน ไม่เจอของให้ใส่ 0 ยอดในระบบจะเห็นหลังส่งแล้ว ทยอยส่งได้ ตัวเลขที่กรอกค้างไว้ไม่หาย</p>` + countForm(s.todo)
+      : `<div class="tx-empty">${s.total ? '<b>นับครบแล้ว</b> สำหรับวันนี้' : 'วันนี้ไม่มีรายการให้นับ'}</div>`) +
+    (s.done.length ? countResults(s.done, 'นับแล้ววันนี้', 'รายการที่ไม่ตรงจะกลับมาให้นับซ้ำวันถัดไป',
+      '<th>เลือกเพราะ</th><th>ผู้นับ</th>', l => `<td>${esc(l.why)}</td><td>${esc(l.who)}</td>`) : '') +
+    (s.off.length ? countResults(s.off, 'ไม่ตรงค้างอยู่', 'รอบแรกไม่ตรงจะถูกนับซ้ำให้เอง ถ้ารอบสองก็ยังไม่ตรง ให้กรอกแถวปรับยอดในชีต Transaction แอปไม่แก้ชีตให้ พอกรอกแล้วกดดึงใหม่ รายการจะหายไปเอง',
+      '<th>นับวันที่</th><th>ต้องทำ</th>', l => `<td>${esc(WmsTx.shortDate(l.date))}</td><td>${l.src === 'นับซ้ำ' ? 'แก้ในชีต' : 'รอนับซ้ำ'}</td>`) : '') +
+    `<p class="tx-note">ความแม่นยำคิดจากรายการสุ่มบนชั้นวางสำรอง 30 วันล่าสุด ไม่รวมรายการเสี่ยง เพราะเลือกมาจากจุดที่น่าจะผิดอยู่แล้ว
+      · ผลนับเก็บในแท็บ "นับสต๊อก" ของไฟล์ชีต · <button class="tx-link" data-count-reload="1">โหลดรายการล่าสุด</button></p>`;
+  renderSend();
+}
+
+async function loadCount() {
+  const url = WmsTx.savedUrl();
+  if (!url || COUNT.busy) return;
+  COUNT.err = '';
+  COUNT.busy = 'กำลังโหลด…';
+  if (TAB === 'count') renderCount();
+  try {
+    COUNT.data = await WmsTx.pullCount(url);
+    /* เลขของรายการที่คนอื่นส่งไปแล้วไม่ต้องเก็บไว้ ไม่งั้นปุ่มส่งจะนับเกินจำนวนที่เหลือจริง */
+    const saved = WmsTx.readDraft(COUNT.data.today);
+    DRAFT = {};
+    WmsTx.countStats(COUNT.data).todo.forEach((l) => { if (saved[l.k] !== undefined) DRAFT[l.k] = saved[l.k]; });
+  } catch (err) {
+    COUNT.err = 'โหลดรายการนับไม่สำเร็จ — ' + err.message;
+  }
+  COUNT.busy = '';
+  renderTabs();
+  if (TAB === 'count') renderCount();
+}
+
+async function sendCount() {
+  const url = WmsTx.savedUrl();
+  const date = COUNT.data && COUNT.data.today;
+  const items = Object.keys(DRAFT).map(k => ({ k, qty: +DRAFT[k] }));
+  if (!url || COUNT.busy || !items.length) return;
+  COUNT.err = '';
+  COUNT.busy = 'กำลังส่ง…';
+  renderSend();
+  try {
+    const r = await WmsTx.saveCount(url, date, items);
+    COUNT.data = r;
+    DRAFT = {};
+    WmsTx.saveDraft(date, DRAFT);
+    if (r.skipped) COUNT.err = `มี ${f(r.skipped)} รายการที่มีคนนับไปก่อนแล้ว ระบบเก็บผลแรกไว้`;
+  } catch (err) {
+    COUNT.err = 'ส่งไม่สำเร็จ ตัวเลขที่กรอกยังอยู่ครบ ลองกดส่งอีกครั้ง — ' + err.message;
+  }
+  COUNT.busy = '';
+  renderTabs();
+  renderCount();
+  /* หน้าเปิดค้างข้ามคืน: ผลของเมื่อวานเข้าแล้ว แต่รายการของวันนี้ยังไม่ได้โหลดมา */
+  if (COUNT.data.today !== date) loadCount();
+}
+
+$('body').addEventListener('input', (e) => {
+  const k = e.target.dataset.count;
+  if (k === undefined) return;
+  e.target.value = e.target.value.replace(/\D/g, '');
+  if (e.target.value) DRAFT[k] = e.target.value; else delete DRAFT[k];
+  WmsTx.saveDraft(COUNT.data.today, DRAFT);
+  renderSend();
+});
+
+$('body').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || e.target.dataset.count === undefined) return;
+  e.preventDefault();
+  const all = [...document.querySelectorAll('.tx-qty')];
+  const next = all[all.indexOf(e.target) + 1];
+  if (next) next.focus(); else e.target.blur();
+});
+
 /* ── รวม ────────────────────────────────────────────────────────────────── */
 
 function renderBody() {
-  if (!DATA) {
+  /* ใบนับไม่ต้องรอยอดทั้งคลัง คำตอบคนละชุดกันและเร็วกว่ามาก */
+  if (TAB === 'count' && WmsTx.savedUrl()) { renderCount(); return; }
+  if (!DATA || TAB === 'count') {
     $('body').innerHTML = WmsTx.savedUrl()
       ? `<div class="tx-empty">ยังไม่มีข้อมูล<br>กด <b>⬇️ ดึงข้อมูล</b> ที่แถบด้านบน</div>`
       : `<div class="tx-empty">ยังไม่ได้เชื่อมกับชีต Transaction<br>
@@ -538,7 +700,13 @@ function renderBody() {
 
 function renderAll() { renderSrc(); renderSum(); renderTabs(); renderBody(); }
 
-function goTab(id) { TAB = id; renderTabs(); renderBody(); }
+function goTab(id) {
+  TAB = id;
+  renderSum();
+  renderTabs();
+  renderBody();
+  if (id === 'count' && !COUNT.data) loadCount();
+}
 
 function goSku(sku, loc) {
   Q = sku; SEL = { sku }; OPENLOC = loc || '';
@@ -560,12 +728,15 @@ $('body').addEventListener('click', (e) => {
   else if (d.openLoc) { OPENLOC = d.openLoc; renderFound(); }
   else if (d.closeLoc) { OPENLOC = ''; renderFound(); }
   else if (d.goTab) goTab(d.goTab);
+  else if (d.countSend) sendCount();
+  else if (d.countReload) loadCount();
   else if (d.kind !== undefined) { KIND = d.kind; renderBad(); }
   else if (d.hist) { goTab('log'); openHistory(d.hist); $('hq').value = d.hist; }
 });
 
 load(WmsTx.read());
 renderAll();
+if (TAB === 'count') loadCount();
 
 /* ปิดเบราว์เซอร์แล้วแคชหาย เปิดมาใหม่ควรเห็นของเลย ไม่ใช่ต้องกดปุ่มก่อนทุกเช้า
    ลองครั้งเดียวต่อรอบเบราว์เซอร์ด้วยกติกาเดียวกับหน้าอื่น ปุ่มดึงใหม่ยังกดเองได้ */

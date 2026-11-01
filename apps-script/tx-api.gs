@@ -5,12 +5,17 @@
  * ช่อง "Apps Script URL — Transaction" วิธีติดตั้งอยู่ใน README หัวข้อ
  * "Stock by Location"
  *
- * ผูกกับไฟล์ Google Sheet ที่มีชีต Transaction และไม่เขียนอะไรลงชีตเลย สมุดรายการ
+ * ผูกกับไฟล์ Google Sheet ที่มีชีต Transaction และไม่เขียนอะไรลงสมุดรายการเลย สมุดรายการ
  * เป็นของที่ทีมกรอกด้วยมือทุกวัน สคริปต์ที่แก้มันได้คือความเสี่ยงที่ไม่จำเป็น
- * ถ้าโค้ดนี้มีจุดผิด อย่างมากตัวเลขบนหน้าเว็บจะผิด ชีตยังอยู่ครบเหมือนเดิม
+ * ถ้าโค้ดนี้มีจุดผิด อย่างมากตัวเลขบนหน้าเว็บจะผิด สมุดรายการยังอยู่ครบเหมือนเดิม
+ *
+ * ที่เขียนมีแห่งเดียวคือแท็บ "นับสต๊อก" ซึ่งสคริปต์สร้างเอง และคำขอจากเว็บเติมได้แค่ช่องผลนับ
+ * ที่ยังว่างของรายการที่สคริปต์ออกเอง คนที่มี URL จึงเพิ่มแถวเองหรือแก้ผลนับเดิมไม่ได้
  *
  * ?api=tx-summary          ยอดคงเหลือทั้งคลัง ยอดขาย และจุดที่ข้อมูลผิด
  * ?api=tx-history&sku=...  ความเคลื่อนไหวของ SKU เดียว
+ * ?api=tx-count            รายการนับของวันนี้ (ยังไม่มีก็ออกให้) และผลนับย้อนหลัง
+ * POST {op:'count-save'}   บันทึกผลนับ
  * ไม่ใส่ api               บอกแค่ว่าเป็นสคริปต์นี้ ให้หน้าตั้งค่าเช็คว่าใส่ URL ถูกตัว
  */
 
@@ -30,15 +35,36 @@ var HISTORY_MAX = 500;      // SKU ขายดีมีหลายพันแ
 var ISSUE_ROWS = 6;         // เลขแถวที่แนบไปต่อหนึ่งรายการ
 var ISSUE_MAX = 200;        // รายการต่อหนึ่งเรื่อง ถ้าเกินบอกจำนวนจริงแล้วส่งแค่ที่หนักสุด
 
+var COUNT_SHEET = 'นับสต๊อก';
+var COUNT_PER_DAY = 20;     // รายการนับต่อวัน
+var COUNT_RISK_MAX = 10;    // รายการนับซ้ำกับรายการเสี่ยงรวมกันไม่เกินเท่านี้ ที่เหลือเป็นรายการสุ่ม
+var COUNT_REST_DAYS = 30;   // นับแล้วเว้นกี่วันก่อนถูกเลือกอีก
+var COUNT_KEEP_DAYS = 30;   // ส่งผลนับย้อนหลังให้หน้าเว็บกี่วัน
+var COUNT_HEAD = ['วันที่', 'ที่มา', 'เหตุผล', 'Location', 'SKU', 'SKU เต็ม', 'ชื่อสินค้า', 'Lot', 'PO', 'นับได้', 'ยอดในระบบ', 'ต่าง', 'ผู้นับ', 'เวลานับ'];
+var COUNT_TEXT_COLS = 9;    // A..I เก็บเป็นข้อความ
+var COUNT_RESULT_COL = 10;  // J..N ว่างจนกว่าจะนับ
+var COUNT_WHO_COL = 13;     // M, N เก็บเป็นข้อความเหมือนกัน
+
 function doGet(e) {
   var p = (e && e.parameter) || {};
   try {
     if (p.api === 'tx-summary') return out_(summary_());
     if (p.api === 'tx-history') return out_(history_(String(p.sku || '')));
+    if (p.api === 'tx-count') return out_(countLoad_());
   } catch (err) {
     return out_({ error: String(err && err.message || err) });
   }
   return out_({ app: 'transaction' });
+}
+
+function doPost(e) {
+  try {
+    var req = JSON.parse(e.postData.contents);
+    if (req.op === 'count-save') return out_(countSave_(req));
+    return out_({ error: 'ไม่รู้จักคำสั่งนี้' });
+  } catch (err) {
+    return out_({ error: String(err && err.message || err) });
+  }
 }
 
 function out_(o) {
@@ -220,6 +246,26 @@ function someRows_(list) { return { rows: list.slice(0, ISSUE_ROWS), rowCount: l
 
 function keyOf_(long, lot, po, loc) { return [same_(long), same_(lot), same_(po), same_(loc)].join('|'); }
 
+function special_(loc) { return /^(QA|IQA|RIB)$/.test(same_(loc)); }
+
+/** แถวขายจากจุดที่ตอนนั้นไม่ได้เปิดขาย หรือจาก QA, IQA, RIB ดู Status ของแถวเข้าล่าสุด ณ แถวที่อ่านถึง ขายไปก่อนที่โลจะปิดไม่ถือว่าผิด */
+function closedSales_(rows) {
+  var closed = {};
+  var lastIn = {};
+  rows.forEach(function (r) {
+    if (r.long && r.to) lastIn[keyOf_(r.long, r.lot, r.po, r.to)] = r.open;
+    if (r.type === 'ขาย' && r.from && r.long) {
+      var k = keyOf_(r.long, r.lot, r.po, r.from);
+      if (k in lastIn && (!lastIn[k] || special_(r.from))) {
+        var c = closed[k] || (closed[k] = { sku: r.sku, lot: r.lot, po: r.po, loc: r.from, sold: 0, list: [] });
+        c.sold += r.qty;
+        c.list.push(r.row);
+      }
+    }
+  });
+  return closed;
+}
+
 function issues_(rows, bals, today) {
   var out = [];
   function add(kind, o) { o.kind = kind; out.push(o); }
@@ -235,9 +281,8 @@ function issues_(rows, bals, today) {
     }
   });
 
-  var closed = {};
+  var closed = closedSales_(rows);
   var locs = {};
-  var lastIn = {};   // Status ของแถวเข้าล่าสุด ณ แถวที่อ่านถึง ขายไปก่อนที่โลจะปิดไม่ถือว่าผิด
   var unread = {};   // วันที่ขายที่อ่านไม่ออก จับกลุ่มตามรูปแบบ ไม่งั้นรูปแบบเดียวจะกลายเป็นหมื่นรายการ
   rows.forEach(function (r) {
     [r.from, r.to].forEach(function (l) {
@@ -260,16 +305,6 @@ function issues_(rows, bals, today) {
     if (r.type !== 'ขาย' && !r.date && !r.note) miss.push('Note');
     if (!r.who) miss.push('ชื่อคนกรอก');
     if (miss.length) add('incomplete', { sku: r.sku, what: miss.join(', '), rows: [r.row], rowCount: 1 });
-
-    if (r.long && r.to) lastIn[keyOf_(r.long, r.lot, r.po, r.to)] = r.open;
-    if (r.type === 'ขาย' && r.from && r.long) {
-      var k = keyOf_(r.long, r.lot, r.po, r.from);
-      if (k in lastIn && (!lastIn[k] || /^(QA|IQA|RIB)$/.test(same_(r.from)))) {
-        var c = closed[k] || (closed[k] = { sku: r.sku, lot: r.lot, po: r.po, loc: r.from, sold: 0, list: [] });
-        c.sold += r.qty;
-        c.list.push(r.row);
-      }
-    }
   });
   Object.keys(closed).forEach(function (k) {
     var c = closed[k];
@@ -423,6 +458,203 @@ function history_(sku) {
     items: list.slice(-HISTORY_MAX).reverse(),
     sheet: { url: ss.getUrl(), gid: sheet.getSheetId() },
   };
+}
+
+/* ── นับสต๊อก ───────────────────────────────────────────────────────────── */
+
+/** แท็บผลนับ ไม่มีก็สร้าง เป็นแท็บเดียวที่สคริปต์นี้เขียนลงไฟล์ */
+function countSheet_(ss) {
+  var sheet = ss.getSheetByName(COUNT_SHEET);
+  if (sheet) return sheet;
+  sheet = ss.insertSheet(COUNT_SHEET, ss.getSheets().length);
+  sheet.getRange(1, 1, 1, COUNT_HEAD.length).setValues([COUNT_HEAD]);
+  sheet.setFrozenRows(1);
+  return sheet;
+}
+
+function readCount_(sheet, tz) {
+  var n = sheet.getLastRow() - 1;
+  if (n < 1) return [];
+  return sheet.getRange(2, 1, n, COUNT_HEAD.length).getValues().map(function (c, i) {
+    var done = typeof c[9] === 'number';
+    return {
+      row: i + 2,
+      date: plainDate_(c[0], tz),
+      src: text_(c[1]), why: text_(c[2]), loc: text_(c[3]), sku: text_(c[4]), long: text_(c[5]), name: text_(c[6]),
+      lot: text_(c[7]), po: text_(c[8]),
+      k: keyOf_(c[5], c[7], c[8], c[3]),
+      qty: done ? c[9] : null, exp: done ? c[10] : null, diff: done ? c[11] : null,
+      who: text_(c[12]), at: text_(c[13]),
+    };
+  }).filter(function (p) { return p.date; });
+}
+
+/** สุ่มแบบได้ผลเดิมทุกครั้งเมื่อวันและรายการเท่าเดิม ลำดับเปลี่ยนไปคนละแบบในแต่ละวัน */
+function hash_(s) {
+  var h = 2166136261;
+  for (var i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+/**
+ * คัดรายการนับของวันนี้ เรียงตาม Location ให้เดินนับได้ทีเดียว
+ *   นับซ้ำ = ครั้งก่อนไม่ตรง ให้นับอีกรอบเพื่อแยกว่านับพลาดหรือยอดผิดจริง รอบสองไม่ตรงอีกก็ไม่เรียกซ้ำแล้ว
+ *   เสี่ยง = จุดที่ข้อมูลฟ้องว่าน่าจะผิด ยอดติดลบมาก่อนเพราะเป็นไปไม่ได้ในโลกจริง
+ *   สุ่ม  = ชั้นวางสำรองที่ไม่ได้เปิดขาย ใช้วัดความแม่นยำของทั้งคลัง
+ * โลเปิดไม่เอามาสุ่ม เพราะของเข้าออกทั้งวันและแถวขายกรอกตามหลัง นับตอนไหนก็ไม่ตรงโดยที่ยอดไม่ได้ผิด
+ */
+function pickCount_(rows, bals, past, today) {
+  var end = dayNo_(today);
+  var rest = {};
+  var last = {};
+  past.forEach(function (p) {
+    if (p.qty === null) return;
+    last[p.k] = p;
+    if (end - dayNo_(p.date) < COUNT_REST_DAYS) rest[p.k] = 1;
+  });
+  var names = {};
+  rows.forEach(function (r) {
+    if (r.long && r.name && !names[same_(r.long)]) names[same_(r.long)] = r.name;
+  });
+
+  var list = [];
+  var picked = {};
+  function keyOfBal(x) { return keyOf_(x.long, x.lot, x.po, x.loc); }
+  function take(x, k, src, why) {
+    if (picked[k]) return;
+    picked[k] = 1;
+    list.push({ src: src, why: why, loc: x.loc, sku: x.sku, long: x.long, name: names[same_(x.long)] || x.name || '', lot: x.lot, po: x.po });
+  }
+
+  Object.keys(last).forEach(function (k) {
+    var p = last[k];
+    if (p.diff === 0 || p.src === 'นับซ้ำ' || p.date >= today || list.length >= COUNT_RISK_MAX) return;
+    take(p, k, 'นับซ้ำ', 'ครั้งก่อนไม่ตรง');
+  });
+
+  var closed = closedSales_(rows);
+  var risky = [];
+  bals.forEach(function (x) {
+    var k = keyOfBal(x);
+    if (x.bal === 0 || rest[k] || !(RACK.test(same_(x.loc)) || special_(x.loc))) return;
+    if (x.bal < 0) risky.push({ x: x, k: k, tier: 0, weight: -x.bal, why: 'ยอดติดลบ' });
+    else if (closed[k]) risky.push({ x: x, k: k, tier: 1, weight: closed[k].sold, why: 'ขายจากโลไม่เปิด' });
+    else if (x.inBlank && x.inOpen) risky.push({ x: x, k: k, tier: 2, weight: x.out, why: 'Status ปนกัน' });
+  });
+  risky.sort(function (a, b) { return a.tier - b.tier || b.weight - a.weight; });
+  risky.forEach(function (r) {
+    if (list.length < COUNT_RISK_MAX) take(r.x, r.k, 'เสี่ยง', r.why);
+  });
+
+  var pool = bals.filter(function (x) {
+    return x.bal > 0 && !x.open && RACK.test(same_(x.loc)) && !rest[keyOfBal(x)];
+  });
+  function rank(x) { return hash_(today + keyOfBal(x)); }
+  pool.sort(function (a, b) { return rank(a) - rank(b); });
+  pool.forEach(function (x) {
+    if (list.length < COUNT_PER_DAY) take(x, keyOfBal(x), 'สุ่ม', 'สุ่มตรวจ');
+  });
+
+  return list.sort(function (a, b) { return same_(a.loc) < same_(b.loc) ? -1 : same_(a.loc) > same_(b.loc) ? 1 : 0; });
+}
+
+/**
+ * วันที่และรหัสตั้งเป็นข้อความก่อนเขียน ไม่งั้นชีตจะแปลงเองตามการตั้งค่าของไฟล์
+ * ซึ่งเป็นต้นเหตุให้วันที่ขายในสมุดรายการอ่านไม่ออกมาแล้ว
+ */
+function appendCount_(sheet, today, list) {
+  if (!list.length) return;
+  var at = sheet.getLastRow() + 1;
+  var short = at + list.length - 1 - sheet.getMaxRows();
+  if (short > 0) sheet.insertRowsAfter(sheet.getMaxRows(), short);
+  sheet.getRange(at, 1, list.length, COUNT_TEXT_COLS).setNumberFormat('@');
+  sheet.getRange(at, COUNT_WHO_COL, list.length, 2).setNumberFormat('@');
+  sheet.getRange(at, 1, list.length, COUNT_HEAD.length).setValues(list.map(function (l) {
+    return [today, l.src, l.why, l.loc, l.sku, l.long, l.name, String(l.lot), String(l.po), '', '', '', '', ''];
+  }));
+}
+
+/** รายการที่ยังไม่นับไม่ส่งเหตุผลไปด้วย และยังไม่มียอดในระบบให้ส่ง คนนับจึงนับตามของจริง ไม่ใช่นับให้ตรงเลข */
+function countView_(past, today) {
+  var end = dayNo_(today);
+  return {
+    app: 'transaction',
+    today: today,
+    lines: past.filter(function (p) {
+      return p.date === today || (p.qty !== null && end - dayNo_(p.date) < COUNT_KEEP_DAYS);
+    }).map(function (p) {
+      var o = { k: p.k, date: p.date, src: p.src, loc: p.loc, sku: p.sku, name: p.name, lot: p.lot, po: p.po };
+      return p.qty === null ? o : merge_(o, { why: p.why, qty: p.qty, exp: p.exp, diff: p.diff, who: p.who, at: p.at });
+    }),
+  };
+}
+
+function countLoad_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var tz = ss.getSpreadsheetTimeZone();
+  var today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  /* หลายเครื่องเปิดพร้อมกันตอนเช้าต้องได้รายการชุดเดียว ไม่ใช่คนละชุดซ้อนกัน */
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var sheet = countSheet_(ss);
+    var past = readCount_(sheet, tz);
+    if (!past.some(function (p) { return p.date === today; })) {
+      var rows = readRows_(ledgerSheet_(ss), tz);
+      appendCount_(sheet, today, pickCount_(rows, balances_(rows), past, today));
+      past = readCount_(sheet, tz);
+    }
+    return countView_(past, today);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * ยอดในระบบคิด ณ ตอนส่ง ไม่ใช่ตอนออกรายการ ของที่ย้ายระหว่างวันจึงไม่กลายเป็นยอดไม่ตรง
+ * ผลนับเขียนได้ครั้งเดียว ส่งซ้ำหรือสองคนนับรายการเดียวกัน ผลแรกยังอยู่ และชื่อคนต้องไม่กลายเป็นสูตรในชีต
+ */
+function countSave_(req) {
+  var items = Array.isArray(req.items) ? req.items : [];
+  if (!items.length) return { error: 'ไม่มีรายการที่จะบันทึก' };
+  var fine = items.every(function (i) { return i && typeof i.qty === 'number' && isFinite(i.qty) && i.qty >= 0; });
+  if (!fine) return { error: 'จำนวนที่นับต้องเป็นตัวเลขและไม่ติดลบ' };
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var tz = ss.getSpreadsheetTimeZone();
+  var now = new Date();
+  var bal = {};
+  balances_(readRows_(ledgerSheet_(ss), tz)).forEach(function (x) { bal[keyOf_(x.long, x.lot, x.po, x.loc)] = x.bal; });
+  var who = String(req.who || '').replace(/^[=+\-@'\s]+/, '').slice(0, 60);
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var sheet = countSheet_(ss);
+    var open = {};
+    readCount_(sheet, tz).forEach(function (p) {
+      if (p.qty === null) open[p.date + '|' + p.k] = p;
+    });
+    var saved = 0;
+    items.forEach(function (i) {
+      var id = req.date + '|' + i.k;
+      var p = open[id];
+      if (!p) return;
+      delete open[id];
+      var exp = bal[p.k] || 0;
+      sheet.getRange(p.row, COUNT_RESULT_COL, 1, 5).setValues([[i.qty, exp, i.qty - exp, who, Utilities.formatDate(now, tz, 'HH:mm')]]);
+      saved++;
+    });
+    var view = countView_(readCount_(sheet, tz), Utilities.formatDate(now, tz, 'yyyy-MM-dd'));
+    view.saved = saved;
+    view.skipped = items.length - saved;
+    return view;
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /* ── Backup ─────────────────────────────────────────────────────────────── */

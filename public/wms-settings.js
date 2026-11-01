@@ -123,8 +123,11 @@
      *
      * wms:roster:sync คือเครื่องนี้ซิงก์ตารางกะกับชีตถึงฉบับไหน — กู้ไปอีกเครื่องแล้ว
      * เครื่องนั้นจะเข้าใจว่าตัวเองมีฉบับที่ตัวเองไม่เคยเห็น
+     *
+     * wms:tx:count:draft คือเลขที่คนบนเครื่องนี้นับค้างไว้ กู้ไปอีกเครื่องแล้วจะดูเหมือนนับแล้ว
+     * ทั้งที่คนบนเครื่องนั้นยังไม่ได้เดินไปดูของ
      */
-    SKIP: ['wms:session', 'wms:orders', 'wms:stock', 'wms:transport:file', 'wms:me', 'wms:roster:sync'],
+    SKIP: ['wms:session', 'wms:orders', 'wms:stock', 'wms:transport:file', 'wms:me', 'wms:roster:sync', 'wms:tx:count:draft'],
 
     /**
      * ไฟล์สำรองแยกเป็นสองชนิด ตามสิ่งที่ "หลุดแล้วเสียหายต่างกัน"

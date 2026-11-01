@@ -4,7 +4,7 @@
  * รันสคริปต์จริงกับชีตปลอม เพราะตัวเลขพวกนี้ต้องตรงกับสูตร SUMIFS ในชีตยอดของทีม
  * ถ้าเพี้ยนไปนิดเดียวคนจะเลิกเชื่อทั้งหน้า ข้อมูลในเทสต์นี้สมมติขึ้นทั้งหมด repo นี้เป็นสาธารณะ
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
@@ -25,6 +25,29 @@ function row(o) {
 const day = (s) => new Date(`${s}T12:00:00Z`);
 const sale = (o) => row({ type: 'ขาย', status: 'เปิด', ...o });
 
+/** แท็บที่สคริปต์เขียนลงได้ สมุดรายการไม่มีเมธอดเขียนเลย ถ้าโค้ดเผลอเขียนใส่เทสต์จะล้มทันที */
+function writableTab() {
+  const grid = [];
+  const formats = [];
+  return {
+    grid,
+    formats,
+    getLastRow: () => grid.length,
+    getLastColumn: () => (grid[0] ? grid[0].length : 0),
+    getMaxRows: () => 1000,
+    insertRowsAfter: () => {},
+    setFrozenRows: () => {},
+    getRange: (r, c, nr, nc) => ({
+      getValues: () => grid.slice(r - 1, r - 1 + nr).map((x) => x.slice(c - 1, c - 1 + nc)),
+      setNumberFormat: (f) => formats.push({ r, c, nr, nc, f, atRow: grid.length }),
+      setValues: (vals) => vals.forEach((v, i) => {
+        grid[r - 1 + i] = grid[r - 1 + i] || [];
+        v.forEach((x, j) => { grid[r - 1 + i][c - 1 + j] = x; });
+      }),
+    }),
+  };
+}
+
 function script(rows, { props = {}, extraSheets = [] } = {}) {
   const grid = [HEAD, ...rows];
   const sheet = {
@@ -35,21 +58,28 @@ function script(rows, { props = {}, extraSheets = [] } = {}) {
       getValues: () => grid.slice(r - 1, r - 1 + nr).map((x) => x.slice(c - 1, c - 1 + nc)),
     }),
   };
+  const tabs = {};
   const ss = {
-    getSheets: () => [...extraSheets, sheet],
-    getSheetByName: () => sheet,
+    getSheets: () => [...extraSheets, sheet, ...Object.values(tabs)],
+    getSheetByName: (name) => tabs[name] || null,
+    insertSheet: (name) => (tabs[name] = writableTab()),
     getSpreadsheetTimeZone: () => 'UTC',
     getUrl: () => 'https://docs.example/d/1/edit',
   };
   const env = {
     SpreadsheetApp: { getActiveSpreadsheet: () => ss },
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (t) => ({ setMimeType: () => JSON.parse(t) }) },
-    Utilities: { formatDate: (d) => d.toISOString().slice(0, 10) },
+    Utilities: { formatDate: (d, tz, f) => (f === 'HH:mm' ? d.toISOString().slice(11, 16) : d.toISOString().slice(0, 10)) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props[k] ?? null }) },
+    LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
     DriveApp: {}, ScriptApp: {},
   };
-  const api = new Function(...Object.keys(env), GS + '\nreturn { doGet: doGet };')(...Object.values(env));
-  return (parameter) => api.doGet({ parameter });
+  const api = new Function(...Object.keys(env), GS + '\nreturn { doGet: doGet, doPost: doPost };')(...Object.values(env));
+  const call = (parameter) => api.doGet({ parameter });
+  call.post = (body) => api.doPost({ postData: { contents: JSON.stringify(body) } });
+  call.tabs = tabs;
+  call.ledger = grid;
+  return call;
 }
 
 const summary = (rows, o) => script(rows, o)({ api: 'tx-summary' });
@@ -329,8 +359,233 @@ describe('tx-api.gs — การตอบกลับ', () => {
     expect(GS).toContain("var TX_SHEET = '';");
   });
 
-  it('สคริปต์ไม่มีคำสั่งเขียนลงชีต', () => {
-    expect(GS).not.toMatch(/\.(setValue|setValues|appendRow|clearContent|insertRows|deleteRow|setFormula)\w*\(/);
+  it('คำสั่งเขียนลงชีตมีเฉพาะในส่วนนับสต๊อก ส่วนที่อ่านสมุดรายการไม่มีเลย', () => {
+    const start = GS.indexOf('/* ── นับสต๊อก');
+    const end = GS.indexOf('/* ── Backup');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const WRITES = /\.(setValue|setValues|appendRow|clearContent|insertRows|deleteRow|setFormula)\w*\(/;
+    expect(GS.slice(0, start)).not.toMatch(WRITES);
+    expect(GS.slice(end)).not.toMatch(WRITES);
+  });
+});
+
+describe('tx-api.gs — นับสต๊อก', () => {
+  const COUNT = 'นับสต๊อก';
+  /* ของบนชั้นสำรองที่ไม่มีอะไรผิด ใช้เป็นตัวเลือกของรายการสุ่ม */
+  const shelf = (n, o = {}) => row({ sku: `RND${String(n).padStart(3, '0')}`, to: `B-01-${String(n).padStart(2, '0')}`, qty: 10, ...o });
+  const onDay = (s) => vi.setSystemTime(new Date(`${s}T05:00:00Z`));
+  const load = (api) => api({ api: 'tx-count' });
+  const todo = (v) => v.lines.filter((l) => l.date === v.today && l.qty === undefined);
+  const saveAll = (api, v, qty = 10, who = 'สมมติ') => api.post({
+    op: 'count-save', date: v.today, who, items: todo(v).map((l) => ({ k: l.k, qty })),
+  });
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    onDay('2026-03-10');
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('เปิดครั้งแรกสร้างแท็บและออกรายการ โดยสมุดรายการไม่เปลี่ยนสักช่อง', () => {
+    const api = script([shelf(1), shelf(2)]);
+    const before = JSON.stringify(api.ledger);
+    const v = load(api);
+    expect(v.today).toBe('2026-03-10');
+    expect(v.lines.map((l) => l.sku)).toEqual(['RND001', 'RND002']);
+    expect(api.tabs[COUNT].grid[0]).toContain('นับได้');
+    expect(JSON.stringify(api.ledger)).toBe(before);
+    expect(load(api).lines.length).toBe(2);
+  });
+
+  it('แท็บนับสต๊อกไม่ทำให้สคริปต์สับสนว่าสมุดรายการคือแท็บไหน', () => {
+    const api = script([shelf(1)]);
+    load(api);
+    expect(api({ api: 'tx-summary' }).keys.length).toBe(1);
+  });
+
+  it('รายการที่ยังไม่นับไม่มียอดในระบบหรือเหตุผลส่งไปด้วย', () => {
+    const v = load(script([row({ to: 'A-01-01', qty: 1 }), sale({ from: 'A-01-01', qty: 5, note: day('2026-03-01') })]));
+    expect(v.lines).toHaveLength(1);
+    expect(Object.keys(v.lines[0]).sort()).toEqual(['date', 'k', 'loc', 'lot', 'name', 'po', 'sku', 'src'].sort());
+    expect(v.lines[0].src).toBe('เสี่ยง');
+  });
+
+  it('วันเดียวกันได้รายการเดิม เปิดกี่รอบแถวก็ไม่เพิ่ม', () => {
+    const api = script(Array.from({ length: 40 }, (_, i) => shelf(i + 1)));
+    const a = load(api);
+    const b = load(api);
+    expect(b.lines.map((l) => l.k)).toEqual(a.lines.map((l) => l.k));
+    expect(api.tabs[COUNT].grid).toHaveLength(21);
+  });
+
+  it('วันที่และรหัสตั้งเป็นข้อความก่อนเขียน และอ่านกลับได้แม้ชีตแปลงวันที่เอง', () => {
+    const api = script([shelf(1, { lot: 0.11, po: 2603000236 })]);
+    const v = load(api);
+    const tab = api.tabs[COUNT];
+    expect(tab.grid[1][0]).toBe('2026-03-10');
+    expect(tab.grid[1][7]).toBe('0.11');
+    expect(tab.grid[1][8]).toBe('2603000236');
+    expect(tab.formats.filter((f) => f.f === '@').every((f) => f.atRow === 1)).toBe(true);
+    expect(tab.formats.filter((f) => f.f === '@')[0]).toMatchObject({ r: 2, c: 1, nc: 9 });
+
+    tab.grid[1][0] = day('2026-03-10');
+    expect(load(api).lines.map((l) => l.k)).toEqual(v.lines.map((l) => l.k));
+  });
+
+  it('รายการเสี่ยงมาก่อน ยอดติดลบนำ แล้วขายจากโลไม่เปิด แล้ว Status ปนกัน และไม่เกินโควตา', () => {
+    const neg = (n, qty) => {
+      const loc = `A-01-${String(n).padStart(2, '0')}`;
+      return [row({ sku: `NEG${n}`, to: loc, qty: 1 }), sale({ sku: `NEG${n}`, from: loc, qty, note: day('2026-03-01') })];
+    };
+    const v = load(script([
+      ...neg(1, 3), ...neg(2, 9),
+      row({ sku: 'CLS001', to: 'A-02-01', qty: 9 }), sale({ sku: 'CLS001', from: 'A-02-01', qty: 2, note: day('2026-03-01') }),
+      row({ sku: 'MIX001', to: 'A-03-01', qty: 5 }), row({ sku: 'MIX001', to: 'A-03-01', qty: 5, status: 'เปิด' }),
+    ]));
+    expect(v.lines.map((l) => [l.sku, l.src])).toEqual([
+      ['NEG1', 'เสี่ยง'], ['NEG2', 'เสี่ยง'], ['CLS001', 'เสี่ยง'], ['MIX001', 'เสี่ยง'],
+    ]);
+
+    const many = script(Array.from({ length: 15 }, (_, i) => neg(String(i).padStart(2, '0'), 5 + i)).flat()
+      .concat(Array.from({ length: 30 }, (_, i) => shelf(i + 1))));
+    const risky = load(many).lines.filter((l) => l.src === 'เสี่ยง');
+    expect(risky).toHaveLength(10);
+    /* หนักสุดถูกเลือกก่อน */
+    expect(risky.map((l) => l.sku)).toContain('NEG14');
+    expect(risky.map((l) => l.sku)).not.toContain('NEG00');
+    expect(load(many).lines).toHaveLength(20);
+  });
+
+  it('รายการสุ่มเลือกเฉพาะชั้นวางสำรองที่มีของ ไม่เอาโลเปิด QA IQA RIB จุดที่ไม่ใช่ชั้นวาง และยอดศูนย์', () => {
+    const v = load(script([
+      shelf(1),
+      row({ sku: 'OPN001', to: 'S-01-01', qty: 5, status: 'เปิด' }),
+      row({ sku: 'SPC001', to: 'QA', qty: 5 }), row({ sku: 'SPC002', to: 'IQA', qty: 5 }), row({ sku: 'SPC003', to: 'RIB', qty: 5 }),
+      row({ sku: 'ODD001', to: 'จุดสมมติ', qty: 5 }),
+      row({ sku: 'ZER001', to: 'B-02-01', qty: 5 }), row({ sku: 'ZER001', type: 'เบิก', from: 'B-02-01', qty: 5 }),
+    ]));
+    expect(v.lines.map((l) => [l.sku, l.src])).toEqual([['RND001', 'สุ่ม']]);
+  });
+
+  it('สุ่มได้ผลเดิมถ้าข้อมูลกับวันเดิม คนละวันได้ชุดต่างกัน และเรียงตาม Location ให้เดินนับได้', () => {
+    const rows = Array.from({ length: 60 }, (_, i) => shelf(i + 1));
+    const a = load(script(rows)).lines.map((l) => l.loc);
+    expect(load(script(rows)).lines.map((l) => l.loc)).toEqual(a);
+    expect(a).toEqual([...a].sort());
+    onDay('2026-03-11');
+    expect(load(script(rows)).lines.map((l) => l.loc)).not.toEqual(a);
+  });
+
+  it('บันทึกผลนับเติมเฉพาะช่องผลนับ และคิดยอดในระบบ ณ ตอนส่ง', () => {
+    const rows = [shelf(1)];
+    const api = script(rows);
+    const v = load(api);
+    /* มีของออกหลังออกรายการแล้ว */
+    api.ledger.push(row({ sku: 'RND001', type: 'เบิก', from: 'B-01-01', qty: 4 }));
+
+    vi.setSystemTime(new Date('2026-03-10T07:30:00Z'));
+    const r = api.post({ op: 'count-save', date: v.today, who: 'สมมติ', items: [{ k: v.lines[0].k, qty: 5 }] });
+    expect(r.saved).toBe(1);
+    expect(r.skipped).toBe(0);
+    expect(r.lines[0]).toMatchObject({ qty: 5, exp: 6, diff: -1, who: 'สมมติ', at: '07:30', why: 'สุ่มตรวจ' });
+    const saved = api.tabs[COUNT].grid[1];
+    expect(saved.slice(9, 14)).toEqual([5, 6, -1, 'สมมติ', '07:30']);
+    expect(saved.slice(3, 5)).toEqual(['B-01-01', 'RND001']);
+  });
+
+  it('LOT เป็นทศนิยมและ PO เป็นตัวเลขเทียบกับสมุดรายการตรง', () => {
+    const api = script([shelf(1, { lot: 0.11, po: 2603000236 })]);
+    const v = load(api);
+    expect(saveAll(api, v, 10).lines[0]).toMatchObject({ exp: 10, diff: 0 });
+  });
+
+  it('ผลนับเขียนได้ครั้งเดียว รหัสที่ไม่อยู่ในรายการเพิ่มแถวไม่ได้', () => {
+    const api = script([shelf(1)]);
+    const v = load(api);
+    const k = v.lines[0].k;
+    api.post({ op: 'count-save', date: v.today, who: 'คนแรก', items: [{ k, qty: 10 }] });
+    const size = api.tabs[COUNT].grid.length;
+    const r = api.post({ op: 'count-save', date: v.today, who: 'คนสอง', items: [{ k, qty: 3 }, { k: 'X|Y|Z|W', qty: 1 }] });
+    expect(r).toMatchObject({ saved: 0, skipped: 2 });
+    expect(r.lines[0]).toMatchObject({ qty: 10, who: 'คนแรก' });
+    expect(api.tabs[COUNT].grid).toHaveLength(size);
+  });
+
+  it('รหัสซ้ำในคำขอเดียวเก็บแค่ค่าแรก', () => {
+    const api = script([shelf(1)]);
+    const v = load(api);
+    const k = v.lines[0].k;
+    const r = api.post({ op: 'count-save', date: v.today, who: 'สมมติ', items: [{ k, qty: 10 }, { k, qty: 3 }] });
+    expect(r).toMatchObject({ saved: 1, skipped: 1 });
+    expect(r.lines[0].qty).toBe(10);
+  });
+
+  it.each([[-1], ['5'], [null], [Infinity]])('จำนวน %s ถูกปฏิเสธทั้งชุด ไม่มีอะไรถูกเขียน', (qty) => {
+    const api = script([shelf(1), shelf(2)]);
+    const v = load(api);
+    const before = JSON.stringify(api.tabs[COUNT].grid);
+    const r = api.post({ op: 'count-save', date: v.today, who: 'สมมติ', items: [{ k: v.lines[0].k, qty: 1 }, { k: v.lines[1].k, qty }] });
+    expect(r.error).toBeTruthy();
+    expect(JSON.stringify(api.tabs[COUNT].grid)).toBe(before);
+  });
+
+  it('คำขอที่ไม่มีรายการหรือคำสั่งไม่รู้จักตอบ error', () => {
+    const api = script([shelf(1)]);
+    expect(api.post({ op: 'count-save', date: '2026-03-10', items: [] }).error).toBeTruthy();
+    expect(api.post({ op: 'อะไรก็ไม่รู้' }).error).toBeTruthy();
+  });
+
+  it('ชื่อคนนับที่ขึ้นต้นเหมือนสูตรไม่กลายเป็นสูตรในชีต', () => {
+    const api = script([shelf(1)]);
+    const v = load(api);
+    api.post({ op: 'count-save', date: v.today, who: '=IMPORTXML("https://x.example","//a")', items: [{ k: v.lines[0].k, qty: 10 }] });
+    expect(String(api.tabs[COUNT].grid[1][12]).startsWith('=')).toBe(false);
+  });
+
+  it('วันถัดไป: ไม่ตรงกลับมานับซ้ำ ตรงแล้วพัก 30 วัน', () => {
+    const api = script([shelf(1), shelf(2), shelf(3)]);
+    const v = load(api);
+    const [a, b, c] = v.lines;
+    api.post({ op: 'count-save', date: v.today, who: 'สมมติ', items: [{ k: a.k, qty: 7 }, { k: b.k, qty: 10 }] });
+
+    onDay('2026-03-11');
+    const d2 = load(api);
+    const today = d2.lines.filter((l) => l.date === '2026-03-11');
+    /* a ไม่ตรง นับซ้ำ / b ตรง พัก / c ยังไม่ได้นับ ถูกเลือกได้อีก */
+    expect(today.map((l) => [l.k, l.src])).toEqual([[a.k, 'นับซ้ำ'], [c.k, 'สุ่ม']]);
+    /* รายการของเมื่อวานที่ไม่ได้นับไม่ค้างอยู่ในหน้าเว็บ */
+    expect(d2.lines.filter((l) => l.date === '2026-03-10').map((l) => l.k)).toEqual([a.k, b.k]);
+
+    onDay('2026-04-09');
+    expect(load(api).lines.filter((l) => l.date === '2026-04-09').map((l) => l.k)).toContain(b.k);
+  });
+
+  it('นับซ้ำแล้วยังไม่ตรงไม่เรียกซ้ำอีก จนครบเวลาพัก', () => {
+    const api = script([shelf(1)]);
+    const v = load(api);
+    const k = v.lines[0].k;
+    api.post({ op: 'count-save', date: v.today, who: 'สมมติ', items: [{ k, qty: 7 }] });
+    onDay('2026-03-11');
+    const d2 = load(api);
+    expect(d2.lines.find((l) => l.date === '2026-03-11').src).toBe('นับซ้ำ');
+    api.post({ op: 'count-save', date: d2.today, who: 'สมมติ', items: [{ k, qty: 7 }] });
+    onDay('2026-03-12');
+    expect(load(api).lines.filter((l) => l.date === '2026-03-12')).toEqual([]);
+  });
+
+  it('ผลนับเก่ากว่า 30 วันไม่ส่งไปหน้าเว็บ แต่ยังอยู่ในแท็บ', () => {
+    const api = script([shelf(1)]);
+    const v = load(api);
+    saveAll(api, v);
+    onDay('2026-04-20');
+    const later = load(api);
+    expect(later.lines.filter((l) => l.date === '2026-03-10')).toEqual([]);
+    expect(api.tabs[COUNT].grid[1][0]).toBe('2026-03-10');
+  });
+
+  it('ไม่มีอะไรให้นับก็ตอบรายการว่าง ไม่ล้ม', () => {
+    expect(load(script([])).lines).toEqual([]);
   });
 });
 
@@ -528,16 +783,33 @@ describe('wms-tx.js', () => {
     expect(() => WmsTx.parse({ error: 'พัง' })).toThrow('พัง');
   });
 
-  it('ข้อความของรายการข้อมูลผิดอ่านรู้เรื่องทุกชนิด', () => {
+  it('รายการข้อมูลผิดแยกเป็นช่องตามแต่ละเรื่อง', () => {
     const base = { sku: 'AAA001', lot: 8, po: '100', loc: 'A-01-01' };
-    expect(WmsTx.describeIssue({ ...base, kind: 'mixed', blank: 20, open: 400, out: 420, bal: 0 }))
-      .toBe('AAA001 lot 8 PO 100 ที่ A-01-01 เข้าแบบว่าง 20 แบบเปิด 400 ออก 420 ยอดจริงคือ 0');
-    expect(WmsTx.describeIssue({ ...base, po: '0', kind: 'outonly', bal: -70 })).toBe('AAA001 lot 8 ที่ A-01-01 ติดลบ 70');
-    expect(WmsTx.describeIssue({ kind: 'baddate', note: '30 ต.ค.', rowCount: 1200 })).toBe('กรอกว่า "30 ต.ค." รูปแบบนี้ 1,200 แถว');
-    expect(WmsTx.describeIssue({ kind: 'locname', name: 'R-1', like: 'R1' })).toBe('R-1 น่าจะเป็นที่เดียวกับ R1');
-    expect(WmsTx.describeIssue({ kind: 'locname', name: 'จุดแปลก', like: '', rowCount: 3 })).toBe('จุดแปลก ใช้แค่ 3 แถว');
-    expect(WmsTx.describeIssue({ kind: 'date', note: 'GR 05-03-26', rowCount: 9, near: '2026-08-02' })).toContain('02/08');
-    for (const { kind } of WmsTx.ISSUES) expect(WmsTx.describeIssue({ ...base, kind, what: 'x', note: 'n', name: 'n' })).not.toBe('');
+    const kindOf = (kind) => WmsTx.ISSUES.find((k) => k.kind === kind);
+    const heads = (kind) => kindOf(kind).cols.map((c) => c.label);
+    const cells = (i) => kindOf(i.kind).cols.map((c) => c.value(i));
+
+    expect(heads('closedsale')).toEqual(['SKU', 'Lot', 'PO', 'Location', 'ขายออก']);
+    expect(cells({ ...base, kind: 'closedsale', sold: 1500 })).toEqual(['AAA001', '8', '100', 'A-01-01', '1,500']);
+    expect(cells({ ...base, kind: 'mixed', blank: 20, open: 400, out: 420, bal: 0 }))
+      .toEqual(['AAA001', '8', '100', 'A-01-01', '20', '400', '420', '0']);
+    expect(cells({ ...base, kind: 'outonly', bal: -70 })).toEqual(['AAA001', '8', '100', 'A-01-01', '70']);
+    expect(cells({ ...base, kind: 'negative', bal: -70 })).toEqual(['AAA001', '8', '100', 'A-01-01', '70']);
+    expect(cells({ ...base, kind: 'qty', value: 'สิบ' })).toEqual(['AAA001', '8', 'A-01-01', 'สิบ']);
+    expect(cells({ kind: 'incomplete', sku: '', what: 'QTY, Note' })).toEqual(['ไม่มีรหัส', 'QTY, Note']);
+    expect(cells({ kind: 'baddate', note: '30 ต.ค.', rowCount: 1200 })).toEqual(['30 ต.ค.', '1,200']);
+    expect(cells({ kind: 'locname', name: 'R-1', like: 'R1' })).toEqual(['R-1', 'น่าจะเป็นที่เดียวกับ R1']);
+    expect(cells({ kind: 'locname', name: 'จุดแปลก', like: '', rowCount: 3 })).toEqual(['จุดแปลก', 'ใช้แค่ 3 แถว']);
+    expect(cells({ kind: 'date', note: 'GR 05-03-26', rowCount: 9, near: '2026-08-02' })).toEqual(['GR 05-03-26', '9', '02/08']);
+  });
+
+  it('ช่องที่ไม่มีค่าแสดงเป็นขีด ไม่ใช่ช่องว่าง และ LOT 0 ยังเป็นเลข 0', () => {
+    const closed = WmsTx.ISSUES.find((k) => k.kind === 'closedsale');
+    expect(closed.cols.map((c) => c.value({ sku: 'AAA001', lot: 0, po: '0', loc: 'A-01-01', sold: 1 })))
+      .toEqual(['AAA001', '0', '–', 'A-01-01', '1']);
+    expect(closed.cols.map((c) => c.value({ sku: 'AAA001', lot: '', po: '', loc: 'A-01-01', sold: 1 })))
+      .toEqual(['AAA001', '–', '–', 'A-01-01', '1']);
+    for (const k of WmsTx.ISSUES) expect(k.cols.length).toBeGreaterThan(0);
   });
 
   it('ลิงก์เปิดชีตตรงแถว', () => {
@@ -576,5 +848,103 @@ describe('wms-tx.js', () => {
     expect(WmsTx.read()).toBe(null);
     session.set(WmsTx.KEY, '{oops');
     expect(WmsTx.read()).toBe(null);
+  });
+});
+
+describe('wms-tx.js — นับสต๊อก', () => {
+  let WmsTx, win, store;
+
+  beforeEach(() => {
+    store = new Map();
+    win = {};
+    new Function('window', 'sessionStorage', 'localStorage', 'console', JS)(win, {
+      getItem: () => null, setItem: () => {},
+    }, {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => store.set(k, String(v)),
+    }, { warn: () => {} });
+    WmsTx = win.WmsTx;
+  });
+
+  const TODAY = '2026-03-10';
+  const line = (o) => ({ k: 'K1', date: TODAY, src: 'สุ่ม', loc: 'B-01-01', sku: 'AAA001', name: 'หมอน', lot: '8', po: '100', ...o });
+  const done = (o) => line({ qty: 10, exp: 10, diff: 0, who: 'สมมติ', at: '09:00', why: 'สุ่มตรวจ', ...o });
+
+  it('แยกรายการของวันนี้เป็นที่ยังไม่นับกับนับแล้ว', () => {
+    const s = WmsTx.countStats({ today: TODAY, lines: [line({ k: 'A' }), done({ k: 'B' }), done({ k: 'C', date: '2026-03-01' })] });
+    expect(s.total).toBe(2);
+    expect(s.todo.map((l) => l.k)).toEqual(['A']);
+    expect(s.done.map((l) => l.k)).toEqual(['B']);
+  });
+
+  it('ความแม่นยำคิดจากรายการสุ่มที่นับแล้วเท่านั้น', () => {
+    const s = WmsTx.countStats({ today: TODAY, lines: [
+      done({ k: 'A' }), done({ k: 'B' }), done({ k: 'C' }), done({ k: 'D', qty: 7, diff: -3 }),
+      done({ k: 'E', src: 'เสี่ยง', qty: 0, diff: -10 }), done({ k: 'F', src: 'นับซ้ำ', qty: 0, diff: -10 }),
+      line({ k: 'G' }),
+    ] });
+    expect(s).toMatchObject({ sample: 4, match: 3, accuracy: 75 });
+  });
+
+  it('ยังไม่มีรายการสุ่มที่นับแล้ว ความแม่นยำเป็น null ไม่ใช่ศูนย์', () => {
+    const s = WmsTx.countStats({ today: TODAY, lines: [line({})] });
+    expect(s.accuracy).toBe(null);
+    expect(s.sample).toBe(0);
+  });
+
+  it('ไม่ตรงค้างอยู่ยึดผลล่าสุดของแต่ละรายการ ไม่รวมของวันนี้ และต่างมากขึ้นก่อน', () => {
+    const s = WmsTx.countStats({ today: TODAY, lines: [
+      done({ k: 'FIXED', date: '2026-03-01', qty: 7, diff: -3 }), done({ k: 'FIXED', date: '2026-03-02', src: 'นับซ้ำ', diff: 0 }),
+      done({ k: 'SMALL', date: '2026-03-02', qty: 9, diff: -1 }),
+      done({ k: 'BIG', date: '2026-03-02', src: 'นับซ้ำ', qty: 5, diff: -5 }),
+      done({ k: 'NOW', qty: 1, diff: -9 }),
+    ] });
+    expect(s.off.map((l) => l.k)).toEqual(['BIG', 'SMALL']);
+  });
+
+  it('แก้ในชีตจนยอดเท่าที่นับได้แล้ว รายการหายจากที่ต้องตาม รวมถึงกรณีแก้จนยอดเป็นศูนย์', () => {
+    const raw = {
+      skus: [['AAA001', 'LONG-1', 'หมอน']], locs: ['B-01-01', 'B-01-02'],
+      keys: [[0, 8, 100, 0, 7, 0], [0, 8, 100, 1, 50, 0]],
+    };
+    const k1 = 'LONG-1|8|100|B-01-01';
+    const k2 = 'LONG-1|8|100|B-01-02';
+    const k3 = 'LONG-1|8|100|B-01-03';
+    const data = { today: TODAY, lines: [
+      done({ k: k1, date: '2026-03-02', qty: 7, diff: -3 }),
+      done({ k: k2, date: '2026-03-02', qty: 40, diff: -10 }),
+      done({ k: k3, date: '2026-03-02', qty: 0, diff: -5 }),
+    ] };
+    expect(WmsTx.countStats(data).off).toHaveLength(3);
+    expect(WmsTx.countStats(data, raw).off.map((l) => l.k)).toEqual([k2]);
+  });
+
+  it('แสดงผลต่างมีเครื่องหมาย', () => {
+    expect(WmsTx.diffText(0)).toBe('ตรง');
+    expect(WmsTx.diffText(3)).toBe('+3');
+    expect(WmsTx.diffText(-1200)).toBe('-1,200');
+  });
+
+  it('ตัวเลขที่กรอกค้างใช้ได้กับวันเดียวกันเท่านั้น และข้อมูลเสียไม่ทำให้หน้าพัง', () => {
+    expect(WmsTx.readDraft(TODAY)).toEqual({});
+    WmsTx.saveDraft(TODAY, { K1: '5' });
+    expect(WmsTx.readDraft(TODAY)).toEqual({ K1: '5' });
+    expect(WmsTx.readDraft('2026-03-11')).toEqual({});
+    store.set('wms:tx:count:draft', '{oops');
+    expect(WmsTx.readDraft(TODAY)).toEqual({});
+  });
+
+  it('สคริปต์รุ่นเก่าหรือ error บอกให้รู้ว่าต้องทำอะไร', async () => {
+    win.WmsGas = { json: async () => ({ app: 'transaction' }), post: async () => ({ error: 'ไม่รู้จักคำสั่งนี้' }) };
+    await expect(WmsTx.pullCount('https://x/exec')).rejects.toThrow('New version');
+    await expect(WmsTx.saveCount('https://x/exec', TODAY, [])).rejects.toThrow('ไม่รู้จักคำสั่งนี้');
+  });
+
+  it('ส่งผลนับพร้อมชื่อคนที่ลงชื่อเข้าระบบ', async () => {
+    store.set('wms:session', JSON.stringify({ name: 'สมมติ', at: 1 }));
+    const sent = [];
+    win.WmsGas = { post: async (url, body) => { sent.push(body); return { lines: [] }; } };
+    await WmsTx.saveCount('https://x/exec', TODAY, [{ k: 'K1', qty: 5 }]);
+    expect(sent).toEqual([{ op: 'count-save', date: TODAY, who: 'สมมติ', items: [{ k: 'K1', qty: 5 }] }]);
   });
 });

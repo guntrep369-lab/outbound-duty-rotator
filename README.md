@@ -308,11 +308,13 @@ localStorage — it is not stored in this repo.** See
 
 Reads the team's hand-entered Transaction sheet through
 [`apps-script/tx-api.gs`](apps-script/tx-api.gs) and works out balances by SKU, LOT, PO, and Location.
-The script only reads. It never writes to the sheet, so the worst a bug can do is show a wrong number.
+The script never writes to the Transaction sheet, so the worst a bug can do there is show a wrong
+number. The one thing it writes is its own `นับสต๊อก` tab, which holds the stock count.
 
 | Tab | What it answers |
 | --- | --- |
 | ต้องเติม | Which SKUs will run out of the open locations within 2 or 3 days, and where to pull from (oldest LOT first, LOT 0 last) |
+| นับสต๊อก | Today's 20 lines to count, and how accurate the stock is |
 | หาของ | Where a SKU is, or what is in a Location |
 | ข้อมูลผิด | Rows that look wrong, each linking to that row in the sheet |
 | ประวัติ | Every movement of one SKU, with a running total |
@@ -323,6 +325,21 @@ one deliberate difference: Status isn't part of the key. The sheet's formula spl
 Status but not the out-side, so a spot that was received both blank and เปิด subtracts its out-rows
 twice. These spots show up under ข้อมูลผิด as "Status ปนกัน". Status only decides whether a spot counts
 as open, using its latest in-row. QA, IQA, and RIB never count as open or as reserve.
+
+**How the stock count works.** The first person to open the นับสต๊อก tab each day gets a list of 20 lines,
+one per SKU + LOT + PO + Location, and everyone else that day sees the same list. To send it straight to
+a counter's phone, use `/stock-location/?tab=count`.
+
+- Up to 10 lines are recounts and risky spots: last count didn't match, then negative balances, sales from
+  a closed location, and mixed Status. The rest are random lines from reserve racks.
+- The counter doesn't see the system balance until after sending, so they count what's on the shelf.
+- The balance is worked out when the count is sent, so goods moved earlier that day don't show as a
+  mismatch. Sale rows entered late still can, which is why open locations aren't picked at random.
+- A mismatch comes back for a recount the next day. If the recount doesn't match either, fix it with a row
+  in the Transaction sheet; the app doesn't change that sheet. Counted lines rest for 30 days.
+- Stock accuracy counts only the random lines, because risky lines were picked for being likely wrong.
+- A result can be written once. Anyone with the URL can fill in today's blank results, but can't add lines
+  or change a result that's already saved.
 
 **Setup (once):**
 
@@ -371,7 +388,7 @@ public/
 ├─ warehouse-forms/ jobs/ loadplan/ transport-docs/ transport-forms/ settings/
 apps-script/
 ├─ roster-api.gs           # the shared schedule sheet's script (pasted into Apps Script, not served)
-└─ tx-api.gs               # read-only balances from the Transaction sheet, plus its nightly backup
+└─ tx-api.gs               # balances from the Transaction sheet, stock count, and nightly backup
 src/
 ├─ data/                   # tests for the shared helpers + page-wide checks
 └─ transport/              # tests for the transport helpers
