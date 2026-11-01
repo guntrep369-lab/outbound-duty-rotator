@@ -275,6 +275,9 @@
 
   /* ── นับสต๊อก ───────────────────────────────────────────────────────────── */
 
+  var DIFF_SRC = 'เทียบระบบ';    // ที่มาของรายการที่ส่งจากแท็บเทียบสต๊อก ต้องตรงกับ COUNT_DIFF_SRC ในสคริปต์
+  var ELSEWHERE = 'ที่อื่น';      // ต้องตรงกับ COUNT_ELSEWHERE ในสคริปต์
+
   function isCounted(l) { return typeof l.qty === 'number'; }
 
   /**
@@ -292,8 +295,9 @@
     var sample = lines.filter(function (l) { return isCounted(l) && l.src === 'สุ่ม'; });
     var match = sample.filter(function (l) { return l.diff === 0; }).length;
 
+    /* รายการเทียบระบบมีผลของตัวเองที่แท็บเทียบสต๊อก ไม่ใช่งานที่รอนับซ้ำหรือรอแก้แบบรายการอื่น */
     var latest = {};
-    lines.filter(isCounted).forEach(function (l) { latest[l.k] = l; });
+    lines.filter(function (l) { return isCounted(l) && l.src !== DIFF_SRC; }).forEach(function (l) { latest[l.k] = l; });
     var now = raw ? balanceMap(raw) : null;
     var off = Object.keys(latest).map(function (k) { return latest[k]; }).filter(function (l) {
       if (l.diff === 0 || l.date === data.today) return false;
@@ -339,9 +343,11 @@
     catch (e) { console.warn('เก็บตัวเลขที่กรอกค้างไม่ได้ —', e.message); }
   }
 
+  var OLD_SCRIPT = 'สคริปต์ยังเป็นรุ่นเก่า — วาง tx-api.gs รุ่นล่าสุดแล้ว Deploy เป็น New version';
+
   function countReply(r) {
     if (r && r.error) throw new Error('Apps Script error: ' + r.error);
-    if (!r || !Array.isArray(r.lines)) throw new Error('สคริปต์ยังเป็นรุ่นเก่า — วาง tx-api.gs รุ่นล่าสุดแล้ว Deploy เป็น New version');
+    if (!r || !Array.isArray(r.lines)) throw new Error(OLD_SCRIPT);
     return r;
   }
 
@@ -353,6 +359,14 @@
     return countReply(await window.WmsGas.post(url, { op: 'count-save', date: date, who: counterName(), items: items }, opts));
   }
 
+  /** ส่ง SKU ที่ไม่ตรงเข้าใบนับ @param rows แถวจาก compareStock */
+  async function addCount(url, rows, opts) {
+    var items = rows.map(function (r) { return { sku: r.sku, longs: r.longs, name: r.name }; });
+    var r = await window.WmsGas.post(url, { op: 'count-add', items: items }, opts);
+    if (r && r.error === 'ไม่รู้จักคำสั่งนี้') throw new Error(OLD_SCRIPT);
+    return countReply(r);
+  }
+
   /** ชื่อที่ลงชื่อเข้าระบบไว้บนเครื่องนี้ ตัวจับเวลาหมดอายุเป็นเรื่องของ wms-gate */
   function counterName() {
     try { return JSON.parse(localStorage.getItem('wms:session') || '{}').name || ''; }
@@ -360,6 +374,8 @@
   }
 
   /* ── เทียบกับระบบบริษัท ──────────────────────────────────────────────────── */
+
+  function code(s) { return String(s === null || s === undefined ? '' : s).toUpperCase().replace(/\s+/g, ''); }
 
   /** ทิศทางของยอดที่ต่าง พร้อมสาเหตุที่น่าจะเป็น ลำดับนี้คือลำดับที่แสดงบนหน้าเว็บ */
   var DIFFS = [
@@ -376,6 +392,9 @@
   var MIN_CLUE = 2;
   /** ถ้าเท่ากันหลายจุดเกินนี้ก็บอกไม่ได้ว่าจุดไหน ไม่ต้องแสดง */
   var MAX_CLUE_LOCS = 2;
+
+  /** ของใช้ภายในไม่ได้เข้าสต๊อกระบบบริษัท และรหัสในชีตเป็นคำไทยที่ตั้งกันเอง ส่วนสินค้าจริงใช้รหัสอังกฤษกับเลข */
+  var THAI = /[฀-๿]/;
 
   /** Location ที่ถ้าตัดออกจากยอดชีตแล้วสองฝั่งเท่ากันพอดี เช่นของที่ระบบบริษัทตัดแล้วแต่ในชีตยังวางอยู่จุดรอส่ง */
   function equalsAt(lines, diff) {
@@ -401,23 +420,26 @@
    *
    * @param raw คำตอบ tx-summary
    * @param stock map จาก WmsStock คือ sku → {sku,description,qa,newwh,total}
-   * @returns {{rows:Array, same:number, counts:Object, sys:number, tx:number, off:number, found:number, ledger:number}}
+   * @returns {{rows:Array, internal:Array, same:number, counts:Object, sys:number, tx:number, off:number, found:number, ledger:number}}
    *   rows คือ SKU ที่ไม่ตรง เรียงจากต่างมากสุด ส่วน found / ledger คือ SKU ที่มียอดในชีตและหาเจอในระบบบริษัท
+   *   internal คือของใช้ภายในที่ไม่นำมาเทียบ ไม่รวมในตัวเลขอื่นทั้งหมด
    */
   function compareStock(raw, stock) {
-    function code(s) { return String(s === null || s === undefined ? '' : s).toUpperCase().replace(/\s+/g, ''); }
-
     var sys = {};
     Object.keys(stock).forEach(function (k) { sys[code(k)] = stock[k]; });
 
     var groups = {};
     function groupOf(t) {
       var c = sys[code(t[1])] ? code(t[1]) : sys[code(t[0])] ? code(t[0]) : code(t[0] || t[1]);
-      return groups[c] || (groups[c] = { ledger: t[0] || t[1], long: t[1], name: t[2], tx: 0, neg: 0, lines: [], breaks: [] });
+      return groups[c] || (groups[c] = { ledger: t[0] || t[1], long: t[1], longs: [], name: t[2], tx: 0, neg: 0, lines: [], breaks: [] });
     }
 
     var byShort = {};
-    raw.skus.forEach(function (t) { byShort[code(t[0] || t[1])] = groupOf(t); });
+    raw.skus.forEach(function (t) {
+      var g = groupOf(t);
+      byShort[code(t[0] || t[1])] = g;
+      if (t[1]) g.longs.push(t[1]);
+    });
     raw.keys.forEach(function (k) {
       var g = groupOf(raw.skus[k[0]]);
       g.tx += k[4];
@@ -431,13 +453,18 @@
       g.breaks.push({ label: def.label, rows: i.rows });
     });
     Object.keys(sys).forEach(function (c) {
-      if (!groups[c]) groups[c] = { ledger: '', long: '', name: '', tx: 0, neg: 0, lines: [], breaks: [] };
+      if (!groups[c]) groups[c] = { ledger: '', long: '', longs: [], name: '', tx: 0, neg: 0, lines: [], breaks: [] };
     });
 
-    var out = { rows: [], same: 0, counts: { more: 0, less: 0, sysonly: 0, txonly: 0 }, sys: 0, tx: 0, off: 0, found: 0, ledger: 0 };
+    var out = { rows: [], internal: [], same: 0, counts: { more: 0, less: 0, sysonly: 0, txonly: 0 }, sys: 0, tx: 0, off: 0, found: 0, ledger: 0 };
     Object.keys(groups).forEach(function (c) {
       var g = groups[c], s = sys[c];
       var n = s ? (s.total || s.qa + s.newwh) : 0;
+      /* วันไหนระบบบริษัทมียอดของรหัสนี้ ก็กลับมาเทียบตามปกติ */
+      if (!n && g.tx && (THAI.test(g.ledger) || THAI.test(g.long))) {
+        out.internal.push({ sku: g.ledger, name: g.name, tx: g.tx });
+        return;
+      }
       out.sys += n;
       out.tx += g.tx;
       if (g.tx !== 0) { out.ledger++; if (s) out.found++; }
@@ -447,8 +474,11 @@
       var kind = !g.tx ? 'sysonly' : !n ? 'txonly' : diff > 0 ? 'more' : 'less';
       out.counts[kind]++;
       out.off += Math.abs(diff);
+      var spots = {};
+      g.lines.forEach(function (l) { spots[l.loc] = 1; });
       out.rows.push({
-        sku: g.ledger || s.sku, ledger: g.ledger, long: g.long, name: g.name || (s ? s.description : ''),
+        sku: g.ledger || s.sku, ledger: g.ledger, long: g.long, longs: g.longs, name: g.name || (s ? s.description : ''),
+        id: code(g.longs.join(',') || g.ledger || s.sku), spots: Object.keys(spots).length,
         sys: n, qa: s ? s.qa : 0, newwh: s ? s.newwh : 0, tx: g.tx, diff: diff, kind: kind,
         /* ระบบบริษัทเป็น 0 ทุกจุดในชีตคือส่วนที่ต่าง การบอกว่าเท่าจุดไหนจึงไม่ได้ช่วยแคบลง */
         neg: g.neg, breaks: g.breaks, equalsAt: n ? equalsAt(g.lines, diff) : [],
@@ -457,22 +487,89 @@
     out.rows.sort(function (a, b) {
       return Math.abs(b.diff) - Math.abs(a.diff) || String(a.sku).localeCompare(String(b.sku));
     });
+    out.internal.sort(function (a, b) { return b.tx - a.tx; });
     return out;
   }
 
-  /** กรองรายการที่ไม่ตรงตามแบบและคำค้น ค้นได้ทั้งรหัสสองแบบและชื่อสินค้า */
-  function filterDiff(rows, kind, q) {
+  /** ผลของการส่งไปนับ ลำดับนี้คือลำดับที่แสดงบนหน้าเว็บ งานที่ต้องตามต่อมาก่อน */
+  var COUNT_STATES = [
+    { state: 'sheet',   label: 'Transaction ผิด', todo: 'ของจริงตรงกับระบบบริษัท แก้ในชีต Transaction' },
+    { state: 'company', label: 'ระบบบริษัทผิด',   todo: 'ของจริงตรงกับ Transaction แจ้งคนดูแลระบบบริษัท' },
+    { state: 'both',    label: 'ไม่ตรงทั้งคู่',    todo: 'นับซ้ำอีกรอบ ถ้ายังเท่าเดิมค่อยแก้ทั้งสองฝั่ง' },
+    { state: 'wait',    label: 'รอนับ',           todo: '' },
+    { state: 'late',    label: 'นับไม่ครบ',       todo: 'รอบนี้หมดอายุแล้ว ส่งเข้าใบนับใหม่' },
+  ];
+
+  /** รอบล่าสุดของแต่ละ SKU: ใช้วันล่าสุด และถ้าวันเดียวกันส่งซ้ำ ใช้แถวหลังสุดของแต่ละจุด */
+  function diffBatches(lines) {
+    var out = {};
+    lines.forEach(function (l) {
+      if (l.src !== DIFF_SRC) return;
+      var id = code(l.long);
+      var b = out[id];
+      if (!b || l.date > b.date) b = out[id] = { date: l.date, spots: {} };
+      if (l.date === b.date) b.spots[l.loc] = l;
+    });
+    return out;
+  }
+
+  /**
+   * ของจริงตรงกับฝั่งไหน
+   *
+   * เทียบผลต่างแทนยอดตรง ๆ เพราะยอดของวันที่นับกับยอดตอนเปิดดูอาจห่างกัน ขายหลังนับแล้วสองฝั่งลดเท่ากัน
+   * ผลรวมช่องต่าง = ของจริง − Transaction ถ้าเป็น 0 ของจริงเท่า Transaction
+   * ถ้าเท่า ระบบบริษัท − Transaction ของจริงก็เท่าระบบบริษัท
+   */
+  function countVerdict(row, b, today) {
+    var spots = Object.keys(b.spots).map(function (k) { return b.spots[k]; });
+    var done = spots.filter(isCounted);
+    var v = { date: b.date, done: done.length, total: spots.length };
+    if (done.length < spots.length) {
+      v.state = b.date === today ? 'wait' : 'late';
+      return v;
+    }
+    v.qty = done.reduce(function (a, l) { return a + l.qty; }, 0);
+    v.off = done.reduce(function (a, l) { return a + l.diff; }, 0);
+    v.state = v.off === 0 ? 'company' : v.off === row.diff ? 'sheet' : 'both';
+    return v;
+  }
+
+  /** ติดผลนับให้แถวจาก compareStock แถวที่ไม่เคยส่งนับได้ count เป็น null */
+  function attachCounts(rows, data) {
+    var batches = data ? diffBatches(data.lines) : {};
+    rows.forEach(function (r) {
+      var b = batches[r.id];
+      r.count = b ? countVerdict(r, b, data.today) : null;
+    });
+    return rows;
+  }
+
+  /** ตัวที่รอนับอยู่ส่งซ้ำไม่ได้ ตัวอื่นส่งได้ รวมถึงตัวที่นับแล้วและอยากนับอีกรอบ */
+  function canSend(r) { return !r.count || r.count.state !== 'wait'; }
+
+  /**
+   * กรองรายการที่ไม่ตรงตามแบบ คำค้น และผลนับ ค้นได้ทั้งรหัสสองแบบและชื่อสินค้า
+   * @param state 'none' คือยังไม่เคยส่งนับ ที่เหลือคือค่าใน COUNT_STATES
+   */
+  function filterDiff(rows, kind, q, state) {
     var n = norm(q);
     return rows.filter(function (r) {
       if (kind && r.kind !== kind) return false;
+      if (state && (r.count ? r.count.state : 'none') !== state) return false;
       return !n || norm(r.sku).indexOf(n) !== -1 || norm(r.long).indexOf(n) !== -1 || norm(r.name).indexOf(n) !== -1;
     });
   }
 
   window.WmsTx = {
     DIFFS: DIFFS,
+    DIFF_SRC: DIFF_SRC,
+    ELSEWHERE: ELSEWHERE,
+    COUNT_STATES: COUNT_STATES,
     compareStock: compareStock,
+    attachCounts: attachCounts,
+    canSend: canSend,
     filterDiff: filterDiff,
+    addCount: addCount,
     countStats: countStats,
     diffText: diffText,
     readDraft: readDraft,

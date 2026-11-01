@@ -9,13 +9,15 @@
  * เป็นของที่ทีมกรอกด้วยมือทุกวัน สคริปต์ที่แก้มันได้คือความเสี่ยงที่ไม่จำเป็น
  * ถ้าโค้ดนี้มีจุดผิด อย่างมากตัวเลขบนหน้าเว็บจะผิด สมุดรายการยังอยู่ครบเหมือนเดิม
  *
- * ที่เขียนมีแห่งเดียวคือแท็บ "นับสต๊อก" ซึ่งสคริปต์สร้างเอง และคำขอจากเว็บเติมได้แค่ช่องผลนับ
- * ที่ยังว่างของรายการที่สคริปต์ออกเอง คนที่มี URL จึงเพิ่มแถวเองหรือแก้ผลนับเดิมไม่ได้
+ * ที่เขียนมีแห่งเดียวคือแท็บ "นับสต๊อก" ซึ่งสคริปต์สร้างเอง คำขอจากเว็บเติมได้แค่ช่องผลนับที่ยังว่าง
+ * กับขอให้ออกรายการนับของ SKU ที่บอกมา โดย Location คิดจากสมุดรายการเองและมีเพดานต่อวัน
+ * คนที่มี URL จึงเขียนแถวตามใจหรือแก้ผลนับเดิมไม่ได้
  *
  * ?api=tx-summary          ยอดคงเหลือทั้งคลัง ยอดขาย และจุดที่ข้อมูลผิด
  * ?api=tx-history&sku=...  ความเคลื่อนไหวของ SKU เดียว
  * ?api=tx-count            รายการนับของวันนี้ (ยังไม่มีก็ออกให้) และผลนับย้อนหลัง
  * POST {op:'count-save'}   บันทึกผลนับ
+ * POST {op:'count-add'}    ส่ง SKU ที่ยอดไม่ตรงระบบบริษัทเข้าใบนับ
  * ไม่ใส่ api               บอกแค่ว่าเป็นสคริปต์นี้ ให้หน้าตั้งค่าเช็คว่าใส่ URL ถูกตัว
  */
 
@@ -44,6 +46,10 @@ var COUNT_HEAD = ['วันที่', 'ที่มา', 'เหตุผล',
 var COUNT_TEXT_COLS = 9;    // A..I เก็บเป็นข้อความ
 var COUNT_RESULT_COL = 10;  // J..N ว่างจนกว่าจะนับ
 var COUNT_WHO_COL = 13;     // M, N เก็บเป็นข้อความเหมือนกัน
+var COUNT_DIFF_SRC = 'เทียบระบบ';   // ที่มาของรายการที่ส่งจากแท็บเทียบสต๊อก
+var COUNT_DIFF_ALL = 'ทุก';         // ช่อง Lot และ PO ของรายการพวกนี้ นับรวมทุก LOT ทุก PO ต่อ Location
+var COUNT_ELSEWHERE = 'ที่อื่น';    // แถวเผื่อของที่ชีตไม่รู้ว่ามี ยอดของจริงต้องรวมส่วนนี้ด้วย
+var COUNT_DIFF_MAX = 300;           // รายการเทียบระบบต่อวัน คนที่มี URL ส่งเพิ่มได้ จึงต้องมีเพดานกันชีตโต
 
 function doGet(e) {
   var p = (e && e.parameter) || {};
@@ -61,6 +67,7 @@ function doPost(e) {
   try {
     var req = JSON.parse(e.postData.contents);
     if (req.op === 'count-save') return out_(countSave_(req));
+    if (req.op === 'count-add') return out_(countAdd_(req));
     return out_({ error: 'ไม่รู้จักคำสั่งนี้' });
   } catch (err) {
     return out_({ error: String(err && err.message || err) });
@@ -510,8 +517,9 @@ function pickCount_(rows, bals, past, today) {
   var end = dayNo_(today);
   var rest = {};
   var last = {};
+  /* รายการเทียบระบบมีผลนับของตัวเองที่แท็บเทียบสต๊อก คนเป็นคนตัดสินว่าจะนับซ้ำไหม */
   past.forEach(function (p) {
-    if (p.qty === null) return;
+    if (p.qty === null || p.src === COUNT_DIFF_SRC) return;
     last[p.k] = p;
     if (end - dayNo_(p.date) < COUNT_REST_DAYS) rest[p.k] = 1;
   });
@@ -577,16 +585,21 @@ function appendCount_(sheet, today, list) {
   }));
 }
 
-/** รายการที่ยังไม่นับไม่ส่งเหตุผลไปด้วย และยังไม่มียอดในระบบให้ส่ง คนนับจึงนับตามของจริง ไม่ใช่นับให้ตรงเลข */
+/**
+ * รายการที่ยังไม่นับไม่ส่งเหตุผลไปด้วย และยังไม่มียอดในระบบให้ส่ง คนนับจึงนับตามของจริง ไม่ใช่นับให้ตรงเลข
+ * รายการเทียบระบบของวันก่อนที่ยังไม่นับต้องส่งด้วย หน้าเว็บจะได้รู้ว่ารอบนั้นนับไม่ครบ ไม่ใช่สรุปผลจากแค่จุดที่นับแล้ว
+ */
 function countView_(past, today) {
   var end = dayNo_(today);
   return {
     app: 'transaction',
     today: today,
     lines: past.filter(function (p) {
-      return p.date === today || (p.qty !== null && end - dayNo_(p.date) < COUNT_KEEP_DAYS);
+      if (p.date === today) return true;
+      return (p.qty !== null || p.src === COUNT_DIFF_SRC) && end - dayNo_(p.date) < COUNT_KEEP_DAYS;
     }).map(function (p) {
       var o = { k: p.k, date: p.date, src: p.src, loc: p.loc, sku: p.sku, name: p.name, lot: p.lot, po: p.po };
+      if (p.src === COUNT_DIFF_SRC) o.long = p.long;
       return p.qty === null ? o : merge_(o, { why: p.why, qty: p.qty, exp: p.exp, diff: p.diff, who: p.who, at: p.at });
     }),
   };
@@ -602,7 +615,8 @@ function countLoad_() {
   try {
     var sheet = countSheet_(ss);
     var past = readCount_(sheet, tz);
-    if (!past.some(function (p) { return p.date === today; })) {
+    /* ส่ง SKU มาจากแท็บเทียบสต๊อกก่อนเปิดใบนับครั้งแรกของวันได้ แถวพวกนั้นไม่ได้แปลว่าออกรายการประจำวันแล้ว */
+    if (!past.some(function (p) { return p.date === today && p.src !== COUNT_DIFF_SRC; })) {
       var rows = readRows_(ledgerSheet_(ss), tz);
       appendCount_(sheet, today, pickCount_(rows, balances_(rows), past, today));
       past = readCount_(sheet, tz);
@@ -627,8 +641,17 @@ function countSave_(req) {
   var tz = ss.getSpreadsheetTimeZone();
   var now = new Date();
   var bal = {};
-  balances_(readRows_(ledgerSheet_(ss), tz)).forEach(function (x) { bal[keyOf_(x.long, x.lot, x.po, x.loc)] = x.bal; });
-  var who = String(req.who || '').replace(/^[=+\-@'\s]+/, '').slice(0, 60);
+  var spot = {};
+  balances_(readRows_(ledgerSheet_(ss), tz)).forEach(function (x) {
+    bal[keyOf_(x.long, x.lot, x.po, x.loc)] = x.bal;
+    var s = same_(x.long) + '|' + same_(x.loc);
+    spot[s] = (spot[s] || 0) + x.bal;
+  });
+  function expected(p) {
+    if (p.src !== COUNT_DIFF_SRC) return bal[p.k] || 0;
+    return p.long.split(',').reduce(function (sum, l) { return sum + (spot[same_(l) + '|' + same_(p.loc)] || 0); }, 0);
+  }
+  var who = plain_(req.who, 60);
 
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
@@ -644,13 +667,93 @@ function countSave_(req) {
       var p = open[id];
       if (!p) return;
       delete open[id];
-      var exp = bal[p.k] || 0;
+      var exp = expected(p);
       sheet.getRange(p.row, COUNT_RESULT_COL, 1, 5).setValues([[i.qty, exp, i.qty - exp, who, Utilities.formatDate(now, tz, 'HH:mm')]]);
       saved++;
     });
     var view = countView_(readCount_(sheet, tz), Utilities.formatDate(now, tz, 'yyyy-MM-dd'));
     view.saved = saved;
     view.skipped = items.length - saved;
+    return view;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** ข้อความจากเว็บต้องไม่กลายเป็นสูตรในชีต */
+function plain_(v, max) {
+  return String(v === null || v === undefined ? '' : v).replace(/^[=+\-@'\s]+/, '').slice(0, max);
+}
+
+/**
+ * ส่ง SKU ที่ยอดไม่ตรงระบบบริษัทเข้าใบนับ ออกแถวต่อ Location รวมทุก LOT ทุก PO
+ * ระบบบริษัทรู้แค่ยอดรวมของ SKU คำถามจึงมีแค่ว่าของจริงมีเท่าไหร่ และกรอก LOT ผิดไม่ทำให้ยอดรวมเพี้ยน
+ *
+ * Location คิดจากสมุดรายการเองทุกครั้ง เว็บบอกได้แค่ว่าเป็น SKU ไหน
+ * SKU ที่ยังรอนับอยู่ไม่ออกซ้ำ ส่วนตัวที่นับครบแล้วส่งใหม่ได้ เผื่ออยากนับอีกรอบ
+ */
+function countAdd_(req) {
+  var items = Array.isArray(req.items) ? req.items : [];
+  if (!items.length) return { error: 'ไม่มี SKU ที่จะส่ง' };
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var tz = ss.getSpreadsheetTimeZone();
+  var today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  var rows = readRows_(ledgerSheet_(ss), tz);
+  var known = {};
+  var names = {};
+  rows.forEach(function (r) {
+    if (!r.long) return;
+    var k = same_(r.long);
+    if (!known[k]) known[k] = r.long;
+    if (!names[k] && r.name) names[k] = r.name;
+  });
+  var spots = {};
+  balances_(rows).forEach(function (x) {
+    if (x.bal === 0) return;
+    var k = same_(x.long);
+    (spots[k] = spots[k] || {})[same_(x.loc)] = x.loc;
+  });
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var sheet = countSheet_(ss);
+    var mine = readCount_(sheet, tz).filter(function (p) { return p.date === today && p.src === COUNT_DIFF_SRC; });
+    var waiting = {};
+    mine.forEach(function (p) { if (p.qty === null) waiting[same_(p.long)] = 1; });
+
+    var list = [];
+    var added = 0;
+    var skipped = 0;
+    items.forEach(function (i) {
+      var sku = plain_(i && i.sku, 100);
+      var longs = (i && Array.isArray(i.longs) ? i.longs : [])
+        .map(function (l) { return known[same_(l)]; })
+        .filter(function (l) { return l; });
+      var id = longs.join(',') || sku;
+      if (!sku || waiting[same_(id)]) { skipped++; return; }
+      waiting[same_(id)] = 1;
+
+      var locs = {};
+      longs.forEach(function (l) {
+        var at = spots[same_(l)] || {};
+        Object.keys(at).forEach(function (k) { locs[k] = at[k]; });
+      });
+      var name = (longs.length && names[same_(longs[0])]) || plain_(i.name, 200);
+      Object.keys(locs).sort().map(function (k) { return locs[k]; }).concat(COUNT_ELSEWHERE).forEach(function (loc) {
+        list.push({ src: COUNT_DIFF_SRC, why: 'ยอดไม่ตรงระบบบริษัท', loc: loc, sku: sku, long: id, name: name, lot: COUNT_DIFF_ALL, po: COUNT_DIFF_ALL });
+      });
+      added++;
+    });
+    if (mine.length + list.length > COUNT_DIFF_MAX) {
+      return { error: 'ส่งได้ไม่เกินวันละ ' + COUNT_DIFF_MAX + ' จุด วันนี้มีแล้ว ' + mine.length + ' จุด รอบนี้จะเพิ่มอีก ' + list.length + ' จุด เลือก SKU ให้น้อยลง' };
+    }
+    appendCount_(sheet, today, list);
+    var view = countView_(readCount_(sheet, tz), today);
+    view.added = added;
+    view.addedLines = list.length;
+    view.skipped = skipped;
     return view;
   } finally {
     lock.releaseLock();

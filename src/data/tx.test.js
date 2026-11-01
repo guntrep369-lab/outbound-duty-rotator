@@ -589,6 +589,163 @@ describe('tx-api.gs — นับสต๊อก', () => {
   });
 });
 
+describe('tx-api.gs — ส่ง SKU จากแท็บเทียบสต๊อกเข้าใบนับ', () => {
+  const COUNT = 'นับสต๊อก';
+  const SRC = 'เทียบระบบ';
+  const onDay = (s) => vi.setSystemTime(new Date(`${s}T05:00:00Z`));
+  const add = (api, items) => api.post({ op: 'count-add', items });
+  const item = (sku = 'AAA001', o = {}) => ({ sku, longs: [`LONG-${sku}`], name: 'ชื่อจากเว็บ', ...o });
+  const mine = (v) => v.lines.filter((l) => l.src === SRC);
+  const open = (v) => mine(v).filter((l) => l.qty === undefined && l.date === v.today);
+  const save = (api, v, qtys) => api.post({
+    op: 'count-save', date: v.today, who: 'สมมติ', items: open(v).map((l) => ({ k: l.k, qty: qtys[l.loc] })),
+  });
+  /* LOT และ PO ต่างกันในจุดเดียว กับอีกจุดหนึ่ง */
+  const LEDGER = [
+    row({ to: 'A-01-01', qty: 10, lot: 8, po: 1 }),
+    row({ to: 'A-01-01', qty: 5, lot: 9, po: 2 }),
+    row({ to: 'B-01-01', qty: 7, lot: 8, po: 1 }),
+  ];
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    onDay('2026-03-10');
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('ออกแถวต่อ Location รวมทุก LOT ทุก PO พร้อมแถวที่อื่น โดยสมุดรายการไม่เปลี่ยนสักช่อง', () => {
+    const api = script(LEDGER);
+    const before = JSON.stringify(api.ledger);
+    const v = add(api, [item()]);
+    expect(mine(v).map((l) => [l.loc, l.sku, l.lot, l.po, l.long])).toEqual([
+      ['A-01-01', 'AAA001', 'ทุก', 'ทุก', 'LONG-AAA001'],
+      ['B-01-01', 'AAA001', 'ทุก', 'ทุก', 'LONG-AAA001'],
+      ['ที่อื่น', 'AAA001', 'ทุก', 'ทุก', 'LONG-AAA001'],
+    ]);
+    expect(v).toMatchObject({ added: 1, addedLines: 3, skipped: 0 });
+    expect(JSON.stringify(api.ledger)).toBe(before);
+  });
+
+  it('ไม่บอกยอดในระบบกับคนนับ เหมือนรายการอื่น', () => {
+    const line = mine(add(script(LEDGER), [item()]))[0];
+    expect(Object.keys(line).sort()).toEqual(['date', 'k', 'loc', 'long', 'lot', 'name', 'po', 'sku', 'src'].sort());
+  });
+
+  it('จุดที่ยอดเป็นศูนย์ไม่ต้องนับ จุดที่ติดลบต้องนับ เพราะของจริงอาจอยู่ตรงนั้น', () => {
+    const v = add(script([
+      row({ to: 'A-01-01', qty: 5 }),
+      row({ type: 'เบิก', from: 'A-01-01', qty: 5 }),
+      row({ to: 'B-01-01', qty: 1 }),
+      row({ type: 'เบิก', from: 'B-01-01', qty: 3 }),
+    ]), [item()]);
+    expect(mine(v).map((l) => l.loc)).toEqual(['B-01-01', 'ที่อื่น']);
+  });
+
+  it('ใช้ชื่อสินค้าจากชีต ไม่ใช่ที่เว็บส่งมา ถ้าชีตรู้จัก SKU นั้น', () => {
+    expect(mine(add(script(LEDGER), [item()]))[0].name).toBe('สินค้า AAA001');
+  });
+
+  it('SKU ที่ชีตไม่รู้จัก มีแค่แถวที่อื่น ใช้รหัสและชื่อที่ส่งมา', () => {
+    const v = add(script(LEDGER), [{ sku: 'ZZZ999', longs: [], name: 'มีแค่ในระบบบริษัท' }]);
+    expect(mine(v).map((l) => [l.loc, l.sku, l.long, l.name])).toEqual([['ที่อื่น', 'ZZZ999', 'ZZZ999', 'มีแค่ในระบบบริษัท']]);
+  });
+
+  it('เว็บบอก Location เองไม่ได้ และรหัสเต็มที่ชีตไม่รู้จักไม่มีผล', () => {
+    const v = add(script(LEDGER), [{ sku: 'AAA001', longs: ['ไม่มีจริง'], loc: 'แอบใส่', name: 'x' }]);
+    expect(mine(v).map((l) => l.loc)).toEqual(['ที่อื่น']);
+  });
+
+  it('รหัสสั้นเดียวมีรหัสเต็มสองตัว นับทุกจุดของทั้งสองตัว และยอดในระบบรวมทั้งสองตัว', () => {
+    const api = script([
+      row({ long: 'L1', to: 'A-01-01', qty: 10 }),
+      row({ long: 'L2', to: 'A-01-01', qty: 4 }),
+      row({ long: 'L2', to: 'B-01-01', qty: 6 }),
+    ]);
+    const v = add(api, [{ sku: 'AAA001', longs: ['L1', 'L2'] }]);
+    expect(mine(v).map((l) => [l.loc, l.long])).toEqual([['A-01-01', 'L1,L2'], ['B-01-01', 'L1,L2'], ['ที่อื่น', 'L1,L2']]);
+    const r = save(api, v, { 'A-01-01': 14, 'B-01-01': 5, 'ที่อื่น': 0 });
+    expect(mine(r).map((l) => l.exp)).toEqual([14, 6, 0]);
+  });
+
+  it('ยอดในระบบรวมทุก LOT ทุก PO ของ Location คิดตอนส่งผล แถวที่อื่นเป็น 0', () => {
+    const api = script(LEDGER);
+    const r = save(api, add(api, [item()]), { 'A-01-01': 12, 'B-01-01': 7, 'ที่อื่น': 2 });
+    expect(mine(r).map((l) => [l.loc, l.qty, l.exp, l.diff])).toEqual([
+      ['A-01-01', 12, 15, -3], ['B-01-01', 7, 7, 0], ['ที่อื่น', 2, 0, 2],
+    ]);
+  });
+
+  it('SKU ที่ยังรอนับอยู่ไม่ออกซ้ำ นับครบแล้วส่งใหม่ได้ และผลรอบแรกยังอยู่', () => {
+    const api = script(LEDGER);
+    const v = add(api, [item()]);
+    const again = add(api, [item()]);
+    expect(again).toMatchObject({ added: 0, addedLines: 0, skipped: 1 });
+    expect(mine(again)).toHaveLength(3);
+
+    save(api, v, { 'A-01-01': 12, 'B-01-01': 7, 'ที่อื่น': 0 });
+    const round2 = add(api, [item()]);
+    expect(round2).toMatchObject({ added: 1, addedLines: 3 });
+    expect(open(round2)).toHaveLength(3);
+
+    const r = save(api, round2, { 'A-01-01': 15, 'B-01-01': 7, 'ที่อื่น': 0 });
+    expect(mine(r).filter((l) => l.loc === 'A-01-01').map((l) => l.qty)).toEqual([12, 15]);
+  });
+
+  it('ส่ง SKU เดียวกันซ้ำในคำขอเดียว ออกรอบเดียว', () => {
+    expect(add(script(LEDGER), [item(), item()])).toMatchObject({ added: 1, addedLines: 3, skipped: 1 });
+  });
+
+  it('ส่งก่อนเปิดใบนับครั้งแรกของวัน รายการประจำวันยังออกตามปกติและไม่ซ้ำ', () => {
+    const shelf = row({ sku: 'RND001', to: 'B-02-01', qty: 10 });
+    const api = script([...LEDGER, shelf]);
+    add(api, [item()]);
+    const v = api({ api: 'tx-count' });
+    expect(v.lines.filter((l) => l.src !== SRC).length).toBeGreaterThan(0);
+    const again = api({ api: 'tx-count' });
+    expect(again.lines.length).toBe(v.lines.length);
+  });
+
+  it('ไม่ถูกดึงไปนับซ้ำเองในวันถัดไป แม้ผลไม่ตรง', () => {
+    const api = script(LEDGER);
+    save(api, add(api, [item()]), { 'A-01-01': 1, 'B-01-01': 1, 'ที่อื่น': 1 });
+    onDay('2026-03-11');
+    const v = api({ api: 'tx-count' });
+    expect(v.lines.filter((l) => l.date === v.today).map((l) => l.src)).not.toContain('นับซ้ำ');
+    expect(v.lines.filter((l) => l.date === v.today).map((l) => l.src)).not.toContain(SRC);
+  });
+
+  it('รอบของวันก่อนที่นับไม่ครบยังส่งไปทั้งรอบ หน้าเว็บจะได้รู้ว่าไม่ครบ', () => {
+    const api = script(LEDGER);
+    const v = add(api, [item()]);
+    api.post({ op: 'count-save', date: v.today, who: 'สมมติ', items: [{ k: open(v)[0].k, qty: 15 }] });
+    onDay('2026-03-11');
+    const next = api({ api: 'tx-count' });
+    expect(mine(next).map((l) => [l.loc, l.qty])).toEqual([['A-01-01', 15], ['B-01-01', undefined], ['ที่อื่น', undefined]]);
+    expect(open(next)).toEqual([]);
+  });
+
+  it('ส่งเกินเพดานต่อวัน ไม่เพิ่มสักแถวและบอกตัวเลข', () => {
+    const many = Array.from({ length: 300 }, (_, i) => row({ sku: 'AAA001', to: `B-${String(i % 90 + 10)}-${String(i % 97 + 1).padStart(2, '0')}`, qty: 1 }));
+    const api = script(many);
+    const r = add(api, [item()]);
+    expect(r.error).toContain('300');
+    expect(api.tabs[COUNT].grid).toHaveLength(1);
+  });
+
+  it('ข้อความจากเว็บไม่กลายเป็นสูตรในชีต และค่าแปลก ๆ ไม่ทำให้สคริปต์ล้ม', () => {
+    const api = script(LEDGER);
+    add(api, [{ sku: '=HYPERLINK("x")', name: "+1-1" }, null, { sku: '' }, { longs: 'ไม่ใช่รายการ', sku: 'ZZZ1' }]);
+    const grid = api.tabs[COUNT].grid.slice(1);
+    expect(grid.map((g) => g[4])).toEqual(['HYPERLINK("x")', 'ZZZ1']);
+    expect(grid[0][6]).toBe('1-1');
+  });
+
+  it('ไม่มีรายการ = บอกตรง ๆ', () => {
+    expect(add(script(LEDGER), []).error).toBeTruthy();
+    expect(script(LEDGER).post({ op: 'count-add' }).error).toBeTruthy();
+  });
+});
+
 describe('tx-api.gs — ประวัติ', () => {
   const rows = [
     row({ to: 'C-01-01', qty: 100, note: 'GR 01-01-26' }),
@@ -887,6 +1044,49 @@ describe('wms-tx.js — เทียบกับระบบบริษัท',
     expect(r.counts).toEqual({ more: 1, less: 1, sysonly: 1, txonly: 1 });
   });
 
+  describe('ของใช้ภายใน', () => {
+    const SKUS = [['AAA001', 'LONG-1', 'หมอน'], ['ถุงทดสอบ', 'ถุงทดสอบ', 'ถุงขนาดเล็ก'], ['กล่อง X', 'กล่อง X', 'กล่องเล็ก'], ['DDD004', 'ของแถมหนึ่ง', 'ของแถม']];
+    const led = (...keys) => raw({ skus: SKUS, keys });
+
+    it('รหัสไทยที่ระบบบริษัทไม่มียอด แยกออกมา ไม่นับเป็นรายการไม่ตรง และไม่รวมในยอดทั้งคลัง', () => {
+      const r = WmsTx.compareStock(led([0, 8, '1', 0, 100, 0], [1, 0, '', 1, 50, 0], [2, 0, '', 1, 500, 0]), map(co('LONG-1', 100)));
+      expect(r.rows).toEqual([]);
+      expect(r.internal).toEqual([
+        { sku: 'กล่อง X', name: 'กล่องเล็ก', tx: 500 },
+        { sku: 'ถุงทดสอบ', name: 'ถุงขนาดเล็ก', tx: 50 },
+      ]);
+      expect(r).toMatchObject({ same: 1, sys: 100, tx: 100, off: 0, ledger: 1, found: 1 });
+      expect(r.counts.txonly).toBe(0);
+    });
+
+    it('รหัสสั้นเป็นอังกฤษแต่รหัสเต็มเป็นไทย ก็นับเป็นของใช้ภายใน', () => {
+      const r = WmsTx.compareStock(led([3, 0, '', 1, 9, 0]), {});
+      expect(r.internal.map((x) => x.sku)).toEqual(['DDD004']);
+    });
+
+    it('ยอดติดลบไม่ถูกทิ้ง ยังอยู่ในรายการให้เห็น แต่ไม่มาปนกับยอดเทียบ', () => {
+      const r = WmsTx.compareStock(led([1, 0, '', 1, -3, 0]), {});
+      expect(r.internal[0].tx).toBe(-3);
+      expect(r.rows).toEqual([]);
+    });
+
+    it('ยอดเป็น 0 ไม่ต้องแสดง', () => {
+      expect(WmsTx.compareStock(led([1, 0, '', 1, 5, 0], [1, 0, '', 2, -5, 0]), {}).internal).toEqual([]);
+    });
+
+    it('พอระบบบริษัทมียอดของรหัสนี้ ก็กลับมาเทียบตามปกติ', () => {
+      const r = WmsTx.compareStock(led([1, 0, '', 1, 50, 0]), map(co('ถุงทดสอบ', 40)));
+      expect(r.internal).toEqual([]);
+      expect(rowOf(r, 'ถุงทดสอบ')).toMatchObject({ sys: 40, tx: 50, diff: -10, kind: 'less' });
+    });
+
+    it('รหัสอังกฤษที่มีแค่ใน Transaction ยังเป็นรายการไม่ตรง เพราะอาจเป็นสินค้าจริงที่ระบบบริษัทตัดไปแล้ว', () => {
+      const r = WmsTx.compareStock(led([0, 8, '1', 0, 30, 0]), {});
+      expect(r.internal).toEqual([]);
+      expect(rowOf(r, 'AAA001').kind).toBe('txonly');
+    });
+  });
+
   it('จุดติดลบหักในยอด SKU เพราะกรอก LOT ผิดจะบวกจุดหนึ่ง ลบอีกจุดหนึ่ง', () => {
     const s = raw({ keys: [[0, 8, '1', 0, 100, 0], [0, 9, '1', 1, -10, 0]] });
     const r = WmsTx.compareStock(s, map(co('LONG-1', 90)));
@@ -985,6 +1185,144 @@ describe('wms-tx.js — เทียบกับระบบบริษัท',
     it('เท่ากันหลายจุดเกินไปบอกไม่ได้ว่าจุดไหน ไม่แสดง', () => {
       const s = raw({ keys: [[0, 8, '1', 0, 5, 0], [0, 8, '1', 1, 5, 0], [0, 8, '1', 2, 5, 0]] });
       expect(WmsTx.compareStock(s, map(co('LONG-1', 10))).rows[0].equalsAt).toEqual([]);
+    });
+  });
+
+  it('แถวมีรหัสสำหรับส่งเข้าใบนับ และจำนวนจุดที่ต้องไปนับ', () => {
+    const s = raw({ keys: [[0, 8, '1', 0, 5, 0], [0, 9, '2', 0, 5, 0], [0, 8, '1', 1, 5, 0]] });
+    const r = WmsTx.compareStock(s, map(co('ZZZ 999', 4), co('LONG-1', 1)));
+    expect(rowOf(r, 'AAA001')).toMatchObject({ id: 'LONG-1', longs: ['LONG-1'], spots: 2 });
+    expect(rowOf(r, 'ZZZ 999')).toMatchObject({ id: 'ZZZ999', longs: [], spots: 0 });
+  });
+
+  it('ระบบบริษัทใช้รหัสสั้น รหัสเต็มสองตัวของชีตรวมเป็นรหัสเดียวกับที่สคริปต์เก็บ', () => {
+    const s = raw({ skus: [['AAA001', 'L1', 'หมอน'], ['AAA001', 'L2', 'หมอน']], keys: [[0, 8, '1', 0, 10, 0], [1, 8, '1', 1, 5, 0]] });
+    expect(WmsTx.compareStock(s, map(co('AAA001', 1))).rows[0]).toMatchObject({ id: 'L1,L2', longs: ['L1', 'L2'] });
+  });
+
+  describe('ผลจากการส่งไปนับ', () => {
+    const TODAY = '2026-03-10';
+    const line = (o) => ({ src: 'เทียบระบบ', long: 'LONG-1', sku: 'AAA001', date: TODAY, loc: 'A-01-01', lot: 'ทุก', po: 'ทุก', k: 'K', ...o });
+    const counted = (qty, exp, o) => line({ qty, exp, diff: qty - exp, ...o });
+    /* ระบบบริษัท 90 แต่ Transaction 100 */
+    const row = () => WmsTx.compareStock(raw({ keys: [[0, 8, '1', 0, 100, 0]] }), map(co('LONG-1', 90))).rows;
+    const verdict = (lines, today = TODAY) => WmsTx.attachCounts(row(), { today, lines })[0].count;
+
+    it('ไม่เคยส่งนับ = null ยังไม่โหลดผลนับก็เหมือนกัน', () => {
+      expect(verdict([])).toBeNull();
+      expect(WmsTx.attachCounts(row(), null)[0].count).toBeNull();
+    });
+
+    it('ของจริงเท่าระบบบริษัท = Transaction ผิด', () => {
+      const v = verdict([counted(90, 100), counted(0, 0, { loc: 'ที่อื่น' })]);
+      expect(v).toMatchObject({ state: 'sheet', qty: 90, off: -10, done: 2, total: 2 });
+    });
+
+    it('ของจริงเท่า Transaction = ระบบบริษัทผิด', () => {
+      expect(verdict([counted(100, 100), counted(0, 0, { loc: 'ที่อื่น' })])).toMatchObject({ state: 'company', qty: 100, off: 0 });
+    });
+
+    it('ไม่เท่าทั้งคู่', () => {
+      expect(verdict([counted(95, 100)])).toMatchObject({ state: 'both', qty: 95, off: -5 });
+    });
+
+    it('รวมหลายจุดและแถวที่อื่นก่อนตัดสิน', () => {
+      expect(verdict([counted(60, 80), counted(25, 20, { loc: 'B-01-01' }), counted(5, 0, { loc: 'ที่อื่น' })])).toMatchObject({ state: 'sheet', qty: 90 });
+    });
+
+    it('เทียบจากผลต่าง: ขายหลังนับแล้วยอดสองฝั่งลดเท่ากัน ผลยังเหมือนเดิม', () => {
+      /* วันที่นับ Transaction 120 ระบบบริษัท 110 นับได้ 110 วันนี้ขายไปแล้วทั้งสองฝั่งเหลือ 100 กับ 90 */
+      expect(verdict([counted(110, 120, { date: '2026-03-08' })])).toMatchObject({ state: 'sheet', qty: 110, date: '2026-03-08' });
+    });
+
+    it('วันนี้ยังนับไม่ครบ = รอนับ และยังไม่สรุปผลจากแค่บางจุด', () => {
+      const v = verdict([counted(90, 100), line({ loc: 'ที่อื่น' })]);
+      expect(v).toMatchObject({ state: 'wait', done: 1, total: 2 });
+      expect(v.qty).toBeUndefined();
+    });
+
+    it('รอบวันก่อนนับไม่ครบ = นับไม่ครบ ไม่ใช่รอนับ เพราะรายการหมดอายุแล้ว', () => {
+      const v = verdict([counted(90, 100, { date: '2026-03-09' }), line({ loc: 'ที่อื่น', date: '2026-03-09' })]);
+      expect(v).toMatchObject({ state: 'late', done: 1, total: 2, date: '2026-03-09' });
+    });
+
+    it('ส่งซ้ำวันใหม่ ใช้รอบล่าสุด แถวของรอบเก่าไม่เอามารวม', () => {
+      const v = verdict([counted(95, 100, { date: '2026-03-09' }), counted(1, 1, { loc: 'จุดเก่า', date: '2026-03-09' }), counted(90, 100)]);
+      expect(v).toMatchObject({ state: 'sheet', total: 1, qty: 90 });
+    });
+
+    it('ส่งซ้ำวันเดียวกัน ใช้แถวหลังสุดของแต่ละจุด', () => {
+      expect(verdict([counted(95, 100), counted(90, 100)])).toMatchObject({ state: 'sheet', qty: 90, total: 1 });
+      expect(verdict([counted(95, 100), line()])).toMatchObject({ state: 'wait', done: 0, total: 1 });
+    });
+
+    it('รายการนับปกติของ SKU เดียวกันไม่เกี่ยว', () => {
+      expect(verdict([counted(1, 1, { src: 'สุ่ม', long: undefined })])).toBeNull();
+    });
+
+    it('รหัสตรงกันแบบไม่สนตัวพิมพ์และเว้นวรรค', () => {
+      expect(verdict([counted(90, 100, { long: 'long -1' })]).state).toBe('sheet');
+    });
+
+    it('ตัวที่รอนับอยู่ส่งซ้ำไม่ได้ ตัวอื่นส่งได้', () => {
+      const send = (lines) => WmsTx.canSend(WmsTx.attachCounts(row(), { today: TODAY, lines })[0]);
+      expect(send([])).toBe(true);
+      expect(send([line()])).toBe(false);
+      expect(send([counted(90, 100)])).toBe(true);
+      expect(send([line({ date: '2026-03-09' })])).toBe(true);
+    });
+
+    it('กรองตามผลนับได้ และ none คือยังไม่เคยส่ง', () => {
+      const rows = WmsTx.compareStock(LEDGER, map(co('LONG-1', 90), co('LONG-2', 40), co('LONG-3', 10)));
+      WmsTx.attachCounts(rows.rows, { today: TODAY, lines: [counted(90, 100), line({ long: 'LONG-2', sku: 'BBB002' })] });
+      const skus = (state) => WmsTx.filterDiff(rows.rows, '', '', state).map((r) => r.sku).sort();
+      expect(skus('sheet')).toEqual(['AAA001']);
+      expect(skus('wait')).toEqual(['BBB002']);
+      expect(skus('none')).toEqual(['CCC003']);
+      expect(skus('')).toEqual(['AAA001', 'BBB002', 'CCC003']);
+    });
+
+    it('รหัสในใบนับต้องเป็นรหัสเดียวกับที่สคริปต์สร้างจากแถวนี้', () => {
+      const r = WmsTx.compareStock(raw({ skus: [['AAA001', 'L1', 'หมอน'], ['AAA001', 'L2', 'หมอน']], keys: [[0, 8, '1', 0, 10, 0], [1, 8, '1', 1, 5, 0]] }), map(co('AAA001', 1))).rows;
+      expect(WmsTx.attachCounts(r, { today: TODAY, lines: [line({ long: 'L1,L2' })] })[0].count.state).toBe('wait');
+    });
+  });
+
+  it('รายการเทียบระบบไม่ปนในความแม่นยำและรายการไม่ตรงค้างอยู่ แต่ขึ้นเป็นงานของวันนี้', () => {
+    const line = (o) => ({ k: 'K', date: '2026-03-10', src: 'เทียบระบบ', loc: 'A', ...o });
+    const s = WmsTx.countStats({ today: '2026-03-10', lines: [
+      line({ k: 'A' }),
+      line({ k: 'B', qty: 1, exp: 5, diff: -4 }),
+      line({ k: 'C', qty: 1, exp: 5, diff: -4, date: '2026-03-09' }),
+      line({ k: 'D', date: '2026-03-09' }),
+    ] });
+    expect(s.todo.map((l) => l.k)).toEqual(['A']);
+    expect(s.done.map((l) => l.k)).toEqual(['B']);
+    expect(s.off).toEqual([]);
+    expect(s.accuracy).toBeNull();
+  });
+
+  describe('ส่งเข้าใบนับ', () => {
+    let win;
+    const loadWith = (reply) => {
+      win = { WmsGas: { post: async (url, body) => { win.sent = { url, body }; return reply; } } };
+      new Function('window', 'sessionStorage', 'console', JS)(win, { getItem: () => null, setItem: () => {} }, { warn: () => {} });
+      return win.WmsTx;
+    };
+    const rows = [{ sku: 'AAA001', longs: ['LONG-1'], name: 'หมอน', sys: 5, tx: 1, diff: 4, id: 'LONG-1' }];
+
+    it('ส่งแค่รหัสกับชื่อ ไม่ส่งตัวเลข เพราะสคริปต์คิด Location เอง', async () => {
+      const r = await loadWith({ lines: [], added: 1 }).addCount('u', rows);
+      expect(win.sent.body).toEqual({ op: 'count-add', items: [{ sku: 'AAA001', longs: ['LONG-1'], name: 'หมอน' }] });
+      expect(r.added).toBe(1);
+    });
+
+    it('สคริปต์รุ่นเก่าไม่รู้จักคำสั่ง ต้องบอกให้ Deploy ใหม่', async () => {
+      await expect(loadWith({ error: 'ไม่รู้จักคำสั่งนี้' }).addCount('u', rows)).rejects.toThrow('New version');
+    });
+
+    it('ข้อความอื่นจากสคริปต์ส่งต่อตามจริง', async () => {
+      await expect(loadWith({ error: 'ส่งได้ไม่เกินวันละ 300 จุด' }).addCount('u', rows)).rejects.toThrow('300 จุด');
     });
   });
 

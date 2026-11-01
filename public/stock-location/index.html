@@ -107,9 +107,13 @@ a.tx-row{color:var(--wms-primary-dark)}
 .tx-ok{color:#166534;font-weight:600}
 
 /* เทียบสต๊อก: จอแคบบีบช่องเบาะแสจนเรียงทีละคำ แถวจะสูงเกินจริง ให้ตารางเลื่อนข้างแทน */
-.tx-dif th:last-child,.tx-dif td:last-child{min-width:190px}
+.tx-dif th:last-child,.tx-dif td:last-child,.tx-dif .tx-res{min-width:190px}
 .tx-dif .tx-link{font-weight:inherit}
-.tx-dif td:first-child .tx-link{font-weight:600}
+.tx-dif .tx-sku .tx-link{font-weight:600}
+.tx-pick{width:18px;height:18px;margin-top:2px;cursor:pointer;accent-color:var(--wms-primary)}
+.tx-int{margin-top:14px}
+.tx-int summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--wms-muted)}
+.tx-int .tx-why{margin-top:8px}
 
 .tx-tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;white-space:nowrap}
 .tx-tag.open{background:#DCFCE7;color:#166534}
@@ -219,6 +223,9 @@ const STOCK = { busy: '', err: '', data: WmsStock.read() };   // ยอดจา
 let CMP = null;       // ผลเทียบ คิดครั้งเดียวต่อข้อมูลหนึ่งชุด
 let DKIND = '';       // ตัวกรองแท็บเทียบสต๊อก
 let DQ = '';          // คำค้นในแท็บเทียบสต๊อก
+let DSTATE = '';      // ตัวกรองผลนับในแท็บเทียบสต๊อก
+const DPICK = new Set();   // SKU ที่ติ๊กไว้จะส่งเข้าใบนับ
+const DSEND = { busy: '', err: '', ok: '' };
 
 const MAX = 300;   // มากกว่านี้เบราว์เซอร์เริ่มหน่วง เหมือนหน้าสต๊อกคงเหลือ
 const GAP_MS = 3600000;   // ดึงสองฝั่งห่างกันเกินนี้ ยอดที่ต่างอาจเป็นแค่งานที่ลงไปในระหว่างนั้น
@@ -573,13 +580,21 @@ async function openHistory(sku) {
 const poText = (l) => (l.po && l.po !== '0' ? l.po : '–');
 const diffCell = (l) => `<td class="num ${l.diff === 0 ? 'tx-ok' : 'tx-neg'}">${esc(WmsTx.diffText(l.diff))}</td>`;
 
+/** รายการจากแท็บเทียบสต๊อกนับรวมทุก LOT ทุก PO ต่อจุด แถวที่อื่นคือของที่ชีตไม่รู้ว่ามี */
+function countWhere(l) {
+  if (l.src !== WmsTx.DIFF_SRC) return { loc: l.loc, sub: `Lot ${l.lot === '' ? '–' : l.lot} · PO ${poText(l)}` };
+  return l.loc === WmsTx.ELSEWHERE
+    ? { loc: 'ที่อื่นในคลัง', sub: 'เจอ SKU นี้ที่อื่นอีกกี่ชิ้น ไม่เจอใส่ 0' }
+    : { loc: l.loc, sub: 'นับรวมทุก LOT ทุก PO' };
+}
+
 /** ไม่แสดงยอดในระบบตอนนับ ถ้าเห็นเลขก่อน คนจะนับให้ได้เท่าเลขนั้น และความแม่นยำที่วัดได้จะไม่จริง */
 function countForm(todo) {
   return `<ol class="tx-jobs">${todo.map(l => `<li class="tx-job tx-cline">
       <div class="main">
-        <div class="what">${esc(l.loc)}</div>
+        <div class="what">${esc(countWhere(l).loc)}</div>
         <div class="do"><b>${esc(l.sku)}</b> ${esc(l.name)}</div>
-        <span class="tx-sub">Lot ${esc(l.lot === '' ? '–' : l.lot)} · PO ${esc(poText(l))}</span>
+        <span class="tx-sub">${esc(countWhere(l).sub)}</span>
       </div>
       <input class="tx-qty" type="text" inputmode="numeric" enterkeyhint="next" autocomplete="off"
         aria-label="จำนวนที่นับได้ ${esc(l.loc)} ${esc(l.sku)}" placeholder="นับได้" data-count="${esc(l.k)}" value="${esc(DRAFT[l.k] ?? '')}">
@@ -626,13 +641,21 @@ function renderCount() {
       ? `<div class="tx-h">รายการที่ต้องนับวันนี้ (${f(s.todo.length)})</div>
          <p class="tx-why">ไปดูของจริงแล้วกรอกจำนวน ไม่เจอของให้ใส่ 0 ยอดในระบบจะเห็นหลังส่งแล้ว ทยอยส่งได้ ตัวเลขที่กรอกค้างไว้ไม่หาย</p>` + countForm(s.todo)
       : `<div class="tx-empty">${s.total ? '<b>นับครบแล้ว</b> สำหรับวันนี้' : 'วันนี้ไม่มีรายการให้นับ'}</div>`) +
-    (s.done.length ? countResults(s.done, 'นับแล้ววันนี้', 'รายการที่ไม่ตรงจะกลับมาให้นับซ้ำวันถัดไป',
+    (s.done.length ? countResults(s.done, 'นับแล้ววันนี้', 'รายการที่ไม่ตรงจะกลับมาให้นับซ้ำวันถัดไป ยกเว้นรายการเทียบระบบ ซึ่งดูผลได้ที่แท็บเทียบสต๊อก',
       '<th>เลือกเพราะ</th><th>ผู้นับ</th>', l => `<td>${esc(l.why)}</td><td>${esc(l.who)}</td>`) : '') +
     (s.off.length ? countResults(s.off, 'ไม่ตรงค้างอยู่', 'รอบแรกไม่ตรงจะถูกนับซ้ำให้เอง ถ้ารอบสองก็ยังไม่ตรง ให้กรอกแถวปรับยอดในชีต Transaction แอปไม่แก้ชีตให้ พอกรอกแล้วกดดึงใหม่ รายการจะหายไปเอง',
       '<th>นับวันที่</th><th>ต้องทำ</th>', l => `<td>${esc(WmsTx.shortDate(l.date))}</td><td>${l.src === 'นับซ้ำ' ? 'แก้ในชีต' : 'รอนับซ้ำ'}</td>`) : '') +
     `<p class="tx-note">ความแม่นยำคิดจากรายการสุ่มบนชั้นวางสำรอง 30 วันล่าสุด ไม่รวมรายการเสี่ยง เพราะเลือกมาจากจุดที่น่าจะผิดอยู่แล้ว
       · ผลนับเก็บในแท็บ "นับสต๊อก" ของไฟล์ชีต · <button class="tx-link" data-count-reload="1">โหลดรายการล่าสุด</button></p>`;
   renderSend();
+}
+
+function setCount(data) {
+  COUNT.data = data;
+  /* เลขของรายการที่คนอื่นส่งไปแล้วไม่ต้องเก็บไว้ ไม่งั้นปุ่มส่งจะนับเกินจำนวนที่เหลือจริง */
+  const saved = WmsTx.readDraft(data.today);
+  DRAFT = {};
+  WmsTx.countStats(data).todo.forEach((l) => { if (saved[l.k] !== undefined) DRAFT[l.k] = saved[l.k]; });
 }
 
 async function loadCount() {
@@ -642,17 +665,14 @@ async function loadCount() {
   COUNT.busy = 'กำลังโหลด…';
   if (TAB === 'count') renderCount();
   try {
-    COUNT.data = await WmsTx.pullCount(url);
-    /* เลขของรายการที่คนอื่นส่งไปแล้วไม่ต้องเก็บไว้ ไม่งั้นปุ่มส่งจะนับเกินจำนวนที่เหลือจริง */
-    const saved = WmsTx.readDraft(COUNT.data.today);
-    DRAFT = {};
-    WmsTx.countStats(COUNT.data).todo.forEach((l) => { if (saved[l.k] !== undefined) DRAFT[l.k] = saved[l.k]; });
+    setCount(await WmsTx.pullCount(url));
   } catch (err) {
     COUNT.err = 'โหลดรายการนับไม่สำเร็จ — ' + err.message;
   }
   COUNT.busy = '';
   renderTabs();
   if (TAB === 'count') renderCount();
+  if (TAB === 'diff') renderDiffRows();
 }
 
 async function sendCount() {
@@ -688,6 +708,13 @@ $('body').addEventListener('input', (e) => {
   renderSend();
 });
 
+$('body').addEventListener('change', (e) => {
+  const id = e.target.dataset.pick;
+  if (id === undefined) return;
+  if (e.target.checked) DPICK.add(id); else DPICK.delete(id);
+  renderPickBar();
+});
+
 $('body').addEventListener('keydown', (e) => {
   if (e.key !== 'Enter' || e.target.dataset.count === undefined) return;
   e.preventDefault();
@@ -715,29 +742,100 @@ function clueCell(r) {
   return out.length ? out.map(x => `<span class="tx-sub">${x}</span>`).join('') : '–';
 }
 
+/** ผลนับของหนึ่ง SKU ยอดนับได้เป็นของวันที่นับ ถ้าไม่ใช่วันนี้ต้องบอกวันด้วย ของอาจขยับไปแล้ว */
+function resultCell(r) {
+  const c = r.count;
+  if (!c) return '–';
+  const def = WmsTx.COUNT_STATES.find(s => s.state === c.state);
+  const when = c.date === COUNT.data.today ? '' : ` ${esc(WmsTx.shortDate(c.date))}`;
+  if (c.state === 'wait') return `<b class="tx-mid">${esc(def.label)}</b><span class="tx-sub">นับแล้ว ${f(c.done)} จาก ${f(c.total)} จุด</span>`;
+  if (c.state === 'late') return `<b class="tx-mid">${esc(def.label)}${when}</b><span class="tx-sub">นับแล้ว ${f(c.done)} จาก ${f(c.total)} จุด ${esc(def.todo)}</span>`;
+  return `<b class="${c.state === 'both' ? 'tx-neg' : 'tx-mid'}">${esc(def.label)}</b><span class="tx-sub">นับได้ ${f(c.qty)}${when ? ` เมื่อ${when}` : ''} — ${esc(def.todo)}</span>`;
+}
+
+function statePills(rows) {
+  const n = (id) => WmsTx.filterDiff(rows, '', '', id).length;
+  const list = WmsTx.COUNT_STATES.filter(s => n(s.state));
+  if (!list.length) return '';
+  const pill = (id, label, count) =>
+    `<button class="tx-opt ${id === DSTATE ? 'on' : ''}" data-diff-state="${id}">${esc(label)}${count === undefined ? '' : ` ${f(count)}`}</button>`;
+  return `<div class="tx-bar">ผลนับ ${pill('', 'ทั้งหมด')}${list.map(s => pill(s.state, s.label, n(s.state))).join('')}${pill('none', 'ยังไม่ส่งนับ', n('none'))}</div>`;
+}
+
+function pickedRows() { return comparison().rows.filter(r => DPICK.has(r.id) && WmsTx.canSend(r)); }
+
+/** อัปเดตเฉพาะแถบส่งตอนติ๊ก วาดตารางใหม่แล้วจอจะกระโดดกลับตำแหน่งเดิม */
+function renderPickBar() {
+  const btn = $('dgo');
+  if (!btn) return;
+  const picked = pickedRows();
+  btn.disabled = !picked.length || !!DSEND.busy;
+  btn.textContent = DSEND.busy || (picked.length ? `ส่งเข้าใบนับ ${f(picked.length)} SKU` : 'ส่งเข้าใบนับ');
+  /* +1 คือแถวที่อื่นของแต่ละ SKU */
+  $('dsum').textContent = picked.length ? `ต้องไปนับ ${f(picked.reduce((a, r) => a + r.spots + 1, 0))} จุด` : 'ติ๊ก SKU ที่อยากให้ไปนับ';
+}
+
 function renderDiffRows() {
   const box = $('dres');
   if (!box) return;
-  const c = comparison();
-  const list = WmsTx.filterDiff(c.rows, DKIND, DQ);
-  if (!list.length) {
-    box.innerHTML = `<div class="tx-empty">${DQ.trim() ? `ไม่พบ "<b>${esc(DQ)}</b>" ใน SKU ที่ไม่ตรง SKU นี้อาจตรงกันอยู่แล้ว` : 'ไม่มีรายการ — <b>เป็นเรื่องดี</b>'}</div>`;
-    return;
-  }
+  const rows = WmsTx.attachCounts(comparison().rows, COUNT.data);
+  if (DSTATE && !WmsTx.filterDiff(rows, '', '', DSTATE).length) DSTATE = '';
+  const list = WmsTx.filterDiff(rows, DKIND, DQ, DSTATE);
   const kind = WmsTx.DIFFS.find(k => k.kind === DKIND);
   box.innerHTML =
-    (kind ? `<p class="tx-why">${esc(kind.note)}</p>` : '') +
-    /* ช่องต่างอยู่ติด SKU เพราะเป็นเลขที่มาดู บนมือถือจะได้เห็นโดยไม่ต้องเลื่อนตาราง */
-    `<div class="tx-wrap"><table class="tx-tbl tx-dif"><thead><tr>
-      <th>SKU</th><th class="num">ต่าง</th><th class="num">ระบบบริษัท</th><th class="num">Transaction</th><th>เบาะแส</th>
-    </tr></thead><tbody>${list.slice(0, MAX).map(r => `<tr>
-      <td>${r.ledger ? `<button class="tx-link" data-sku="${esc(r.ledger)}">${esc(r.sku)}</button>` : esc(r.sku)}<span class="tx-sub tx-name">${esc(r.name)}</span></td>
-      <td class="num tx-neg">${esc(WmsTx.diffText(r.diff))}</td>
-      <td class="num">${f(r.sys)}${r.sys ? `<span class="tx-sub">QA ${f(r.qa)} · NEW WH ${f(r.newwh)}</span>` : ''}</td>
-      <td class="num">${f(r.tx)}</td>
-      <td>${clueCell(r)}</td>
-    </tr>`).join('')}</tbody></table></div>` +
-    (list.length > MAX ? `<p class="tx-note">แสดง ${f(MAX)} จาก ${f(list.length)} รายการ เรียงจากต่างมากสุด</p>` : '');
+    statePills(rows) +
+    (COUNT.err && !COUNT.data ? `<div class="tx-warn">${esc(COUNT.err)}</div>` : '') +
+    (DSEND.err ? `<div class="tx-warn">${esc(DSEND.err)}</div>` : '') +
+    (DSEND.ok ? `<p class="tx-why tx-ok">${esc(DSEND.ok)} · <button class="tx-link" data-go-tab="count">เปิดใบนับ</button></p>` : '') +
+    (kind && list.length ? `<p class="tx-why">${esc(kind.note)}</p>` : '') +
+    (list.length
+      /* ช่องต่างอยู่ติด SKU เพราะเป็นเลขที่มาดู บนมือถือจะได้เห็นโดยไม่ต้องเลื่อนตาราง */
+      ? `<div class="tx-wrap"><table class="tx-tbl tx-dif"><thead><tr>
+          <th></th><th>SKU</th><th class="num">ต่าง</th><th class="num">ระบบบริษัท</th><th class="num">Transaction</th><th>ผลนับ</th><th>เบาะแส</th>
+        </tr></thead><tbody>${list.slice(0, MAX).map(r => `<tr>
+          <td>${WmsTx.canSend(r) ? `<input type="checkbox" class="tx-pick" aria-label="เลือก ${esc(r.sku)}" data-pick="${esc(r.id)}" ${DPICK.has(r.id) ? 'checked' : ''}>` : ''}</td>
+          <td class="tx-sku">${r.ledger ? `<button class="tx-link" data-sku="${esc(r.ledger)}">${esc(r.sku)}</button>` : esc(r.sku)}<span class="tx-sub tx-name">${esc(r.name)}</span></td>
+          <td class="num tx-neg">${esc(WmsTx.diffText(r.diff))}</td>
+          <td class="num">${f(r.sys)}${r.sys ? `<span class="tx-sub">QA ${f(r.qa)} · NEW WH ${f(r.newwh)}</span>` : ''}</td>
+          <td class="num">${f(r.tx)}${r.spots ? `<span class="tx-sub">อยู่ ${f(r.spots)} จุด</span>` : ''}</td>
+          <td class="tx-res">${resultCell(r)}</td>
+          <td>${clueCell(r)}</td>
+        </tr>`).join('')}</tbody></table></div>`
+      : `<div class="tx-empty">${DQ.trim() ? `ไม่พบ "<b>${esc(DQ)}</b>" ใน SKU ที่ไม่ตรง SKU นี้อาจตรงกันอยู่แล้ว` : 'ไม่มีรายการ — <b>เป็นเรื่องดี</b>'}</div>`) +
+    (list.length > MAX ? `<p class="tx-note">แสดง ${f(MAX)} จาก ${f(list.length)} รายการ เรียงจากต่างมากสุด</p>` : '') +
+    (rows.length ? `<div class="tx-csend"><span id="dsum"></span><span class="sp"></span><button id="dgo" data-diff-send="1"></button></div>` : '');
+  renderPickBar();
+}
+
+async function sendDiff() {
+  const url = WmsTx.savedUrl();
+  const rows = pickedRows();
+  if (!url || DSEND.busy || !rows.length) return;
+  DSEND.err = ''; DSEND.ok = '';
+  DSEND.busy = 'กำลังส่ง…';
+  renderPickBar();
+  try {
+    const r = await WmsTx.addCount(url, rows);
+    setCount(r);
+    DPICK.clear();
+    DSEND.ok = `ส่งแล้ว ${f(r.added)} SKU รวม ${f(r.addedLines)} จุด` + (r.skipped ? ` · ข้าม ${f(r.skipped)} SKU ที่รอนับอยู่แล้ว` : '');
+  } catch (err) {
+    DSEND.err = 'ส่งเข้าใบนับไม่สำเร็จ SKU ที่ติ๊กไว้ยังอยู่ — ' + err.message;
+  }
+  DSEND.busy = '';
+  renderTabs();
+  if (TAB === 'diff') renderDiffRows();
+}
+
+/** พับไว้แต่ไม่ซ่อน ถ้าสินค้าจริงถูกกรอกรหัสเป็นคำไทย จะได้ยังเห็นว่าหลุดมาอยู่ตรงนี้ */
+function internalList(list) {
+  if (!list.length) return '';
+  return `<details class="tx-int"><summary>ไม่นำมาเทียบ: ของใช้ภายใน ${f(list.length)} SKU รวม ${f(list.reduce((a, r) => a + r.tx, 0))} ชิ้น</summary>
+    <p class="tx-why">แยกจากรหัส SKU ที่เป็นภาษาไทยและระบบบริษัทไม่มียอด ถ้าตัวไหนเป็นสินค้าจริง แก้รหัสในชีตหรือรับเข้าระบบบริษัท แล้วจะกลับมาเทียบเอง</p>
+    <div class="tx-wrap"><table class="tx-tbl"><thead><tr><th>SKU</th><th class="num">Transaction</th></tr></thead><tbody>
+      ${list.map(r => `<tr><td><button class="tx-link" data-sku="${esc(r.sku)}">${esc(r.sku)}</button><span class="tx-sub tx-name">${esc(r.name)}</span></td>
+        <td class="num ${r.tx < 0 ? 'tx-neg' : ''}">${f(r.tx)}</td></tr>`).join('')}
+    </tbody></table></div></details>`;
 }
 
 function renderDiff() {
@@ -770,12 +868,13 @@ function renderDiff() {
       ${card('', 'ไม่ตรงทั้งหมด', c.rows.length)}
       ${WmsTx.DIFFS.filter(k => c.counts[k.kind]).map(k => card(k.kind, k.label, c.counts[k.kind])).join('')}
     </div>` +
-    `<p class="tx-why">รวมทั้งคลัง ระบบบริษัท ${f(c.sys)} · Transaction ${f(c.tx)} · ต่างกันรวม ${f(c.off)} ชิ้น (ถ้าหักบวกลบกันเหลือ ${esc(WmsTx.diffText(c.sys - c.tx))})</p>` +
+    `<p class="tx-why">รวมทั้งคลัง ระบบบริษัท ${f(c.sys)} · Transaction ${f(c.tx)}${c.internal.length ? ' (ไม่รวมของใช้ภายใน)' : ''} · ต่างกันรวม ${f(c.off)} ชิ้น (ถ้าหักบวกลบกันเหลือ ${esc(WmsTx.diffText(c.sys - c.tx))})</p>` +
     `<div class="tx-bar"><input class="tx-input" id="dq" type="search" autocomplete="off" spellcheck="false"
        placeholder="หารหัส SKU หรือชื่อสินค้าในรายการที่ไม่ตรง" value="${esc(DQ)}"></div><div id="dres"></div>` +
+    internalList(c.internal) +
     `<p class="tx-note">ต่าง = ระบบบริษัท − Transaction · ระบบบริษัทรู้แค่ยอดรวม จึงเทียบได้ระดับ SKU ไม่ใช่ Location
       · ยอด Transaction หักจุดติดลบแล้ว · เวลาดึงคือเวลาที่แอปอ่าน ไม่ใช่เวลาที่ระบบบริษัทอัปเดต
-      · กด SKU เพื่อดูว่าของอยู่ Location ไหนแล้วไปนับ ของจริงตรงกับฝั่งไหน อีกฝั่งคือฝั่งที่ต้องแก้ หน้านี้ไม่แก้ข้อมูลทั้งสองฝั่ง</p>`;
+      · ติ๊ก SKU แล้วกดส่งเข้าใบนับ พอนับครบ ช่องผลนับจะบอกว่าของจริงตรงกับฝั่งไหน อีกฝั่งคือฝั่งที่ต้องแก้ หน้านี้ไม่แก้ข้อมูลทั้งสองฝั่ง</p>`;
   $('dq').addEventListener('input', (e) => { DQ = e.target.value; renderDiffRows(); });
   renderDiffRows();
 }
@@ -808,7 +907,7 @@ async function pullStock() {
 }
 
 async function pullBoth() {
-  await Promise.all([pullNow(), pullStock()]);
+  await Promise.all([pullNow(), pullStock(), loadCount()]);
   if (TAB === 'diff') renderBody();
 }
 
@@ -831,11 +930,13 @@ function renderAll() { renderSrc(); renderSum(); renderTabs(); renderBody(); }
 
 function goTab(id) {
   TAB = id;
+  DSEND.err = ''; DSEND.ok = '';
   renderSum();
   renderTabs();
   renderBody();
   if (id === 'count' && !COUNT.data) loadCount();
   if (id === 'diff' && !STOCK.data && !STOCK.err) pullStock();
+  if (id === 'diff' && !COUNT.data) loadCount();
 }
 
 function goSku(sku, loc) {
@@ -861,7 +962,9 @@ $('body').addEventListener('click', (e) => {
   else if (d.countSend) sendCount();
   else if (d.countReload) loadCount();
   else if (d.diffPull) pullBoth();
+  else if (d.diffSend) sendDiff();
   else if (d.diffKind !== undefined) { DKIND = d.diffKind; renderDiff(); }
+  else if (d.diffState !== undefined) { DSTATE = d.diffState; renderDiffRows(); }
   else if (d.kind !== undefined) { KIND = d.kind; renderBad(); }
   else if (d.hist) { goTab('log'); openHistory(d.hist); $('hq').value = d.hist; }
 });

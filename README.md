@@ -339,12 +339,12 @@ a counter's phone, use `/stock-location/?tab=count`.
 - A mismatch comes back for a recount the next day. If the recount doesn't match either, fix it with a row
   in the Transaction sheet; the app doesn't change that sheet. Counted lines rest for 30 days.
 - Stock accuracy counts only the random lines, because risky lines were picked for being likely wrong.
-- A result can be written once. Anyone with the URL can fill in today's blank results, but can't add lines
-  or change a result that's already saved.
+- A result can be written once. Anyone with the URL can fill in today's blank results and send SKUs from the
+  เทียบสต๊อก tab, but can't change a result that's already saved.
 
 **How the stock comparison works.** The company system knows one number per SKU, not the Location, so the
-เทียบสต๊อก tab compares the two sides per SKU. It reads the same URL as สต๊อกคงเหลือ (`/stock`), so the
-script doesn't need redeploying, and it changes neither side.
+เทียบสต๊อก tab compares the two sides per SKU. It reads the same URL as สต๊อกคงเหลือ (`/stock`) and changes
+neither side.
 
 - Difference = company system − Transaction. The Transaction side includes negative spots, because a wrong
   LOT shows as plus in one spot and minus in another while the SKU total stays right.
@@ -356,6 +356,30 @@ script doesn't need redeploying, and it changes neither side.
   read the data, not when the company system last updated it.
 - QA and NEW WH are shown but not compared, because the company's QA warehouse may not line up with the
   sheet's QA Location.
+- Internal supplies aren't compared, because they never enter the company system. A SKU counts as internal
+  when its code contains Thai letters and the company system has no stock of it. These SKUs are left out of
+  every figure and listed in a folded section under the table. If the company system ever shows stock for one,
+  it's compared like any other SKU.
+
+**Finding out which side is wrong.** Tick SKUs in the เทียบสต๊อก tab and press ส่งเข้าใบนับ. The script adds
+one line per Location that has a balance, plus a ที่อื่น line for stock the sheet doesn't know about. Each
+line counts every LOT and PO together, because the company system can only be compared at SKU level. Once
+every line is counted, the tab shows the result:
+
+| Result | Meaning | What to do |
+| --- | --- | --- |
+| Transaction ผิด | The real stock matches the company system | Fix the Transaction sheet |
+| ระบบบริษัทผิด | The real stock matches Transaction | Tell whoever looks after the company system |
+| ไม่ตรงทั้งคู่ | The real stock matches neither side | Count again, and if the number holds, fix both sides |
+
+- The app compares differences, not totals, so sales recorded on both sides after the count don't change the
+  result.
+- A round that isn't fully counted by the end of the day shows as นับไม่ครบ, and the SKU can be sent again. A
+  fully counted SKU can be sent again the same day.
+- These lines don't count toward the daily 20 or the accuracy figure, and they don't come back as recounts.
+- The app adds at most 300 of these lines a day, and the script refuses a send that would go over.
+- Results are stored in the นับสต๊อก tab of the Transaction file. This feature needs the current `tx-api.gs`,
+  so redeploy it as described under "After changing the script".
 
 **Setup (once):**
 
