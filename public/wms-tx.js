@@ -145,6 +145,17 @@
     return { ready: ready.sort(byCover), none: none.sort(byCover), hiddenReady: hiddenReady, hiddenNone: hiddenNone };
   }
 
+  /** ประโยคบอกความเร่งด่วนของงานเติมหนึ่งข้อ */
+  function coverText(x) {
+    return x.open > 0 ? 'เหลือขายอีก ' + x.cover.toFixed(1) + ' วัน' : 'ของในโลเปิดหมดแล้ว';
+  }
+
+  /** งานของ SKU ที่ไม่มีของสำรอง QA, IQA, RIB ไม่ใช่ที่ดึงมาเติมตามปกติ แต่คนควรรู้ว่ายังมีของอยู่ตรงนั้น */
+  function noReserveText(x) {
+    var other = x.QA + x.IQA + x.RIB;
+    return other > 0 ? 'ไม่มีของบนชั้นวาง มีอยู่ที่ QA, IQA, RIB ' + fmt(other) + ' ชิ้น' : 'ไม่มีของบนชั้นวาง ต้องตามของเข้า';
+  }
+
   function norm(s) { return String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ''); }
 
   /** ค้นได้ทั้งรหัส ชื่อสินค้า และ Location @returns {{skus:Array, locs:Array}} */
@@ -260,6 +271,8 @@
     expand: expand,
     source: source,
     refill: refill,
+    coverText: coverText,
+    noReserveText: noReserveText,
     search: search,
     describeIssue: describeIssue,
     rowUrl: rowUrl,

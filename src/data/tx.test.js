@@ -462,6 +462,13 @@ describe('wms-tx.js', () => {
     expect(WmsTx.refill(d, 3).none.map((x) => x.sku)).toEqual(['BBB002']);
   });
 
+  it('งานเติมของอ่านเป็นประโยค และบอกเมื่อยังมีของอยู่ที่ QA, IQA, RIB', () => {
+    expect(WmsTx.coverText({ open: 44, cover: 1.76 })).toBe('เหลือขายอีก 1.8 วัน');
+    expect(WmsTx.coverText({ open: 0, cover: 0 })).toBe('ของในโลเปิดหมดแล้ว');
+    expect(WmsTx.noReserveText({ QA: 1, IQA: 0, RIB: 2 })).toBe('ไม่มีของบนชั้นวาง มีอยู่ที่ QA, IQA, RIB 3 ชิ้น');
+    expect(WmsTx.noReserveText({ QA: 0, IQA: 0, RIB: 0 })).toBe('ไม่มีของบนชั้นวาง ต้องตามของเข้า');
+  });
+
   it('ค้นได้ทั้งรหัส รหัสยาว ชื่อ และ Location', () => {
     const d = WmsTx.expand(DATA);
     expect(WmsTx.search(d, 'aaa').skus.map((x) => x.sku)).toEqual(['AAA001']);
