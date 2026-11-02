@@ -417,12 +417,25 @@ out on the server, and returns only the summary and the lines that differ. It ne
 | `ตัดสต๊อกระบบ TRcloud` | Cuts in the company system. The cut amount is `เบิกออก` minus `รับเข้า`, because a correction is entered as a receipt on the same order |
 | `Report order ระบบJST` | Shipped orders from JST, with the shipping status |
 | `Report order ระบบ CRM` | Shipped orders from CRM |
+| `Report order ระบบโอนย้าย` | Optional. The transfer report (allocate-out export), pasted with its header row |
 
 Columns are found by their header, so moving a column is fine. Renaming a tab or a header makes the
 check stop with a message rather than read the wrong column.
 
 Lines are matched on order number + SKU. Online order IDs can't be used, because the sheet rounds some
 of them into scientific notation. An order number with ` · date` on the end counts as the same order.
+
+**Transfers:** a transfer to a store shows up in three places. JST has a placeholder order whose SKU
+starts with `STR` (named `Store_DT_…`) and is never cut. The goods themselves are cut as `โอนย้าย` rows,
+whose `เลขภายใน` (Transaction) and `อธิบายรายการ` (TRcloud) hold the transfer slip number. The transfer
+report lists each slip's SKUs under `หมายเลขใบโอนย้ายสินค้า`, the same slip number, with
+`จำนวนการโอนย้ายสินค้า` and `วันที่จัดส่ง`.
+
+- With the transfer tab, each slip + SKU is matched like an order line, so a transfer cut too much,
+  too little, or for a slip the report doesn't have is listed with the other mistakes. The destination
+  store (`โอนเข้าคลัง`) is shown where an order shows its carrier.
+- Without it, or while it only has a header row, transfers are only checked against each other: the two
+  systems should agree.
 
 **Tab ตัดผิด / ตัดเกิน:**
 
@@ -458,9 +471,9 @@ the same Uploadยิงออก label for the Transaction cut tab.
 - Days after the ledger's last sale date aren't compared. The page lists them with the other figures,
   so they don't look like a shortage.
 - A fourth column, Report ควรออก, shows how much should have left that day. It is the JST and CRM reports
-  by their warehouse-out date, minus lines that shouldn't leave (a cancelled shipment, a blank shipping
-  status, or a code that isn't warehouse stock, whether or not it was cut), plus transfers taken from the
-  Transaction cut tab, because the report has no transfers.
+  by their warehouse-out date and the transfer report by its `วันที่จัดส่ง`, minus lines that shouldn't
+  leave (a cancelled shipment, a blank shipping status, or a code that isn't warehouse stock, whether or not
+  it was cut). Without the transfer tab, transfers are taken from the Transaction cut tab instead.
 - The three systems are still judged against each other first, and the tab's count is that result. The
   เทียบกับ Report column is a second check. Some orders are cut on a different day from their report date,
   so the same น่าจะลงคนละวัน rule applies to it, and a day only counts as matching the report if every SKU
@@ -474,10 +487,12 @@ Transaction** set too. ดึงยอดขายใหม่ re-reads only the
 
 These aren't errors, so they appear only under ที่มาของยอด:
 
-- Codes that aren't warehouse stock, as long as they weren't cut: a code starting with `STR`, or one that
-  doesn't match three letters + ten digits. If one of these was cut, it's listed as usual.
-- A report line with no shipping status or a cancelled shipment that wasn't cut.
-- Transfers that match in both systems.
+- Codes that aren't warehouse stock, as long as they weren't cut: a code starting with `STR` (the
+  placeholder for a store transfer), or one that doesn't match three letters + ten digits. If one of these
+  was cut, it's listed as usual.
+- A report line with no shipping status or a cancelled shipment that wasn't cut. A blank shipping status
+  means the order hasn't shipped.
+- Without the transfer tab, transfers that match in both systems.
 - Cuts dated outside the report's period, for orders that aren't in the report. They wait for next
   month's report.
 - TRcloud rows from department `IV`, which adjust stock and have nothing to do with orders.
@@ -499,7 +514,8 @@ before the report does, since those orders would otherwise all look uncut.
 project, paste the new file, then Deploy → Manage deployments → pencil icon → Version: New version → Deploy.
 The URLs stay the same. Until then, the tab says which script is out of date and the other tabs keep working.
 The Report ควรออก column needs the newer `cut-api.gs` as well. With an older one, the tab compares the
-three systems only and says to paste the script again.
+three systems only and says to paste the script again. Reading `Report order ระบบโอนย้าย` needs the
+same update, and ที่มาของยอด says so until it's done.
 
 The URL works like a key: anyone who has it can read the order numbers and SKUs in the result, so keep it
 out of this repo. The result leaves out online order IDs and tracking numbers.

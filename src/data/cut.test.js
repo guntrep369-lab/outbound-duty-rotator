@@ -15,8 +15,11 @@ const HEADS = {
   tr: ['วันที่', 'SYS ID', 'DT', 'รหัสสินค้า', 'อธิบายรายการ', 'หน่วย', 'Serial / Lot', 'กลุ่มสินค้า', 'หมวดสินค้า', 'Location', 'พนักงาน', 'แผนก', 'โครงการ', 'คลังสินค้า', 'Engine', 'รับเข้า (ปริมาณ)', 'เบิกออก (ปริมาณ)'],
   jst: ['หมายเลขคำสั่งซื้อออนไลน์', 'หมายเลขออเดอร์ภายใน', 'สถานะ', 'บริษัทขนส่ง', 'หมายเลขพัสดุ', 'สถานะขนส่ง', 'คลัง', 'วันที่ออกจากคลังสินค้า', 'รหัสสินค้า', 'ชื่อสินค้า', 'จำนวนสินค้า', 'รหัสแบบสินค้า', 'รูปแบบสินค้า'],
   crm: ['วันที่', 'ขนส่ง', 'Order ID', 'SKU', 'แบรนด์', 'ขนาด', 'จำนวน'],
+  /* ลำดับเดียวกับรายงานจริง มีคอลัมน์จำนวนอื่นอยู่ก่อนช่องที่ต้องใช้ */
+  tf: ['หมายเลขใบโอนย้ายสินค้า', 'เลขใบส่งออก', 'สถานะออกจากคลัง', 'โอนเข้าคลัง', 'จำนวนโอนย้ายทั้งหมด', 'จำนวนออกคลัง', 'วันที่จัดส่ง', 'รหัสสินค้า', 'ชื่อสินค้า', 'จำนวนการโอนย้ายสินค้า'],
 };
-const NAMES = { tx: 'ตัดสต๊อกระบบ Transaction', tr: 'ตัดสต๊อกระบบ TRcloud', jst: 'Report order ระบบJST', crm: 'Report order ระบบ CRM' };
+/* ไม่มีแถวในแท็บโอนย้าย คือเหมือนไฟล์ที่ยังไม่มีแท็บนี้ */
+const NAMES = { tx: 'ตัดสต๊อกระบบ Transaction', tr: 'ตัดสต๊อกระบบ TRcloud', jst: 'Report order ระบบJST', crm: 'Report order ระบบ CRM', tf: 'Report order ระบบโอนย้าย' };
 
 const A = 'AAA0000000001';
 const B = 'BBB0000000002';
@@ -30,6 +33,9 @@ const jst = (ref, sku, qty, o = {}) => [
 ];
 const crm = (ref, sku, qty, o = {}) => [o.date ?? when(DAY), o.sup ?? 'ขนส่งบี', ref, sku, o.name ?? 'แบรนด์', o.size ?? '', qty];
 const tx = (ref, sku, qty, o = {}) => [o.date ?? DAY, o.sup ?? 'ขนส่งเอ', '', ref, '', sku, o.name ?? 'แบรนด์', o.size ?? '', qty, o.src ?? 'JST'];
+const tf = (slip, sku, qty, o = {}) => [
+  slip, `EX${slip}`, 'จัดส่งแล้ว', o.store ?? 'Store_สมมติ', 99, qty, o.date ?? when(DAY), sku, o.name ?? `สินค้า ${sku}`, qty,
+];
 const tr = (ref, sku, out, o = {}) => [
   o.date ?? when(DAY), 1, when(DAY), sku, ref, 'Unit', o.lot ?? 'ขนส่งเอ', '', '', '', '', o.dept ?? 'OB', '', 'WH', 'import', o.inq ?? 0, out,
 ];
@@ -77,7 +83,7 @@ const rowsOf = (r, kind) => r.rows.filter((x) => x.k === kind);
 /* แถวของออเดอร์ที่ตรงกันทุกฝั่ง ใส่เป็นฉากหลังให้แท็บไม่ว่าง */
 const fine = (ref, sku = A, qty = 1) => ({ jst: [jst(ref, sku, qty)], tx: [tx(ref, sku, qty)], tr: [tr(ref, sku, qty)] });
 const join = (...parts) => {
-  const out = { jst: [], crm: [], tx: [], tr: [] };
+  const out = { jst: [], crm: [], tx: [], tr: [], tf: [] };
   for (const p of parts) for (const k of Object.keys(p)) out[k].push(...p[k]);
   return out;
 };
@@ -523,6 +529,67 @@ describe('cut-api.gs — อ่านชีต', () => {
     expect(text).toContain('5001');
     expect(text).not.toContain('ONLINE-SECRET');
     expect(text).not.toContain('TRACK-SECRET');
+  });
+});
+
+describe('cut-api.gs — รายงานโอนย้าย', () => {
+  const move = (slip, sku, qty, o = {}) => ({ tx: [tx(slip, sku, qty, { src: 'โอนย้าย', ...o })], tr: [tr(slip, sku, qty)] });
+
+  it('ใบโอนย้ายที่ตัดตรงกับรายงาน นับเป็นตรงเหมือนออเดอร์', () => {
+    const r = run(join({ tf: [tf(1201, A, 3)] }, move('1201', A, 3)));
+    expect(r.rows).toEqual([]);
+    expect(r.info.matched).toEqual({ lines: 1, qty: 3 });
+    expect(r.totals).toMatchObject({ report: 3, tf: 3, jst: 0, crm: 0 });
+    expect(r.tabs.tf.rows).toBe(1);
+  });
+
+  it('ตัดเกินรายงานโอนย้าย ขึ้นเป็นตัดเกิน พร้อมคลังปลายทาง', () => {
+    const r = run(join({ tf: [tf(1201, A, 3, { store: 'Store_DT_สมมติ' })] }, move('1201', A, 5)));
+    expect(rowsOf(r, 'over')[0]).toMatchObject({ ref: '1201', sys: 'โอนย้าย', sup: 'Store_DT_สมมติ', r: 3, x: 5, t: 5 });
+  });
+
+  it('ใบโอนย้ายที่ไม่อยู่ในรายงาน ขึ้นเป็นตัดแต่ไม่มีใน Report', () => {
+    const r = run(join({ tf: [tf(1201, A, 1)] }, move('1201', A, 1), move('1202', B, 4)));
+    expect(rowsOf(r, 'ghost')[0]).toMatchObject({ ref: '1202', sys: 'โอนย้าย', x: 4, t: 4, goal: 0 });
+    expect(r.kinds.transferDiff.total).toBe(0);
+  });
+
+  it('รหัส STR ในรายงานเป็นออเดอร์แฝงของงานโอนย้าย ไม่ได้ตัดก็ถูก และไม่นับเป็นยอดควรออก', () => {
+    const r = run(join({ tf: [tf(1201, A, 2), tf(1201, 'STR0000000022', 1)] }, move('1201', A, 2)));
+    expect(r.rows).toEqual([]);
+    expect(r.info.nonStock).toEqual({ lines: 1, qty: 1 });
+    expect(dailyOf(r, 'r')).toEqual({ [`${DAY}|${A}`]: 2 });
+  });
+
+  it('ยอดควรออกใช้รายงานโอนย้ายตามวันที่จัดส่ง ไม่ใช่วันที่ตัด', () => {
+    const r = run(join({ tf: [tf(1201, A, 4, { date: when('2026-03-09') })] }, move('1201', A, 4)));
+    expect(dailyOf(r, 'r')).toEqual({ [`2026-03-09|${A}`]: 4 });
+    expect(dailyOf(r, 'x')).toEqual({ [`${DAY}|${A}`]: 4 });
+  });
+
+  it('วันที่เป็นข้อความแบบมีตัว T คั่นเวลาก็อ่านได้', () => {
+    const r = run(join({ tf: [tf(1201, A, 1, { date: '2026-03-05T20:12:39' })] }, move('1201', A, 1)));
+    expect(r.tabs.tf).toMatchObject({ from: DAY, to: DAY });
+  });
+
+  it('แท็บที่มีแต่หัวตาราง ทำเหมือนยังไม่มีแท็บ งานโอนย้ายเทียบแค่สองระบบ', () => {
+    const r = run(join(fine('5001'), move('1200', A, 4)));
+    expect(r.rows).toEqual([]);
+    expect(r.info.transfer).toMatchObject({ refs: 1, qty: 4 });
+    expect(dailyOf(r, 'r')).toEqual({ [`${DAY}|${A}`]: 5 });
+  });
+
+  it('ไม่มีแท็บโอนย้ายเลยก็ตรวจได้', () => {
+    const book = bookOf(join(fine('5001'), move('1200', A, 4)));
+    delete book[NAMES.tf];
+    const r = JSON.parse(api(book).doGet({ parameter: { api: 'cut-check' } }).text);
+    expect(r.error).toBeUndefined();
+    expect(r.totals.tf).toBe(0);
+  });
+
+  it('รายงานโอนย้ายคนละเดือนกับ JST มีคำเตือน', () => {
+    const r = run(join(fine('5001'), { tf: [tf(1201, A, 1, { date: when('2026-04-02') })] }, move('1201', A, 1)));
+    expect(r.warnings.some((x) => x.includes('Report โอนย้าย'))).toBe(true);
   });
 });
 

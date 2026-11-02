@@ -166,13 +166,14 @@ const L = WmsCut.LABEL;
 const KINDS = {
   over: { label: 'ตัดเกิน', why: 'ตัดมากกว่าจำนวนใน Report ส่วนมากเกิดจากลงซ้ำ ดูวันที่ตัดในคอลัมน์วันที่', tone: 'tx-neg' },
   wrong: { label: 'ตัดผิด SKU', why: 'ออเดอร์นี้มีใน Report แต่ SKU นี้ไม่อยู่ในออเดอร์', tone: 'tx-neg' },
-  ghost: { label: 'ตัดแต่ไม่มีใน Report', why: 'มีรายการตัด แต่ไม่พบเลขออเดอร์นี้ทั้งใน Report JST และ CRM', tone: 'tx-neg' },
+  ghost: { label: 'ตัดแต่ไม่มีใน Report', why: 'มีรายการตัด แต่ไม่พบเลขออเดอร์หรือเลขใบโอนย้ายนี้ใน Report', tone: 'tx-neg' },
   cancel: { label: 'ขนส่งยกเลิกแต่ตัดแล้ว', why: 'Report บอกว่าการจัดส่งถูกยกเลิก ถ้าของไม่ได้ออกจากคลังจริงต้องคืนยอด', tone: 'tx-mid' },
   blankCut: { label: 'สถานะขนส่งว่างแต่ตัดแล้ว', why: 'สถานะขนส่งว่างคือยังไม่ได้ส่ง แต่ตัดสต๊อกไปแล้ว ต้องคืนยอด', tone: 'tx-neg' },
   transferDiff: { label: 'โอนย้ายไม่ตรงกัน', why: 'งานโอนย้ายที่ยอดในสองระบบไม่เท่ากัน', tone: 'tx-neg' },
   under: { label: 'ยังไม่ตัดหรือตัดไม่ครบ', why: 'จำนวนใน Report มากกว่ายอดที่ตัด ดูคอลัมน์สุดท้ายว่าขาดฝั่งไหน', tone: 'tx-neg' },
 };
 const FIX_KINDS = ['over', 'wrong', 'ghost', 'cancel', 'blankCut', 'transferDiff'];
+const TAB_TF = 'Report order ระบบโอนย้าย';
 
 /* ครบทุกถังที่สคริปต์ส่งมา ถังที่ไม่อยู่ในนี้จะขึ้นชื่อถังดิบ เห็นได้ทันทีว่าลืมเพิ่ม */
 const PARTS = {
@@ -197,7 +198,7 @@ let BUSY = '';
 let ERR = '';
 let TAB = 'fix';
 let KIND = '';    // การ์ดที่กดเลือก
-let SYS = '';     // JST | CRM
+let SYS = '';     // JST | CRM | โอนย้าย
 let Q = '';
 let LEDGER = null;      // คำตอบจาก tx-daily
 let LEDGER_ERR = '';
@@ -303,7 +304,7 @@ function renderSum() {
   const t = RAW.totals;
   const stat = (label, n, sub) => `<div class="tx-stat"><small>${esc(label)}</small><b>${f(n)}</b><i>${esc(sub)}</i></div>`;
   $('sum').innerHTML =
-    stat('Report ของเดือน', t.report, `JST ${f(t.jst)} · CRM ${f(t.crm)}`) +
+    stat('Report ของเดือน', t.report, `JST ${f(t.jst)} · CRM ${f(t.crm)}${t.tf ? ` · โอนย้าย ${f(t.tf)}` : ''}`) +
     stat('ตัดใน Transaction', t.tx, `ต่างจาก Report ${plus(t.tx - t.report)}`) +
     stat('ตัดใน TRcloud', t.tr, `ต่างจาก Report ${plus(t.tr - t.report)}`) +
     stat('รายการที่ตรงกันทุกฝั่ง', RAW.info.matched.lines, `${f(RAW.info.matched.qty)} ชิ้น`);
@@ -388,7 +389,7 @@ function filterBar() {
   const opt = (v, label) => `<button class="tx-opt ${SYS === v ? 'on' : ''}" data-sys="${v}">${label}</button>`;
   return `<div class="tx-bar">
     <input class="tx-input" id="q" type="search" placeholder="ค้นเลขออเดอร์ หรือ SKU" value="${esc(Q)}">
-    ${opt('', 'ทุกระบบ')}${opt('JST', 'JST')}${opt('CRM', 'CRM')}
+    ${opt('', 'ทุกระบบ')}${opt('JST', 'JST')}${opt('CRM', 'CRM')}${opt('โอนย้าย', 'โอนย้าย')}
   </div>`;
 }
 
@@ -436,13 +437,20 @@ function partLine(p) {
 function partNote(id) {
   const i = RAW.info;
   let text = '';
-  if (id === 'nonstock') text = `รหัสขึ้นต้น STR ${f(i.nonStock.qty)} ชิ้น · รหัสไม่ครบหรือว่าง ${f(i.badSku.qty)} ชิ้น`;
+  if (id === 'nonstock') text = `ออเดอร์แฝงของงานโอนย้ายไปหน้าร้าน (รหัส STR) ${f(i.nonStock.qty)} ชิ้น · รหัสไม่ครบหรือว่าง ${f(i.badSku.qty)} ชิ้น`;
   if (id === 'blankOk') text = 'ยังไม่ได้ส่ง ถูกต้องแล้ว';
   if (id === 'cancelOk') text = 'ถูกต้องแล้ว';
   if (id === 'transfer') text = `${f(i.transfer.refs)} เลขงาน ยอดสองระบบตรงกัน`;
   if (id === 'outside') text = `${dm(i.outsideTx.from)}${i.outsideTx.to !== i.outsideTx.from ? ' ถึง ' + dm(i.outsideTx.to) : ''} · ${f(i.outsideTx.orders)} ออเดอร์`;
   if (id === 'adjust') text = `รับเข้า ${f(i.adjust.inq)} · เบิกออก ${f(i.adjust.outq)}`;
   return text ? `<span class="tx-sub">${esc(text)}</span>` : '';
+}
+
+/** ยังเทียบงานโอนย้ายกับรายงานไม่ได้เพราะอะไร '' = เทียบได้แล้ว หรือเดือนนี้ไม่มีงานโอนย้าย */
+function tfNote() {
+  if (RAW.totals.tf === undefined) return `<b>cut-api.gs</b> รุ่นนี้ยังไม่อ่านแท็บ ${TAB_TF} ให้วางโค้ดใหม่แล้ว Deploy เป็น New version`;
+  if (!RAW.totals.tf && RAW.info.transfer.refs) return `ไม่พบข้อมูลในแท็บ ${TAB_TF} งานโอนย้ายจึงเทียบได้แค่ว่าสองระบบตรงกันเอง`;
+  return '';
 }
 
 function reconHtml() {
@@ -462,6 +470,7 @@ function reconHtml() {
       </tbody>
     </table></div>
     <div class="tx-note">ที่อยู่ในตารางนี้แต่ไม่ได้เป็นสีแดงคือเรื่องปกติ ไม่ต้องแก้
+      ${tfNote() ? `<br>${tfNote()}` : ''}
       ${RAW.kinds.cancel.total || RAW.kinds.blankCut.total ? '<br>รายการที่ขนส่งยกเลิกหรือสถานะว่างแต่ตัดแล้ว ยอดเท่า Report จึงไม่อยู่ในตารางนี้ ดูที่แท็บตัดผิด / ตัดเกิน' : ''}
       ${i.reversedCount ? `<br>ตัดแล้วกลับรายการจนเป็นศูนย์เรียบร้อย ${f(i.reversedCount)} ออเดอร์ ไม่กระทบยอด` : ''}
       ${i.trIn ? `<br>TRcloud มีแถวรับเข้าทั้งหมด ${f(i.trIn)} ชิ้น ซึ่งหักออกจากยอดเบิกแล้ว` : ''}
@@ -675,8 +684,11 @@ function dailyHtml() {
     <div id="list"></div>
     <div class="tx-note">ตัวเลขสีแดงคือช่องที่ต่างจากอีกสองช่อง สีส้มคือไม่เท่ากันทั้งสามช่อง<br>
       ${c.hasR
-        ? `${L.r} คือ Report JST + CRM ตามวันที่ออกจากคลัง ไม่นับรายการที่ขนส่งยกเลิก สถานะขนส่งว่าง หรือรหัสที่ไม่ใช่ของในคลัง
-          แล้วบวกงานโอนย้ายจาก ${L.x} เพราะ Report ไม่มีงานโอนย้าย<br>
+        ? `${RAW.totals.tf
+            ? `${L.r} คือ Report JST + CRM ตามวันที่ออกจากคลัง และ Report โอนย้ายตามวันที่จัดส่ง
+              ไม่นับรายการที่ขนส่งยกเลิก สถานะขนส่งว่าง หรือรหัสที่ไม่ใช่ของในคลัง เช่นออเดอร์แฝง STR`
+            : `${L.r} คือ Report JST + CRM ตามวันที่ออกจากคลัง ไม่นับรายการที่ขนส่งยกเลิก สถานะขนส่งว่าง หรือรหัสที่ไม่ใช่ของในคลัง
+              แล้วบวกงานโอนย้ายจาก ${L.x} เพราะยังไม่มีแท็บ ${TAB_TF}`}<br>
           บางออเดอร์ตัดสต๊อกคนละวันกับวันที่ออกจากคลัง ถ้าสองวันติดกันหักกันแล้วเท่ากันจะขึ้นว่าน่าจะลงคนละวัน`
         : `ยังไม่มีช่อง ${L.r} ให้วาง <b>cut-api.gs</b> ใหม่ แล้ว Deploy เป็น New version จากนั้นกด <b>ตรวจใหม่</b>`}</div>`;
 }

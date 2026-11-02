@@ -5,12 +5,13 @@
  * ช่อง "Apps Script URL — เช็ครายการตัดสต๊อก" วิธีติดตั้งอยู่ใน README หัวข้อ "Stock Cut Check"
  *
  * ผูกกับไฟล์ Google Sheet ที่มี 4 แท็บด้านล่าง และอ่านอย่างเดียว ไม่เขียนอะไรลงชีตเลย
+ * แท็บรายงานโอนย้ายไม่บังคับ ถ้ามี งานโอนย้ายจะเทียบกับรายงานด้วยเลขใบโอนย้าย + SKU แบบเดียวกับออเดอร์
  * ข้อมูลรวมกันหลายแสนแถว ส่งให้เบราว์เซอร์ทั้งหมดไม่ไหว จึงคิดที่นี่แล้วส่งกลับเฉพาะสรุปกับรายการที่ไม่ตรง
  *
  * หน่วยที่เทียบคือ เลขออเดอร์ + SKU เลขคำสั่งซื้อออนไลน์ใช้ไม่ได้ เพราะบางแถวถูกชีตปัดเป็นเลขยกกำลัง
  * ยอดของ TRcloud คือ เบิกออก − รับเข้า เพราะการแก้ตัดผิดลงเป็นแถวรับเข้าของออเดอร์เดิม
  * ส่งยอดรายวันต่อ SKU ไปด้วย หน้าเว็บเอาไปเทียบกับแถวขายในสมุด Transaction (public/wms-cut.js)
- * พร้อมยอดที่ควรออกตาม Report ของแต่ละวัน บวกงานโอนย้ายที่ Report ไม่มี
+ * พร้อมยอดที่ควรออกตาม Report ของแต่ละวัน ถ้าไม่มีรายงานโอนย้าย ส่วนของงานโอนย้ายใช้ยอดที่ตัดจริง
  *
  * ?api=cut-check   ผลการเทียบ
  * ไม่ใส่ api        บอกแค่ว่าเป็นสคริปต์นี้ ให้หน้าตั้งค่าเช็คว่าใส่ URL ถูกตัว
@@ -20,9 +21,13 @@ var TAB_TX = 'ตัดสต๊อกระบบ Transaction';
 var TAB_TR = 'ตัดสต๊อกระบบ TRcloud';
 var TAB_JST = 'Report order ระบบJST';
 var TAB_CRM = 'Report order ระบบ CRM';
+/* ไม่บังคับ ถ้ามีแท็บนี้ งานโอนย้ายจะเทียบกับรายงานนี้แบบเดียวกับออเดอร์ ไฟล์ที่ยังไม่มีใช้ได้เหมือนเดิม */
+var TAB_TF = 'Report order ระบบโอนย้าย';
 
 var CANCELLED = 'ยกเลิกแล้ว';
-var TRANSFER = 'โอนย้าย';   // ค่าในคอลัมน์ที่มาของแท็บ Transaction งานย้ายคลัง ไม่ใช่ออเดอร์ จึงไม่มีใน Report
+var TRANSFER = 'โอนย้าย';   // ค่าในคอลัมน์ที่มาของแท็บ Transaction งานย้ายคลัง ไม่ใช่ออเดอร์ จึงไม่มีใน Report JST หรือ CRM
+var SYS_KEY = { JST: 'jst', CRM: 'crm' };
+SYS_KEY[TRANSFER] = 'tf';
 var ADJUST_DEPT = 'IV';     // แผนกนี้ปรับยอดคลังเอง ไม่เกี่ยวกับออเดอร์
 
 /* รหัสที่ไม่ใช่ของในคลัง ถ้าไม่ได้ถูกตัดเลยจะไม่นับเป็นข้อผิดพลาด แต่ถ้าถูกตัดจริงจะขึ้นรายการตามปกติ */
@@ -73,7 +78,7 @@ function plainDate_(v, tz) {
   if (v && typeof v.getTime === 'function') {
     return isNaN(v.getTime()) ? '' : Utilities.formatDate(v, tz, 'yyyy-MM-dd');
   }
-  var s = text_(v).replace(/\s+\d{1,2}:\d{2}.*$/, '');
+  var s = text_(v).replace(/[\sT]+\d{1,2}:\d{2}.*$/, '');
   var m = /^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/.exec(s);
   if (m) return ymd_(m[1], m[2], m[3]);
   m = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2}|\d{4})$/.exec(s);
@@ -125,8 +130,9 @@ function newWork_() {
   return {
     keys: {}, orders: {}, transfer: {}, carriers: {}, names: {}, crmNames: {},
     period: { from: '', to: '' },
-    tabs: { tx: span_(), tr: span_(), jst: span_(), crm: span_() },
-    totals: { report: 0, jst: 0, crm: 0, tx: 0, txJst: 0, txCrm: 0, txTransfer: 0, tr: 0, trOut: 0, trIn: 0 },
+    hasTf: false,
+    tabs: { tx: span_(), tr: span_(), jst: span_(), crm: span_(), tf: span_() },
+    totals: { report: 0, jst: 0, crm: 0, tf: 0, tx: 0, txJst: 0, txCrm: 0, txTransfer: 0, tr: 0, trOut: 0, trIn: 0 },
     outsideTx: { rows: 0, qty: 0, from: '', to: '', refs: {} },
     outsideTr: { rows: 0, qty: 0, from: '', to: '' },
     adjust: { rows: 0, inq: 0, outq: 0 },
@@ -151,19 +157,22 @@ function key_(w, ref, sku) {
   });
 }
 
-/** Report คือยอดที่ควรถูกตัด ต้องอ่านก่อน เพราะแถวตัดต้องรู้ว่าออเดอร์นี้อยู่ใน Report หรือเปล่า */
+/**
+ * Report คือยอดที่ควรถูกตัด ต้องอ่านก่อน เพราะแถวตัดต้องรู้ว่าออเดอร์นี้อยู่ใน Report หรือเปล่า
+ * รายงานโอนย้ายใช้เลขใบโอนย้ายเป็นเลขออเดอร์ ตรงกับเลขภายในของแถวโอนย้ายในแท็บตัด และช่อง sup คือคลังปลายทาง
+ */
 function addReport_(w, sys, row, at, tz) {
   var ref = ref_(row[at.ref]), sku = code_(row[at.sku]), q = num_(row[at.qty]);
   if (!ref && !sku && !q) return;
   var d = plainDate_(row[at.date], tz), sup = text_(row[at.sup]), ship = sys === 'JST' ? text_(row[at.ship]) : '';
-  var span = sys === 'JST' ? w.tabs.jst : w.tabs.crm;
+  var span = w.tabs[SYS_KEY[sys]];
   span.rows++;
   stretch_(span, d);
   stretch_(w.period, d);
   w.totals.report += q;
-  w.totals[sys === 'JST' ? 'jst' : 'crm'] += q;
+  w.totals[SYS_KEY[sys]] += q;
   if (sup) w.carriers[sup] = 1;
-  if (sys === 'JST' && !w.names[sku] && text_(row[at.name])) w.names[sku] = text_(row[at.name]);
+  if (sys !== 'CRM' && !w.names[sku] && text_(row[at.name])) w.names[sku] = text_(row[at.name]);
   if (sys === 'CRM' && !w.crmNames[sku]) w.crmNames[sku] = (text_(row[at.brand]) + ' ' + text_(row[at.size])).trim();
 
   var o = w.orders[ref] || (w.orders[ref] = { sys: sys, date: '', sup: '', ship: '' });
@@ -189,8 +198,8 @@ function addCut_(w, row, at, tz) {
   if (!w.names[sku]) w.names[sku] = (text_(row[at.brand]) + ' ' + text_(row[at.size])).trim();
   if (src === TRANSFER) w.transfer[ref] = 1;
   tally_(w.daily.x, d, sku, q);
-  /* Report ไม่มีงานโอนย้าย ยอดควรออกของงานนี้จึงใช้ยอดที่ตัดจริง */
-  if (src === TRANSFER) tally_(w.daily.r, d, sku, q);
+  /* ไม่มีรายงานโอนย้าย ยอดควรออกของงานนี้จึงใช้ยอดที่ตัดจริง */
+  if (src === TRANSFER && !w.hasTf) tally_(w.daily.r, d, sku, q);
 
   if (outside_(w, ref, d)) {
     var o = w.outsideTx;
@@ -311,7 +320,8 @@ function dailyOf_(w) {
 function bucket_(k, w) {
   var o = w.orders[k.ref];
   if (!o) {
-    if (w.transfer[k.ref]) return k.x === k.t ? 'transfer' : 'transferDiff';
+    /* มีรายงานโอนย้ายแล้ว ใบโอนย้ายที่ไม่อยู่ในรายงานคือตัดแต่ไม่มีใน Report เหมือนออเดอร์ */
+    if (w.transfer[k.ref] && !w.hasTf) return k.x === k.t ? 'transfer' : 'transferDiff';
     return k.x || k.t ? 'ghost' : 'reversed';
   }
   if (!k.r) return k.x || k.t ? 'wrong' : 'reversed';
@@ -539,7 +549,7 @@ function info_(w, list, buckets) {
 }
 
 function warnings_(w) {
-  var out = [], tx = w.tabs.tx, tr = w.tabs.tr, jst = w.tabs.jst, crm = w.tabs.crm;
+  var out = [], tx = w.tabs.tx, tr = w.tabs.tr, jst = w.tabs.jst, crm = w.tabs.crm, tf = w.tabs.tf;
   if (tx.lastRow >= CHUNK_ROWS && tx.lastRow % CHUNK_ROWS === 0) {
     out.push('แท็บ Transaction เต็มพอดีที่แถว ' + tx.lastRow.toLocaleString('en-US') + ' สูตรดึงข้อมูลน่าจะตัดแถวหลังจากนี้ทิ้ง ให้ขยายช่วงในสูตรของแท็บนี้ก่อนตรวจรอบถัดไป');
   }
@@ -551,6 +561,9 @@ function warnings_(w) {
   }
   if (jst.from && crm.from && (jst.from.slice(0, 7) !== crm.from.slice(0, 7) || jst.to.slice(0, 7) !== crm.to.slice(0, 7))) {
     out.push('Report ของ JST (' + jst.from + ' ถึง ' + jst.to + ') กับ CRM (' + crm.from + ' ถึง ' + crm.to + ') เป็นคนละเดือน');
+  }
+  if (jst.from && tf.from && (jst.from.slice(0, 7) !== tf.from.slice(0, 7) || jst.to.slice(0, 7) !== tf.to.slice(0, 7))) {
+    out.push('Report โอนย้าย (' + tf.from + ' ถึง ' + tf.to + ') กับ JST (' + jst.from + ' ถึง ' + jst.to + ') เป็นคนละเดือน');
   }
   return out;
 }
@@ -572,6 +585,17 @@ function check_() {
   });
   w.tabs.crm.lastRow = crm.lastRow;
   eachRow_(crm, function (row, at) { addReport_(w, 'CRM', row, at, tz); });
+
+  var tfSheet = ss.getSheetByName(TAB_TF);
+  if (tfSheet && tfSheet.getLastRow() > 1) {
+    var tf = tab_(ss, TAB_TF, {
+      ref: /^หมายเลขใบโอนย้าย/, sup: /^โอนเข้าคลัง/, date: /^วันที่จัดส่ง/, sku: /^รหัสสินค้า/, name: /^ชื่อสินค้า/, qty: /^จำนวนการโอนย้าย/,
+    });
+    w.tabs.tf.lastRow = tf.lastRow;
+    eachRow_(tf, function (row, at) { addReport_(w, TRANSFER, row, at, tz); });
+    /* แท็บที่สร้างไว้แต่ยังไม่ได้วางข้อมูล ถ้านับว่ามี งานโอนย้ายทุกใบจะขึ้นเป็นตัดแต่ไม่มีใน Report */
+    w.hasTf = w.tabs.tf.rows > 0;
+  }
 
   if (!w.period.to) throw new Error('แท็บ Report ยังไม่มีข้อมูล ให้ดึง Report ของเดือนมาลงก่อน');
 
