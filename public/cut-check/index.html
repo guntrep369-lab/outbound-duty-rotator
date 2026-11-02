@@ -109,11 +109,9 @@
 .tx-bar .sp{flex:1}
 .tx-tbl tr[data-day],.tx-tbl tr[data-sku]{cursor:pointer}
 .tx-tbl tr[data-day]:hover td,.tx-tbl tr[data-sku]:hover td{background:var(--wms-primary-light)}
-.tx-tbl tr.open td{background:var(--wms-primary-light);font-weight:600}
 .tx-more{padding:0;border:0;background:none;font:inherit;color:inherit;white-space:nowrap}
 button.tx-more{cursor:pointer}
 .tx-more i{display:inline-block;width:12px;font-style:normal;color:var(--wms-muted)}
-.tx-tbl .tx-detail>td{padding:10px;background:var(--wms-surface2)}
 .tx-tag{display:inline-block;margin-top:2px;padding:1px 7px;border-radius:999px;background:#FEF3C7;
   color:#92400E;font-size:11px;font-weight:600;white-space:nowrap}
 
@@ -122,14 +120,38 @@ button.tx-more{cursor:pointer}
 .tx-tbl tr[data-cell]:hover td{background:var(--wms-primary-light)}
 .tx-cell{display:grid;gap:8px}
 .tx-cell .tx-h{margin:6px 0 0}
+/* ช่องออเดอร์ไม่ให้ถูกบีบจนคำขาด จอแคบให้ตารางเลื่อนข้างแทน */
+.tx-ords td:first-child{min-width:150px}
 .tx-hint{font-size:13px;font-weight:600;color:var(--wms-text);line-height:1.5}
 .tx-row{font-weight:600;color:var(--wms-primary-dark)}
 
+/* ── หน้าต่างรายละเอียด ฉากหลังเบลอให้ตาอยู่ที่ข้อมูล ชื่อคลาสเดียวกับหน้าเทียบ Order ── */
+.modal-overlay{display:none;position:fixed;inset:0;z-index:500;align-items:center;justify-content:center;padding:16px;
+  background:rgba(15,23,42,.45);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.modal-overlay.open{display:flex}
+.modal-box{display:flex;flex-direction:column;width:min(1080px,100%);max-height:calc(100vh - 32px);
+  background:var(--wms-surface);border-radius:14px;box-shadow:0 25px 60px rgba(0,0,0,.25)}
+.modal-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:16px 20px;
+  border-bottom:1px solid var(--wms-border)}
+.modal-header h3{font-size:16px;font-weight:700;color:var(--wms-text);line-height:1.35}
+.modal-header p{margin-top:2px;font-size:12.5px;color:var(--wms-muted)}
+.modal-close{flex-shrink:0;padding:4px 9px;border:0;border-radius:8px;background:none;font-size:18px;line-height:1;
+  color:var(--wms-muted);cursor:pointer}
+.modal-close:hover{background:var(--wms-surface2);color:var(--wms-text)}
+.modal-body{overflow-y:auto;padding:16px 20px 20px}
+.pop-back{margin-bottom:6px;padding:0;border:0;background:none;font-family:var(--wms-font);font-size:12.5px;
+  font-weight:600;color:var(--wms-primary-dark);cursor:pointer}
+.pop-res{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-bottom:14px;
+  font-size:13px;font-weight:600;color:var(--wms-text)}
+.pop-res small{display:block;font-size:11.5px;font-weight:400;color:var(--wms-muted)}
+html.pop-open{overflow:hidden}
+
 @media (max-width:640px){
   .tx-body{padding:12px 12px 60px}
-  /* แผงอยู่ในตารางที่กว้างกว่าจอ ถ้าไม่จำกัด หัวข้อจะยาวเลยขอบจอ ตารางข้างในเลื่อนข้างเองได้ */
-  .tx-cell{max-width:calc(100vw - 72px)}
   .tx-src,.tx-sum,.tx-tabs{padding-left:12px;padding-right:12px}
+  .modal-overlay{padding:8px}
+  .modal-box{max-height:calc(100vh - 16px)}
+  .modal-header,.modal-body{padding-left:14px;padding-right:14px}
 }
 </style>
 </head>
@@ -155,6 +177,7 @@ button.tx-more{cursor:pointer}
   <div class="tx-body" id="body"></div>
 
 </div><!-- /.wms-main -->
+<div class="modal-overlay" id="pop" role="dialog" aria-modal="true" aria-labelledby="popTitle"></div>
 </div><!-- /.wms-shell -->
 
 <script type="module" src="../wms-shell.js"></script>
@@ -214,8 +237,8 @@ let LEDGER = null;      // คำตอบจาก tx-daily
 let LEDGER_ERR = '';
 let DAILY = null;       // ผลเทียบรายวัน คิดครั้งเดียวต่อข้อมูลหนึ่งชุด
 let VIEW = 'day';       // day | sku
-let OPEN_DAY = '';
-let OPEN_CELL = '';     // วัน|SKU ที่กดดูว่าต่างเพราะออเดอร์ไหนหรือแถวไหนในชีตทีม
+/* หน้าต่างที่เปิดอยู่: day = วันที่กดเข้ามา, cell = วัน|SKU ที่กดดูรายออเดอร์ ถ้ามีทั้งคู่จะมีปุ่มกลับไปรายการ SKU */
+let POP = null;
 let CELLS = null;       // ดัชนีรายละเอียดรายช่อง สร้างใหม่ทุกครั้งที่ DAILY ถูกล้าง
 
 function readCache() {
@@ -543,9 +566,9 @@ function resHead(c) {
   return `<th>สามระบบเทียบกัน</th>${c.hasR ? '<th>เทียบกับ Report</th>' : ''}`;
 }
 
-/** open ไม่ใส่ = แถวที่กดเปิดไม่ได้ */
-function skuCell(r, open) {
-  const caret = open === undefined ? '' : `<span class="tx-more"><i>${open ? '▾' : '▸'}</i></span>`;
+/** more = แถวนี้กดเปิดหน้าต่างรายละเอียดได้ */
+function skuCell(r, more) {
+  const caret = more ? '<span class="tx-more"><i>▸</i></span>' : '';
   return `<td class="tx-name"><b>${caret}${esc(r.sku)}</b><span class="tx-sub">${esc(r.name)}</span></td>`;
 }
 
@@ -569,15 +592,13 @@ function rowReport(r) {
 }
 
 function skuDayRow(c, r, withDate) {
-  const id = `${r.date}|${r.sku}`, open = OPEN_CELL === id;
-  const span = (c.hasR ? 7 : 5) + (withDate ? 1 : 0);
-  return `<tr data-cell="${esc(id)}" class="${open ? 'open' : ''}">
+  return `<tr data-cell="${esc(`${r.date}|${r.sku}`)}">
     ${withDate ? `<td class="nw">${esc(dm(r.date))}</td>` : ''}
-    ${skuCell(r, open)}
+    ${skuCell(r, true)}
     ${numCells(c, r)}
     <td class="tx-res">${esc(WmsCut.diffWords(r.s, r.x, r.t))}${r.moved ? `<br>${SHIFT_TAG}` : ''}</td>
     ${c.hasR ? `<td class="tx-res">${rowReport(r)}</td>` : ''}
-  </tr>${open ? `<tr class="tx-detail"><td colspan="${span}">${cellPanel(c, r)}</td></tr>` : ''}`;
+  </tr>`;
 }
 
 function cellInfo() {
@@ -614,7 +635,7 @@ function ordersBlock(c, r, info, one) {
       <td class="tx-res">${esc(kindLabel(e.kind))}${WmsCut.dateWords(e) ? `<span class="tx-sub">${esc(WmsCut.dateWords(e))}</span>` : ''}</td>
     </tr>`);
   one.moved.forEach((g) => rows.push(`<tr>
-      <td><b>${f(g.orders)} ออเดอร์</b><span class="tx-sub">${g.orders > g.refs.length ? 'เช่น ' : ''}${esc(g.refs.join(', '))}</span></td>
+      <td><b class="nw">${f(g.orders)} ออเดอร์</b><span class="tx-sub">${g.orders > g.refs.length ? 'เช่น ' : ''}${g.refs.map((x) => `<span class="nw">${esc(x)}</span>`).join(', ')}</span></td>
       <td class="num">${f(g.r)}</td><td class="num">${f(g.x)}</td><td class="num">${f(g.t)}</td>
       <td class="tx-res">${SHIFT_TAG}<span class="tx-sub">ยอดของออเดอร์ตรงแล้ว ต่างแค่วันที่ลง · ${esc(WmsCut.dateWords(g))}</span></td>
     </tr>`));
@@ -624,7 +645,7 @@ function ordersBlock(c, r, info, one) {
       <td class="tx-res"><span class="tx-ok">ตรงทุกแหล่ง</span></td></tr>`);
   }
   if (one.more) rows.push(`<tr><td colspan="5">และอีก ${f(one.more)} ออเดอร์ที่ไม่ได้แสดง ดูได้ในแท็บตัดผิด / ตัดเกิน หรือยังไม่ตัด</td></tr>`);
-  return `${head}<div class="tx-wrap"><table class="tx-tbl">
+  return `${head}<div class="tx-wrap"><table class="tx-tbl tx-ords">
       <thead><tr><th>ออเดอร์</th><th class="num">${L.r}</th><th class="num">${L.x}</th><th class="num">${L.t}</th><th>เรื่อง</th></tr></thead>
       <tbody>${rows.join('')}
         <tr class="sum"><td>รวมทั้งช่อง</td><td class="num">${f(r.r)}</td><td class="num">${f(r.x)}</td><td class="num">${f(r.t)}</td><td></td></tr>
@@ -675,22 +696,76 @@ function dayReport(d) {
 }
 
 function dayRow(c, d) {
-  const open = OPEN_DAY === d.date;
   const results = `<td class="tx-res">${dayResult(d)}</td>${c.hasR ? `<td class="tx-res">${dayReport(d)}</td>` : ''}`;
   if (d.status === 'ok' && (!d.rep || d.rep.status === 'ok')) {
     return `<tr><td class="nw"><span class="tx-more"><i></i>${esc(dm(d.date))}</span></td>${numCells(c, d)}${results}</tr>`;
   }
-  const detail = open ? `<tr class="tx-detail"><td colspan="${c.hasR ? 7 : 5}">
-    <div class="tx-why">กดที่ SKU เพื่อดูว่าต่างเพราะออเดอร์ไหน หรือแถวไหนในชีตทีม</div>
-    <div class="tx-wrap"><table class="tx-tbl">
-      <thead><tr><th>SKU</th>${numHead(c)}${resHead(c)}</tr></thead>
-      <tbody>${c.rows.filter((r) => r.date === d.date).map((r) => skuDayRow(c, r, false)).join('')}</tbody>
-    </table></div></td></tr>` : '';
-  return `<tr data-day="${esc(d.date)}" class="${open ? 'open' : ''}">
-      <td class="nw"><button class="tx-more" aria-expanded="${open}"><i>${open ? '▾' : '▸'}</i>${esc(dm(d.date))}</button></td>
+  return `<tr data-day="${esc(d.date)}">
+      <td class="nw"><button class="tx-more" aria-haspopup="dialog"><i>▸</i>${esc(dm(d.date))}</button></td>
       ${numCells(c, d)}
       ${results}
-    </tr>${detail}`;
+    </tr>`;
+}
+
+/* ── หน้าต่างรายละเอียด ─────────────────────────────────────────────────── */
+
+/** ตัวเลขสี่ช่องกับผลเทียบ ขึ้นบนสุดของหน้าต่าง ไม่ต้องย้อนไปดูแถวที่กดมา */
+function popStats(c, v, three, rep) {
+  const odd = WmsCut.oddOne(v.s, v.x, v.t);
+  const box = (k) => `<div class="tx-stat"><small>${esc(L[k])}</small><b class="${k === 'r' ? '' : tone(k, odd)}">${f(v[k])}</b></div>`;
+  return `<div class="tx-stats">${c.hasR ? box('r') : ''}${box('s')}${box('x')}${box('t')}</div>
+    <div class="pop-res"><div><small>สามระบบเทียบกัน</small>${three}</div>${c.hasR ? `<div><small>เทียบกับ Report</small>${rep}</div>` : ''}</div>`;
+}
+
+function popDay(c, d) {
+  const rows = c.rows.filter((r) => r.date === d.date);
+  return {
+    title: `วันที่ ${dm(d.date)}`,
+    sub: `${f(rows.length)} SKU ที่ยอดไม่ตรงกัน`,
+    body: `${popStats(c, d, dayResult(d), c.hasR ? dayReport(d) : '')}
+      <div class="tx-why">กดที่ SKU เพื่อดูว่าต่างเพราะออเดอร์ไหน หรือแถวไหนในชีตทีม</div>
+      <div class="tx-wrap"><table class="tx-tbl">
+        <thead><tr><th>SKU</th>${numHead(c)}${resHead(c)}</tr></thead>
+        <tbody>${rows.map((r) => skuDayRow(c, r, false)).join('')}</tbody>
+      </table></div>`,
+  };
+}
+
+function popCell(c, r) {
+  const three = WmsCut.diffWords(r.s, r.x, r.t);
+  return {
+    title: r.sku,
+    sub: `${r.name ? `${r.name} · ` : ''}วันที่ ${dm(r.date)}`,
+    body: popStats(c, r, `${three ? esc(three) : '<span class="tx-ok">ตรงกัน</span>'}${r.moved ? `<br>${SHIFT_TAG}` : ''}`, c.hasR ? rowReport(r) : '')
+      + cellPanel(c, r),
+  };
+}
+
+function renderPop() {
+  const box = $('pop');
+  const c = POP && TAB === 'daily' ? dailyResult() : null;
+  const day = c && POP.day ? c.days.find((d) => d.date === POP.day) : null;
+  const row = c && POP.cell ? c.rows.find((r) => `${r.date}|${r.sku}` === POP.cell) : null;
+  const view = row ? popCell(c, row) : day ? popDay(c, day) : null;
+  /* ข้อมูลชุดใหม่อาจไม่มีวันหรือ SKU ที่เปิดค้างไว้แล้ว ปิดไปเลย */
+  if (!view) POP = null;
+  document.documentElement.classList.toggle('pop-open', !!view);
+  box.classList.toggle('open', !!view);
+  if (!view) { box.innerHTML = ''; return; }
+  const back = row && day ? `<button class="pop-back" data-back>← กลับไปรายการ SKU ของวันที่ ${esc(dm(day.date))}</button>` : '';
+  box.innerHTML = `<div class="modal-box">
+      <div class="modal-header">
+        <div>${back}<h3 id="popTitle">${esc(view.title)}</h3><p>${esc(view.sub)}</p></div>
+        <button class="modal-close" data-close aria-label="ปิด">✕</button>
+      </div>
+      <div class="modal-body">${view.body}</div>
+    </div>`;
+  box.querySelector('[data-close]').focus();
+}
+
+function openPop(p) {
+  POP = p;
+  renderPop();
 }
 
 function dayTable(c) {
@@ -807,7 +882,7 @@ function renderBody() {
   renderList();
 }
 
-function render() { renderSrc(); renderSum(); renderTabs(); renderBody(); }
+function render() { renderSrc(); renderSum(); renderTabs(); renderBody(); renderPop(); }
 
 $('tabs').addEventListener('click', (e) => {
   const b = e.target.closest('[data-tab]');
@@ -815,7 +890,20 @@ $('tabs').addEventListener('click', (e) => {
   TAB = b.dataset.tab;
   KIND = '';
   Q = '';   // รหัสที่ค้นค้างจากแท็บอื่นจะทำให้แท็บนี้ดูเหมือนว่างเปล่า
+  POP = null;
   render();
+});
+
+$('pop').addEventListener('click', (e) => {
+  /* กดที่พื้นหลังนอกกล่องก็ปิด */
+  if (e.target === e.currentTarget || e.target.closest('[data-close]')) { openPop(null); return; }
+  if (e.target.closest('[data-back]')) { openPop({ day: POP.day, cell: '' }); return; }
+  const cell = e.target.closest('[data-cell]');
+  if (cell) openPop({ day: POP.day, cell: cell.dataset.cell });
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && POP) openPop(null);
 });
 
 $('body').addEventListener('click', (e) => {
@@ -828,8 +916,7 @@ $('body').addEventListener('click', (e) => {
   }
   const cell = e.target.closest('[data-cell]');
   if (cell) {
-    OPEN_CELL = OPEN_CELL === cell.dataset.cell ? '' : cell.dataset.cell;
-    renderList();
+    openPop({ day: '', cell: cell.dataset.cell });
     return;
   }
   const sku = e.target.closest('[data-sku]');
@@ -841,8 +928,7 @@ $('body').addEventListener('click', (e) => {
   }
   const day = e.target.closest('[data-day]');
   if (day) {
-    OPEN_DAY = OPEN_DAY === day.dataset.day ? '' : day.dataset.day;
-    renderList();
+    openPop({ day: day.dataset.day, cell: '' });
     return;
   }
   const card = e.target.closest('[data-kind]');

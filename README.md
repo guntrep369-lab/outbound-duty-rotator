@@ -462,8 +462,8 @@ column B is the code that matches the cut tabs' SKU. On the page the three colum
 ledger), Uploadยิงออก (the Transaction cut tab) and TRcloud. The ตัดผิด / ตัดเกิน and ยังไม่ตัด tabs use
 the same Uploadยิงออก label for the Transaction cut tab.
 
-- The list is one row per day. Press a day that differs to see its SKUs, or switch to ราย SKU รวมทั้งช่วง
-  for the SKUs whose totals over the whole period still differ. Red marks the number that differs from the
+- The list is one row per day. Press a day that differs to see its SKUs in a window over the blurred
+  page, or switch to ราย SKU รวมทั้งช่วง for the SKUs whose totals over the whole period still differ. Red marks the number that differs from the
   other two, and orange means all three differ.
 - A gap in one direction on a day and the opposite direction on the next day is labelled น่าจะลงคนละวัน,
   because the same goods were entered a day apart. Totals over the two days agree. A row only gets this
@@ -478,7 +478,8 @@ the same Uploadยิงออก label for the Transaction cut tab.
   เทียบกับ Report column is a second check. Some orders are cut on a different day from their report date,
   so the same น่าจะลงคนละวัน rule applies to it, and a day only counts as matching the report if every SKU
   matches.
-- Press a SKU inside an open day (or a row in the search results) to see what makes up that cell. The
+- Press a SKU in a day's window (or a row in the search results) to see what makes up that cell, in the
+  same window with a button back to the day's SKUs. ✕, Esc or a click outside the window closes it. The
   first line says where to look: if UAT is the odd one out, the ledger rows; if Uploadยิงออก or TRcloud
   is, the orders; if all three agree but miss the report, the orders too, for a status change or a
   different date.
