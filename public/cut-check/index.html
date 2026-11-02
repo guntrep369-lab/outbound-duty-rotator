@@ -131,7 +131,7 @@ button.tx-more{cursor:pointer}
 
   <div class="mod-head">
     <div class="mod-title">
-      <div class="ic"><img src="../icons/compare.png" alt="" width="38" height="38"></div>
+      <div class="ic"><img src="../icons/cut-check.png" alt="" width="38" height="38"></div>
       <div>
         <h2>เช็ครายการตัดสต๊อก · Stock Cut Check</h2>
         <p>เทียบรายการตัดใน Transaction และ TRcloud กับ Report ออเดอร์ของเดือน และเทียบยอดออกรายวันกับสต๊อกราย Location — อ่านอย่างเดียว ไม่แก้ชีต</p>
@@ -314,12 +314,12 @@ function underCount() { return RAW.kinds.under.total + RAW.gaps.length; }
 
 function renderTabs() {
   if (!RAW) { $('tabs').innerHTML = ''; return; }
-  const tab = (id, label, n) => `<button class="tx-tab ${TAB === id ? 'on' : ''}" data-tab="${id}" role="tab" aria-selected="${TAB === id}">${esc(label)}${n === null ? '' : `<span class="n">${f(n)}</span>`}</button>`;
+  const tab = (id, label, icon, n) => `<button class="tx-tab ${TAB === id ? 'on' : ''}" data-tab="${id}" role="tab" aria-selected="${TAB === id}"><img src="${icon}" alt="" width="26" height="26">${esc(label)}${n === null ? '' : `<span class="n">${f(n)}</span>`}</button>`;
   $('tabs').innerHTML =
-    tab('fix', '✂️ ตัดผิด / ตัดเกิน', fixCount()) +
-    tab('under', '⏳ ยังไม่ตัด', underCount()) +
-    tab('daily', '📅 เทียบรายวัน', dailyResult() ? dailyResult().counts.daysBad : null) +
-    tab('recon', '🧮 ที่มาของยอด', null);
+    tab('fix', 'ตัดผิด / ตัดเกิน', '../icons/tab-cut.png', fixCount()) +
+    tab('under', 'ยังไม่ตัด', '../icons/tab-wait.png', underCount()) +
+    tab('daily', 'เทียบรายวัน', '../icons/tab-daily.png', dailyResult() ? dailyResult().counts.daysBad : null) +
+    tab('recon', 'ที่มาของยอด', '../icons/tab-source.png', null);
 }
 
 /* ── ตารางรายการ ────────────────────────────────────────────────────────── */
@@ -401,8 +401,8 @@ function renderList() {
   const html = shown.map(section).join('');
   const total = TAB === 'fix' ? fixCount() : RAW.kinds.under.total;
   box.innerHTML = html || (total
-    ? `<div class="tx-empty">ไม่พบรายการที่ตรงกับตัวกรอง</div>`
-    : `<div class="tx-pass">✅ ${TAB === 'fix' ? 'ไม่พบรายการตัดผิดหรือตัดเกิน' : 'ไม่พบรายการที่ยังไม่ตัด'}</div>`);
+    ? `<div class="tx-empty art-search">ไม่พบรายการที่ตรงกับตัวกรอง</div>`
+    : `<div class="tx-empty art-done">${TAB === 'fix' ? 'ไม่พบรายการตัดผิดหรือตัดเกิน' : 'ไม่พบรายการที่ยังไม่ตัด'} — <b>เป็นเรื่องดี</b></div>`);
 }
 
 function gapBlock(g) {
@@ -487,14 +487,14 @@ function ledgerBtn(label) {
 /** ยังเทียบไม่ได้เพราะอะไร ต้องบอกให้รู้ว่าต้องทำอะไรต่อ */
 function dailyWaiting() {
   if (!RAW.daily) {
-    return `<div class="tx-empty">ผลตรวจรอบนี้ยังไม่มียอดรายวัน กด <b>ตรวจใหม่</b> ด้านบน<br>
+    return `<div class="tx-empty art-data">ผลตรวจรอบนี้ยังไม่มียอดรายวัน กด <b>ตรวจใหม่</b> ด้านบน<br>
       ถ้ากดแล้วยังขึ้นข้อความนี้ แปลว่า <b>cut-api.gs</b> ยังเป็นรุ่นเก่า ให้วางโค้ดใหม่แล้ว Deploy เป็น New version</div>`;
   }
   if (!WmsSettings.txUrl()) {
-    return `<div class="tx-empty">ยังไม่ได้ตั้ง Apps Script URL ของ Transaction — <a href="../settings/">ตั้งที่หน้าตั้งค่า</a></div>`;
+    return `<div class="tx-empty art-link">ยังไม่ได้ตั้ง Apps Script URL ของ Transaction — <a href="../settings/">ตั้งที่หน้าตั้งค่า</a></div>`;
   }
   return `${LEDGER_ERR ? `<div class="tx-warn">⚠️ ดึงยอดขายไม่สำเร็จ: ${esc(LEDGER_ERR)}</div>` : ''}
-    <div class="tx-empty">ต้องดึงยอดขายจากสต๊อกราย Location มาเทียบก่อน<br><br>${ledgerBtn('▶️ ดึงยอดขาย')}</div>`;
+    <div class="tx-empty art-data">ต้องดึงยอดขายจากสต๊อกราย Location มาเทียบก่อน<br><br>${ledgerBtn('▶️ ดึงยอดขาย')}</div>`;
 }
 
 function tone(side, odd) {
@@ -561,7 +561,11 @@ function dayTable(c) {
 
 function skuTable(c) {
   const hit = c.skus.filter((r) => `${r.sku} ${r.name}`.toUpperCase().includes(Q));
-  if (!hit.length) return `<div class="tx-${c.skus.length ? 'empty' : 'pass'}">${c.skus.length ? 'ไม่พบ SKU ที่ตรงกับคำค้น' : '✅ รวมทั้งช่วงแล้วทุก SKU ตรงกันหมด'}</div>`;
+  if (!hit.length) {
+    return c.skus.length
+      ? '<div class="tx-empty art-search">ไม่พบ SKU ที่ตรงกับคำค้น</div>'
+      : '<div class="tx-empty art-done">รวมทั้งช่วงแล้วทุก SKU <b>ตรงกันหมด</b></div>';
+  }
   return `<div class="tx-why">SKU ที่รวมทั้งช่วงแล้วยังไม่ตรง กดแถวเพื่อดูว่าต่างกันวันไหน</div>
     <div class="tx-wrap"><table class="tx-tbl">
       <thead><tr><th>SKU</th>${THREE_HEAD}<th>ต่างกันยังไง</th></tr></thead>
@@ -571,7 +575,7 @@ function skuTable(c) {
 
 function searchTable(c) {
   const hit = c.rows.filter((r) => `${r.sku} ${r.name}`.toUpperCase().includes(Q));
-  if (!hit.length) return '<div class="tx-empty">ไม่พบวันที่ไม่ตรงของ SKU นี้ ถ้าพิมพ์รหัสถูก แปลว่าตรงกันทุกวัน</div>';
+  if (!hit.length) return '<div class="tx-empty art-search">ไม่พบวันที่ไม่ตรงของ SKU นี้ ถ้าพิมพ์รหัสถูก แปลว่าตรงกันทุกวัน</div>';
   return `<div class="tx-wrap"><table class="tx-tbl">
     <thead><tr><th>วันที่</th><th>SKU</th>${THREE_HEAD}<th>ต่างกันยังไง</th></tr></thead>
     <tbody>${hit.map((r) => skuDayRow(r, true)).join('')}</tbody>
@@ -634,7 +638,7 @@ function dailyHtml() {
 
 function renderBody() {
   if (!RAW) {
-    $('body').innerHTML = `<div class="tx-empty">
+    $('body').innerHTML = `<div class="tx-empty ${BUSY ? '' : WmsSettings.cutUrl() ? 'art-data' : 'art-link'}">
       ${BUSY ? '<b>กำลังตรวจ</b><br>สคริปต์ต้องอ่านข้อมูลหลายแสนแถว อาจใช้เวลา 1-3 นาที' : ''}
       ${!BUSY && WmsSettings.cutUrl() ? 'กด <b>เริ่มตรวจ</b> เพื่อเทียบรายการตัดสต๊อกกับ Report ของเดือน' : ''}
       ${!BUSY && !WmsSettings.cutUrl() ? 'ยังไม่ได้ตั้ง URL ของสคริปต์ <b>cut-api.gs</b><br>ดูวิธีติดตั้งใน README หัวข้อ Stock Cut Check' : ''}

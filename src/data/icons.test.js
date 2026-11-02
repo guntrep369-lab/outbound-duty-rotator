@@ -32,6 +32,37 @@ describe('ไอคอนของทุกหน้า', () => {
 const PUB = path.resolve(__dirname, '../../public');
 const NAVS = ['transport-docs/transport-nav.js', 'transport-forms/forms-nav.js', 'warehouse-forms/wh-nav.js'];
 
+describe('ไอคอนแท็บ', () => {
+  for (const page of ['stock-location/index.html', 'cut-check/index.html']) {
+    it(page, () => {
+      const file = path.join(PUB, page);
+      const srcs = [...fs.readFileSync(file, 'utf8').matchAll(/'(\.\.\/icons\/tab-[^']+)'/g)].map((m) => m[1]);
+      expect(srcs.length, `${page} ไม่มีไอคอนแท็บ`).toBeGreaterThan(0);
+      for (const s of srcs) expect(fs.existsSync(path.resolve(path.dirname(file), s)), `${page} ชี้ไป ${s} ที่ไม่มีอยู่`).toBe(true);
+    });
+  }
+});
+
+/**
+ * ภาพตอนหน้าว่างตั้งใน CSS พอชื่อผิดจะไม่มีภาพขึ้นและไม่มีอะไรเตือน
+ * คลาส art-* บางจุดเลือกด้วยเงื่อนไขใน JS จึงเช็คจากตัวหนังสือทั้งไฟล์ ไม่ใช่แค่ใน class=""
+ */
+describe('ภาพตอนหน้าว่าง', () => {
+  const css = fs.readFileSync(path.join(PUB, 'wms-theme.css'), 'utf8');
+  it('wms-theme.css ชี้ไปรูปที่มีอยู่จริง', () => {
+    const urls = [...css.matchAll(/url\((icons\/[^)]+)\)/g)].map((m) => m[1]);
+    expect(urls.length).toBeGreaterThan(0);
+    for (const u of urls) expect(fs.existsSync(path.join(PUB, u)), `ไม่มีไฟล์ ${u}`).toBe(true);
+  });
+  for (const p of htmlPages()) {
+    const used = [...new Set([...fs.readFileSync(p.file, 'utf8').matchAll(/\bart-[a-z]+\b/g)].map((m) => m[0]))];
+    if (!used.length) continue;
+    it(p.name, () => {
+      for (const c of used) expect(css.includes(`.${c}::before {`), `${p.name} ใช้ ${c} ที่ไม่มีภาพ`).toBe(true);
+    });
+  }
+});
+
 describe('ไอคอนหัวโมดูล', () => {
   for (const p of htmlPages()) {
     const srcs = [...fs.readFileSync(p.file, 'utf8').matchAll(/<img src="([^"]*icons\/[^"]+)"/g)].map((m) => m[1]);

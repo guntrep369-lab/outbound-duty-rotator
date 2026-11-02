@@ -216,11 +216,25 @@ body {
 .tx-tab:hover:not(.on) { background:var(--wms-primary-light); color:var(--wms-primary-dark); }
 .tx-tab:focus-visible { outline:2px solid var(--wms-primary-dark); outline-offset:-3px; }
 .tx-tab.on { background:var(--wms-primary); color:#fff; font-weight:700; cursor:default; }
+.tx-tab img { display:block; flex-shrink:0; border-radius:24%; }
+/* ไอคอนสีม่วงเดียวกับแท็บที่เลือกอยู่ ต้องมีขอบถึงจะยังเห็นเป็นไอคอน */
+.tx-tab.on img { box-shadow:0 0 0 1.5px rgba(255,255,255,.8); }
 .tx-tab .n {
   padding:1px 8px; border-radius:999px; background:var(--wms-primary-light); color:var(--wms-primary-dark);
   font-size:12px; font-weight:700; font-variant-numeric:tabular-nums;
 }
 .tx-tab.on .n { background:#fff; }
+
+/* ภาพตอนหน้าว่าง ใส่คลาสที่กล่องข้อความ ภาพจะขึ้นเหนือข้อความเอง
+   done = ไม่มีปัญหา, search = ค้นหา/ไม่พบ, data = ยังไม่มีข้อมูล, link = ยังไม่ได้เชื่อม */
+.art-done::before, .art-search::before, .art-data::before, .art-link::before {
+  content:''; display:block; width:120px; height:120px; margin:0 auto 12px;
+  background:center/contain no-repeat;
+}
+.art-done::before { background-image:url(icons/empty-done.png); }
+.art-search::before { background-image:url(icons/empty-search.png); }
+.art-data::before { background-image:url(icons/empty-data.png); }
+.art-link::before { background-image:url(icons/empty-link.png); }
 
 /* ── Content fills the space left by the sidebar (no centred max-width,
       otherwise wide monitors get large dead margins). ────────────────────── */

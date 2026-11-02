@@ -135,7 +135,6 @@ td{padding:9px 12px;vertical-align:middle}
 .stock-upload-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
 .demand-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px}
 .empty-state{text-align:center;padding:48px 24px;color:var(--muted)}
-.empty-state .icon{font-size:40px;margin-bottom:10px}
 .empty-state h3{font-size:15px;color:var(--neutral);margin-bottom:5px}
 .empty-state p{font-size:13px}
 
@@ -478,8 +477,7 @@ td{padding:9px 12px;vertical-align:middle}
 
   <!-- Table -->
   <div class="table-wrap" id="tableWrap">
-    <div class="empty-state">
-      <div class="icon">📂</div>
+    <div class="empty-state art-data">
       <h3>ยังไม่มีข้อมูล</h3>
       <p>อัปโหลดไฟล์ Excel แล้วกด "เปรียบเทียบ"</p>
     </div>
@@ -541,8 +539,7 @@ td{padding:9px 12px;vertical-align:middle}
   </div>
 
   <div class="table-wrap" id="stockTableWrap">
-    <div class="empty-state">
-      <div class="icon">📦</div>
+    <div class="empty-state art-data">
       <h3>ยังไม่มีข้อมูล</h3>
       <p>อัปโหลดไฟล์ออเดอร์ + ไฟล์สต๊อก แล้วกด "เช็คสต๊อก"</p>
     </div>
@@ -603,8 +600,7 @@ td{padding:9px 12px;vertical-align:middle}
   </div>
 
   <div class="table-wrap" id="custTableWrap">
-    <div class="empty-state">
-      <div class="icon">👤</div>
+    <div class="empty-state art-data">
       <h3>ยังไม่มีข้อมูล</h3>
       <p>ดึงข้อมูลออเดอร์ใน Tab "เทียบ Order" ก่อน แล้วกลับมากด "เทียบข้อมูลลูกค้า"</p>
     </div>
@@ -628,8 +624,7 @@ td{padding:9px 12px;vertical-align:middle}
   </p>
 
   <div id="dupWrap">
-    <div class="empty-state">
-      <div class="icon">🔍</div>
+    <div class="empty-state art-data">
       <h3>ยังไม่ได้ตรวจ</h3>
       <p>ดึงข้อมูลออเดอร์ใน Tab เทียบ Order ก่อน แล้วกด "ตรวจ Order ซ้ำ"</p>
     </div>
@@ -653,8 +648,7 @@ td{padding:9px 12px;vertical-align:middle}
   </p>
 
   <div id="consignWrap">
-    <div class="empty-state">
-      <div class="icon">📦</div>
+    <div class="empty-state art-data">
       <h3>ยังไม่ได้ตรวจ</h3>
       <p>ดึงข้อมูลออเดอร์ใน Tab เทียบ Order ก่อน แล้วกด "ตรวจเลข Consign"</p>
     </div>
@@ -1135,8 +1129,7 @@ function renderTable() {
 
   if (!rows.length) {
     document.getElementById('tableWrap').innerHTML = `
-      <div class="empty-state">
-        <div class="icon">🔍</div>
+      <div class="empty-state art-search">
         <h3>ไม่พบข้อมูล</h3>
         <p>ลองปรับตัวกรองหรือคำค้นหา</p>
       </div>`;
@@ -1317,7 +1310,7 @@ function clearCompare() {
   document.getElementById('searchInput').value = '';
   currentFilter = 'all';
   document.querySelectorAll('#tab-compare .filter-tab').forEach((t,i) => t.classList.toggle('active', i===0));
-  document.getElementById('tableWrap').innerHTML = `<div class="empty-state"><div class="icon">📂</div><h3>ยังไม่มีข้อมูล</h3><p>อัปโหลดไฟล์ Excel แล้วกด "เปรียบเทียบ"</p></div>`;
+  document.getElementById('tableWrap').innerHTML = `<div class="empty-state art-data"><h3>ยังไม่มีข้อมูล</h3><p>อัปโหลดไฟล์ Excel แล้วกด "เปรียบเทียบ"</p></div>`;
 }
 
 // helpers for compare tab stock display
@@ -1478,7 +1471,7 @@ function renderStockTable() {
   if (search) rows = rows.filter(r => r.sku.toLowerCase().includes(search) || r.name.toLowerCase().includes(search));
 
   if (!rows.length) {
-    document.getElementById('stockTableWrap').innerHTML = `<div class="empty-state"><div class="icon">🔍</div><h3>ไม่พบข้อมูล</h3><p>ลองปรับตัวกรอง</p></div>`;
+    document.getElementById('stockTableWrap').innerHTML = `<div class="empty-state art-search"><h3>ไม่พบข้อมูล</h3><p>ลองปรับตัวกรอง</p></div>`;
     return;
   }
 
@@ -2094,7 +2087,7 @@ function applyCarrier(idx) {
   document.getElementById('summaryStrip').style.display = 'none';
   document.getElementById('filterBar').style.display = 'none';
   document.getElementById('tableWrap').innerHTML =
-    `<div class="empty-state"><div class="icon">🔄</div>
+    `<div class="empty-state art-data">
      <h3>เลือกขนส่ง: ${esc(carriersData[idx].key)}</h3>
      <p>${data1.length} แถว (เช้า) | ${data2.length} แถว (เย็น) — กด "เปรียบเทียบ"</p></div>`;
   updateCompareBtn();
@@ -2550,7 +2543,7 @@ function renderCustomerTable() {
 
   if (!rows.length) {
     document.getElementById('custTableWrap').innerHTML =
-      `<div class="empty-state"><div class="icon">🔍</div><h3>ไม่พบข้อมูล</h3><p>ลองปรับตัวกรอง</p></div>`;
+      `<div class="empty-state art-search"><h3>ไม่พบข้อมูล</h3><p>ลองปรับตัวกรอง</p></div>`;
     return;
   }
 

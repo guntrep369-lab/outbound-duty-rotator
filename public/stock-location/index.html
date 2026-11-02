@@ -318,9 +318,16 @@ function renderTabs() {
   }
   if (COUNT.data) count.count = WmsTx.countStats(COUNT.data).todo.length;
   if (comparison()) count.diff = comparison().rows.length;
-  const list = [['fill', '📥 ต้องเติม'], ['count', '📋 นับสต๊อก'], ['diff', '⚖️ เทียบสต๊อก'], ['find', '🔍 หาของ'], ['bad', '⚠️ ข้อมูลผิด'], ['log', '🕘 ประวัติ']];
-  $('tabs').innerHTML = list.map(([id, label]) =>
-    `<button class="tx-tab ${id === TAB ? 'on' : ''}" role="tab" aria-selected="${id === TAB}" data-tab="${id}">${label}` +
+  const list = [
+    ['fill', 'ต้องเติม', '../icons/tab-refill.png'],
+    ['count', 'นับสต๊อก', '../icons/tab-count.png'],
+    ['diff', 'เทียบสต๊อก', '../icons/tab-compare.png'],
+    ['find', 'หาของ', '../icons/tab-find.png'],
+    ['bad', 'ข้อมูลผิด', '../icons/tab-error.png'],
+    ['log', 'ประวัติ', '../icons/tab-history.png'],
+  ];
+  $('tabs').innerHTML = list.map(([id, label, icon]) =>
+    `<button class="tx-tab ${id === TAB ? 'on' : ''}" role="tab" aria-selected="${id === TAB}" data-tab="${id}"><img src="${icon}" alt="" width="26" height="26">${label}` +
     `${count[id] !== undefined ? ` <span class="n">${f(count[id])}</span>` : ''}</button>`
   ).join('');
 }
@@ -366,8 +373,10 @@ function renderFill() {
     `<div class="tx-bar">แสดงของที่พอขายไม่ถึง ${[2, 3].map(n =>
       `<button class="tx-opt ${n === DAYS ? 'on' : ''}" data-days="${n}">${n} วัน</button>`).join('')}</div>` +
 
-    `<div class="tx-h">ไปดึงของมาเติม (${r.ready.length} SKU)</div>` + jobList(r.ready, pull) +
-    `<div class="tx-h">ไม่มีสำรองให้เติม (${r.none.length} SKU)</div>` + jobList(r.none, (x) => esc(WmsTx.noReserveText(x))) +
+    (r.ready.length || r.none.length
+      ? `<div class="tx-h">ไปดึงของมาเติม (${r.ready.length} SKU)</div>` + jobList(r.ready, pull) +
+        `<div class="tx-h">ไม่มีสำรองให้เติม (${r.none.length} SKU)</div>` + jobList(r.none, (x) => esc(WmsTx.noReserveText(x)))
+      : `<div class="tx-empty art-done">ไม่มีของที่พอขายไม่ถึง ${DAYS} วัน — <b>เป็นเรื่องดี</b></div>`) +
 
     `<p class="tx-note">เหลือขายอีก = ของในโลเปิด ÷ ยอดขายเฉลี่ย ${RAW.saleDays} วันล่าสุด (ถึง ${esc(WmsTx.shortDate(RAW.lastDate))})
       · สำรอง = ชั้นวางที่ไม่เปิด ไม่นับ QA, IQA, RIB
@@ -392,14 +401,14 @@ function renderFound() {
   if (SEL && SEL.loc && DATA.locs[SEL.loc]) { box.innerHTML = locDetail(DATA.locs[SEL.loc]); return; }
 
   const q = Q.trim();
-  if (!q) { box.innerHTML = `<div class="tx-empty">พิมพ์รหัส SKU, ชื่อสินค้า หรือ Location เพื่อดูว่าของอยู่ตรงไหน</div>`; return; }
+  if (!q) { box.innerHTML = `<div class="tx-empty art-search">พิมพ์รหัส SKU, ชื่อสินค้า หรือ Location เพื่อดูว่าของอยู่ตรงไหน</div>`; return; }
   const up = q.toUpperCase();
   const r = WmsTx.search(DATA, q);
   const exactSku = r.skus.find(x => x.sku.toUpperCase() === up || String(x.long).toUpperCase() === up);
   const exactLoc = r.locs.find(l => l.loc.toUpperCase() === up);
   if (exactSku || (r.skus.length === 1 && !r.locs.length)) { box.innerHTML = skuDetail(exactSku || r.skus[0]); return; }
   if (exactLoc || (r.locs.length === 1 && !r.skus.length)) { box.innerHTML = locDetail(exactLoc || r.locs[0]); return; }
-  if (!r.skus.length && !r.locs.length) { box.innerHTML = `<div class="tx-empty">ไม่พบ "<b>${esc(q)}</b>" ที่ยังมียอดคงเหลือ</div>`; return; }
+  if (!r.skus.length && !r.locs.length) { box.innerHTML = `<div class="tx-empty art-search">ไม่พบ "<b>${esc(q)}</b>" ที่ยังมียอดคงเหลือ</div>`; return; }
 
   box.innerHTML =
     (r.skus.length ? `<div class="tx-h">SKU (${r.skus.length})</div><div class="tx-wrap"><table class="tx-tbl"><thead><tr>
@@ -486,7 +495,7 @@ function issueSection(k) {
 function renderBad() {
   const counts = RAW.issues.counts;
   const kinds = WmsTx.ISSUES.filter(k => counts[k.kind]);
-  if (!kinds.length) { $('body').innerHTML = `<div class="tx-empty">ไม่พบจุดผิด — <b>เป็นเรื่องดี</b></div>`; return; }
+  if (!kinds.length) { $('body').innerHTML = `<div class="tx-empty art-done">ไม่พบจุดผิด — <b>เป็นเรื่องดี</b></div>`; return; }
   if (!counts[KIND]) KIND = '';
 
   $('body').innerHTML =
@@ -515,8 +524,8 @@ function renderHist() {
   if (HIST.busy) { box.innerHTML = `<div class="tx-empty">⏳ ${esc(HIST.busy)}</div>`; return; }
   if (HIST.err) { box.innerHTML = `<div class="tx-err">${esc(HIST.err)}</div>`; return; }
   const h = HIST.data;
-  if (!h) { box.innerHTML = `<div class="tx-empty">ใส่รหัส SKU เพื่อดูว่าของเข้าออกเมื่อไหร่ ใครกรอก และยอดเปลี่ยนตรงแถวไหน</div>`; return; }
-  if (!h.count) { box.innerHTML = `<div class="tx-empty">ไม่พบ SKU "<b>${esc(h.sku)}</b>" ในชีต</div>`; return; }
+  if (!h) { box.innerHTML = `<div class="tx-empty art-search">ใส่รหัส SKU เพื่อดูว่าของเข้าออกเมื่อไหร่ ใครกรอก และยอดเปลี่ยนตรงแถวไหน</div>`; return; }
+  if (!h.count) { box.innerHTML = `<div class="tx-empty art-search">ไม่พบ SKU "<b>${esc(h.sku)}</b>" ในชีต</div>`; return; }
 
   const signed = (i) => i.change > 0 ? '+' + f(i.change) : i.change < 0 ? '−' + f(-i.change) : f(i.qty);
   const label = (i) => i.type === 'เบิก' && i.from && i.to ? 'โอน' : (i.type || '—');
@@ -628,7 +637,7 @@ function renderCount() {
     (s.todo.length
       ? `<div class="tx-h">รายการที่ต้องนับวันนี้ (${f(s.todo.length)})</div>
          <p class="tx-why">ไปดูของจริงแล้วกรอกจำนวน ไม่เจอของให้ใส่ 0 ยอดในระบบจะเห็นหลังส่งแล้ว ทยอยส่งได้ ตัวเลขที่กรอกค้างไว้ไม่หาย</p>` + countForm(s.todo)
-      : `<div class="tx-empty">${s.total ? '<b>นับครบแล้ว</b> สำหรับวันนี้' : 'วันนี้ไม่มีรายการให้นับ'}</div>`) +
+      : `<div class="tx-empty art-done">${s.total ? '<b>นับครบแล้ว</b> สำหรับวันนี้' : 'วันนี้ไม่มีรายการให้นับ'}</div>`) +
     (s.done.length ? countResults(s.done, 'นับแล้ววันนี้', 'รายการที่ไม่ตรงจะกลับมาให้นับซ้ำวันถัดไป ยกเว้นรายการเทียบระบบ ซึ่งดูผลได้ที่แท็บเทียบสต๊อก',
       '<th>เลือกเพราะ</th><th>ผู้นับ</th>', l => `<td>${esc(l.why)}</td><td>${esc(l.who)}</td>`) : '') +
     (s.off.length ? countResults(s.off, 'ไม่ตรงค้างอยู่', 'รอบแรกไม่ตรงจะถูกนับซ้ำให้เอง ถ้ารอบสองก็ยังไม่ตรง ให้กรอกแถวปรับยอดในชีต Transaction แอปไม่แก้ชีตให้ พอกรอกแล้วกดดึงใหม่ รายการจะหายไปเอง',
@@ -789,7 +798,7 @@ function renderDiffRows() {
           <td class="tx-res">${resultCell(r)}</td>
           <td>${clueCell(r)}</td>
         </tr>`).join('')}</tbody></table></div>`
-      : `<div class="tx-empty">${DQ.trim() ? `ไม่พบ "<b>${esc(DQ)}</b>" ใน SKU ที่ไม่ตรง SKU นี้อาจตรงกันอยู่แล้ว` : 'ไม่มีรายการ — <b>เป็นเรื่องดี</b>'}</div>`) +
+      : `<div class="tx-empty ${DQ.trim() ? 'art-search' : 'art-done'}">${DQ.trim() ? `ไม่พบ "<b>${esc(DQ)}</b>" ใน SKU ที่ไม่ตรง SKU นี้อาจตรงกันอยู่แล้ว` : 'ไม่มีรายการ — <b>เป็นเรื่องดี</b>'}</div>`) +
     (list.length > MAX ? `<p class="tx-note">แสดง ${f(MAX)} จาก ${f(list.length)} รายการ เรียงจากต่างมากสุด</p>` : '') +
     (rows.length ? `<div class="tx-csend"><span id="dsum"></span><span class="sp"></span><button id="dgo" data-diff-send="1"></button></div>` : '');
   renderPickBar();
@@ -829,7 +838,7 @@ function internalList(list) {
 function renderDiff() {
   if (!STOCK.data) {
     $('body').innerHTML = !WmsStock.savedUrl()
-      ? `<div class="tx-empty">ยังไม่ได้ตั้ง URL ของสต๊อกคงเหลือ<br>ใส่ได้ที่ <a href="../settings/">หน้าตั้งค่า</a></div>`
+      ? `<div class="tx-empty art-link">ยังไม่ได้ตั้ง URL ของสต๊อกคงเหลือ<br>ใส่ได้ที่ <a href="../settings/">หน้าตั้งค่า</a></div>`
       : STOCK.err
         ? `<div class="tx-warn">${esc(STOCK.err)}</div><button class="tx-opt" data-diff-pull="1">ลองใหม่</button>`
         : `<div class="tx-empty">⏳ <span id="dbusy">${esc(STOCK.busy || 'กำลังดึงยอดจากระบบบริษัท…')}</span></div>`;
@@ -906,8 +915,8 @@ function renderBody() {
   if (TAB === 'count' && WmsTx.savedUrl()) { renderCount(); return; }
   if (!DATA || TAB === 'count') {
     $('body').innerHTML = WmsTx.savedUrl()
-      ? `<div class="tx-empty">ยังไม่มีข้อมูล<br>กด <b>⬇️ ดึงข้อมูล</b> ที่แถบด้านบน</div>`
-      : `<div class="tx-empty">ยังไม่ได้เชื่อมกับชีต Transaction<br>
+      ? `<div class="tx-empty art-data">ยังไม่มีข้อมูล<br>กด <b>⬇️ ดึงข้อมูล</b> ที่แถบด้านบน</div>`
+      : `<div class="tx-empty art-link">ยังไม่ได้เชื่อมกับชีต Transaction<br>
           ติดตั้ง <b>apps-script/tx-api.gs</b> ในไฟล์ชีต แล้วใส่ URL ที่ <a href="../settings/">หน้าตั้งค่า</a></div>`;
     return;
   }
