@@ -39,19 +39,6 @@
 .tx-stat b{font-size:18px;font-weight:700;color:var(--wms-text);font-variant-numeric:tabular-nums}
 .tx-stat i{display:block;font-style:normal;font-size:11px;color:var(--wms-muted)}
 
-/* ── แท็บ ── */
-.tx-tabs{display:flex;gap:7px;overflow-x:auto;padding:11px 20px;background:var(--wms-surface);
-  border-bottom:1px solid var(--wms-border)}
-.tx-tabs:empty{display:none}
-.tx-tab{flex-shrink:0;white-space:nowrap;display:inline-flex;align-items:center;gap:7px;
-  padding:7px 14px;border-radius:999px;border:1px solid var(--wms-border2);background:var(--wms-surface);
-  font-family:var(--wms-font);font-size:13px;color:#334155;cursor:pointer;transition:all .13s}
-.tx-tab:hover{border-color:var(--wms-primary);color:var(--wms-primary-dark)}
-.tx-tab.on{background:var(--wms-primary);border-color:var(--wms-primary);color:#fff;font-weight:600}
-.tx-tab .n{padding:1px 7px;border-radius:999px;background:var(--wms-surface2);
-  font-size:11.5px;font-weight:700;color:var(--wms-muted)}
-.tx-tab.on .n{background:rgba(255,255,255,.22);color:#fff}
-
 /* ── เนื้อหา ── */
 .tx-body{padding:14px 20px 60px}
 .tx-empty{padding:44px 20px;text-align:center;color:var(--wms-muted);font-size:14px;line-height:1.7}
@@ -327,12 +314,12 @@ function underCount() { return RAW.kinds.under.total + RAW.gaps.length; }
 
 function renderTabs() {
   if (!RAW) { $('tabs').innerHTML = ''; return; }
-  const tab = (id, label, n) => `<button class="tx-tab ${TAB === id ? 'on' : ''}" data-tab="${id}" role="tab">${esc(label)}${n === null ? '' : `<span class="n">${f(n)}</span>`}</button>`;
+  const tab = (id, label, n) => `<button class="tx-tab ${TAB === id ? 'on' : ''}" data-tab="${id}" role="tab" aria-selected="${TAB === id}">${esc(label)}${n === null ? '' : `<span class="n">${f(n)}</span>`}</button>`;
   $('tabs').innerHTML =
-    tab('fix', 'ตัดผิด / ตัดเกิน', fixCount()) +
-    tab('under', 'ยังไม่ตัด', underCount()) +
-    tab('daily', 'เทียบรายวัน', dailyResult() ? dailyResult().counts.daysBad : null) +
-    tab('recon', 'ที่มาของยอด', null);
+    tab('fix', '✂️ ตัดผิด / ตัดเกิน', fixCount()) +
+    tab('under', '⏳ ยังไม่ตัด', underCount()) +
+    tab('daily', '📅 เทียบรายวัน', dailyResult() ? dailyResult().counts.daysBad : null) +
+    tab('recon', '🧮 ที่มาของยอด', null);
 }
 
 /* ── ตารางรายการ ────────────────────────────────────────────────────────── */

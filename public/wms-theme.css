@@ -197,6 +197,31 @@ body {
 }
 .carrier-tab.active .soon-badge { background:rgba(255,255,255,.2); color:#fff; border-color:transparent; }
 
+/* ── Section tabs (สต๊อกราย Location, เช็ครายการตัดสต๊อก) — these are the page's
+      headings, so they sit on their own band and must not look like the small
+      filter pills inside the content. The active tab joins the line under the band. ── */
+.tx-tabs {
+  display:flex; align-items:flex-end; gap:6px; overflow-x:auto; scrollbar-width:none;
+  padding:14px 20px 0; background:var(--wms-border); border-bottom:3px solid var(--wms-primary);
+}
+.tx-tabs::-webkit-scrollbar { display:none; }
+.tx-tabs:empty { display:none; }
+.tx-tab {
+  display:inline-flex; align-items:center; gap:8px; flex-shrink:0;
+  padding:11px 20px; border:0; border-radius:12px 12px 0 0;
+  background:var(--wms-surface); color:var(--wms-text);
+  font-family:var(--wms-font); font-size:15px; font-weight:600; white-space:nowrap;
+  cursor:pointer; transition:background .13s, color .13s;
+}
+.tx-tab:hover:not(.on) { background:var(--wms-primary-light); color:var(--wms-primary-dark); }
+.tx-tab:focus-visible { outline:2px solid var(--wms-primary-dark); outline-offset:-3px; }
+.tx-tab.on { background:var(--wms-primary); color:#fff; font-weight:700; cursor:default; }
+.tx-tab .n {
+  padding:1px 8px; border-radius:999px; background:var(--wms-primary-light); color:var(--wms-primary-dark);
+  font-size:12px; font-weight:700; font-variant-numeric:tabular-nums;
+}
+.tx-tab.on .n { background:#fff; }
+
 /* ── Content fills the space left by the sidebar (no centred max-width,
       otherwise wide monitors get large dead margins). ────────────────────── */
 .wms-main > .main,
