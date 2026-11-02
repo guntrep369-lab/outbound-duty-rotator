@@ -64,6 +64,15 @@ describe('ภาพตอนหน้าว่าง', () => {
   }
 });
 
+/* น้องกล่องบนสายพานรอโหลดและการ์ดฉลองตั้งใน JS ชื่อผิดจะเป็นกรอบว่างกลางจอ */
+describe('น้องกล่องใน wms-motion.js', () => {
+  it('ทุกท่าที่ชี้ไปมีไฟล์จริง', () => {
+    const names = [...fs.readFileSync(path.join(PUB, 'wms-motion.js'), 'utf8').matchAll(/icons\/(mascot-[a-z]+\.png)/g)].map((m) => m[1]);
+    expect(names.length).toBeGreaterThan(1);
+    for (const n of names) expect(fs.existsSync(path.join(PUB, 'icons', n)), `ไม่มีไฟล์ icons/${n}`).toBe(true);
+  });
+});
+
 describe('ไอคอนหัวโมดูล', () => {
   for (const p of htmlPages()) {
     const srcs = [...fs.readFileSync(p.file, 'utf8').matchAll(/<img src="([^"]*icons\/[^"]+)"/g)].map((m) => m[1]);

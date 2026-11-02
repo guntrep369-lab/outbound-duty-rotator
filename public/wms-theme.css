@@ -144,6 +144,126 @@ body {
 @keyframes wms-page-out { to { opacity:0; } }
 @keyframes wms-page-in  { from { opacity:0; transform:translateY(12px); } }
 
+/* ── Motion: the conveyor and the box mascot (wms-motion.js) ───────────────
+   The gate's conveyor belt (wms-gate.css) carried into the working pages, so
+   the whole system moves the same way. Everything is short and stops for
+   people whose device asks for reduced motion.                              */
+
+/* Loading belt, bottom centre, while someone waits on Apps Script. */
+.wms-busy {
+  position:fixed; left:50%; bottom:calc(20px + env(safe-area-inset-bottom)); z-index:700;
+  display:flex; align-items:center; gap:10px; max-width:calc(100vw - 32px);
+  padding:4px 18px 4px 6px; border-radius:999px; background:#0F172A; color:#E2E8F0;
+  box-shadow:0 12px 32px rgba(15,23,42,.35); font-family:var(--wms-font); font-size:13px; font-weight:500;
+  white-space:nowrap; pointer-events:none; transform:translateX(-50%);
+  animation:wms-busy-in .4s cubic-bezier(.34,1.56,.64,1) both;
+}
+.wms-busy.out { animation:wms-busy-out .25s ease both; }
+.wms-busy-t { overflow:hidden; text-overflow:ellipsis; }
+.wms-busy-s { color:#A5B4FC; font-weight:700; font-variant-numeric:tabular-nums; }
+.wms-busy-s:empty { display:none; }
+@keyframes wms-busy-in { from { opacity:0; transform:translate(-50%, 24px) scale(.9); } }
+@keyframes wms-busy-out { to { opacity:0; transform:translate(-50%, 16px); } }
+.wms-busy-belt { position:relative; flex-shrink:0; width:92px; height:44px; overflow:hidden; }
+/* Stripes sliding past make the band look like it's running. */
+.wms-busy-belt::after {
+  content:''; position:absolute; left:2px; right:2px; bottom:4px; height:6px; border-radius:3px;
+  background:repeating-linear-gradient(90deg, #6366F1 0 8px, #3730A3 8px 14px);
+  animation:wms-belt .45s linear infinite;
+}
+@keyframes wms-belt { to { background-position:14px 0; } }
+/* Parcels ride left to right (outbound), as on the gate. */
+.wms-busy-belt i {
+  position:absolute; left:0; bottom:10px; width:11px; height:10px; border-radius:2px;
+  background:linear-gradient(90deg, transparent 4px, #fff 4px 7px, transparent 7px), #C4B5FD;
+  animation:wms-ride 2.1s linear infinite;
+}
+.wms-busy-belt i:nth-child(2) { animation-delay:-.7s; }
+.wms-busy-belt i:nth-child(3) { animation-delay:-1.4s; }
+@keyframes wms-ride { from { transform:translateX(-14px); } to { transform:translateX(96px); } }
+/* The mascot walks on the spot; the belt does the moving. */
+.wms-busy-belt img {
+  position:absolute; left:26px; bottom:7px; z-index:1;
+  animation:wms-step .3s ease-in-out infinite alternate;
+}
+@keyframes wms-step { from { transform:rotate(-3deg); } to { transform:translateY(-3px) rotate(3deg); } }
+
+/* Tabs: the purple sweeps in from the side the previous tab was on. */
+.tx-tab.on.from-l, .tx-tab.on.from-r {
+  background:linear-gradient(var(--wms-primary), var(--wms-primary)) no-repeat var(--wms-surface);
+  animation:wms-wipe .32s cubic-bezier(.2,.8,.2,1) both;
+}
+.tx-tab.on.from-l { background-position:left; }
+.tx-tab.on.from-r { background-position:right; }
+@keyframes wms-wipe {
+  from { background-size:0 100%; color:var(--wms-text); }
+  to   { background-size:100% 100%; }
+}
+/* …and the new tab's content rises in, block by block. */
+.wms-enter > *, .wms-enter .tx-cards > * { animation:wms-rise .36s cubic-bezier(.2,.8,.2,1) both; }
+.wms-enter > :nth-child(2) { animation-delay:40ms; }
+.wms-enter > :nth-child(3) { animation-delay:80ms; }
+.wms-enter > :nth-child(n+4) { animation-delay:120ms; }
+.wms-enter .tx-cards > :nth-child(2) { animation-delay:90ms; }
+.wms-enter .tx-cards > :nth-child(3) { animation-delay:140ms; }
+.wms-enter .tx-cards > :nth-child(n+4) { animation-delay:190ms; }
+@keyframes wms-rise { from { opacity:0; transform:translateY(10px); } }
+
+/* Counting numbers stay hidden until wms-motion.js starts them from 0, or the
+   page paints its final value first and the count visibly jumps back. If the
+   module never loads they show anyway a moment later. */
+html:not(.wms-moving) [data-count] { animation:wms-count-wait 0s 1.2s backwards; }
+@keyframes wms-count-wait { from { visibility:hidden; } }
+
+/* A count that went down since the last check: something got fixed. */
+.wms-drop { animation:wms-drop 1.6s ease-out; border-radius:6px; }
+@keyframes wms-drop { 0%, 35% { background-color:#BBF7D0; box-shadow:0 0 0 4px #BBF7D0; color:#047857; } }
+
+/* Pop-ups grow out of the cell that was tapped and shrink back into it. */
+.wms-pop-in { animation:wms-pop-in .34s cubic-bezier(.2,.9,.3,1.04) both; }
+@keyframes wms-pop-in { from { opacity:0; transform:scale(.3); } }
+.wms-pop-out { animation:wms-pop-out .22s cubic-bezier(.4,0,1,1) both; }
+@keyframes wms-pop-out { to { opacity:0; transform:scale(.3); } }
+.wms-fading { animation:wms-fade-out .22s ease both; }
+@keyframes wms-fade-in { from { opacity:0; } }
+@keyframes wms-fade-out { to { opacity:0; } }
+
+/* Confetti bursting out of the middle of its host. */
+.wms-confetti { position:absolute; left:50%; top:45%; width:0; height:0; pointer-events:none; z-index:3; }
+.wms-confetti i {
+  position:absolute; left:-4px; top:-5px; width:8px; height:10px; border-radius:2px;
+  animation:wms-burst 1.25s cubic-bezier(.15,.75,.35,1) both;
+}
+@keyframes wms-burst {
+  0%   { opacity:1; transform:translate(0, 0) rotate(0) scale(.5); }
+  55%  { opacity:1; transform:translate(var(--x), var(--y)) rotate(calc(var(--r) * .6)) scale(1); }
+  100% { opacity:0; transform:translate(calc(var(--x) * 1.15), calc(var(--y) + 70px)) rotate(var(--r)); }
+}
+
+/* "All fixed" card, where the loading belt was. */
+.wms-cheer {
+  position:fixed; left:50%; bottom:calc(20px + env(safe-area-inset-bottom)); z-index:700;
+  display:flex; align-items:center; gap:12px; width:max-content; max-width:calc(100vw - 32px);
+  padding:6px 6px 6px 10px; border-radius:18px; background:#0F172A; color:#fff;
+  box-shadow:0 16px 40px rgba(15,23,42,.4); font-family:var(--wms-font);
+  transform:translateX(-50%); animation:wms-busy-in .45s cubic-bezier(.34,1.56,.64,1) both;
+}
+.wms-cheer.out { animation:wms-busy-out .25s ease both; }
+.wms-cheer img { flex-shrink:0; animation:wms-hop .7s cubic-bezier(.34,1.56,.64,1) .1s both; }
+.wms-cheer span { min-width:0; }
+.wms-cheer b { display:block; font-size:14px; font-weight:700; }
+.wms-cheer small { display:block; font-size:12px; color:#A5B4FC; }
+.wms-cheer small:empty { display:none; }
+.wms-cheer button {
+  flex-shrink:0; width:44px; height:44px; border:0; border-radius:12px; cursor:pointer;
+  background:transparent; color:#94A3B8; font-size:16px;
+}
+.wms-cheer button:hover { background:#1E293B; color:#fff; }
+
+@media (prefers-reduced-motion:reduce) {
+  .wms-busy, .wms-busy *, .wms-busy-belt::after, .wms-cheer, .wms-cheer img { animation:none !important; }
+}
+
 /* ── Module header (icon tile + title + sub-nav) ─────────────────────────── */
 .mod-head { background:var(--wms-surface); border-bottom:1px solid var(--wms-border);
             padding:14px 20px 0; flex-shrink:0; font-family:var(--wms-font); }
@@ -226,15 +346,34 @@ body {
 .tx-tab.on .n { background:#fff; }
 
 /* ภาพตอนหน้าว่าง ใส่คลาสที่กล่องข้อความ ภาพจะขึ้นเหนือข้อความเอง
-   done = ไม่มีปัญหา, search = ค้นหา/ไม่พบ, data = ยังไม่มีข้อมูล, link = ยังไม่ได้เชื่อม */
+   done = ไม่มีปัญหา (น้องกล่องดีใจ), search = ค้นหา/ไม่พบ (น้องกล่องส่องแว่น),
+   data = ยังไม่มีข้อมูล, link = ยังไม่ได้เชื่อม */
 .art-done::before, .art-search::before, .art-data::before, .art-link::before {
   content:''; display:block; width:120px; height:120px; margin:0 auto 12px;
   background:center/contain no-repeat;
 }
-.art-done::before { background-image:url(icons/empty-done.png); }
-.art-search::before { background-image:url(icons/empty-search.png); }
+.art-done::before { background-image:url(icons/mascot-cheer.png); }
+.art-search::before { background-image:url(icons/mascot-look.png); }
 .art-data::before { background-image:url(icons/empty-data.png); }
 .art-link::before { background-image:url(icons/empty-link.png); }
+@media (prefers-reduced-motion:no-preference) {
+  .art-done::before { animation:wms-hop .7s cubic-bezier(.34,1.56,.64,1) both; }
+  .art-search::before { animation:wms-peek 2.4s ease-in-out 2; transform-origin:50% 90%; }
+}
+@keyframes wms-hop {
+  0%   { opacity:0; transform:translateY(18px) scale(.7); }
+  60%  { opacity:1; transform:translateY(-6px) scale(1.04); }
+  100% { transform:none; }
+}
+@keyframes wms-peek { 0%, 100% { transform:none; } 50% { transform:rotate(-6deg) translateX(-4px); } }
+
+/* ดึงข้อมูลไม่สำเร็จ น้องกล่องเกาหัวอยู่ข้างข้อความ ข้อความแดงอย่างเดียวดูเหมือนระบบพัง
+   ทั้งที่ส่วนมากแค่สคริปต์ตอบช้าหรือยังไม่ได้ Deploy */
+.tx-err { display:flex; align-items:center; gap:10px; }
+.tx-err::before {
+  content:''; flex-shrink:0; width:44px; height:44px;
+  background:url(icons/mascot-oops.png) center/contain no-repeat;
+}
 
 /* ── Content fills the space left by the sidebar (no centred max-width,
       otherwise wide monitors get large dead margins). ────────────────────── */

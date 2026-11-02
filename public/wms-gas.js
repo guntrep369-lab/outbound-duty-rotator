@@ -20,6 +20,22 @@
   }
 
   /**
+   * นับคำขอที่คนกำลังนั่งรออยู่ ให้สายพานรอโหลดขึ้นมุมล่างจอ (wms-motion.js)
+   * คำขอที่ส่ง onProgress มาคือคำขอที่หน้าเว็บบอกคนว่ากำลังรอ ส่วนที่เช็คเงียบ ๆ
+   * เบื้องหลัง เช่นตัวเลขบนเมนู ไม่ส่ง สายพานจึงไม่โผล่ขึ้นมาเอง ส่ง busy:true แทนได้
+   */
+  var waiting = 0;
+  function busy(d, mode) {
+    waiting = Math.max(0, waiting + d);
+    try { window.dispatchEvent(new CustomEvent('wms:busy', { detail: { n: waiting, mode: mode } })); } catch (e) {}
+  }
+  function watched(o, mode, job) {
+    if (!(o.onProgress || o.busy)) return job();
+    busy(1, mode);
+    return job().finally(function () { busy(-1, mode); });
+  }
+
+  /**
    * Fetch an Apps Script endpoint, which is slow and occasionally flaky.
    *
    * TIMEOUT: 90s, not 30s. A GAS web app reading a grown sheet routinely needs
@@ -31,8 +47,12 @@
    * full 90s, and spending another 90 to hear the same thing is worse than
    * handing back control. `onProgress` ticks each second so the wait shows.
    */
-  async function fetchWithRetry(url, opts) {
+  function fetchWithRetry(url, opts) {
     var o = opts || {};
+    return watched(o, 'get', function () { return attempts(url, o); });
+  }
+
+  async function attempts(url, o) {
     var retries = o.retries == null ? 1 : o.retries;
     var timeoutMs = o.timeoutMs == null ? 90000 : o.timeoutMs;
     var lastErr;
@@ -68,11 +88,15 @@
 
   /** ดึงแล้วแปลงเป็น JSON — ข้อความที่ไม่ใช่ JSON มักเป็นหน้า error ของ Google
       ซึ่งบอกสาเหตุจริงไว้ในนั้น จึงแปะต้นข้อความกลับไปให้เห็น ไม่ใช่แค่ "พังนะ" */
-  async function json(url, api, opts) {
-    var resp = await fetchWithRetry(withApi(url, api), opts);
-    var text = await resp.text();
-    try { return JSON.parse(text); }
-    catch (e) { throw new Error('ข้อมูลที่ได้ไม่ใช่ JSON: "' + text.slice(0, 120) + '..."'); }
+  function json(url, api, opts) {
+    var o = opts || {};
+    /* นับรวมตอนอ่านตัวข้อมูลด้วย คำตอบก้อนใหญ่ยังโหลดต่ออีกพักหลังได้หัวคำตอบแล้ว */
+    return watched(o, 'get', async function () {
+      var resp = await attempts(withApi(url, api), o);
+      var text = await resp.text();
+      try { return JSON.parse(text); }
+      catch (e) { throw new Error('ข้อมูลที่ได้ไม่ใช่ JSON: "' + text.slice(0, 120) + '..."'); }
+    });
   }
 
   /**
@@ -86,8 +110,12 @@
    * ไม่ retry: การส่งซ้ำอาจกลายเป็นบันทึกไฟล์เดียวกันสองรอบ ซึ่งแย่กว่าการบอกว่า
    * ไม่สำเร็จแล้วให้คนกดเอง
    */
-  async function post(url, payload, opts) {
+  function post(url, payload, opts) {
     var o = opts || {};
+    return watched(o, 'post', function () { return send(url, payload, o); });
+  }
+
+  async function send(url, payload, o) {
     var ctrl = new AbortController();
     var started = Date.now();
     var timer = setTimeout(function () { ctrl.abort(); }, o.timeoutMs == null ? 90000 : o.timeoutMs);
@@ -143,5 +171,6 @@
     fetchWithRetry: fetchWithRetry,
     json: json,
     post: post,
+    waiting: function () { return waiting; },
   };
 })();

@@ -20,6 +20,7 @@
   background:var(--wms-surface);border:1px solid var(--wms-border);color:var(--wms-muted)}
 .tx-src .pill b{color:var(--wms-text);font-weight:600}
 .tx-src .pill.warn{background:#FEF3C7;border-color:#FDE68A;color:#92400E}
+.tx-src .pill.ok{background:#ECFDF5;border-color:#A7F3D0;color:#047857;font-weight:600}
 .tx-src .sp{flex:1}
 .tx-src button{padding:4px 12px;border-radius:999px;border:1px solid var(--wms-border2);
   background:var(--wms-surface);font-family:var(--wms-font);font-size:13px;color:#334155;cursor:pointer}
@@ -160,7 +161,7 @@ button.tx-more{cursor:pointer}
 /* ── หน้าต่างรายละเอียด ฉากหลังเบลอให้ตาอยู่ที่ข้อมูล ชื่อคลาสเดียวกับหน้าเทียบ Order ── */
 .modal-overlay{display:none;position:fixed;inset:0;z-index:500;align-items:center;justify-content:center;padding:16px;
   background:rgba(15,23,42,.45);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
-.modal-overlay.open{display:flex}
+.modal-overlay.open{display:flex;animation:wms-fade-in .2s ease both}
 .modal-box{display:flex;flex-direction:column;width:min(1080px,100%);max-height:calc(100vh - 32px);
   background:var(--wms-surface);border-radius:14px;box-shadow:0 25px 60px rgba(0,0,0,.25)}
 .modal-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:16px 20px;
@@ -368,6 +369,10 @@ let CELLS = null;       // ดัชนีรายละเอียดรา�
 let FIX = null;         // รายการแก้แยกตามระบบ ล้างพร้อม DAILY
 let WHO = '';           // ระบบที่เปิดดูในแท็บแก้แยกตามระบบ s | x | t
 let SUM_OPEN = false;   // มือถือพับภาพรวมเดือนไว้ ให้รายการที่ต้องแก้ขึ้นมาในจอแรก
+let BEFORE = null;      // ตัวเลขก่อนตรวจรอบนี้ ไว้เทียบว่าแก้ไปได้เท่าไร
+let GAIN = 0;           // รายการที่ต้องแก้ลดลงเท่าไรจากรอบก่อน
+let POP_AT = null;      // จุดที่กดเปิดหน้าต่าง หน้าต่างขยายออกจากตรงนั้นและหดกลับไปที่เดิม
+let CLOSING = false;
 
 function readCache() {
   try {
@@ -394,6 +399,7 @@ function renderSrc() {
     const when = new Date(RAW.at).toLocaleString('th-TH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
     html += `<span class="pill">📅 Report <b>${esc(dm(RAW.period.from))} ถึง ${esc(dm(RAW.period.to))}</b></span>`;
     html += `<span class="pill">🕐 ตรวจเมื่อ <b>${esc(when)}</b></span>`;
+    if (GAIN) html += `<span class="pill ok">✓ ที่ต้องแก้ลดลง ${f(GAIN)} รายการจากรอบก่อน</span>`;
   } else {
     html += `<span class="pill warn">⚠️ ยังไม่ได้ตรวจ</span>`;
   }
@@ -413,6 +419,7 @@ async function run() {
   const url = WmsSettings.cutUrl();
   if (BUSY || !url) return;
   ERR = '';
+  BEFORE = snapshot();
   BUSY = 'กำลังอ่านชีตทั้ง 4 แท็บ…';
   renderSrc();
   renderBody();
@@ -432,16 +439,54 @@ async function run() {
   } catch (e) {
     ERR = e.message;
     BUSY = '';
+    BEFORE = null;
     render();
     return;
   }
   await loadLedger();
 }
 
+/* ── ก่อนและหลังตรวจ ────────────────────────────────────────────────────── */
+
+/** จำนวนรายการที่ต้องแก้ของแต่ละระบบ null = ยังไม่รู้ (ชีตทีมก่อนดึงยอดขาย) */
+function perSystem() {
+  const fx = fixResult();
+  return Object.fromEntries(WHO_ORDER.map((k) => [k, fx[k] ? fx[k].length : null]));
+}
+
+function snapshot() {
+  return { dom: window.WmsMotion?.counts(document) || {}, sys: RAW ? perSystem() : null };
+}
+
+/**
+ * ตรวจรอบใหม่เสร็จ ตัวเลขวิ่งจากค่าเดิม ที่ลดลงกะพริบเขียว
+ * ระบบไหนเพิ่งแก้ครบในรอบนี้ น้องกล่องขึ้นมาฉลอง เทียบเฉพาะระบบที่รู้ยอดทั้งสองรอบ
+ */
+function afterCheck(before) {
+  GAIN = 0;
+  if (!before || !RAW) return;
+  window.WmsMotion?.countUp(document, before.dom);
+  if (!before.sys) return;
+  const now = perSystem();
+  const known = WHO_ORDER.filter((k) => before.sys[k] !== null && now[k] !== null);
+  const was = known.reduce((s, k) => s + before.sys[k], 0);
+  const is = known.reduce((s, k) => s + now[k], 0);
+  GAIN = Math.max(0, was - is);
+  renderSrc();
+  const done = known.filter((k) => before.sys[k] > 0 && now[k] === 0);
+  if (!done.length) return;
+  const left = WHO_ORDER.reduce((s, k) => s + (now[k] || 0), 0);
+  window.WmsMotion?.cheer(
+    left ? `${done.map((k) => WHO_INFO[k].label).join(' และ ')} แก้ครบแล้ว` : 'แก้ครบทุกระบบแล้ว',
+    left ? `ระบบอื่นยังเหลืออีก ${f(left)} รายการ` : 'ไม่มีรายการค้างให้แก้ในเดือนนี้',
+  );
+}
+
 /** ดึงแยกจากการตรวจหลัก แก้สมุดแล้วเช็คซ้ำได้ในไม่กี่วินาที ไม่ต้องรอตรวจทั้งสี่แท็บ */
 async function loadLedger() {
   const url = WmsSettings.txUrl();
   LEDGER_ERR = '';
+  if (!BEFORE) BEFORE = snapshot();   // กดดึงยอดขายใหม่อย่างเดียว ไม่ได้ผ่าน run
   if (url && RAW) {
     const say = (sec) => { BUSY = `กำลังอ่านยอดขายจากสต๊อกราย Location…${sec ? ` ${sec} วินาที` : ''}`; renderSrc(); };
     say(0);
@@ -462,6 +507,8 @@ async function loadLedger() {
   }
   BUSY = '';
   render();
+  afterCheck(BEFORE);
+  BEFORE = null;
 }
 
 /* ── ยอดรวมและแท็บ ──────────────────────────────────────────────────────── */
@@ -469,7 +516,8 @@ async function loadLedger() {
 function renderSum() {
   if (!RAW) { $('sum').innerHTML = ''; return; }
   const t = RAW.totals;
-  const stat = (label, n, sub) => `<div class="tx-stat"><small>${esc(label)}</small><b>${f(n)}</b><i>${esc(sub)}</i></div>`;
+  /* ไม่มีชื่อ data-count-key ตั้งใจ ยอดรวมน้อยลงไม่ได้แปลว่าแก้แล้ว จึงไม่กะพริบเขียว */
+  const stat = (label, n, sub) => `<div class="tx-stat"><small>${esc(label)}</small><b data-count="${n}">${f(n)}</b><i>${esc(sub)}</i></div>`;
   $('sum').classList.toggle('open', SUM_OPEN);
   $('sum').innerHTML =
     `<button class="tx-sum-t" data-sum aria-expanded="${SUM_OPEN}"><span><b>ภาพรวมเดือน · Report ${f(t.report)}</b>
@@ -492,7 +540,7 @@ function sysCount() {
 function renderTabs() {
   if (!RAW) { $('tabs').innerHTML = ''; return; }
   /* short = ชื่อบนมือถือ ห้าแท็บต้องพอดีจอโดยไม่ต้องเลื่อน */
-  const tab = (id, label, short, icon, n) => `<button class="tx-tab ${TAB === id ? 'on' : ''}" data-tab="${id}" role="tab" aria-selected="${TAB === id}" aria-label="${esc(label)}${n === null ? '' : ` ${f(n)}`}"><img src="${icon}" alt="" width="26" height="26"><span class="lb">${esc(label)}</span><span class="sh">${esc(short)}</span>${n === null ? '' : `<span class="n">${f(n)}</span>`}</button>`;
+  const tab = (id, label, short, icon, n) => `<button class="tx-tab ${TAB === id ? 'on' : ''}" data-tab="${id}" role="tab" aria-selected="${TAB === id}" aria-label="${esc(label)}${n === null ? '' : ` ${f(n)}`}"><img src="${icon}" alt="" width="26" height="26"><span class="lb">${esc(label)}</span><span class="sh">${esc(short)}</span>${n === null ? '' : `<span class="n" data-count="${n}" data-count-key="tab-${id}">${f(n)}</span>`}</button>`;
   $('tabs').innerHTML =
     tab('fix', 'ตัดผิด / ตัดเกิน', 'ตัดผิด', '../icons/tab-cut.png', fixCount()) +
     tab('under', 'ยังไม่ตัด', 'ยังไม่ตัด', '../icons/tab-wait.png', underCount()) +
@@ -559,7 +607,7 @@ function cards(kinds) {
   return `<div class="tx-cards">${kinds.map((k) => {
     const s = RAW.kinds[k], info = KINDS[k];
     return `<button class="tx-card ${KIND === k ? 'on' : ''}" data-kind="${k}"><small>${esc(info.label)}</small>
-      <b class="${s.total ? info.tone : 'tx-ok'}">${f(s.total)}</b><i>${s.total ? `${f(s.orders)} ออเดอร์ · ${f(s.qty)} ชิ้น` : 'ไม่มี'}</i></button>`;
+      <b class="${s.total ? info.tone : 'tx-ok'}" data-count="${s.total}" data-count-key="kind-${k}">${f(s.total)}</b><i>${s.total ? `${f(s.orders)} ออเดอร์ · ${f(s.qty)} ชิ้น` : 'ไม่มี'}</i></button>`;
   }).join('')}</div>`;
 }
 
@@ -927,9 +975,31 @@ function renderPop() {
   box.querySelector('[data-close]').focus();
 }
 
-function openPop(p) {
+/** at = จุดที่กด หน้าต่างขยายออกจากตรงนั้น เปลี่ยนเนื้อหาระหว่างเปิดอยู่ไม่ขยายซ้ำ */
+function openPop(p, at) {
+  if (CLOSING) return;
+  const was = !!POP;
   POP = p;
+  if (!was && at) POP_AT = at;
   renderPop();
+  if (!was && POP) window.WmsMotion?.popIn($('pop').querySelector('.modal-box'), POP_AT);
+}
+
+/** หดกลับไปที่แถวที่กดเปิด แล้วค่อยปิดจริง */
+function closePop() {
+  const box = $('pop').querySelector('.modal-box');
+  if (!POP || CLOSING) return;
+  const done = () => { CLOSING = false; $('pop').classList.remove('wms-fading'); openPop(null); };
+  if (!window.WmsMotion || !box) { done(); return; }
+  CLOSING = true;
+  WmsMotion.popOut(box, done, POP_AT);
+}
+
+/** จุดที่กด กดด้วยแป้นพิมพ์ไม่มีพิกัด ใช้กลางแถวแทน */
+function tapAt(e, el) {
+  if (e.clientX || e.clientY) return { x: e.clientX, y: e.clientY };
+  const r = el.getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
 }
 
 function dayTable(c) {
@@ -1067,7 +1137,7 @@ function whoCards(fx) {
     if (!list) return card(`<small>${esc(info.label)}</small><b>–</b><i>ต้องดึงยอดขายก่อน</i>`);
     const n = needSum(list);
     return card(`<small>${esc(info.label)}</small>
-      <b class="${list.length ? 'tx-neg' : 'tx-ok'}">${f(list.length)}</b>
+      <b class="${list.length ? 'tx-neg' : 'tx-ok'}" data-count="${list.length}" data-count-key="who-${k}">${f(list.length)}</b>
       <i>${list.length ? `ลงเพิ่ม ${f(n.more)} · คืน ${f(n.less)} ชิ้น` : 'ไม่มีที่ต้องแก้'}</i>`);
   }).join('')}</div>`;
 }
@@ -1224,14 +1294,14 @@ $('sum').addEventListener('click', (e) => {
 
 $('pop').addEventListener('click', (e) => {
   /* กดที่พื้นหลังนอกกล่องก็ปิด */
-  if (e.target === e.currentTarget || e.target.closest('[data-close]')) { openPop(null); return; }
+  if (e.target === e.currentTarget || e.target.closest('[data-close]')) { closePop(); return; }
   if (e.target.closest('[data-back]')) { openPop({ day: POP.day, cell: '' }); return; }
   const cell = e.target.closest('[data-cell]');
   if (cell) openPop({ day: POP.day, cell: cell.dataset.cell });
 });
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && POP) openPop(null);
+  if (e.key === 'Escape' && POP) closePop();
 });
 
 $('body').addEventListener('click', (e) => {
@@ -1257,7 +1327,7 @@ $('body').addEventListener('click', (e) => {
   }
   const cell = e.target.closest('[data-cell]');
   if (cell) {
-    openPop({ day: '', cell: cell.dataset.cell });
+    openPop({ day: '', cell: cell.dataset.cell }, tapAt(e, cell));
     return;
   }
   const sku = e.target.closest('[data-sku]');
@@ -1269,7 +1339,7 @@ $('body').addEventListener('click', (e) => {
   }
   const day = e.target.closest('[data-day]');
   if (day) {
-    openPop({ day: day.dataset.day, cell: '' });
+    openPop({ day: day.dataset.day, cell: '' }, tapAt(e, day));
     return;
   }
   const card = e.target.closest('[data-kind]');

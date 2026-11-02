@@ -141,8 +141,8 @@ async function pullAll() {
   PULLING = 'กำลังดึงข้อมูล…';
   renderSrc();
   const jobs = [];
-  if (OrderIndex.savedUrl()) jobs.push(OrderIndex.pull(OrderIndex.savedUrl()).catch(() => {}));
-  if (WmsStock.savedUrl())   jobs.push(WmsStock.pull(WmsStock.savedUrl()).catch(() => {}));
+  if (OrderIndex.savedUrl()) jobs.push(OrderIndex.pull(OrderIndex.savedUrl(), { busy: true }).catch(() => {}));
+  if (WmsStock.savedUrl())   jobs.push(WmsStock.pull(WmsStock.savedUrl(), { busy: true }).catch(() => {}));
   await Promise.all(jobs);
   PULLING = '';
   render();

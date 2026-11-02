@@ -13,6 +13,7 @@
 
 import { MODULES, GROUPS, BRAND, ICON_PATHS } from './wms-modules.js';
 import { mountBadges } from './wms-badges.js';
+import { mountMotion } from './wms-motion.js';
 
 /** Inline SVG for one lucide icon name. */
 function icon(name, cls) {
@@ -102,9 +103,10 @@ function keepMenuScroll(doc) {
 /** Turn every <div data-wms-shell> marker on the page into the sidebar. */
 export function mountShell(doc = document) {
   let active = '';
+  let root = './';
   for (const slot of doc.querySelectorAll('[data-wms-shell]')) {
     active = slot.getAttribute('data-wms-shell') || '';
-    const root = slot.getAttribute('data-root') ?? './';
+    root = slot.getAttribute('data-root') ?? './';
     // Fill the placeholder itself instead of swapping it out. A page transition
     // may already have captured it as the menu (see wms-theme.css), and removing
     // a captured element cuts the transition off halfway.
@@ -123,6 +125,8 @@ export function mountShell(doc = document) {
   keepMenuScroll(doc);
   // Open-item count on สมุดกะ, see wms-badges.js.
   mountBadges(active);
+  // Loading belt, tab sweep, count-up, see wms-motion.js.
+  mountMotion(doc, root);
 }
 
 // Module scripts are deferred, so the DOM is already parsed by the time we run.

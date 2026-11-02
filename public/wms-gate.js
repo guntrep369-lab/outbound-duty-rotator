@@ -33,6 +33,8 @@
   var SESSION_HOURS = 12; // a shift's length — a shared PC shouldn't stay open overnight
   var INTRO_MS = 2500; // long enough for the logo's light sweep to finish
   var MIN_CODE = 4;
+  // Pages sit at different depths, so files beside this script are found from its own URL.
+  var HERE = document.currentScript ? document.currentScript.src : location.href;
 
   /* ── Storage ───────────────────────────────────────────────────────────── */
   function readUsers() {
@@ -245,11 +247,31 @@
     );
   }
 
+  /**
+   * The warehouse photo behind the sign-in card, moving: haze drifting, lights
+   * breathing. Its first and last frames are the photo itself, so the loop has no
+   * seam, and the photo is the poster, so a slow or failed load looks exactly like
+   * before. Skipped when motion is turned down or the connection saves data.
+   */
+  function backdrop(gate) {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (navigator.connection && navigator.connection.saveData) return;
+    var v = document.createElement('video');
+    v.className = 'gate-video';
+    v.muted = true; v.loop = true; v.playsInline = true; v.autoplay = true;
+    v.setAttribute('muted', ''); v.setAttribute('playsinline', ''); v.setAttribute('aria-hidden', 'true');
+    v.poster = new URL('wms-gate-bg.jpg', HERE).href;
+    v.src = new URL('wms-gate-bg.mp4', HERE).href;
+    gate.insertBefore(v, gate.firstChild);
+    gate.classList.add('has-video');
+  }
+
   /* ── Flow ──────────────────────────────────────────────────────────────── */
   function start() {
     var gate = document.createElement('div');
     gate.id = 'wms-gate';
     gate.innerHTML = '<div class="stage">' + introHTML() + '</div>';
+    backdrop(gate);
     document.body.appendChild(gate);
 
     var stage = gate.querySelector('.stage');
