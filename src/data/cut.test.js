@@ -147,6 +147,30 @@ describe('cut-api.gs — ยอดรายวันไว้เทียบก�
     const r = run({ jst: [jst('5001', A, 1, { name: 'โต๊ะสมมติ' })], tx: [tx('5001', A, 1)], tr: [tr('5001', A, 1)] });
     expect(r.daily.skus).toEqual([[A, 'โต๊ะสมมติ']]);
   });
+
+  it('ยอดควรออกตาม Report ลงวันที่ออกจากคลัง ไม่นับที่ไม่ควรออก แต่บวกงานโอนย้าย', () => {
+    const r = run({
+      jst: [
+        jst('5001', A, 3),
+        jst('5002', B, 2, { date: when(OTHER) }),
+        jst('5003', A, 4, { ship: 'ยกเลิกแล้ว' }),
+        jst('5004', A, 5, { ship: 'ยกเลิกแล้ว' }),
+        jst('5005', A, 6, { ship: '' }),
+        jst('5006', 'STR0001', 1),
+      ],
+      crm: [crm('7001', C, 1, { date: when(OTHER) })],
+      tx: [tx('5001', A, 3), tx('5004', A, 5), tx('TF-1', B, 7, { src: 'โอนย้าย' })],
+      tr: [tr('5001', A, 3), tr('5004', A, 5), tr('TF-1', B, 7)],
+    });
+    /* 5002 กับ 7001 ยังไม่ตัดแต่ยังควรออก ยกเลิก สถานะว่าง และรหัสที่ไม่ใช่ของในคลังไม่ควรออก แม้จะตัดไปแล้ว */
+    expect(dailyOf(r, 'r')).toEqual({ [`${DAY}|${A}`]: 3, [`${DAY}|${B}`]: 7, [`${OTHER}|${B}`]: 2, [`${OTHER}|${C}`]: 1 });
+  });
+
+  it('รายการใน Report ที่ไม่มีวันที่ นับแยกไว้ ไม่หายเงียบ', () => {
+    const r = run(join(fine('5001', A, 1), { jst: [jst('5002', B, 2, { date: '' })] }));
+    expect(r.daily.skippedR).toEqual({ rows: 1, qty: 2 });
+    expect(dailyOf(r, 'r')).toEqual({ [`${DAY}|${A}`]: 1 });
+  });
 });
 
 describe('cut-api.gs — ยอดที่ตรงกัน', () => {

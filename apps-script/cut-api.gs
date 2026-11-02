@@ -10,6 +10,7 @@
  * หน่วยที่เทียบคือ เลขออเดอร์ + SKU เลขคำสั่งซื้อออนไลน์ใช้ไม่ได้ เพราะบางแถวถูกชีตปัดเป็นเลขยกกำลัง
  * ยอดของ TRcloud คือ เบิกออก − รับเข้า เพราะการแก้ตัดผิดลงเป็นแถวรับเข้าของออเดอร์เดิม
  * ส่งยอดรายวันต่อ SKU ไปด้วย หน้าเว็บเอาไปเทียบกับแถวขายในสมุด Transaction (public/wms-cut.js)
+ * พร้อมยอดที่ควรออกตาม Report ของแต่ละวัน บวกงานโอนย้ายที่ Report ไม่มี
  *
  * ?api=cut-check   ผลการเทียบ
  * ไม่ใส่ api        บอกแค่ว่าเป็นสคริปต์นี้ ให้หน้าตั้งค่าเช็คว่าใส่ URL ถูกตัว
@@ -129,7 +130,7 @@ function newWork_() {
     outsideTx: { rows: 0, qty: 0, from: '', to: '', refs: {} },
     outsideTr: { rows: 0, qty: 0, from: '', to: '' },
     adjust: { rows: 0, inq: 0, outq: 0 },
-    daily: { x: newSide_(), t: newSide_() },
+    daily: { x: newSide_(), t: newSide_(), r: newSide_() },
   };
 }
 
@@ -188,6 +189,8 @@ function addCut_(w, row, at, tz) {
   if (!w.names[sku]) w.names[sku] = (text_(row[at.brand]) + ' ' + text_(row[at.size])).trim();
   if (src === TRANSFER) w.transfer[ref] = 1;
   tally_(w.daily.x, d, sku, q);
+  /* Report ไม่มีงานโอนย้าย ยอดควรออกของงานนี้จึงใช้ยอดที่ตัดจริง */
+  if (src === TRANSFER) tally_(w.daily.r, d, sku, q);
 
   if (outside_(w, ref, d)) {
     var o = w.outsideTx;
@@ -260,10 +263,21 @@ function tally_(side, d, sku, q) {
   day[sku] = (day[sku] || 0) + q;
 }
 
+/**
+ * ยอดที่ควรออกของรายการนี้ตาม Report ลงวันที่ออกจากคลังของออเดอร์ นับได้หลังจัดถังแล้วเท่านั้น
+ * รายการที่ไม่ได้ตัดเพราะขนส่งยกเลิก สถานะว่าง หรือไม่ใช่ของในคลัง ไม่ควรออก
+ */
+function addShould_(w, k) {
+  var o = w.orders[k.ref];
+  if (!o) return;
+  var q = k.bucket === 'nonstock' || k.bucket === 'cancelOk' || k.bucket === 'blankOk' ? 0 : target_(k, k.bucket);
+  tally_(w.daily.r, o.date, k.sku, q);
+}
+
 /** ส่งแบบย่อ วันที่กับ SKU อยู่ในตารางเดียวแล้วอ้างด้วยเลขลำดับ ทั้งเดือนมีหลายพันช่อง */
 function dailyOf_(w) {
   var seen = {}, skus = [], dayIdx = {};
-  [w.daily.x, w.daily.t].forEach(function (side) {
+  [w.daily.x, w.daily.t, w.daily.r].forEach(function (side) {
     Object.keys(side.days).forEach(function (d) { dayIdx[d] = 1; });
   });
   var days = Object.keys(dayIdx).sort();
@@ -284,8 +298,11 @@ function dailyOf_(w) {
     });
     return out;
   }
-  var x = cells(w.daily.x), t = cells(w.daily.t);
-  return { days: days, skus: skus, x: x, t: t, skippedX: w.daily.x.skipped, skippedT: w.daily.t.skipped };
+  var x = cells(w.daily.x), t = cells(w.daily.t), r = cells(w.daily.r);
+  return {
+    days: days, skus: skus, x: x, t: t, r: r,
+    skippedX: w.daily.x.skipped, skippedT: w.daily.t.skipped, skippedR: w.daily.r.skipped,
+  };
 }
 
 /* ── จัดประเภท ─────────────────────────────────────────────────────────── */
@@ -416,6 +433,7 @@ function compare_(w) {
     k.bucket = bucket_(k, w);
   });
   var gaps = markGaps_(w, list);
+  list.forEach(function (k) { addShould_(w, k); });
 
   var buckets = {};
   var byKind = {};

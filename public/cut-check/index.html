@@ -168,7 +168,7 @@ const KINDS = {
   wrong: { label: 'ตัดผิด SKU', why: 'ออเดอร์นี้มีใน Report แต่ SKU นี้ไม่อยู่ในออเดอร์', tone: 'tx-neg' },
   ghost: { label: 'ตัดแต่ไม่มีใน Report', why: 'มีรายการตัด แต่ไม่พบเลขออเดอร์นี้ทั้งใน Report JST และ CRM', tone: 'tx-neg' },
   cancel: { label: 'ขนส่งยกเลิกแต่ตัดแล้ว', why: 'Report บอกว่าการจัดส่งถูกยกเลิก ถ้าของไม่ได้ออกจากคลังจริงต้องคืนยอด', tone: 'tx-mid' },
-  blankCut: { label: 'สถานะขนส่งว่างแต่ตัดแล้ว', why: 'Report ยังไม่มีสถานะขนส่ง อาจยังไม่ได้ออกจริง ควรเช็คอีกที', tone: 'tx-mid' },
+  blankCut: { label: 'สถานะขนส่งว่างแต่ตัดแล้ว', why: 'สถานะขนส่งว่างคือยังไม่ได้ส่ง แต่ตัดสต๊อกไปแล้ว ต้องคืนยอด', tone: 'tx-neg' },
   transferDiff: { label: 'โอนย้ายไม่ตรงกัน', why: 'งานโอนย้ายที่ยอดในสองระบบไม่เท่ากัน', tone: 'tx-neg' },
   under: { label: 'ยังไม่ตัดหรือตัดไม่ครบ', why: 'จำนวนใน Report มากกว่ายอดที่ตัด ดูคอลัมน์สุดท้ายว่าขาดฝั่งไหน', tone: 'tx-neg' },
 };
@@ -437,7 +437,7 @@ function partNote(id) {
   const i = RAW.info;
   let text = '';
   if (id === 'nonstock') text = `รหัสขึ้นต้น STR ${f(i.nonStock.qty)} ชิ้น · รหัสไม่ครบหรือว่าง ${f(i.badSku.qty)} ชิ้น`;
-  if (id === 'blankOk') text = 'น่าจะยังไม่ออกจากคลังจริง';
+  if (id === 'blankOk') text = 'ยังไม่ได้ส่ง ถูกต้องแล้ว';
   if (id === 'cancelOk') text = 'ถูกต้องแล้ว';
   if (id === 'transfer') text = `${f(i.transfer.refs)} เลขงาน ยอดสองระบบตรงกัน`;
   if (id === 'outside') text = `${dm(i.outsideTx.from)}${i.outsideTx.to !== i.outsideTx.from ? ' ถึง ' + dm(i.outsideTx.to) : ''} · ${f(i.outsideTx.orders)} ออเดอร์`;
@@ -503,58 +503,98 @@ function tone(side, odd) {
   return odd === side ? 'tx-neg' : '';
 }
 
-function threeCells(r) {
+/** ช่องตัวเลข Report ควรออกขึ้นก่อนเป็นยอดตั้ง แล้วตามด้วยสามระบบ สีบอกว่าระบบไหนต่างจากอีกสองระบบ */
+function numCells(c, r) {
   const odd = WmsCut.oddOne(r.s, r.x, r.t);
-  return `<td class="num ${tone('s', odd)}">${f(r.s)}</td>
+  return `${c.hasR ? `<td class="num">${f(r.r)}</td>` : ''}
+    <td class="num ${tone('s', odd)}">${f(r.s)}</td>
     <td class="num ${tone('x', odd)}">${f(r.x)}</td>
     <td class="num ${tone('t', odd)}">${f(r.t)}</td>`;
 }
 
-const THREE_HEAD = `<th class="num">${L.s}</th><th class="num">${L.x}</th><th class="num">${L.t}</th>`;
+function numHead(c) {
+  return `${c.hasR ? `<th class="num">${L.r}</th>` : ''}<th class="num">${L.s}</th><th class="num">${L.x}</th><th class="num">${L.t}</th>`;
+}
+
+function resHead(c) {
+  return `<th>สามระบบเทียบกัน</th>${c.hasR ? '<th>เทียบกับ Report</th>' : ''}`;
+}
 
 function skuCell(r) {
   return `<td class="tx-name"><b>${esc(r.sku)}</b><span class="tx-sub">${esc(r.name)}</span></td>`;
 }
 
-function skuDayRow(r, withDate) {
+const SHIFT_TAG = '<span class="tx-tag">น่าจะลงคนละวัน</span>';
+
+/** ผลของหนึ่งแถวที่เป็นยอดรวม (ราย SKU หรือแถวรวม) ไม่มีเรื่องลงคนละวัน */
+function sumResults(c, r) {
+  const words = WmsCut.reportWords(r.r, r.s, r.x, r.t);
+  return `<td class="tx-res">${esc(WmsCut.diffWords(r.s, r.x, r.t))}</td>
+    ${c.hasR ? `<td class="tx-res">${words ? esc(words) : '<span class="tx-ok">ตรง</span>'}</td>` : ''}`;
+}
+
+const EASED = 'หักลงคนละวันแล้ว ';
+
+/** ถ้าหักที่ลงคนละวันได้บางส่วน บอกยอดที่เหลือจริง ยอดดิบส่วนใหญ่คือของที่ลงวันติดกัน */
+function rowReport(r) {
+  if (r.rl) return esc(EASED + WmsCut.reportWords(0, r.rl.s, r.rl.x, r.rl.t));
+  const words = WmsCut.reportWords(r.r, r.s, r.x, r.t);
+  if (!words) return '<span class="tx-ok">ตรง</span>';
+  return `${esc(words)}${r.rmoved ? `<br>${SHIFT_TAG}` : ''}`;
+}
+
+function skuDayRow(c, r, withDate) {
   return `<tr>
     ${withDate ? `<td class="nw">${esc(dm(r.date))}</td>` : ''}
     ${skuCell(r)}
-    ${threeCells(r)}
-    <td class="tx-res">${esc(WmsCut.diffWords(r.s, r.x, r.t))}${r.moved ? '<br><span class="tx-tag">น่าจะลงคนละวัน</span>' : ''}</td>
+    ${numCells(c, r)}
+    <td class="tx-res">${esc(WmsCut.diffWords(r.s, r.x, r.t))}${r.moved ? `<br>${SHIFT_TAG}` : ''}</td>
+    ${c.hasR ? `<td class="tx-res">${rowReport(r)}</td>` : ''}
   </tr>`;
 }
 
 function dayResult(d) {
   if (d.status === 'ok') return '<span class="tx-ok">ตรงทุก SKU</span>';
-  if (d.status === 'shift') return `<span class="tx-tag">น่าจะลงคนละวัน</span><span class="tx-sub">${f(d.shift)} SKU</span>`;
+  if (d.status === 'shift') return `${SHIFT_TAG}<span class="tx-sub">${f(d.shift)} SKU</span>`;
   const words = WmsCut.diffWords(d.s, d.x, d.t);
   const more = d.shift ? ` · อีก ${f(d.shift)} SKU น่าจะลงคนละวัน` : '';
   return `${esc(words || 'ยอดรวมเท่ากัน แต่รายตัวไม่ตรง')}<span class="tx-sub">${f(d.bad)} SKU ไม่ตรง${esc(more)}</span>`;
 }
 
-function dayRow(d, rows) {
+/** ยอดที่บอกคือส่วนที่ยังต่างจาก Report หลังหักที่ลงคนละวันแล้ว ถ้ามีการหักจะขึ้นต้นให้รู้ */
+function dayReport(d) {
+  const p = d.rep;
+  if (p.status === 'ok') return '<span class="tx-ok">ตรง Report</span>';
+  if (p.status === 'shift') return `${SHIFT_TAG}<span class="tx-sub">${f(p.shift)} SKU</span>`;
+  const words = WmsCut.reportWords(0, p.s, p.x, p.t);
+  const eased = p.shift || p.split ? EASED : '';
+  const more = p.shift ? ` · อีก ${f(p.shift)} SKU น่าจะลงคนละวัน` : '';
+  return `${esc(words ? eased + words : 'ยอดรวมเท่ากัน แต่รายตัวไม่ตรง')}<span class="tx-sub">${f(p.bad)} SKU ไม่ตรง${esc(more)}</span>`;
+}
+
+function dayRow(c, d) {
   const open = OPEN_DAY === d.date;
-  if (d.status === 'ok') {
-    return `<tr><td class="nw"><span class="tx-more"><i></i>${esc(dm(d.date))}</span></td>${threeCells(d)}<td class="tx-res">${dayResult(d)}</td></tr>`;
+  const results = `<td class="tx-res">${dayResult(d)}</td>${c.hasR ? `<td class="tx-res">${dayReport(d)}</td>` : ''}`;
+  if (d.status === 'ok' && (!d.rep || d.rep.status === 'ok')) {
+    return `<tr><td class="nw"><span class="tx-more"><i></i>${esc(dm(d.date))}</span></td>${numCells(c, d)}${results}</tr>`;
   }
-  const detail = open ? `<tr class="tx-detail"><td colspan="5"><div class="tx-wrap"><table class="tx-tbl">
-      <thead><tr><th>SKU</th>${THREE_HEAD}<th>ต่างกันยังไง</th></tr></thead>
-      <tbody>${rows.filter((r) => r.date === d.date).map((r) => skuDayRow(r, false)).join('')}</tbody>
+  const detail = open ? `<tr class="tx-detail"><td colspan="${c.hasR ? 7 : 5}"><div class="tx-wrap"><table class="tx-tbl">
+      <thead><tr><th>SKU</th>${numHead(c)}${resHead(c)}</tr></thead>
+      <tbody>${c.rows.filter((r) => r.date === d.date).map((r) => skuDayRow(c, r, false)).join('')}</tbody>
     </table></div></td></tr>` : '';
   return `<tr data-day="${esc(d.date)}" class="${open ? 'open' : ''}">
       <td class="nw"><button class="tx-more" aria-expanded="${open}"><i>${open ? '▾' : '▸'}</i>${esc(dm(d.date))}</button></td>
-      ${threeCells(d)}
-      <td class="tx-res">${dayResult(d)}</td>
+      ${numCells(c, d)}
+      ${results}
     </tr>${detail}`;
 }
 
 function dayTable(c) {
   return `<div class="tx-wrap"><table class="tx-tbl">
-    <thead><tr><th>วันที่</th>${THREE_HEAD}<th>ผล</th></tr></thead>
+    <thead><tr><th>วันที่</th>${numHead(c)}${resHead(c)}</tr></thead>
     <tbody>
-      ${c.days.map((d) => dayRow(d, c.rows)).join('')}
-      <tr class="sum"><td>รวม</td><td class="num">${f(c.totals.s)}</td><td class="num">${f(c.totals.x)}</td><td class="num">${f(c.totals.t)}</td><td class="tx-res">${esc(WmsCut.diffWords(c.totals.s, c.totals.x, c.totals.t))}</td></tr>
+      ${c.days.map((d) => dayRow(c, d)).join('')}
+      <tr class="sum"><td>รวม</td>${c.hasR ? `<td class="num">${f(c.totals.r)}</td>` : ''}<td class="num">${f(c.totals.s)}</td><td class="num">${f(c.totals.x)}</td><td class="num">${f(c.totals.t)}</td>${sumResults(c, c.totals)}</tr>
     </tbody>
   </table></div>`;
 }
@@ -566,10 +606,10 @@ function skuTable(c) {
       ? '<div class="tx-empty art-search">ไม่พบ SKU ที่ตรงกับคำค้น</div>'
       : '<div class="tx-empty art-done">รวมทั้งช่วงแล้วทุก SKU <b>ตรงกันหมด</b></div>';
   }
-  return `<div class="tx-why">SKU ที่รวมทั้งช่วงแล้วยังไม่ตรง กดแถวเพื่อดูว่าต่างกันวันไหน</div>
+  return `<div class="tx-why">SKU ที่รวมทั้งช่วงแล้วยังไม่ตรง${c.hasR ? 'กันเองหรือไม่ตรงกับ Report' : ''} กดแถวเพื่อดูว่าต่างกันวันไหน</div>
     <div class="tx-wrap"><table class="tx-tbl">
-      <thead><tr><th>SKU</th>${THREE_HEAD}<th>ต่างกันยังไง</th></tr></thead>
-      <tbody>${hit.map((r) => `<tr data-sku="${esc(r.sku)}">${skuCell(r)}${threeCells(r)}<td class="tx-res">${esc(WmsCut.diffWords(r.s, r.x, r.t))}</td></tr>`).join('')}</tbody>
+      <thead><tr><th>SKU</th>${numHead(c)}${resHead(c)}</tr></thead>
+      <tbody>${hit.map((r) => `<tr data-sku="${esc(r.sku)}">${skuCell(r)}${numCells(c, r)}${sumResults(c, r)}</tr>`).join('')}</tbody>
     </table></div>`;
 }
 
@@ -577,8 +617,8 @@ function searchTable(c) {
   const hit = c.rows.filter((r) => `${r.sku} ${r.name}`.toUpperCase().includes(Q));
   if (!hit.length) return '<div class="tx-empty art-search">ไม่พบวันที่ไม่ตรงของ SKU นี้ ถ้าพิมพ์รหัสถูก แปลว่าตรงกันทุกวัน</div>';
   return `<div class="tx-wrap"><table class="tx-tbl">
-    <thead><tr><th>วันที่</th><th>SKU</th>${THREE_HEAD}<th>ต่างกันยังไง</th></tr></thead>
-    <tbody>${hit.map((r) => skuDayRow(r, true)).join('')}</tbody>
+    <thead><tr><th>วันที่</th><th>SKU</th>${numHead(c)}${resHead(c)}</tr></thead>
+    <tbody>${hit.map((r) => skuDayRow(c, r, true)).join('')}</tbody>
   </table></div>`;
 }
 
@@ -594,7 +634,7 @@ function dailyWarnings(c) {
   const part = (p, text) => { if (p && p.rows) out.push(`${text} ${f(p.rows)} แถว${p.qty ? ` (${f(p.qty)} ชิ้น)` : ''} ไม่ได้นับ`); };
   if (!c.last) out.push('ไม่พบแถวที่ช่องรับ/เบิกเป็น "ขาย" ในสมุด Transaction');
   if (c.waiting.length) {
-    const left = c.waiting.map((w) => `${dm(w.date)} (${L.x} ${f(w.x)} · ${L.t} ${f(w.t)})`).join(', ');
+    const left = c.waiting.map((w) => `${dm(w.date)} (${c.hasR ? `${L.r} ${f(w.r)} · ` : ''}${L.x} ${f(w.x)} · ${L.t} ${f(w.t)})`).join(', ');
     out.push(`${L.s} ลงถึงวันที่ ${dm(c.last)} วันต่อจากนี้ยังเทียบไม่ได้: ${left}`);
   }
   part(LEDGER.noDate, `แถวขายใน ${L.s} ที่ไม่มีวันที่`);
@@ -603,6 +643,8 @@ function dailyWarnings(c) {
   if (LEDGER.badQty && LEDGER.badQty.rows) out.push(`แถวขายใน ${L.s} ที่จำนวนไม่ใช่ตัวเลข ${f(LEDGER.badQty.rows)} แถว นับเป็นศูนย์`);
   part(RAW.daily.skippedX, `แถวใน ${L.x} ที่ไม่มีวันที่หรือ SKU`);
   part(RAW.daily.skippedT, `แถวใน ${L.t} ที่ไม่มีวันที่หรือ SKU`);
+  const noDay = RAW.daily.skippedR;
+  if (noDay && noDay.rows) out.push(`รายการใน Report ที่ไม่มีวันที่ ${f(noDay.rows)} รายการ (${f(noDay.qty)} ชิ้น) ไม่ได้นับในช่อง ${L.r}`);
   return out.map((w) => `<div class="tx-warn">⚠️ ${esc(w)}</div>`).join('');
 }
 
@@ -615,10 +657,11 @@ function dailyHtml() {
   const opt = (v, label) => `<button class="tx-opt ${VIEW === v ? 'on' : ''}" data-view="${v}">${label}</button>`;
   return `${LEDGER_ERR ? `<div class="tx-warn">⚠️ ดึงยอดขายรอบล่าสุดไม่สำเร็จ ตัวเลขนี้เป็นของรอบก่อน: ${esc(LEDGER_ERR)}</div>` : ''}
     ${dailyWarnings(c)}
-    <div class="tx-why">ยอดออกของแต่ละ SKU ในแต่ละวัน เทียบสามที่: ${L.s} คือแถว "ขาย" ในสต๊อกราย Location, ${L.x} คือแท็บตัด Transaction และ ${L.t} (${dm(c.from)} ถึง ${dm(c.to)})</div>
+    <div class="tx-why">ยอดออกของแต่ละ SKU ในแต่ละวัน เทียบสามที่: ${L.s} คือแถว "ขาย" ในสต๊อกราย Location, ${L.x} คือแท็บตัด Transaction และ ${L.t}${c.hasR ? ` แล้วเทียบกับ ${L.r} ว่าจริง ๆ ควรออกเท่าไร` : ''} (${dm(c.from)} ถึง ${dm(c.to)})</div>
     <div class="tx-stats">
       ${stat('วันที่ตรงทุก SKU', n.daysOk, 'tx-ok', `จาก ${f(c.days.length)} วัน`)}
       ${stat('วันที่ไม่ตรง', n.daysBad, n.daysBad ? 'tx-neg' : 'tx-ok', 'กดที่วันเพื่อดูราย SKU')}
+      ${c.hasR ? stat('วันที่ไม่ตรงกับ Report', n.repBad, n.repBad ? 'tx-neg' : 'tx-ok', `ควรออกรวม ${f(c.totals.r)} ชิ้น`) : ''}
       ${stat('รายการน่าจะลงคนละวัน', n.shiftKeys, n.shiftKeys ? 'tx-mid' : 'tx-ok', 'รวมสองวันติดกันแล้วเท่ากัน')}
       ${stat('SKU ที่รวมทั้งช่วงยังไม่ตรง', n.skusBad, n.skusBad ? 'tx-neg' : 'tx-ok', `รายวันตรง ${f(n.equal)} จาก ${f(n.keys)} รายการ`)}
     </div>
@@ -631,7 +674,11 @@ function dailyHtml() {
     </div>
     <div id="list"></div>
     <div class="tx-note">ตัวเลขสีแดงคือช่องที่ต่างจากอีกสองช่อง สีส้มคือไม่เท่ากันทั้งสามช่อง<br>
-      ไม่ได้เทียบกับ Report เพราะวันที่ใน Report คือวันที่ขนส่งออก ไม่ใช่วันที่ลงตัดสต๊อก</div>`;
+      ${c.hasR
+        ? `${L.r} คือ Report JST + CRM ตามวันที่ออกจากคลัง ไม่นับรายการที่ขนส่งยกเลิก สถานะขนส่งว่าง หรือรหัสที่ไม่ใช่ของในคลัง
+          แล้วบวกงานโอนย้ายจาก ${L.x} เพราะ Report ไม่มีงานโอนย้าย<br>
+          บางออเดอร์ตัดสต๊อกคนละวันกับวันที่ออกจากคลัง ถ้าสองวันติดกันหักกันแล้วเท่ากันจะขึ้นว่าน่าจะลงคนละวัน`
+        : `ยังไม่มีช่อง ${L.r} ให้วาง <b>cut-api.gs</b> ใหม่ แล้ว Deploy เป็น New version จากนั้นกด <b>ตรวจใหม่</b>`}</div>`;
 }
 
 /* ── รวมหน้า ────────────────────────────────────────────────────────────── */

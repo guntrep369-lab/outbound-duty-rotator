@@ -34,12 +34,11 @@ function pack(table) {
   return { days, skus, cells };
 }
 
-function compare({ s = {}, x = {}, t = {}, last, period = PERIOD }) {
+/** ไม่ใส่ r คือ cut-api.gs รุ่นก่อนที่ยังไม่ส่งยอดควรออก */
+function compare({ s = {}, x = {}, t = {}, r, last, period = PERIOD }) {
   const led = pack(s);
-  const px = pack(x);
-  const pt = pack(t);
-  /* สคริปต์ส่ง x กับ t ด้วยตารางวันและ SKU ชุดเดียวกัน จึงต้องรวมก่อน */
-  const days = [...new Set([...px.days, ...pt.days])].sort();
+  /* สคริปต์ส่ง x, t, r ด้วยตารางวันและ SKU ชุดเดียวกัน จึงต้องรวมก่อน */
+  const days = [...new Set([x, t, r || {}].flatMap((table) => Object.keys(table)))].sort();
   const skus = [];
   const cellsOf = (table) => {
     const out = [];
@@ -52,6 +51,7 @@ function compare({ s = {}, x = {}, t = {}, last, period = PERIOD }) {
     return out;
   };
   const daily = { days, skus, x: cellsOf(x), t: cellsOf(t) };
+  if (r) daily.r = cellsOf(r);
   const lastDay = last ?? led.days[led.days.length - 1] ?? '';
   return WmsCut.compareDaily(daily, period, { ...led, last: lastDay });
 }
@@ -65,7 +65,9 @@ describe('wms-cut.js — ตรงกัน', () => {
     expect(c.rows).toEqual([]);
     expect(c.skus).toEqual([]);
     expect(c.counts).toMatchObject({ daysOk: 2, daysBad: 0, daysShift: 0, keys: 3, equal: 3, skusBad: 0 });
-    expect(c.totals).toEqual({ s: 8, x: 8, t: 8 });
+    expect(c.totals).toEqual({ r: 0, s: 8, x: 8, t: 8 });
+    expect(c.hasR).toBe(false);
+    expect(c.days.every((d) => d.rep === null)).toBe(true);
   });
 
   it('วันที่ไม่มีข้อมูลเลยไม่ขึ้นในตาราง ไม่ถูกนับเป็นวันที่ตรง', () => {
@@ -94,7 +96,7 @@ describe('wms-cut.js — ไม่ตรง', () => {
     expect(c.rows).toHaveLength(1);
     expect(c.rows[0]).toMatchObject({ date: '2026-03-05', sku: A, name: 'ชื่อ ' + A, s: 3, x: 5, t: 5, moved: 0 });
     expect(dayOf(c, '2026-03-05')).toMatchObject({ status: 'bad', bad: 1, shift: 0 });
-    expect(c.skus).toEqual([{ sku: A, name: 'ชื่อ ' + A, s: 3, x: 5, t: 5 }]);
+    expect(c.skus).toEqual([{ sku: A, name: 'ชื่อ ' + A, r: 0, s: 3, x: 5, t: 5 }]);
   });
 
   it('SKU ที่มีแค่ฝั่งเดียวก็ต้องขึ้น ไม่ใช่หายไปเพราะอีกฝั่งไม่มีแถว', () => {
@@ -217,7 +219,7 @@ describe('wms-cut.js — สมุดยังลงไม่ถึง', () => {
     });
     expect(c.to).toBe('2026-03-30');
     expect(c.rows).toEqual([]);
-    expect(c.waiting).toEqual([{ date: '2026-03-31', x: 6, t: 6 }]);
+    expect(c.waiting).toEqual([{ date: '2026-03-31', r: 0, x: 6, t: 6 }]);
   });
 
   it('สมุดลงถึงวันเลยช่วงไปแล้ว เทียบถึงวันสุดท้ายของ Report', () => {
@@ -229,7 +231,94 @@ describe('wms-cut.js — สมุดยังลงไม่ถึง', () => {
   it('สมุดไม่มีแถวของเดือนนี้เลย ไม่เทียบ และทุกวันอยู่ในรายการรอ', () => {
     const c = compare({ x: { '2026-03-05': { [A]: 1 } }, t: { '2026-03-05': { [A]: 1 } }, last: '2026-02-20' });
     expect(c.days).toEqual([]);
-    expect(c.waiting).toEqual([{ date: '2026-03-05', x: 1, t: 1 }]);
+    expect(c.waiting).toEqual([{ date: '2026-03-05', r: 0, x: 1, t: 1 }]);
+  });
+
+  it('วันที่รอ บอกยอดควรออกตาม Report ด้วย', () => {
+    const c = compare({
+      s: { '2026-03-30': { [A]: 1 } },
+      x: { '2026-03-30': { [A]: 1 }, '2026-03-31': { [A]: 4 } },
+      t: { '2026-03-30': { [A]: 1 }, '2026-03-31': { [A]: 4 } },
+      r: { '2026-03-30': { [A]: 1 }, '2026-03-31': { [A]: 5 } },
+    });
+    expect(c.waiting).toEqual([{ date: '2026-03-31', r: 5, x: 4, t: 4 }]);
+  });
+});
+
+describe('wms-cut.js — เทียบกับ Report ควรออก', () => {
+  it('ทุกระบบเท่ากับ Report ขึ้นว่าตรง', () => {
+    const table = { '2026-03-05': { [A]: 5, [B]: 2 } };
+    const c = compare({ s: table, x: table, t: table, r: table });
+    expect(c.hasR).toBe(true);
+    expect(dayOf(c, '2026-03-05')).toMatchObject({ r: 7, status: 'ok', rep: { status: 'ok', bad: 0, shift: 0 } });
+    expect(c.rows).toEqual([]);
+    expect(c.counts).toMatchObject({ repOk: 1, repBad: 0, repShift: 0 });
+    expect(c.totals).toEqual({ r: 7, s: 7, x: 7, t: 7 });
+  });
+
+  it('สามระบบตรงกันเองแต่เกิน Report วันนั้นยังตรงกันเอง แต่ไม่ตรงกับ Report', () => {
+    const sys = { '2026-03-05': { [A]: 5, [B]: 3 } };
+    const c = compare({ s: sys, x: sys, t: sys, r: { '2026-03-05': { [A]: 5, [B]: 1 } } });
+    const d = dayOf(c, '2026-03-05');
+    expect(d.status).toBe('ok');
+    expect(d.rep).toMatchObject({ status: 'bad', bad: 1, shift: 0, split: 0, s: 2, x: 2, t: 2 });
+    expect(c.rows[0].rl).toBeNull();
+    expect(c.rows).toHaveLength(1);
+    expect(c.rows[0]).toMatchObject({ sku: B, r: 1, s: 3, x: 3, t: 3, moved: 0, rmoved: 0 });
+    expect(c.counts).toMatchObject({ daysOk: 1, daysBad: 0, repBad: 1, skusBad: 0 });
+    /* รายการรวมทั้งช่วงขึ้นด้วย แต่ไม่นับเป็น SKU ที่สามระบบไม่ตรงกัน */
+    expect(c.skus).toEqual([{ sku: B, name: 'ชื่อ ' + B, r: 1, s: 3, x: 3, t: 3 }]);
+  });
+
+  it('ระบบเดียวที่ขาด บอกว่าระบบนั้นขาดจาก Report', () => {
+    const ok = { '2026-03-05': { [A]: 10 } };
+    const c = compare({ s: ok, x: { '2026-03-05': { [A]: 6 } }, t: ok, r: ok });
+    const p = dayOf(c, '2026-03-05').rep;
+    expect(p).toMatchObject({ status: 'bad', bad: 1, s: 0, x: -4, t: 0 });
+    expect(WmsCut.reportWords(0, p.s, p.x, p.t)).toBe('Uploadยิงออก ขาด 4');
+  });
+
+  it('Report มีแต่ไม่มีระบบไหนตัดเลย วันนั้นต้องขึ้น ไม่ใช่หายไป', () => {
+    const c = compare({
+      s: { '2026-03-05': { [A]: 1 } }, x: { '2026-03-05': { [A]: 1 } }, t: { '2026-03-05': { [A]: 1 } },
+      r: { '2026-03-05': { [A]: 1 }, '2026-03-06': { [B]: 4 } },
+      last: '2026-03-31',
+    });
+    expect(dayOf(c, '2026-03-06')).toMatchObject({ r: 4, s: 0, x: 0, t: 0, status: 'ok', rep: { status: 'bad', s: -4, x: -4, t: -4 } });
+    /* ช่องที่มีแต่ Report ไม่นับเป็นรายการที่สามระบบเทียบกัน */
+    expect(c.counts).toMatchObject({ keys: 1, equal: 1 });
+  });
+
+  it('ทุกระบบตัดวันถัดจากวันออกใน Report ขึ้นว่าน่าจะลงคนละวัน', () => {
+    const sys = { '2026-03-13': { [A]: 300, [B]: 40 } };
+    const c = compare({ s: sys, x: sys, t: sys, r: { '2026-03-12': { [A]: 300 }, '2026-03-13': { [B]: 40 } } });
+    expect(dayOf(c, '2026-03-12').rep).toMatchObject({ status: 'shift', shift: 1, moved: 300 });
+    expect(dayOf(c, '2026-03-13').rep).toMatchObject({ status: 'shift', shift: 1, moved: 300 });
+    expect(c.rows.map((r) => [r.date, r.sku, r.rmoved])).toEqual([['2026-03-12', A, 300], ['2026-03-13', A, 300]]);
+    expect(c.skus).toEqual([]);
+  });
+
+  it('หักที่ลงคนละวันแล้วยังเหลือ ส่วนที่เหลือนับเป็นต่างจริง', () => {
+    const c = compare({
+      s: { '2026-03-13': { [A]: 300 } }, x: { '2026-03-13': { [A]: 290 } }, t: { '2026-03-13': { [A]: 300 } },
+      r: { '2026-03-12': { [A]: 300 } },
+    });
+    /* ที่ขาดอยู่ตกที่วันของ Report วันถัดไปหักกันหมดแล้ว */
+    expect(dayOf(c, '2026-03-12').rep).toMatchObject({ status: 'bad', bad: 1, shift: 0, split: 1, s: 0, x: -10, t: 0 });
+    expect(dayOf(c, '2026-03-13').rep.status).toBe('shift');
+    /* ยอดดิบขาด 300 แต่ที่ขาดจริงคือ 10 */
+    expect(c.rows.find((r) => r.date === '2026-03-12').rl).toEqual({ s: 0, x: -10, t: 0 });
+    expect(c.rows.find((r) => r.date === '2026-03-13')).toMatchObject({ rmoved: 300, rl: null });
+  });
+
+  it('งานต่างจริงขึ้นก่อนงานที่ลงคนละวันในวันเดียวกัน', () => {
+    const c = compare({
+      s: { '2026-03-05': { [A]: 1 }, '2026-03-06': { [A]: 50, [B]: 2 } },
+      x: { '2026-03-05': { [A]: 1 }, '2026-03-06': { [A]: 50, [B]: 2 } },
+      t: { '2026-03-05': { [A]: 1 }, '2026-03-06': { [A]: 50, [B]: 2 } },
+      r: { '2026-03-05': { [A]: 51 }, '2026-03-06': { [B]: 1 } },
+    });
+    expect(c.rows.filter((r) => r.date === '2026-03-06').map((r) => r.sku)).toEqual([B, A]);
   });
 });
 
@@ -249,5 +338,13 @@ describe('wms-cut.js — คำอธิบาย', () => {
     expect(WmsCut.oddOne(1, 2, 2)).toBe('s');
     expect(WmsCut.oddOne(2, 1, 2)).toBe('x');
     expect(WmsCut.oddOne(2, 2, 1)).toBe('t');
+  });
+
+  it('เทียบกับ Report: สามระบบต่างเท่ากันพูดครั้งเดียว ไม่งั้นบอกทีละระบบ', () => {
+    expect(WmsCut.reportWords(5, 5, 5, 5)).toBe('');
+    expect(WmsCut.reportWords(3481, 3493, 3493, 3493)).toBe('ทั้งสามระบบ เกิน 12');
+    expect(WmsCut.reportWords(3038, 3038, 2667, 3038)).toBe('Uploadยิงออก ขาด 371');
+    expect(WmsCut.reportWords(10, 7, 10, 12)).toBe('UAT ขาด 3 · TRcloud เกิน 2');
+    expect(WmsCut.LABEL.r).toBe('Report ควรออก');
   });
 });

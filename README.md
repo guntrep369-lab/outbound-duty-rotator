@@ -432,7 +432,7 @@ of them into scientific notation. An order number with ` · date` on the end cou
 | ตัดผิด SKU | The order is in the report, but this SKU isn't part of it |
 | ตัดแต่ไม่มีใน Report | Cut, but the order number isn't in either report |
 | ขนส่งยกเลิกแต่ตัดแล้ว | The report says the shipment was cancelled, yet stock was cut |
-| สถานะขนส่งว่างแต่ตัดแล้ว | The report has no shipping status yet, so it's worth a second look |
+| สถานะขนส่งว่างแต่ตัดแล้ว | A blank shipping status means the order hasn't shipped, yet stock was cut. The cut should be reversed |
 | โอนย้ายไม่ตรงกัน | A transfer whose quantity differs between the two systems |
 
 **Tab ยังไม่ตัด:** lines where the report has more than was cut. If a whole day of a system (at least 5
@@ -455,11 +455,18 @@ the same Uploadยิงออก label for the Transaction cut tab.
 - A gap in one direction on a day and the opposite direction on the next day is labelled น่าจะลงคนละวัน,
   because the same goods were entered a day apart. Totals over the two days agree. A row only gets this
   label if nothing else is left over after taking the shift out.
-- Days after the ledger's last sale date aren't compared. The page lists them with the other two figures,
+- Days after the ledger's last sale date aren't compared. The page lists them with the other figures,
   so they don't look like a shortage.
-- The report isn't part of this match. Its dates are shipping dates rather than the dates cuts were entered,
-  and it has no transfers, while the ledger's sale rows include them.
-- The ledger has no order numbers, so this check works per SKU per day and can't name an order.
+- A fourth column, Report ควรออก, shows how much should have left that day. It is the JST and CRM reports
+  by their warehouse-out date, minus lines that shouldn't leave (a cancelled shipment, a blank shipping
+  status, or a code that isn't warehouse stock, whether or not it was cut), plus transfers taken from the
+  Transaction cut tab, because the report has no transfers.
+- The three systems are still judged against each other first, and the tab's count is that result. The
+  เทียบกับ Report column is a second check. Some orders are cut on a different day from their report date,
+  so the same น่าจะลงคนละวัน rule applies to it, and a day only counts as matching the report if every SKU
+  matches.
+- The ledger has no order numbers, so this check works per SKU per day and can't name an order. The
+  ตัดผิด / ตัดเกิน and ยังไม่ตัด tabs name the orders behind a gap from the report.
 
 The two scripts belong to different files and don't know each other, since linking them would put a file
 ID in this public repo. The page calls both and compares the answers. It needs **Apps Script URL —
@@ -491,6 +498,8 @@ before the report does, since those orders would otherwise all look uncut.
 **Updating to a version with เทียบรายวัน:** both `cut-api.gs` and `tx-api.gs` have new code. In each script
 project, paste the new file, then Deploy → Manage deployments → pencil icon → Version: New version → Deploy.
 The URLs stay the same. Until then, the tab says which script is out of date and the other tabs keep working.
+The Report ควรออก column needs the newer `cut-api.gs` as well. With an older one, the tab compares the
+three systems only and says to paste the script again.
 
 The URL works like a key: anyone who has it can read the order numbers and SKUs in the result, so keep it
 out of this repo. The result leaves out online order IDs and tracking numbers.
