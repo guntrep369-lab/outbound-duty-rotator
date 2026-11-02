@@ -374,12 +374,23 @@ describe('wms-cut.js — แตกช่องที่ไม่ตรงลง�
     expect(idx.hasRows).toBe(true);
     expect(one.listed).toBe(true);
     expect(one.ok).toEqual({ orders: 2, qty: 3 });
-    expect(one.orders).toEqual([{ ref: '5003', sys: 'JST', x: 3, t: 3, r: 1, kind: 'over', od: '', xo: [], to: [] }]);
-    expect(one.moved).toEqual([{ od: '', xo: ['2026-03-06'], to: ['2026-03-06'], orders: 4, x: 0, t: 0, r: 5, refs: ['6001', '6002', '6003'] }]);
+    expect(one.orders).toEqual([{ ref: '5003', sys: 'JST', x: 3, t: 3, r: 1, kind: 'over', od: [], xo: [], to: [] }]);
+    expect(one.moved).toEqual([{ od: [], xo: ['2026-03-06'], to: ['2026-03-06'], orders: 4, x: 0, t: 0, r: 5, refs: ['6001', '6002', '6003'] }]);
     expect(one.rows).toEqual([
       { row: 12, loc: 'A-01-01', lot: 3, po: 'PO-1', qty: 2, who: 'คนเอ' },
       { row: 15, loc: 'B-02-02', lot: 0, po: '', qty: 'สอง', who: 'คนเอ' },
     ]);
+  });
+
+  it('วันใน Report อ่านได้ทั้งรายการวันจากสคริปต์รุ่นนี้ และวันเดียวจากรุ่นก่อน', () => {
+    const one = (od) => WmsCut.cellIndex({
+      days: ['2026-03-05'], skus: [[A, 'ชื่อ A']],
+      detail: [[0, 0, 0, 0, 0, [['5003', 'CRM', 4, 4, 0, 'ok', od, [], []]], [[od, [], [], 1, 2, 2, 0, ['5004']]]]],
+    }, {}).get('2026-03-05', A);
+    expect(one(['2026-03-03', '2026-03-07']).orders[0].od).toEqual(['2026-03-03', '2026-03-07']);
+    expect(one(['2026-03-03', '2026-03-07']).moved[0].od).toEqual(['2026-03-03', '2026-03-07']);
+    expect(one('2026-03-07').orders[0].od).toEqual(['2026-03-07']);
+    expect(one('').moved[0].od).toEqual([]);
   });
 
   it('ช่องที่สคริปต์ไม่ได้ส่งมาคือ Upload, TRcloud และ Report ตรงกันวันนั้น', () => {
@@ -397,11 +408,12 @@ describe('wms-cut.js — แตกช่องที่ไม่ตรงลง�
   });
 
   it('บอกวันที่ที่ลงต่างไป', () => {
-    expect(WmsCut.dateWords({ od: '', xo: ['2026-03-06'], to: ['2026-03-06'] })).toBe('ตัดวันที่ 6/3 ทั้งสองระบบ');
-    expect(WmsCut.dateWords({ od: '2026-03-04', xo: [], to: [] })).toBe('Report ลงวันที่ 4/3');
-    expect(WmsCut.dateWords({ od: '', xo: ['2026-03-06'], to: ['2026-03-05', '2026-03-07'] }))
+    expect(WmsCut.dateWords({ od: [], xo: ['2026-03-06'], to: ['2026-03-06'] })).toBe('ตัดวันที่ 6/3 ทั้งสองระบบ');
+    expect(WmsCut.dateWords({ od: ['2026-03-04'], xo: [], to: [] })).toBe('Report ลงวันที่ 4/3');
+    expect(WmsCut.dateWords({ od: ['2026-03-03', '2026-03-07'], xo: [], to: [] })).toBe('Report ลงวันที่ 3/3, 7/3');
+    expect(WmsCut.dateWords({ od: [], xo: ['2026-03-06'], to: ['2026-03-05', '2026-03-07'] }))
       .toBe('Uploadยิงออก ตัดวันที่ 6/3 · TRcloud ตัดวันที่ 5/3, 7/3');
-    expect(WmsCut.dateWords({ od: '', xo: [], to: [] })).toBe('');
+    expect(WmsCut.dateWords({ od: [], xo: [], to: [] })).toBe('');
   });
 
   it('ชี้ว่าต้องดูฝั่งไหนก่อน', () => {

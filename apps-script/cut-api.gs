@@ -152,11 +152,14 @@ function stretch_(s, d) {
   if (!s.to || d > s.to) s.to = d;
 }
 
-/** xd, td คือ วันที่ → ยอดที่ตัดวันนั้น ใช้ทั้งบอกวันที่ตัดและแตกยอดรายวันลงถึงออเดอร์ */
+/**
+ * xd, td คือ วันที่ → ยอดที่ตัดวันนั้น ใช้ทั้งบอกวันที่ตัดและแตกยอดรายวันลงถึงออเดอร์
+ * rd คือ วันที่ → ยอดใน Report วันนั้น ออเดอร์เดียวกันส่งได้หลายรอบ แต่ละรอบลงวันของตัวเองใน Report
+ */
 function key_(w, ref, sku) {
   var id = ref + '|' + sku;
   return w.keys[id] || (w.keys[id] = {
-    ref: ref, sku: sku, r: 0, x: 0, out: 0, inq: 0, t: 0, ship: '', xd: {}, td: {}, note: '', sup: '', src: '',
+    ref: ref, sku: sku, r: 0, x: 0, out: 0, inq: 0, t: 0, ship: '', xd: {}, td: {}, rd: {}, note: '', sup: '', src: '',
   });
 }
 
@@ -184,6 +187,7 @@ function addReport_(w, sys, row, at, tz) {
   if (!o.ship) o.ship = ship;
   var k = key_(w, ref, sku);
   k.r += q;
+  if (d) k.rd[d] = (k.rd[d] || 0) + q;
   if (!k.ship) k.ship = ship;
 }
 
@@ -276,17 +280,30 @@ function tally_(side, d, sku, q) {
 }
 
 /**
- * ยอดที่ควรออกของรายการนี้ตาม Report ลงวันที่ออกจากคลังของออเดอร์ นับได้หลังจัดถังแล้วเท่านั้น
+ * ยอดที่ควรออกของรายการนี้ตาม Report ลงวันที่ออกจากคลังของแต่ละแถว นับได้หลังจัดถังแล้วเท่านั้น
+ * ออเดอร์ที่ส่งสองรอบจึงควรออกทั้งสองวัน ไม่ใช่รวมไปวันสุดท้าย
  * รายการที่ไม่ได้ตัดเพราะขนส่งยกเลิก สถานะว่าง หรือไม่ใช่ของในคลัง ไม่ควรออก
  */
 function addShould_(w, k) {
-  var o = w.orders[k.ref];
-  if (!o) return;
-  tally_(w.daily.r, o.date, k.sku, should_(k));
+  if (!w.orders[k.ref]) return;
+  var left = should_(k);
+  if (!left) return;
+  Object.keys(k.rd).forEach(function (d) {
+    tally_(w.daily.r, d, k.sku, k.rd[d]);
+    left -= k.rd[d];
+  });
+  /* แถวใน Report ที่ไม่มีวันที่ ลงวันไหนไม่ได้ นับเป็นยอดที่ข้าม */
+  tally_(w.daily.r, '', k.sku, left);
 }
 
+/** ได้แค่ศูนย์ หรือยอดเต็มใน Report (k.r) เพราะ target_ ไม่มีกรณีครึ่งๆ ยอดรายวันจึงใช้ k.rd ได้ตรงๆ */
 function should_(k) {
   return k.bucket === 'nonstock' || k.bucket === 'cancelOk' || k.bucket === 'blankOk' ? 0 : target_(k, k.bucket);
+}
+
+/** ยอดที่ควรออกของรายการนี้ในวันเดียว */
+function shouldOn_(k, d) {
+  return should_(k) ? k.rd[d] || 0 : 0;
 }
 
 /** วันอื่นนอกจากวันนี้ที่รายการนี้ถูกตัด ยอดตัดกับคืนที่หักกันจนเป็นศูนย์ไม่นับ */
@@ -300,16 +317,16 @@ function otherDays_(byDay, d) {
  * ออเดอร์ที่ยอดทั้งเดือนตรงแล้วแต่ลงคนละวัน รวมเป็นกลุ่มตามวันที่ เพราะวันที่ลงคนละวันทั้งวันมีเป็นร้อยต่อ SKU
  * ที่เหลือคือเรื่องที่ต้องแก้ ส่งทีละออเดอร์
  *   [ลำดับวัน, ลำดับ SKU, ออเดอร์ที่ตรง, ชิ้นที่ตรง, ออเดอร์ที่ไม่ได้ส่งเพราะเกินเพดาน,
- *    [[เลขออเดอร์, ระบบ, x, t, r, ถัง, วันที่ใน Report ถ้าไม่ใช่วันนี้, วันอื่นที่ Upload ตัด, วันอื่นที่ TRcloud ตัด], ...],
- *    [[วันที่ใน Report ถ้าไม่ใช่วันนี้, วันอื่นที่ Upload ตัด, วันอื่นที่ TRcloud ตัด, จำนวนออเดอร์, x, t, r, ตัวอย่างเลขออเดอร์], ...]]
+ *    [[เลขออเดอร์, ระบบ, x, t, r, ถัง, วันอื่นที่ลงใน Report, วันอื่นที่ Upload ตัด, วันอื่นที่ TRcloud ตัด], ...],
+ *    [[วันอื่นที่ลงใน Report, วันอื่นที่ Upload ตัด, วันอื่นที่ TRcloud ตัด, จำนวนออเดอร์, x, t, r, ตัวอย่างเลขออเดอร์], ...]]
  */
 function detailOf_(w, list, dayNo, skuNo) {
   var at = {};
   list.forEach(function (k) {
-    var o = w.orders[k.ref], days = {};
+    var days = {};
     Object.keys(k.xd).forEach(function (d) { days[d] = 1; });
     Object.keys(k.td).forEach(function (d) { days[d] = 1; });
-    if (o && o.date) days[o.date] = 1;
+    if (w.orders[k.ref]) Object.keys(k.rd).forEach(function (d) { days[d] = 1; });
     Object.keys(days).forEach(function (d) {
       var id = d + '|' + k.sku;
       (at[id] || (at[id] = { d: d, sku: k.sku, keys: [] })).keys.push(k);
@@ -328,14 +345,14 @@ function detailOf_(w, list, dayNo, skuNo) {
       var o = w.orders[k.ref];
       var kx = k.xd[d] || 0, kt = k.td[d] || 0;
       /* ไม่มีรายงานโอนย้าย ยอดควรออกของงานโอนย้ายคือยอดที่ตัด เหมือนตอนรวมยอดรายวัน */
-      var kr = o ? (o.date === d ? should_(k) : 0) : (w.transfer[k.ref] && !w.hasTf ? kx : 0);
+      var kr = o ? shouldOn_(k, d) : (w.transfer[k.ref] && !w.hasTf ? kx : 0);
       if (kx === kt && kt === kr) {
         if (kx) { ok++; okQty += kx; }
         return;
       }
-      var od = o && o.date !== d ? o.date : '', xo = otherDays_(k.xd, d), to = otherDays_(k.td, d);
+      var od = o ? otherDays_(k.rd, d) : [], xo = otherDays_(k.xd, d), to = otherDays_(k.td, d);
       if (KINDS.indexOf(k.bucket) < 0 && k.bucket !== 'gap') {
-        var id = od + '|' + xo.join(',') + '|' + to.join(',');
+        var id = od.join(',') + '|' + xo.join(',') + '|' + to.join(',');
         var g = moved[id] || (moved[id] = [od, xo, to, 0, 0, 0, 0, []]);
         g[3]++; g[4] += kx; g[5] += kt; g[6] += kr;
         if (g[7].length < 3) g[7].push(k.ref);

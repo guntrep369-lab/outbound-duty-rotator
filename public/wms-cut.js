@@ -247,16 +247,18 @@
       var id = d + '|' + sku;
       return at[id] || (at[id] = blank());
     }
+    /* สคริปต์รุ่นก่อนส่งวันใน Report เป็นวันเดียว ('' คือไม่มี) รุ่นนี้ส่งเป็นรายการวัน */
+    function days(v) { return [].concat(v || []); }
     (daily.detail || []).forEach(function (c) {
       var o = one(daily.days[c[0]], daily.skus[c[1]][0]);
       o.listed = true;
       o.ok = { orders: c[2], qty: c[3] };
       o.more = c[4];
       o.orders = c[5].map(function (e) {
-        return { ref: e[0], sys: e[1], x: e[2], t: e[3], r: e[4], kind: e[5], od: e[6], xo: e[7], to: e[8] };
+        return { ref: e[0], sys: e[1], x: e[2], t: e[3], r: e[4], kind: e[5], od: days(e[6]), xo: e[7], to: e[8] };
       });
       o.moved = c[6].map(function (g) {
-        return { od: g[0], xo: g[1], to: g[2], orders: g[3], x: g[4], t: g[5], r: g[6], refs: g[7] };
+        return { od: days(g[0]), xo: g[1], to: g[2], orders: g[3], x: g[4], t: g[5], r: g[6], refs: g[7] };
       });
     });
     (ledger.lines || []).forEach(function (l) {
@@ -273,8 +275,8 @@
 
   /** ลงวันอื่นยังไง เช่น Report ลงวันที่ 12/10 หรือตัดวันที่ 13/10 ทั้งสองระบบ */
   function dateWords(e) {
-    var out = [];
-    if (e.od) out.push('Report ลงวันที่ ' + dayMonth(e.od));
+    var out = [], od = e.od.map(dayMonth).join(', ');
+    if (od) out.push('Report ลงวันที่ ' + od);
     var xo = e.xo.map(dayMonth).join(', '), to = e.to.map(dayMonth).join(', ');
     if (xo && xo === to) out.push('ตัดวันที่ ' + xo + ' ทั้งสองระบบ');
     else {

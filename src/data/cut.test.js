@@ -177,6 +177,26 @@ describe('cut-api.gs — ยอดรายวันไว้เทียบก�
     expect(r.daily.skippedR).toEqual({ rows: 1, qty: 2 });
     expect(dailyOf(r, 'r')).toEqual({ [`${DAY}|${A}`]: 1 });
   });
+
+  it('ออเดอร์เดียวกันส่งสองรอบ ยอดควรออกลงทั้งสองวันตาม Report ไม่รวมไปวันสุดท้าย', () => {
+    const r = run({
+      crm: [crm('7001', A, 4), crm('7001', B, 1), crm('7001', A, 4, { date: when(OTHER) })],
+      tx: [tx('7001', A, 4, { src: 'CRM' }), tx('7001', B, 1, { src: 'CRM' }), tx('7001', A, 4, { date: OTHER, src: 'CRM' })],
+      tr: [tr('7001', A, 4), tr('7001', B, 1), tr('7001', A, 4, { date: when(OTHER) })],
+    });
+    expect(dailyOf(r, 'r')).toEqual({ [`${DAY}|${A}`]: 4, [`${DAY}|${B}`]: 1, [`${OTHER}|${A}`]: 4 });
+    expect(r.daily.detail).toEqual([]);
+    expect(r.rows).toEqual([]);
+  });
+
+  it('ส่งสองรอบแต่วันหนึ่งมีแถวไม่มีวันที่ ส่วนนั้นนับเป็นยอดที่ข้าม', () => {
+    const r = run(join(fine('5001', A, 1), {
+      crm: [crm('7001', B, 2), crm('7001', B, 3, { date: '' })],
+      tx: [tx('7001', B, 5, { src: 'CRM' })], tr: [tr('7001', B, 5)],
+    }));
+    expect(dailyOf(r, 'r')).toEqual({ [`${DAY}|${A}`]: 1, [`${DAY}|${B}`]: 2 });
+    expect(r.daily.skippedR).toEqual({ rows: 1, qty: 3 });
+  });
 });
 
 describe('cut-api.gs — รายออเดอร์ของช่องรายวันที่ไม่ตรง', () => {
@@ -193,7 +213,7 @@ describe('cut-api.gs — รายออเดอร์ของช่องร�
       jst: [jst('5003', A, 1)], tx: [tx('5003', A, 3)], tr: [tr('5003', A, 3)],
     }));
     expect(detailOf(r)).toEqual({
-      [`${DAY}|${A}`]: [2, 3, 0, [['5003', 'JST', 3, 3, 1, 'over', '', [], []]], []],
+      [`${DAY}|${A}`]: [2, 3, 0, [['5003', 'JST', 3, 3, 1, 'over', [], [], []]], []],
     });
   });
 
@@ -204,14 +224,26 @@ describe('cut-api.gs — รายออเดอร์ของช่องร�
       tr: [tr('5001', A, 2, { date: when(OTHER) }), tr('5002', A, 1, { date: when(OTHER) })],
     });
     expect(detailOf(r)).toEqual({
-      [`${DAY}|${A}`]: [0, 0, 0, [], [['', [OTHER], [OTHER], 2, 0, 0, 3, ['5001', '5002']]]],
-      [`${OTHER}|${A}`]: [0, 0, 0, [], [[DAY, [], [], 2, 3, 3, 0, ['5001', '5002']]]],
+      [`${DAY}|${A}`]: [0, 0, 0, [], [[[], [OTHER], [OTHER], 2, 0, 0, 3, ['5001', '5002']]]],
+      [`${OTHER}|${A}`]: [0, 0, 0, [], [[[DAY], [], [], 2, 3, 3, 0, ['5001', '5002']]]],
+    });
+  });
+
+  it('ออเดอร์ส่งสองรอบที่รอบหลังลืมตัดใน Upload ชี้ที่วันรอบหลัง พร้อมบอกวันอื่นใน Report', () => {
+    const r = run({
+      crm: [crm('7001', A, 4), crm('7001', A, 4, { date: when(OTHER) })],
+      tx: [tx('7001', A, 4, { src: 'CRM' })],
+      tr: [tr('7001', A, 4), tr('7001', A, 4, { date: when(OTHER) })],
+    });
+    /* วันแรกตัดครบทุกแหล่ง ไม่ต้องส่ง */
+    expect(detailOf(r)).toEqual({
+      [`${OTHER}|${A}`]: [0, 0, 0, [['7001', 'CRM', 0, 4, 4, 'under', [DAY], [DAY], [DAY]]], []],
     });
   });
 
   it('ยอดควรออกของรายการที่ไม่ควรออกเป็นศูนย์ เช่นขนส่งยกเลิกแต่ตัดแล้ว', () => {
     const r = run({ jst: [jst('5001', A, 2, { ship: 'ยกเลิกแล้ว' })], tx: [tx('5001', A, 2)], tr: [tr('5001', A, 2)] });
-    expect(detailOf(r)[`${DAY}|${A}`][3]).toEqual([['5001', 'JST', 2, 2, 0, 'cancel', '', [], []]]);
+    expect(detailOf(r)[`${DAY}|${A}`][3]).toEqual([['5001', 'JST', 2, 2, 0, 'cancel', [], [], []]]);
   });
 
   it('ไม่มีรายงานโอนย้าย ยอดควรออกของงานโอนย้ายคือยอดที่ Upload ตัด', () => {
@@ -221,7 +253,7 @@ describe('cut-api.gs — รายออเดอร์ของช่องร�
     }, {
       tx: [tx('TF-1', A, 3, { src: 'โอนย้าย' })], tr: [tr('TF-1', A, 3, { date: when(OTHER) })],
     }));
-    expect(detailOf(r)[`${DAY}|${A}`]).toEqual([1, 1, 0, [], [['', [], [OTHER], 1, 3, 0, 3, ['TF-1']]]]);
+    expect(detailOf(r)[`${DAY}|${A}`]).toEqual([1, 1, 0, [], [[[], [], [OTHER], 1, 3, 0, 3, ['TF-1']]]]);
   });
 
   it('ออเดอร์เกินเพดานต่อช่อง ส่งที่หนักสุดแล้วบอกจำนวนที่เหลือ', () => {
@@ -234,7 +266,7 @@ describe('cut-api.gs — รายออเดอร์ของช่องร�
     expect(more).toBe(5);
     expect(orders).toHaveLength(40);
     /* ไม่มีใน Report ระบบคือที่มาที่แท็บตัดบอกไว้ */
-    expect(orders[0]).toEqual(['G144', 'JST', 9, 9, 0, 'ghost', '', [], []]);
+    expect(orders[0]).toEqual(['G144', 'JST', 9, 9, 0, 'ghost', [], [], []]);
   });
 });
 

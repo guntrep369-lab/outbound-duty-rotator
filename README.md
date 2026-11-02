@@ -471,9 +471,10 @@ the same Uploadยิงออก label for the Transaction cut tab.
 - Days after the ledger's last sale date aren't compared. The page lists them with the other figures,
   so they don't look like a shortage.
 - A fourth column, Report ควรออก, shows how much should have left that day. It is the JST and CRM reports
-  by their warehouse-out date and the transfer report by its `วันที่จัดส่ง`, minus lines that shouldn't
-  leave (a cancelled shipment, a blank shipping status, or a code that isn't warehouse stock, whether or not
-  it was cut). Without the transfer tab, transfers are taken from the Transaction cut tab instead.
+  by their warehouse-out date and the transfer report by its `วันที่จัดส่ง`, each report line on its own
+  date, so an order shipped in two rounds counts on both days. Lines that shouldn't leave are taken off (a
+  cancelled shipment, a blank shipping status, or a code that isn't warehouse stock, whether or not it was
+  cut). Without the transfer tab, transfers are taken from the Transaction cut tab instead.
 - The three systems are still judged against each other first, and the tab's count is that result. The
   เทียบกับ Report column is a second check. Some orders are cut on a different day from their report date,
   so the same น่าจะลงคนละวัน rule applies to it, and a day only counts as matching the report if every SKU
@@ -528,6 +529,8 @@ The Report ควรออก column needs the newer `cut-api.gs` as well. With 
 three systems only and says to paste the script again. Reading `Report order ระบบโอนย้าย` needs the
 same update, and ที่มาของยอด says so until it's done. The order and ledger-row breakdown of a cell needs
 both newer scripts. Until each is updated, the panel says which one, then press ตรวจใหม่ or ดึงยอดขายใหม่.
+An older `cut-api.gs` also puts all of an order's Report ควรออก on its last report date, so an order shipped
+in two rounds looks short on the first day and over on the last. Paste the new one and press ตรวจใหม่.
 
 The URL works like a key: anyone who has it can read the order numbers and SKUs in the result, so keep it
 out of this repo. The result leaves out online order IDs and tracking numbers.
