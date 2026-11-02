@@ -493,6 +493,22 @@ the same Uploadยิงออก label for the Transaction cut tab.
   who entered it. The ledger has no order numbers, so this is as close as it gets. The row number opens
   the sheet at that row.
 
+**Tab แก้แยกตามระบบ:** everything from the other tabs, sorted by the system where it has to be fixed rather
+than by JST or CRM, so each list can go to whoever looks after that system. Each item says how many pieces
+to add (+) or take back (−), and the copy button puts the list on the clipboard as columns to paste into a
+sheet or a chat. The lists are sorted by date, then the largest first.
+
+- Uploadยิงออก and TRcloud: every order line whose cut in that system isn't what the report says, plus
+  whole days that were never entered. TRcloud's take-back is a receipt (`รับเข้า`) on the same order.
+- ชีตทีม (UAT) has no order numbers, so its list comes from the daily comparison in two ways: a day + SKU
+  where the ledger differs from the other two systems, which agree with each other, and an order that
+  Uploadยิงออก or TRcloud got wrong where the ledger, on every day that order was cut, has the same number
+  as the system that's wrong. That means the ledger carries the same mistake. Entries made a day apart
+  aren't listed, since the two days already add up. A day + SKU where all three differ is only counted,
+  because it can't tell which one is wrong.
+- A row whose day + SKU differs somewhere opens the same window as เทียบรายวัน. The ledger list needs the
+  sales pulled first (ดึงยอดขาย).
+
 The two scripts belong to different files and don't know each other, since linking them would put a file
 ID in this public repo. The page calls both and compares the answers. It needs **Apps Script URL —
 Transaction** set too. ดึงยอดขายใหม่ re-reads only the ledger, so a fix there can be checked in seconds.

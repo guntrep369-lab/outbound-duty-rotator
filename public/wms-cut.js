@@ -300,6 +300,84 @@
     return 'ตรงกันทุกแหล่ง';
   }
 
+  var CUT_DAYS = { x: 'xd', t: 'td' };
+
+  /**
+   * ทุกเรื่องที่ต้องแก้ แยกตามระบบที่ต้องไปแก้ ไม่ใช่ตามระบบขาย ส่งต่อให้คนดูแลแต่ละระบบได้เลย
+   * Upload กับ TRcloud มาจากรายออเดอร์ของ cut-api.gs ตรงๆ ชีตทีมไม่มีเลขออเดอร์ จึงมาจากเทียบรายวันสองทาง
+   *   sheet  ช่องที่ชีตทีมต่างจากสองระบบที่ตรงกันเอง ให้ลงตามสองระบบนั้น ช่องที่ลงคนละวันไม่นับ ยอดรวมตรงแล้ว
+   *   ออเดอร์ที่ Upload หรือ TRcloud ผิด แล้วชีตทีมทุกวันที่ตัดเท่ากับระบบที่ผิด แปลว่าชีตทีมลงผิดตามไปด้วย
+   * need บวก = ต้องลงเพิ่ม ลบ = ต้องคืน
+   * @param {Array} rows  rows จาก ?api=cut-check
+   * @param {Array} gaps  gaps จาก ?api=cut-check
+   * @param {Object} [c]  ผลของ compareDaily ไม่มีคือยังไม่ได้ดึงยอดขาย รายการของชีตทีมจะเป็น null
+   * @param {Object} [cells]  ผลของ cellIndex ใช้บอกว่าช่องของชีตทีมมีออเดอร์ที่อีกสองระบบต้องแก้ปนอยู่
+   */
+  function fixLists(rows, gaps, c, cells) {
+    var out = { s: c ? [] : null, x: [], t: [], unclear: 0 };
+    var at = {};
+    if (c) c.rows.forEach(function (r) { at[r.date + '|' + r.sku] = r; });
+    /* ช่องที่เปิดดูรายละเอียดได้ในเทียบรายวัน ช่องที่สามแหล่งเท่ากันไม่มีให้เปิด */
+    var cellOf = function (d, sku) { return sku && at[d + '|' + sku] ? d + '|' + sku : ''; };
+    rows.forEach(function (r) {
+      ['x', 't'].forEach(function (k) {
+        if (r[k] === r.goal) return;
+        var days = r[CUT_DAYS[k]];
+        out[k].push({
+          date: r.date, ref: r.ref, sku: r.sku, sys: r.sys, kind: r.k, need: r.goal - r[k], days: days, lines: r.lines || 0,
+          cell: cellOf(days[0] || r.date, r.sku),
+        });
+      });
+    });
+    gaps.forEach(function (g) {
+      (g.side === 'both' ? ['x', 't'] : [g.side === 'tx' ? 'x' : 't']).forEach(function (k) {
+        out[k].push({ date: g.date, ref: '', sku: '', sys: g.sys, kind: 'gap', need: g.qty, days: [], lines: g.lines, orders: g.orders, refs: g.refs, cell: '' });
+      });
+    });
+    if (c) {
+      /* ช่องที่ไม่อยู่ในรายการของเทียบรายวันคือสามแหล่งเท่ากัน วันนอกช่วงที่เทียบได้บอกไม่ได้ */
+      var same = function (d, sku, k) {
+        if (!d || d < c.from || d > c.to) return false;
+        var r = at[d + '|' + sku];
+        return !r || r.s === r[k];
+      };
+      c.rows.forEach(function (r) {
+        var odd = oddOne(r.s, r.x, r.t);
+        if (r.moved || !odd) return;
+        if (odd !== 's') {
+          if (odd === 'all') out.unclear++;
+          return;
+        }
+        var one = cells ? cells.get(r.date, r.sku) : null;
+        out.s.push({
+          date: r.date, ref: '', sku: r.sku, name: r.name, kind: 'sheet', need: r.x - r.s, days: [],
+          cell: cellOf(r.date, r.sku), mixed: !!(one && one.orders.length),
+        });
+      });
+      rows.forEach(function (r) {
+        if (!r.sku) return;
+        for (var i = 0; i < 2; i++) {
+          var k = i ? 't' : 'x';
+          var days = r[CUT_DAYS[k]].length ? r[CUT_DAYS[k]] : [r.date];
+          if (r[k] === r.goal || !days.every(function (d) { return same(d, r.sku, k); })) continue;
+          out.s.push({
+            date: r.date, ref: r.ref, sku: r.sku, sys: r.sys, kind: r.k, need: r.goal - r[k], days: days, via: k,
+            cell: cellOf(days[0], r.sku),
+          });
+          break;
+        }
+      });
+    }
+    ['s', 'x', 't'].forEach(function (k) {
+      if (!out[k]) return;
+      out[k].sort(function (a, b) {
+        if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+        return Math.abs(b.need) - Math.abs(a.need) || (a.ref + a.sku < b.ref + b.sku ? -1 : 1);
+      });
+    });
+    return out;
+  }
+
   /** ลิงก์เปิดชีตตรงแถวนั้น แบบเดียวกับ WmsTx.rowUrl หน้านี้ไม่ได้โหลด wms-tx.js */
   function rowUrl(sheet, row) {
     if (!sheet || !sheet.url) return '';
@@ -308,6 +386,6 @@
 
   window.WmsCut = {
     LABEL: LABEL, oddOne: oddOne, diffWords: diffWords, reportWords: reportWords, compareDaily: compareDaily,
-    cellIndex: cellIndex, dateWords: dateWords, fixHint: fixHint, rowUrl: rowUrl,
+    cellIndex: cellIndex, dateWords: dateWords, fixHint: fixHint, rowUrl: rowUrl, fixLists: fixLists,
   };
 })();

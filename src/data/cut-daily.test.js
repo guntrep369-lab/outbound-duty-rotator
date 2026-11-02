@@ -429,3 +429,76 @@ describe('wms-cut.js — แตกช่องที่ไม่ตรงลง�
     expect(WmsCut.rowUrl(null, 12)).toBe('');
   });
 });
+
+describe('wms-cut.js — รายการแก้แยกตามระบบที่ต้องไปแก้', () => {
+  const D1 = '2026-03-05', D2 = '2026-03-06';
+  /* แถวแบบที่ cut-api.gs ส่งมา goal คือยอดที่ถูก xd, td คือวันที่ตัดของแต่ละระบบ */
+  const row = (o) => ({ k: 'over', ref: '5001', sku: A, sys: 'JST', date: D1, r: 2, x: 2, t: 2, goal: 2, xd: [D1], td: [D1], ...o });
+  /* ผลของ compareDaily: มีแต่ช่องที่ไม่ตรง ช่องที่ไม่อยู่ในนี้คือสามแหล่งเท่ากัน */
+  const daily = (rows) => ({ from: PERIOD.from, to: D2, rows: rows.map((r) => ({ name: '', r: 0, moved: 0, ...r })) });
+
+  it('ออเดอร์ไปอยู่ในระบบที่ยอดไม่เท่ากับที่ควรตัด บวกคือต้องลงเพิ่ม ลบคือต้องคืน', () => {
+    const out = WmsCut.fixLists([
+      row({ ref: '5001', x: 4, t: 4 }),
+      row({ ref: '5002', k: 'under', x: 0, xd: [] }),
+      row({ ref: '5003', k: 'ghost', goal: 0, r: 0, x: 0, t: 3, xd: [], td: [D2] }),
+    ], []);
+    expect(out.s).toBe(null);
+    expect(out.x.map((e) => [e.ref, e.need, e.days])).toEqual([['5001', -2, [D1]], ['5002', 2, []]]);
+    /* วันที่ใน Report วันเดียวกัน เรื่องใหญ่ขึ้นก่อน */
+    expect(out.t.map((e) => [e.ref, e.need, e.days])).toEqual([['5003', -3, [D2]], ['5001', -2, [D1]]]);
+  });
+
+  it('ขาดทั้งวันไปอยู่ในระบบที่ขาด ขาดทั้งสองระบบอยู่ทั้งคู่', () => {
+    const gap = (side) => ({ date: D1, sys: 'CRM', side, orders: 6, lines: 9, qty: 12, refs: ['7001', '7002'] });
+    const one = WmsCut.fixLists([], [gap('tx')]);
+    expect(one.x).toEqual([{ date: D1, ref: '', sku: '', sys: 'CRM', kind: 'gap', need: 12, days: [], lines: 9, orders: 6, refs: ['7001', '7002'], cell: '' }]);
+    expect(one.t).toEqual([]);
+    const both = WmsCut.fixLists([], [gap('both')]);
+    expect([both.x.length, both.t.length]).toEqual([1, 1]);
+  });
+
+  it('ชีตทีม: ช่องที่ต่างจากอีกสองระบบที่ตรงกันเอง ให้ลงตามสองระบบนั้น ช่องที่ลงคนละวันไม่นับ', () => {
+    const c = daily([
+      { date: D1, sku: A, name: 'ชื่อ A', s: 3, x: 5, t: 5 },
+      { date: D1, sku: B, s: 9, x: 7, t: 7, moved: 2 },
+      { date: D2, sku: B, s: 1, x: 2, t: 3 },
+    ]);
+    const cells = { get: (d, sku) => ({ orders: sku === A ? [{ ref: '5009' }] : [] }) };
+    const out = WmsCut.fixLists([], [], c, cells);
+    expect(out.s).toEqual([{ date: D1, ref: '', sku: A, name: 'ชื่อ A', kind: 'sheet', need: 2, days: [], cell: `${D1}|${A}`, mixed: true }]);
+    /* สามแหล่งไม่เท่ากันเลย บอกไม่ได้ว่าใครผิด นับไว้บอกเฉยๆ */
+    expect(out.unclear).toBe(1);
+  });
+
+  it('ชีตทีม: ออเดอร์ที่ระบบหนึ่งผิด แล้วชีตทีมทุกวันที่ตัดเท่ากับระบบนั้น ชีตทีมผิดตามด้วย', () => {
+    const rows = [
+      row({ ref: '5001', x: 4, t: 4, xd: [D1], td: [D1] }),
+      row({ ref: '5002', sku: B, k: 'under', x: 0, t: 2, xd: [], td: [D1] }),
+    ];
+    /* วันที่ D1 ของ A สามแหล่งเท่ากัน (ไม่อยู่ในรายการ) ส่วน B ชีตทีมเท่ากับ Upload ที่ขาด */
+    const out = WmsCut.fixLists(rows, [], daily([{ date: D1, sku: B, s: 5, x: 5, t: 7 }]));
+    expect(out.s.map((e) => [e.ref, e.need, e.via, e.cell])).toEqual([['5001', -2, 'x', ''], ['5002', 2, 'x', `${D1}|${B}`]]);
+    /* แถวของ Upload ก็เปิดช่องเดียวกันได้ ถ้าช่องนั้นมีในเทียบรายวัน */
+    expect(out.x.map((e) => [e.ref, e.cell])).toEqual([['5001', ''], ['5002', `${D1}|${B}`]]);
+  });
+
+  it('ชีตทีมไม่เท่ากับระบบที่ผิด หรือวันที่ตัดเลยช่วงที่ชีตทีมลงถึง ไม่นับว่าชีตทีมผิดตาม', () => {
+    const rows = [
+      row({ ref: '5001', x: 4, t: 4 }),
+      row({ ref: '5003', x: 3, t: 3, date: '2026-03-09', xd: ['2026-03-09'], td: ['2026-03-09'] }),
+    ];
+    const out = WmsCut.fixLists(rows, [], daily([{ date: D1, sku: A, s: 2, x: 4, t: 4 }]));
+    /* 5001: ชีตทีมเป็น 2 ไม่เท่ากับที่ Upload ตัดเกินไว้ จึงไปขึ้นเป็นช่องที่ชีตทีมต่างแทน */
+    expect(out.s.map((e) => [e.kind, e.ref, e.need])).toEqual([['sheet', '', 2]]);
+  });
+
+  it('เรียงตามวันที่ แล้วเรื่องใหญ่ขึ้นก่อน', () => {
+    const out = WmsCut.fixLists([
+      row({ ref: '5001', date: D2, x: 3 }),
+      row({ ref: '5002', x: 9 }),
+      row({ ref: '5003', x: 3 }),
+    ], []);
+    expect(out.x.map((e) => e.ref)).toEqual(['5002', '5003', '5001']);
+  });
+});
