@@ -123,6 +123,11 @@ span.tx-ok::before{content:'✓ '}
 .tx-card b.tx-ok{color:#166534}
 .tx-card i{display:block;font-style:normal;font-size:12px;color:var(--wms-muted)}
 .tx-card:hover{border-color:var(--wms-primary)}
+.tx-card-ic{display:flex;align-items:center;gap:10px}
+.tx-card-ic img{flex-shrink:0;width:34px;height:34px;border-radius:24%}
+.tx-card-ic span{min-width:0}
+/* ไอคอนระบบตัวเล็กหน้าชื่อระบบ */
+.tx-ic{width:18px;height:18px;margin-right:6px;border-radius:24%;vertical-align:-4px}
 .tx-card.on{border-color:var(--wms-primary);background:var(--wms-primary-light)}
 
 /* ── เทียบรายวัน ── */
@@ -214,6 +219,11 @@ html.pop-open{overflow:hidden}
   .tx-tab .sh{display:block}
   .tx-tab .n{position:absolute;top:2px;left:calc(50% + 6px);padding:0 5px;font-size:12px;line-height:1.4}
   .tx-tab:not(.on) .n{background:var(--wms-primary);color:#fff}
+
+  /* การ์ดสามระบบอยู่แถวเดียวกัน ไอคอนขึ้นบน ไม่มีใบไหนตกไปอยู่แถวล่างคนเดียว */
+  .tx-cards.tx-who{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+  .tx-who .tx-card-ic{flex-direction:column;align-items:flex-start;gap:6px;padding:9px 10px}
+  .tx-who .tx-card-ic img{width:28px;height:28px}
 
   /* ตารางกลายเป็นการ์ดทีละรายการ ตัวเลขเป็นกล่องมีชื่อกำกับ ไม่ต้องเลื่อนข้าง
      k-top บนซ้าย, k-side บนขวา, k-main ทั้งแถว, ตัวเลข, k-res และ k-res2 ผลเทียบ */
@@ -338,6 +348,8 @@ const PARTS = {
 };
 
 const SIDE = { tx: L.x, tr: L.t, both: 'ทั้งสองระบบ' };
+/* ไอคอนประจำแต่ละระบบ ใช้ทุกจุดที่บอกชื่อระบบ คนจะจำรูปได้ก่อนอ่านชื่อ */
+const ICON = { s: '../icons/sys-sheet.png', x: '../icons/sys-upload.png', t: '../icons/sys-trcloud.png' };
 
 let RAW = null;
 let BUSY = '';
@@ -485,7 +497,7 @@ function renderTabs() {
     tab('fix', 'ตัดผิด / ตัดเกิน', 'ตัดผิด', '../icons/tab-cut.png', fixCount()) +
     tab('under', 'ยังไม่ตัด', 'ยังไม่ตัด', '../icons/tab-wait.png', underCount()) +
     tab('daily', 'เทียบรายวัน', 'รายวัน', '../icons/tab-daily.png', dailyResult() ? dailyResult().counts.daysBad : null) +
-    tab('sys', 'แก้แยกตามระบบ', 'แก้ตามระบบ', '../icons/tab-count.png', sysCount()) +
+    tab('sys', 'แก้แยกตามระบบ', 'แก้ตามระบบ', '../icons/tab-fix.png', sysCount()) +
     tab('recon', 'ที่มาของยอด', 'ที่มา', '../icons/tab-source.png', null);
 }
 
@@ -864,7 +876,7 @@ function dayRow(c, d) {
 /** ตัวเลขสี่ช่องกับผลเทียบ ขึ้นบนสุดของหน้าต่าง ไม่ต้องย้อนไปดูแถวที่กดมา */
 function popStats(c, v, three, rep) {
   const odd = WmsCut.oddOne(v.s, v.x, v.t);
-  const box = (k) => `<div class="tx-stat"><small>${esc(L[k])}</small><b class="${k === 'r' ? '' : mark(k, odd, v)}">${f(v[k])}</b></div>`;
+  const box = (k) => `<div class="tx-stat"><small>${ICON[k] ? `<img class="tx-ic" src="${ICON[k]}" alt="">` : ''}${esc(L[k])}</small><b class="${k === 'r' ? '' : mark(k, odd, v)}">${f(v[k])}</b></div>`;
   return `<div class="tx-stats">${c.hasR ? box('r') : ''}${box('s')}${box('x')}${box('t')}</div>
     <div class="pop-res"><div><small>สามระบบเทียบกัน</small>${three}</div>${c.hasR ? `<div><small>เทียบกับ Report</small>${rep}</div>` : ''}</div>`;
 }
@@ -1049,13 +1061,14 @@ function needSum(list) {
 }
 
 function whoCards(fx) {
-  return `<div class="tx-cards">${WHO_ORDER.map((k) => {
+  return `<div class="tx-cards tx-who">${WHO_ORDER.map((k) => {
     const list = fx[k], info = WHO_INFO[k], on = WHO === k ? 'on' : '';
-    if (!list) return `<button class="tx-card ${on}" data-who="${k}"><small>${esc(info.label)}</small><b>–</b><i>ต้องดึงยอดขายก่อน</i></button>`;
+    const card = (inner) => `<button class="tx-card tx-card-ic ${on}" data-who="${k}"><img src="${ICON[k]}" alt="" width="34" height="34"><span>${inner}</span></button>`;
+    if (!list) return card(`<small>${esc(info.label)}</small><b>–</b><i>ต้องดึงยอดขายก่อน</i>`);
     const n = needSum(list);
-    return `<button class="tx-card ${on}" data-who="${k}"><small>${esc(info.label)}</small>
+    return card(`<small>${esc(info.label)}</small>
       <b class="${list.length ? 'tx-neg' : 'tx-ok'}">${f(list.length)}</b>
-      <i>${list.length ? `ลงเพิ่ม ${f(n.more)} · คืน ${f(n.less)} ชิ้น` : 'ไม่มีที่ต้องแก้'}</i></button>`;
+      <i>${list.length ? `ลงเพิ่ม ${f(n.more)} · คืน ${f(n.less)} ชิ้น` : 'ไม่มีที่ต้องแก้'}</i>`);
   }).join('')}</div>`;
 }
 
@@ -1151,7 +1164,7 @@ function sysHtml() {
     const unclear = WHO === 's' && fx.unclear
       ? `<div class="tx-note">อีก ${f(fx.unclear)} ช่องที่สามแหล่งไม่เท่ากันเลย บอกไม่ได้ว่าระบบไหนผิด ดูในแท็บเทียบรายวัน</div>` : '';
     const shift = WHO === 's' ? ' ช่องที่น่าจะลงคนละวันไม่อยู่ในรายการ เพราะยอดรวมสองวันตรงแล้ว' : '';
-    body = `<h3 class="tx-h">${esc(info.label)}<span class="n">${f(list.length)} รายการ</span></h3>
+    body = `<h3 class="tx-h"><img class="tx-ic" src="${ICON[WHO]}" alt="">${esc(info.label)}<span class="n">${f(list.length)} รายการ</span></h3>
       <div class="tx-why">${esc(info.why + shift)}</div>
       <div class="tx-bar"><button class="tx-opt" data-copy>📋 คัดลอกรายการไปวางในชีตหรือไลน์</button></div>
       <div class="tx-wrap"><table class="tx-tbl tx-mc mc-fix">

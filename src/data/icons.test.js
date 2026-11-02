@@ -32,11 +32,12 @@ describe('ไอคอนของทุกหน้า', () => {
 const PUB = path.resolve(__dirname, '../../public');
 const NAVS = ['transport-docs/transport-nav.js', 'transport-forms/forms-nav.js', 'warehouse-forms/wh-nav.js'];
 
-describe('ไอคอนแท็บ', () => {
+/* sys- = ไอคอนประจำระบบในหน้าเช็คตัดสต๊อก ตั้งใน JS เหมือนไอคอนแท็บ */
+describe('ไอคอนแท็บและไอคอนระบบ', () => {
   for (const page of ['stock-location/index.html', 'cut-check/index.html']) {
     it(page, () => {
       const file = path.join(PUB, page);
-      const srcs = [...fs.readFileSync(file, 'utf8').matchAll(/'(\.\.\/icons\/tab-[^']+)'/g)].map((m) => m[1]);
+      const srcs = [...fs.readFileSync(file, 'utf8').matchAll(/'(\.\.\/icons\/(?:tab|sys)-[^']+)'/g)].map((m) => m[1]);
       expect(srcs.length, `${page} ไม่มีไอคอนแท็บ`).toBeGreaterThan(0);
       for (const s of srcs) expect(fs.existsSync(path.resolve(path.dirname(file), s)), `${page} ชี้ไป ${s} ที่ไม่มีอยู่`).toBe(true);
     });
