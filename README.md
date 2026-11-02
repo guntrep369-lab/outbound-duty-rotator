@@ -18,7 +18,7 @@ The list lives in [`public/wms-modules.js`](public/wms-modules.js) (the one plac
 | — | สมุดกะ · Shift Log | `shiftlog/` |
 | — (hidden) | สรุปเช้า · Morning Brief · ย้อนหลัง · History | `summary/` · `history/` |
 | ออเดอร์ | เทียบ Order · ค้นหาออเดอร์ | `order-compare/` · `order-lookup/` |
-| คลังสินค้า | สต๊อกคงเหลือ · สต๊อกราย Location · สรุปหยิบของ · เบิกตามออเดอร์ · เอกสารคลังสินค้า | `stock/` · `stock-location/` · `picking/` · `order-sheet/` · `warehouse-forms/` |
+| คลังสินค้า | สต๊อกคงเหลือ · สต๊อกราย Location · สรุปหยิบของ · เบิกตามออเดอร์ · เช็ครายการตัดสต๊อก · เอกสารคลังสินค้า | `stock/` · `stock-location/` · `picking/` · `order-sheet/` · `cut-check/` · `warehouse-forms/` |
 | ขนส่ง | ทำใบงานขนส่ง · เอกสารขนส่ง | `transport-docs/` · `transport-forms/` |
 | ขนส่ง (hidden) | ประเภทงานรถ · ผังงานรถวันนี้ | `jobs/` · `loadplan/` |
 | ทีมและระบบ | **ตารางกะ · Shift Schedule** · ตั้งค่า | `roster/` · `settings/` |
@@ -404,6 +404,75 @@ the same.
 
 ---
 
+## ⚖️ Stock Cut Check (`/cut-check`)
+
+Compares what was cut from stock with the month-end order reports, to find wrong and duplicate cuts.
+[`apps-script/cut-api.gs`](apps-script/cut-api.gs) reads a Google Sheet with four tabs, works everything
+out on the server, and returns only the summary and the lines that differ. It never writes to the sheet.
+
+| Tab in the sheet | What it holds |
+| --- | --- |
+| `ตัดสต๊อกระบบ Transaction` | Cuts in the team's system. The column after `SUM of` has no header and says where the row came from (`JST`, `CRM`, or `โอนย้าย`) |
+| `ตัดสต๊อกระบบ TRcloud` | Cuts in the company system. The cut amount is `เบิกออก` minus `รับเข้า`, because a correction is entered as a receipt on the same order |
+| `Report order ระบบJST` | Shipped orders from JST, with the shipping status |
+| `Report order ระบบ CRM` | Shipped orders from CRM |
+
+Columns are found by their header, so moving a column is fine. Renaming a tab or a header makes the
+check stop with a message rather than read the wrong column.
+
+Lines are matched on order number + SKU. Online order IDs can't be used, because the sheet rounds some
+of them into scientific notation. An order number with ` · date` on the end counts as the same order.
+
+**Tab ตัดผิด / ตัดเกิน:**
+
+| Type | Meaning |
+| --- | --- |
+| ตัดเกิน | Cut more than the report's quantity. The dates show if it was cut twice |
+| ตัดผิด SKU | The order is in the report, but this SKU isn't part of it |
+| ตัดแต่ไม่มีใน Report | Cut, but the order number isn't in either report |
+| ขนส่งยกเลิกแต่ตัดแล้ว | The report says the shipment was cancelled, yet stock was cut |
+| สถานะขนส่งว่างแต่ตัดแล้ว | The report has no shipping status yet, so it's worth a second look |
+| โอนย้ายไม่ตรงกัน | A transfer whose quantity differs between the two systems |
+
+**Tab ยังไม่ตัด:** lines where the report has more than was cut. If a whole day of a system (at least 5
+orders) is missing from one side, those lines are grouped into one notice. An order missing entirely
+from one side with 5 or more SKUs becomes one row.
+
+**Tab ที่มาของยอด:** starts from the report's total and adds each cause until it reaches the real total
+of each system. Every row in the sheet falls into exactly one cause, so the two must meet to the piece.
+If they don't, the page says the numbers shouldn't be trusted.
+
+These aren't errors, so they appear only under ที่มาของยอด:
+
+- Codes that aren't warehouse stock, as long as they weren't cut: a code starting with `STR`, or one that
+  doesn't match three letters + ten digits. If one of these was cut, it's listed as usual.
+- A report line with no shipping status or a cancelled shipment that wasn't cut.
+- Transfers that match in both systems.
+- Cuts dated outside the report's period, for orders that aren't in the report. They wait for next
+  month's report.
+- TRcloud rows from department `IV`, which adjust stock and have nothing to do with orders.
+- Cuts that were reversed back to zero.
+
+The page warns when the Transaction tab ends on an exact multiple of 20,000 rows, because the tab's
+formula joins chunks of that size and may be cutting off newer rows. It also warns when a cut tab stops
+before the report does, since those orders would otherwise all look uncut.
+
+**Setup (once):**
+
+1. Open the Google Sheet, then Extensions → Apps Script. Replace the sample code with `cut-api.gs`.
+2. Deploy → New deployment → Web app. Execute as **Me**, Who has access **Anyone**. Copy the URL that
+   ends in `/exec`.
+3. On each device: ตั้งค่า → **Apps Script URL — เช็ครายการตัดสต๊อก**, paste the URL, press ทดสอบ, then
+   บันทึก URL. The test reads all four tabs, so it can take a few minutes.
+
+The URL works like a key: anyone who has it can read the order numbers and SKUs in the result, so keep it
+out of this repo. The result leaves out online order IDs and tracking numbers.
+
+The last result stays on the device, so reopening the page doesn't wait for another run. Press ตรวจใหม่
+after the sheet's data changes.
+
+---
+
 ## 🗂️ Project structure
 
 ```
@@ -423,12 +492,14 @@ public/
 ├─ roster/                 # ตารางกะ (+ roster-sync.js: sharing through the sheet,
 │                          #   roster-people.js: group / day off by date, leave counts)
 ├─ stock-location/         # สต๊อกราย Location, from the Transaction sheet (+ wms-tx.js: grouping, refill list)
+├─ cut-check/              # เช็ครายการตัดสต๊อก, cuts compared with the month-end order reports
 ├─ summary/ history/ order-compare/ order-lookup/ stock/ picking/ order-sheet/
 ├─ shiftlog/               # สมุดกะ (+ logis.html: the read-only page for Logis)
 ├─ warehouse-forms/ jobs/ loadplan/ transport-docs/ transport-forms/ settings/
 apps-script/
 ├─ roster-api.gs           # the shared schedule sheet's script (pasted into Apps Script, not served)
-└─ tx-api.gs               # balances from the Transaction sheet, stock count, and nightly backup
+├─ tx-api.gs               # balances from the Transaction sheet, stock count, and nightly backup
+└─ cut-api.gs              # compares stock cuts with the order reports (read-only)
 src/
 ├─ data/                   # tests for the shared helpers + page-wide checks
 └─ transport/              # tests for the transport helpers

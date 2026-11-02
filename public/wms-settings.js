@@ -24,6 +24,7 @@
     rosterUrl:      'wms:roster:url',
     rosterToken:    'wms:roster:token',
     txUrl:          'wms:tx:url',
+    cutUrl:         'wms:cut:url',
     me:             'wms:me',
   };
 
@@ -94,6 +95,13 @@
     setTxUrl: function (v) { return write(KEYS.txUrl, v); },
 
     /**
+     * Apps Script URL ของไฟล์เช็คตัดสต๊อก — ต้องผูกกับไฟล์ที่มีแท็บรายการตัดกับ Report ครบ 4 แท็บ
+     * (ดู apps-script/cut-api.gs) ไม่ต้องมีรหัส สคริปต์อ่านอย่างเดียว
+     */
+    cutUrl: function () { return read(KEYS.cutUrl); },
+    setCutUrl: function (v) { return write(KEYS.cutUrl, v); },
+
+    /**
      * ชื่อคนที่ใช้เครื่องนี้ — ติดไปกับไฟล์ที่บันทึกขึ้นส่วนกลาง
      *
      * ไม่ใช่การล็อกอินและไม่ได้กันอะไร แค่ให้เด็กคลังที่มาเลือกไฟล์รู้ว่าใครอัปมา
@@ -126,8 +134,10 @@
      *
      * wms:tx:count:draft คือเลขที่คนบนเครื่องนี้นับค้างไว้ กู้ไปอีกเครื่องแล้วจะดูเหมือนนับแล้ว
      * ทั้งที่คนบนเครื่องนั้นยังไม่ได้เดินไปดูของ
+     *
+     * wms:cut:result คือผลตรวจรอบล่าสุด เป็นข้อมูลของเดือน กู้ไปอีกเครื่องแล้วจะดูเหมือนเพิ่งตรวจ
      */
-    SKIP: ['wms:session', 'wms:orders', 'wms:stock', 'wms:transport:file', 'wms:me', 'wms:roster:sync', 'wms:tx:count:draft'],
+    SKIP: ['wms:session', 'wms:orders', 'wms:stock', 'wms:transport:file', 'wms:me', 'wms:roster:sync', 'wms:tx:count:draft', 'wms:cut:result'],
 
     /**
      * ไฟล์สำรองแยกเป็นสองชนิด ตามสิ่งที่ "หลุดแล้วเสียหายต่างกัน"
@@ -188,13 +198,13 @@
       try { names = Object.keys((JSON.parse(d['wms:sku:names'] || 'null') || {}).names || {}).length; } catch (e) {}
       return {
         orderUrl: !!d[KEYS.orderUrl], stockUrl: !!d[KEYS.stockUrl],
-        transportUrl: !!d[KEYS.transportUrl], rosterUrl: !!d[KEYS.rosterUrl], txUrl: !!d[KEYS.txUrl], logo: !!d[KEYS.logo],
+        transportUrl: !!d[KEYS.transportUrl], rosterUrl: !!d[KEYS.rosterUrl], txUrl: !!d[KEYS.txUrl], cutUrl: !!d[KEYS.cutUrl], logo: !!d[KEYS.logo],
         token: !!d[KEYS.transportToken],
         users: users, skus: skus, names: names,
         /* มีกุญแจอยู่ในไฟล์ไหม — ใช้เตือนตอนคนกำลังจะส่งไฟล์ต่อ */
         hasKeys: Object.keys(d).some(function (k) { return window.WmsSettings.kindOf(k) === 'key'; }),
         others: Object.keys(d).filter(function (k) {
-          return [KEYS.orderUrl, KEYS.stockUrl, KEYS.transportUrl, KEYS.rosterUrl, KEYS.txUrl, KEYS.logo,
+          return [KEYS.orderUrl, KEYS.stockUrl, KEYS.transportUrl, KEYS.rosterUrl, KEYS.txUrl, KEYS.cutUrl, KEYS.logo,
                   'wms:users', 'wms:wh:sku'].indexOf(k) === -1;
         }).length,
         keys: Object.keys(d).length,
