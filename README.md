@@ -18,7 +18,8 @@ The list lives in [`public/wms-modules.js`](public/wms-modules.js) (the one plac
 | — | สมุดกะ · Shift Log | `shiftlog/` |
 | — (hidden) | สรุปเช้า · Morning Brief · ย้อนหลัง · History | `summary/` · `history/` |
 | ออเดอร์ | เทียบ Order · ค้นหาออเดอร์ | `order-compare/` · `order-lookup/` |
-| คลังสินค้า | สต๊อกคงเหลือ · สต๊อกราย Location · สรุปหยิบของ · เบิกตามออเดอร์ · เช็ครายการตัดสต๊อก · เอกสารคลังสินค้า | `stock/` · `stock-location/` · `picking/` · `order-sheet/` · `cut-check/` · `warehouse-forms/` |
+| คลังสินค้า | สต๊อกคงเหลือ · สรุปหยิบของ · เบิกตามออเดอร์ · เอกสารคลังสินค้า | `stock/` · `picking/` · `order-sheet/` · `warehouse-forms/` |
+| สินค้าคงคลัง | สต๊อกราย Location · เช็ครายการตัดสต๊อก | `stock-location/` · `cut-check/` |
 | ขนส่ง | ทำใบงานขนส่ง · เอกสารขนส่ง | `transport-docs/` · `transport-forms/` |
 | ขนส่ง (hidden) | ประเภทงานรถ · ผังงานรถวันนี้ | `jobs/` · `loadplan/` |
 | ทีมและระบบ | **ตารางกะ · Shift Schedule** · ตั้งค่า | `roster/` · `settings/` |

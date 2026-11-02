@@ -28,6 +28,7 @@
 export const GROUPS = [
   { id: 'order',     label: 'ออเดอร์',     labelEn: 'Orders' },
   { id: 'warehouse', label: 'คลังสินค้า',  labelEn: 'Warehouse' },
+  { id: 'inventory', label: 'สินค้าคงคลัง', labelEn: 'Inventory' },
   { id: 'transport', label: 'ขนส่ง',       labelEn: 'Transport' },
   { id: 'system',    label: 'ทีมและระบบ',  labelEn: 'Team & System' },
 ];
@@ -43,11 +44,11 @@ export const MODULES = [
   { id: 'order', label: 'เทียบ Order', labelEn: 'Order Compare', path: 'order-compare/', icon: 'clipboard', group: 'order' },
   { id: 'lookup', label: 'ค้นหาออเดอร์', labelEn: 'Order Lookup', path: 'order-lookup/', icon: 'search', group: 'order' },
   { id: 'stock', label: 'สต๊อกคงเหลือ', labelEn: 'Stock on Hand', path: 'stock/', icon: 'package', group: 'warehouse' },
-  { id: 'txstock', label: 'สต๊อกราย Location', labelEn: 'Stock by Location', path: 'stock-location/', icon: 'mapPin', group: 'warehouse' },
   { id: 'picking', label: 'สรุปหยิบของ', labelEn: 'Picking Sheet', path: 'picking/', icon: 'clipboardList', group: 'warehouse' },
   { id: 'reqpick', label: 'เบิกตามออเดอร์', labelEn: 'Order Requisition', path: 'order-sheet/', icon: 'listChecks', group: 'warehouse' },
-  { id: 'cutcheck', label: 'เช็ครายการตัดสต๊อก', labelEn: 'Stock Cut Check', path: 'cut-check/', icon: 'scale', group: 'warehouse' },
   { id: 'warehouse', label: 'เอกสารคลังสินค้า', labelEn: 'Warehouse Forms', path: 'warehouse-forms/', icon: 'boxes', group: 'warehouse' },
+  { id: 'txstock', label: 'สต๊อกราย Location', labelEn: 'Stock by Location', path: 'stock-location/', icon: 'mapPin', group: 'inventory' },
+  { id: 'cutcheck', label: 'เช็ครายการตัดสต๊อก', labelEn: 'Stock Cut Check', path: 'cut-check/', icon: 'scale', group: 'inventory' },
   /* ประเภทงานรถกับผังงานรถวันนี้ยังไม่ได้ใช้ในงานจริง ซ่อนไว้เหมือนสรุปเช้า */
   { id: 'jobs', label: 'ประเภทงานรถ', labelEn: 'Job Types', path: 'jobs/', icon: 'compass', group: 'transport', hidden: true },
   { id: 'loadplan', label: 'ผังงานรถวันนี้', labelEn: 'Load Plan', path: 'loadplan/', icon: 'map', group: 'transport', hidden: true },
