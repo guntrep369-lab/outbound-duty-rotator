@@ -9,6 +9,7 @@
  *
  * หน่วยที่เทียบคือ เลขออเดอร์ + SKU เลขคำสั่งซื้อออนไลน์ใช้ไม่ได้ เพราะบางแถวถูกชีตปัดเป็นเลขยกกำลัง
  * ยอดของ TRcloud คือ เบิกออก − รับเข้า เพราะการแก้ตัดผิดลงเป็นแถวรับเข้าของออเดอร์เดิม
+ * ส่งยอดรายวันต่อ SKU ไปด้วย หน้าเว็บเอาไปเทียบกับแถวขายในสมุด Transaction (public/wms-cut.js)
  *
  * ?api=cut-check   ผลการเทียบ
  * ไม่ใส่ api        บอกแค่ว่าเป็นสคริปต์นี้ ให้หน้าตั้งค่าเช็คว่าใส่ URL ถูกตัว
@@ -128,8 +129,11 @@ function newWork_() {
     outsideTx: { rows: 0, qty: 0, from: '', to: '', refs: {} },
     outsideTr: { rows: 0, qty: 0, from: '', to: '' },
     adjust: { rows: 0, inq: 0, outq: 0 },
+    daily: { x: newSide_(), t: newSide_() },
   };
 }
+
+function newSide_() { return { days: {}, skipped: { rows: 0, qty: 0 } }; }
 
 function span_() { return { rows: 0, from: '', to: '', lastRow: 0 }; }
 
@@ -183,6 +187,7 @@ function addCut_(w, row, at, tz) {
   if (sup) w.carriers[sup] = 1;
   if (!w.names[sku]) w.names[sku] = (text_(row[at.brand]) + ' ' + text_(row[at.size])).trim();
   if (src === TRANSFER) w.transfer[ref] = 1;
+  tally_(w.daily.x, d, sku, q);
 
   if (outside_(w, ref, d)) {
     var o = w.outsideTx;
@@ -214,6 +219,7 @@ function addTrcloud_(w, row, at, tz) {
     w.adjust.outq += outq;
     return;
   }
+  tally_(w.daily.t, d, sku, outq - inq);
   if (outside_(w, ref, d)) {
     var o = w.outsideTr;
     o.rows++;
@@ -236,6 +242,51 @@ function outside_(w, ref, d) {
 }
 
 function nonStock_(sku) { return !GOOD_SKU.test(sku) || NON_STOCK.test(sku); }
+
+/* ── ยอดรายวัน ─────────────────────────────────────────────────────────── */
+
+/**
+ * ยอดรายวันต่อ SKU ไว้เทียบกับแถวขายในสมุด Transaction นับก่อนตัดสินว่าเป็นออเดอร์ของ Report ไหม
+ * เพราะแถวขายในสมุดรวมงานโอนย้ายกับออเดอร์ที่ยังไม่อยู่ใน Report ด้วย
+ */
+function tally_(side, d, sku, q) {
+  if (!q) return;
+  if (!d || !sku) {
+    side.skipped.rows++;
+    side.skipped.qty += q;
+    return;
+  }
+  var day = side.days[d] || (side.days[d] = {});
+  day[sku] = (day[sku] || 0) + q;
+}
+
+/** ส่งแบบย่อ วันที่กับ SKU อยู่ในตารางเดียวแล้วอ้างด้วยเลขลำดับ ทั้งเดือนมีหลายพันช่อง */
+function dailyOf_(w) {
+  var seen = {}, skus = [], dayIdx = {};
+  [w.daily.x, w.daily.t].forEach(function (side) {
+    Object.keys(side.days).forEach(function (d) { dayIdx[d] = 1; });
+  });
+  var days = Object.keys(dayIdx).sort();
+  days.forEach(function (d, i) { dayIdx[d] = i; });
+  function skuNo(sku) {
+    if (seen[sku] === undefined) {
+      seen[sku] = skus.length;
+      skus.push([sku, w.names[sku] || w.crmNames[sku] || '']);
+    }
+    return seen[sku];
+  }
+  function cells(side) {
+    var out = [];
+    Object.keys(side.days).forEach(function (d) {
+      Object.keys(side.days[d]).forEach(function (sku) {
+        if (side.days[d][sku]) out.push([dayIdx[d], skuNo(sku), side.days[d][sku]]);
+      });
+    });
+    return out;
+  }
+  var x = cells(w.daily.x), t = cells(w.daily.t);
+  return { days: days, skus: skus, x: x, t: t, skippedX: w.daily.x.skipped, skippedT: w.daily.t.skipped };
+}
 
 /* ── จัดประเภท ─────────────────────────────────────────────────────────── */
 
@@ -412,6 +463,7 @@ function compare_(w) {
     recon: recon_(w, buckets),
     info: info_(w, list, buckets),
     warnings: warnings_(w),
+    daily: dailyOf_(w),
   };
 }
 

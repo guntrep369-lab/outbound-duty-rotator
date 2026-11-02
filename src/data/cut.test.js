@@ -82,6 +82,73 @@ const join = (...parts) => {
   return out;
 };
 
+/** ยอดรายวันแบบอ่านง่าย { 'วัน|SKU': จำนวน } */
+function dailyOf(r, side) {
+  const out = {};
+  for (const [d, s, q] of r.daily[side]) out[`${r.daily.days[d]}|${r.daily.skus[s][0]}`] = q;
+  return out;
+}
+
+describe('cut-api.gs — ยอดรายวันไว้เทียบกับแถวขาย', () => {
+  const OTHER = '2026-03-06';
+
+  it('รวมราย SKU ราย วัน แยกสองแหล่ง', () => {
+    const r = run({
+      jst: [jst('5001', A, 3), jst('5002', B, 1), jst('5003', A, 2, { date: when(OTHER) })],
+      tx: [tx('5001', A, 3), tx('5002', B, 1), tx('5003', A, 2, { date: OTHER })],
+      tr: [tr('5001', A, 3), tr('5002', B, 1), tr('5003', A, 2, { date: when(OTHER) })],
+    });
+    const want = { [`${DAY}|${A}`]: 3, [`${DAY}|${B}`]: 1, [`${OTHER}|${A}`]: 2 };
+    expect(dailyOf(r, 'x')).toEqual(want);
+    expect(dailyOf(r, 't')).toEqual(want);
+  });
+
+  it('รวมงานโอนย้ายด้วย เพราะแถวขายในสมุดรวมอยู่แล้ว', () => {
+    const r = run(join(fine('5001', A, 1), { tx: [tx('TF-1', A, 7, { src: 'โอนย้าย' })], tr: [tr('TF-1', A, 7)] }));
+    expect(dailyOf(r, 'x')).toEqual({ [`${DAY}|${A}`]: 8 });
+    expect(dailyOf(r, 't')).toEqual({ [`${DAY}|${A}`]: 8 });
+  });
+
+  it('รวมแถวนอกช่วงของ Report ด้วย หน้าเว็บเป็นคนเลือกช่วงเอง', () => {
+    const r = run(join(fine('5001', A, 1), { tx: [tx('6001', A, 4, { date: '2026-04-01' })], tr: [tr('6001', A, 4, { date: when('2026-04-01') })] }));
+    expect(dailyOf(r, 'x')[`2026-04-01|${A}`]).toBe(4);
+    expect(dailyOf(r, 't')[`2026-04-01|${A}`]).toBe(4);
+  });
+
+  it('TRcloud คิดเบิกออกลบรับเข้า และไม่รวมแผนกปรับยอดคลัง', () => {
+    const r = run(join(fine('5001', A, 5), {
+      tr: [tr('5001', A, 0, { inq: 2 }), tr('ADJ-1', A, 100, { dept: 'IV' })],
+    }));
+    expect(dailyOf(r, 't')).toEqual({ [`${DAY}|${A}`]: 3 });
+  });
+
+  it('เบิกออกกับรับเข้าหักกันจนเป็นศูนย์ ไม่ต้องส่งช่องนั้น', () => {
+    const r = run(join(fine('5001', A, 1), { tr: [tr('5001', A, 0, { inq: 1 })] }));
+    expect(dailyOf(r, 't')).toEqual({});
+  });
+
+  it('ยอดรวมรายวันกับยอดรวมทั้งแท็บต้องเท่ากัน ไม่มีแถวตกหล่น', () => {
+    const r = run(join(fine('5001', A, 2), fine('5002', B, 3), {
+      tx: [tx('TF-1', A, 7, { src: 'โอนย้าย' }), tx('6001', B, 1, { date: '2026-04-01' })],
+      tr: [tr('TF-1', A, 7), tr('5001', A, 0, { inq: 1 })],
+    }));
+    const sum = (side) => Object.values(dailyOf(r, side)).reduce((a, b) => a + b, 0);
+    expect(sum('x')).toBe(r.totals.tx);
+    expect(sum('t')).toBe(r.totals.tr);
+  });
+
+  it('แถวที่ไม่มีวันที่หรือ SKU นับแยกไว้ ไม่หายเงียบ', () => {
+    const r = run(join(fine('5001', A, 1), { tx: [tx('6001', A, 2, { date: '' }), tx('6002', '', 3)] }));
+    expect(r.daily.skippedX).toEqual({ rows: 2, qty: 5 });
+    expect(dailyOf(r, 'x')).toEqual({ [`${DAY}|${A}`]: 1 });
+  });
+
+  it('ชื่อสินค้าติดไปกับรหัส', () => {
+    const r = run({ jst: [jst('5001', A, 1, { name: 'โต๊ะสมมติ' })], tx: [tx('5001', A, 1)], tr: [tr('5001', A, 1)] });
+    expect(r.daily.skus).toEqual([[A, 'โต๊ะสมมติ']]);
+  });
+});
+
 describe('cut-api.gs — ยอดที่ตรงกัน', () => {
   it('ทุกฝั่งเท่ากันไม่ขึ้นรายการเลย', () => {
     const r = run(join(fine('5001'), fine('5002', B, 2)));

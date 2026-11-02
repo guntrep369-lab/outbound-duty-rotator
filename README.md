@@ -442,6 +442,26 @@ from one side with 5 or more SKUs becomes one row.
 of each system. Every row in the sheet falls into exactly one cause, so the two must meet to the piece.
 If they don't, the page says the numbers shouldn't be trusted.
 
+**Tab เทียบรายวัน:** checks the quantity that left per SKU per day in three places: the rows marked `ขาย`
+in the `รับ/เบิก` column of the Stock by Location ledger, the Transaction cut tab, and TRcloud. The ledger's
+column B is the code that matches the cut tabs' SKU.
+
+- The list is one row per day. Press a day that differs to see its SKUs, or switch to ราย SKU รวมทั้งช่วง
+  for the SKUs whose totals over the whole period still differ. Red marks the number that differs from the
+  other two, and orange means all three differ.
+- A gap in one direction on a day and the opposite direction on the next day is labelled น่าจะลงคนละวัน,
+  because the same goods were entered a day apart. Totals over the two days agree. A row only gets this
+  label if nothing else is left over after taking the shift out.
+- Days after the ledger's last sale date aren't compared. The page lists them with the other two figures,
+  so they don't look like a shortage.
+- The report isn't part of this match. Its dates are shipping dates rather than the dates cuts were entered,
+  and it has no transfers, while the ledger's sale rows include them.
+- The ledger has no order numbers, so this check works per SKU per day and can't name an order.
+
+The two scripts belong to different files and don't know each other, since linking them would put a file
+ID in this public repo. The page calls both and compares the answers. It needs **Apps Script URL —
+Transaction** set too. ดึงยอดขายใหม่ re-reads only the ledger, so a fix there can be checked in seconds.
+
 These aren't errors, so they appear only under ที่มาของยอด:
 
 - Codes that aren't warehouse stock, as long as they weren't cut: a code starting with `STR`, or one that
@@ -464,6 +484,10 @@ before the report does, since those orders would otherwise all look uncut.
    ends in `/exec`.
 3. On each device: ตั้งค่า → **Apps Script URL — เช็ครายการตัดสต๊อก**, paste the URL, press ทดสอบ, then
    บันทึก URL. The test reads all four tabs, so it can take a few minutes.
+
+**Updating to a version with เทียบรายวัน:** both `cut-api.gs` and `tx-api.gs` have new code. In each script
+project, paste the new file, then Deploy → Manage deployments → pencil icon → Version: New version → Deploy.
+The URLs stay the same. Until then, the tab says which script is out of date and the other tabs keep working.
 
 The URL works like a key: anyone who has it can read the order numbers and SKUs in the result, so keep it
 out of this repo. The result leaves out online order IDs and tracking numbers.
@@ -492,7 +516,7 @@ public/
 ├─ roster/                 # ตารางกะ (+ roster-sync.js: sharing through the sheet,
 │                          #   roster-people.js: group / day off by date, leave counts)
 ├─ stock-location/         # สต๊อกราย Location, from the Transaction sheet (+ wms-tx.js: grouping, refill list)
-├─ cut-check/              # เช็ครายการตัดสต๊อก, cuts compared with the month-end order reports
+├─ cut-check/              # เช็ครายการตัดสต๊อก, cuts compared with the month-end order reports (+ wms-cut.js: per-day match with the ledger)
 ├─ summary/ history/ order-compare/ order-lookup/ stock/ picking/ order-sheet/
 ├─ shiftlog/               # สมุดกะ (+ logis.html: the read-only page for Logis)
 ├─ warehouse-forms/ jobs/ loadplan/ transport-docs/ transport-forms/ settings/

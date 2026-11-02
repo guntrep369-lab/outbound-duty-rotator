@@ -90,6 +90,83 @@ function bal(s, sku, loc, lot = 8) {
   return k ? k[4] : 0;
 }
 
+describe('tx-api.gs — ยอดขายรายวัน', () => {
+  const daily = (rows, parameter = {}) => script(rows)({ api: 'tx-daily', ...parameter });
+  /* ยอดแบบอ่านง่าย { 'วัน|SKU': จำนวน } */
+  const cells = (r) => Object.fromEntries(r.cells.map(([d, s, q]) => [`${r.days[d]}|${r.skus[s][0]}`, q]));
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-03-01T12:00:00Z'));
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('รวมแถวขายราย SKU ราย วัน ใช้รหัสเต็มในคอลัมน์ B', () => {
+    const r = daily([
+      sale({ long: 'AAA0000000001', qty: 2, note: day('2026-01-10') }),
+      sale({ long: 'AAA0000000001', qty: 3, note: day('2026-01-10') }),
+      sale({ long: 'AAA0000000001', qty: 1, note: day('2026-01-11') }),
+      sale({ long: 'BBB0000000002', qty: 4, note: day('2026-01-10') }),
+    ]);
+    expect(cells(r)).toEqual({
+      '2026-01-10|AAA0000000001': 5,
+      '2026-01-11|AAA0000000001': 1,
+      '2026-01-10|BBB0000000002': 4,
+    });
+    expect(r.last).toBe('2026-01-11');
+  });
+
+  it('นับเฉพาะแถวขาย แถวรับและเบิกไม่เกี่ยว', () => {
+    const r = daily([
+      sale({ qty: 2, note: day('2026-01-10') }),
+      row({ type: 'รับ', to: 'A-01-01', qty: 9, note: day('2026-01-10') }),
+      row({ type: 'เบิก', from: 'A-01-01', to: 'B-01-01', qty: 9, note: day('2026-01-10') }),
+    ]);
+    expect(Object.values(cells(r))).toEqual([2]);
+  });
+
+  it('พิมพ์เล็กใหญ่ต่างกันคือ SKU เดียวกัน', () => {
+    const r = daily([
+      sale({ long: 'aaa0000000001', qty: 1, note: day('2026-01-10') }),
+      sale({ long: 'AAA0000000001 ', qty: 1, note: day('2026-01-10') }),
+    ]);
+    expect(cells(r)).toEqual({ '2026-01-10|AAA0000000001': 2 });
+  });
+
+  it('ส่งเฉพาะช่วงที่ขอ แต่บอกวันสุดท้ายของทั้งชีต', () => {
+    const r = daily([
+      sale({ qty: 1, note: day('2026-01-09') }),
+      sale({ qty: 2, note: day('2026-01-10') }),
+      sale({ qty: 3, note: day('2026-02-01') }),
+    ], { from: '2026-01-10', to: '2026-01-31' });
+    expect(r.days).toEqual(['2026-01-10']);
+    expect(r.from).toBe('2026-01-10');
+    expect(r.to).toBe('2026-01-31');
+    expect(r.last).toBe('2026-02-01');
+  });
+
+  it('แถวที่นับไม่ได้บอกจำนวนกลับไป ไม่หายเงียบ', () => {
+    const r = daily([
+      sale({ qty: 1, note: day('2026-01-10') }),
+      sale({ qty: 2, note: '' }),
+      sale({ long: '', qty: 3, note: day('2026-01-10') }),
+      sale({ qty: 4, note: day('2062-01-10') }),
+      sale({ qty: 'สอง', note: day('2026-01-10') }),
+    ]);
+    expect(r.noDate).toEqual({ rows: 1, qty: 2 });
+    expect(r.noSku).toEqual({ rows: 1, qty: 3 });
+    expect(r.future).toEqual({ rows: 1, qty: 4 });
+    expect(r.badQty).toEqual({ rows: 1 });
+    expect(r.last).toBe('2026-01-10');
+  });
+
+  it('ไม่เขียนอะไรลงชีต', () => {
+    const call = script([sale({ qty: 1, note: day('2026-01-10') })]);
+    call({ api: 'tx-daily' });
+    expect(Object.keys(call.tabs)).toEqual([]);
+  });
+});
+
 describe('tx-api.gs — คิดยอดแบบเดียวกับสูตรในชีตยอด', () => {
   it('รับบวกที่ Location รับ / ขายลบที่ Location เบิก / เบิกลบต้นทางบวกปลายทาง', () => {
     const s = summary([

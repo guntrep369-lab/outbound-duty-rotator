@@ -16,6 +16,7 @@
  * ?api=tx-summary          ยอดคงเหลือทั้งคลัง ยอดขาย และจุดที่ข้อมูลผิด
  * ?api=tx-history&sku=...  ความเคลื่อนไหวของ SKU เดียว
  * ?api=tx-count            รายการนับของวันนี้ (ยังไม่มีก็ออกให้) และผลนับย้อนหลัง
+ * ?api=tx-daily&from=...&to=...  ยอดแถวขายราย SKU ราย วัน ให้หน้าเช็ครายการตัดสต๊อกเอาไปเทียบ
  * POST {op:'count-save'}   บันทึกผลนับ
  * POST {op:'count-add'}    ส่ง SKU ที่ยอดไม่ตรงระบบบริษัทเข้าใบนับ
  * ไม่ใส่ api               บอกแค่ว่าเป็นสคริปต์นี้ ให้หน้าตั้งค่าเช็คว่าใส่ URL ถูกตัว
@@ -57,6 +58,7 @@ function doGet(e) {
     if (p.api === 'tx-summary') return out_(summary_());
     if (p.api === 'tx-history') return out_(history_(String(p.sku || '')));
     if (p.api === 'tx-count') return out_(countLoad_());
+    if (p.api === 'tx-daily') return out_(daily_(String(p.from || ''), String(p.to || '')));
   } catch (err) {
     return out_({ error: String(err && err.message || err) });
   }
@@ -436,6 +438,48 @@ function summary_() {
     keys: keys,
     issues: issues_(rows, bals, today),
   };
+}
+
+/**
+ * ยอดแถวขายราย SKU ราย วัน ส่งแบบย่อเหมือน summary_ ไฟล์นี้ไม่รู้จักไฟล์ตัดสต๊อก หน้าเว็บเป็นคนเอาไปเทียบ
+ * last คือวันขายล่าสุดของทั้งชีต ไม่ใช่ของช่วงที่ขอ หน้าเว็บจะได้รู้ว่าชีตลงถึงวันไหน
+ * แถวที่นับไม่ได้ต้องบอกจำนวนกลับไป ไม่งั้นยอดที่หายไปจะดูเหมือนตัดไม่ตรงทั้งที่จริงกรอกไม่ครบ
+ */
+function daily_(from, to) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var tz = ss.getSpreadsheetTimeZone();
+  var today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  var rows = readRows_(ledgerSheet_(ss), tz);
+
+  var out = {
+    app: 'transaction', at: Date.now(), from: from, to: to, last: '',
+    noDate: { rows: 0, qty: 0 }, noSku: { rows: 0, qty: 0 }, future: { rows: 0, qty: 0 }, badQty: { rows: 0 },
+    skus: [], days: [], cells: [],
+  };
+  function skip(part, r) { part.rows++; part.qty += r.qty; }
+
+  var tally = {}, skuIdx = {};
+  rows.forEach(function (r) {
+    if (r.type !== 'ขาย') return;
+    if (!r.date) return skip(out.noDate, r);
+    if (r.date > today) return skip(out.future, r);
+    if (r.date > out.last) out.last = r.date;
+    if ((from && r.date < from) || (to && r.date > to)) return;
+    if (!r.long) return skip(out.noSku, r);
+    if (r.badQty !== null) out.badQty.rows++;
+    var k = same_(r.long);
+    if (skuIdx[k] === undefined) { skuIdx[k] = out.skus.length; out.skus.push([k, r.name]); }
+    var day = tally[r.date] || (tally[r.date] = {});
+    day[k] = (day[k] || 0) + r.qty;
+  });
+
+  out.days = Object.keys(tally).sort();
+  out.days.forEach(function (d, i) {
+    Object.keys(tally[d]).forEach(function (k) {
+      if (tally[d][k]) out.cells.push([i, skuIdx[k], tally[d][k]]);
+    });
+  });
+  return out;
 }
 
 /** ความเคลื่อนไหวของ SKU เดียว ใหม่สุดขึ้นก่อน คงเหลือคิดจากทุกแถวของ SKU นั้นแล้วค่อยตัดช่วงที่ส่ง */
