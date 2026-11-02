@@ -446,7 +446,8 @@ If they don't, the page says the numbers shouldn't be trusted.
 **Tab เทียบรายวัน:** checks the quantity that left per SKU per day in three places: the rows marked `ขาย`
 in the `รับ/เบิก` column of the Stock by Location ledger, the Transaction cut tab, and TRcloud. The ledger's
 column B is the code that matches the cut tabs' SKU. On the page the three columns are labelled UAT (the
-ledger), Uploadยิงออก (the Transaction cut tab) and TRcloud.
+ledger), Uploadยิงออก (the Transaction cut tab) and TRcloud. The ตัดผิด / ตัดเกิน and ยังไม่ตัด tabs use
+the same Uploadยิงออก label for the Transaction cut tab.
 
 - The list is one row per day. Press a day that differs to see its SKUs, or switch to ราย SKU รวมทั้งช่วง
   for the SKUs whose totals over the whole period still differ. Red marks the number that differs from the

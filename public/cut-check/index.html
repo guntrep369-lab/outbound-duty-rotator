@@ -190,7 +190,7 @@ const PARTS = {
   adjust: { label: 'TRcloud แผนก IV ปรับยอดคลัง' },
 };
 
-const SIDE = { tx: 'Transaction', tr: 'TRcloud', both: 'ทั้งสองระบบ' };
+const SIDE = { tx: L.x, tr: L.t, both: 'ทั้งสองระบบ' };
 
 let RAW = null;
 let BUSY = '';
@@ -332,7 +332,7 @@ function diffText(r) {
   };
   const dx = r.x - r.goal, dt = r.t - r.goal;
   if (dx === dt) return dx ? `${word(dx)} ทั้งสองระบบ` : '';
-  return [dx ? `Transaction ${word(dx)}` : '', dt ? `TRcloud ${word(dt)}` : ''].filter(Boolean).join(' · ');
+  return [dx ? `${L.x} ${word(dx)}` : '', dt ? `${L.t} ${word(dt)}` : ''].filter(Boolean).join(' · ');
 }
 
 function cutDays(r) {
@@ -357,7 +357,7 @@ function rowHtml(r) {
   </tr>`;
 }
 
-const TABLE_HEAD = `<tr><th>ออเดอร์</th><th>SKU</th><th>วันที่</th><th class="num">Report</th><th class="num">Transaction</th><th class="num">TRcloud</th><th>ต่างกันยังไง</th></tr>`;
+const TABLE_HEAD = `<tr><th>ออเดอร์</th><th>SKU</th><th>วันที่</th><th class="num">Report</th><th class="num">${L.x}</th><th class="num">${L.t}</th><th>ต่างกันยังไง</th></tr>`;
 
 function matches(r) {
   if (SYS && r.sys !== SYS) return false;
@@ -406,7 +406,7 @@ function renderList() {
 }
 
 function gapBlock(g) {
-  const who = g.side === 'both' ? 'ทั้ง Transaction และ TRcloud' : SIDE[g.side];
+  const who = g.side === 'both' ? `ทั้ง ${L.x} และ ${L.t}` : SIDE[g.side];
   const other = g.side === 'both' ? '' : ` แต่ ${SIDE[g.side === 'tx' ? 'tr' : 'tx']} ตัดแล้ว`;
   const carriers = Object.keys(g.carriers).map((c) => `${c} ${f(g.carriers[c])}`).join(', ');
   const more = g.orders > g.refs.length ? ` และอีก ${f(g.orders - g.refs.length)} ออเดอร์` : '';
