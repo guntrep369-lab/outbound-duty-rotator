@@ -597,12 +597,12 @@ function dailyWarnings(c) {
     const left = c.waiting.map((w) => `${dm(w.date)} (${L.x} ${f(w.x)} · ${L.t} ${f(w.t)})`).join(', ');
     out.push(`${L.s} ลงถึงวันที่ ${dm(c.last)} วันต่อจากนี้ยังเทียบไม่ได้: ${left}`);
   }
-  part(LEDGER.noDate, `แถวขายใน${L.s} ที่ไม่มีวันที่`);
-  part(LEDGER.noSku, `แถวขายใน${L.s} ที่ไม่มีรหัส SKU`);
-  part(LEDGER.future, `แถวขายใน${L.s} ที่วันที่เลยวันนี้ไป น่าจะพิมพ์ปีผิด`);
-  if (LEDGER.badQty && LEDGER.badQty.rows) out.push(`แถวขายใน${L.s} ที่จำนวนไม่ใช่ตัวเลข ${f(LEDGER.badQty.rows)} แถว นับเป็นศูนย์`);
-  part(RAW.daily.skippedX, `แถวใน${L.x} ที่ไม่มีวันที่หรือ SKU`);
-  part(RAW.daily.skippedT, `แถวใน${L.t} ที่ไม่มีวันที่หรือ SKU`);
+  part(LEDGER.noDate, `แถวขายใน ${L.s} ที่ไม่มีวันที่`);
+  part(LEDGER.noSku, `แถวขายใน ${L.s} ที่ไม่มีรหัส SKU`);
+  part(LEDGER.future, `แถวขายใน ${L.s} ที่วันที่เลยวันนี้ไป น่าจะพิมพ์ปีผิด`);
+  if (LEDGER.badQty && LEDGER.badQty.rows) out.push(`แถวขายใน ${L.s} ที่จำนวนไม่ใช่ตัวเลข ${f(LEDGER.badQty.rows)} แถว นับเป็นศูนย์`);
+  part(RAW.daily.skippedX, `แถวใน ${L.x} ที่ไม่มีวันที่หรือ SKU`);
+  part(RAW.daily.skippedT, `แถวใน ${L.t} ที่ไม่มีวันที่หรือ SKU`);
   return out.map((w) => `<div class="tx-warn">⚠️ ${esc(w)}</div>`).join('');
 }
 
@@ -615,7 +615,7 @@ function dailyHtml() {
   const opt = (v, label) => `<button class="tx-opt ${VIEW === v ? 'on' : ''}" data-view="${v}">${label}</button>`;
   return `${LEDGER_ERR ? `<div class="tx-warn">⚠️ ดึงยอดขายรอบล่าสุดไม่สำเร็จ ตัวเลขนี้เป็นของรอบก่อน: ${esc(LEDGER_ERR)}</div>` : ''}
     ${dailyWarnings(c)}
-    <div class="tx-why">ยอดออกของแต่ละ SKU ในแต่ละวัน เทียบสามที่: แถว "ขาย" ใน${L.s}, แท็บ${L.x} และ ${L.t} (${dm(c.from)} ถึง ${dm(c.to)})</div>
+    <div class="tx-why">ยอดออกของแต่ละ SKU ในแต่ละวัน เทียบสามที่: ${L.s} คือแถว "ขาย" ในสต๊อกราย Location, ${L.x} คือแท็บตัด Transaction และ ${L.t} (${dm(c.from)} ถึง ${dm(c.to)})</div>
     <div class="tx-stats">
       ${stat('วันที่ตรงทุก SKU', n.daysOk, 'tx-ok', `จาก ${f(c.days.length)} วัน`)}
       ${stat('วันที่ไม่ตรง', n.daysBad, n.daysBad ? 'tx-neg' : 'tx-ok', 'กดที่วันเพื่อดูราย SKU')}

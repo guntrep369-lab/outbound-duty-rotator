@@ -235,15 +235,15 @@ describe('wms-cut.js — สมุดยังลงไม่ถึง', () => {
 
 describe('wms-cut.js — คำอธิบาย', () => {
   it('บอกช่องที่ต่างจากอีกสองช่อง', () => {
-    expect(WmsCut.diffWords(3, 5, 5)).toBe('สต๊อกราย Location ขาด 2');
-    expect(WmsCut.diffWords(120, 100, 100)).toBe('สต๊อกราย Location เกิน 20');
-    expect(WmsCut.diffWords(5, 3, 5)).toBe('ตัด Transaction ขาด 2');
+    expect(WmsCut.diffWords(3, 5, 5)).toBe('UAT ขาด 2');
+    expect(WmsCut.diffWords(120, 100, 100)).toBe('UAT เกิน 20');
+    expect(WmsCut.diffWords(5, 3, 5)).toBe('Uploadยิงออก ขาด 2');
     expect(WmsCut.diffWords(5, 5, 1234)).toBe('TRcloud เกิน 1,229');
   });
 
-  it('เท่ากันหมดไม่มีคำอธิบาย ไม่เท่ากันเลยบอกต่างจากสต๊อกราย Location เท่าไร', () => {
+  it('เท่ากันหมดไม่มีคำอธิบาย ไม่เท่ากันเลยบอกต่างจาก UAT เท่าไร', () => {
     expect(WmsCut.diffWords(5, 5, 5)).toBe('');
-    expect(WmsCut.diffWords(500, 490, 530)).toBe('ตัด Transaction ขาด 10 · TRcloud เกิน 30 จากยอดสต๊อกราย Location');
+    expect(WmsCut.diffWords(500, 490, 530)).toBe('Uploadยิงออก ขาด 10 · TRcloud เกิน 30 จากยอด UAT');
     expect(WmsCut.oddOne(5, 5, 5)).toBe('');
     expect(WmsCut.oddOne(1, 2, 3)).toBe('all');
     expect(WmsCut.oddOne(1, 2, 2)).toBe('s');

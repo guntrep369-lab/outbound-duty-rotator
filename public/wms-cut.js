@@ -16,7 +16,7 @@
 (function () {
   'use strict';
 
-  var LABEL = { s: 'สต๊อกราย Location', x: 'ตัด Transaction', t: 'TRcloud' };
+  var LABEL = { s: 'UAT', x: 'Uploadยิงออก', t: 'TRcloud' };
 
   function fmt(n) { return Math.round(n).toLocaleString('en-US'); }
 
@@ -41,7 +41,7 @@
     function gap(label, mine, rest) {
       return label + (mine < rest ? ' ขาด ' : ' เกิน ') + fmt(Math.abs(mine - rest));
     }
-    if (odd === 'all') return gap(LABEL.x, x, s) + ' · ' + gap(LABEL.t, t, s) + ' จากยอด' + LABEL.s;
+    if (odd === 'all') return gap(LABEL.x, x, s) + ' · ' + gap(LABEL.t, t, s) + ' จากยอด ' + LABEL.s;
     return odd === 's' ? gap(LABEL.s, s, x) : odd === 'x' ? gap(LABEL.x, x, s) : gap(LABEL.t, t, s);
   }
 
