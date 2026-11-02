@@ -478,8 +478,18 @@ the same Uploadยิงออก label for the Transaction cut tab.
   เทียบกับ Report column is a second check. Some orders are cut on a different day from their report date,
   so the same น่าจะลงคนละวัน rule applies to it, and a day only counts as matching the report if every SKU
   matches.
-- The ledger has no order numbers, so this check works per SKU per day and can't name an order. The
-  ตัดผิด / ตัดเกิน and ยังไม่ตัด tabs name the orders behind a gap from the report.
+- Press a SKU inside an open day (or a row in the search results) to see what makes up that cell. The
+  first line says where to look: if UAT is the odd one out, the ledger rows; if Uploadยิงออก or TRcloud
+  is, the orders; if all three agree but miss the report, the orders too, for a status change or a
+  different date.
+- The orders part lists each order whose cut that day differs from what it should be, with what kind of
+  problem it is and, where it was entered on another day, which day. Orders that were cut in full but on
+  another day are grouped by date with a count and a few order numbers, because a day entered a day late
+  holds hundreds of them. Orders that match are a count. The script only sends this for cells where
+  Uploadยิงออก, TRcloud and Report ควรออก differ, and at most 40 orders per cell.
+- The ledger part lists that day's `ขาย` rows for the SKU: row number, Location, LOT, PO, quantity and
+  who entered it. The ledger has no order numbers, so this is as close as it gets. The row number opens
+  the sheet at that row.
 
 The two scripts belong to different files and don't know each other, since linking them would put a file
 ID in this public repo. The page calls both and compares the answers. It needs **Apps Script URL —
@@ -515,7 +525,8 @@ project, paste the new file, then Deploy → Manage deployments → pencil icon 
 The URLs stay the same. Until then, the tab says which script is out of date and the other tabs keep working.
 The Report ควรออก column needs the newer `cut-api.gs` as well. With an older one, the tab compares the
 three systems only and says to paste the script again. Reading `Report order ระบบโอนย้าย` needs the
-same update, and ที่มาของยอด says so until it's done.
+same update, and ที่มาของยอด says so until it's done. The order and ledger-row breakdown of a cell needs
+both newer scripts. Until each is updated, the panel says which one, then press ตรวจใหม่ or ดึงยอดขายใหม่.
 
 The URL works like a key: anyone who has it can read the order numbers and SKUs in the result, so keep it
 out of this repo. The result leaves out online order IDs and tracking numbers.

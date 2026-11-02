@@ -117,8 +117,18 @@ button.tx-more{cursor:pointer}
 .tx-tag{display:inline-block;margin-top:2px;padding:1px 7px;border-radius:999px;background:#FEF3C7;
   color:#92400E;font-size:11px;font-weight:600;white-space:nowrap}
 
+/* ── รายละเอียดของหนึ่งช่อง วัน + SKU ── */
+.tx-tbl tr[data-cell]{cursor:pointer}
+.tx-tbl tr[data-cell]:hover td{background:var(--wms-primary-light)}
+.tx-cell{display:grid;gap:8px}
+.tx-cell .tx-h{margin:6px 0 0}
+.tx-hint{font-size:13px;font-weight:600;color:var(--wms-text);line-height:1.5}
+.tx-row{font-weight:600;color:var(--wms-primary-dark)}
+
 @media (max-width:640px){
   .tx-body{padding:12px 12px 60px}
+  /* แผงอยู่ในตารางที่กว้างกว่าจอ ถ้าไม่จำกัด หัวข้อจะยาวเลยขอบจอ ตารางข้างในเลื่อนข้างเองได้ */
+  .tx-cell{max-width:calc(100vw - 72px)}
   .tx-src,.tx-sum,.tx-tabs{padding-left:12px;padding-right:12px}
 }
 </style>
@@ -205,6 +215,8 @@ let LEDGER_ERR = '';
 let DAILY = null;       // ผลเทียบรายวัน คิดครั้งเดียวต่อข้อมูลหนึ่งชุด
 let VIEW = 'day';       // day | sku
 let OPEN_DAY = '';
+let OPEN_CELL = '';     // วัน|SKU ที่กดดูว่าต่างเพราะออเดอร์ไหนหรือแถวไหนในชีตทีม
+let CELLS = null;       // ดัชนีรายละเอียดรายช่อง สร้างใหม่ทุกครั้งที่ DAILY ถูกล้าง
 
 function readCache() {
   try {
@@ -263,6 +275,7 @@ async function run() {
     if (r.app !== 'cut' || !r.kinds) throw new Error('คำตอบไม่ใช่ของสคริปต์เช็คตัดสต๊อก ตรวจ URL ที่หน้าตั้งค่า');
     RAW = r;
     DAILY = null;
+    CELLS = null;
     saveCache(CACHE, r);
   } catch (e) {
     ERR = e.message;
@@ -288,6 +301,7 @@ async function loadLedger() {
       if (!r.cells) throw new Error('สคริปต์ tx-api.gs ยังเป็นรุ่นเก่า ให้วางโค้ดใหม่แล้ว Deploy เป็น New version');
       LEDGER = r;
       DAILY = null;
+      CELLS = null;
       saveCache(LEDGER_CACHE, r);
     } catch (e) {
       LEDGER_ERR = e.message;
@@ -529,8 +543,10 @@ function resHead(c) {
   return `<th>สามระบบเทียบกัน</th>${c.hasR ? '<th>เทียบกับ Report</th>' : ''}`;
 }
 
-function skuCell(r) {
-  return `<td class="tx-name"><b>${esc(r.sku)}</b><span class="tx-sub">${esc(r.name)}</span></td>`;
+/** open ไม่ใส่ = แถวที่กดเปิดไม่ได้ */
+function skuCell(r, open) {
+  const caret = open === undefined ? '' : `<span class="tx-more"><i>${open ? '▾' : '▸'}</i></span>`;
+  return `<td class="tx-name"><b>${caret}${esc(r.sku)}</b><span class="tx-sub">${esc(r.name)}</span></td>`;
 }
 
 const SHIFT_TAG = '<span class="tx-tag">น่าจะลงคนละวัน</span>';
@@ -553,13 +569,90 @@ function rowReport(r) {
 }
 
 function skuDayRow(c, r, withDate) {
-  return `<tr>
+  const id = `${r.date}|${r.sku}`, open = OPEN_CELL === id;
+  const span = (c.hasR ? 7 : 5) + (withDate ? 1 : 0);
+  return `<tr data-cell="${esc(id)}" class="${open ? 'open' : ''}">
     ${withDate ? `<td class="nw">${esc(dm(r.date))}</td>` : ''}
-    ${skuCell(r)}
+    ${skuCell(r, open)}
     ${numCells(c, r)}
     <td class="tx-res">${esc(WmsCut.diffWords(r.s, r.x, r.t))}${r.moved ? `<br>${SHIFT_TAG}` : ''}</td>
     ${c.hasR ? `<td class="tx-res">${rowReport(r)}</td>` : ''}
-  </tr>`;
+  </tr>${open ? `<tr class="tx-detail"><td colspan="${span}">${cellPanel(c, r)}</td></tr>` : ''}`;
+}
+
+function cellInfo() {
+  if (!CELLS) CELLS = WmsCut.cellIndex(RAW.daily, LEDGER);
+  return CELLS;
+}
+
+/** ตัวเลขที่ไม่เท่ากับ Report ของแถวเดียวกันเป็นสีแดง */
+function vsReport(v, r) { return `<td class="num ${v !== r ? 'tx-neg' : ''}">${f(v)}</td>`; }
+
+function kindLabel(k) { return (KINDS[k] || PARTS[k] || { label: k }).label; }
+
+/** ช่องนี้ต่างเพราะอะไร ชี้ว่าต้องดูฝั่งไหนก่อน แล้วแตกลงไปถึงออเดอร์และแถวในชีตทีม */
+function cellPanel(c, r) {
+  const info = cellInfo(), one = info.get(r.date, r.sku);
+  return `<div class="tx-cell">
+    <div class="tx-hint">👉 ${esc(WmsCut.fixHint(r, c.hasR))}</div>
+    ${ordersBlock(c, r, info, one)}
+    ${rowsBlock(r, info, one)}
+  </div>`;
+}
+
+function ordersBlock(c, r, info, one) {
+  const head = `<div class="tx-h">รายออเดอร์ของวันที่ ${esc(dm(r.date))} ใน ${esc(L.x)} และ ${esc(L.t)}</div>`;
+  if (!info.hasOrders) {
+    return `${head}<div class="tx-why">ผลตรวจรอบนี้ยังไม่มีรายออเดอร์ ให้วาง <b>cut-api.gs</b> ใหม่ แล้ว Deploy เป็น New version จากนั้นกด <b>ตรวจใหม่</b></div>`;
+  }
+  if (!one.listed) {
+    return `${head}<div class="tx-why">${esc(L.x)}, ${esc(L.t)} และ ${esc(L.r)} ตรงกันในวันนี้ ไม่มีออเดอร์ที่ต้องดู</div>`;
+  }
+  const rows = one.orders.map((e) => `<tr>
+      <td class="nw"><span class="tx-ref">${esc(e.ref || '(ไม่มีเลข)')}</span><span class="tx-sub">${esc(e.sys)}</span></td>
+      <td class="num">${f(e.r)}</td>${vsReport(e.x, e.r)}${vsReport(e.t, e.r)}
+      <td class="tx-res">${esc(kindLabel(e.kind))}${WmsCut.dateWords(e) ? `<span class="tx-sub">${esc(WmsCut.dateWords(e))}</span>` : ''}</td>
+    </tr>`);
+  one.moved.forEach((g) => rows.push(`<tr>
+      <td><b>${f(g.orders)} ออเดอร์</b><span class="tx-sub">${g.orders > g.refs.length ? 'เช่น ' : ''}${esc(g.refs.join(', '))}</span></td>
+      <td class="num">${f(g.r)}</td><td class="num">${f(g.x)}</td><td class="num">${f(g.t)}</td>
+      <td class="tx-res">${SHIFT_TAG}<span class="tx-sub">ยอดของออเดอร์ตรงแล้ว ต่างแค่วันที่ลง · ${esc(WmsCut.dateWords(g))}</span></td>
+    </tr>`));
+  if (one.ok.orders) {
+    rows.push(`<tr><td>อีก ${f(one.ok.orders)} ออเดอร์</td>
+      <td class="num">${f(one.ok.qty)}</td><td class="num">${f(one.ok.qty)}</td><td class="num">${f(one.ok.qty)}</td>
+      <td class="tx-res"><span class="tx-ok">ตรงทุกแหล่ง</span></td></tr>`);
+  }
+  if (one.more) rows.push(`<tr><td colspan="5">และอีก ${f(one.more)} ออเดอร์ที่ไม่ได้แสดง ดูได้ในแท็บตัดผิด / ตัดเกิน หรือยังไม่ตัด</td></tr>`);
+  return `${head}<div class="tx-wrap"><table class="tx-tbl">
+      <thead><tr><th>ออเดอร์</th><th class="num">${L.r}</th><th class="num">${L.x}</th><th class="num">${L.t}</th><th>เรื่อง</th></tr></thead>
+      <tbody>${rows.join('')}
+        <tr class="sum"><td>รวมทั้งช่อง</td><td class="num">${f(r.r)}</td><td class="num">${f(r.x)}</td><td class="num">${f(r.t)}</td><td></td></tr>
+      </tbody>
+    </table></div>`;
+}
+
+function rowsBlock(r, info, one) {
+  const head = `<div class="tx-h">แถวขายใน ${esc(L.s)} ของวันที่ ${esc(dm(r.date))}</div>`;
+  if (!info.hasRows) {
+    return `${head}<div class="tx-why">ยอดขายรอบนี้ยังไม่มีรายแถว ให้วาง <b>tx-api.gs</b> ใหม่ แล้ว Deploy เป็น New version จากนั้นกด <b>ดึงยอดขายใหม่</b></div>`;
+  }
+  if (!one.rows.length) return `${head}<div class="tx-why">ไม่มีแถวขายของ SKU นี้ในวันนี้</div>`;
+  const link = (row) => {
+    const u = WmsCut.rowUrl(info.sheet, row);
+    return u ? `<a class="tx-row" href="${esc(u)}" target="_blank" rel="noopener">${row}</a>` : String(row);
+  };
+  const qty = (q) => (typeof q === 'number' ? f(q) : `<span class="tx-neg">${esc(q)}</span><span class="tx-sub">ไม่ใช่ตัวเลข นับเป็น 0</span>`);
+  return `${head}<div class="tx-wrap"><table class="tx-tbl">
+      <thead><tr><th>แถวที่</th><th>Location</th><th>LOT</th><th>PO</th><th class="num">จำนวน</th><th>คนลง</th></tr></thead>
+      <tbody>${one.rows.map((x) => `<tr>
+          <td class="nw">${link(x.row)}</td><td class="nw">${esc(x.loc)}</td><td>${esc(x.lot)}</td><td>${esc(x.po)}</td>
+          <td class="num">${qty(x.qty)}</td><td>${esc(x.who)}</td>
+        </tr>`).join('')}
+        <tr class="sum"><td colspan="4">รวม</td><td class="num">${f(r.s)}</td><td></td></tr>
+      </tbody>
+    </table></div>
+    <div class="tx-why">กดเลขแถวเพื่อเปิดชีตตรงแถวนั้น</div>`;
 }
 
 function dayResult(d) {
@@ -587,7 +680,9 @@ function dayRow(c, d) {
   if (d.status === 'ok' && (!d.rep || d.rep.status === 'ok')) {
     return `<tr><td class="nw"><span class="tx-more"><i></i>${esc(dm(d.date))}</span></td>${numCells(c, d)}${results}</tr>`;
   }
-  const detail = open ? `<tr class="tx-detail"><td colspan="${c.hasR ? 7 : 5}"><div class="tx-wrap"><table class="tx-tbl">
+  const detail = open ? `<tr class="tx-detail"><td colspan="${c.hasR ? 7 : 5}">
+    <div class="tx-why">กดที่ SKU เพื่อดูว่าต่างเพราะออเดอร์ไหน หรือแถวไหนในชีตทีม</div>
+    <div class="tx-wrap"><table class="tx-tbl">
       <thead><tr><th>SKU</th>${numHead(c)}${resHead(c)}</tr></thead>
       <tbody>${c.rows.filter((r) => r.date === d.date).map((r) => skuDayRow(c, r, false)).join('')}</tbody>
     </table></div></td></tr>` : '';
@@ -682,7 +777,8 @@ function dailyHtml() {
       ${ledgerBtn('🔄 ดึงยอดขายใหม่')}
     </div>
     <div id="list"></div>
-    <div class="tx-note">ตัวเลขสีแดงคือช่องที่ต่างจากอีกสองช่อง สีส้มคือไม่เท่ากันทั้งสามช่อง<br>
+    <div class="tx-note">ตัวเลขสีแดงคือช่องที่ต่างจากอีกสองช่อง สีส้มคือไม่เท่ากันทั้งสามช่อง
+      กดวันแล้วกด SKU เพื่อดูรายออเดอร์และแถวขายในชีตทีมของช่องนั้น<br>
       ${c.hasR
         ? `${RAW.totals.tf
             ? `${L.r} คือ Report JST + CRM ตามวันที่ออกจากคลัง และ Report โอนย้ายตามวันที่จัดส่ง
@@ -728,6 +824,12 @@ $('body').addEventListener('click', (e) => {
   if (view) {
     VIEW = view.dataset.view;
     renderBody();
+    return;
+  }
+  const cell = e.target.closest('[data-cell]');
+  if (cell) {
+    OPEN_CELL = OPEN_CELL === cell.dataset.cell ? '' : cell.dataset.cell;
+    renderList();
     return;
   }
   const sku = e.target.closest('[data-sku]');

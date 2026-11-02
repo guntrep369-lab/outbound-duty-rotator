@@ -348,3 +348,72 @@ describe('wms-cut.js — คำอธิบาย', () => {
     expect(WmsCut.LABEL.r).toBe('Report ควรออก');
   });
 });
+
+describe('wms-cut.js — แตกช่องที่ไม่ตรงลงถึงออเดอร์และแถวในชีต', () => {
+  /* รูปเดียวกับที่ cut-api.gs กับ tx-api.gs ส่งมา */
+  const daily = {
+    days: ['2026-03-05', '2026-03-06'],
+    skus: [[A, 'ชื่อ A'], [B, 'ชื่อ B']],
+    detail: [
+      [0, 0, 2, 3, 0,
+        [['5003', 'JST', 3, 3, 1, 'over', '', [], []]],
+        [['', ['2026-03-06'], ['2026-03-06'], 4, 0, 0, 5, ['6001', '6002', '6003']]]],
+    ],
+  };
+  const ledger = {
+    days: ['2026-03-05'], skus: [[A, 'ชื่อ A']],
+    locs: ['A-01-01', 'B-02-02'], whos: ['คนเอ'],
+    lines: [[0, 0, 12, 0, 3, 'PO-1', 2, 0], [0, 0, 15, 1, 0, '', 'สอง', 0]],
+    sheet: { url: 'https://docs.example/d/1/edit#gid=0', gid: 77 },
+  };
+
+  it('อ่านรายออเดอร์ กลุ่มที่ลงคนละวัน และแถวในชีตของช่องเดียวกัน', () => {
+    const idx = WmsCut.cellIndex(daily, ledger);
+    const one = idx.get('2026-03-05', A);
+    expect(idx.hasOrders).toBe(true);
+    expect(idx.hasRows).toBe(true);
+    expect(one.listed).toBe(true);
+    expect(one.ok).toEqual({ orders: 2, qty: 3 });
+    expect(one.orders).toEqual([{ ref: '5003', sys: 'JST', x: 3, t: 3, r: 1, kind: 'over', od: '', xo: [], to: [] }]);
+    expect(one.moved).toEqual([{ od: '', xo: ['2026-03-06'], to: ['2026-03-06'], orders: 4, x: 0, t: 0, r: 5, refs: ['6001', '6002', '6003'] }]);
+    expect(one.rows).toEqual([
+      { row: 12, loc: 'A-01-01', lot: 3, po: 'PO-1', qty: 2, who: 'คนเอ' },
+      { row: 15, loc: 'B-02-02', lot: 0, po: '', qty: 'สอง', who: 'คนเอ' },
+    ]);
+  });
+
+  it('ช่องที่สคริปต์ไม่ได้ส่งมาคือ Upload, TRcloud และ Report ตรงกันวันนั้น', () => {
+    const one = WmsCut.cellIndex(daily, ledger).get('2026-03-06', B);
+    expect(one.listed).toBe(false);
+    expect(one.orders).toEqual([]);
+    expect(one.rows).toEqual([]);
+  });
+
+  it('สคริปต์รุ่นเก่าที่ไม่ส่งรายละเอียด บอกได้ว่าฝั่งไหนยังไม่มี', () => {
+    const idx = WmsCut.cellIndex({ days: [], skus: [] }, { days: [], skus: [] });
+    expect(idx.hasOrders).toBe(false);
+    expect(idx.hasRows).toBe(false);
+    expect(idx.get('2026-03-05', A).listed).toBe(false);
+  });
+
+  it('บอกวันที่ที่ลงต่างไป', () => {
+    expect(WmsCut.dateWords({ od: '', xo: ['2026-03-06'], to: ['2026-03-06'] })).toBe('ตัดวันที่ 6/3 ทั้งสองระบบ');
+    expect(WmsCut.dateWords({ od: '2026-03-04', xo: [], to: [] })).toBe('Report ลงวันที่ 4/3');
+    expect(WmsCut.dateWords({ od: '', xo: ['2026-03-06'], to: ['2026-03-05', '2026-03-07'] }))
+      .toBe('Uploadยิงออก ตัดวันที่ 6/3 · TRcloud ตัดวันที่ 5/3, 7/3');
+    expect(WmsCut.dateWords({ od: '', xo: [], to: [] })).toBe('');
+  });
+
+  it('ชี้ว่าต้องดูฝั่งไหนก่อน', () => {
+    expect(WmsCut.fixHint({ r: 5, s: 3, x: 5, t: 5 }, true)).toBe('UAT ต่างจาก Uploadยิงออก และ TRcloud ให้ดูแถวในชีตทีม');
+    expect(WmsCut.fixHint({ r: 4, s: 3, x: 5, t: 5 }, true)).toContain('ไม่ตรง Report ให้ดูรายออเดอร์ด้วย');
+    expect(WmsCut.fixHint({ r: 5, s: 5, x: 2, t: 5 }, true)).toBe('Uploadยิงออก ต่างจากอีกสองแหล่ง ให้ดูรายออเดอร์');
+    expect(WmsCut.fixHint({ r: 5, s: 1, x: 2, t: 3 }, true)).toBe('ทั้งสามแหล่งไม่เท่ากัน ให้ดูทั้งรายออเดอร์และแถวในชีตทีม');
+    expect(WmsCut.fixHint({ r: 4, s: 5, x: 5, t: 5 }, true)).toContain('ทั้งสามแหล่งตรงกัน แต่ไม่ตรง Report');
+  });
+
+  it('ลิงก์เปิดชีตตรงแถว ไม่มี URL ของชีตก็ไม่ทำลิงก์', () => {
+    expect(WmsCut.rowUrl(ledger.sheet, 12)).toBe('https://docs.example/d/1/edit#gid=77&range=A12');
+    expect(WmsCut.rowUrl(null, 12)).toBe('');
+  });
+});

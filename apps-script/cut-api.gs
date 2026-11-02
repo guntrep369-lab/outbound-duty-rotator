@@ -12,6 +12,7 @@
  * ยอดของ TRcloud คือ เบิกออก − รับเข้า เพราะการแก้ตัดผิดลงเป็นแถวรับเข้าของออเดอร์เดิม
  * ส่งยอดรายวันต่อ SKU ไปด้วย หน้าเว็บเอาไปเทียบกับแถวขายในสมุด Transaction (public/wms-cut.js)
  * พร้อมยอดที่ควรออกตาม Report ของแต่ละวัน ถ้าไม่มีรายงานโอนย้าย ส่วนของงานโอนย้ายใช้ยอดที่ตัดจริง
+ * ช่องรายวันที่สามแหล่งนี้ไม่เท่ากันส่งรายออเดอร์ไปด้วย ให้ชี้ได้ว่าต่างเพราะออเดอร์ไหน
  *
  * ?api=cut-check   ผลการเทียบ
  * ไม่ใส่ api        บอกแค่ว่าเป็นสคริปต์นี้ ให้หน้าตั้งค่าเช็คว่าใส่ URL ถูกตัว
@@ -40,6 +41,7 @@ var GAP_MIN_ORDERS = 5;     // ทั้งวันไม่ถูกตัด�
 var ORDER_MERGE = 5;        // ออเดอร์ที่ขาดทั้งใบและมี SKU ตั้งแต่เท่านี้ รวมเป็นแถวเดียว
 var ROWS_MAX = 1000;        // รายการต่อประเภท ถ้าเกินบอกจำนวนจริงแล้วส่งแค่ที่หนักสุด
 var LIST_MAX = 300;         // เลขออเดอร์ที่แนบไปต่อหนึ่งก้อน
+var CELL_MAX = 40;          // ออเดอร์ต่อหนึ่งช่องรายวัน วันที่ทั้งวันลงคนละวันมีได้เป็นร้อยต่อ SKU
 
 /* ประเภทที่ต้องตามแก้ ลำดับนี้คือลำดับที่หน้าเว็บแสดง */
 var KINDS = ['over', 'wrong', 'ghost', 'cancel', 'under', 'blankCut', 'transferDiff'];
@@ -150,6 +152,7 @@ function stretch_(s, d) {
   if (!s.to || d > s.to) s.to = d;
 }
 
+/** xd, td คือ วันที่ → ยอดที่ตัดวันนั้น ใช้ทั้งบอกวันที่ตัดและแตกยอดรายวันลงถึงออเดอร์ */
 function key_(w, ref, sku) {
   var id = ref + '|' + sku;
   return w.keys[id] || (w.keys[id] = {
@@ -211,7 +214,7 @@ function addCut_(w, row, at, tz) {
   }
   var k = key_(w, ref, sku);
   k.x += q;
-  if (d) k.xd[d] = 1;
+  if (d) k.xd[d] = (k.xd[d] || 0) + q;
   if (!k.sup) k.sup = sup;
   if (!k.src) k.src = src;
 }
@@ -242,7 +245,7 @@ function addTrcloud_(w, row, at, tz) {
   var k = key_(w, ref, sku);
   k.out += outq;
   k.inq += inq;
-  if (d) k.td[d] = 1;
+  if (d) k.td[d] = (k.td[d] || 0) + outq - inq;
   /* ช่องนี้เก็บชื่อขนส่ง หรือเหตุผลที่พิมพ์เองตอนแก้ยอด อันที่ไม่ใช่ชื่อขนส่งคือเหตุผล */
   var lot = text_(row[at.lot]);
   if (lot && !k.note && !w.carriers[lot]) k.note = lot;
@@ -279,12 +282,76 @@ function tally_(side, d, sku, q) {
 function addShould_(w, k) {
   var o = w.orders[k.ref];
   if (!o) return;
-  var q = k.bucket === 'nonstock' || k.bucket === 'cancelOk' || k.bucket === 'blankOk' ? 0 : target_(k, k.bucket);
-  tally_(w.daily.r, o.date, k.sku, q);
+  tally_(w.daily.r, o.date, k.sku, should_(k));
+}
+
+function should_(k) {
+  return k.bucket === 'nonstock' || k.bucket === 'cancelOk' || k.bucket === 'blankOk' ? 0 : target_(k, k.bucket);
+}
+
+/** วันอื่นนอกจากวันนี้ที่รายการนี้ถูกตัด ยอดตัดกับคืนที่หักกันจนเป็นศูนย์ไม่นับ */
+function otherDays_(byDay, d) {
+  return Object.keys(byDay).filter(function (x) { return x !== d && byDay[x]; }).sort();
+}
+
+/**
+ * ออเดอร์ในช่อง วัน + SKU ที่ Upload, TRcloud และยอดควรออกไม่เท่ากัน หน้าเว็บกดดูได้ว่าต่างเพราะออเดอร์ไหน
+ * ช่องที่ทุกแหล่งเท่ากันไม่ส่ง ในช่องที่ส่ง ออเดอร์ที่ยอดวันนั้นเท่ากันส่งแค่จำนวน
+ * ออเดอร์ที่ยอดทั้งเดือนตรงแล้วแต่ลงคนละวัน รวมเป็นกลุ่มตามวันที่ เพราะวันที่ลงคนละวันทั้งวันมีเป็นร้อยต่อ SKU
+ * ที่เหลือคือเรื่องที่ต้องแก้ ส่งทีละออเดอร์
+ *   [ลำดับวัน, ลำดับ SKU, ออเดอร์ที่ตรง, ชิ้นที่ตรง, ออเดอร์ที่ไม่ได้ส่งเพราะเกินเพดาน,
+ *    [[เลขออเดอร์, ระบบ, x, t, r, ถัง, วันที่ใน Report ถ้าไม่ใช่วันนี้, วันอื่นที่ Upload ตัด, วันอื่นที่ TRcloud ตัด], ...],
+ *    [[วันที่ใน Report ถ้าไม่ใช่วันนี้, วันอื่นที่ Upload ตัด, วันอื่นที่ TRcloud ตัด, จำนวนออเดอร์, x, t, r, ตัวอย่างเลขออเดอร์], ...]]
+ */
+function detailOf_(w, list, dayNo, skuNo) {
+  var at = {};
+  list.forEach(function (k) {
+    var o = w.orders[k.ref], days = {};
+    Object.keys(k.xd).forEach(function (d) { days[d] = 1; });
+    Object.keys(k.td).forEach(function (d) { days[d] = 1; });
+    if (o && o.date) days[o.date] = 1;
+    Object.keys(days).forEach(function (d) {
+      var id = d + '|' + k.sku;
+      (at[id] || (at[id] = { d: d, sku: k.sku, keys: [] })).keys.push(k);
+    });
+  });
+  function val(side, d, sku) { return (side.days[d] && side.days[d][sku]) || 0; }
+  function size(e) { return Math.max(Math.abs(e[2] - e[4]), Math.abs(e[3] - e[4]), Math.abs(e[2] - e[3])); }
+
+  var out = [];
+  Object.keys(at).sort().forEach(function (id) {
+    var c = at[id], d = c.d;
+    var x = val(w.daily.x, d, c.sku), t = val(w.daily.t, d, c.sku), r = val(w.daily.r, d, c.sku);
+    if (x === t && t === r) return;
+    var ok = 0, okQty = 0, bad = [], moved = {};
+    c.keys.forEach(function (k) {
+      var o = w.orders[k.ref];
+      var kx = k.xd[d] || 0, kt = k.td[d] || 0;
+      /* ไม่มีรายงานโอนย้าย ยอดควรออกของงานโอนย้ายคือยอดที่ตัด เหมือนตอนรวมยอดรายวัน */
+      var kr = o ? (o.date === d ? should_(k) : 0) : (w.transfer[k.ref] && !w.hasTf ? kx : 0);
+      if (kx === kt && kt === kr) {
+        if (kx) { ok++; okQty += kx; }
+        return;
+      }
+      var od = o && o.date !== d ? o.date : '', xo = otherDays_(k.xd, d), to = otherDays_(k.td, d);
+      if (KINDS.indexOf(k.bucket) < 0 && k.bucket !== 'gap') {
+        var id = od + '|' + xo.join(',') + '|' + to.join(',');
+        var g = moved[id] || (moved[id] = [od, xo, to, 0, 0, 0, 0, []]);
+        g[3]++; g[4] += kx; g[5] += kt; g[6] += kr;
+        if (g[7].length < 3) g[7].push(k.ref);
+        return;
+      }
+      bad.push([k.ref, o ? o.sys : k.src, kx, kt, kr, k.bucket, od, xo, to]);
+    });
+    bad.sort(function (a, b) { return size(b) - size(a) || (a[0] < b[0] ? -1 : 1); });
+    var groups = Object.keys(moved).sort().map(function (id) { return moved[id]; });
+    out.push([dayNo[d], skuNo(c.sku), ok, okQty, Math.max(0, bad.length - CELL_MAX), bad.slice(0, CELL_MAX), groups]);
+  });
+  return out;
 }
 
 /** ส่งแบบย่อ วันที่กับ SKU อยู่ในตารางเดียวแล้วอ้างด้วยเลขลำดับ ทั้งเดือนมีหลายพันช่อง */
-function dailyOf_(w) {
+function dailyOf_(w, list) {
   var seen = {}, skus = [], dayIdx = {};
   [w.daily.x, w.daily.t, w.daily.r].forEach(function (side) {
     Object.keys(side.days).forEach(function (d) { dayIdx[d] = 1; });
@@ -310,6 +377,7 @@ function dailyOf_(w) {
   var x = cells(w.daily.x), t = cells(w.daily.t), r = cells(w.daily.r);
   return {
     days: days, skus: skus, x: x, t: t, r: r,
+    detail: detailOf_(w, list, dayIdx, skuNo),
     skippedX: w.daily.x.skipped, skippedT: w.daily.t.skipped, skippedR: w.daily.r.skipped,
   };
 }
@@ -491,7 +559,7 @@ function compare_(w) {
     recon: recon_(w, buckets),
     info: info_(w, list, buckets),
     warnings: warnings_(w),
-    daily: dailyOf_(w),
+    daily: dailyOf_(w, list),
   };
 }
 

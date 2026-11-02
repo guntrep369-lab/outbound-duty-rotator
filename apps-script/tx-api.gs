@@ -16,7 +16,7 @@
  * ?api=tx-summary          ยอดคงเหลือทั้งคลัง ยอดขาย และจุดที่ข้อมูลผิด
  * ?api=tx-history&sku=...  ความเคลื่อนไหวของ SKU เดียว
  * ?api=tx-count            รายการนับของวันนี้ (ยังไม่มีก็ออกให้) และผลนับย้อนหลัง
- * ?api=tx-daily&from=...&to=...  ยอดแถวขายราย SKU ราย วัน ให้หน้าเช็ครายการตัดสต๊อกเอาไปเทียบ
+ * ?api=tx-daily&from=...&to=...  ยอดแถวขายราย SKU ราย วัน และแถวขายทีละแถว ให้หน้าเช็ครายการตัดสต๊อกเอาไปเทียบ
  * POST {op:'count-save'}   บันทึกผลนับ
  * POST {op:'count-add'}    ส่ง SKU ที่ยอดไม่ตรงระบบบริษัทเข้าใบนับ
  * ไม่ใส่ api               บอกแค่ว่าเป็นสคริปต์นี้ ให้หน้าตั้งค่าเช็คว่าใส่ URL ถูกตัว
@@ -444,21 +444,29 @@ function summary_() {
  * ยอดแถวขายราย SKU ราย วัน ส่งแบบย่อเหมือน summary_ ไฟล์นี้ไม่รู้จักไฟล์ตัดสต๊อก หน้าเว็บเป็นคนเอาไปเทียบ
  * last คือวันขายล่าสุดของทั้งชีต ไม่ใช่ของช่วงที่ขอ หน้าเว็บจะได้รู้ว่าชีตลงถึงวันไหน
  * แถวที่นับไม่ได้ต้องบอกจำนวนกลับไป ไม่งั้นยอดที่หายไปจะดูเหมือนตัดไม่ตรงทั้งที่จริงกรอกไม่ครบ
+ * lines คือแถวขายทีละแถวในช่วงที่ขอ หน้าเว็บใช้ชี้ว่ายอดของช่องที่ไม่ตรงมาจากแถวไหนในชีต
+ *   [ลำดับวัน, ลำดับ SKU, เลขแถว, ลำดับ Location, LOT, PO, จำนวน (ข้อความถ้าพิมพ์ไม่ใช่ตัวเลข), ลำดับคนลง]
  */
 function daily_(from, to) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var tz = ss.getSpreadsheetTimeZone();
   var today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
-  var rows = readRows_(ledgerSheet_(ss), tz);
+  var sheet = ledgerSheet_(ss);
+  var rows = readRows_(sheet, tz);
 
   var out = {
     app: 'transaction', at: Date.now(), from: from, to: to, last: '',
     noDate: { rows: 0, qty: 0 }, noSku: { rows: 0, qty: 0 }, future: { rows: 0, qty: 0 }, badQty: { rows: 0 },
-    skus: [], days: [], cells: [],
+    sheet: { url: ss.getUrl(), gid: sheet.getSheetId() },
+    skus: [], days: [], cells: [], locs: [], whos: [], lines: [],
   };
   function skip(part, r) { part.rows++; part.qty += r.qty; }
+  function no(idx, list, v) {
+    if (idx[v] === undefined) { idx[v] = list.length; list.push(v); }
+    return idx[v];
+  }
 
-  var tally = {}, skuIdx = {};
+  var tally = {}, skuIdx = {}, locIdx = {}, whoIdx = {};
   rows.forEach(function (r) {
     if (r.type !== 'ขาย') return;
     if (!r.date) return skip(out.noDate, r);
@@ -471,14 +479,19 @@ function daily_(from, to) {
     if (skuIdx[k] === undefined) { skuIdx[k] = out.skus.length; out.skus.push([k, r.name]); }
     var day = tally[r.date] || (tally[r.date] = {});
     day[k] = (day[k] || 0) + r.qty;
+    out.lines.push([r.date, skuIdx[k], r.row, no(locIdx, out.locs, r.from), r.lot, r.po,
+      r.badQty !== null ? r.badQty : r.qty, no(whoIdx, out.whos, r.who)]);
   });
 
   out.days = Object.keys(tally).sort();
+  var dayIdx = {};
   out.days.forEach(function (d, i) {
+    dayIdx[d] = i;
     Object.keys(tally[d]).forEach(function (k) {
       if (tally[d][k]) out.cells.push([i, skuIdx[k], tally[d][k]]);
     });
   });
+  out.lines.forEach(function (l) { l[0] = dayIdx[l[0]]; });
   return out;
 }
 

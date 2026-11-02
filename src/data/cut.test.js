@@ -179,6 +179,65 @@ describe('cut-api.gs — ยอดรายวันไว้เทียบก�
   });
 });
 
+describe('cut-api.gs — รายออเดอร์ของช่องรายวันที่ไม่ตรง', () => {
+  const OTHER = '2026-03-06';
+  /** { 'วัน|SKU': [ตรงกี่ออเดอร์, ตรงกี่ชิ้น, ไม่ได้ส่งกี่ออเดอร์, ออเดอร์, กลุ่มลงคนละวัน] } */
+  function detailOf(r) {
+    const out = {};
+    for (const [d, s, ...rest] of r.daily.detail) out[`${r.daily.days[d]}|${r.daily.skus[s][0]}`] = rest;
+    return out;
+  }
+
+  it('ส่งเฉพาะออเดอร์ที่ยอดวันนั้นไม่เท่ากัน ที่ตรงส่งแค่จำนวน และไม่ส่งช่องที่ตรงทั้งช่อง', () => {
+    const r = run(join(fine('5001', A, 2), fine('5002', A, 1), fine('5004', B, 1), {
+      jst: [jst('5003', A, 1)], tx: [tx('5003', A, 3)], tr: [tr('5003', A, 3)],
+    }));
+    expect(detailOf(r)).toEqual({
+      [`${DAY}|${A}`]: [2, 3, 0, [['5003', 'JST', 3, 3, 1, 'over', '', [], []]], []],
+    });
+  });
+
+  it('ออเดอร์ที่ยอดตรงแต่ลงคนละวัน รวมเป็นกลุ่มตามวันที่ ทั้งวันใน Report และวันที่ตัด', () => {
+    const r = run({
+      jst: [jst('5001', A, 2), jst('5002', A, 1)],
+      tx: [tx('5001', A, 2, { date: OTHER }), tx('5002', A, 1, { date: OTHER })],
+      tr: [tr('5001', A, 2, { date: when(OTHER) }), tr('5002', A, 1, { date: when(OTHER) })],
+    });
+    expect(detailOf(r)).toEqual({
+      [`${DAY}|${A}`]: [0, 0, 0, [], [['', [OTHER], [OTHER], 2, 0, 0, 3, ['5001', '5002']]]],
+      [`${OTHER}|${A}`]: [0, 0, 0, [], [[DAY, [], [], 2, 3, 3, 0, ['5001', '5002']]]],
+    });
+  });
+
+  it('ยอดควรออกของรายการที่ไม่ควรออกเป็นศูนย์ เช่นขนส่งยกเลิกแต่ตัดแล้ว', () => {
+    const r = run({ jst: [jst('5001', A, 2, { ship: 'ยกเลิกแล้ว' })], tx: [tx('5001', A, 2)], tr: [tr('5001', A, 2)] });
+    expect(detailOf(r)[`${DAY}|${A}`][3]).toEqual([['5001', 'JST', 2, 2, 0, 'cancel', '', [], []]]);
+  });
+
+  it('ไม่มีรายงานโอนย้าย ยอดควรออกของงานโอนย้ายคือยอดที่ Upload ตัด', () => {
+    /* 5009 ทำให้ Report ครอบสองวัน แถว TRcloud วันถัดไปจึงไม่ใช่แถวนอกช่วง */
+    const r = run(join(fine('5001', A, 1), {
+      jst: [jst('5009', B, 1, { date: when(OTHER) })], tx: [tx('5009', B, 1, { date: OTHER })], tr: [tr('5009', B, 1, { date: when(OTHER) })],
+    }, {
+      tx: [tx('TF-1', A, 3, { src: 'โอนย้าย' })], tr: [tr('TF-1', A, 3, { date: when(OTHER) })],
+    }));
+    expect(detailOf(r)[`${DAY}|${A}`]).toEqual([1, 1, 0, [], [['', [], [OTHER], 1, 3, 0, 3, ['TF-1']]]]);
+  });
+
+  it('ออเดอร์เกินเพดานต่อช่อง ส่งที่หนักสุดแล้วบอกจำนวนที่เหลือ', () => {
+    const ghosts = Array.from({ length: 45 }, (_, i) => `G${100 + i}`);
+    const r = run(join(fine('5001', A, 1), {
+      tx: ghosts.map((g, i) => tx(g, A, i === 44 ? 9 : 1)), tr: ghosts.map((g, i) => tr(g, A, i === 44 ? 9 : 1)),
+    }));
+    const [ok, , more, orders] = detailOf(r)[`${DAY}|${A}`];
+    expect(ok).toBe(1);
+    expect(more).toBe(5);
+    expect(orders).toHaveLength(40);
+    /* ไม่มีใน Report ระบบคือที่มาที่แท็บตัดบอกไว้ */
+    expect(orders[0]).toEqual(['G144', 'JST', 9, 9, 0, 'ghost', '', [], []]);
+  });
+});
+
 describe('cut-api.gs — ยอดที่ตรงกัน', () => {
   it('ทุกฝั่งเท่ากันไม่ขึ้นรายการเลย', () => {
     const r = run(join(fine('5001'), fine('5002', B, 2)));

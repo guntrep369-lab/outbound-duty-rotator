@@ -143,6 +143,21 @@ describe('tx-api.gs — ยอดขายรายวัน', () => {
     expect(r.from).toBe('2026-01-10');
     expect(r.to).toBe('2026-01-31');
     expect(r.last).toBe('2026-02-01');
+    expect(r.lines.map((l) => l[2])).toEqual([3]);
+  });
+
+  it('ส่งแถวขายทีละแถวพร้อมเลขแถว ให้หน้าเว็บชี้กลับไปที่ชีตได้', () => {
+    const r = daily([
+      row({ type: 'รับ', to: 'A-01-01', qty: 9, note: day('2026-01-10') }),
+      sale({ long: 'AAA0000000001', from: 'A-01-01', lot: 3, po: 'PO-1', qty: 2, who: 'คนเอ', note: day('2026-01-10') }),
+      sale({ long: 'AAA0000000001', from: 'B-02-02', lot: 4, po: 'PO-2', qty: 'สอง', who: 'คนบี', note: day('2026-01-11') }),
+    ]);
+    const lines = r.lines.map(([d, s, n, loc, lot, po, qty, who]) => [r.days[d], r.skus[s][0], n, r.locs[loc], lot, po, qty, r.whos[who]]);
+    expect(lines).toEqual([
+      ['2026-01-10', 'AAA0000000001', 3, 'A-01-01', 3, 'PO-1', 2, 'คนเอ'],
+      ['2026-01-11', 'AAA0000000001', 4, 'B-02-02', 4, 'PO-2', 'สอง', 'คนบี'],
+    ]);
+    expect(r.sheet).toEqual({ url: 'https://docs.example/d/1/edit', gid: 77 });
   });
 
   it('แถวที่นับไม่ได้บอกจำนวนกลับไป ไม่หายเงียบ', () => {

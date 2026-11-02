@@ -11,6 +11,7 @@
  *
  * สามแหล่งแรกเทียบกันเองเป็นหลัก Report เทียบแยกอีกชุด เพราะวันที่ใน Report คือวันที่ออกจากคลัง
  * ซึ่งบางออเดอร์ลงตัดสต๊อกคนละวัน cut-api.gs รุ่นก่อนไม่ส่ง r มา ตอนนั้นเทียบแค่สามแหล่ง
+ * ช่องที่ไม่ตรงแตกลงไปได้ถึงออเดอร์ (cut-api.gs) และถึงแถวในชีตทีม (tx-api.gs) ด้วย cellIndex
  *
  * โหลดเป็น classic script เปิดเป็น window.WmsCut
  */
@@ -229,5 +230,82 @@
     };
   }
 
-  window.WmsCut = { LABEL: LABEL, oddOne: oddOne, diffWords: diffWords, reportWords: reportWords, compareDaily: compareDaily };
+  function dayMonth(ymd) {
+    var p = String(ymd || '').split('-');
+    return p.length === 3 ? +p[2] + '/' + +p[1] : '';
+  }
+
+  /**
+   * รายละเอียดของช่อง วัน + SKU: ออเดอร์จาก cut-api.gs และแถวขายในชีตทีมจาก tx-api.gs สร้างดัชนีครั้งเดียว
+   * listed บอกว่า cut-api.gs ส่งรายออเดอร์ของช่องนี้มา ช่องที่ Upload, TRcloud และ Report เท่ากันจะไม่ถูกส่ง
+   * hasOrders, hasRows เป็น false เมื่อสคริปต์ฝั่งนั้นยังเป็นรุ่นที่ไม่ส่งรายละเอียด
+   */
+  function cellIndex(daily, ledger) {
+    var at = {};
+    function blank() { return { listed: false, orders: [], moved: [], ok: { orders: 0, qty: 0 }, more: 0, rows: [] }; }
+    function one(d, sku) {
+      var id = d + '|' + sku;
+      return at[id] || (at[id] = blank());
+    }
+    (daily.detail || []).forEach(function (c) {
+      var o = one(daily.days[c[0]], daily.skus[c[1]][0]);
+      o.listed = true;
+      o.ok = { orders: c[2], qty: c[3] };
+      o.more = c[4];
+      o.orders = c[5].map(function (e) {
+        return { ref: e[0], sys: e[1], x: e[2], t: e[3], r: e[4], kind: e[5], od: e[6], xo: e[7], to: e[8] };
+      });
+      o.moved = c[6].map(function (g) {
+        return { od: g[0], xo: g[1], to: g[2], orders: g[3], x: g[4], t: g[5], r: g[6], refs: g[7] };
+      });
+    });
+    (ledger.lines || []).forEach(function (l) {
+      one(ledger.days[l[0]], ledger.skus[l[1]][0]).rows.push({
+        row: l[2], loc: ledger.locs[l[3]], lot: l[4], po: l[5], qty: l[6], who: ledger.whos[l[7]],
+      });
+    });
+    var none = blank();
+    return {
+      hasOrders: !!daily.detail, hasRows: !!ledger.lines, sheet: ledger.sheet || null,
+      get: function (d, sku) { return at[d + '|' + sku] || none; },
+    };
+  }
+
+  /** ลงวันอื่นยังไง เช่น Report ลงวันที่ 12/10 หรือตัดวันที่ 13/10 ทั้งสองระบบ */
+  function dateWords(e) {
+    var out = [];
+    if (e.od) out.push('Report ลงวันที่ ' + dayMonth(e.od));
+    var xo = e.xo.map(dayMonth).join(', '), to = e.to.map(dayMonth).join(', ');
+    if (xo && xo === to) out.push('ตัดวันที่ ' + xo + ' ทั้งสองระบบ');
+    else {
+      if (xo) out.push(LABEL.x + ' ตัดวันที่ ' + xo);
+      if (to) out.push(LABEL.t + ' ตัดวันที่ ' + to);
+    }
+    return out.join(' · ');
+  }
+
+  /** ช่องนี้ต้องไปดูที่ไหนก่อน ตัดสินจากแหล่งที่ต่างจากแหล่งอื่น */
+  function fixHint(r, hasR) {
+    var odd = oddOne(r.s, r.x, r.t);
+    var offR = hasR && r.x !== r.r;
+    if (odd === 's') {
+      return LABEL.s + ' ต่างจาก ' + LABEL.x + ' และ ' + LABEL.t + ' ให้ดูแถวในชีตทีม' +
+        (offR ? ' ส่วนสองระบบนั้นก็ไม่ตรง Report ให้ดูรายออเดอร์ด้วย' : '');
+    }
+    if (odd === 'x' || odd === 't') return LABEL[odd] + ' ต่างจากอีกสองแหล่ง ให้ดูรายออเดอร์';
+    if (odd === 'all') return 'ทั้งสามแหล่งไม่เท่ากัน ให้ดูทั้งรายออเดอร์และแถวในชีตทีม';
+    if (hasR && r.s !== r.r) return 'ทั้งสามแหล่งตรงกัน แต่ไม่ตรง Report ให้ดูรายออเดอร์ว่าเปลี่ยนสถานะหรือลงคนละวัน';
+    return 'ตรงกันทุกแหล่ง';
+  }
+
+  /** ลิงก์เปิดชีตตรงแถวนั้น แบบเดียวกับ WmsTx.rowUrl หน้านี้ไม่ได้โหลด wms-tx.js */
+  function rowUrl(sheet, row) {
+    if (!sheet || !sheet.url) return '';
+    return String(sheet.url).split('#')[0] + '#gid=' + sheet.gid + '&range=A' + row;
+  }
+
+  window.WmsCut = {
+    LABEL: LABEL, oddOne: oddOne, diffWords: diffWords, reportWords: reportWords, compareDaily: compareDaily,
+    cellIndex: cellIndex, dateWords: dateWords, fixHint: fixHint, rowUrl: rowUrl,
+  };
 })();
