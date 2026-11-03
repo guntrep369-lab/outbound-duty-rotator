@@ -58,6 +58,7 @@
 .tx-stat small{display:block;font-size:12px;color:var(--wms-muted)}
 .tx-stat b{font-size:20px;font-weight:700;color:var(--wms-text);font-variant-numeric:tabular-nums}
 .tx-stat b.tx-mid{color:#B45309}
+.tx-stat b.tx-neg{color:#B91C1C}
 .tx-stat i{display:block;font-style:normal;font-size:12px;color:var(--wms-muted)}
 
 /* ── เนื้อหา ── */
@@ -106,6 +107,10 @@
 .lp-tbl tr.lp-grp td{border-bottom-color:transparent}
 .lp-tbl tr.lp-in td:first-child{box-shadow:inset 3px 0 0 var(--wms-primary-light)}
 .lp-tbl .k-src{min-width:150px}
+.lp-tbl .k-ord{min-width:120px}
+.lp-tbl .k-note{min-width:160px}
+/* สลับมุมมองอยู่บนสุดของเนื้อหา เส้นใต้แยกจากตัวกรองด้านล่าง */
+.lp-view{padding-bottom:12px;border-bottom:1px solid var(--wms-border)}
 
 @media (max-width:640px){
   .mod-title h2 .en,.mod-title p{display:none}
@@ -131,7 +136,11 @@
   .lp-tbl td{display:block;min-width:0;padding:0;border:0;white-space:normal}
   .lp-tbl .k-date{grid-column:1/-1;font-size:12px;color:var(--wms-muted)}
   .lp-tbl .k-sku{grid-column:1/-1;min-width:0}
-  .lp-tbl tr.lp-in .k-sku{display:none}
+  .lp-tbl:not(.lp-ord) tr.lp-in .k-sku{display:none}
+  .lp-tbl .k-ord,.lp-tbl .k-note{grid-column:1/-1;min-width:0}
+  .lp-ord tr.lp-in .k-ord{display:none}
+  .lp-tbl .k-note:empty{display:none}
+  .lp-view .tx-opt{flex:1;justify-content:center}
   .lp-tbl .k-lot::before,.lp-tbl .k-po::before,.lp-tbl .k-qty::before{content:attr(data-label);display:block;
     font-size:12px;font-weight:500;color:var(--wms-muted)}
   .lp-tbl .k-qty{font-size:16px;font-weight:700}
@@ -185,11 +194,17 @@ let LED = null;     // คำตอบ tx-daily ของเดือนที�
 let ROWS = [];      // WmsLotPo.build(LED)
 let MONTH = '';     // yyyy-mm
 let DAY = '';       // '' = ทั้งเดือน
-let ONLY = '';      // '' | split | unknown
+let ONLY = '';      // '' | split | unknown | gap
 let Q = '';
 let BUSY = '';
 let ERR = '';
 let CUT = null;     // ผลเทียบรายวันล่าสุดจากหน้าเช็ครายการตัดสต๊อก อ่านจากเครื่องนี้
+let VIEW = 'sku';   // sku = รวมราย SKU, order = รายออเดอร์
+/* ออเดอร์ของเดือนจากไฟล์ตัดสต๊อก (cut-api.gs ?api=cut-orders) หนึ่งเดือนราวสองเมกะไบต์ ไม่เก็บลงเครื่อง เปิดหน้าใหม่ดึงใหม่ */
+let ORD = null;
+let ORD_ERR = '';
+let OLINES = [];    // WmsLotPo.allocate(ROWS, ORD)
+let LATE = [];      // วันที่มีออเดอร์ แต่สมุดยังลงขายไม่ถึง
 
 function monthRange(m) {
   const [y, mo] = m.split('-').map(Number);
@@ -246,6 +261,51 @@ function take(l) {
   ROWS = WmsLotPo.build(l);
   /* วันล่าสุดที่มีขายคือวันที่ทำรายงานบ่อยสุด */
   if (!DAY || !l.days.includes(DAY)) DAY = l.days[l.days.length - 1] || '';
+  pair();
+}
+
+/**
+ * ปันล็อตให้ออเดอร์ ต้องเป็นเดือนเดียวกันทั้งสองฝั่ง วันที่สมุดยังลงขายไม่ถึงตัดออกก่อน
+ * ไม่งั้นออเดอร์ทั้งวันจะขึ้นว่าสมุดลงไม่ถึง ทั้งที่แค่ยังไม่ได้ลง
+ */
+function pair() {
+  OLINES = [];
+  LATE = [];
+  if (!ORD || !LED) return;
+  if (ORD.from !== LED.from) { ORD = null; return; }
+  const last = LED.last || '';
+  const late = {};
+  const lines = ORD.lines.filter((l) => {
+    const d = ORD.days[l[0]];
+    if (d <= last) return true;
+    late[d] = 1;
+    return false;
+  });
+  LATE = Object.keys(late).sort();
+  OLINES = WmsLotPo.allocate(ROWS, Object.assign({}, ORD, { lines }));
+}
+
+async function loadOrders() {
+  const url = WmsSettings.cutUrl();
+  if (BUSY || !url || !LED) return;
+  const r = monthRange(MONTH);
+  ORD_ERR = '';
+  const say = (sec) => { BUSY = `กำลังอ่านออเดอร์จากไฟล์ตัดสต๊อก…${sec ? ` ${sec} วินาที` : ''}`; renderSrc(); };
+  say(0);
+  renderBody();
+  try {
+    /* อ่านแท็บ Transaction ทั้งแท็บ เป็นแสนแถว เผื่อเวลาไว้เหมือนหน้าเช็คตัดสต๊อก */
+    const res = await WmsGas.json(url, `cut-orders&from=${r.from}&to=${r.to}`, { retries: 1, timeoutMs: 300000, onProgress: say });
+    if (res.error) throw new Error(res.error);
+    if (res.app !== 'cut') throw new Error('URL เช็คตัดสต๊อกในหน้าตั้งค่าไม่ใช่สคริปต์ cut-api.gs');
+    if (!res.lines) throw new Error('สคริปต์ cut-api.gs ยังเป็นรุ่นเก่า ให้วางโค้ดใหม่แล้ว Deploy เป็น New version');
+    ORD = res;
+  } catch (e) {
+    ORD_ERR = e.message;
+  }
+  BUSY = '';
+  pair();
+  render();
 }
 
 async function load() {
@@ -270,6 +330,13 @@ async function load() {
   }
   BUSY = '';
   CUT = readCut();
+  /* ดึงใหม่ตอนดูรายออเดอร์ ออเดอร์ต้องใหม่ด้วย ไม่งั้นจะปันล็อตชุดใหม่ให้ออเดอร์ชุดเก่า */
+  if (!ERR && VIEW === 'order' && WmsSettings.cutUrl()) {
+    ORD = null;
+    pair();
+    loadOrders();
+    return;
+  }
   render();
 }
 
@@ -335,12 +402,27 @@ function renderDays() {
   });
 }
 
+/** แถวขายของวันที่เลือก ใช้เทียบกับผลเทียบรายวันเสมอ ไม่ว่าดูมุมไหน */
 function picked() { return DAY ? ROWS.filter((r) => r.date === DAY) : ROWS; }
+
+const byOrder = () => VIEW === 'order' && !!ORD;
+
+/** บรรทัดที่ตารางแสดงและปุ่มคัดลอกจะได้ */
+function chosen() { return WmsLotPo.filter(byOrder() ? OLINES : ROWS, { date: DAY, q: Q, only: ONLY }); }
 
 function renderSum() {
   if (!LED || BUSY) { $('sum').innerHTML = ''; return; }
-  const t = WmsLotPo.totals(picked());
   const stat = (label, n, sub, cls) => `<div class="tx-stat"><small>${esc(label)}</small><b class="${cls || ''}" data-count="${n}">${f(n)}</b><i>${esc(sub)}</i></div>`;
+  if (byOrder()) {
+    const o = WmsLotPo.totals(DAY ? OLINES.filter((r) => r.date === DAY) : OLINES);
+    $('sum').innerHTML =
+      stat('ชิ้นที่ออก', o.qty, DAY ? `วันที่ ${dm(DAY)}` : monthName(MONTH)) +
+      stat('ออเดอร์', o.orders, `${f(o.lines)} บรรทัด ออเดอร์ × SKU × LOT/PO`) +
+      stat('ไม่รู้ LOT หรือ PO', o.unknown.qty, `${f(o.unknown.lines)} บรรทัด · LOT 0 หรือ PO 0`, o.unknown.qty ? 'tx-mid' : '') +
+      stat('ยอดไม่ลงกัน', o.gap.qty, `${f(o.gap.lines)} บรรทัด · สมุดกับแท็บ Transaction`, o.gap.qty ? 'tx-neg' : '');
+    return;
+  }
+  const t = WmsLotPo.totals(picked());
   $('sum').innerHTML =
     stat('ชิ้นที่ขายออก', t.qty, DAY ? `วันที่ ${dm(DAY)}` : monthName(MONTH)) +
     stat('SKU', t.skus, `${f(t.lines)} บรรทัด SKU × LOT/PO`) +
@@ -402,13 +484,49 @@ function srcHtml(r) {
   return `<span class="tx-sub">${esc(r.locs.join(', '))}</span><span class="tx-sub">แถว ${links}${more}</span>${bad}`;
 }
 
+const cutNote = (rows) => rows.length > SHOW_MAX
+  ? `<div class="tx-note" style="margin-top:10px">แสดง ${f(SHOW_MAX)} จาก ${f(rows.length)} บรรทัด เลือกวันหรือค้นหาเพื่อดูส่วนที่เหลือ — ปุ่มคัดลอกและดาวน์โหลดได้ครบทุกบรรทัด</div>`
+  : '';
+
+/** รายออเดอร์: บรรทัดของออเดอร์เดียวกันอยู่ติดกัน แถวต่อจากแถวแรกไม่เขียนเลขออเดอร์ซ้ำ */
+function orderListHtml(rows) {
+  const show = rows.slice(0, SHOW_MAX);
+  const body = show.map((r, i) => {
+    const prev = show[i - 1], next = show[i + 1];
+    const same = (a) => !!r.ref && a && a.date === r.date && a.ref === r.ref;
+    const cls = [same(prev) ? 'lp-in' : '', same(next) ? 'lp-grp' : ''].filter(Boolean).join(' ');
+    const ord = !r.ref
+      ? '<span class="tx-neg">ไม่มีออเดอร์</span>'
+      : same(prev) ? `<span class="tx-sub">${esc(r.ref)}</span>` : `<b>${esc(r.ref)}</b><span class="tx-sub">${esc(r.src)}</span>`;
+    const none = r.miss === 'ledger' || r.miss === 'minus';
+    /* ไม่รู้ LOT/PO บอกอยู่ในช่องแล้ว ช่องหมายเหตุบนจอเหลือแค่เรื่องยอดไม่ลงกัน ไฟล์ที่ส่งออกยังมีครบ */
+    const note = r.miss ? WmsLotPo.note(r) : '';
+    return `<tr${cls ? ` class="${cls}"` : ''}>
+      ${DAY ? '' : `<td class="nw k-date">${esc(dm(r.date))}</td>`}
+      <td class="nw k-ord">${ord}</td>
+      <td class="k-sku"><b>${esc(r.sku)}</b><span class="tx-sub">${esc(r.name)}</span>${r.split > 1 ? `<span class="tx-tag">ได้ ${r.split} LOT/PO</span>` : ''}</td>
+      <td class="nw k-lot" data-label="LOT">${none ? '—' : lotHtml(r.lot, r.noLot, 'LOT')}</td>
+      <td class="nw k-po" data-label="PO">${none ? '—' : lotHtml(r.po, r.noPo, 'PO')}</td>
+      <td class="num k-qty" data-label="จำนวน">${f(r.qty)}</td>
+      <td class="k-note">${note ? `<span class="tx-sub tx-neg">${esc(note)}</span>` : ''}</td>
+    </tr>`;
+  }).join('');
+  const t = WmsLotPo.totals(rows);
+  return `<div class="tx-wrap"><table class="tx-tbl lp-tbl lp-ord">
+    <thead><tr>${DAY ? '' : '<th>วันที่</th>'}<th>ออเดอร์</th><th>SKU / ชื่อสินค้า</th><th>LOT</th><th>PO</th><th class="num">จำนวน</th><th>หมายเหตุ</th></tr></thead>
+    <tbody>${body}
+      <tr class="sum">${DAY ? '' : '<td></td>'}<td class="k-ord">${f(t.orders)} ออเดอร์</td><td class="k-sku">${f(t.lines)} บรรทัด</td><td></td><td></td><td class="num k-qty">${f(t.qty)}</td><td></td></tr>
+    </tbody></table></div>${cutNote(rows)}`;
+}
+
 function listHtml() {
-  const rows = WmsLotPo.filter(ROWS, { date: DAY, q: Q, only: ONLY });
+  const rows = chosen();
   if (!rows.length) {
     return Q || ONLY
       ? '<div class="tx-empty art-search">ไม่พบรายการที่ตรงกับที่เลือก</div>'
       : '<div class="tx-empty art-done">ไม่มีแถวขายในช่วงนี้</div>';
   }
+  if (byOrder()) return orderListHtml(rows);
   const show = rows.slice(0, SHOW_MAX);
   const body = show.map((r, i) => {
     const prev = show[i - 1], next = show[i + 1];
@@ -427,7 +545,7 @@ function listHtml() {
     </tr>`;
   }).join('');
   const t = WmsLotPo.totals(rows);
-  const cut = rows.length > SHOW_MAX ? `<div class="tx-note" style="margin-top:10px">แสดง ${f(SHOW_MAX)} จาก ${f(rows.length)} บรรทัด เลือกวันหรือค้นหาเพื่อดูส่วนที่เหลือ — ปุ่มคัดลอกและดาวน์โหลดได้ครบทุกบรรทัด</div>` : '';
+  const cut = cutNote(rows);
   return `<div class="tx-wrap"><table class="tx-tbl lp-tbl">
     <thead><tr>${DAY ? '' : '<th>วันที่</th>'}<th>SKU / ชื่อสินค้า</th><th>LOT</th><th>PO</th><th class="num">จำนวน</th><th>Location · แถวในชีต</th></tr></thead>
     <tbody>${body}
@@ -438,7 +556,7 @@ function listHtml() {
 function renderList() {
   const box = $('list');
   if (box) box.innerHTML = listHtml();
-  const n = WmsLotPo.filter(ROWS, { date: DAY, q: Q, only: ONLY }).length;
+  const n = chosen().length;
   const copy = $('copyBtn');
   if (copy) { copy.textContent = `📋 คัดลอก ${f(n)} บรรทัด`; copy.disabled = !n; }
   const dl = $('dlBtn');
@@ -460,24 +578,57 @@ function renderBody() {
     $('body').innerHTML = `<div class="tx-empty art-done">${esc(monthName(MONTH))} ยังไม่มีแถวขายในสมุด</div>`;
     return;
   }
-  const scope = DAY ? ROWS.filter((r) => r.date === DAY) : ROWS;
-  const all = WmsLotPo.filter(scope, {});
-  const split = WmsLotPo.filter(scope, { only: 'split' }).length;
-  const unknown = WmsLotPo.filter(scope, { only: 'unknown' }).length;
-  /* ตัวเลขบนปุ่มนับเป็นบรรทัดทั้งสามปุ่ม ตรงกับจำนวนที่ปุ่มคัดลอกจะได้ */
-  const opt = (v, label, n) => `<button class="tx-opt${ONLY === v ? ' on' : ''}" data-only="${v}">${label} ${f(n)} บรรทัด</button>`;
-  $('body').innerHTML = `${statusHtml()}
+  const views = `<div class="tx-bar lp-view">
+      <button class="tx-opt${VIEW === 'sku' ? ' on' : ''}" data-view="sku">รวมราย SKU</button>
+      <button class="tx-opt${VIEW === 'order' ? ' on' : ''}" data-view="order">รายออเดอร์</button>
+    </div>`;
+  if (VIEW === 'order' && !ORD) {
+    $('body').innerHTML = views + (!WmsSettings.cutUrl()
+      ? `<div class="tx-empty art-link">เลขออเดอร์มาจากไฟล์ตัดสต๊อกของเดือน ยังไม่ได้ตั้ง Apps Script URL ของเช็ครายการตัดสต๊อก — <a href="../settings/">ตั้งที่หน้าตั้งค่า</a></div>`
+      : `${ORD_ERR ? `<div class="tx-warn bad">ดึงออเดอร์ไม่สำเร็จ: ${esc(ORD_ERR)}</div>` : ''}
+        <div class="tx-empty art-data">เลขออเดอร์มาจากแท็บตัดสต๊อกระบบ Transaction ในไฟล์ตัดสต๊อกของเดือน<br><br>
+        <button class="tx-opt" data-orders>▶️ ดึงออเดอร์</button></div>`);
+    return;
+  }
+  const scope = (byOrder() ? OLINES : ROWS).filter((r) => !DAY || r.date === DAY);
+  const count = (only) => WmsLotPo.filter(scope, { only }).length;
+  /* ตัวเลขบนปุ่มนับเป็นบรรทัดทุกปุ่ม ตรงกับจำนวนที่ปุ่มคัดลอกจะได้ */
+  const opt = (v, label) => `<button class="tx-opt${ONLY === v ? ' on' : ''}" data-only="${v}">${label} ${f(count(v))} บรรทัด</button>`;
+  const opts = byOrder()
+    ? opt('', 'ทั้งหมด') + opt('split', 'ได้หลาย LOT/PO') + opt('unknown', 'ไม่รู้ LOT/PO') + opt('gap', 'ยอดไม่ลงกัน')
+    : opt('', 'ทั้งหมด') + opt('split', 'ออกหลาย LOT/PO') + opt('unknown', 'ไม่รู้ LOT/PO');
+  const cols = byOrder() ? 'วันที่ · ระบบ · เลขออเดอร์ · SKU · ชื่อสินค้า · LOT · PO · จำนวน · หมายเหตุ' : 'วันที่ · SKU · ชื่อสินค้า · LOT · PO · จำนวน · หมายเหตุ';
+  $('body').innerHTML = `${views}${statusHtml()}${byOrder() ? orderNote() : ''}
     <div class="tx-bar">
-      <input id="q" class="tx-input" type="search" placeholder="ค้นหา SKU ชื่อสินค้า LOT หรือ PO" value="${esc(Q)}" autocomplete="off">
-      ${opt('', 'ทั้งหมด', all.length)}${opt('split', 'ออกหลาย LOT/PO', split)}${opt('unknown', 'ไม่รู้ LOT/PO', unknown)}
+      <input id="q" class="tx-input" type="search" placeholder="ค้นหา${byOrder() ? 'เลขออเดอร์' : ''} SKU ชื่อสินค้า LOT หรือ PO" value="${esc(Q)}" autocomplete="off">
+      ${opts}
     </div>
     <div class="tx-bar lp-out">
       <button class="tx-opt" id="copyBtn">📋 คัดลอก</button>
       <button class="tx-opt" id="dlBtn">⬇️ ดาวน์โหลด CSV</button>
-      <span>คัดลอกแล้ววางใน Excel ได้เลย คอลัมน์ วันที่ · SKU · ชื่อสินค้า · LOT · PO · จำนวน · หมายเหตุ ทุกบรรทัดมี SKU ครบ กรองหรือทำ Pivot ต่อได้</span>
+      <span>คัดลอกแล้ววางใน Excel ได้เลย คอลัมน์ ${cols} ทุกบรรทัดมีข้อมูลครบ กรองหรือทำ Pivot ต่อได้</span>
     </div>
     <div id="list"></div>`;
   renderList();
+}
+
+/** รายออเดอร์เป็นการปันส่วน ต้องบอกให้ชัดว่ามาจากไหนและเชื่อได้แค่ไหน */
+function orderNote() {
+  const when = new Date(ORD.at).toLocaleString('th-TH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const out = [`<div class="tx-note">เลขออเดอร์มาจากแท็บตัดสต๊อกระบบ Transaction ในไฟล์ตัดสต๊อก (ดึงเมื่อ ${esc(when)})
+    สมุดลงขายรวมต่อ SKU ต่อวัน ไม่ได้บอกว่าออเดอร์ไหนหยิบล็อตไหน หน้านี้จึงปันให้ <b>ล็อตเก่าก่อน ตามลำดับแถวในแท็บ</b>
+    — วันที่เทียบรายวันตรงแล้ว ทุกชิ้นได้ LOT/PO ครบ</div>`];
+  const r = monthRange(MONTH);
+  if (!ORD.lines.length) {
+    out.push(`<div class="tx-warn bad">ไฟล์ตัดสต๊อกที่ตั้งไว้ไม่มีออเดอร์ของ${esc(monthName(MONTH))}${ORD.span.from ? ` (มีวันที่ ${esc(dm(ORD.span.from))} ถึง ${esc(dm(ORD.span.to))})` : ''}
+      — เปลี่ยน URL เช็คตัดสต๊อกเป็นไฟล์ของเดือนนี้ที่<a href="../settings/">หน้าตั้งค่า</a></div>`);
+  } else if (ORD.span.from > r.from || ORD.span.to < r.to) {
+    out.push(`<div class="tx-note">ไฟล์ตัดสต๊อกมีออเดอร์วันที่ ${esc(dm(ORD.span.from))} ถึง ${esc(dm(ORD.span.to))} วันอื่นของเดือนจะขึ้นว่าไม่มีออเดอร์</div>`);
+  }
+  if (LATE.length) {
+    out.push(`<div class="tx-note">ออเดอร์วันที่ ${LATE.map((d) => esc(dm(d))).join(', ')} ยังไม่ได้ปันล็อต เพราะสมุดลงขายถึง ${esc(dm(LED.last))}</div>`);
+  }
+  return out.join('');
 }
 
 function render() {
@@ -508,11 +659,10 @@ async function copyText(text) {
 }
 
 function download() {
-  const rows = WmsLotPo.filter(ROWS, { date: DAY, q: Q, only: ONLY });
-  const blob = new Blob([WmsLotPo.csv(rows)], { type: 'text/csv;charset=utf-8' });
+  const blob = new Blob([WmsLotPo.csv(chosen(), byOrder())], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `lot-po-${DAY || MONTH}${ONLY ? '-' + ONLY : ''}.csv`;
+  a.download = `lot-po-${byOrder() ? 'orders-' : ''}${DAY || MONTH}${ONLY ? '-' + ONLY : ''}.csv`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -529,6 +679,18 @@ $('days').addEventListener('click', (e) => {
 });
 
 $('body').addEventListener('click', (e) => {
+  const view = e.target.closest('[data-view]');
+  if (view) {
+    if (VIEW === view.dataset.view) return;
+    VIEW = view.dataset.view;
+    ONLY = '';
+    /* ดึงออเดอร์ตอนเปิดดูรายออเดอร์ครั้งแรก คนที่ดูแค่ราย SKU ไม่ต้องรอ */
+    if (VIEW === 'order' && !ORD && !ORD_ERR && WmsSettings.cutUrl()) { loadOrders(); return; }
+    renderSum();
+    renderBody();
+    return;
+  }
+  if (e.target.closest('[data-orders]')) { loadOrders(); return; }
   const only = e.target.closest('[data-only]');
   if (only) {
     ONLY = only.dataset.only;
@@ -537,7 +699,7 @@ $('body').addEventListener('click', (e) => {
   }
   if (e.target.closest('#copyBtn')) {
     const btn = $('copyBtn');
-    copyText(WmsLotPo.tsv(WmsLotPo.filter(ROWS, { date: DAY, q: Q, only: ONLY }))).then((ok) => {
+    copyText(WmsLotPo.tsv(chosen(), byOrder())).then((ok) => {
       btn.textContent = ok ? 'คัดลอกแล้ว วางใน Excel ได้เลย' : 'คัดลอกไม่ได้ ลองกดอีกครั้ง';
       if (ok) window.WmsMotion?.saved(btn); else window.WmsMotion?.shake(btn);
     });

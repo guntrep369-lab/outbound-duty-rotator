@@ -579,6 +579,19 @@ script, only the Transaction URL from the settings page. It never writes to the 
   every line. Download gives the same table as a CSV that Excel opens in Thai. Both take the whole
   selection, even when the page only draws the first 500 lines.
 
+**By order (รายออเดอร์):** the ledger sells per SKU per day and has no order numbers. This view takes
+the day's orders from the cut workbook's `ตัดสต๊อกระบบ Transaction` tab, through `cut-api.gs`
+`?api=cut-orders` (the cut-check URL in the settings page), then hands the day's LOT/PO to them: oldest
+LOT first, to orders in the tab's row order. It's an allocation, not a record of which order took
+which lot. On a day where เทียบรายวัน matches, every piece gets a LOT/PO. Otherwise the rest shows as
+ยอดไม่ลงกัน, either an order the ledger didn't sell or a sale with no order. Days after the ledger's last
+sale date are left out until the ledger reaches them. Copy and the CSV get วันที่, ระบบ, เลขออเดอร์, SKU,
+ชื่อสินค้า, LOT, PO, จำนวน, หมายเหตุ. The orders are fetched when the view is opened (about 2 MB a
+month) and aren't kept on the device.
+
+**Updating to a version with รายออเดอร์:** paste the new `cut-api.gs`, then Deploy → Manage deployments →
+pencil icon → Version: New version → Deploy. Until then the view says the script is out of date.
+
 **Is the day ready to send?** The report is only as right as the ledger. The page reads the last
 เทียบรายวัน result saved on this device by the cut-check page, then marks each day ✓ (matches all
 three systems and the Report), ! (only cut on different days) or ✕ (still differs). If the ledger has

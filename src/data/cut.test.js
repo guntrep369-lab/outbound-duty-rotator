@@ -726,3 +726,48 @@ describe('cut-api.gs — ชื่อสินค้า', () => {
     expect(r.names[C]).toBe('ชื่อตัดคำ');
   });
 });
+
+describe('cut-api.gs — ออเดอร์รายวันให้หน้า LOT / PO ที่ขายออก', () => {
+  const orders = (d, parameter = {}) => JSON.parse(api(bookOf(d)).doGet({ parameter: { api: 'cut-orders', ...parameter } }).text);
+  /* แปลงกลับเป็นแถวอ่านง่าย [วัน, ออเดอร์, SKU, จำนวน, ที่มา] */
+  const flat = (r) => r.lines.map((l) => [r.days[l[0]], l[1], r.skus[l[2]][0], l[3], r.srcs[l[4]]]);
+
+  it('อ่านแค่แท็บ Transaction เรียงตามแถว รวมแถวซ้ำของ วัน ออเดอร์ SKU เดียวกัน', () => {
+    const r = orders({
+      tx: [
+        tx('5002', B, 1),
+        tx('5001', A, 2, { src: 'CRM' }),
+        tx('5002 · 2026-03-05', B, 2),
+        tx('SL-01', C, 4, { src: 'โอนย้าย' }),
+        tx('5001', A, 1, { date: '2026-03-06', src: 'CRM' }),
+      ],
+    });
+    expect(r.app).toBe('cut');
+    expect(flat(r)).toEqual([
+      [DAY, '5002', B, 3, 'JST'],
+      [DAY, '5001', A, 2, 'CRM'],
+      [DAY, 'SL-01', C, 4, 'โอนย้าย'],
+      ['2026-03-06', '5001', A, 1, 'CRM'],
+    ]);
+    expect(r.skus.find((s) => s[0] === A)[1]).toBe('แบรนด์');
+    expect(r.span).toEqual({ from: DAY, to: '2026-03-06' });
+  });
+
+  it('กรองตามช่วงวันที่ แต่ span ยังบอกช่วงของทั้งแท็บ', () => {
+    const r = orders({ tx: [tx('5001', A, 1), tx('5002', A, 1, { date: '2026-03-09' })] }, { from: '2026-03-06', to: '2026-03-31' });
+    expect(flat(r)).toEqual([['2026-03-09', '5002', A, 1, 'JST']]);
+    expect(r.span).toEqual({ from: DAY, to: '2026-03-09' });
+  });
+
+  it('แถวที่ไม่มีวันที่หรือเลขออเดอร์นับเป็นแถวข้าม ยอดรวมเป็นศูนย์ไม่ส่ง', () => {
+    const r = orders({ tx: [tx('5001', A, 2), tx('', A, 3), tx('5003', B, 1, { date: '' }), tx('5004', A, 1), tx('5004', A, -1)] });
+    expect(flat(r)).toEqual([[DAY, '5001', A, 2, 'JST']]);
+    expect(r.skipped).toEqual({ rows: 2, qty: 4 });
+  });
+
+  it('ไม่ต้องมีแท็บอื่น ใช้ได้แม้ Report ยังว่าง', () => {
+    const r = orders({ tx: [tx('5001', A, 1)] });
+    expect(r.error).toBeUndefined();
+    expect(r.lines).toHaveLength(1);
+  });
+});

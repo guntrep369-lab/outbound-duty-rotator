@@ -15,6 +15,7 @@
  * ช่องรายวันที่สามแหล่งนี้ไม่เท่ากันส่งรายออเดอร์ไปด้วย ให้ชี้ได้ว่าต่างเพราะออเดอร์ไหน
  *
  * ?api=cut-check   ผลการเทียบ
+ * ?api=cut-orders&from=...&to=...  แถวตัดของแท็บ Transaction ทีละออเดอร์ ให้หน้า LOT / PO ที่ขายออกปันล็อตให้แต่ละออเดอร์
  * ไม่ใส่ api        บอกแค่ว่าเป็นสคริปต์นี้ ให้หน้าตั้งค่าเช็คว่าใส่ URL ถูกตัว
  */
 
@@ -51,6 +52,7 @@ function doGet(e) {
   var p = (e && e.parameter) || {};
   try {
     if (p.api === 'cut-check') return out_(check_());
+    if (p.api === 'cut-orders') return out_(orders_(String(p.from || ''), String(p.to || '')));
   } catch (err) {
     return out_({ error: String(err && err.message || err) });
   }
@@ -663,6 +665,59 @@ function warnings_(w) {
   return out;
 }
 
+/* ── รายออเดอร์ของแต่ละวัน ─────────────────────────────────────────────── */
+
+function txTab_(ss) {
+  var tx = tab_(ss, TAB_TX, {
+    date: /^Date$/i, sup: /^Sup$/i, ref: /^เลขภายใน/, sku: /^SKU$/i, brand: /^แบรนด์/, size: /^ขนาด/, qty: /^SUM of/i,
+  });
+  tx.at.src = tx.at.qty + 1;   // คอลัมน์ถัดจากจำนวนไม่มีหัวตาราง แต่บอกว่าแถวนี้มาจากระบบไหน
+  return tx;
+}
+
+/**
+ * สมุด Transaction ลงขายรวมต่อ SKU ต่อวัน ไม่มีเลขออเดอร์ หน้าเว็บจึงต้องรู้ว่าวันนั้นออเดอร์ไหนตัด SKU อะไรเท่าไร
+ * อ่านแค่แท็บ Transaction ไม่ต้องรอเทียบทั้งสี่แท็บ ส่งแบบย่อ วัน SKU และที่มาเป็นเลขลำดับ เดือนหนึ่งมีเป็นแสนแถว
+ *   line = [ลำดับวัน, เลขออเดอร์, ลำดับ SKU, จำนวน, ลำดับที่มา]  เรียงตามแถวแรกที่เจอในแท็บ
+ * แถวของ วัน + ออเดอร์ + SKU เดียวกันรวมกันก่อนส่ง span คือช่วงวันที่ของทั้งแท็บ หน้าเว็บจะได้บอกว่าไฟล์นี้มีถึงวันไหน
+ */
+function orders_(from, to) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var tz = ss.getSpreadsheetTimeZone();
+  var tx = txTab_(ss);
+  var out = {
+    app: 'cut', at: Date.now(), from: from, to: to, span: { from: '', to: '' },
+    skipped: { rows: 0, qty: 0 }, days: [], skus: [], srcs: [], lines: [],
+  };
+  var dayIdx = {}, skuIdx = {}, srcIdx = {}, at = {};
+  function no(idx, list, v, item) {
+    if (idx[v] === undefined) { idx[v] = list.length; list.push(item === undefined ? v : item); }
+    return idx[v];
+  }
+  eachRow_(tx, function (row, c) {
+    var ref = ref_(row[c.ref]), sku = code_(row[c.sku]), q = num_(row[c.qty]);
+    if (!ref && !sku && !q) return;
+    var d = plainDate_(row[c.date], tz);
+    stretch_(out.span, d);
+    if (!d || !ref || !sku) {
+      out.skipped.rows++;
+      out.skipped.qty += q;
+      return;
+    }
+    if ((from && d < from) || (to && d > to) || !q) return;
+    var k = d + '|' + ref + '|' + sku;
+    var l = at[k];
+    if (!l) {
+      var name = (text_(row[c.brand]) + ' ' + text_(row[c.size])).trim();
+      l = at[k] = [no(dayIdx, out.days, d), ref, no(skuIdx, out.skus, sku, [sku, name]), 0, no(srcIdx, out.srcs, text_(row[c.src]))];
+      out.lines.push(l);
+    }
+    l[3] += q;
+  });
+  out.lines = out.lines.filter(function (l) { return l[3] !== 0; });
+  return out;
+}
+
 function check_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var tz = ss.getSpreadsheetTimeZone();
@@ -694,10 +749,7 @@ function check_() {
 
   if (!w.period.to) throw new Error('แท็บ Report ยังไม่มีข้อมูล ให้ดึง Report ของเดือนมาลงก่อน');
 
-  var tx = tab_(ss, TAB_TX, {
-    date: /^Date$/i, sup: /^Sup$/i, ref: /^เลขภายใน/, sku: /^SKU$/i, brand: /^แบรนด์/, size: /^ขนาด/, qty: /^SUM of/i,
-  });
-  tx.at.src = tx.at.qty + 1;   // คอลัมน์ถัดจากจำนวนไม่มีหัวตาราง แต่บอกว่าแถวนี้มาจากระบบไหน
+  var tx = txTab_(ss);
   w.tabs.tx.lastRow = tx.lastRow;
   eachRow_(tx, function (row, at) { addCut_(w, row, at, tz); });
 
