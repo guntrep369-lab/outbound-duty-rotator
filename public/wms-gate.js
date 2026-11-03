@@ -286,6 +286,10 @@
 
     var fail = function (msg, focusId) {
       stage.querySelector('#gate-err').textContent = msg;
+      var card = stage.querySelector('.gate-login');
+      card.classList.remove('shake');
+      void card.offsetWidth;   // shake again on a second wrong try
+      card.classList.add('shake');
       if (focusId) {
         var el = stage.querySelector(focusId);
         if (el) { el.value = ''; el.focus(); }

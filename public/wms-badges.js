@@ -98,9 +98,12 @@ function settings() {
   return S ? { url: S.rosterUrl(), token: S.rosterToken() } : { url: '', token: '' };
 }
 
+let drawn = false;
+
 /**
  * วาดเลขบนเมนูสมุดกะ — 0 ไม่โชว์ · ค้าง 2 วันขึ้นไปเป็นสีแดงเหมือนในรายการค้าง
  * กะนี้ยังไม่มีใครกดรับทราบงานต่อ เลขจะกะพริบ (class ask) จนกว่าจะมีคนกดในหน้าสมุดกะ
+ * เลขเปลี่ยนระหว่างเปิดหน้าอยู่ เลขเด้งหนึ่งที (wms-motion.js) ตอนเปิดหน้าครั้งแรกไม่เด้ง
  */
 export function renderBadge(doc = document, now = new Date()) {
   const links = doc.querySelectorAll('.sysmod[data-mod="shiftlog"]');
@@ -114,12 +117,16 @@ export function renderBadge(doc = document, now = new Date()) {
     let b = a.querySelector('.sysmod-badge');
     if (!n) { if (b) b.remove(); a.removeAttribute('title'); return; }
     if (!b) { b = doc.createElement('b'); b.className = 'sysmod-badge'; a.appendChild(b); }
-    b.textContent = n > 99 ? '99+' : String(n);
+    const text = n > 99 ? '99+' : String(n);
+    const changed = b.textContent !== text;
+    b.textContent = text;
     b.classList.toggle('old', age >= 2);
     b.classList.toggle('ask', needs);
+    if (drawn && changed) window.WmsMotion?.bump(b);
     a.title = 'งานค้างในสมุดกะ ' + n + ' รายการ' + (age ? ' · เก่าสุดค้างมา ' + age + ' วัน' : '') +
       (needs ? ' · กะนี้ยังไม่มีใครกดรับทราบงานต่อ' : '');
   });
+  drawn = true;
 }
 
 let busy = false;

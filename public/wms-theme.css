@@ -219,6 +219,39 @@ html:not(.wms-moving) [data-count] { animation:wms-count-wait 0s 1.2s backwards;
 .wms-drop { animation:wms-drop 1.6s ease-out; border-radius:6px; }
 @keyframes wms-drop { 0%, 35% { background-color:#BBF7D0; box-shadow:0 0 0 4px #BBF7D0; color:#047857; } }
 
+/* A badge whose number just changed pops once. Badges that already move
+   keep doing that while they pop. */
+.wms-bump { animation:wms-bump .45s cubic-bezier(.34,1.56,.64,1); }
+@keyframes wms-bump { 30% { transform:scale(1.35); } }
+.wms-drop.wms-bump { animation:wms-drop 1.6s ease-out, wms-bump .45s cubic-bezier(.34,1.56,.64,1); }
+.sysmod-badge.ask.wms-bump { animation:wms-bump .45s cubic-bezier(.34,1.56,.64,1), wms-badge-ask 1.6s ease-out infinite; }
+
+/* Wrong input or a failed send: a short side-to-side shake right there.
+   Inline text can't be moved, so a span shakes as an inline-block. */
+.wms-shake { animation:wms-shake .45s cubic-bezier(.36,.07,.19,.97) both; }
+span.wms-shake { display:inline-block; }
+@keyframes wms-shake {
+  10%, 90% { transform:translateX(-2px); }
+  20%, 80% { transform:translateX(4px); }
+  30%, 50%, 70% { transform:translateX(-6px); }
+  40%, 60% { transform:translateX(6px); }
+}
+
+/* Saved: a ring and a tick draw themselves in front of the message, in its colour. */
+.wms-check {
+  display:inline-block; width:1.15em; height:1.15em; margin-right:.35em; vertical-align:-.22em;
+  fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round;
+  animation:wms-check-pop .5s cubic-bezier(.34,1.56,.64,1) both;
+}
+.wms-check circle {
+  fill:currentColor; fill-opacity:.12; stroke-dasharray:1;
+  transform:rotate(-90deg); transform-box:fill-box; transform-origin:center;   /* draws from the top */
+  animation:wms-draw .38s ease-out both;
+}
+.wms-check path { stroke-width:2.3; stroke-dasharray:1; animation:wms-draw .26s ease-out .3s both; }
+@keyframes wms-draw { from { stroke-dashoffset:1; } to { stroke-dashoffset:0; } }
+@keyframes wms-check-pop { from { transform:scale(.6); } 60% { transform:scale(1.15); } }
+
 /* Pop-ups grow out of the cell that was tapped and shrink back into it. */
 .wms-pop-in { animation:wms-pop-in .34s cubic-bezier(.2,.9,.3,1.04) both; }
 @keyframes wms-pop-in { from { opacity:0; transform:scale(.3); } }
@@ -261,7 +294,8 @@ html:not(.wms-moving) [data-count] { animation:wms-count-wait 0s 1.2s backwards;
 .wms-cheer button:hover { background:#1E293B; color:#fff; }
 
 @media (prefers-reduced-motion:reduce) {
-  .wms-busy, .wms-busy *, .wms-busy-belt::after, .wms-cheer, .wms-cheer img { animation:none !important; }
+  .wms-busy, .wms-busy *, .wms-busy-belt::after, .wms-cheer, .wms-cheer img,
+  .wms-check, .wms-check * { animation:none !important; }
 }
 
 /* ── Module header (icon tile + title + sub-nav) ─────────────────────────── */

@@ -413,6 +413,7 @@
     try {
       var r = await C.push({ onProgress: function (s) { btn.textContent = 'กำลังบันทึก… ' + s + ' วินาที'; } });
       btn.textContent = '✓ บันทึกแล้ว ' + (r.rows || '') + ' แถว';
+      if (window.WmsMotion) window.WmsMotion.saved(btn);
       // ไฟล์ที่เพิ่งบันทึกคือไฟล์เดียวกับที่ถืออยู่ ทำเครื่องหมายว่าอยู่ส่วนกลางแล้ว
       // ไม่งั้นแถบจะยังชวนให้กดบันทึกซ้ำ แล้วชีตจะมีไฟล์เดียวกันสองแถว
       var f = read();

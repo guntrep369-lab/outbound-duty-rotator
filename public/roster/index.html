@@ -819,7 +819,10 @@ var _osMigrated=useData(D);
 
 function _data(){return {employees:employees,outsource:outsource,periods:periods,holidays:holidays,extraPro:extraPro,overrides:overrides,kpiData:kpiData,minStaff:minStaff,osExtra:osExtra,shiftLog:shiftLog,late:late,ot:ot,savedAt:Date.now()};}
 function stamp(ts){return new Date(ts).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});}
-function setSaveState(cls,txt){var el=document.getElementById('save-state');el.className='rs-saved'+(cls?' '+cls:'');el.textContent=txt;}
+// done = เพิ่งบันทึกสำเร็จ เครื่องหมายถูกวาดตัวเอง · ผิดสั่นครั้งเดียวตอนเพิ่งพัง ลองใหม่แล้วพังซ้ำไม่สั่นอีก
+function setSaveState(cls,txt,done){var el=document.getElementById('save-state');var was=el.classList.contains('err');el.className='rs-saved'+(cls?' '+cls:'');el.textContent=txt;
+  if(!window.WmsMotion)return;
+  if(done)WmsMotion.saved(el);else if(cls==='err'&&!was)WmsMotion.shake(el);}
 function saveLocal(){
   // ดึงฉบับใหม่จากชีตมาแล้วสมุดกะอาจเปลี่ยน — เลขงานค้างบนเมนูข้าง (wms-badges.js) วาดใหม่
   try{localStorage.setItem(STORE_KEY,JSON.stringify(_data()));window.dispatchEvent(new Event('wms:shiftlog'));return true;}
@@ -829,7 +832,7 @@ function changed(){
   var ok=saveLocal();
   // ใช้ชีตส่วนกลางอยู่ — ข้อความบอกสถานะการส่งขึ้นชีตแทน
   if(sync&&sync.on())sync.changed();
-  else if(ok)setSaveState('ok','✓ บันทึกแล้ว '+stamp(Date.now()));
+  else if(ok)setSaveState('ok','✓ บันทึกแล้ว '+stamp(Date.now()),true);
 }
 
 // ── ส่งออก / นำเข้า ──
@@ -1797,7 +1800,7 @@ function syncStatus(state,info){
   else if(state==='offline'){cls='err';act=true;txt='⚠ ต่อชีตไม่ได้ เก็บในเครื่องไว้ก่อน · กดเพื่อลองใหม่';}
   else if(state==='error'){cls='err';act=true;txt='⚠ '+(info.error||'ส่งขึ้นชีตไม่สำเร็จ')+' · กดเพื่อลองใหม่';}
   else return;
-  setSaveState(cls,txt);
+  setSaveState(cls,txt,state==='saved');
   var el=document.getElementById('save-state');
   el.classList.toggle('act',act);
   el.onclick=act?function(){sync.retry();}:null;

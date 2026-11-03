@@ -445,7 +445,10 @@ function author(){return (window.WmsSettings&&WmsSettings.me())||(window.wmsGate
 function el(id){return document.getElementById(id);}
 function stamp(ts){return new Date(ts).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});}
 function hm(ts){return new Date(ts).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});}
-function setSaveState(cls,txt){var s=el('save-state');s.className='sl-saved'+(cls?' '+cls:'');s.textContent=txt;}
+// done = เพิ่งบันทึกสำเร็จ เครื่องหมายถูกวาดตัวเอง · ผิดสั่นครั้งเดียวตอนเพิ่งพัง ลองใหม่แล้วพังซ้ำไม่สั่นอีก
+function setSaveState(cls,txt,done){var s=el('save-state');var was=s.classList.contains('err');s.className='sl-saved'+(cls?' '+cls:'');s.textContent=txt;
+  if(!window.WmsMotion)return;
+  if(done)WmsMotion.saved(s);else if(cls==='err'&&!was)WmsMotion.shake(s);}
 function saveLocal(){
   data.savedAt=Date.now();
   // เลขงานค้างบนเมนูข้าง (wms-badges.js) วาดใหม่ทันที ไม่ต้องรอเปลี่ยนหน้า
@@ -455,7 +458,7 @@ function saveLocal(){
 function changed(){
   var ok=saveLocal();
   if(sync&&sync.on())sync.changed();
-  else if(ok)setSaveState('ok','✓ บันทึกแล้ว '+stamp(Date.now()));
+  else if(ok)setSaveState('ok','✓ บันทึกแล้ว '+stamp(Date.now()),true);
   render();
 }
 
@@ -993,7 +996,7 @@ function syncStatus(state,info){
   else if(state==='error'){cls='err';act=true;txt='⚠ '+(info.error||'ส่งขึ้นชีตไม่สำเร็จ')+' · กดเพื่อลองใหม่';}
   else if(state==='local')txt='เก็บในเครื่องนี้ · ตั้งชีตส่วนกลางในหน้าตั้งค่า แล้วอีกกะจะเห็นด้วย';
   else return;
-  setSaveState(cls,txt);
+  setSaveState(cls,txt,state==='saved');
   var s=el('save-state');
   s.classList.toggle('act',act);
   s.onclick=act?function(){sync.retry();}:null;

@@ -9,6 +9,8 @@
  *  - ตัวเลข [data-count]: วิ่งขึ้นจาก 0 ตอนเปิดหน้า หน้าเว็บสั่ง countUp เองตอนได้ข้อมูลใหม่
  *    ตัวไหนลดลงจากรอบก่อนจะกะพริบเขียว
  *  - popIn / popOut / celebrate / cheer ให้หน้าเว็บเรียกผ่าน window.WmsMotion
+ *  - shake / saved / bump: สั่นตอนผิด, เครื่องหมายถูกวาดตัวเองตอนบันทึกสำเร็จ, ป้ายตัวเลขเด้งตอนเลขเปลี่ยน
+ *    ช่องที่เบราว์เซอร์บอกว่ากรอกไม่ครบสั่นเอง เลขบนแท็บ .tx-tabs เด้งเองเมื่อวาดใหม่แล้วเลขเปลี่ยน
  *
  * wms-shell.js เรียก mountMotion ให้ทุกหน้า สคริปต์ในหน้าเว็บรันก่อนโมดูลนี้ จึงต้องเรียกผ่าน
  * window.WmsMotion?. เสมอ ไม่มีก็แค่ไม่ขยับ ข้อมูลยังขึ้นครบ
@@ -91,18 +93,34 @@ export function enter(box) {
   box._wmsEnter = WIN.setTimeout(() => box.classList.remove('wms-enter'), 700);
 }
 
+/** เลขบนแต่ละแท็บ ตามชื่อแท็บ (data-tab) เลขที่กำลังวิ่งอยู่ใช้ค่าจริงใน data-count */
+export function tabNums(tabs) {
+  const out = {};
+  for (const t of tabs.querySelectorAll('.tx-tab[data-tab]')) {
+    const n = t.querySelector('.n');
+    if (n) out[t.dataset.tab] = n.dataset.count ?? n.textContent;
+  }
+  return out;
+}
+
 /**
  * หน้าเว็บวาดแถบแท็บใหม่ทั้งแถบทุกครั้ง จึงดูจากผลที่วาดเสร็จแทนการผูกกับปุ่ม
  * แท็บที่เลือกเปลี่ยนตำแหน่งเมื่อไร สีม่วงกวาดเข้ามาจากฝั่งที่แท็บเดิมอยู่
+ * เลขบนแท็บไหนต่างจากรอบที่แล้ว เลขนั้นเด้ง แท็บที่เพิ่งมีเลขครั้งแรกไม่เด้ง
  */
 function watchTabs(doc) {
   const onAt = (tabs) => [...tabs.querySelectorAll('.tx-tab')].findIndex((t) => t.classList.contains('on'));
   for (const tabs of doc.querySelectorAll('.tx-tabs')) {
     /* หน้าเว็บวาดแท็บแรกไปแล้วก่อนโมดูลนี้โหลด */
-    let last = onAt(tabs);
+    let last = onAt(tabs), had = tabNums(tabs);
     const body = tabs.nextElementSibling?.classList.contains('tx-body') ? tabs.nextElementSibling : null;
     new WIN.MutationObserver(() => {
       const all = [...tabs.querySelectorAll('.tx-tab')];
+      const nums = tabNums(tabs);
+      for (const id in nums) {
+        if (id in had && had[id] !== nums[id]) bump(tabs.querySelector(`.tx-tab[data-tab="${id}"] .n`));
+      }
+      had = nums;
       const i = onAt(tabs);
       if (i < 0 || i === last) return;
       if (last >= 0 && !still()) {
@@ -184,6 +202,42 @@ export function popOut(box, done, at) {
   WIN.setTimeout(end, 320);   // แท็บอยู่เบื้องหลัง แอนิเมชันไม่วิ่ง ก็ยังต้องปิด
 }
 
+/* ── ผิด / สำเร็จ / ป้ายตัวเลข ───────────────────────────────────────────── */
+
+/** ใส่คลาสให้แอนิเมชันเล่นหนึ่งรอบ มาซ้ำระหว่างที่ยังเล่นอยู่ก็เริ่มใหม่ */
+function replay(el, cls, ms) {
+  if (!el?.classList || !WIN || still()) return;
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
+  WIN.clearTimeout(el['_' + cls]);
+  el['_' + cls] = WIN.setTimeout(() => el.classList.remove(cls), ms);
+}
+
+/** สั่นซ้ายขวาสั้น ๆ ตอนกรอกผิดหรือส่งไม่สำเร็จ ตาจะไปที่จุดนั้นเอง */
+export function shake(el) { replay(el, 'wms-shake', 500); }
+
+/** ป้ายตัวเลขเด้งขึ้นหนึ่งที ตอนเลขเปลี่ยน */
+export function bump(el) { replay(el, 'wms-bump', 500); }
+
+/* เครื่องหมายที่หน้าเว็บเขียนไว้หน้าข้อความสำเร็จ ไม่มีโมดูลนี้ก็ยังเห็นเครื่องหมายเดิม */
+const MARK = /^\s*(?:✓|✅|☁️?)\s*/u;
+const CHECK = '<svg class="wms-check" viewBox="0 0 20 20" aria-hidden="true">' +
+  '<circle cx="10" cy="10" r="8.5" pathLength="1"/><path d="M6 10.4l2.7 2.7L14.2 7.4" pathLength="1"/></svg>';
+
+/**
+ * วงกลมกับเครื่องหมายถูกวาดตัวเองขึ้นหน้าข้อความ ตอนบันทึกหรือส่งสำเร็จ
+ * ข้อความที่ขึ้นต้นด้วย ✓ ✅ ☁ อยู่แล้ว ตัวนั้นถูกแทนที่ ไม่ได้ซ้อนกันสองตัว
+ * ลดการเคลื่อนไหวไว้ เครื่องหมายขึ้นนิ่ง ๆ เลย
+ */
+export function saved(el) {
+  if (!el) return;
+  el.querySelector(':scope > .wms-check')?.remove();
+  const first = el.firstChild;
+  if (first?.nodeType === 3) first.nodeValue = first.nodeValue.replace(MARK, '');
+  el.insertAdjacentHTML('afterbegin', CHECK);
+}
+
 /* ── ฉลอง ────────────────────────────────────────────────────────────────── */
 
 const CONFETTI = ['#6366F1', '#A5B4FC', '#22C55E', '#F59E0B', '#F472B6', '#38BDF8'];
@@ -247,10 +301,12 @@ export function cheer(title, sub = '') {
 export function mountMotion(doc, root, win = WIN) {
   WIN = win;
   ROOT = root;
-  win.WmsMotion = { counts, countUp, enter, popIn, popOut, celebrate, cheer };
+  win.WmsMotion = { counts, countUp, enter, popIn, popOut, celebrate, cheer, shake, saved, bump };
   if (!doc.body) return;   // เทสต์ที่ไม่มีหน้าเว็บจริง
   mountBusy(doc, root);
   watchTabs(doc);
+  /* ช่องที่ติด required / pattern แล้วกดส่ง เบราว์เซอร์ขึ้นคำเตือนเอง เราแค่ให้ช่องนั้นสั่นด้วย */
+  doc.addEventListener('invalid', (e) => shake(e.target), true);
   doc.documentElement.classList.add('wms-moving');   // ตัวเลขที่ซ่อนรอไว้ (wms-theme.css) เริ่มนับได้
   countUp(doc);
 }

@@ -108,3 +108,93 @@ describe('ตัวเลขที่วิ่ง — wms-motion.js', () => {
     expect(M.busyLabel('post')).toMatch(/ส่งข้อมูล/);
   });
 });
+
+/** กล่องข้อความปลอม: ข้อความหนึ่งก้อน กับเครื่องหมายถูกที่ saved() ใส่ไว้ข้างหน้า */
+function msg(text) {
+  const el = {
+    nodes: [{ nodeType: 3, nodeValue: text }],
+    get firstChild() { return el.nodes[0]; },
+    querySelector: () => (el.nodes[0].check ? { remove: () => el.nodes.shift() } : null),
+    insertAdjacentHTML: (where, html) => el.nodes.unshift({ nodeType: 1, check: html }),
+    get text() { return el.nodes.filter((n) => n.nodeType === 3).map((n) => n.nodeValue).join(''); },
+  };
+  return el;
+}
+
+describe('เครื่องหมายถูกตอนบันทึกสำเร็จ — saved()', () => {
+  let M;
+  beforeAll(async () => { M = await import('../../public/wms-motion.js'); });
+
+  it('แทนเครื่องหมายที่หน้าเว็บเขียนไว้ ไม่ซ้อนกันสองตัว', () => {
+    for (const t of ['✓ บันทึกแล้ว 3 พ.ย.', '✅ บันทึกแล้ว', '☁ บันทึกขึ้นชีตแล้ว', '☁️ บันทึกให้ทีมคลังใช้']) {
+      const el = msg(t);
+      M.saved(el);
+      expect(el.nodes[0].check).toMatch(/class="wms-check"/);
+      expect(el.text).not.toMatch(/^[✓✅☁]/u);
+    }
+  });
+
+  it('ข้อความที่ไม่มีเครื่องหมาย ได้เครื่องหมายเพิ่มข้างหน้า ข้อความเดิมอยู่ครบ', () => {
+    const el = msg('ส่งผลนับแล้ว 4 รายการ');
+    M.saved(el);
+    expect(el.nodes).toHaveLength(2);
+    expect(el.text).toBe('ส่งผลนับแล้ว 4 รายการ');
+  });
+
+  it('เรียกซ้ำกับกล่องเดิม ยังมีเครื่องหมายตัวเดียว', () => {
+    const el = msg('✓ บันทึกแล้ว');
+    M.saved(el);
+    M.saved(el);
+    expect(el.nodes.filter((n) => n.check)).toHaveLength(1);
+  });
+});
+
+describe('สั่นตอนผิด ป้ายเด้งตอนเลขเปลี่ยน — shake() / bump()', () => {
+  let M, timers;
+  const box = () => {
+    const cls = new Set();
+    return { offsetWidth: 0, cls, classList: { add: (c) => cls.add(c), remove: (c) => cls.delete(c) } };
+  };
+  beforeAll(async () => {
+    M = await import('../../public/wms-motion.js');
+    timers = [];
+    M.mountMotion({}, '../', {
+      matchMedia: () => ({ matches: false }),
+      setTimeout: (fn) => timers.push(fn), clearTimeout: () => {},
+    });
+  });
+
+  it('ใส่คลาสให้เล่นหนึ่งรอบ แล้วเอาออกเองตอนจบ', () => {
+    const a = box(), b = box();
+    M.shake(a);
+    M.bump(b);
+    expect(a.cls.has('wms-shake')).toBe(true);
+    expect(b.cls.has('wms-bump')).toBe(true);
+    timers.forEach((fn) => fn());
+    expect(a.cls.size + b.cls.size).toBe(0);
+  });
+
+  it('ไม่มีกล่องให้สั่น (หน้าเว็บหาไม่เจอ) ก็ไม่พัง', () => {
+    expect(() => { M.shake(null); M.bump(undefined); }).not.toThrow();
+  });
+
+  it('ลดการเคลื่อนไหวไว้ ไม่สั่นไม่เด้ง', () => {
+    M.mountMotion({}, '../', { matchMedia: () => ({ matches: true }), setTimeout: () => {}, clearTimeout: () => {} });
+    const a = box();
+    M.shake(a);
+    M.bump(a);
+    expect(a.cls.size).toBe(0);
+  });
+
+  it('เลขบนแท็บอ่านตามชื่อแท็บ เลขที่กำลังวิ่งใช้ค่าจริง', () => {
+    const tab = (id, n) => ({ dataset: { tab: id }, querySelector: () => n });
+    const tabs = {
+      querySelectorAll: () => [
+        tab('fix', { dataset: { count: '40' }, textContent: '12' }),
+        tab('find', { dataset: {}, textContent: '7' }),
+        tab('log', null),
+      ],
+    };
+    expect(M.tabNums(tabs)).toEqual({ fix: '40', find: '7' });
+  });
+});

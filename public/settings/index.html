@@ -303,6 +303,8 @@ function say(id, text, cls) {
   const el = $(id);
   el.textContent = text || '';
   el.className = 'msg' + (cls ? ' ' + cls : '');
+  if (cls === 'ok') window.WmsMotion?.saved(el);
+  else if (cls === 'bad') window.WmsMotion?.shake(el);
 }
 
 // ── URL ────────────────────────────────────────────────────────────────

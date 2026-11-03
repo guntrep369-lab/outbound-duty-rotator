@@ -205,7 +205,7 @@ let OPENLOC = '';     // Location ที่เปิดดูอยู่ใน�
 let KIND = '';        // ตัวกรองแท็บข้อมูลผิด
 const HIST = { sku: '', busy: '', err: '', data: null };
 const HCACHE = new Map();   // ประวัติที่ดูแล้วในรอบนี้ กดกลับไปดูซ้ำไม่ต้องรอสคริปต์อ่านทั้งชีตอีกรอบ
-const COUNT = { busy: '', err: '', data: null };   // ใบนับสต๊อก ดึงตอนเปิดแท็บ
+const COUNT = { busy: '', err: '', ok: '', data: null };   // ใบนับสต๊อก ดึงตอนเปิดแท็บ
 let DRAFT = {};       // ตัวเลขที่กรอกแล้วแต่ยังไม่ส่ง
 const STOCK = { busy: '', err: '', data: WmsStock.read() };   // ยอดจากระบบบริษัท แคชกองเดียวกับหน้าสต๊อกคงเหลือ
 let CMP = null;       // ผลเทียบ คิดครั้งเดียวต่อข้อมูลหนึ่งชุด
@@ -633,7 +633,8 @@ function renderCount() {
       card('นับแล้ววันนี้', `${f(s.done.length)}/${f(s.total)}`) +
       card('ไม่ตรงค้างอยู่', f(s.off.length)) +
     `</div>` +
-    (COUNT.err ? `<div class="tx-warn">${esc(COUNT.err)}</div>` : '') +
+    (COUNT.err ? `<div class="tx-warn" id="cerr">${esc(COUNT.err)}</div>` : '') +
+    (COUNT.ok ? `<p class="tx-why tx-ok" id="cok">${esc(COUNT.ok)}</p>` : '') +
     (s.todo.length
       ? `<div class="tx-h">รายการที่ต้องนับวันนี้ (${f(s.todo.length)})</div>
          <p class="tx-why">ไปดูของจริงแล้วกรอกจำนวน ไม่เจอของให้ใส่ 0 ยอดในระบบจะเห็นหลังส่งแล้ว ทยอยส่งได้ ตัวเลขที่กรอกค้างไว้ไม่หาย</p>` + countForm(s.todo)
@@ -658,7 +659,7 @@ function setCount(data) {
 async function loadCount() {
   const url = WmsTx.savedUrl();
   if (!url || COUNT.busy) return;
-  COUNT.err = '';
+  COUNT.err = ''; COUNT.ok = '';
   COUNT.busy = 'กำลังโหลด…';
   if (TAB === 'count') renderCount();
   try {
@@ -677,21 +678,26 @@ async function sendCount() {
   const date = COUNT.data && COUNT.data.today;
   const items = Object.keys(DRAFT).map(k => ({ k, qty: +DRAFT[k] }));
   if (!url || COUNT.busy || !items.length) return;
-  COUNT.err = '';
+  COUNT.err = ''; COUNT.ok = '';
   COUNT.busy = 'กำลังส่ง…';
   renderSend();
+  let failed = false;
   try {
     const r = await WmsTx.saveCount(url, date, items);
     COUNT.data = r;
     DRAFT = {};
     WmsTx.saveDraft(date, DRAFT);
     if (r.skipped) COUNT.err = `มี ${f(r.skipped)} รายการที่มีคนนับไปก่อนแล้ว ระบบเก็บผลแรกไว้`;
+    if (items.length > (r.skipped || 0)) COUNT.ok = `✓ ส่งผลนับแล้ว ${f(items.length - (r.skipped || 0))} รายการ`;
   } catch (err) {
     COUNT.err = 'ส่งไม่สำเร็จ ตัวเลขที่กรอกยังอยู่ครบ ลองกดส่งอีกครั้ง — ' + err.message;
+    failed = true;
   }
   COUNT.busy = '';
   renderTabs();
   renderCount();
+  if (failed) window.WmsMotion?.shake($('cerr'));
+  else window.WmsMotion?.saved($('cok'));
   /* หน้าเปิดค้างข้ามคืน: ผลของเมื่อวานเข้าแล้ว แต่รายการของวันนี้ยังไม่ได้โหลดมา */
   if (COUNT.data.today !== date) loadCount();
 }
@@ -782,7 +788,7 @@ function renderDiffRows() {
   box.innerHTML =
     statePills(rows) +
     (COUNT.err && !COUNT.data ? `<div class="tx-warn">${esc(COUNT.err)}</div>` : '') +
-    (DSEND.err ? `<div class="tx-warn">${esc(DSEND.err)}</div>` : '') +
+    (DSEND.err ? `<div class="tx-warn" id="derr">${esc(DSEND.err)}</div>` : '') +
     (DSEND.ok ? `<p class="tx-why tx-ok">${esc(DSEND.ok)} · <button class="tx-link" data-go-tab="count">เปิดใบนับ</button></p>` : '') +
     (kind && list.length ? `<p class="tx-why">${esc(kind.note)}</p>` : '') +
     (list.length
@@ -815,13 +821,16 @@ async function sendDiff() {
     const r = await WmsTx.addCount(url, rows);
     setCount(r);
     DPICK.clear();
-    DSEND.ok = `ส่งแล้ว ${f(r.added)} SKU รวม ${f(r.addedLines)} จุด` + (r.skipped ? ` · ข้าม ${f(r.skipped)} SKU ที่รอนับอยู่แล้ว` : '');
+    DSEND.ok = `✓ ส่งแล้ว ${f(r.added)} SKU รวม ${f(r.addedLines)} จุด` + (r.skipped ? ` · ข้าม ${f(r.skipped)} SKU ที่รอนับอยู่แล้ว` : '');
   } catch (err) {
     DSEND.err = 'ส่งเข้าใบนับไม่สำเร็จ SKU ที่ติ๊กไว้ยังอยู่ — ' + err.message;
   }
   DSEND.busy = '';
   renderTabs();
-  if (TAB === 'diff') renderDiffRows();
+  if (TAB !== 'diff') return;
+  renderDiffRows();
+  if (DSEND.err) window.WmsMotion?.shake($('derr'));
+  else window.WmsMotion?.saved(document.querySelector('#dres .tx-ok'));
 }
 
 /** พับไว้แต่ไม่ซ่อน ถ้าสินค้าจริงถูกกรอกรหัสเป็นคำไทย จะได้ยังเห็นว่าหลุดมาอยู่ตรงนี้ */

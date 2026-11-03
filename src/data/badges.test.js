@@ -187,6 +187,20 @@ describe('วาดเลขบนเมนู', () => {
     expect(link.title).toBe('งานค้างในสมุดกะ 2 รายการ · เก่าสุดค้างมา 4 วัน');
   });
 
+  it('เลขเปลี่ยนระหว่างเปิดหน้าอยู่ — เลขเด้ง เลขเดิมไม่เด้ง', () => {
+    const bumps = [];
+    window.WmsMotion = { bump: (b) => bumps.push(b.textContent) };
+    const doc = fakeDoc();
+    renderBadge(doc, now);
+    bumps.length = 0;
+    renderBadge(doc, now);
+    expect(bumps).toEqual([]);
+    const { [Object.keys(LOG).find((k) => LOG[k].open)]: _closed, ...rest } = LOG;
+    store['wms:roster'] = JSON.stringify({ shiftLog: rest });
+    renderBadge(doc, now);
+    expect(bumps).toEqual(['1']);
+  });
+
   it('ปิดงานค้างหมดแล้ว — เอาเลขออก', () => {
     const doc = fakeDoc();
     renderBadge(doc, now);

@@ -139,6 +139,14 @@ html.wms-locked body > *:not(#wms-gate) { visibility: hidden; }
   box-shadow: 0 24px 60px rgba(2, 6, 23, .55);
   -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
 }
+/* Wrong code: the card shakes once, as a phone's lock screen does (wms-gate.js). */
+.gate-login.shake { animation: gate-shake .45s cubic-bezier(.36, .07, .19, .97) both; }
+@keyframes gate-shake {
+  10%, 90% { transform: translateX(-2px) }
+  20%, 80% { transform: translateX(4px) }
+  30%, 50%, 70% { transform: translateX(-7px) }
+  40%, 60% { transform: translateX(7px) }
+}
 .gate-login .logo { width: 46px; height: 46px; border-radius: 11px; display: block; margin: 0 auto 14px; }
 .gate-login h1 { font-size: 19px; font-weight: 700; letter-spacing: -.02em; }
 .gate-login h1 span { color: #A5B4FC; font-size: 13px; font-weight: 500; }
