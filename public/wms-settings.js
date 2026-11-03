@@ -136,8 +136,9 @@
      * ทั้งที่คนบนเครื่องนั้นยังไม่ได้เดินไปดูของ
      *
      * wms:cut:result กับ wms:cut:ledger คือผลตรวจรอบล่าสุด เป็นข้อมูลของเดือน กู้ไปอีกเครื่องแล้วจะดูเหมือนเพิ่งตรวจ
+     * wms:lotpo:ledger ก็เป็นแถวขายที่ดึงไว้ของเดือนเหมือนกัน
      */
-    SKIP: ['wms:session', 'wms:orders', 'wms:stock', 'wms:transport:file', 'wms:me', 'wms:roster:sync', 'wms:tx:count:draft', 'wms:cut:result', 'wms:cut:ledger'],
+    SKIP: ['wms:session', 'wms:orders', 'wms:stock', 'wms:transport:file', 'wms:me', 'wms:roster:sync', 'wms:tx:count:draft', 'wms:cut:result', 'wms:cut:ledger', 'wms:lotpo:ledger'],
 
     /**
      * ไฟล์สำรองแยกเป็นสองชนิด ตามสิ่งที่ "หลุดแล้วเสียหายต่างกัน"

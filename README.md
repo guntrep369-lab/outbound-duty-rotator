@@ -19,7 +19,7 @@ The list lives in [`public/wms-modules.js`](public/wms-modules.js) (the one plac
 | — (hidden) | สรุปเช้า · Morning Brief · ย้อนหลัง · History | `summary/` · `history/` |
 | ออเดอร์ | เทียบ Order · ค้นหาออเดอร์ | `order-compare/` · `order-lookup/` |
 | คลังสินค้า | สต๊อกคงเหลือ · สรุปหยิบของ · เบิกตามออเดอร์ · เอกสารคลังสินค้า | `stock/` · `picking/` · `order-sheet/` · `warehouse-forms/` |
-| สินค้าคงคลัง | สต๊อกราย Location · เช็ครายการตัดสต๊อก | `stock-location/` · `cut-check/` |
+| สินค้าคงคลัง | สต๊อกราย Location · เช็ครายการตัดสต๊อก · LOT / PO ที่ขายออก | `stock-location/` · `cut-check/` · `lot-po/` |
 | ขนส่ง | ทำใบงานขนส่ง · เอกสารขนส่ง | `transport-docs/` · `transport-forms/` |
 | ขนส่ง (hidden) | ประเภทงานรถ · ผังงานรถวันนี้ | `jobs/` · `loadplan/` |
 | ทีมและระบบ | **ตารางกะ · Shift Schedule** · ตั้งค่า | `roster/` · `settings/` |
@@ -563,6 +563,31 @@ after the sheet's data changes.
 
 ---
 
+## 🏷️ Lot & PO Out (`/lot-po`)
+
+The report for accounting: on each day, which LOT and PO every SKU that was sold came from. It reads
+the ledger's `ขาย` rows through the same `tx-daily` call that เทียบรายวัน uses, so it needs no new
+script, only the Transaction URL from the settings page. It never writes to the sheet.
+
+- Rows with the same day, SKU (column B), LOT and PO become one line. The location isn't part of the
+  line, but it's shown, with links to the ledger rows behind it.
+- A SKU that went out from several LOT/PO on one day gets one line for each, oldest LOT first.
+- `LOT 0`, `PO 0` or a blank one means the LOT or PO isn't known (mostly stock from the last count). These
+  lines are marked and can be listed on their own.
+- A quantity typed as text isn't added, the same as the balance sheet's SUMIFS, and the line says so.
+- Copy pastes into Excel as columns (วันที่, SKU, ชื่อสินค้า, LOT, PO, จำนวน, หมายเหตุ), with the SKU on
+  every line. Download gives the same table as a CSV that Excel opens in Thai. Both take the whole
+  selection, even when the page only draws the first 500 lines.
+
+**Is the day ready to send?** The report is only as right as the ledger. The page reads the last
+เทียบรายวัน result saved on this device by the cut-check page, then marks each day ✓ (matches all
+three systems and the Report), ! (only cut on different days) or ✕ (still differs). If the ledger has
+changed since that check, the day says so. Fix the day in เช็ครายการตัดสต๊อก first, then send it.
+
+The fetched month stays on the device. Press ดึงใหม่ after the ledger changes.
+
+---
+
 ## 🗂️ Project structure
 
 ```
@@ -585,6 +610,7 @@ public/
 │                          #   roster-people.js: group / day off by date, leave counts)
 ├─ stock-location/         # สต๊อกราย Location, from the Transaction sheet (+ wms-tx.js: grouping, refill list)
 ├─ cut-check/              # เช็ครายการตัดสต๊อก, cuts compared with the month-end order reports (+ wms-cut.js: per-day match with the ledger)
+├─ lot-po/                 # LOT / PO ที่ขายออก, the daily SKU × LOT × PO report for accounting (+ wms-lotpo.js)
 ├─ summary/ history/ order-compare/ order-lookup/ stock/ picking/ order-sheet/
 ├─ shiftlog/               # สมุดกะ (+ logis.html: the read-only page for Logis)
 ├─ warehouse-forms/ jobs/ loadplan/ transport-docs/ transport-forms/ settings/
