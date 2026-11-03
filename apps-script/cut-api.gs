@@ -26,6 +26,7 @@ var TAB_CRM = 'Report order ระบบ CRM';
 var TAB_TF = 'Report order ระบบโอนย้าย';
 
 var CANCELLED = 'ยกเลิกแล้ว';
+var SHIPPED = 'จัดส่งแล้ว';   // สถานะออเดอร์ JST ค่านี้คู่กับขนส่งยกเลิก = ของออกจากคลังไปแล้ว ลูกค้ายกเลิกทีหลัง
 var TRANSFER = 'โอนย้าย';   // ค่าในคอลัมน์ที่มาของแท็บ Transaction งานย้ายคลัง ไม่ใช่ออเดอร์ จึงไม่มีใน Report JST หรือ CRM
 var SYS_KEY = { JST: 'jst', CRM: 'crm' };
 SYS_KEY[TRANSFER] = 'tf';
@@ -97,8 +98,11 @@ function ymd_(y, m, d) {
   return y + '-' + ('0' + +m).slice(-2) + '-' + ('0' + +d).slice(-2);
 }
 
-/** หาคอลัมน์จากหัวตาราง ถ้าหาไม่เจอให้ล้มดัง ๆ เพราะอ่านผิดคอลัมน์แล้วตัวเลขจะผิดโดยไม่มีอะไรเตือน */
-function tab_(ss, name, spec) {
+/**
+ * หาคอลัมน์จากหัวตาราง ถ้าหาไม่เจอให้ล้มดัง ๆ เพราะอ่านผิดคอลัมน์แล้วตัวเลขจะผิดโดยไม่มีอะไรเตือน
+ * ยกเว้นคอลัมน์ใน opt ซึ่งไม่มีก็ได้ หาไม่เจอได้ -1 และอ่านเป็นค่าว่าง
+ */
+function tab_(ss, name, spec, opt) {
   var sh = ss.getSheetByName(name);
   if (!sh) throw new Error('ไม่พบแท็บ "' + name + '" ในไฟล์นี้');
   var lastCol = sh.getLastColumn();
@@ -109,7 +113,7 @@ function tab_(ss, name, spec) {
     for (var i = 0; i < head.length && at[key] < 0; i++) {
       if (spec[key].test(text_(head[i]))) at[key] = i;
     }
-    if (at[key] < 0) {
+    if (at[key] < 0 && !(opt && opt[key])) {
       throw new Error('แท็บ "' + name + '" หาคอลัมน์ ' + key + ' ไม่เจอ ถ้าแท็บนี้ดึงด้วยสูตร ให้เปิดชีตดูว่ายังขึ้นข้อมูลอยู่ไหม');
     }
   }
@@ -159,18 +163,21 @@ function stretch_(s, d) {
 function key_(w, ref, sku) {
   var id = ref + '|' + sku;
   return w.keys[id] || (w.keys[id] = {
-    ref: ref, sku: sku, r: 0, x: 0, out: 0, inq: 0, t: 0, ship: '', xd: {}, td: {}, rd: {}, note: '', sup: '', src: '',
+    ref: ref, sku: sku, r: 0, x: 0, out: 0, inq: 0, t: 0, ship: '', back: false, xd: {}, td: {}, rd: {}, note: '', sup: '', src: '',
   });
 }
 
 /**
  * Report คือยอดที่ควรถูกตัด ต้องอ่านก่อน เพราะแถวตัดต้องรู้ว่าออเดอร์นี้อยู่ใน Report หรือเปล่า
  * รายงานโอนย้ายใช้เลขใบโอนย้ายเป็นเลขออเดอร์ ตรงกับเลขภายในของแถวโอนย้ายในแท็บตัด และช่อง sup คือคลังปลายทาง
+ * JST ที่สถานะจัดส่งแล้วแต่ขนส่งยกเลิก (back) คือของออกจากคลังไปแล้ว ลูกค้ายกเลิก ของตีกลับเข้าคลัง
+ * ต้องตัดตามวันที่ออกเหมือนออเดอร์ปกติ ของที่กลับเข้ามาเป็นอีกเรื่องหนึ่ง ไม่ได้หักจากยอดนี้
  */
 function addReport_(w, sys, row, at, tz) {
   var ref = ref_(row[at.ref]), sku = code_(row[at.sku]), q = num_(row[at.qty]);
   if (!ref && !sku && !q) return;
   var d = plainDate_(row[at.date], tz), sup = text_(row[at.sup]), ship = sys === 'JST' ? text_(row[at.ship]) : '';
+  var back = ship === CANCELLED && at.status >= 0 && text_(row[at.status]) === SHIPPED;
   var span = w.tabs[SYS_KEY[sys]];
   span.rows++;
   stretch_(span, d);
@@ -189,6 +196,7 @@ function addReport_(w, sys, row, at, tz) {
   k.r += q;
   if (d) k.rd[d] = (k.rd[d] || 0) + q;
   if (!k.ship) k.ship = ship;
+  if (back) k.back = true;
 }
 
 function addCut_(w, row, at, tz) {
@@ -282,7 +290,7 @@ function tally_(side, d, sku, q) {
 /**
  * ยอดที่ควรออกของรายการนี้ตาม Report ลงวันที่ออกจากคลังของแต่ละแถว นับได้หลังจัดถังแล้วเท่านั้น
  * ออเดอร์ที่ส่งสองรอบจึงควรออกทั้งสองวัน ไม่ใช่รวมไปวันสุดท้าย
- * รายการที่ไม่ได้ตัดเพราะขนส่งยกเลิก สถานะว่าง หรือไม่ใช่ของในคลัง ไม่ควรออก
+ * รายการที่ไม่ได้ตัดเพราะขนส่งยกเลิกก่อนของออก สถานะว่าง หรือไม่ใช่ของในคลัง ไม่ควรออก
  */
 function addShould_(w, k) {
   if (!w.orders[k.ref]) return;
@@ -410,7 +418,7 @@ function bucket_(k, w) {
     return k.x || k.t ? 'ghost' : 'reversed';
   }
   if (!k.r) return k.x || k.t ? 'wrong' : 'reversed';
-  var cancelled = k.ship === CANCELLED;
+  var cancelled = k.ship === CANCELLED && !k.back;
   var blank = o.sys === 'JST' && !k.ship;
   if (!k.x && !k.t) {
     if (nonStock_(k.sku)) return 'nonstock';
@@ -482,7 +490,7 @@ function rowOf_(k, kind, w) {
     k: kind, ref: k.ref, sku: k.sku, sys: o ? o.sys : k.src,
     date: (o && o.date) || xd[0] || td[0] || '',
     sup: (o && o.sup) || k.sup,
-    ship: k.ship || (o && o.ship) || '',
+    ship: k.ship || (o && o.ship) || '', back: k.back,
     r: k.r, x: k.x, t: k.t, goal: goal, side: side_(goal, k.x, k.t),
     xd: xd, td: td, inq: k.inq, note: k.note,
   };
@@ -503,7 +511,7 @@ function mergeOrders_(rows, w) {
       return r.side === first.side && first.side !== 'both' && (first.side === 'tx' ? !r.x : !r.t);
     });
     if (!whole) { out.push.apply(out, list); return; }
-    var sum = { k: first.k, ref: ref, sku: '', sys: first.sys, date: first.date, sup: first.sup, ship: first.ship,
+    var sum = { k: first.k, ref: ref, sku: '', sys: first.sys, date: first.date, sup: first.sup, ship: first.ship, back: first.back,
       r: 0, x: 0, t: 0, goal: 0, side: first.side, xd: [], td: [], inq: 0, note: first.note, lines: list.length };
     var xd = {}, td = {};
     list.forEach(function (r) {
@@ -602,8 +610,9 @@ function recon_(w, buckets) {
 }
 
 function info_(w, list, buckets) {
-  var str = { lines: 0, qty: 0 }, bad = { lines: 0, qty: 0 }, rev = {};
+  var str = { lines: 0, qty: 0 }, bad = { lines: 0, qty: 0 }, back = { lines: 0, qty: 0 }, rev = {};
   list.forEach(function (k) {
+    if (k.back) { back.lines++; back.qty += k.r; }
     if (k.bucket === 'nonstock') {
       var part = GOOD_SKU.test(k.sku) ? str : bad;
       part.lines++;
@@ -623,6 +632,7 @@ function info_(w, list, buckets) {
     badSku: bad,
     blankOk: count('blankOk'),
     cancelOk: count('cancelOk'),
+    shippedBack: back,
     transfer: { refs: Object.keys(w.transfer).length, lines: transfer ? transfer.lines : 0, qty: w.totals.txTransfer },
     outsideTx: { rows: w.outsideTx.rows, qty: w.outsideTx.qty, from: w.outsideTx.from, to: w.outsideTx.to, orders: Object.keys(w.outsideTx.refs).length },
     outsideTr: { rows: w.outsideTr.rows, qty: w.outsideTr.qty, from: w.outsideTr.from, to: w.outsideTr.to },
@@ -659,9 +669,9 @@ function check_() {
   var w = newWork_();
 
   var jst = tab_(ss, TAB_JST, {
-    ref: /^หมายเลขออเดอร์ภายใน/, sup: /^บริษัทขนส่ง/, ship: /^สถานะขนส่ง/, date: /^วันที่ออกจากคลัง/,
+    ref: /^หมายเลขออเดอร์ภายใน/, sup: /^บริษัทขนส่ง/, ship: /^สถานะขนส่ง/, status: /^สถานะ$/, date: /^วันที่ออกจากคลัง/,
     sku: /^รหัสสินค้า/, name: /^ชื่อสินค้า/, qty: /^จำนวนสินค้า/,
-  });
+  }, { status: 1 });
   w.tabs.jst.lastRow = jst.lastRow;
   eachRow_(jst, function (row, at) { addReport_(w, 'JST', row, at, tz); });
 

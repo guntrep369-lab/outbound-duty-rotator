@@ -415,7 +415,7 @@ out on the server, and returns only the summary and the lines that differ. It ne
 | --- | --- |
 | `ตัดสต๊อกระบบ Transaction` | Cuts in the team's system. The column after `SUM of` has no header and says where the row came from (`JST`, `CRM`, or `โอนย้าย`) |
 | `ตัดสต๊อกระบบ TRcloud` | Cuts in the company system. The cut amount is `เบิกออก` minus `รับเข้า`, because a correction is entered as a receipt on the same order |
-| `Report order ระบบJST` | Shipped orders from JST, with the shipping status |
+| `Report order ระบบJST` | Shipped orders from JST, with the order status (`สถานะ`, optional) and the shipping status |
 | `Report order ระบบ CRM` | Shipped orders from CRM |
 | `Report order ระบบโอนย้าย` | Optional. The transfer report (allocate-out export), pasted with its header row |
 
@@ -437,6 +437,13 @@ report lists each slip's SKUs under `หมายเลขใบโอนย้�
 - Without it, or while it only has a header row, transfers are only checked against each other: the two
   systems should agree.
 
+**Shipped, then cancelled:** a JST line whose `สถานะ` is `จัดส่งแล้ว` but whose `สถานะขนส่ง` is
+`ยกเลิกแล้ว` left the warehouse before the customer cancelled, and the goods came back. It must still
+be cut on its warehouse-out date, so it is checked like any shipped line. Not cut is listed under
+ยังไม่ตัด, and a correct cut counts as matching. A `ยกเลิกแล้ว` line with any other `สถานะ` was cancelled
+before it left, so it should not be cut. Without the `สถานะ` column, every `ยกเลิกแล้ว` line is treated
+that way.
+
 **Tab ตัดผิด / ตัดเกิน:**
 
 | Type | Meaning |
@@ -444,7 +451,7 @@ report lists each slip's SKUs under `หมายเลขใบโอนย้�
 | ตัดเกิน | Cut more than the report's quantity. The dates show if it was cut twice |
 | ตัดผิด SKU | The order is in the report, but this SKU isn't part of it |
 | ตัดแต่ไม่มีใน Report | Cut, but the order number isn't in either report |
-| ขนส่งยกเลิกแต่ตัดแล้ว | The report says the shipment was cancelled, yet stock was cut |
+| ขนส่งยกเลิกแต่ตัดแล้ว | The report says the order was cancelled before it left the warehouse, yet stock was cut |
 | สถานะขนส่งว่างแต่ตัดแล้ว | A blank shipping status means the order hasn't shipped, yet stock was cut. The cut should be reversed |
 | โอนย้ายไม่ตรงกัน | A transfer whose quantity differs between the two systems |
 

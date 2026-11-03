@@ -324,12 +324,14 @@ const KINDS = {
   over: { label: 'ตัดเกิน', why: 'ตัดมากกว่าจำนวนใน Report ส่วนมากเกิดจากลงซ้ำ ดูวันที่ตัดในคอลัมน์วันที่', tone: 'tx-neg' },
   wrong: { label: 'ตัดผิด SKU', why: 'ออเดอร์นี้มีใน Report แต่ SKU นี้ไม่อยู่ในออเดอร์', tone: 'tx-neg' },
   ghost: { label: 'ตัดแต่ไม่มีใน Report', why: 'มีรายการตัด แต่ไม่พบเลขออเดอร์หรือเลขใบโอนย้ายนี้ใน Report', tone: 'tx-neg' },
-  cancel: { label: 'ขนส่งยกเลิกแต่ตัดแล้ว', why: 'Report บอกว่าการจัดส่งถูกยกเลิก ถ้าของไม่ได้ออกจากคลังจริงต้องคืนยอด', tone: 'tx-mid' },
+  cancel: { label: 'ขนส่งยกเลิกแต่ตัดแล้ว', why: 'Report บอกว่ายกเลิกก่อนของออกจากคลัง (สถานะยังไม่ใช่จัดส่งแล้ว) ตัดไปแล้วต้องคืนยอด', tone: 'tx-mid' },
   blankCut: { label: 'สถานะขนส่งว่างแต่ตัดแล้ว', why: 'สถานะขนส่งว่างคือยังไม่ได้ส่ง แต่ตัดสต๊อกไปแล้ว ต้องคืนยอด', tone: 'tx-neg' },
   transferDiff: { label: 'โอนย้ายไม่ตรงกัน', why: 'งานโอนย้ายที่ยอดในสองระบบไม่เท่ากัน', tone: 'tx-neg' },
   under: { label: 'ยังไม่ตัดหรือตัดไม่ครบ', why: 'จำนวนใน Report มากกว่ายอดที่ตัด ดูคอลัมน์สุดท้ายว่าขาดฝั่งไหน', tone: 'tx-neg' },
 };
 const FIX_KINDS = ['over', 'wrong', 'ghost', 'cancel', 'blankCut', 'transferDiff'];
+/* JST สถานะจัดส่งแล้วแต่ขนส่งยกเลิก ของออกจากคลังไปแล้ว ต้องตัดวันที่ออกเหมือนออเดอร์ปกติ */
+const BACK = 'ส่งออกแล้ว ลูกค้ายกเลิก ตีกลับคลัง';
 const TAB_TF = 'Report order ระบบโอนย้าย';
 
 /* ครบทุกถังที่สคริปต์ส่งมา ถังที่ไม่อยู่ในนี้จะขึ้นชื่อถังดิบ เห็นได้ทันทีว่าลืมเพิ่ม */
@@ -342,7 +344,7 @@ const PARTS = {
   gap: { label: 'ขาดทั้งวัน', fix: true },
   nonstock: { label: 'รหัสที่ไม่ใช่ของในคลัง ไม่ได้ตัด' },
   blankOk: { label: 'สถานะขนส่งว่าง และยังไม่ตัด' },
-  cancelOk: { label: 'ขนส่งยกเลิก และไม่ได้ตัด' },
+  cancelOk: { label: 'ขนส่งยกเลิกก่อนของออก และไม่ได้ตัด' },
   transfer: { label: 'งานโอนย้าย ไม่มีใน Report' },
   outside: { label: 'ตัดนอกช่วงของ Report รอเทียบรอบถัดไป' },
   adjust: { label: 'TRcloud แผนก IV ปรับยอดคลัง' },
@@ -576,7 +578,7 @@ function rowHtml(r) {
   return `<tr>
     <td class="nw k-top"><span class="tx-ref">${esc(r.ref || '(ไม่มีเลขออเดอร์)')}</span><span class="tx-sub">${esc(r.sys || '-')}${r.sup ? ' · ' + esc(r.sup) : ''}</span></td>
     <td class="tx-name k-main">${r.sku ? `<b>${esc(r.sku)}</b><span class="tx-sub">${esc(name)}</span>` : `<b>ทั้งออเดอร์ ${f(r.lines)} SKU</b>`}</td>
-    <td class="nw k-side">${esc(dm(r.date))}${cut ? `<span class="tx-sub">${esc(cut)}</span>` : ''}${r.ship ? `<span class="tx-sub">${esc(r.ship)}</span>` : ''}</td>
+    <td class="nw k-side">${esc(dm(r.date))}${cut ? `<span class="tx-sub">${esc(cut)}</span>` : ''}${r.ship ? `<span class="tx-sub">${esc(r.back ? BACK : r.ship)}</span>` : ''}</td>
     <td class="num" data-label="Report">${f(r.r)}</td>
     <td class="num ${bad(r.x)}" data-label="${esc(L.x)}">${f(r.x)}</td>
     <td class="num ${bad(r.t)}" data-label="${esc(L.t)}">${f(r.t)}</td>
@@ -698,6 +700,7 @@ function reconHtml() {
     <div class="tx-note">ที่อยู่ในตารางนี้แต่ไม่ได้เป็นสีแดงคือเรื่องปกติ ไม่ต้องแก้
       ${tfNote() ? `<br>${tfNote()}` : ''}
       ${RAW.kinds.cancel.total || RAW.kinds.blankCut.total ? '<br>รายการที่ขนส่งยกเลิกหรือสถานะว่างแต่ตัดแล้ว ยอดเท่า Report จึงไม่อยู่ในตารางนี้ ดูที่แท็บตัดผิด / ตัดเกิน' : ''}
+      ${i.shippedBack?.lines ? `<br>${BACK} ${f(i.shippedBack.lines)} รายการ ${f(i.shippedBack.qty)} ชิ้น นับเป็นยอดที่ต้องตัดวันที่ออกจากคลังแล้ว` : ''}
       ${i.reversedCount ? `<br>ตัดแล้วกลับรายการจนเป็นศูนย์เรียบร้อย ${f(i.reversedCount)} ออเดอร์ ไม่กระทบยอด` : ''}
       ${i.trIn ? `<br>TRcloud มีแถวรับเข้าทั้งหมด ${f(i.trIn)} ชิ้น ซึ่งหักออกจากยอดเบิกแล้ว` : ''}
     </div>`;
@@ -1092,8 +1095,8 @@ function dailyHtml() {
       ${c.hasR
         ? `${RAW.totals.tf
             ? `${L.r} คือ Report JST + CRM ตามวันที่ออกจากคลัง และ Report โอนย้ายตามวันที่จัดส่ง
-              ไม่นับรายการที่ขนส่งยกเลิก สถานะขนส่งว่าง หรือรหัสที่ไม่ใช่ของในคลัง เช่นออเดอร์แฝง STR`
-            : `${L.r} คือ Report JST + CRM ตามวันที่ออกจากคลัง ไม่นับรายการที่ขนส่งยกเลิก สถานะขนส่งว่าง หรือรหัสที่ไม่ใช่ของในคลัง
+              ไม่นับรายการที่ขนส่งยกเลิกก่อนของออก สถานะขนส่งว่าง หรือรหัสที่ไม่ใช่ของในคลัง เช่นออเดอร์แฝง STR`
+            : `${L.r} คือ Report JST + CRM ตามวันที่ออกจากคลัง ไม่นับรายการที่ขนส่งยกเลิกก่อนของออก สถานะขนส่งว่าง หรือรหัสที่ไม่ใช่ของในคลัง
               แล้วบวกงานโอนย้ายจาก ${L.x} เพราะยังไม่มีแท็บ ${TAB_TF}`}<br>
           บางออเดอร์ตัดสต๊อกคนละวันกับวันที่ออกจากคลัง ถ้าสองวันติดกันหักกันแล้วเท่ากันจะขึ้นว่าน่าจะลงคนละวัน`
         : `ยังไม่มีช่อง ${L.r} ให้วาง <b>cut-api.gs</b> ใหม่ แล้ว Deploy เป็น New version จากนั้นกด <b>ตรวจใหม่</b>`}</div>`;
@@ -1150,7 +1153,7 @@ function fixNotes(e) {
   const out = [];
   if (e.via) out.push(`ชีตทีมวันนั้นเท่ากับ ${L[e.via]} จึงน่าจะลงผิดเหมือนกัน`);
   if (e.mixed) out.push(`ช่องนี้ ${L.x} หรือ ${L.t} มีออเดอร์ต้องแก้ด้วย แก้สองระบบนั้นก่อน ยอดที่ต้องลงอาจเปลี่ยน`);
-  if (e.kind === 'cancel') out.push('คืนเมื่อของไม่ได้ออกจากคลังจริง');
+  if (e.kind === 'cancel') out.push('คืนยอด เพราะยกเลิกก่อนของออกจากคลัง');
   return out;
 }
 

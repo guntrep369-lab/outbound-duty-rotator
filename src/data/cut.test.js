@@ -28,7 +28,7 @@ const DAY = '2026-03-05';
 
 const when = (s) => new Date(`${s}T12:00:00Z`);
 const jst = (ref, sku, qty, o = {}) => [
-  o.online ?? `ON${ref}`, ref, 'จัดส่งแล้ว', o.sup ?? 'ขนส่งเอ', o.track ?? `TRK${ref}`, o.ship ?? 'จัดส่งแล้ว', 'คลังเอ',
+  o.online ?? `ON${ref}`, ref, o.status ?? 'จัดส่งแล้ว', o.sup ?? 'ขนส่งเอ', o.track ?? `TRK${ref}`, o.ship ?? 'จัดส่งแล้ว', 'คลังเอ',
   o.date ?? when(DAY), sku, o.name ?? `สินค้า ${sku}`, qty, sku, '',
 ];
 const crm = (ref, sku, qty, o = {}) => [o.date ?? when(DAY), o.sup ?? 'ขนส่งบี', ref, sku, o.name ?? 'แบรนด์', o.size ?? '', qty];
@@ -159,8 +159,8 @@ describe('cut-api.gs — ยอดรายวันไว้เทียบก�
       jst: [
         jst('5001', A, 3),
         jst('5002', B, 2, { date: when(OTHER) }),
-        jst('5003', A, 4, { ship: 'ยกเลิกแล้ว' }),
-        jst('5004', A, 5, { ship: 'ยกเลิกแล้ว' }),
+        jst('5003', A, 4, { ship: 'ยกเลิกแล้ว', status: 'ยกเลิก' }),
+        jst('5004', A, 5, { ship: 'ยกเลิกแล้ว', status: 'ยกเลิก' }),
         jst('5005', A, 6, { ship: '' }),
         jst('5006', 'STR0001', 1),
       ],
@@ -242,7 +242,7 @@ describe('cut-api.gs — รายออเดอร์ของช่องร�
   });
 
   it('ยอดควรออกของรายการที่ไม่ควรออกเป็นศูนย์ เช่นขนส่งยกเลิกแต่ตัดแล้ว', () => {
-    const r = run({ jst: [jst('5001', A, 2, { ship: 'ยกเลิกแล้ว' })], tx: [tx('5001', A, 2)], tr: [tr('5001', A, 2)] });
+    const r = run({ jst: [jst('5001', A, 2, { ship: 'ยกเลิกแล้ว', status: 'ยกเลิก' })], tx: [tx('5001', A, 2)], tr: [tr('5001', A, 2)] });
     expect(detailOf(r)[`${DAY}|${A}`][3]).toEqual([['5001', 'JST', 2, 2, 0, 'cancel', [], [], []]]);
   });
 
@@ -353,16 +353,45 @@ describe('cut-api.gs — ตัดผิดและตัดเกิน', () =
 });
 
 describe('cut-api.gs — สถานะขนส่ง', () => {
-  it('ขนส่งยกเลิกแต่ตัดแล้ว ยอดเท่า Report ก็ยังผิด', () => {
-    const r = run({ jst: [jst('5001', A, 1, { ship: 'ยกเลิกแล้ว' })], tx: [tx('5001', A, 1)], tr: [tr('5001', A, 1)] });
+  it('ยกเลิกก่อนของออกจากคลังแต่ตัดแล้ว ยอดเท่า Report ก็ยังผิด', () => {
+    const r = run({ jst: [jst('5001', A, 1, { ship: 'ยกเลิกแล้ว', status: 'ยกเลิก' })], tx: [tx('5001', A, 1)], tr: [tr('5001', A, 1)] });
     expect(rowsOf(r, 'cancel')[0]).toMatchObject({ ship: 'ยกเลิกแล้ว', goal: 0, side: 'both' });
     expect(r.kinds.cancel.qty).toBe(1);
   });
 
-  it('ขนส่งยกเลิกและไม่ได้ตัด ถูกต้องแล้ว ไม่ขึ้นรายการ', () => {
-    const r = run(join(fine('5002'), { jst: [jst('5001', A, 2, { ship: 'ยกเลิกแล้ว' })] }));
+  it('ยกเลิกก่อนของออกจากคลังและไม่ได้ตัด ถูกต้องแล้ว ไม่ขึ้นรายการ', () => {
+    const r = run(join(fine('5002'), { jst: [jst('5001', A, 2, { ship: 'ยกเลิกแล้ว', status: 'ยกเลิก' })] }));
     expect(r.rows).toEqual([]);
     expect(r.info.cancelOk).toEqual({ lines: 1, qty: 2 });
+  });
+
+  /* ของออกจากคลังไปแล้ว ลูกค้ายกเลิกทีหลัง ของตีกลับเข้าคลัง ยังต้องตัดตามวันที่ออก */
+  const back = { ship: 'ยกเลิกแล้ว' };
+
+  it('ส่งออกแล้วลูกค้ายกเลิก ตัดวันที่ออกถูกต้อง ไม่ต้องคืนยอด', () => {
+    const r = run({ jst: [jst('5001', A, 2, back)], tx: [tx('5001', A, 2)], tr: [tr('5001', A, 2)] });
+    expect(r.rows).toEqual([]);
+    expect(r.kinds.cancel.total).toBe(0);
+    expect(r.info.matched).toEqual({ lines: 1, qty: 2 });
+    expect(r.info.shippedBack).toEqual({ lines: 1, qty: 2 });
+    /* สามแหล่งตรงกันในวันที่ออก ช่องรายวันไม่มีอะไรต้องดู */
+    expect(dailyOf(r, 'r')).toEqual({ [`${DAY}|${A}`]: 2 });
+    expect(r.daily.detail).toEqual([]);
+  });
+
+  it('ส่งออกแล้วลูกค้ายกเลิก แต่ไม่ได้ตัด ขึ้นว่ายังไม่ตัด และยอดควรออกลงวันที่ออก', () => {
+    const r = run(join(fine('5002'), { jst: [jst('5001', B, 3, back)] }));
+    expect(rowsOf(r, 'under')[0]).toMatchObject({ ref: '5001', sku: B, r: 3, goal: 3, x: 0, t: 0, side: 'both', ship: 'ยกเลิกแล้ว', back: true });
+    expect(r.info.cancelOk.lines).toBe(0);
+    expect(dailyOf(r, 'r')[`${DAY}|${B}`]).toBe(3);
+  });
+
+  it('ไฟล์ที่ไม่มีคอลัมน์สถานะ ขนส่งยกเลิกทุกแถวยังถือว่ายกเลิกก่อนของออก', () => {
+    const book = bookOf({ jst: [jst('5001', A, 1, back)], tx: [tx('5001', A, 1)], tr: [tr('5001', A, 1)] });
+    book[NAMES.jst] = book[NAMES.jst].map((row) => row.filter((_, i) => i !== 2));
+    const r = JSON.parse(api(book).doGet({ parameter: { api: 'cut-check' } }).text);
+    expect(r.error).toBeUndefined();
+    expect(rowsOf(r, 'cancel')[0]).toMatchObject({ ref: '5001', goal: 0, back: false });
   });
 
   it('สถานะว่างและไม่ได้ตัด ไม่นับว่าผิด เพราะน่าจะยังไม่ออกจริง', () => {
@@ -511,7 +540,7 @@ describe('cut-api.gs — กระทบยอด', () => {
       { jst: [jst('5002', A, 1)], tx: [tx('5002', A, 3)], tr: [tr('5002', A, 3)] },
       { crm: [crm('ME-1', A, 5)], tx: [tx('ME-1', A, 5, { src: 'CRM' }), tx('ME-1', B, 2, { src: 'CRM' })], tr: [tr('ME-1', A, 5), tr('ME-1', B, 2)] },
       { tx: [tx('9999', A, 1)], tr: [tr('9998', A, 1)] },
-      { jst: [jst('5003', A, 1, { ship: 'ยกเลิกแล้ว' }), jst('5004', A, 1, { ship: '' }), jst('5005', 'STR0000000001', 1), jst('5006', A, 2, { ship: 'แสกนรับสำเร็จ' })] },
+      { jst: [jst('5003', A, 1, { ship: 'ยกเลิกแล้ว', status: 'ยกเลิก' }), jst('5004', A, 1, { ship: '' }), jst('5005', 'STR0000000001', 1), jst('5006', A, 2, { ship: 'แสกนรับสำเร็จ' })] },
       { tx: [tx('1200', A, 4, { src: 'โอนย้าย' }), tx('8001', A, 2, { date: '2026-04-01' })], tr: [tr('1200', A, 4), tr('โอนคลัง', A, 0, { dept: 'IV', inq: 8 })] },
     ));
     expect(r.recon.report + r.recon.dx).toBe(r.totals.tx);
