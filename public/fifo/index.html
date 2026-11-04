@@ -313,6 +313,19 @@ const ageLegend = () => `<div class="tx-legend" aria-label="สีของอ�
 
 const lotText = (x) => x.lm ? `LOT ${esc(x.lot)} · ${esc(WmsFifo.monthText(x.lm))}` : `<span class="tx-mid">LOT ${esc(x.lot || 'ว่าง')} · ไม่รู้ LOT</span>`;
 const poText = (po) => WmsFifo.noPo(po) ? '<span class="tx-sub">ไม่รู้ PO</span>' : esc(po);
+
+/** วันรับเข้าของกอง PO ที่ลง -01 -02 รวมกันแล้ว บอกว่ารับกี่รอบ: รับ 3 รอบ 29/9 · 5/10 · 7/10 */
+function recvWords(x) {
+  const r = x.rounds || [];
+  const count = x.recv === WmsFifo.COUNT_DAY;
+  const many = r.length > 1 || (count && r.length);
+  if (!many) return count ? 'ก่อนนับสต๊อก' : x.recv ? `รับ ${dm(x.recv)}` : 'ไม่มีวันรับ';
+  const days = r.length === 1 ? dm(r[0].d) : r.length <= 3 && !count ? r.map((y) => dm(y.d)).join(' · ') : `${dm(r[0].d)}–${dm(r[r.length - 1].d)}`;
+  if (count) return `ก่อนนับสต๊อก + รับเพิ่ม${r.length > 1 ? ` ${r.length} รอบ` : ''} ${days}`;
+  return `รับ ${r.length} รอบ ${days}`;
+}
+const recvTitle = (x) => (x.rounds || []).length > 1 || (x.recv === WmsFifo.COUNT_DAY && (x.rounds || []).length)
+  ? `PO เดียวกันที่ทยอยรับ ใช้รอบไหนก่อนก็ได้ — ${x.rounds.map((y) => `${dm(y.d)} รับเข้า ${f(y.qty)} ชิ้น`).join(', ')}` : '';
 const loc = (i) => RES.locs[i] || '';
 const rowLink = (row) => {
   const u = WmsCut.rowUrl(RES.sheet, row);
@@ -500,7 +513,7 @@ function stockDetail(e) {
     return `<tr class="${hot.has(x) ? 'fi-hot' : ''}">
       <td class="nw k-rank">${x.rank ? `<span class="fi-rank${x.rank === 1 ? ' first' : ''}" title="ลำดับ FIFO">${x.rank}</span>` : '<span class="tx-sub">—</span>'}</td>
       <td class="nw k-lot">${lotText(x)}${x.age !== null ? `<span class="tx-sub">อายุ ${f(x.age)} เดือน</span>` : ''}</td>
-      <td class="nw k-po">${poText(x.po)}<span class="tx-sub">${x.recv ? `รับ ${esc(x.recv === WmsFifo.COUNT_DAY ? 'ก่อนนับสต๊อก' : dm(x.recv))}` : 'ไม่มีวันรับ'}</span></td>
+      <td class="nw k-po"${recvTitle(x) ? ` title="${esc(recvTitle(x))}"` : ''}>${poText(x.po)}<span class="tx-sub">${esc(recvWords(x))}</span></td>
       <td class="num k-qty"><b>${f(x.qty)}</b></td>
       <td class="num k-open" data-label="ในโลขาย">${x.open ? f(x.open) : '—'}</td>
       <td class="num k-floor" data-label="ตั้งพื้น">${x.floor ? f(x.floor) : '—'}</td>
@@ -519,7 +532,8 @@ function renderStock() {
   const opt = (v, label) => `<button class="tx-opt${ONLY === v ? ' on' : ''}" data-only="${v}">${label} ${f(n(v))}</button>`;
   const rows = stockRows();
   $('body').innerHTML = `<div class="tx-note">สต๊อก${esc(asOf())} แต่ละ SKU เรียงกองจากเก่าไปใหม่ ตาม<b>เดือนของ LOT</b> แล้ว<b>วันที่รับเข้าของ PO</b>
-      กด SKU เพื่อดูว่าแต่ละกองอยู่ Location ไหน</div>
+      กด SKU เพื่อดูว่าแต่ละกองอยู่ Location ไหน ·
+      PO ที่ลง <b>-01 -02</b> ต่อท้าย (วันที่รับเข้าคลัง) นับเป็น <b>PO เดียวกัน</b> รวมเป็นกองเดียว ใช้รอบไหนก่อนก็ได้</div>
     ${ageLegend()}
     <div class="tx-bar">
       <input id="q" class="tx-input" type="search" placeholder="ค้นหา SKU ชื่อสินค้า หรือ PO" value="${esc(Q)}" autocomplete="off">
@@ -585,7 +599,7 @@ function renderSkip() {
   $('body').innerHTML = `<div class="tx-note"><b>หยิบขาย</b> = ขาย LOT หรือ PO ที่ใหม่กว่า ทั้งที่ของเก่ากว่ายังอยู่ในโลที่เปิดขาย ·
       <b>เติมของ</b> = เติมของใหม่กว่าเข้าโลขาย ทั้งที่ของเก่ากว่ายังอยู่บนแร็คหรือตั้งพื้น ·
       ไม่นับ QA / IQA / RIB และแถวที่ไม่รู้ LOT — ${esc(monthName(MONTH))}</div>
-    <div class="tx-legend"><span><i class="sw c-lot"></i>ข้าม LOT = มี LOT เดือนเก่ากว่า</span><span><i class="sw c-po"></i>ข้าม PO = LOT เดียวกัน แต่มี PO ที่รับเข้าก่อน</span></div>
+    <div class="tx-legend"><span><i class="sw c-lot"></i>ข้าม LOT = มี LOT เดือนเก่ากว่า</span><span><i class="sw c-po"></i>ข้าม PO = LOT เดียวกัน แต่มี PO อื่นที่รับเข้าก่อน (PO -01 -02 เป็น PO เดียวกัน ไม่นับ)</span></div>
     <div class="tx-bar">
       <input id="q" class="tx-input" type="search" placeholder="ค้นหา SKU หรือชื่อสินค้า" value="${esc(Q)}" autocomplete="off">
       ${opt('', 'ทั้งหมด', t.sale.skipRows + t.refill.skipRows)}${opt('sale', 'หยิบขาย', t.sale.skipRows)}${opt('refill', 'เติมของ', t.refill.skipRows)}

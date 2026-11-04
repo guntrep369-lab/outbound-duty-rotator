@@ -670,6 +670,11 @@ the device.
 - Inside one LOT, the PO that came in first is older. Its date is the first `GR` row of that
   SKU + LOT + PO. Stock from the stock count comes before every receipt. Two POs received on the same
   day are the same age.
+- A PO written with `-01`, `-02` and so on at the end (`9900000001-05`) is the same PO, received over
+  several days. The two digits are the day it came into the warehouse. The page drops them and treats
+  every round as one batch: any round can go out first, and it never counts as ข้าม PO. The batch's
+  receive date is its first round, and the page lists every round. Rounds entered with different LOTs
+  stay separate batches, so the older LOT still goes first.
 - QA / IQA / RIB locations aren't counted, either as the goods that went out or as older goods left
   behind.
 
@@ -695,8 +700,9 @@ its letter. The rest is split in two:
   first tiles give the % of pieces that followed FIFO that month for หยิบขาย and เติมของ, split into
   ตาม FIFO / ข้าม PO / ข้าม LOT.
 - **คงเหลือราย LOT:** stock as of the month's last day, one row per SKU. The bar shows each batch from
-  oldest (left) to newest, colored by age. Open a SKU to see each batch's order, LOT, PO, receive date,
-  how much is in the selling locations, on the floor and on racks, and the locations.
+  oldest (left) to newest, colored by age. Open a SKU to see each batch's order, LOT, PO, receive date
+  (with every round, such as `รับ 3 รอบ 29/9 · 5/10 · 7/10`), how much is in the selling locations, on
+  the floor and on racks, and the locations.
   - `⚠ ควรเติมของเก่าก่อน` marks a SKU where an older batch isn't in any selling location (it's on a rack
     or on the floor) while every batch in the selling locations is newer.
   - `โลขายมีหลายกอง` says which batch to pick first when the selling locations hold different ages.

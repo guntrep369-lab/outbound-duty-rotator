@@ -11,6 +11,9 @@
  *   2. LOT เดียวกัน เรียงตาม PO ตามวันที่รับเข้า คือวันที่ GR แถวแรกของ SKU + LOT + PO นั้น
  *      PO ที่อยู่ในแถวนับสต๊อกถือว่ารับก่อนทุก GR ในสมุด PO ที่รับวันเดียวกันถือว่าเก่าเท่ากัน
  *      PO 0 หรือ PO ที่ไม่มีวันรับ (มาจาก RETURN หรือแปลงสินค้าอย่างเดียว) เทียบในระดับ PO ไม่ได้
+ *   3. PO ที่ลง -01 -02 ต่อท้าย (เลขวันที่ที่รับเข้าคลัง) คือ PO เดียวกันที่ทยอยรับหลายวัน (ผู้ใช้ยืนยัน 2026-11-04)
+ *      ตัดส่วนท้ายออกแล้วรวมเป็นกองเดียว ใช้รอบไหนก่อนก็ได้ วันรับของกองคือรอบแรก แต่ละรอบเก็บไว้ใน rounds
+ *      ยังแยกตาม LOT อยู่ รอบที่ลง LOT ต่างกันเป็นคนละกอง LOT เก่ากว่าออกก่อน (ผู้ใช้ยืนยัน)
  *
  * การเบิกที่ตรวจ (ไม่นับ QA / IQA / RIB เพราะไม่ได้เดินตาม FIFO อยู่แล้ว ผู้ใช้ยืนยัน)
  *   หยิบขาย  แถวขาย ข้าม = ตอนนั้นมีของที่เก่ากว่าอยู่ในโลที่เปิดขาย
@@ -37,6 +40,8 @@
   function text(v) { return v === null || v === undefined ? '' : String(v).trim(); }
   function up(v) { return text(v).toUpperCase(); }
   function noPo(v) { return /^0*$/.test(text(v)); }
+  /** 9900000001-01 กับ 9900000001-02 เป็น PO 9900000001 ส่วนท้ายคือวันที่รับเข้า ไม่ใช่อีก PO */
+  function basePo(v) { var s = up(v); var m = /^(\d{6,})-\d{1,2}$/.exec(s); return m ? m[1] : s; }
 
   /** เดือนของ LOT เทียบกับเดือนของรายงาน (yyyy-mm) ไม่รู้ได้ null  key = ปี × 12 + เดือน ใช้เรียงและคิดอายุ */
   function lotMonth(lot, ref) {
@@ -66,14 +71,14 @@
   function parse(res) {
     return res.rows.map(function (x) {
       return {
-        row: x[0], sku: x[1], lot: up(x[2]), po: up(res.pos[x[3]]), from: x[4], to: x[5],
+        row: x[0], sku: x[1], lot: up(x[2]), po: basePo(res.pos[x[3]]), from: x[4], to: x[5],
         qty: typeof x[6] === 'number' ? x[6] : 0, t: x[7], d: x[8] >= 0 ? res.days[x[8]] : '',
         open: !!(x[9] & 1), gr: !!(x[9] & 2), count: !!(x[9] & 4), own: !!(x[9] & 8),
       };
     });
   }
 
-  function newState() { return { bal: {}, open: {}, recv: {}, keys: {} }; }
+  function newState() { return { bal: {}, open: {}, recv: {}, rounds: {}, keys: {} }; }
 
   /** ใส่แถวหนึ่งลงยอด กติกาเดียวกับ balances_: เข้าที่ Location รับทุกประเภท ออกที่ Location เบิกเฉพาะเบิกกับขาย */
   function apply(st, r) {
@@ -85,12 +90,20 @@
       (st.keys[r.sku] = st.keys[r.sku] || {})[k] = 1;
       var day = r.count ? COUNT_DAY : r.gr ? r.d : '';
       if (day && (!st.recv[b] || day < st.recv[b])) st.recv[b] = day;
+      /* รอบรับเข้าของ PO เดียวกัน หนึ่งรอบต่อวันที่ GR */
+      if (r.gr && r.d) { var rs = st.rounds[b] || (st.rounds[b] = {}); rs[r.d] = (rs[r.d] || 0) + r.qty; }
     }
     if (r.from >= 0 && r.t) {
       var o = b + '|' + r.from;
       st.bal[o] = (st.bal[o] || 0) - r.qty;
       (st.keys[r.sku] = st.keys[r.sku] || {})[o] = 1;
     }
+  }
+
+  /** รอบรับเข้าของกอง เรียงตามวัน [{ d, qty }] ชิ้นคือที่รับเข้ารอบนั้น ไม่ใช่ที่เหลือ */
+  function rounds(st, b) {
+    var rs = st.rounds[b] || {};
+    return Object.keys(rs).sort().map(function (d) { return { d: d, qty: rs[d] }; });
   }
 
   /**
@@ -183,7 +196,7 @@
       if (!x) {
         var i = info(st, b);
         /* store = ยังไม่อยู่ในโลขาย แยกเป็น rack (Location R) กับ floor (ตั้งพื้นที่ยังไม่เปิด) */
-        x = e.batches[b] = { lot: i.lot, po: i.po, lm: i.lm, recv: i.recv, qty: 0, open: 0, store: 0, rack: 0, floor: 0, special: 0, locs: [] };
+        x = e.batches[b] = { lot: i.lot, po: i.po, lm: i.lm, recv: i.recv, rounds: rounds(st, b), qty: 0, open: 0, store: 0, rack: 0, floor: 0, special: 0, locs: [] };
       }
       var name = up(res.locs[loc]);
       var sp = SPECIAL.test(name);
@@ -285,6 +298,7 @@
   /** ตัวกรองแท็บคงเหลือ only = '' | refill | multi | unknown | mixed */
   function filterStock(list, o) {
     var q = up(o.q || '');
+    var qp = basePo(q);   // ค้น 9900000001-02 ก็เจอกอง PO 9900000001
     return list.filter(function (e) {
       if (o.only === 'refill' && !e.refill.length) return false;
       if (o.only === 'multi' && e.lots < 2) return false;
@@ -292,7 +306,7 @@
       if (o.only === 'mixed' && !e.mixed) return false;
       if (!q) return true;
       return up(e.code).indexOf(q) >= 0 || up(e.short).indexOf(q) >= 0 || up(e.name).indexOf(q) >= 0 ||
-        e.batches.some(function (x) { return up(x.po).indexOf(q) >= 0; });
+        e.batches.some(function (x) { return x.po.indexOf(qp) >= 0; });
     });
   }
 
@@ -339,9 +353,16 @@
   function recvText(v) { return v === COUNT_DAY ? 'ก่อนนับสต๊อก' : v || ''; }
   function dmy(d) { var p = String(d || '').split('-'); return p.length === 3 ? +p[2] + '/' + +p[1] + '/' + p[0] : ''; }
 
-  /** ตารางคงเหลือราย LOT หนึ่งแถวต่อ SKU + LOT + PO */
+  /** รอบรับเข้าเป็นข้อความ บอกเมื่อมีมากกว่าหนึ่งรอบ: 3 รอบ: 29/9/2026, 5/10/2026, 7/10/2026 */
+  function roundsText(x) {
+    var r = x.rounds || [], count = x.recv === COUNT_DAY;
+    if (!(r.length > 1 || (count && r.length))) return '';
+    return (count ? 'ก่อนนับสต๊อก + ' : '') + r.length + ' รอบ: ' + r.map(function (y) { return dmy(y.d); }).join(', ');
+  }
+
+  /** ตารางคงเหลือราย LOT หนึ่งแถวต่อ SKU + LOT + PO (PO -01 -02 รวมแล้ว) */
   function stockTable(res, an, list) {
-    var head = ['SKU', 'SKU สั้น', 'ชื่อสินค้า', 'ลำดับ FIFO', 'LOT', 'เดือนของ LOT', 'อายุ (เดือน)', 'PO', 'รับเข้า',
+    var head = ['SKU', 'SKU สั้น', 'ชื่อสินค้า', 'ลำดับ FIFO', 'LOT', 'เดือนของ LOT', 'อายุ (เดือน)', 'PO', 'รับเข้า', 'รอบรับเข้า',
       'คงเหลือ', 'ในโลขาย', 'ตั้งพื้น (ไม่เปิดขาย)', 'บนแร็ค', 'QA / IQA / RIB', 'Location', 'หมายเหตุ'];
     var out = [head];
     (list || an.stock.list).forEach(function (e) {
@@ -351,7 +372,7 @@
         if (x.lm && noPo(x.po)) notes.push('ไม่รู้ PO');
         if (e.refill.some(function (f) { return f.batch === x; })) notes.push('ควรเติมกองนี้ก่อน กองใหม่กว่าอยู่ในโลขายแล้ว');
         out.push([e.code, e.short, e.name, x.rank || '', x.lot, x.lm ? monthText(x.lm) : '', x.age === null ? '' : x.age,
-          x.po, recvText(x.recv), x.qty, x.open, x.floor, x.rack, x.special,
+          x.po, recvText(x.recv), roundsText(x), x.qty, x.open, x.floor, x.rack, x.special,
           x.locs.map(function (l) { return res.locs[l.loc] + ' (' + l.qty + ')'; }).join(', '), notes.join(' · ')]);
       });
     });
@@ -411,6 +432,7 @@
       ['เติมของ = แถวเบิกเข้าโลที่เปิดขาย ที่ตอนนั้นมีของเก่ากว่ายังไม่อยู่ในโลขาย (บนแร็คหรือตั้งพื้น)'],
       ['ในโลขาย = Location ที่ Status เปิด · บนแร็ค = Location R · ตั้งพื้น = Location อื่นที่ยังไม่เปิดขาย'],
       ['ลำดับเก่าไปใหม่ = เดือนของ LOT แล้ววันที่รับเข้าของ PO ไม่นับ QA / IQA / RIB'],
+      ['PO ที่ลง -01 -02 ต่อท้าย (วันที่รับเข้าคลัง) นับเป็น PO เดียวกัน ใช้รอบไหนก่อนก็ได้ ไม่นับเป็นข้าม PO'],
     ];
   }
 
@@ -418,8 +440,8 @@
   function tsv(table) { return table.map(function (l) { return l.map(cell).join('\t'); }).join('\n'); }
 
   window.WmsFifo = {
-    lotMonth: lotMonth, monthText: monthText, lastDay: lastDay, analyze: analyze, older: older, noPo: noPo,
-    filterStock: filterStock, skipsBySku: skipsBySku, recvText: recvText,
+    lotMonth: lotMonth, monthText: monthText, lastDay: lastDay, analyze: analyze, older: older, noPo: noPo, basePo: basePo,
+    filterStock: filterStock, skipsBySku: skipsBySku, recvText: recvText, roundsText: roundsText,
     stockTable: stockTable, skipTable: skipTable, agingTable: agingTable, summaryTable: summaryTable, tsv: tsv,
     KIND: KIND, STATE: STATE, COUNT_DAY: COUNT_DAY,
   };

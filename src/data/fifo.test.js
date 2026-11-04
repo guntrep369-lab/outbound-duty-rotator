@@ -189,6 +189,65 @@ describe('analyze — PO ใน LOT เดียวกัน เรียงต�
   });
 });
 
+describe('analyze — PO ที่ลง -01 -02 ต่อท้ายคือ PO เดียวกันที่รับคนละวัน', () => {
+  it('ส่วนท้ายสองหลักคือวันที่รับเข้า ตัดออกเหลือเลข PO เลขแบบอื่นไม่ตัด', () => {
+    expect(F.basePo('9900000001-01')).toBe('9900000001');
+    expect(F.basePo(' 9900000001-2 ')).toBe('9900000001');
+    expect(F.basePo('99000001-15')).toBe('99000001');
+    for (const v of ['9900000001', 'PO-A', 'PO-A-01', '12-03', '9900000001-123', '0']) expect(F.basePo(v)).toBe(v);
+  });
+
+  it('หยิบรอบ -02 ทั้งที่รอบ -01 ยังอยู่ในโลขาย ไม่นับเป็นข้าม PO แต่ PO อื่นที่รับก่อนยังนับ', () => {
+    const an = F.analyze(ledger([
+      gr({ lot: 9, po: '9900000002', to: 'P1-01', open: true, qty: 4, d: '2026-09-03' }),
+      gr({ lot: 9, po: '9900000001-05', to: 'P1-01', open: true, qty: 4, d: '2026-09-05' }),
+      gr({ lot: 9, po: '9900000001-20', to: 'P1-02', open: true, qty: 4, d: '2026-09-20' }),
+      sale({ lot: 9, po: '9900000001-20', from: 'P1-02', qty: 1, d: '2026-10-02' }),
+      sale({ lot: 9, po: '9900000002', qty: 4, d: '2026-10-03' }),
+      sale({ lot: 9, po: '9900000001-20', from: 'P1-02', qty: 1, d: '2026-10-04' }),
+    ]), '2026-10');
+    expect(an.issues.map((x) => [x.po, x.state])).toEqual([['9900000001', 'po'], ['9900000002', 'ok'], ['9900000001', 'ok']]);
+    expect(an.issues[0].older.map((o) => o.po)).toEqual(['9900000002']);
+  });
+
+  it('คงเหลือรวมเป็นกองเดียว วันรับคือรอบแรก และบอกทุกรอบที่รับเข้า', () => {
+    const s = F.analyze(ledger([
+      gr({ lot: 9, po: '9900000001-05', to: 'R1-01-01', qty: 6, d: '2026-09-05' }),
+      gr({ lot: 9, po: '9900000001-05', to: 'P1-01', open: true, qty: 2, d: '2026-09-05' }),
+      gr({ lot: 9, po: '9900000001-20', to: 'R1-01-01', qty: 3, d: '2026-09-20' }),
+      gr({ lot: 9, po: '9900000003', to: 'P1-01', open: true, qty: 1, d: '2026-09-10' }),
+    ]), '2026-10').stock;
+    const bs = s.list[0].batches;
+    expect(bs.map((x) => [x.po, x.recv, x.qty])).toEqual([['9900000001', '2026-09-05', 11], ['9900000003', '2026-09-10', 1]]);
+    expect(bs[0].rounds).toEqual([{ d: '2026-09-05', qty: 8 }, { d: '2026-09-20', qty: 3 }]);
+    expect(F.roundsText(bs[0])).toBe('2 รอบ: 5/9/2026, 20/9/2026');
+    expect(F.roundsText(bs[1])).toBe('');
+    expect(F.roundsText({ recv: F.COUNT_DAY, rounds: [{ d: '2026-10-03', qty: 6 }] })).toBe('ก่อนนับสต๊อก + 1 รอบ: 3/10/2026');
+    expect(bs[0].locs.map((l) => l.qty)).toEqual([9, 2]);
+    expect(F.filterStock(s.list, { q: '9900000001-20' })).toHaveLength(1);
+  });
+
+  it('ขายลงรอบ -20 จากจุดที่มีแต่รอบ -05 ยอดหักกันได้ ไม่ติดลบ', () => {
+    const s = F.analyze(ledger([
+      gr({ lot: 9, po: '9900000001-05', to: 'P1-01', open: true, qty: 5, d: '2026-09-05' }),
+      gr({ lot: 9, po: '9900000001-20', to: 'R1-01-01', qty: 5, d: '2026-09-20' }),
+      sale({ lot: 9, po: '9900000001-20', qty: 2, d: '2026-10-02' }),
+    ]), '2026-10').stock;
+    expect(s.negative).toEqual({ keys: 0, qty: 0 });
+    expect(s.list[0].batches[0]).toMatchObject({ qty: 8, open: 3, rack: 5 });
+  });
+
+  it('รอบที่ลง LOT ต่างกันยังเป็นคนละกอง LOT เก่ากว่าต้องออกก่อน', () => {
+    const an = F.analyze(ledger([
+      gr({ lot: 9, po: '9900000001-28', to: 'P1-01', open: true, qty: 4, d: '2026-09-28' }),
+      gr({ lot: 10, po: '9900000001-14', to: 'P1-02', open: true, qty: 4, d: '2026-10-14' }),
+      sale({ lot: 10, po: '9900000001-14', from: 'P1-02', qty: 1, d: '2026-10-20' }),
+    ]), '2026-10');
+    expect(an.issues[0].state).toBe('lot');
+    expect(an.stock.list[0].batches.map((x) => [x.lot, x.po])).toEqual([['9', '9900000001'], ['10', '9900000001']]);
+  });
+});
+
 describe('analyze — เติมของ', () => {
   it('เติม LOT ใหม่เข้าโลขาย ทั้งที่ LOT เก่ายังอยู่บนแร็ค คือเติมข้าม', () => {
     const an = F.analyze(ledger([
@@ -345,7 +404,7 @@ describe('ส่งออก', () => {
     const an = F.analyze(res, '2026-10');
     const st = F.stockTable(res, an);
     expect(st[0]).toContain('ลำดับ FIFO');
-    expect(st[0].slice(9, 13)).toEqual(['คงเหลือ', 'ในโลขาย', 'ตั้งพื้น (ไม่เปิดขาย)', 'บนแร็ค']);
+    expect(st[0].slice(7, 14)).toEqual(['PO', 'รับเข้า', 'รอบรับเข้า', 'คงเหลือ', 'ในโลขาย', 'ตั้งพื้น (ไม่เปิดขาย)', 'บนแร็ค']);
     expect(st.every((r) => r.length === st[0].length)).toBe(true);
     expect(st).toHaveLength(3);
     const sk = F.skipTable(res, an);
