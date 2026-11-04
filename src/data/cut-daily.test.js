@@ -502,3 +502,47 @@ describe('wms-cut.js — รายการแก้แยกตามระบ�
     expect(out.x.map((e) => e.ref)).toEqual(['5002', '5003', '5001']);
   });
 });
+
+describe('wms-cut.js — บันทึกการแก้', () => {
+  const D = '2026-03-05';
+  const e = (o = {}) => ({ date: D, ref: 'R1', sku: A, sys: 'JST', kind: 'over', need: -2, days: [D], ...o });
+  const mark = (key, at, o = {}) => ({ key, at, act: 'แก้แล้ว', k: key[0], date: D, need: -2, ...o });
+  const KX = `x|${D}|R1|${A}|`;
+
+  it('คีย์ไม่มีประเภท ก้อนขาดทั้งวันใช้ระบบขาย', () => {
+    expect(WmsCut.fixKey('x', e())).toBe(KX);
+    expect(WmsCut.fixKey('x', e({ kind: 'under', need: 2 }))).toBe(KX);
+    expect(WmsCut.fixKey('t', { date: D, ref: '', sku: '', sys: 'CRM', kind: 'gap' })).toBe(`t|${D}|||CRM`);
+    expect(WmsCut.fixKey('s', { date: D, ref: '', sku: B })).toBe(`s|${D}||${B}|`);
+  });
+
+  it('ยังไม่ตรวจใหม่หลังกดคือรอตรวจ ตรวจแล้วบอกว่ายังเท่าเดิม เหลือบางส่วน หรือกลับข้าง', () => {
+    const fx = { s: null, x: [e(), e({ ref: 'R2', need: -1 }), e({ ref: 'R3', need: 2 }), e({ ref: 'R4' })], t: [] };
+    const k = (ref) => `x|${D}|${ref}|${A}|`;
+    const log = [mark(k('R1'), 100), mark(k('R2'), 100), mark(k('R3'), 100), mark(k('R4'), 900)];
+    const st = WmsCut.fixState(fx, log, { x: 500, t: 500, s: 0 });
+    expect(['R1', 'R2', 'R3', 'R4'].map((r) => st.by[k(r)].state)).toEqual(['still', 'part', 'flip', 'wait']);
+    expect(st.by[k('R1')].mark.at).toBe(100);
+  });
+
+  it('กดแก้แล้ว ตรวจรอบหลังไม่พบคือหายจริง ส่งไปบันทึก ส่วนที่บันทึกว่าหายแล้วอยู่ในประวัติ', () => {
+    const fx = { s: [], x: [], t: [] };
+    const log = [mark(KX, 100), mark(`t|${D}|R9|${B}|`, 50), { ...mark(`t|${D}|R9|${B}|`, 300), act: 'ตรวจแล้วหาย' }];
+    const st = WmsCut.fixState(fx, log, { x: 500, t: 500, s: 500 });
+    expect(st.gone.map((m) => m.key)).toEqual([KX]);
+    expect(st.done.map((m) => m.key).sort()).toEqual([KX, `t|${D}|R9|${B}|`].sort());
+  });
+
+  it('ยังไม่ได้ตรวจหลังกด รายการไม่ครบ หรือยังไม่รู้รายการของระบบนั้น ไม่ตัดสินว่าหาย', () => {
+    const log = [mark(KX, 100), mark(`s|${D}||${B}|`, 100)];
+    expect(WmsCut.fixState({ s: [], x: [], t: [] }, log, { x: 50, t: 50, s: 50 }).gone).toEqual([]);
+    expect(WmsCut.fixState({ s: [], x: [], t: [] }, log, { x: 500, t: 500, s: 500 }, true).gone).toEqual([]);
+    expect(WmsCut.fixState({ s: null, x: [e()], t: [] }, log, { x: 500, t: 500, s: 0 }).gone).toEqual([]);
+  });
+
+  it('ยกเลิกแล้วกลับเป็นยังไม่แก้ ตรวจแล้วหายแล้วกลับมาอีกบอกไว้', () => {
+    const fx = { s: [], x: [e()], t: [] };
+    expect(WmsCut.fixState(fx, [mark(KX, 100), { ...mark(KX, 200), act: 'ยกเลิก' }], { x: 500 }).by[KX]).toEqual({ state: 'open', back: false });
+    expect(WmsCut.fixState(fx, [mark(KX, 100), { ...mark(KX, 200), act: 'ตรวจแล้วหาย' }], { x: 500 }).by[KX]).toEqual({ state: 'open', back: true });
+  });
+});

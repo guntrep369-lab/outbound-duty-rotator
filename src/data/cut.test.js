@@ -639,9 +639,12 @@ describe('cut-api.gs — อ่านชีต', () => {
     expect(r.rows).toEqual([]);
   });
 
-  it('สคริปต์อ่านอย่างเดียว ไม่มีคำสั่งเขียนลงชีตเลย', () => {
-    expect(GS).not.toMatch(/\.(setValue|setValues|appendRow|insertSheet|deleteRow|deleteRows|clear|clearContent|setFormula)\b/);
-    expect(GS).not.toMatch(/function doPost/);
+  it('ส่วนที่อ่านแท็บข้อมูลไม่มีคำสั่งเขียนลงชีต ที่เขียนมีแค่ส่วนบันทึกการแก้ และไม่ลบหรือแก้แถวเดิม', () => {
+    const at = GS.indexOf('/* ── บันทึกการแก้');
+    expect(at).toBeGreaterThan(0);
+    expect(GS.slice(0, at)).not.toMatch(/\.(setValue|setValues|appendRow|insertSheet|deleteRow|deleteRows|clear|clearContent|setFormula)\b/);
+    expect(GS.slice(0, at)).not.toMatch(/function doPost/);
+    expect(GS.slice(at)).not.toMatch(/\.(setValue|deleteRow|deleteRows|clear|clearContent|setFormula)\b/);
   });
 
   it('ไม่ส่งเลขคำสั่งซื้อออนไลน์กับเลขพัสดุออกไป ไม่จำเป็นต่อการเทียบ', () => {
@@ -769,5 +772,111 @@ describe('cut-api.gs — ออเดอร์รายวันให้หน�
     const r = orders({ tx: [tx('5001', A, 1)] });
     expect(r.error).toBeUndefined();
     expect(r.lines).toHaveLength(1);
+  });
+});
+
+describe('cut-api.gs — บันทึกการแก้', () => {
+  /** แท็บที่สคริปต์สร้างเองและเขียนได้ แท็บข้อมูลตัดสต๊อกไม่มีในไฟล์นี้ บันทึกการแก้ต้องไม่แตะมัน */
+  function logTab() {
+    const grid = [];
+    const formats = [];
+    return {
+      grid,
+      formats,
+      getLastRow: () => grid.length,
+      getLastColumn: () => (grid[0] ? grid[0].length : 0),
+      getMaxRows: () => 1000,
+      getSheetId: () => 9,
+      insertRowsAfter: () => {},
+      setFrozenRows: () => {},
+      getRange: (r, c, nr, nc) => ({
+        getValues: () => grid.slice(r - 1, r - 1 + nr).map((x) => x.slice(c - 1, c - 1 + nc)),
+        setNumberFormat: (f) => formats.push({ r, c, nr, nc, f, filled: grid.length }),
+        setValues: (vals) => vals.forEach((v, i) => {
+          grid[r - 1 + i] = grid[r - 1 + i] || [];
+          v.forEach((x, j) => { grid[r - 1 + i][c - 1 + j] = x; });
+        }),
+      }),
+    };
+  }
+
+  function book() {
+    const tabs = {};
+    const ss = {
+      getSheetByName: (n) => tabs[n] || null,
+      getSheets: () => Object.values(tabs),
+      insertSheet: (n) => (tabs[n] = logTab()),
+      getUrl: () => 'https://docs.example/d/2/edit',
+      getSpreadsheetTimeZone: () => 'Asia/Bangkok',
+    };
+    const env = {
+      SpreadsheetApp: { getActiveSpreadsheet: () => ss },
+      Utilities: { formatDate: (d) => d.toISOString().slice(0, 10) },
+      ContentService: { createTextOutput: (s) => ({ text: s, setMimeType() { return this; } }), MimeType: { JSON: 'json' } },
+      LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
+    };
+    const s = new Function(...Object.keys(env), `${GS}\nreturn { doGet: doGet, doPost: doPost };`)(...Object.values(env));
+    return {
+      tabs,
+      get: () => JSON.parse(s.doGet({ parameter: { api: 'cut-fixlog' } }).text),
+      post: (body) => JSON.parse(s.doPost({ postData: { contents: JSON.stringify(body) } }).text),
+    };
+  }
+
+  const item = (o = {}) => ({ key: `x|${DAY}|R1|${A}|`, k: 'x', date: DAY, ref: 'R1', sku: A, sys: 'JST', what: 'ตัดเกิน', need: -2, ...o });
+
+  it('ยังไม่เคยกดแก้แล้ว ส่ง log ว่าง และไม่สร้างแท็บ', () => {
+    const b = book();
+    expect(b.get()).toMatchObject({ app: 'cut', log: [], sheet: null });
+    expect(b.tabs).toEqual({});
+  });
+
+  it('กดแก้แล้วครั้งแรกสร้างแท็บพร้อมหัวตาราง แล้วต่อแถวท้าย', () => {
+    const b = book();
+    const r = b.post({ op: 'fix-log', act: 'แก้แล้ว', by: ' คนเอ ', items: [item()] });
+    expect(r.added).toBe(1);
+    const tab = b.tabs['บันทึกการแก้'];
+    expect(tab.grid[0]).toEqual(['เวลา', 'คนกด', 'ทำ', 'ระบบที่แก้', 'วันที่', 'ออเดอร์', 'SKU', 'ระบบขาย', 'เรื่อง', 'ยอดที่ต้องแก้', 'คีย์']);
+    expect(tab.grid[1].slice(1)).toEqual(['คนเอ ', 'แก้แล้ว', 'Uploadยิงออก', DAY, 'R1', A, 'JST', 'ตัดเกิน', -2, `x|${DAY}|R1|${A}|`]);
+    expect(tab.grid[1][0]).toBeInstanceOf(Date);
+    expect(r.log).toEqual([expect.objectContaining({ act: 'แก้แล้ว', k: 'x', key: `x|${DAY}|R1|${A}|`, need: -2, by: 'คนเอ ' })]);
+    expect(r.sheet).toEqual({ url: 'https://docs.example/d/2/edit', gid: 9 });
+    /* ตั้งเป็นข้อความก่อนเขียน ช่องยอดยังเป็นตัวเลข */
+    expect(tab.formats.filter((x) => x.f === '@').map((x) => [x.c, x.nc, x.filled])).toEqual([[2, 8, 1], [11, 1, 1]]);
+  });
+
+  it('ยกเลิกกับตรวจแล้วหายใช้ได้เฉพาะรายการที่กดแก้แล้ว ตรวจซ้ำสองเครื่องไม่ลงซ้ำ', () => {
+    const b = book();
+    expect(b.post({ op: 'fix-log', act: 'ตรวจแล้วหาย', items: [item()] }).added).toBe(0);
+    b.post({ op: 'fix-log', act: 'แก้แล้ว', items: [item()] });
+    expect(b.post({ op: 'fix-log', act: 'ตรวจแล้วหาย', items: [item()] }).added).toBe(1);
+    expect(b.post({ op: 'fix-log', act: 'ตรวจแล้วหาย', items: [item()] }).added).toBe(0);
+    expect(b.post({ op: 'fix-log', act: 'ยกเลิก', items: [item()] }).added).toBe(0);
+    /* ตรวจแล้วหายแล้วกลับมาใหม่ กดแก้แล้วได้อีกรอบ */
+    expect(b.post({ op: 'fix-log', act: 'แก้แล้ว', items: [item()] }).added).toBe(1);
+    expect(b.get().log.map((r) => r.act)).toEqual(['แก้แล้ว', 'ตรวจแล้วหาย', 'แก้แล้ว']);
+  });
+
+  it('ไม่เขียนสูตรลงชีต และข้ามรายการที่ระบบหรือวันที่ไม่ถูก', () => {
+    const b = book();
+    const r = b.post({ op: 'fix-log', act: 'แก้แล้ว', by: '=IMPORTXML("x")', items: [
+      item({ ref: '=HYPERLINK("http://x")', key: '+k1' }),
+      item({ k: 'z', key: 'k2' }),
+      item({ date: '5/3/2026', key: 'k3' }),
+      item({ key: '' }),
+    ] });
+    expect(r.added).toBe(1);
+    const row = b.tabs['บันทึกการแก้'].grid[1];
+    expect(row[1]).toBe('IMPORTXML("x")');
+    expect(row[5]).toBe('HYPERLINK("http://x")');
+    expect(row[10]).toBe('k1');
+  });
+
+  it('คำสั่งที่ไม่รู้จักตอบ error ไม่เขียนอะไร', () => {
+    const b = book();
+    expect(b.post({ op: 'fix-log', act: 'ลบ', items: [item()] }).error).toBeTruthy();
+    expect(b.post({ op: 'อื่น' }).error).toBeTruthy();
+    expect(b.post({ op: 'fix-log', act: 'แก้แล้ว', items: [] }).error).toBeTruthy();
+    expect(b.tabs).toEqual({});
   });
 });

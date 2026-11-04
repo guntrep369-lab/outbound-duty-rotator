@@ -378,6 +378,57 @@
     return out;
   }
 
+  /**
+   * คีย์ของรายการแก้ในบันทึกการแก้ ไม่ใส่ประเภท เพราะคืนยอดตัดเกินเกินไปจะกลายเป็นตัดไม่ครบ ต้องยังเป็นรายการเดิม
+   * ก้อนขาดทั้งวันไม่มีออเดอร์และ SKU ใช้ระบบขายแทน
+   */
+  function fixKey(k, e) {
+    return [k, e.date, e.ref || '', e.sku || '', e.ref || e.sku ? '' : e.sys || ''].join('|');
+  }
+
+  /**
+   * สถานะของรายการแก้แต่ละรายการตามบันทึกการแก้ (cut-api.gs ?api=cut-fixlog) แถวหลังสุดของคีย์เดียวกันคือสถานะตอนนี้
+   *   open   ยังไม่ได้กดแก้แล้ว (back = เคยตรวจแล้วหาย แต่กลับมาอีก)
+   *   wait   กดแก้แล้ว ยังไม่ได้ตรวจใหม่หลังกด
+   *   still  ตรวจใหม่หลังกดแล้วยังต้องแก้เท่าเดิมหรือมากกว่า
+   *   part   ตรวจใหม่แล้วเหลือน้อยลง แก้ไปบางส่วน
+   *   flip   ตรวจใหม่แล้วยอดกลับข้าง เช่นต้องคืน 2 กลายเป็นต้องลงเพิ่ม 2 น่าจะแก้ซ้ำสองรอบ
+   * รายการที่กดแก้แล้วและตรวจรอบหลังไม่พบ อยู่ใน gone ให้หน้าเว็บส่งไปบันทึกว่าตรวจแล้วหาย
+   * done คือรายการที่ตรวจแล้วหาย (รวม gone) ไว้แสดงเป็นประวัติ เป็นแถวที่กดแก้แล้ว จะได้บอกว่าใครแก้เมื่อไร
+   * @param {Object} fx   ผลของ fixLists ระบบที่เป็น null ยังไม่รู้รายการ จึงไม่ตัดสินรายการของระบบนั้น
+   * @param {Array} log   log จาก cut-fixlog เรียงตามที่บันทึก
+   * @param {Object} seen เวลาที่ได้ข้อมูลของแต่ละระบบ { s, x, t } เป็นเวลาของสคริปต์ เทียบกับเวลาที่กดได้ตรง
+   * @param {boolean} [capped] สคริปต์ส่งรายการไม่ครบบางประเภท รายการที่หายไปอาจแค่ไม่ได้ส่งมา ยังบอกไม่ได้ว่าหาย
+   */
+  function fixState(fx, log, seen, capped) {
+    var last = {}, fixed = {};
+    (log || []).forEach(function (r) {
+      last[r.key] = r;
+      if (r.act === 'แก้แล้ว') fixed[r.key] = r;
+    });
+    var by = {}, here = {}, gone = [], done = [];
+    ['s', 'x', 't'].forEach(function (k) {
+      (fx[k] || []).forEach(function (e) {
+        var key = fixKey(k, e), m = last[key];
+        here[key] = 1;
+        if (!m || m.act !== 'แก้แล้ว') { by[key] = { state: 'open', back: !!m && m.act === 'ตรวจแล้วหาย' }; return; }
+        var state = 'still';
+        if (!(seen[k] > m.at)) state = 'wait';
+        else if (e.need * m.need < 0) state = 'flip';
+        else if (Math.abs(e.need) < Math.abs(m.need)) state = 'part';
+        by[key] = { state: state, mark: m };
+      });
+    });
+    Object.keys(last).forEach(function (key) {
+      var m = last[key];
+      if (here[key]) return;
+      if (m.act === 'ตรวจแล้วหาย') done.push(fixed[key] || m);
+      else if (m.act === 'แก้แล้ว' && fx[m.k] && seen[m.k] > m.at && !capped) { gone.push(m); done.push(m); }
+    });
+    done.sort(function (a, b) { return a.date !== b.date ? (a.date < b.date ? -1 : 1) : a.at - b.at; });
+    return { by: by, gone: gone, done: done };
+  }
+
   /** ลิงก์เปิดชีตตรงแถวนั้น แบบเดียวกับ WmsTx.rowUrl หน้านี้ไม่ได้โหลด wms-tx.js */
   function rowUrl(sheet, row) {
     if (!sheet || !sheet.url) return '';
@@ -387,5 +438,6 @@
   window.WmsCut = {
     LABEL: LABEL, oddOne: oddOne, diffWords: diffWords, reportWords: reportWords, compareDaily: compareDaily,
     cellIndex: cellIndex, dateWords: dateWords, fixHint: fixHint, rowUrl: rowUrl, fixLists: fixLists,
+    fixKey: fixKey, fixState: fixState,
   };
 })();

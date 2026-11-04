@@ -100,6 +100,17 @@ span.tx-ok::before{content:'✓ '}
 .tx-tbl tr.is-ok td.num{color:var(--wms-muted)}
 
 .tx-int{margin-top:8px}
+/* บันทึกการแก้ สถานะบอกด้วยคำ สีช่วยแยกเฉยๆ แถวที่แก้แล้วรอตรวจจางลง ตาจะไปหาแถวที่ยังต้องทำ */
+.k-log{min-width:150px}
+.lg{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:600;line-height:1.5}
+.lg-wait{background:#E0E7FF;color:#3730A3}
+.lg-still{background:#FEF3C7;color:#92400E}
+.lg-flip{background:#FEE2E2;color:#991B1B}
+.lg-btn{display:block;margin-top:4px;white-space:nowrap}
+.lg-btn:disabled,.tx-opt:disabled{opacity:.6;cursor:default}
+.tx-tbl tr.lg-dim td:not(.k-log){opacity:.55}
+.lg-done{margin-top:16px}
+.lg-done .tx-wrap{margin-top:8px}
 .tx-int summary{cursor:pointer;font-size:13px;font-weight:600}
 .tx-int p{margin-top:6px;font-size:12px;line-height:1.7;word-break:break-word}
 
@@ -258,6 +269,8 @@ html.pop-open{overflow:hidden}
   .tx-tbl.tx-mc.mc-fix .k-top .tx-sub{display:inline;margin-left:6px}
   .tx-tbl.tx-mc.mc-fix .k-main{grid-column:1}
   .tx-tbl.tx-mc.mc-fix .k-side{grid-row:1 / span 2}
+  .tx-tbl.tx-mc.mc-fix .k-log{grid-row:5;grid-column:1/-1;margin-top:8px}
+  .lg-btn{display:inline-flex;margin:6px 0 0}
 
   /* เทียบรายวัน ตัวเลขเรียงตรงหัวคอลัมน์ให้ไล่ดูทีละวันได้ ผลเทียบลงบรรทัดถัดไป */
   .tx-tbl.tx-m2,.tx-m2 thead,.tx-m2 tbody{display:block}
@@ -290,7 +303,7 @@ html.pop-open{overflow:hidden}
       <div class="ic"><img src="../icons/cut-check.png" alt="" width="38" height="38"></div>
       <div>
         <h2>เช็ครายการตัดสต๊อก<span class="en"> · Stock Cut Check</span></h2>
-        <p>เทียบรายการตัดใน Transaction และ TRcloud กับ Report ออเดอร์ของเดือน และเทียบยอดออกรายวันกับสต๊อกราย Location — อ่านอย่างเดียว ไม่แก้ชีต</p>
+        <p>เทียบรายการตัดใน Transaction และ TRcloud กับ Report ออเดอร์ของเดือน และเทียบยอดออกรายวันกับสต๊อกราย Location — ไม่แก้ข้อมูลตัดสต๊อก เขียนแค่บันทึกการแก้</p>
       </div>
     </div>
   </div>
@@ -374,6 +387,14 @@ let SUM_OPEN = false;   // มือถือพับภาพรวมเด�
 let BEFORE = null;      // ตัวเลขก่อนตรวจรอบนี้ ไว้เทียบว่าแก้ไปได้เท่าไร
 let GAIN = 0;           // รายการที่ต้องแก้ลดลงเท่าไรจากรอบก่อน
 let POP_AT = null;      // จุดที่กดเปิดหน้าต่าง หน้าต่างขยายออกจากตรงนั้นและหดกลับไปที่เดิม
+/* บันทึกการแก้จากแท็บในไฟล์ตัดสต๊อก (cut-api.gs ?api=cut-fixlog) ทุกเครื่องเห็นชุดเดียวกัน null = ยังไม่ได้อ่าน */
+let FIXLOG = null;
+let FIXLOG_ERR = '';
+let FIXLOG_OLD = false;  // สคริปต์รุ่นที่ยังไม่มีบันทึกการแก้
+let SAVING = '';         // คีย์ที่กำลังบันทึก all = ทั้งชุด
+let FSHOW = '';          // '' ทั้งหมด | open ยังไม่แก้ | wait รอตรวจใหม่ | again ต้องดูซ้ำ
+let VERIFIED = 0;        // รอบนี้ยืนยันได้ว่าแก้แล้วกี่รายการ
+let ARMED = 0;           // กดแก้แล้วทั้งชุดครั้งแรก รอกดยืนยัน
 let CLOSING = false;
 
 function readCache() {
@@ -402,6 +423,7 @@ function renderSrc() {
     html += `<span class="pill">📅 Report <b>${esc(dm(RAW.period.from))} ถึง ${esc(dm(RAW.period.to))}</b></span>`;
     html += `<span class="pill">🕐 ตรวจเมื่อ <b>${esc(when)}</b></span>`;
     if (GAIN) html += `<span class="pill ok">✓ ที่ต้องแก้ลดลง ${f(GAIN)} รายการจากรอบก่อน</span>`;
+    if (VERIFIED) html += `<span class="pill ok">✓ ตรวจแล้วหาย ${f(VERIFIED)} รายการที่กดแก้ไว้</span>`;
   } else {
     html += `<span class="pill warn">⚠️ ยังไม่ได้ตรวจ</span>`;
   }
@@ -421,6 +443,7 @@ async function run() {
   const url = WmsSettings.cutUrl();
   if (BUSY || !url) return;
   ERR = '';
+  VERIFIED = 0;
   BEFORE = snapshot();
   BUSY = 'กำลังอ่านชีตทั้ง 4 แท็บ…';
   renderSrc();
@@ -511,6 +534,77 @@ async function loadLedger() {
   render();
   afterCheck(BEFORE);
   BEFORE = null;
+  loadFixLog();
+}
+
+/* ── บันทึกการแก้ ───────────────────────────────────────────────────────── */
+
+function me() {
+  try { return JSON.parse(localStorage.getItem('wms:session') || '{}').name || ''; } catch (e) { return ''; }
+}
+
+const atText = (ms) => new Date(ms).toLocaleString('th-TH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+/**
+ * สถานะของทุกรายการในแท็บแก้แยกตามระบบ เวลาที่ตรวจเป็นเวลาของสคริปต์ทั้งคู่ เทียบกับเวลาที่กดแก้แล้วได้ตรง
+ * ชีตทีมเปลี่ยนเมื่อดึงยอดขายใหม่ อีกสองระบบเปลี่ยนเมื่อกดตรวจใหม่
+ */
+function logState() {
+  if (!FIXLOG || !RAW) return null;
+  const ms = (v) => (v ? +new Date(v) : 0);
+  const capped = Object.keys(RAW.kinds).some((k) => RAW.kinds[k].shown < RAW.kinds[k].total);
+  return WmsCut.fixState(fixResult(), FIXLOG.log, { s: ms(LEDGER && LEDGER.at), x: ms(RAW.at), t: ms(RAW.at) }, capped);
+}
+
+/** แท็บเดียว อ่านเร็ว อ่านทุกครั้งที่เปิดหน้าและหลังตรวจ จะได้เห็นที่คนอื่นกดไว้ */
+async function loadFixLog() {
+  const url = WmsSettings.cutUrl();
+  if (!url || !RAW) return;
+  try {
+    const r = await WmsGas.json(url, 'cut-fixlog', { retries: 1 });
+    if (r.error) throw new Error(r.error);
+    if (r.app !== 'cut') throw new Error('คำตอบไม่ใช่ของสคริปต์เช็คตัดสต๊อก ตรวจ URL ที่หน้าตั้งค่า');
+    FIXLOG_OLD = !r.log;
+    FIXLOG = r.log ? r : null;
+    FIXLOG_ERR = '';
+  } catch (e) {
+    FIXLOG_ERR = `อ่านบันทึกการแก้ไม่สำเร็จ: ${e.message}`;
+  }
+  await verifyGone();
+  renderSrc();
+  if (TAB === 'sys') renderBody();
+}
+
+/** กดแก้แล้วไว้ และการตรวจรอบหลังไม่พบรายการนั้น บันทึกว่าตรวจแล้วหายเอง ไม่ต้องรอคนกด */
+async function verifyGone() {
+  const st = logState();
+  if (!st || !st.gone.length) return;
+  const r = await saveLog('ตรวจแล้วหาย', st.gone);
+  if (r) VERIFIED += r.added;
+}
+
+function logItem(k, e) {
+  return { key: WmsCut.fixKey(k, e), k, date: e.date, ref: e.ref || '', sku: e.sku || '', sys: e.sys || '', what: fixWhy(e), need: e.need };
+}
+
+async function saveLog(act, items, key) {
+  SAVING = key || 'all';
+  if (TAB === 'sys') renderBody();
+  try {
+    const r = await WmsGas.post(WmsSettings.cutUrl(), { op: 'fix-log', act, by: me(), items }, { timeoutMs: 60000 });
+    if (r.error) throw new Error(r.error);
+    if (!r.log) throw new Error('สคริปต์ cut-api.gs ยังเป็นรุ่นเก่า ให้วางโค้ดใหม่แล้ว Deploy เป็น New version');
+    FIXLOG = r;
+    FIXLOG_ERR = '';
+    return r;
+  } catch (e) {
+    FIXLOG_ERR = `บันทึกไม่สำเร็จ: ${e.message}`;
+    return null;
+  } finally {
+    SAVING = '';
+    if (TAB === 'sys') renderBody();
+    if (FIXLOG_ERR && window.WmsMotion) setTimeout(() => window.WmsMotion.shake(document.querySelector('.lg-err')), 0);
+  }
 }
 
 /* ── ยอดรวมและแท็บ ──────────────────────────────────────────────────────── */
@@ -1133,15 +1227,16 @@ function needSum(list) {
   }, { more: 0, less: 0 });
 }
 
-function whoCards(fx) {
+function whoCards(fx, st) {
   return `<div class="tx-cards tx-who">${WHO_ORDER.map((k) => {
     const list = fx[k], info = WHO_INFO[k], on = WHO === k ? 'on' : '';
     const card = (inner) => `<button class="tx-card tx-card-ic ${on}" data-who="${k}"><img src="${ICON[k]}" alt="" width="34" height="34"><span>${inner}</span></button>`;
     if (!list) return card(`<small>${esc(info.label)}</small><b>–</b><i>ต้องดึงยอดขายก่อน</i>`);
     const n = needSum(list);
+    const wait = st ? list.filter((e) => logOf(st, k, e).state === 'wait').length : 0;
     return card(`<small>${esc(info.label)}</small>
       <b class="${list.length ? 'tx-neg' : 'tx-ok'}" data-count="${list.length}" data-count-key="who-${k}">${f(list.length)}</b>
-      <i>${list.length ? `ลงเพิ่ม ${f(n.more)} · คืน ${f(n.less)} ชิ้น` : 'ไม่มีที่ต้องแก้'}</i>`);
+      <i>${list.length ? `ลงเพิ่ม ${f(n.more)} · คืน ${f(n.less)} ชิ้น${wait ? ` · รอตรวจ ${f(wait)}` : ''}` : 'ไม่มีที่ต้องแก้'}</i>`);
   }).join('')}</div>`;
 }
 
@@ -1170,23 +1265,49 @@ function fixItem(e) {
   return `${order}<b>${esc(e.sku)}</b><span class="tx-sub">${esc(e.name || RAW.names[e.sku] || '')}</span>`;
 }
 
-function fixRow(k, e) {
+const logOf = (st, k, e) => (st && st.by[WmsCut.fixKey(k, e)]) || { state: 'open' };
+
+/** ต้องดูซ้ำ: กดแก้แล้ว ตรวจใหม่แล้วยังไม่หาย ไม่ว่ายอดเท่าเดิม เหลือบางส่วน หรือกลับข้าง */
+const AGAIN = { still: 1, part: 1, flip: 1 };
+
+function logWords(s, e) {
+  if (s.state === 'still') return { cls: 'lg-still', text: 'กดแก้แล้ว แต่ตรวจใหม่ยังไม่หาย', hint: 'ดูว่าลงในระบบแล้วจริง และไฟล์ตัดสต๊อกดึงข้อมูลใหม่แล้ว' };
+  if (s.state === 'part') return { cls: 'lg-still', text: `แก้ไปบางส่วน จาก ${plus(s.mark.need)} เหลือ ${plus(e.need)}`, hint: '' };
+  if (s.state === 'flip') return { cls: 'lg-flip', text: `ยอดกลับข้าง จาก ${plus(s.mark.need)} เป็น ${plus(e.need)}`, hint: 'น่าจะแก้ซ้ำสองรอบ ดูก่อนแก้อีก' };
+  return null;
+}
+
+/** ช่องบันทึก: ปุ่มแก้แล้ว หรือสถานะหลังกด ใครกดเมื่อไร */
+function logCell(k, e, st) {
+  if (!st) return '';
+  const key = WmsCut.fixKey(k, e), s = logOf(st, k, e);
+  const btn = (attr, label) => `<button class="tx-opt lg-btn" ${attr}="${esc(key)}" ${SAVING ? 'disabled' : ''}>${SAVING === key ? 'กำลังบันทึก…' : label}</button>`;
+  const who = s.mark ? `<span class="tx-sub">${esc(s.mark.by || 'ไม่ได้ระบุชื่อ')} · ${esc(atText(s.mark.at))}</span>` : '';
+  if (s.state === 'open') return `${s.back ? '<span class="tx-sub tx-mid">เคยตรวจแล้วหาย แต่กลับมาอีก</span>' : ''}${btn('data-mark', '✓ แก้แล้ว')}`;
+  if (s.state === 'wait') return `<span class="lg lg-wait">แก้แล้ว รอตรวจใหม่</span>${who}${btn('data-undo', 'ยกเลิก')}`;
+  const w = logWords(s, e);
+  return `<span class="lg ${w.cls}">${esc(w.text)}</span>${w.hint ? `<span class="tx-sub">${esc(w.hint)}</span>` : ''}${who}${btn('data-mark', '✓ แก้อีกรอบแล้ว')}`;
+}
+
+function fixRow(k, e, st) {
   const cut = fixCut(e);
   const more = e.kind === 'gap' && e.orders > e.refs.length ? ` และอีก ${f(e.orders - e.refs.length)} ออเดอร์` : '';
   const refs = e.kind === 'gap' ? `<details class="tx-int"><summary>ดูเลขออเดอร์</summary><p>${e.refs.map(esc).join(', ')}${esc(more)}</p></details>` : '';
   const verb = e.need > 0 ? WHO_INFO[k].more : WHO_INFO[k].less;
-  return `<tr${e.cell ? ` data-cell="${esc(e.cell)}"` : ''}>
+  const dim = logOf(st, k, e).state === 'wait' ? ' class="lg-dim"' : '';
+  return `<tr${e.cell ? ` data-cell="${esc(e.cell)}"` : ''}${dim}>
     <td class="k-top"><span class="nw">${esc(dm(e.date))}</span>${cut ? `<span class="tx-sub">${esc(cut)}</span>` : ''}</td>
     <td class="tx-name k-main">${fixItem(e)}</td>
     <td class="nw k-side"><b class="tx-need ${e.need > 0 ? 'tx-mid' : 'tx-neg'}">${plus(e.need)}</b><span class="tx-sub">${esc(verb)}</span></td>
     <td class="tx-res k-res">${esc(fixWhy(e))}${fixNotes(e).map((t) => `<span class="tx-sub">${esc(t)}</span>`).join('')}${refs}</td>
+    ${st ? `<td class="k-log">${logCell(k, e, st)}</td>` : ''}
   </tr>`;
 }
 
 /** วางลงชีตแล้วแตกเป็นคอลัมน์ได้เลย วันที่เขียนเต็มให้ชีตอ่านเป็นวันที่ไม่สลับวันกับเดือน */
-function fixTsv(k, list) {
+function fixTsv(k, list, st) {
   const clean = (v) => String(v ?? '').replace(/[\t\r\n]+/g, ' ');
-  const head = ['วันที่', 'ออเดอร์', 'ระบบขาย', 'SKU', 'ชื่อสินค้า', 'ต้องทำ', 'จำนวน', 'วันที่ตัด', 'เรื่อง'];
+  const head = ['วันที่', 'ออเดอร์', 'ระบบขาย', 'SKU', 'ชื่อสินค้า', 'ต้องทำ', 'จำนวน', 'วันที่ตัด', 'เรื่อง', 'บันทึก'];
   const lines = list.map((e) => {
     const gap = e.kind === 'gap';
     return [
@@ -1199,6 +1320,7 @@ function fixTsv(k, list) {
       Math.abs(e.need),
       e.days.join(', '),
       [fixWhy(e), ...fixNotes(e)].join(' · '),
+      (logWords(logOf(st, k, e), e) || {}).text || '',
     ].map(clean).join('\t');
   });
   return [head.join('\t'), ...lines].join('\n');
@@ -1222,12 +1344,59 @@ async function copyText(text) {
   }
 }
 
-function sysHtml() {
+/** รายการของระบบที่เปิดอยู่ ตามตัวกรองบันทึก copy ไม่เอารายการที่กดแก้แล้วรอตรวจ จะได้ไม่ส่งให้แก้ซ้ำ */
+function sysRows() {
   const fx = fixResult();
   if (!WHO) WHO = WHO_ORDER.find((k) => fx[k] && fx[k].length) || 'x';
+  const list = fx[WHO] || [];
+  const st = logState();
+  if (!st) return { fx, list, st, shown: list, copy: list, opens: [] };
+  const state = (e) => logOf(st, WHO, e).state;
+  const shown = list.filter((e) => !FSHOW || (FSHOW === 'again' ? AGAIN[state(e)] : state(e) === FSHOW));
+  return { fx, list, st, shown, copy: shown.filter((e) => state(e) !== 'wait'), opens: shown.filter((e) => state(e) === 'open') };
+}
+
+function fshowBar(st, list) {
+  const n = { '': list.length, open: 0, wait: 0, again: 0 };
+  list.forEach((e) => {
+    const s = logOf(st, WHO, e).state;
+    n[AGAIN[s] ? 'again' : s]++;
+  });
+  const opt = (v, label) => `<button class="tx-opt ${FSHOW === v ? 'on' : ''}" data-fshow="${v}">${label} ${f(n[v])}</button>`;
+  return `<div class="tx-bar">${opt('', 'ทั้งหมด')}${opt('open', 'ยังไม่แก้')}${opt('wait', 'รอตรวจใหม่')}${opt('again', 'ต้องดูซ้ำ')}</div>`;
+}
+
+/** ประวัติของระบบที่เปิดอยู่ รายการที่กดแก้แล้วและตรวจรอบหลังไม่พบแล้ว */
+function doneHtml(st) {
+  const list = st.done.filter((m) => m.k === WHO);
+  if (!list.length) return '';
+  const item = (m) => {
+    const order = m.ref ? `<span class="tx-ref">${esc(m.ref)}</span> <span class="tx-sub tx-in">${esc(m.sys || '-')}</span><br>` : '';
+    const what = m.sku ? `<b>${esc(m.sku)}</b>` : m.ref ? '<b>ทั้งออเดอร์</b>' : `<b>ขาดทั้งวัน ${esc(m.sys)}</b>`;
+    return `${order}${what}<span class="tx-sub">${esc(m.what)}</span>`;
+  };
+  return `<details class="tx-int lg-done"><summary>✓ ตรวจแล้วหาย ${f(list.length)} รายการ</summary>
+    <div class="tx-wrap"><table class="tx-tbl tx-mc mc-fix">
+      <thead><tr><th>วันที่</th><th>ออเดอร์ / SKU</th><th>ที่แก้</th><th>คนกดแก้แล้ว</th></tr></thead>
+      <tbody>${list.map((m) => `<tr>
+        <td class="k-top"><span class="nw">${esc(dm(m.date))}</span></td>
+        <td class="tx-name k-main">${item(m)}</td>
+        <td class="nw k-side"><b class="tx-need">${plus(m.need)}</b></td>
+        <td class="tx-res k-res">${esc(m.by || 'ไม่ได้ระบุชื่อ')}<span class="tx-sub">${esc(atText(m.at))}</span></td>
+      </tr>`).join('')}</tbody>
+    </table></div></details>`;
+}
+
+function sysHtml() {
+  const { fx, list: all, st, shown, copy, opens } = sysRows();
   const info = WHO_INFO[WHO], list = fx[WHO];
+  const tab = FIXLOG && FIXLOG.sheet
+    ? `<a href="${esc(WmsCut.rowUrl(FIXLOG.sheet, 1))}" target="_blank" rel="noopener">บันทึกการแก้ ↗</a>` : '<b>บันทึกการแก้</b>';
   const intro = `<div class="tx-why">รวมทุกเรื่องที่ต้องแก้จากแท็บอื่น แยกตามระบบที่ต้องไปแก้ แต่ละรายการบอกว่าต้องลงเพิ่มหรือคืนเท่าไร
-    กดคัดลอกแล้ววางในชีตหรือไลน์ ส่งให้คนดูแลระบบนั้นได้เลย</div>`;
+    กดคัดลอกแล้ววางในชีตหรือไลน์ ส่งให้คนดูแลระบบนั้นได้เลย${st ? ` แก้ในระบบเสร็จแล้วกด <b>แก้แล้ว</b> แล้วกดตรวจใหม่
+    รายการที่หายไปจะถูกบันทึกว่าตรวจแล้วหาย ทุกเครื่องเห็นชุดเดียวกันในแท็บ ${tab} ของไฟล์ตัดสต๊อก` : ''}</div>`;
+  const warn = FIXLOG_ERR ? `<div class="tx-warn bad lg-err">${esc(FIXLOG_ERR)}</div>`
+    : FIXLOG_OLD ? '<div class="tx-warn">ปุ่มแก้แล้วยังใช้ไม่ได้ — สคริปต์ cut-api.gs ยังเป็นรุ่นที่ไม่มีบันทึกการแก้ ให้วางโค้ดใหม่แล้ว Deploy เป็น New version</div>' : '';
   let body;
   if (!list) body = dailyWaiting();
   else if (!list.length) body = `<div class="tx-empty art-done">${esc(info.label)} ไม่มีรายการที่ต้องแก้ — <b>เป็นเรื่องดี</b></div>`;
@@ -1237,15 +1406,43 @@ function sysHtml() {
     const unclear = WHO === 's' && fx.unclear
       ? `<div class="tx-note">อีก ${f(fx.unclear)} ช่องที่สามแหล่งไม่เท่ากันเลย บอกไม่ได้ว่าระบบไหนผิด ดูในแท็บเทียบรายวัน</div>` : '';
     const shift = WHO === 's' ? ' ช่องที่น่าจะลงคนละวันไม่อยู่ในรายการ เพราะยอดรวมสองวันตรงแล้ว' : '';
+    const bulk = opens.length > 1
+      ? `<button class="tx-opt" data-mark-all ${SAVING ? 'disabled' : ''}>${SAVING === 'all' ? 'กำลังบันทึก…'
+        : ARMED ? `กดอีกครั้งเพื่อยืนยัน ${f(opens.length)} รายการ` : `✓ แก้แล้วทั้ง ${f(opens.length)} รายการที่ยังไม่แก้`}</button>` : '';
+    const table = shown.length
+      ? `<div class="tx-wrap"><table class="tx-tbl tx-mc mc-fix">
+        <thead><tr><th>วันที่</th><th>ออเดอร์ / SKU</th><th>ต้องทำ</th><th>เรื่อง</th>${st ? '<th>บันทึก</th>' : ''}</tr></thead>
+        <tbody>${shown.map((e) => fixRow(WHO, e, st)).join('')}</tbody>
+      </table></div>`
+      : '<div class="tx-empty art-search">ไม่มีรายการในตัวกรองนี้</div>';
     body = `<h3 class="tx-h"><img class="tx-ic" src="${ICON[WHO]}" alt="">${esc(info.label)}<span class="n">${f(list.length)} รายการ</span></h3>
       <div class="tx-why">${esc(info.why + shift)}</div>
-      <div class="tx-bar"><button class="tx-opt" data-copy>📋 คัดลอกรายการไปวางในชีตหรือไลน์</button></div>
-      <div class="tx-wrap"><table class="tx-tbl tx-mc mc-fix">
-        <thead><tr><th>วันที่</th><th>ออเดอร์ / SKU</th><th>ต้องทำ</th><th>เรื่อง</th></tr></thead>
-        <tbody>${list.map((e) => fixRow(WHO, e)).join('')}</tbody>
-      </table></div>${unclear}${capped}`;
+      ${st ? fshowBar(st, all) : ''}
+      <div class="tx-bar"><button class="tx-opt" data-copy ${copy.length ? '' : 'disabled'}>📋 คัดลอก ${f(copy.length)} รายการ${st ? 'ที่ยังไม่ได้แก้' : ''} ไปวางในชีตหรือไลน์</button>${bulk}</div>
+      ${table}${unclear}${capped}`;
   }
-  return intro + whoCards(fx) + body;
+  return intro + warn + whoCards(fx, st) + body + (st && list ? doneHtml(st) : '');
+}
+
+async function markOne(act, key) {
+  if (SAVING) return;
+  const e = (fixResult()[WHO] || []).find((x) => WmsCut.fixKey(WHO, x) === key);
+  if (e) await saveLog(act, [logItem(WHO, e)], key);
+}
+
+/** กดครั้งแรกให้ยืนยันก่อน ทั้งชุดอาจเป็นร้อยรายการ กดพลาดแล้วต้องยกเลิกทีละรายการ */
+let armTimer = 0;
+async function markAll() {
+  if (SAVING) return;
+  clearTimeout(armTimer);
+  if (!ARMED) {
+    ARMED = 1;
+    renderBody();
+    armTimer = setTimeout(() => { ARMED = 0; if (TAB === 'sys') renderBody(); }, 5000);
+    return;
+  }
+  ARMED = 0;
+  await saveLog('แก้แล้ว', sysRows().opens.map((e) => logItem(WHO, e)));
 }
 
 /* ── รวมหน้า ────────────────────────────────────────────────────────────── */
@@ -1309,9 +1506,22 @@ document.addEventListener('keydown', (e) => {
 
 $('body').addEventListener('click', (e) => {
   if (e.target.closest('[data-reload]')) { loadLedger(); return; }
+  const mark = e.target.closest('[data-mark]');
+  if (mark) { markOne('แก้แล้ว', mark.dataset.mark); return; }
+  const undo = e.target.closest('[data-undo]');
+  if (undo) { markOne('ยกเลิก', undo.dataset.undo); return; }
+  if (e.target.closest('[data-mark-all]')) { markAll(); return; }
+  const fshow = e.target.closest('[data-fshow]');
+  if (fshow) {
+    FSHOW = fshow.dataset.fshow;
+    ARMED = 0;
+    renderBody();
+    return;
+  }
   const copy = e.target.closest('[data-copy]');
   if (copy) {
-    copyText(fixTsv(WHO, fixResult()[WHO])).then((ok) => {
+    const rows = sysRows();
+    copyText(fixTsv(WHO, rows.copy, rows.st)).then((ok) => {
       copy.textContent = ok ? '✓ คัดลอกแล้ว วางในชีตได้เลย' : 'คัดลอกไม่ได้ ลองกดอีกครั้ง';
     });
     return;
@@ -1319,6 +1529,7 @@ $('body').addEventListener('click', (e) => {
   const who = e.target.closest('[data-who]');
   if (who) {
     WHO = who.dataset.who;
+    ARMED = 0;
     renderBody();
     return;
   }
@@ -1366,6 +1577,7 @@ $('body').addEventListener('input', (e) => {
 
 readCache();
 render();
+loadFixLog();
 </script>
 </body>
 </html>

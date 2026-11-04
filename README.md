@@ -409,7 +409,8 @@ the same.
 
 Compares what was cut from stock with the month-end order reports, to find wrong and duplicate cuts.
 [`apps-script/cut-api.gs`](apps-script/cut-api.gs) reads a Google Sheet with four tabs, works everything
-out on the server, and returns only the summary and the lines that differ. It never writes to the sheet.
+out on the server, and returns only the summary and the lines that differ. It never changes the four
+tabs. The only thing it writes is the fix log (บันทึกการแก้, below), in a tab of its own.
 
 | Tab in the sheet | What it holds |
 | --- | --- |
@@ -516,6 +517,29 @@ sheet or a chat. The lists are sorted by date, then the largest first.
 - A row whose day + SKU differs somewhere opens the same window as เทียบรายวัน. The ledger list needs the
   sales pulled first (ดึงยอดขาย).
 
+**บันทึกการแก้ (fix log):** once an item is fixed in its system, press **✓ แก้แล้ว** on that row. The press
+goes into tab `บันทึกการแก้` of the cut workbook, with the time, who pressed it (the name signed in on
+the device), and the amount that needed fixing. The script makes the tab the first time. Every device
+reads the same tab, so two people don't fix the same item twice (returning stock twice, say). The tab only
+grows: ยกเลิก adds a row that cancels the last แก้แล้ว, rather than deleting it.
+
+Press ตรวจใหม่ after the fixes. Each marked item then shows one of these:
+
+| Status | Meaning |
+| --- | --- |
+| รอตรวจใหม่ | Marked, but no check has run since. The row is dimmed and left out of the copy. |
+| ยังไม่หาย | Checked again and the same amount (or more) still needs fixing. |
+| แก้ไปบางส่วน | Checked again and less is left. |
+| ยอดกลับข้าง | Checked again and the sign flipped, e.g. +1 became −1. It was probably fixed twice. |
+
+An item that no longer appears after the check is recorded as `ตรวจแล้วหาย` without anyone pressing
+anything, and moves to the ✓ ตรวจแล้วหาย list under the table, with the name of whoever fixed it. If it
+comes back later, it's marked as back again. The filters (ทั้งหมด / ยังไม่แก้ / รอตรวจใหม่ / ต้องดูซ้ำ)
+narrow the table, the copy button takes only the items that aren't waiting for a check, and
+**✓ แก้แล้วทั้ง N รายการ** marks every unmarked item in the list at once, after a second press to confirm.
+An item is matched on system, date, order and SKU, so an over-cut that turns into an under-cut is still
+the same item. Items over the result's size limit can't be judged gone, so they stay as they were.
+
 The two scripts belong to different files and don't know each other, since linking them would put a file
 ID in this public repo. The page calls both and compares the answers. It needs **Apps Script URL —
 Transaction** set too. ดึงยอดขายใหม่ re-reads only the ledger, so a fix there can be checked in seconds.
@@ -555,8 +579,13 @@ both newer scripts. Until each is updated, the panel says which one, then press 
 An older `cut-api.gs` also puts all of an order's Report ควรออก on its last report date, so an order shipped
 in two rounds looks short on the first day and over on the last. Paste the new one and press ตรวจใหม่.
 
-The URL works like a key: anyone who has it can read the order numbers and SKUs in the result, so keep it
-out of this repo. The result leaves out online order IDs and tracking numbers.
+**Updating to a version with บันทึกการแก้:** paste the new `cut-api.gs` and deploy a new version as above.
+Until then, the แก้แยกตามระบบ tab says the script is out of date and hides the แก้แล้ว buttons. The rest of
+the page works as before.
+
+The URL works like a key: anyone who has it can read the order numbers and SKUs in the result, and can add
+rows to the fix log, so keep it out of this repo. The result leaves out online order IDs and tracking
+numbers.
 
 The last result stays on the device, so reopening the page doesn't wait for another run. Press ตรวจใหม่
 after the sheet's data changes.
@@ -653,7 +682,7 @@ public/
 apps-script/
 ├─ roster-api.gs           # the shared schedule sheet's script (pasted into Apps Script, not served)
 ├─ tx-api.gs               # balances from the Transaction sheet, stock count, and nightly backup
-└─ cut-api.gs              # compares stock cuts with the order reports (read-only)
+└─ cut-api.gs              # compares stock cuts with the order reports, keeps the fix log
 src/
 ├─ data/                   # tests for the shared helpers + page-wide checks
 └─ transport/              # tests for the transport helpers

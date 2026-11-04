@@ -4,7 +4,8 @@
  * ใช้กับหน้าเช็ครายการตัดสต๊อก (public/cut-check) — ใส่ URL ในหน้าตั้งค่า
  * ช่อง "Apps Script URL — เช็ครายการตัดสต๊อก" วิธีติดตั้งอยู่ใน README หัวข้อ "Stock Cut Check"
  *
- * ผูกกับไฟล์ Google Sheet ที่มี 4 แท็บด้านล่าง และอ่านอย่างเดียว ไม่เขียนอะไรลงชีตเลย
+ * ผูกกับไฟล์ Google Sheet ที่มี 4 แท็บด้านล่าง และอ่านแท็บพวกนั้นอย่างเดียว ไม่แก้ข้อมูลตัดสต๊อกเลย
+ * ที่เขียนมีแห่งเดียวคือแท็บ "บันทึกการแก้" ซึ่งสคริปต์สร้างเอง เว็บเติมได้แค่แถวต่อท้าย แก้หรือลบแถวเดิมไม่ได้
  * แท็บรายงานโอนย้ายไม่บังคับ ถ้ามี งานโอนย้ายจะเทียบกับรายงานด้วยเลขใบโอนย้าย + SKU แบบเดียวกับออเดอร์
  * ข้อมูลรวมกันหลายแสนแถว ส่งให้เบราว์เซอร์ทั้งหมดไม่ไหว จึงคิดที่นี่แล้วส่งกลับเฉพาะสรุปกับรายการที่ไม่ตรง
  *
@@ -16,6 +17,8 @@
  *
  * ?api=cut-check   ผลการเทียบ
  * ?api=cut-orders&from=...&to=...  แถวตัดของแท็บ Transaction ทีละออเดอร์ ให้หน้า LOT / PO ที่ขายออกปันล็อตให้แต่ละออเดอร์
+ * ?api=cut-fixlog  บันทึกการแก้ทั้งหมด (รายการที่กดแก้แล้ว ยกเลิก หรือตรวจแล้วหาย)
+ * POST {op:'fix-log'}  เพิ่มแถวในบันทึกการแก้
  * ไม่ใส่ api        บอกแค่ว่าเป็นสคริปต์นี้ ให้หน้าตั้งค่าเช็คว่าใส่ URL ถูกตัว
  */
 
@@ -53,6 +56,7 @@ function doGet(e) {
   try {
     if (p.api === 'cut-check') return out_(check_());
     if (p.api === 'cut-orders') return out_(orders_(String(p.from || ''), String(p.to || '')));
+    if (p.api === 'cut-fixlog') return out_(fixLog_());
   } catch (err) {
     return out_({ error: String(err && err.message || err) });
   }
@@ -763,4 +767,123 @@ function check_() {
   if (!w.tabs.tr.rows) throw new Error('แท็บ TRcloud ยังไม่มีข้อมูล');
 
   return compare_(w);
+}
+
+/* ── บันทึกการแก้ ───────────────────────────────────────────────────────── */
+
+/* แท็บเดียวที่สคริปต์นี้เขียน สร้างเองตอนกดแก้แล้วครั้งแรก เว็บเติมได้แค่แถวต่อท้าย แก้หรือลบแถวเดิมไม่ได้ */
+var TAB_LOG = 'บันทึกการแก้';
+var LOG_HEAD = ['เวลา', 'คนกด', 'ทำ', 'ระบบที่แก้', 'วันที่', 'ออเดอร์', 'SKU', 'ระบบขาย', 'เรื่อง', 'ยอดที่ต้องแก้', 'คีย์'];
+var LOG_FIXED = 'แก้แล้ว';
+var LOG_UNDO = 'ยกเลิก';
+var LOG_GONE = 'ตรวจแล้วหาย';
+var LOG_SYS = { s: 'ชีตทีม', x: 'Uploadยิงออก', t: 'TRcloud' };
+var LOG_MAX = 500;          // รายการต่อการกดหนึ่งครั้ง ทั้งเดือนของตุลามีราวสามร้อย
+
+function doPost(e) {
+  try {
+    var req = JSON.parse(e.postData.contents);
+    if (req.op === 'fix-log') return out_(fixAdd_(req));
+    return out_({ error: 'ไม่รู้จักคำสั่งนี้' });
+  } catch (err) {
+    return out_({ error: String(err && err.message || err) });
+  }
+}
+
+/** ตัดตัวที่ทำให้ชีตอ่านเป็นสูตรออก คนที่มี URL จะได้เขียนสูตรลงไฟล์ไม่ได้ */
+function plain_(v, max) {
+  return String(v === null || v === undefined ? '' : v).replace(/^[=+\-@'\s]+/, '').slice(0, max);
+}
+
+/**
+ * แถวทั้งหมดในแท็บบันทึกการแก้ เรียงตามที่บันทึก แถวหลังสุดของคีย์เดียวกันคือสถานะตอนนี้
+ * ไม่มีแท็บคือยังไม่เคยกดแก้แล้ว ส่ง log ว่าง
+ */
+function fixLog_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(TAB_LOG);
+  return {
+    app: 'cut',
+    at: Date.now(),
+    log: sheet ? readLog_(sheet) : [],
+    sheet: sheet ? { url: ss.getUrl(), gid: sheet.getSheetId() } : null,
+  };
+}
+
+function readLog_(sheet) {
+  var n = sheet.getLastRow() - 1;
+  if (n < 1) return [];
+  var back = {};
+  Object.keys(LOG_SYS).forEach(function (k) { back[LOG_SYS[k]] = k; });
+  var acts = [LOG_FIXED, LOG_UNDO, LOG_GONE];
+  return sheet.getRange(2, 1, n, LOG_HEAD.length).getValues().map(function (c) {
+    return {
+      at: c[0] instanceof Date ? c[0].getTime() : 0, by: String(c[1]), act: String(c[2]), k: back[String(c[3])] || '',
+      date: String(c[4]), ref: String(c[5]), sku: String(c[6]), sys: String(c[7]), what: String(c[8]),
+      need: typeof c[9] === 'number' ? c[9] : 0, key: String(c[10]),
+    };
+  }).filter(function (r) { return r.key && r.at && r.k && acts.indexOf(r.act) >= 0; });
+}
+
+function logSheet_(ss) {
+  var sheet = ss.getSheetByName(TAB_LOG);
+  if (sheet) return sheet;
+  sheet = ss.insertSheet(TAB_LOG, ss.getSheets().length);
+  sheet.getRange(1, 1, 1, LOG_HEAD.length).setValues([LOG_HEAD]);
+  sheet.setFrozenRows(1);
+  return sheet;
+}
+
+/**
+ * act: แก้แล้ว = คนกดว่าไปแก้ในระบบนั้นแล้ว, ยกเลิก = กดผิด, ตรวจแล้วหาย = หน้าเว็บตรวจรอบหลังกดแก้แล้วไม่พบรายการนี้
+ * ยกเลิกกับตรวจแล้วหายใช้ได้เฉพาะรายการที่สถานะตอนนี้เป็นแก้แล้ว สองเครื่องตรวจพร้อมกันจะได้ไม่ลงซ้ำ
+ * กดแก้แล้วซ้ำได้ เพราะตรวจแล้วยังไม่หายแล้วไปแก้อีกรอบ คือการแก้อีกครั้งจริงๆ
+ * เวลาใช้เวลาของสคริปต์ หน้าเว็บเทียบกับเวลาที่ตรวจ (at ของ cut-check) ซึ่งเป็นนาฬิกาเดียวกัน
+ */
+function fixAdd_(req) {
+  var act = [LOG_FIXED, LOG_UNDO, LOG_GONE].indexOf(req.act) >= 0 ? req.act : '';
+  if (!act) return { error: 'ไม่รู้จักคำสั่งนี้' };
+  var items = Array.isArray(req.items) ? req.items.slice(0, LOG_MAX) : [];
+  if (!items.length) return { error: 'ไม่มีรายการที่จะบันทึก' };
+  var by = plain_(req.by, 60);
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var sheet = logSheet_(ss);
+    var last = {};
+    readLog_(sheet).forEach(function (r) { last[r.key] = r.act; });
+    var now = new Date();
+    var rows = [];
+    items.forEach(function (i) {
+      if (!i || !LOG_SYS[i.k]) return;
+      var key = plain_(i.key, 300);
+      var date = String(i.date || '');
+      if (!key || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+      if (act !== LOG_FIXED && last[key] !== LOG_FIXED) return;
+      last[key] = act;
+      var need = Number(i.need);
+      rows.push([now, by, act, LOG_SYS[i.k], date, plain_(i.ref, 100), plain_(i.sku, 100), plain_(i.sys, 30),
+        plain_(i.what, 200), isFinite(need) ? need : 0, key]);
+    });
+    appendLog_(sheet, rows);
+    var out = fixLog_();
+    out.added = rows.length;
+    return out;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** ข้อความตั้งเป็นข้อความก่อนเขียน ไม่งั้นชีตจะแปลงวันที่กับเลขออเดอร์เองตามการตั้งค่าของไฟล์ */
+function appendLog_(sheet, rows) {
+  if (!rows.length) return;
+  var at = sheet.getLastRow() + 1;
+  var short = at + rows.length - 1 - sheet.getMaxRows();
+  if (short > 0) sheet.insertRowsAfter(sheet.getMaxRows(), short);
+  sheet.getRange(at, 1, rows.length, 1).setNumberFormat('yyyy-mm-dd hh:mm');
+  sheet.getRange(at, 2, rows.length, 8).setNumberFormat('@');
+  sheet.getRange(at, 11, rows.length, 1).setNumberFormat('@');
+  sheet.getRange(at, 1, rows.length, LOG_HEAD.length).setValues(rows);
 }
