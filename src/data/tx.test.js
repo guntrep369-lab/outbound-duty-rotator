@@ -8,6 +8,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
+import { sharedMocks } from './gas-shared-mock.js';
 
 const GS = fs.readFileSync(path.resolve(__dirname, '../../apps-script/tx-api.gs'), 'utf8');
 const JS = fs.readFileSync(path.resolve(__dirname, '../../public/wms-tx.js'), 'utf8');
@@ -48,7 +49,7 @@ function writableTab() {
   };
 }
 
-function script(rows, { props = {}, extraSheets = [], named = {} } = {}) {
+function script(rows, { props = {}, extraSheets = [], named = {}, env: more = {} } = {}) {
   const grid = [HEAD, ...rows];
   const sheet = {
     getLastRow: () => grid.length,
@@ -65,18 +66,21 @@ function script(rows, { props = {}, extraSheets = [], named = {} } = {}) {
     insertSheet: (name) => (tabs[name] = writableTab()),
     getSpreadsheetTimeZone: () => 'UTC',
     getUrl: () => 'https://docs.example/d/1/edit',
+    getName: () => 'สมุดสมมติ',
   };
   const env = {
     SpreadsheetApp: { getActiveSpreadsheet: () => ss },
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (t) => ({ setMimeType: () => JSON.parse(t) }) },
-    Utilities: { formatDate: (d, tz, f) => (f === 'HH:mm' ? d.toISOString().slice(11, 16) : d.toISOString().slice(0, 10)) },
+    Utilities: { formatDate: (d, tz, f) => (f === 'H' ? String(d.getUTCHours()) : f === 'HH:mm' ? d.toISOString().slice(11, 16) : d.toISOString().slice(0, 10)) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props[k] ?? null }) },
     LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
     DriveApp: {}, ScriptApp: {},
+    ...more,
   };
-  const api = new Function(...Object.keys(env), GS + '\nreturn { doGet: doGet, doPost: doPost };')(...Object.values(env));
+  const api = new Function(...Object.keys(env), GS + '\nreturn { doGet: doGet, doPost: doPost, sharedTick: sharedTick, installShared: installShared, stopShared: stopShared };')(...Object.values(env));
   const call = (parameter) => api.doGet({ parameter });
   call.post = (body) => api.doPost({ postData: { contents: JSON.stringify(body) } });
+  call.api = api;
   call.tabs = tabs;
   call.ledger = grid;
   return call;
@@ -1019,6 +1023,203 @@ describe('tx-api.gs — Backup', () => {
     expect(d.deleted).toEqual(['backupNow']);
     expect(d.created).toEqual([['backupNow', 1, 2]]);
     expect(d.files).toHaveLength(1);
+  });
+});
+
+describe('tx-api.gs — ข้อมูลกลาง', () => {
+  const T0 = new Date('2026-03-10T10:00:00Z');   // 10 โมงตามเวลาของไฟล์ชีตปลอม (UTC) อยู่ในเวลางานของรอบตั้งเวลา
+  const rows = () => [row({ to: 'A-01-01', qty: 5 }), sale({ from: 'A-01-01', qty: 2, note: day('2026-03-09') })];
+  const at = (ms) => vi.setSystemTime(new Date(T0.getTime() + ms));
+  const MIN = 60000;
+
+  /** สมุดปลอมพร้อม Drive กับ Script Properties ปลอม เพิ่มแถวในสมุดได้ภายหลังผ่าน api.ledger */
+  function setup(o = {}) {
+    const g = sharedMocks(o);
+    const api = script(o.rows || rows(), { env: g.env });
+    return { g, api };
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(T0);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('ไม่ใส่ shared คิดใหม่ทุกครั้งเหมือนเดิม ไม่แตะ Drive', () => {
+    const { g, api } = setup();
+    const r = api({ api: 'tx-summary' });
+    expect(r.keys.length).toBeGreaterThan(0);
+    expect(r.shared).toBeUndefined();
+    expect(g.files).toEqual({});
+    expect(g.info('tx-summary')).toBeNull();
+  });
+
+  it('เปิดหน้าครั้งแรกยังไม่มีชุดกลาง คิดแล้วเก็บเป็นไฟล์ในโฟลเดอร์ WMS ข้อมูลกลาง', () => {
+    const { g, api } = setup();
+    const r = api({ api: 'tx-summary', shared: '1' });
+    expect(r.shared).toMatchObject({ at: T0.getTime(), by: '', auto: true, params: null });
+    const ids = Object.keys(g.files);
+    expect(ids).toHaveLength(1);
+    expect(g.files[ids[0]]).toMatchObject({ folder: 'WMS ข้อมูลกลาง', mime: 'text/plain' });
+    expect(g.files[ids[0]].name).toContain('tx-summary');
+    expect(g.info('tx-summary')).toMatchObject({ file: ids[0], at: T0.getTime() });
+    expect(g.content('tx-summary').keys).toEqual(r.keys);
+  });
+
+  it('ยังไม่มีโฟลเดอร์ สร้างให้', () => {
+    const { g, api } = setup({ folder: false });
+    api({ api: 'tx-summary', shared: '1' });
+    expect(g.folders.map((f) => f.name)).toEqual(['WMS ข้อมูลกลาง']);
+  });
+
+  it('เครื่องที่สองได้ชุดเดียวกับเครื่องแรก แม้สมุดจะมีแถวเพิ่มแล้ว จนกว่าจะมีคนกดดึงใหม่', () => {
+    const { api } = setup();
+    const first = api({ api: 'tx-summary', shared: '1' });
+    api.ledger.push(row({ to: 'A-01-01', qty: 100 }));
+    at(10 * MIN);
+    const second = api({ api: 'tx-summary', shared: '1' });
+    expect(second).toEqual(first);
+    const pressed = api.post({ op: 'shared-fresh', api: 'tx-summary', by: 'คนเอ' });
+    expect(pressed.rows).toBe(first.rows + 1);
+    expect(pressed.shared).toMatchObject({ by: 'คนเอ', auto: false, at: T0.getTime() + 10 * MIN });
+    at(11 * MIN);
+    expect(api({ api: 'tx-summary', shared: '1' }).rows).toBe(first.rows + 1);
+  });
+
+  it('กดดึงใหม่เขียนทับไฟล์เดิม ไม่สร้างไฟล์ใหม่ทุกครั้ง', () => {
+    const { g, api } = setup();
+    api({ api: 'tx-summary', shared: '1' });
+    api.post({ op: 'shared-fresh', api: 'tx-summary', by: 'คนเอ' });
+    api.post({ op: 'shared-fresh', api: 'tx-summary', by: 'คนบี' });
+    const ids = Object.keys(g.files);
+    expect(ids).toHaveLength(1);
+    expect(g.files[ids[0]].writes).toBe(3);
+  });
+
+  it('ไฟล์ถูกลบทิ้ง ถือว่ายังไม่มีชุดกลาง คิดใหม่แล้วสร้างไฟล์ใหม่', () => {
+    const { g, api } = setup();
+    api({ api: 'tx-summary', shared: '1' });
+    g.files[g.info('tx-summary').file].trashed = true;
+    api.ledger.push(row({ to: 'A-01-01', qty: 1 }));
+    at(MIN);
+    const r = api({ api: 'tx-summary', shared: '1' });
+    expect(r.shared.at).toBe(T0.getTime() + MIN);
+    expect(Object.keys(g.files)).toHaveLength(2);
+  });
+
+  it('ชุดที่เก็บไว้เก่ากว่าชั่วโมง เปิดหน้าแล้วคิดใหม่ให้', () => {
+    const { api } = setup();
+    api({ api: 'tx-summary', shared: '1' });
+    api.ledger.push(row({ to: 'A-01-01', qty: 1 }));
+    at(59 * MIN);
+    expect(api({ api: 'tx-summary', shared: '1' }).shared.at).toBe(T0.getTime());
+    at(61 * MIN);
+    expect(api({ api: 'tx-summary', shared: '1' }).shared).toMatchObject({ at: T0.getTime() + 61 * MIN, auto: true });
+  });
+
+  it('มีคนกำลังคิดอยู่ กดซ้ำได้ busy ไม่คิดซ้อน ป้ายที่ค้างเกิน 7 นาทีถือว่าตายแล้ว', () => {
+    const { g, api } = setup();
+    g.running('tx-summary', 2 * MIN, 'คนบี');
+    expect(api.post({ op: 'shared-fresh', api: 'tx-summary', by: 'คนเอ' })).toEqual({
+      app: 'transaction', busy: { at: T0.getTime() - 2 * MIN, by: 'คนบี', auto: false },
+    });
+    expect(g.files).toEqual({});
+    g.running('tx-summary', 8 * MIN, 'คนบี');
+    expect(api.post({ op: 'shared-fresh', api: 'tx-summary', by: 'คนเอ' }).keys).toBeDefined();
+    expect(g.store['shared-run:tx-summary']).toBeUndefined();
+  });
+
+  it('เปิดหน้าตอนมีคนกำลังคิดชุดใหม่ ได้ชุดเก่าไปก่อนแม้จะเกินชั่วโมง ไม่ต้องรอ', () => {
+    const { g, api } = setup();
+    const first = api({ api: 'tx-summary', shared: '1' });
+    at(90 * MIN);
+    g.running('tx-summary', MIN);
+    expect(api({ api: 'tx-summary', shared: '1' })).toEqual(first);
+  });
+
+  it('คิดล้ม ไม่เก็บอะไร ป้ายกำลังคิดถูกลบ และคนกดได้ข้อความผิดพลาด', () => {
+    const { g, api } = setup();
+    api.ledger.length = 0;   // ไม่มีหัวตาราง หาชีต Transaction ไม่เจอ
+    const r = api.post({ op: 'shared-fresh', api: 'tx-summary', by: 'คนเอ' });
+    expect(r.error).toContain('ไม่พบชีต Transaction');
+    expect(g.store['shared-run:tx-summary']).toBeUndefined();
+    expect(g.info('tx-summary')).toBeNull();
+    expect(g.store['shared-err:tx-summary']).toBeUndefined();   // คนกดเห็นข้อความเองแล้ว เก็บเฉพาะรอบอัตโนมัติ
+  });
+
+  it('ชื่อคนกดถูกตัดตัวที่ทำให้เป็นสูตร และยาวไม่เกิน 60 ตัว', () => {
+    const { api } = setup();
+    const r = api.post({ op: 'shared-fresh', api: 'tx-summary', by: '=HYPERLINK("x")' + 'ก'.repeat(100) });
+    expect(r.shared.by.startsWith('HYPERLINK')).toBe(true);
+    expect(r.shared.by.length).toBe(60);
+  });
+
+  it('ยอดขายรายวันใช้ชุดกลางได้เฉพาะช่วงวันที่เดียวกัน ช่วงอื่นคิดใหม่แล้วเก็บแทน', () => {
+    const { g, api } = setup();
+    const mar = api({ api: 'tx-daily', from: '2026-03-01', to: '2026-03-31', shared: '1' });
+    expect(mar.shared.params).toEqual({ from: '2026-03-01', to: '2026-03-31' });
+    api.ledger.push(sale({ from: 'A-01-01', qty: 1, note: day('2026-03-09') }));
+    at(MIN);
+    expect(api({ api: 'tx-daily', from: '2026-03-01', to: '2026-03-31', shared: '1' })).toEqual(mar);
+    const feb = api({ api: 'tx-daily', from: '2026-02-01', to: '2026-02-28', shared: '1' });
+    expect(feb.shared).toMatchObject({ at: T0.getTime() + MIN, params: { from: '2026-02-01', to: '2026-02-28' } });
+    expect(g.info('tx-daily').params).toEqual({ from: '2026-02-01', to: '2026-02-28' });
+  });
+
+  it('กดดึงยอดขายใหม่ต้องส่งวันที่ที่ถูกรูปแบบ', () => {
+    const { api } = setup();
+    expect(api.post({ op: 'shared-fresh', api: 'tx-daily', from: '1/3/2026', to: '', by: 'คนเอ' }).error).toBe('ช่วงวันที่ไม่ถูกต้อง');
+    expect(api.post({ op: 'shared-fresh', api: 'tx-history', by: 'คนเอ' }).error).toBe('ไม่รู้จักข้อมูลชุดนี้');
+    const r = api.post({ op: 'shared-fresh', api: 'tx-daily', from: '2026-03-01', to: '2026-03-31', by: 'คนเอ' });
+    expect(r.shared).toMatchObject({ by: 'คนเอ', params: { from: '2026-03-01', to: '2026-03-31' } });
+  });
+
+  it('shared-at ตอบสั้น ๆ ว่าชุดไหนเป็นของเวลาไหน ใครกำลังคิด ไม่ส่งเลขไฟล์ออกไป', () => {
+    const { g, api } = setup();
+    expect(api({ api: 'shared-at' })).toEqual({ app: 'transaction', at: T0.getTime(), shared: {}, run: {}, err: {} });
+    api.post({ op: 'shared-fresh', api: 'tx-summary', by: 'คนเอ' });
+    g.running('tx-daily', MIN, 'คนบี');
+    const st = api({ api: 'shared-at' });
+    expect(st.shared['tx-summary']).toEqual({ at: T0.getTime(), by: 'คนเอ', auto: false, ms: 0, params: null });
+    expect(st.run).toEqual({ 'tx-daily': { at: T0.getTime() - MIN, by: 'คนบี', auto: false } });
+    expect(JSON.stringify(st)).not.toContain('file');
+  });
+
+  it('รอบตั้งเวลาทำงานเฉพาะ 8:00 ถึงก่อน 18:00 คิดยอดคงเหลือกับยอดขายช่วงล่าสุดที่มีคนเปิดดู', () => {
+    const { g, api } = setup();
+    api({ api: 'tx-daily', from: '2026-03-01', to: '2026-03-31', shared: '1' });
+    vi.setSystemTime(new Date('2026-03-10T07:30:00Z'));   // 7:30
+    api.api.sharedTick();
+    expect(g.info('tx-summary')).toBeNull();
+    vi.setSystemTime(new Date('2026-03-10T18:00:00Z'));   // 18:00
+    api.api.sharedTick();
+    expect(g.info('tx-summary')).toBeNull();
+    vi.setSystemTime(new Date('2026-03-10T08:00:00Z'));
+    api.api.sharedTick();
+    expect(g.info('tx-summary')).toMatchObject({ auto: true, by: '' });
+    expect(g.info('tx-daily')).toMatchObject({ at: Date.parse('2026-03-10T08:00:00Z'), auto: true, params: { from: '2026-03-01', to: '2026-03-31' } });
+  });
+
+  it('รอบตั้งเวลาล้ม เก็บข้อความไว้ให้หน้าเว็บบอก รอบถัดไปสำเร็จแล้วล้างทิ้ง', () => {
+    const { g, api } = setup();
+    const saved = api.ledger.splice(0);
+    api.api.sharedTick();
+    const st = api({ api: 'shared-at' });
+    expect(st.err['tx-summary'].msg).toContain('ไม่พบชีต Transaction');
+    api.ledger.push(...saved);
+    api.api.sharedTick();
+    expect(api({ api: 'shared-at' }).err).toEqual({});
+  });
+
+  it('installShared ตั้งเวลาทุก 30 นาทีทับตัวเดิมของตัวเอง ไม่แตะตัวตั้งเวลาอื่น และเก็บชุดแรกทันที', () => {
+    const { g, api } = setup();
+    g.triggers.push({ fn: 'backupNow', days: 1 }, { fn: 'sharedTick', minutes: 5 });
+    const msg = api.api.installShared();
+    expect(g.triggers).toEqual([{ fn: 'backupNow', days: 1 }, { fn: 'sharedTick', minutes: 30 }]);
+    expect(g.info('tx-summary')).toMatchObject({ auto: true });
+    expect(msg).toContain('ยอดคงเหลือ');
+    api.api.stopShared();
+    expect(g.triggers).toEqual([{ fn: 'backupNow', days: 1 }]);
   });
 });
 

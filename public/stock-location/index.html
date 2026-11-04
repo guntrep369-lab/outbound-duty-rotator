@@ -20,6 +20,7 @@
   background:var(--wms-surface);border:1px solid var(--wms-border);color:var(--wms-muted)}
 .tx-src .pill b{color:var(--wms-text);font-weight:600}
 .tx-src .pill.warn{background:#FEF3C7;border-color:#FDE68A;color:#92400E}
+.tx-src .pill.ok{background:#ECFDF5;border-color:#A7F3D0;color:#047857;font-weight:600}
 .tx-src .sp{flex:1}
 .tx-src button{padding:4px 12px;border-radius:999px;border:1px solid var(--wms-border2);
   background:var(--wms-surface);font-family:var(--wms-font);font-size:12px;color:#334155;cursor:pointer}
@@ -183,6 +184,7 @@ button.tx-card.on{border-color:var(--wms-primary);background:var(--wms-primary-l
 <script type="module" src="../wms-shell.js"></script>
 <script src="../wms-settings.js"></script>
 <script src="../wms-gas.js"></script>
+<script src="../wms-shared.js"></script>
 <script src="../wms-stock.js"></script>
 <script src="../wms-tx.js"></script>
 <script>
@@ -195,6 +197,8 @@ let RAW = null;       // คำตอบจาก Apps Script
 let DATA = null;      // RAW ที่จัดกลุ่มแล้ว
 let PULLING = '';
 let ERR = '';
+/* ข้อมูลกลาง (wms-shared.js): run = คนอื่นกำลังดึงชุดใหม่อยู่ fresh = เวลาที่ป้าย "อัปเดตแล้ว" ยังขึ้นอยู่ */
+const SH = { run: null, fresh: 0, err: null };
 /* เปิดมาเจอต้องเติมก่อน เพราะเป็นงานที่ต้องทำทุกวัน ส่วนหาของเปิดเมื่อมีคนถาม
    ?tab=count เอาไว้ส่งลิงก์ให้คนนับ เปิดมาเจอรายการของตัวเองเลย */
 let TAB = new URLSearchParams(location.search).get('tab') === 'count' ? 'count' : 'fill';
@@ -249,13 +253,21 @@ function renderSrc() {
     html += RAW.lastDate
       ? `<span class="pill">📅 ขายถึง <b>${esc(WmsTx.shortDate(RAW.lastDate))}</b></span>`
       : `<span class="pill warn">⚠️ อ่านวันที่ขายไม่ออก</span>`;
-    html += `<span class="pill">🕐 ดึงเมื่อ <b>${esc(when)}</b></span>` + backupPill();
+    const by = WmsShared.who(RAW);
+    html += `<span class="pill" title="${esc(sharedTitle())}">🕐 ดึงเมื่อ <b>${esc(when)}</b>${by ? ` · ${esc(by)}` : ''}</span>` + backupPill();
+    if (Date.now() < SH.fresh) html += `<span class="pill ok">✓ อัปเดตเป็นชุดล่าสุดแล้ว</span>`;
   } else {
     html += `<span class="pill warn">⚠️ ยังไม่มีข้อมูล</span>`;
   }
+  if (SH.run && !PULLING) {
+    const t = new Date(SH.run.at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+    html += `<span class="pill">⏳ ${esc(WmsShared.runner(SH.run))} กำลังดึงชุดใหม่ (เริ่ม ${esc(t)}) เสร็จแล้วขึ้นให้เอง</span>`;
+  }
+  if (SH.err && RAW && SH.err.at > WmsShared.stamp(RAW)) html += `<span class="pill warn" title="${esc(SH.err.msg)}">⚠️ รอบอัตโนมัติดึงไม่สำเร็จ</span>`;
   html += `<span class="sp"></span>`;
   if (url) {
-    html += `<button id="pullBtn" class="${RAW ? '' : 'p'}" ${PULLING ? 'disabled' : ''}>${PULLING ? 'กำลังดึง…' : (RAW ? '🔄 ดึงใหม่' : '⬇️ ดึงข้อมูล')}</button>`;
+    const wait = PULLING || SH.run;
+    html += `<button id="pullBtn" class="${RAW ? '' : 'p'}" ${wait ? 'disabled' : ''}>${PULLING ? 'กำลังดึง…' : SH.run ? 'รอชุดใหม่…' : (RAW ? '🔄 ดึงใหม่' : '⬇️ ดึงข้อมูล')}</button>`;
   } else {
     html += `<span class="pill">ยังไม่ได้ตั้ง Apps Script URL — <a href="../settings/">ตั้งที่หน้าตั้งค่า</a></span>`;
   }
@@ -265,18 +277,39 @@ function renderSrc() {
   if (btn) btn.onclick = pullNow;
 }
 
-async function pullNow() {
+/** ป้ายบนเวลาที่ดึง บอกว่าทุกเครื่องเห็นชุดเดียวกัน และสคริปต์ใช้เวลาคิดนานเท่าไร */
+function sharedTitle() {
+  const s = RAW && RAW.shared;
+  if (!s) return 'ชุดนี้ดึงในเครื่องนี้เอง เครื่องอื่นอาจเห็นคนละชุด';
+  return `ข้อมูลกลาง ทุกเครื่องเห็นชุดเดียวกัน${s.ms ? ` · สคริปต์ใช้เวลาคิด ${Math.round(s.ms / 1000)} วินาที` : ''}`;
+}
+
+/**
+ * กดดึงใหม่ สคริปต์คิดใหม่แล้วเก็บเป็นข้อมูลกลาง เครื่องอื่นจะได้ชุดนี้ภายในนาทีถัดไป
+ * shared = เปิดหน้าแล้วยังไม่มีข้อมูล อ่านชุดที่เก็บไว้แทน ไม่สั่งคิดใหม่
+ */
+async function pullNow(shared) {
   const url = WmsTx.savedUrl();
   if (PULLING || !url) return;
+  const word = shared === true ? 'กำลังโหลดข้อมูลกลาง…' : 'กำลังดึงข้อมูล…';
   ERR = '';
-  PULLING = 'กำลังดึงข้อมูล…';
+  PULLING = word;
   renderSrc();
   try {
-    const s = await WmsTx.pull(url, {
-      onProgress: (sec) => { PULLING = `กำลังดึงข้อมูล… ${sec} วินาที`; renderSrc(); },
+    const opts = {
+      onProgress: (sec) => { PULLING = `${word} ${sec} วินาที`; renderSrc(); },
       onRetry: () => { PULLING = 'ไม่สำเร็จ กำลังลองใหม่…'; renderSrc(); },
-    });
+    };
+    const s = shared === true ? await WmsTx.pullShared(url, opts) : await WmsTx.pull(url, opts);
     PULLING = '';
+    if (s.busy) {
+      /* มีคนกดก่อนหน้าไม่กี่วินาที รอชุดของเขาแทน ได้ตัวเลขชุดเดียวกันและไม่ต้องคิดซ้อน */
+      SH.run = s.busy;
+      renderSrc();
+      WATCH.soon();
+      return;
+    }
+    SH.run = null;
     HCACHE.clear();
     HIST.data = null;
     load(s);
@@ -287,6 +320,36 @@ async function pullNow() {
     ERR = 'ดึงข้อมูลไม่สำเร็จ — ' + err.message;
     renderSrc();
   }
+}
+
+/**
+ * ถามทุกนาทีว่ามีชุดใหม่ไหม (WmsShared.watch) มีแล้วโหลดเงียบ ๆ ไม่ขึ้นสายพานรอ
+ * กำลังพิมพ์ตัวเลขนับอยู่ไม่วาดหน้าใหม่ ถามรอบถัดไปแทน ตัวเลขที่พิมพ์ค้างจะได้ไม่หาย
+ * ประวัติที่เปิดดูอยู่ไม่ดึงใหม่เอง เป็นคำขอแยกที่ช้า ล้างแค่แคช กดดูครั้งหน้าได้ของใหม่
+ */
+async function checkShared() {
+  const url = WmsTx.savedUrl();
+  if (!url || PULLING) return false;
+  const st = await WmsShared.status(url);
+  if (!WmsShared.knows(st, 'transaction')) return false;   // สคริปต์รุ่นก่อน
+  const run = WmsShared.running(st, 'tx-summary');
+  const err = (st.err && st.err['tx-summary']) || null;
+  if (JSON.stringify(run) !== JSON.stringify(SH.run) || JSON.stringify(err) !== JSON.stringify(SH.err)) {
+    SH.run = run; SH.err = err; renderSrc();
+  }
+  if (!WmsShared.newer(st, 'tx-summary', RAW)) return !!run;
+  if (WmsShared.typing()) return true;
+  const s = await WmsTx.pullShared(url);
+  if (PULLING || s.busy || WmsShared.stamp(s) <= WmsShared.stamp(RAW)) return !!run;
+  const had = !!RAW;   // เปิดมายังไม่มีอะไรเลย ไม่ต้องบอกว่าอัปเดต
+  HCACHE.clear();
+  load(s);
+  if (had) {
+    SH.fresh = Date.now() + 20000;
+    setTimeout(renderSrc, 20500);
+  }
+  renderAll();
+  return !!run;
 }
 
 /* ── ยอดรวม + แท็บ ──────────────────────────────────────────────────────── */
@@ -980,8 +1043,12 @@ renderAll();
 if (TAB === 'count') loadCount();
 
 /* ปิดเบราว์เซอร์แล้วแคชหาย เปิดมาใหม่ควรเห็นของเลย ไม่ใช่ต้องกดปุ่มก่อนทุกเช้า
-   ลองครั้งเดียวต่อรอบเบราว์เซอร์ด้วยกติกาเดียวกับหน้าอื่น ปุ่มดึงใหม่ยังกดเองได้ */
-if (!RAW && WmsTx.savedUrl() && WmsGas.firstTry('tx:module')) pullNow();
+   อ่านข้อมูลกลางที่สคริปต์เก็บไว้ เร็วกว่าให้คิดใหม่ และเห็นชุดเดียวกับเครื่องอื่น
+   ลองครั้งเดียวต่อรอบเบราว์เซอร์ด้วยกติกาเดียวกับหน้าอื่น ปุ่มดึงใหม่ยังกดเองได้
+   มีข้อมูลอยู่แล้วก็ถามทันทีว่าเครื่องอื่นดึงชุดใหม่ไปหรือยัง จากนั้นถามทุกนาที */
+const WATCH = WmsShared.watch(checkShared);
+if (!RAW && WmsTx.savedUrl() && WmsGas.firstTry('tx:module')) pullNow(true);
+else if (RAW) WATCH.now();
 </script>
 </body>
 </html>

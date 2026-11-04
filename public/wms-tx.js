@@ -258,8 +258,25 @@
     catch (e) { console.warn('เก็บยอด Transaction ไม่ได้ —', e.message); }
   }
 
+  /**
+   * กดดึงใหม่ สคริปต์คิดใหม่แล้วเก็บเป็นข้อมูลกลาง (wms-shared.js) ทุกเครื่องจะได้ชุดนี้
+   * มีคนกำลังดึงอยู่ได้ { busy } กลับไป หน้าเว็บรอชุดนั้นแทนการดึงซ้อน
+   * สคริปต์รุ่นก่อนไม่รู้จักคำสั่งนี้ ถอยไปดึงแบบเดิม
+   */
   async function pull(url, opts) {
-    var s = parse(await window.WmsGas.json(url, 'tx-summary', opts));
+    var r = window.WmsShared ? await window.WmsShared.press(url, 'tx-summary', null, opts) : null;
+    if (r && r.busy && !r.keys) return { busy: r.busy };
+    if (!r || r.error === (window.WmsShared && window.WmsShared.OLD)) r = await window.WmsGas.json(url, 'tx-summary', opts);
+    var s = parse(r);
+    save(s);
+    return s;
+  }
+
+  /** เปิดหน้า อ่านชุดที่สคริปต์เก็บไว้ ยังไม่มีหรือเก่าเกินชั่วโมง สคริปต์คิดใหม่ให้เอง */
+  async function pullShared(url, opts) {
+    var r = await window.WmsShared.read(url, 'tx-summary', opts);
+    if (r && r.busy && !r.keys) return { busy: r.busy };
+    var s = parse(r);
     save(s);
     return s;
   }
@@ -596,6 +613,7 @@
     read: read,
     save: save,
     pull: pull,
+    pullShared: pullShared,
     pullHistory: pullHistory,
     savedUrl: function () { return window.WmsSettings ? WmsSettings.txUrl() : ''; },
   };

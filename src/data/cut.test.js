@@ -4,9 +4,10 @@
  * รันสคริปต์จริงกับชีตปลอม เพราะคนจะไปแก้ยอดสต๊อกตามตัวเลขนี้ ถ้าจัดประเภทผิดคือแก้ผิดของจริง
  * ข้อมูลในเทสต์สมมติขึ้นทั้งหมด repo นี้เป็นสาธารณะ
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import { sharedMocks } from './gas-shared-mock.js';
 
 const GS = fs.readFileSync(path.resolve(__dirname, '../../apps-script/cut-api.gs'), 'utf8');
 
@@ -878,5 +879,106 @@ describe('cut-api.gs — บันทึกการแก้', () => {
     expect(b.post({ op: 'อื่น' }).error).toBeTruthy();
     expect(b.post({ op: 'fix-log', act: 'แก้แล้ว', items: [] }).error).toBeTruthy();
     expect(b.tabs).toEqual({});
+  });
+});
+
+describe('cut-api.gs — ข้อมูลกลาง', () => {
+  const T0 = new Date('2026-03-10T03:00:00Z');   // 10 โมงเวลาไทย
+  const MIN = 60000;
+  const LOG = ['เวลา', 'คนกด', 'ทำ', 'ระบบที่แก้', 'วันที่', 'ออเดอร์', 'SKU', 'ระบบขาย', 'เรื่อง', 'ยอดที่ต้องแก้', 'คีย์'];
+
+  /** ไฟล์ตัดสต๊อกปลอมพร้อม Drive กับ Script Properties ปลอม แท็บเป็นอาร์เรย์ เพิ่มแถวทีหลังได้ */
+  function setup(d = join(fine('5001'), fine('5002', B, 2))) {
+    const g = sharedMocks();
+    const tabs = bookOf(d);
+    const ss = {
+      getSheetByName: (n) => (tabs[n] ? { ...sheet(tabs[n]), getSheetId: () => 9 } : null),
+      getSpreadsheetTimeZone: () => 'Asia/Bangkok',
+      getName: () => 'ไฟล์ตัดสต๊อกสมมติ',
+      getUrl: () => 'https://docs.example/d/2/edit',
+    };
+    const env = {
+      SpreadsheetApp: { getActiveSpreadsheet: () => ss },
+      Utilities: { formatDate: (x, tz, f) => (f === 'H' ? String((x.getUTCHours() + 7) % 24) : x.toISOString().slice(0, 10)) },
+      ContentService: { createTextOutput: (s) => ({ text: s, setMimeType() { return this; } }), MimeType: { JSON: 'json' } },
+      LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
+      ...g.env,
+    };
+    const s = new Function(...Object.keys(env), `${GS}\nreturn { doGet, doPost, sharedTick, installShared, stopShared };`)(...Object.values(env));
+    return {
+      g, tabs, s,
+      get: (parameter) => JSON.parse(s.doGet({ parameter }).text),
+      post: (body) => JSON.parse(s.doPost({ postData: { contents: JSON.stringify(body) } }).text),
+    };
+  }
+  const addOrder = (c, ref) => {
+    c.tabs[NAMES.jst].push(jst(ref, A, 1));
+    c.tabs[NAMES.tx].push(tx(ref, A, 1));
+    c.tabs[NAMES.tr].push(tr(ref, A, 1));
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(T0);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('ไม่ใส่ shared ตรวจใหม่ทุกครั้งเหมือนเดิม ไม่แตะ Drive', () => {
+    const c = setup();
+    const r = c.get({ api: 'cut-check' });
+    expect(r.app).toBe('cut');
+    expect(r.shared).toBeUndefined();
+    expect(c.g.files).toEqual({});
+  });
+
+  it('ผลตรวจชุดกลางไม่มีอายุ ทุกเครื่องเห็นชุดเดิมจนกว่าจะมีคนกดตรวจใหม่', () => {
+    const c = setup();
+    const first = c.get({ api: 'cut-check', shared: '1' });
+    expect(first.shared).toMatchObject({ at: T0.getTime(), auto: true, params: null });
+    expect(c.g.files[c.g.info('cut-check').file].name).toBe('cut-check · ไฟล์ตัดสต๊อกสมมติ.json');
+    addOrder(c, '5003');
+    vi.setSystemTime(new Date(T0.getTime() + 300 * MIN));
+    expect(c.get({ api: 'cut-check', shared: '1' })).toEqual(first);
+    const pressed = c.post({ op: 'shared-fresh', api: 'cut-check', by: 'คนเอ' });
+    expect(pressed.info.matched.lines).toBe(first.info.matched.lines + 1);
+    expect(pressed.shared).toMatchObject({ by: 'คนเอ', auto: false });
+    expect(c.get({ api: 'cut-check', shared: '1' })).toEqual(pressed);
+  });
+
+  it('มีคนกำลังตรวจอยู่ กดซ้ำได้ busy ไม่ตรวจซ้อน', () => {
+    const c = setup();
+    c.g.running('cut-check', 3 * MIN, 'คนบี');
+    expect(c.post({ op: 'shared-fresh', api: 'cut-check', by: 'คนเอ' })).toEqual({
+      app: 'cut', busy: { at: T0.getTime() - 3 * MIN, by: 'คนบี', auto: false },
+    });
+    expect(c.post({ op: 'shared-fresh', api: 'cut-orders', by: 'คนเอ' }).error).toBe('ไม่รู้จักข้อมูลชุดนี้');
+  });
+
+  it('ตรวจล้ม (แท็บ Report ว่าง) ไม่เก็บอะไร คนกดได้ข้อความผิดพลาด', () => {
+    const c = setup({ jst: [], tx: [tx('5001', A, 1)], tr: [tr('5001', A, 1)] });
+    expect(c.post({ op: 'shared-fresh', api: 'cut-check', by: 'คนเอ' }).error).toContain('แท็บ Report ยังไม่มีข้อมูล');
+    expect(c.g.info('cut-check')).toBeNull();
+    expect(c.g.store['shared-run:cut-check']).toBeUndefined();
+  });
+
+  it('shared-at บอกจำนวนแถวของบันทึกการแก้ด้วย ตรงกับ rows ของ cut-fixlog', () => {
+    const c = setup();
+    expect(c.get({ api: 'shared-at' })).toEqual({ app: 'cut', at: T0.getTime(), shared: {}, run: {}, err: {}, logRows: 0 });
+    c.tabs['บันทึกการแก้'] = [LOG, [T0, 'คนเอ', 'แก้แล้ว', 'TRcloud', DAY, '5001', A, 'JST', 'ตัดเกิน', -1, 'k1']];
+    expect(c.get({ api: 'shared-at' }).logRows).toBe(2);
+    expect(c.get({ api: 'cut-fixlog' }).rows).toBe(2);
+  });
+
+  it('รอบตั้งเวลาทำงานในเวลางานตามเวลาของไฟล์ชีต และ installShared ตั้งทุก 2 ชั่วโมง', () => {
+    const c = setup();
+    vi.setSystemTime(new Date('2026-03-10T11:00:00Z'));   // 18:00 เวลาไทย
+    c.s.sharedTick();
+    expect(c.g.info('cut-check')).toBeNull();
+    vi.setSystemTime(new Date('2026-03-10T01:00:00Z'));   // 8:00 เวลาไทย
+    c.s.sharedTick();
+    expect(c.g.info('cut-check')).toMatchObject({ auto: true, by: '' });
+    c.g.triggers.push({ fn: 'sharedTick', hours: 6 });
+    expect(c.s.installShared()).toContain('ผลตรวจ');
+    expect(c.g.triggers).toEqual([{ fn: 'sharedTick', hours: 2 }]);
   });
 });

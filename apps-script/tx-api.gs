@@ -19,9 +19,14 @@
  * ?api=tx-daily&from=...&to=...  ยอดแถวขายราย SKU ราย วัน และแถวขายทีละแถว ให้หน้าเช็ครายการตัดสต๊อกเอาไปเทียบ
  *                                พร้อมคู่ SKU จากแท็บ "MASTER แปลงสินค้า" (ถ้ามี) ให้หน้า LOT / PO ที่ขายออก
  * ?api=tx-fifo             ทุกแถวของสมุดแบบย่อ ให้หน้า FIFO สต๊อกคิดยอดราย LOT และหาการเบิกข้าม LOT เอง
+ * ?api=shared-at           เวลาของข้อมูลกลางชุดล่าสุด (ดูส่วน "ข้อมูลกลาง" ท้ายไฟล์)
  * POST {op:'count-save'}   บันทึกผลนับ
  * POST {op:'count-add'}    ส่ง SKU ที่ยอดไม่ตรงระบบบริษัทเข้าใบนับ
+ * POST {op:'shared-fresh'} คิดยอดใหม่แล้วเก็บเป็นข้อมูลกลาง (ปุ่มดึงใหม่บนหน้าเว็บ)
  * ไม่ใส่ api               บอกแค่ว่าเป็นสคริปต์นี้ ให้หน้าตั้งค่าเช็คว่าใส่ URL ถูกตัว
+ *
+ * ข้อมูลกลาง: ผลของ tx-summary กับ tx-daily เก็บเป็นไฟล์ JSON ในโฟลเดอร์ "WMS ข้อมูลกลาง" ใน Drive
+ * ของเจ้าของสคริปต์ ทุกเครื่องอ่านชุดเดียวกัน ไม่ได้เขียนลงไฟล์ชีต
  */
 
 // ชื่อชีตสมุดรายการ — ว่างไว้ = หาเองจากหัวตาราง (คอลัมน์ F, G ขึ้นต้นด้วย Location เบิก / รับ)
@@ -60,11 +65,16 @@ var COUNT_DIFF_MAX = 300;           // รายการเทียบระ�
 function doGet(e) {
   var p = (e && e.parameter) || {};
   try {
-    if (p.api === 'tx-summary') return out_(summary_());
+    if (p.api === 'tx-summary') return out_(p.shared ? sharedRead_('tx-summary', null, summary_) : summary_());
     if (p.api === 'tx-history') return out_(history_(String(p.sku || '')));
     if (p.api === 'tx-count') return out_(countLoad_());
-    if (p.api === 'tx-daily') return out_(daily_(String(p.from || ''), String(p.to || '')));
+    if (p.api === 'tx-daily') {
+      var from = String(p.from || ''), to = String(p.to || '');
+      if (!p.shared) return out_(daily_(from, to));
+      return out_(sharedRead_('tx-daily', { from: from, to: to }, function () { return daily_(from, to); }));
+    }
     if (p.api === 'tx-fifo') return out_(fifo_());
+    if (p.api === 'shared-at') return out_(sharedAt_());
   } catch (err) {
     return out_({ error: String(err && err.message || err) });
   }
@@ -76,6 +86,7 @@ function doPost(e) {
     var req = JSON.parse(e.postData.contents);
     if (req.op === 'count-save') return out_(countSave_(req));
     if (req.op === 'count-add') return out_(countAdd_(req));
+    if (req.op === 'shared-fresh') return out_(sharedPress_(req));
     return out_({ error: 'ไม่รู้จักคำสั่งนี้' });
   } catch (err) {
     return out_({ error: String(err && err.message || err) });
@@ -939,4 +950,207 @@ function installBackup() {
   });
   ScriptApp.newTrigger('backupNow').timeBased().everyDays(1).atHour(2).create();
   return backupNow();
+}
+
+/* ── ข้อมูลกลาง ─────────────────────────────────────────────────────────── */
+
+/*
+ * เดิมแต่ละเครื่องกดดึงเอง ได้ตัวเลขคนละเวลา คนหนึ่งเห็นยอดตอนเช้า อีกคนเห็นตอนบ่าย แล้วคุยกันไม่ตรง
+ * ตอนนี้ผลที่คิดเสร็จเก็บไว้ชุดเดียว ทุกเครื่องอ่านชุดนั้น หน้าเว็บถาม shared-at ทุกนาที มีชุดใหม่ค่อยโหลด
+ *
+ * เก็บเป็นไฟล์ JSON ในโฟลเดอร์ SHARED_FOLDER ใน Drive ของเจ้าของสคริปต์ ไม่เขียนลงไฟล์ชีต สมุดรายการไม่ถูกแตะ
+ * เวลา คนกด และเลขไฟล์อยู่ใน Script Properties คีย์ shared:<ชื่อ> ถามได้เร็วโดยไม่ต้องเปิดไฟล์
+ *
+ * ?api=tx-summary&shared=1               ชุดที่เก็บไว้ ยังไม่มีหรือเก่ากว่า SHARED_MAX_MIN ก็คิดใหม่แล้วเก็บ
+ * ?api=tx-daily&from=...&to=...&shared=1  แบบเดียวกัน ใช้ได้เมื่อช่วงวันที่ตรงกับชุดที่เก็บ
+ * POST {op:'shared-fresh', api, by}      คิดใหม่แล้วเก็บแทนชุดเดิม ถ้ามีคนกำลังคิดอยู่ตอบ busy แทนการคิดซ้อน
+ * ไม่ใส่ shared                          คิดใหม่ทุกครั้งและไม่เก็บ เหมือนรุ่นก่อน
+ *
+ * ตั้งเวลา: รัน installShared ครั้งเดียวจากหน้าแก้สคริปต์ เลิกด้วย stopShared
+ */
+var SHARED_APP = 'transaction';
+var SHARED_NAMES = ['tx-summary', 'tx-daily'];
+var SHARED_FOLDER = 'WMS ข้อมูลกลาง';
+var SHARED_MAX_MIN = 60;          // เปิดหน้าแล้วชุดที่เก็บไว้เก่ากว่านี้ คิดใหม่ให้เลย ตั้งเวลาไว้ทุก 30 นาที ปกติจึงไม่ถึง
+var SHARED_EVERY_MIN = 30;        // ตั้งเวลาดึงเองทุกกี่นาที Apps Script ให้เลือกได้แค่ 1 5 10 15 30
+var SHARED_FROM_HOUR = 8;         // ตั้งเวลาทำงานเฉพาะ 8:00 ถึงก่อน 18:00 ตามเวลาของไฟล์ชีต นอกเวลางานไม่มีใครดู
+var SHARED_TO_HOUR = 18;
+var SHARED_BUSY_MS = 7 * 60000;   // Apps Script ตัดจบที่ 6 นาที ป้ายกำลังคิดที่ค้างนานกว่านี้คือตัวที่ตายไปแล้ว
+
+function sharedJson_(all, k) {
+  try { return all[k] ? JSON.parse(all[k]) : null; } catch (err) { return null; }
+}
+
+function sharedProp_(k) {
+  return sharedJson_({ v: PropertiesService.getScriptProperties().getProperty(k) }, 'v');
+}
+
+function sameParams_(a, b) {
+  a = a || {}; b = b || {};
+  return String(a.from || '') === String(b.from || '') && String(a.to || '') === String(b.to || '');
+}
+
+function running_(name) {
+  var r = sharedProp_('shared-run:' + name);
+  return r && Date.now() - r.at < SHARED_BUSY_MS ? r : null;
+}
+
+/** ชุดที่เก็บไว้ ไม่มี ช่วงวันที่ไม่ตรง เก่าเกิน maxMin หรือไฟล์ถูกลบ คืน null */
+function sharedLoad_(name, params, maxMin) {
+  var info = sharedProp_('shared:' + name);
+  if (!info || !info.file || !sameParams_(info.params, params)) return null;
+  if (maxMin && Date.now() - info.at > maxMin * 60000) return null;
+  try {
+    var f = DriveApp.getFileById(info.file);
+    if (f.isTrashed()) return null;
+    return JSON.parse(f.getBlob().getDataAsString('UTF-8'));
+  } catch (err) {
+    return null;
+  }
+}
+
+/**
+ * เก็บผลเป็นชุดกลาง ไฟล์มีป้าย shared ของตัวเองติดไปด้วย คนที่โหลดรู้ว่าเป็นชุดไหนโดยไม่ต้องถามซ้ำ
+ * เขียนไฟล์กับป้ายใต้ล็อกเดียวกัน สองงานเสร็จพร้อมกันป้ายจะไม่ชี้ไปคนละชุดกับไฟล์
+ * เก็บไม่สำเร็จไม่ทำให้คำตอบล้ม คนกดยังได้ตัวเลขของตัวเอง แค่คนอื่นยังเห็นชุดเดิม
+ */
+function sharedSave_(name, params, data, meta) {
+  var pub = { at: Date.now(), by: meta.by || '', auto: !!meta.auto, ms: meta.ms || 0, params: params || null };
+  data.shared = pub;
+  var text = JSON.stringify(data);
+  var props = PropertiesService.getScriptProperties();
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+    try {
+      var old = sharedProp_('shared:' + name);
+      var file = null;
+      if (old && old.file) {
+        try { file = DriveApp.getFileById(old.file); if (file.isTrashed()) file = null; } catch (err) { file = null; }
+      }
+      if (file) {
+        file.setContent(text);
+      } else {
+        var it = DriveApp.getFoldersByName(SHARED_FOLDER);
+        var folder = it.hasNext() ? it.next() : DriveApp.createFolder(SHARED_FOLDER);
+        file = folder.createFile(name + ' · ' + SpreadsheetApp.getActiveSpreadsheet().getName() + '.json', text, 'text/plain');
+      }
+      var keep = { file: file.getId(), size: text.length };
+      Object.keys(pub).forEach(function (k) { keep[k] = pub[k]; });
+      props.setProperty('shared:' + name, JSON.stringify(keep));
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (err) {
+    data.sharedErr = 'เก็บเป็นข้อมูลกลางไม่สำเร็จ: ' + String(err && err.message || err);
+  }
+  return data;
+}
+
+/**
+ * คิดใหม่แล้วเก็บ มีคนกำลังคิดชุดเดียวกันอยู่ ตอบ busy ให้หน้าเว็บรอชุดนั้นแทน
+ * คิดซ้อนไม่ทำให้ตัวเลขผิด แต่กินโควตาเวลาของ Apps Script และทุกคนรอนานขึ้น
+ * งานตั้งเวลาที่ล้มเก็บข้อความไว้ใน shared-err ไม่มีใครเห็นหน้าจอตอนนั้น จึงต้องบอกผ่านหน้าเว็บทีหลัง
+ */
+function sharedFresh_(name, params, who, compute) {
+  var run = running_(name);
+  if (run) return { app: SHARED_APP, busy: { at: run.at, by: run.by, auto: run.auto } };
+  var props = PropertiesService.getScriptProperties();
+  var started = Date.now();
+  props.setProperty('shared-run:' + name, JSON.stringify({ at: started, by: who.by, auto: who.auto, params: params || null }));
+  try {
+    var data = compute();
+    sharedSave_(name, params, data, { by: who.by, auto: who.auto, ms: Date.now() - started });
+    props.deleteProperty('shared-err:' + name);
+    return data;
+  } catch (err) {
+    if (who.auto) props.setProperty('shared-err:' + name, JSON.stringify({ at: Date.now(), msg: String(err && err.message || err).slice(0, 300) }));
+    throw err;
+  } finally {
+    props.deleteProperty('shared-run:' + name);
+  }
+}
+
+/** เปิดหน้าเว็บ ส่งชุดที่เก็บไว้ ถ้ามีคนกำลังคิดชุดใหม่อยู่ ส่งชุดเก่าไปก่อน ชุดใหม่หน้าเว็บจะโหลดเองตอนถามรอบถัดไป */
+function sharedRead_(name, params, compute) {
+  var kept = sharedLoad_(name, params, SHARED_MAX_MIN);
+  if (kept) return kept;
+  if (running_(name)) {
+    var old = sharedLoad_(name, params, 0);
+    if (old) return old;
+  }
+  return sharedFresh_(name, params, { by: '', auto: true }, compute);
+}
+
+/** ปุ่มดึงใหม่ ชื่อคนกดมาจากเว็บ ตัดตัวที่ทำให้กลายเป็นสูตรออกเหมือนข้อความอื่นจากเว็บ */
+function sharedPress_(req) {
+  var who = { by: plain_(req.by, 60), auto: false };
+  if (req.api === 'tx-summary') return sharedFresh_('tx-summary', null, who, summary_);
+  if (req.api === 'tx-daily') {
+    var from = String(req.from || ''), to = String(req.to || '');
+    if (!/^(\d{4}-\d{2}-\d{2})?$/.test(from) || !/^(\d{4}-\d{2}-\d{2})?$/.test(to)) return { error: 'ช่วงวันที่ไม่ถูกต้อง' };
+    return sharedFresh_('tx-daily', { from: from, to: to }, who, function () { return daily_(from, to); });
+  }
+  return { error: 'ไม่รู้จักข้อมูลชุดนี้' };
+}
+
+/** คำตอบสั้น ๆ ให้หน้าเว็บถามทุกนาที: ชุดล่าสุดเป็นของเวลาไหน ใครกด ใครกำลังคิดอยู่ งานตั้งเวลาล้มไหม */
+function sharedAt_() {
+  var all = PropertiesService.getScriptProperties().getProperties();
+  var out = { app: SHARED_APP, at: Date.now(), shared: {}, run: {}, err: {} };
+  SHARED_NAMES.forEach(function (n) {
+    var i = sharedJson_(all, 'shared:' + n);
+    if (i) out.shared[n] = { at: i.at, by: i.by, auto: i.auto, ms: i.ms, params: i.params };
+    var r = sharedJson_(all, 'shared-run:' + n);
+    if (r && Date.now() - r.at < SHARED_BUSY_MS) out.run[n] = { at: r.at, by: r.by, auto: r.auto };
+    var e = sharedJson_(all, 'shared-err:' + n);
+    if (e) out.err[n] = e;
+  });
+  return out;
+}
+
+function workHour_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var h = Number(Utilities.formatDate(new Date(), ss.getSpreadsheetTimeZone(), 'H'));
+  return h >= SHARED_FROM_HOUR && h < SHARED_TO_HOUR;
+}
+
+/**
+ * คิดทุกชุดใหม่ ยอดรายวันคิดเฉพาะช่วงวันที่ที่หน้าเช็ครายการตัดสต๊อกเปิดดูล่าสุด
+ * ชุดหนึ่งล้มไม่ทำให้อีกชุดไม่ได้คิด ข้อความที่ล้มเก็บไว้ใน shared-err แล้ว
+ */
+function sharedAuto_() {
+  var who = { by: '', auto: true };
+  var done = [];
+  try { if (!sharedFresh_('tx-summary', null, who, summary_).busy) done.push('ยอดคงเหลือ'); } catch (err) {}
+  var d = sharedProp_('shared:tx-daily');
+  if (d && d.params) {
+    var from = String(d.params.from || ''), to = String(d.params.to || '');
+    try {
+      if (!sharedFresh_('tx-daily', { from: from, to: to }, who, function () { return daily_(from, to); }).busy) done.push('ยอดขายรายวัน');
+    } catch (err) {}
+  }
+  return done;
+}
+
+/** ตัวตั้งเวลาเรียกฟังก์ชันนี้ นอกเวลางานไม่ทำอะไร */
+function sharedTick() {
+  if (!workHour_()) return;
+  sharedAuto_();
+}
+
+/** กดรันครั้งเดียวจากหน้าแก้สคริปต์: ตั้งเวลาดึงข้อมูลกลางเอง แล้วเก็บชุดแรกให้ทันที เพื่อให้เห็นว่าใช้ได้ */
+function installShared() {
+  stopShared();
+  ScriptApp.newTrigger('sharedTick').timeBased().everyMinutes(SHARED_EVERY_MIN).create();
+  var done = sharedAuto_();
+  return 'ตั้งเวลาแล้ว ทุก ' + SHARED_EVERY_MIN + ' นาที ช่วง ' + SHARED_FROM_HOUR + ':00 ถึง ' + SHARED_TO_HOUR + ':00'
+    + ' / เก็บชุดแรกแล้ว: ' + (done.join(', ') || 'ไม่สำเร็จ ดูข้อความใน shared-err');
+}
+
+/** เลิกตั้งเวลา ชุดที่เก็บไว้ยังอยู่ ปุ่มดึงใหม่บนหน้าเว็บยังเก็บชุดกลางได้เหมือนเดิม */
+function stopShared() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'sharedTick') ScriptApp.deleteTrigger(t);
+  });
 }

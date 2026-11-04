@@ -18,8 +18,12 @@
  * ?api=cut-check   ผลการเทียบ
  * ?api=cut-orders&from=...&to=...  แถวตัดของแท็บ Transaction ทีละออเดอร์ ให้หน้า LOT / PO ที่ขายออกปันล็อตให้แต่ละออเดอร์
  * ?api=cut-fixlog  บันทึกการแก้ทั้งหมด (รายการที่กดแก้แล้ว ยกเลิก หรือตรวจแล้วหาย)
+ * ?api=shared-at   เวลาของผลตรวจชุดกลางล่าสุด (ดูส่วน "ข้อมูลกลาง" ท้ายไฟล์)
  * POST {op:'fix-log'}  เพิ่มแถวในบันทึกการแก้
+ * POST {op:'shared-fresh'}  ตรวจใหม่แล้วเก็บเป็นผลกลางให้ทุกเครื่องเห็นชุดเดียวกัน (ปุ่มตรวจใหม่บนหน้าเว็บ)
  * ไม่ใส่ api        บอกแค่ว่าเป็นสคริปต์นี้ ให้หน้าตั้งค่าเช็คว่าใส่ URL ถูกตัว
+ *
+ * ผลตรวจชุดกลางเก็บเป็นไฟล์ JSON ในโฟลเดอร์ "WMS ข้อมูลกลาง" ใน Drive ของเจ้าของสคริปต์ ไม่ได้เขียนลงไฟล์ชีต
  */
 
 var TAB_TX = 'ตัดสต๊อกระบบ Transaction';
@@ -54,9 +58,10 @@ var KINDS = ['over', 'wrong', 'ghost', 'cancel', 'under', 'blankCut', 'transferD
 function doGet(e) {
   var p = (e && e.parameter) || {};
   try {
-    if (p.api === 'cut-check') return out_(check_());
+    if (p.api === 'cut-check') return out_(p.shared ? sharedRead_('cut-check', null, check_) : check_());
     if (p.api === 'cut-orders') return out_(orders_(String(p.from || ''), String(p.to || '')));
     if (p.api === 'cut-fixlog') return out_(fixLog_());
+    if (p.api === 'shared-at') return out_(sharedAt_());
   } catch (err) {
     return out_({ error: String(err && err.message || err) });
   }
@@ -784,6 +789,7 @@ function doPost(e) {
   try {
     var req = JSON.parse(e.postData.contents);
     if (req.op === 'fix-log') return out_(fixAdd_(req));
+    if (req.op === 'shared-fresh') return out_(sharedPress_(req));
     return out_({ error: 'ไม่รู้จักคำสั่งนี้' });
   } catch (err) {
     return out_({ error: String(err && err.message || err) });
@@ -806,6 +812,7 @@ function fixLog_() {
     app: 'cut',
     at: Date.now(),
     log: sheet ? readLog_(sheet) : [],
+    rows: sheet ? sheet.getLastRow() : 0,   // เทียบกับ logRows ของ shared-at ให้หน้าเว็บรู้ว่ามีคนกดเพิ่ม
     sheet: sheet ? { url: ss.getUrl(), gid: sheet.getSheetId() } : null,
   };
 }
@@ -886,4 +893,197 @@ function appendLog_(sheet, rows) {
   sheet.getRange(at, 2, rows.length, 8).setNumberFormat('@');
   sheet.getRange(at, 11, rows.length, 1).setNumberFormat('@');
   sheet.getRange(at, 1, rows.length, LOG_HEAD.length).setValues(rows);
+}
+
+/* ── ข้อมูลกลาง ─────────────────────────────────────────────────────────── */
+
+/*
+ * เดิมแต่ละเครื่องกดตรวจเอง ได้ผลคนละเวลา คนหนึ่งเห็นรายการที่ต้องแก้ตอนเช้า อีกคนเห็นตอนบ่าย แล้วคุยกันไม่ตรง
+ * ตอนนี้ผลตรวจเก็บไว้ชุดเดียว ทุกเครื่องอ่านชุดนั้น หน้าเว็บถาม shared-at ทุกนาที มีชุดใหม่ค่อยโหลด
+ * บันทึกการแก้อยู่ในแท็บของมันอยู่แล้ว shared-at บอกจำนวนแถวไปด้วย มีคนกดแก้แล้วเครื่องอื่นจะเห็นในนาทีถัดไป
+ *
+ * เก็บเป็นไฟล์ JSON ในโฟลเดอร์ SHARED_FOLDER ใน Drive ของเจ้าของสคริปต์ ไม่เขียนลงไฟล์ชีต
+ * เวลา คนกด และเลขไฟล์อยู่ใน Script Properties คีย์ shared:<ชื่อ> ถามได้เร็วโดยไม่ต้องเปิดไฟล์
+ *
+ * ?api=cut-check&shared=1           ผลตรวจที่เก็บไว้ ยังไม่มีก็ตรวจใหม่แล้วเก็บ
+ * POST {op:'shared-fresh', api, by} ตรวจใหม่แล้วเก็บแทนชุดเดิม ถ้ามีคนกำลังตรวจอยู่ตอบ busy แทนการตรวจซ้อน
+ * ไม่ใส่ shared                     ตรวจใหม่ทุกครั้งและไม่เก็บ เหมือนรุ่นก่อน
+ *
+ * ตั้งเวลา: รัน installShared ครั้งเดียวจากหน้าแก้สคริปต์ เลิกด้วย stopShared
+ */
+var SHARED_APP = 'cut';
+var SHARED_NAMES = ['cut-check'];
+var SHARED_FOLDER = 'WMS ข้อมูลกลาง';
+var SHARED_MAX_MIN = 0;           // ไม่มีอายุ ตรวจทีหนึ่งหลายนาที เปิดหน้าแล้วไม่ควรต้องรอ ชุดใหม่มาจากคนกดหรือรอบตั้งเวลา
+var SHARED_EVERY_HOURS = 2;       // ตั้งเวลาตรวจเองทุกกี่ชั่วโมง ตรวจทีละหลายนาที ถี่กว่านี้กินโควตาเวลาของ Apps Script
+var SHARED_FROM_HOUR = 8;         // ตั้งเวลาทำงานเฉพาะ 8:00 ถึงก่อน 18:00 ตามเวลาของไฟล์ชีต นอกเวลางานไม่มีใครดู
+var SHARED_TO_HOUR = 18;
+var SHARED_BUSY_MS = 7 * 60000;   // Apps Script ตัดจบที่ 6 นาที ป้ายกำลังคิดที่ค้างนานกว่านี้คือตัวที่ตายไปแล้ว
+
+function sharedJson_(all, k) {
+  try { return all[k] ? JSON.parse(all[k]) : null; } catch (err) { return null; }
+}
+
+function sharedProp_(k) {
+  return sharedJson_({ v: PropertiesService.getScriptProperties().getProperty(k) }, 'v');
+}
+
+function sameParams_(a, b) {
+  a = a || {}; b = b || {};
+  return String(a.from || '') === String(b.from || '') && String(a.to || '') === String(b.to || '');
+}
+
+function running_(name) {
+  var r = sharedProp_('shared-run:' + name);
+  return r && Date.now() - r.at < SHARED_BUSY_MS ? r : null;
+}
+
+/** ชุดที่เก็บไว้ ไม่มี ช่วงวันที่ไม่ตรง เก่าเกิน maxMin หรือไฟล์ถูกลบ คืน null */
+function sharedLoad_(name, params, maxMin) {
+  var info = sharedProp_('shared:' + name);
+  if (!info || !info.file || !sameParams_(info.params, params)) return null;
+  if (maxMin && Date.now() - info.at > maxMin * 60000) return null;
+  try {
+    var f = DriveApp.getFileById(info.file);
+    if (f.isTrashed()) return null;
+    return JSON.parse(f.getBlob().getDataAsString('UTF-8'));
+  } catch (err) {
+    return null;
+  }
+}
+
+/**
+ * เก็บผลเป็นชุดกลาง ไฟล์มีป้าย shared ของตัวเองติดไปด้วย คนที่โหลดรู้ว่าเป็นชุดไหนโดยไม่ต้องถามซ้ำ
+ * เขียนไฟล์กับป้ายใต้ล็อกเดียวกัน สองงานเสร็จพร้อมกันป้ายจะไม่ชี้ไปคนละชุดกับไฟล์
+ * เก็บไม่สำเร็จไม่ทำให้คำตอบล้ม คนกดยังได้ตัวเลขของตัวเอง แค่คนอื่นยังเห็นชุดเดิม
+ */
+function sharedSave_(name, params, data, meta) {
+  var pub = { at: Date.now(), by: meta.by || '', auto: !!meta.auto, ms: meta.ms || 0, params: params || null };
+  data.shared = pub;
+  var text = JSON.stringify(data);
+  var props = PropertiesService.getScriptProperties();
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+    try {
+      var old = sharedProp_('shared:' + name);
+      var file = null;
+      if (old && old.file) {
+        try { file = DriveApp.getFileById(old.file); if (file.isTrashed()) file = null; } catch (err) { file = null; }
+      }
+      if (file) {
+        file.setContent(text);
+      } else {
+        var it = DriveApp.getFoldersByName(SHARED_FOLDER);
+        var folder = it.hasNext() ? it.next() : DriveApp.createFolder(SHARED_FOLDER);
+        file = folder.createFile(name + ' · ' + SpreadsheetApp.getActiveSpreadsheet().getName() + '.json', text, 'text/plain');
+      }
+      var keep = { file: file.getId(), size: text.length };
+      Object.keys(pub).forEach(function (k) { keep[k] = pub[k]; });
+      props.setProperty('shared:' + name, JSON.stringify(keep));
+    } finally {
+      lock.releaseLock();
+    }
+  } catch (err) {
+    data.sharedErr = 'เก็บเป็นข้อมูลกลางไม่สำเร็จ: ' + String(err && err.message || err);
+  }
+  return data;
+}
+
+/**
+ * คิดใหม่แล้วเก็บ มีคนกำลังคิดชุดเดียวกันอยู่ ตอบ busy ให้หน้าเว็บรอชุดนั้นแทน
+ * คิดซ้อนไม่ทำให้ตัวเลขผิด แต่กินโควตาเวลาของ Apps Script และทุกคนรอนานขึ้น
+ * งานตั้งเวลาที่ล้มเก็บข้อความไว้ใน shared-err ไม่มีใครเห็นหน้าจอตอนนั้น จึงต้องบอกผ่านหน้าเว็บทีหลัง
+ */
+function sharedFresh_(name, params, who, compute) {
+  var run = running_(name);
+  if (run) return { app: SHARED_APP, busy: { at: run.at, by: run.by, auto: run.auto } };
+  var props = PropertiesService.getScriptProperties();
+  var started = Date.now();
+  props.setProperty('shared-run:' + name, JSON.stringify({ at: started, by: who.by, auto: who.auto, params: params || null }));
+  try {
+    var data = compute();
+    sharedSave_(name, params, data, { by: who.by, auto: who.auto, ms: Date.now() - started });
+    props.deleteProperty('shared-err:' + name);
+    return data;
+  } catch (err) {
+    if (who.auto) props.setProperty('shared-err:' + name, JSON.stringify({ at: Date.now(), msg: String(err && err.message || err).slice(0, 300) }));
+    throw err;
+  } finally {
+    props.deleteProperty('shared-run:' + name);
+  }
+}
+
+/** ส่งผลที่เก็บไว้ ถ้ามีคนกำลังตรวจชุดใหม่อยู่ ส่งชุดเก่าไปก่อน ชุดใหม่หน้าเว็บจะโหลดเองตอนถามรอบถัดไป */
+function sharedRead_(name, params, compute) {
+  var kept = sharedLoad_(name, params, SHARED_MAX_MIN);
+  if (kept) return kept;
+  if (running_(name)) {
+    var old = sharedLoad_(name, params, 0);
+    if (old) return old;
+  }
+  return sharedFresh_(name, params, { by: '', auto: true }, compute);
+}
+
+/** ปุ่มตรวจใหม่ ชื่อคนกดมาจากเว็บ ตัดตัวที่ทำให้กลายเป็นสูตรออกเหมือนข้อความอื่นจากเว็บ */
+function sharedPress_(req) {
+  if (req.api !== 'cut-check') return { error: 'ไม่รู้จักข้อมูลชุดนี้' };
+  return sharedFresh_('cut-check', null, { by: plain_(req.by, 60), auto: false }, check_);
+}
+
+/**
+ * คำตอบสั้น ๆ ให้หน้าเว็บถามทุกนาที: ชุดล่าสุดเป็นของเวลาไหน ใครกด ใครกำลังตรวจอยู่ งานตั้งเวลาล้มไหม
+ * logRows คือจำนวนแถวในแท็บบันทึกการแก้ (รวมหัวตาราง) เปลี่ยนเมื่อไรหน้าเว็บค่อยอ่านบันทึกใหม่
+ */
+function sharedAt_() {
+  var all = PropertiesService.getScriptProperties().getProperties();
+  var out = { app: SHARED_APP, at: Date.now(), shared: {}, run: {}, err: {} };
+  SHARED_NAMES.forEach(function (n) {
+    var i = sharedJson_(all, 'shared:' + n);
+    if (i) out.shared[n] = { at: i.at, by: i.by, auto: i.auto, ms: i.ms, params: i.params };
+    var r = sharedJson_(all, 'shared-run:' + n);
+    if (r && Date.now() - r.at < SHARED_BUSY_MS) out.run[n] = { at: r.at, by: r.by, auto: r.auto };
+    var e = sharedJson_(all, 'shared-err:' + n);
+    if (e) out.err[n] = e;
+  });
+  var log = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TAB_LOG);
+  out.logRows = log ? log.getLastRow() : 0;
+  return out;
+}
+
+function workHour_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var h = Number(Utilities.formatDate(new Date(), ss.getSpreadsheetTimeZone(), 'H'));
+  return h >= SHARED_FROM_HOUR && h < SHARED_TO_HOUR;
+}
+
+/** ตรวจใหม่แล้วเก็บ คืนรายการที่ทำสำเร็จ ข้อความที่ล้มเก็บไว้ใน shared-err แล้ว */
+function sharedAuto_() {
+  try {
+    return sharedFresh_('cut-check', null, { by: '', auto: true }, check_).busy ? [] : ['ผลตรวจ'];
+  } catch (err) {
+    return [];
+  }
+}
+
+/** ตัวตั้งเวลาเรียกฟังก์ชันนี้ นอกเวลางานไม่ทำอะไร */
+function sharedTick() {
+  if (!workHour_()) return;
+  sharedAuto_();
+}
+
+/** กดรันครั้งเดียวจากหน้าแก้สคริปต์: ตั้งเวลาตรวจเอง แล้วเก็บชุดแรกให้ทันที เพื่อให้เห็นว่าใช้ได้ (ตรวจรอบแรกใช้เวลาหลายนาที) */
+function installShared() {
+  stopShared();
+  ScriptApp.newTrigger('sharedTick').timeBased().everyHours(SHARED_EVERY_HOURS).create();
+  var done = sharedAuto_();
+  return 'ตั้งเวลาแล้ว ทุก ' + SHARED_EVERY_HOURS + ' ชั่วโมง ช่วง ' + SHARED_FROM_HOUR + ':00 ถึง ' + SHARED_TO_HOUR + ':00'
+    + ' / เก็บชุดแรกแล้ว: ' + (done.join(', ') || 'ไม่สำเร็จ ดูข้อความใน shared-err');
+}
+
+/** เลิกตั้งเวลา ผลที่เก็บไว้ยังอยู่ ปุ่มตรวจใหม่บนหน้าเว็บยังเก็บชุดกลางได้เหมือนเดิม */
+function stopShared() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'sharedTick') ScriptApp.deleteTrigger(t);
+  });
 }

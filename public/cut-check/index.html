@@ -320,6 +320,7 @@ html.pop-open{overflow:hidden}
 <script type="module" src="../wms-shell.js"></script>
 <script src="../wms-settings.js"></script>
 <script src="../wms-gas.js"></script>
+<script src="../wms-shared.js"></script>
 <script src="../wms-cut.js"></script>
 <script>
 const $ = id => document.getElementById(id);
@@ -396,6 +397,8 @@ let FSHOW = '';          // '' ทั้งหมด | open ยังไม่�
 let VERIFIED = 0;        // รอบนี้ยืนยันได้ว่าแก้แล้วกี่รายการ
 let ARMED = 0;           // กดแก้แล้วทั้งชุดครั้งแรก รอกดยืนยัน
 let CLOSING = false;
+/* ข้อมูลกลาง (wms-shared.js): cut / tx = คนที่กำลังตรวจใหม่หรือดึงยอดขายชุดใหม่อยู่ fresh = เวลาที่ป้าย "อัปเดตแล้ว" ยังขึ้นอยู่ */
+const SH = { cut: null, tx: null, err: null, fresh: 0 };
 
 function readCache() {
   try {
@@ -421,15 +424,22 @@ function renderSrc() {
   } else if (RAW) {
     const when = new Date(RAW.at).toLocaleString('th-TH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
     html += `<span class="pill">📅 Report <b>${esc(dm(RAW.period.from))} ถึง ${esc(dm(RAW.period.to))}</b></span>`;
-    html += `<span class="pill">🕐 ตรวจเมื่อ <b>${esc(when)}</b></span>`;
+    const by = WmsShared.who(RAW);
+    html += `<span class="pill" title="${esc(sharedTitle(RAW))}">🕐 ตรวจเมื่อ <b>${esc(when)}</b>${by ? ` · ${esc(by)}` : ''}</span>`;
+    if (Date.now() < SH.fresh) html += `<span class="pill ok">✓ อัปเดตเป็นชุดล่าสุดแล้ว</span>`;
     if (GAIN) html += `<span class="pill ok">✓ ที่ต้องแก้ลดลง ${f(GAIN)} รายการจากรอบก่อน</span>`;
     if (VERIFIED) html += `<span class="pill ok">✓ ตรวจแล้วหาย ${f(VERIFIED)} รายการที่กดแก้ไว้</span>`;
   } else {
     html += `<span class="pill warn">⚠️ ยังไม่ได้ตรวจ</span>`;
   }
+  const started = (run) => new Date(run.at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+  if (!BUSY && SH.cut) html += `<span class="pill">⏳ ${esc(WmsShared.runner(SH.cut))} กำลังตรวจใหม่ (เริ่ม ${esc(started(SH.cut))}) เสร็จแล้วขึ้นให้เอง</span>`;
+  else if (!BUSY && SH.tx) html += `<span class="pill">⏳ ${esc(WmsShared.runner(SH.tx))} กำลังดึงยอดขายชุดใหม่ เสร็จแล้วขึ้นให้เอง</span>`;
+  if (SH.err && RAW && SH.err.at > WmsShared.stamp(RAW)) html += `<span class="pill warn" title="${esc(SH.err.msg)}">⚠️ รอบตรวจอัตโนมัติไม่สำเร็จ</span>`;
   html += `<span class="sp"></span>`;
   if (url) {
-    html += `<button id="runBtn" class="${RAW ? '' : 'p'}" ${BUSY ? 'disabled' : ''}>${BUSY ? 'กำลังตรวจ…' : (RAW ? '🔄 ตรวจใหม่' : '▶️ เริ่มตรวจ')}</button>`;
+    const wait = BUSY || SH.cut;
+    html += `<button id="runBtn" class="${RAW ? '' : 'p'}" ${wait ? 'disabled' : ''}>${BUSY ? 'กำลังตรวจ…' : SH.cut ? 'รอผลตรวจ…' : (RAW ? '🔄 ตรวจใหม่' : '▶️ เริ่มตรวจ')}</button>`;
   } else {
     html += `<span class="pill">ยังไม่ได้ตั้ง Apps Script URL — <a href="../settings/">ตั้งที่หน้าตั้งค่า</a></span>`;
   }
@@ -439,9 +449,21 @@ function renderSrc() {
   if (btn) btn.onclick = run;
 }
 
+/** ป้ายบนเวลาที่ตรวจ บอกว่าทุกเครื่องเห็นชุดเดียวกัน และสคริปต์ใช้เวลาตรวจนานเท่าไร */
+function sharedTitle(r) {
+  const s = r && r.shared;
+  if (!s) return 'ชุดนี้ตรวจในเครื่องนี้เอง เครื่องอื่นอาจเห็นคนละชุด';
+  return `ข้อมูลกลาง ทุกเครื่องเห็นชุดเดียวกัน${s.ms ? ` · สคริปต์ใช้เวลา ${Math.round(s.ms / 1000)} วินาที` : ''}`;
+}
+
+/**
+ * กดตรวจใหม่ สคริปต์ตรวจแล้วเก็บเป็นผลกลาง เครื่องอื่นจะได้ชุดนี้ภายในนาทีถัดไป
+ * มีคนกดก่อนแล้วยังตรวจไม่เสร็จ รอผลของเขาแทน ได้ชุดเดียวกันและไม่ต้องตรวจซ้อน
+ * สคริปต์รุ่นก่อนไม่รู้จักคำสั่งนี้ ถอยไปตรวจแบบเดิม
+ */
 async function run() {
   const url = WmsSettings.cutUrl();
-  if (BUSY || !url) return;
+  if (BUSY || SH.cut || !url) return;
   ERR = '';
   VERIFIED = 0;
   BEFORE = snapshot();
@@ -449,11 +471,21 @@ async function run() {
   renderSrc();
   renderBody();
   try {
-    const r = await WmsGas.json(url, 'cut-check', {
+    const opts = {
       retries: 0,
       timeoutMs: TIMEOUT,
       onProgress: (sec) => { BUSY = `กำลังอ่านชีตทั้ง 4 แท็บ… ${sec} วินาที`; renderSrc(); },
-    });
+    };
+    let r = await WmsShared.press(url, 'cut-check', null, opts);
+    if (r && r.error === WmsShared.OLD) r = await WmsGas.json(url, 'cut-check', opts);
+    if (r.busy && !r.kinds) {
+      SH.cut = r.busy;
+      BUSY = '';
+      BEFORE = null;
+      render();
+      WATCH.soon();
+      return;
+    }
     if (r.error) throw new Error(r.error);
     if (r.app !== 'cut' || !r.kinds) throw new Error('คำตอบไม่ใช่ของสคริปต์เช็คตัดสต๊อก ตรวจ URL ที่หน้าตั้งค่า');
     RAW = r;
@@ -468,7 +500,7 @@ async function run() {
     render();
     return;
   }
-  await loadLedger();
+  await loadLedger(true);
 }
 
 /* ── ก่อนและหลังตรวจ ────────────────────────────────────────────────────── */
@@ -507,8 +539,14 @@ function afterCheck(before) {
   );
 }
 
-/** ดึงแยกจากการตรวจหลัก แก้สมุดแล้วเช็คซ้ำได้ในไม่กี่วินาที ไม่ต้องรอตรวจทั้งสี่แท็บ */
-async function loadLedger() {
+const ledgerFits = () => !!(LEDGER && RAW && WmsShared.samePeriod(LEDGER, RAW.period));
+
+/**
+ * ดึงแยกจากการตรวจหลัก แก้สมุดแล้วเช็คซ้ำได้ในไม่กี่วินาที ไม่ต้องรอตรวจทั้งสี่แท็บ
+ * fresh = ให้สคริปต์คิดใหม่แล้วเก็บเป็นยอดขายชุดกลาง ไม่ใส่ = อ่านชุดที่เก็บไว้ของช่วงวันที่เดียวกัน
+ * (ยังไม่มีหรือเก่าเกินชั่วโมง สคริปต์คิดใหม่ให้เอง)
+ */
+async function loadLedger(fresh) {
   const url = WmsSettings.txUrl();
   LEDGER_ERR = '';
   if (!BEFORE) BEFORE = snapshot();   // กดดึงยอดขายใหม่อย่างเดียว ไม่ได้ผ่าน run
@@ -517,24 +555,115 @@ async function loadLedger() {
     say(0);
     renderBody();
     try {
-      const r = await WmsGas.json(url, `tx-daily&from=${RAW.period.from}&to=${RAW.period.to}`, { retries: 1, onProgress: say });
-      if (r.error) throw new Error(r.error);
-      if (r.app !== 'transaction') throw new Error('URL ของ Transaction ในหน้าตั้งค่าไม่ใช่สคริปต์ tx-api.gs');
-      if (!r.cells) throw new Error('สคริปต์ tx-api.gs ยังเป็นรุ่นเก่า ให้วางโค้ดใหม่แล้ว Deploy เป็น New version');
-      LEDGER = r;
-      DAILY = null;
-      CELLS = null;
-      FIX = null;
-      saveCache(LEDGER_CACHE, r);
+      const period = { from: RAW.period.from, to: RAW.period.to };
+      const api = `tx-daily&from=${period.from}&to=${period.to}`;
+      let r;
+      if (fresh === true) {
+        r = await WmsShared.press(url, 'tx-daily', period, { onProgress: say });
+        if (r && r.error === WmsShared.OLD) r = await WmsGas.json(url, api, { retries: 1, onProgress: say });
+      } else {
+        r = await WmsShared.read(url, api, { retries: 1, onProgress: say });
+      }
+      if (r.busy && !r.cells) {
+        SH.tx = r.busy;   // มีคนกำลังดึงยอดขายช่วงนี้อยู่ รอชุดของเขา
+        WATCH.soon();
+      } else {
+        if (r.error) throw new Error(r.error);
+        if (r.app !== 'transaction') throw new Error('URL ของ Transaction ในหน้าตั้งค่าไม่ใช่สคริปต์ tx-api.gs');
+        if (!r.cells) throw new Error('สคริปต์ tx-api.gs ยังเป็นรุ่นเก่า ให้วางโค้ดใหม่แล้ว Deploy เป็น New version');
+        LEDGER = r;
+        DAILY = null;
+        CELLS = null;
+        FIX = null;
+        saveCache(LEDGER_CACHE, r);
+      }
     } catch (e) {
       LEDGER_ERR = e.message;
     }
   }
+  finish();
+}
+
+/** ตรวจหรือโหลดชุดใหม่เสร็จ วาดใหม่ ตัวเลขวิ่งจากค่าเดิม แล้วอ่านบันทึกการแก้ (ตรวจแล้วหายบันทึกเอง) */
+function finish() {
   BUSY = '';
   render();
   afterCheck(BEFORE);
   BEFORE = null;
   loadFixLog();
+}
+
+/** ป้าย "อัปเดตเป็นชุดล่าสุดแล้ว" ขึ้น 20 วินาทีหลังโหลดชุดของเครื่องอื่นมาให้ */
+function flashFresh() {
+  SH.fresh = Date.now() + 20000;
+  setTimeout(renderSrc, 20500);
+  renderSrc();
+}
+
+/**
+ * ถามทุกนาที (WmsShared.watch) ว่ามีผลตรวจ ยอดขาย หรือบันทึกการแก้ชุดใหม่ไหม มีแล้วโหลดให้เอง
+ * กำลังพิมพ์ค้น เปิดหน้าต่างรายละเอียด หรือกำลังบันทึกอยู่ ไม่วาดหน้าใหม่ ถามรอบถัดไปแทน
+ * ตรวจแล้วหายของเครื่องอื่น สคริปต์กันไม่ให้ลงซ้ำอยู่แล้ว (fixAdd_) ทุกเครื่องเช็คพร้อมกันได้
+ */
+async function checkShared() {
+  const cutUrl = WmsSettings.cutUrl(), txUrl = WmsSettings.txUrl();
+  if (!cutUrl || BUSY) return false;
+  const [cs, ts] = await Promise.all([WmsShared.status(cutUrl), txUrl ? WmsShared.status(txUrl) : null]);
+  const okC = WmsShared.knows(cs, 'cut'), okT = WmsShared.knows(ts, 'transaction');
+  const run = { cut: okC ? WmsShared.running(cs, 'cut-check') : null, tx: okT ? WmsShared.running(ts, 'tx-daily') : null };
+  const err = (okC && cs.err && cs.err['cut-check']) || null;
+  if (JSON.stringify([run.cut, run.tx, err]) !== JSON.stringify([SH.cut, SH.tx, SH.err])) {
+    SH.cut = run.cut; SH.tx = run.tx; SH.err = err;
+    renderSrc();
+  }
+  const waiting = !!(run.cut || run.tx);
+  if (BUSY) return waiting;
+  const newCut = okC && WmsShared.newer(cs, 'cut-check', RAW);
+  const newTx = !newCut && okT && !!RAW && WmsShared.newer(ts, 'tx-daily', ledgerFits() ? LEDGER : null, RAW.period);
+  const newLog = !newCut && okC && !!FIXLOG && FIXLOG.rows != null && cs.logRows !== FIXLOG.rows;
+  if (!newCut && !newTx && !newLog) return waiting;
+  if (SAVING || ARMED || POP || WmsShared.typing()) return true;
+  if (newCut) {
+    BEFORE = snapshot();
+    BUSY = 'มีผลตรวจชุดใหม่ กำลังโหลด…';
+    renderSrc();
+    try {
+      const r = await WmsShared.read(cutUrl, 'cut-check', { retries: 1, timeoutMs: TIMEOUT });
+      if (r.error) throw new Error(r.error);
+      if (r.app !== 'cut' || !r.kinds) throw new Error('คำตอบไม่ใช่ของสคริปต์เช็คตัดสต๊อก');
+      if (WmsShared.stamp(r) > WmsShared.stamp(RAW)) {
+        const had = !!RAW;   // เปิดมายังไม่มีอะไรเลย ไม่ต้องบอกว่าอัปเดต
+        RAW = r;
+        DAILY = null;
+        CELLS = null;
+        FIX = null;
+        VERIFIED = 0;
+        saveCache(CACHE, r);
+        if (had) {
+          SH.fresh = Date.now() + 20000;
+          setTimeout(renderSrc, 20500);
+        }
+      }
+    } catch (e) {
+      console.warn('โหลดผลตรวจชุดใหม่ไม่สำเร็จ —', e.message);
+      BUSY = '';
+      BEFORE = null;
+      renderSrc();
+      return waiting;
+    }
+    /* ช่วงวันที่ของ Report เปลี่ยน หรือยอดขายชุดกลางใหม่กว่า ดึงยอดขายของช่วงนี้มาด้วย ไม่งั้นแท็บรายวันจะว่าง */
+    if (txUrl && (!ledgerFits() || (okT && WmsShared.newer(ts, 'tx-daily', LEDGER, RAW.period)))) await loadLedger();
+    else finish();
+    return waiting;
+  }
+  if (newTx) {
+    const had = WmsShared.stamp(LEDGER);
+    await loadLedger();
+    if (WmsShared.stamp(LEDGER) > had) flashFresh();
+    return waiting;
+  }
+  await loadFixLog();
+  return waiting;
 }
 
 /* ── บันทึกการแก้ ───────────────────────────────────────────────────────── */
@@ -1505,7 +1634,8 @@ document.addEventListener('keydown', (e) => {
 });
 
 $('body').addEventListener('click', (e) => {
-  if (e.target.closest('[data-reload]')) { loadLedger(); return; }
+  /* มียอดขายของช่วงนี้แล้ว กดคือขอชุดใหม่ ยังไม่มีอ่านชุดกลางที่เก็บไว้ก่อน เร็วกว่า */
+  if (e.target.closest('[data-reload]')) { loadLedger(ledgerFits()); return; }
   const mark = e.target.closest('[data-mark]');
   if (mark) { markOne('แก้แล้ว', mark.dataset.mark); return; }
   const undo = e.target.closest('[data-undo]');
@@ -1578,6 +1708,9 @@ $('body').addEventListener('input', (e) => {
 readCache();
 render();
 loadFixLog();
+/* เปิดหน้าแล้วถามทันทีว่ามีผลตรวจชุดกลางที่ใหม่กว่าในเครื่องนี้ไหม จากนั้นถามทุกนาที */
+const WATCH = WmsShared.watch(checkShared);
+WATCH.now();
 </script>
 </body>
 </html>

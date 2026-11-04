@@ -391,9 +391,11 @@ every line is counted, the tab shows the result:
 2. Choose `installBackup` in the toolbar and press Run. Allow the Drive and Sheets permissions. This
    sets a nightly copy of the whole file into the Drive folder `WMS Transaction Backup` and makes the
    first copy right away. The newest 30 are kept; older ones go to the Drive trash.
-3. Deploy → New deployment → Web app. Execute as **Me**, Who has access **Anyone**. Copy the URL that
+3. Choose `installShared` and press Run. This refreshes the shared copy on a timer (see "Everyone sees
+   the same numbers" below). It's optional: without it, the copy changes only when someone presses ดึงใหม่.
+4. Deploy → New deployment → Web app. Execute as **Me**, Who has access **Anyone**. Copy the URL that
    ends in `/exec`.
-4. On each device: ตั้งค่า → **Apps Script URL — Transaction**, paste the URL, press ทดสอบ, then
+5. On each device: ตั้งค่า → **Apps Script URL — Transaction**, paste the URL, press ทดสอบ, then
    บันทึก URL.
 
 The URL works like a key: anyone who has it can read the balances, so keep it out of this repo. Keep
@@ -402,6 +404,29 @@ the balance sheet running until the two agree, and compare the spots listed unde
 **After changing the script:** saving isn't enough, because the web app keeps running the old version.
 Go to Deploy → Manage deployments → the pencil icon → Version: **New version** → Deploy. The URL stays
 the same.
+
+**Everyone sees the same numbers (ข้อมูลกลาง).** The script keeps its last result as one shared copy, and
+every device reads that copy. Before this, each device read the sheet on its own, so two people could be
+looking at numbers from different times.
+
+- Opening the page loads the shared copy, which is much faster than reading the sheet. If the copy is
+  more than an hour old, the script reads the sheet again first.
+- 🔄 ดึงใหม่ reads the sheet again and replaces the shared copy. The bar says when and who:
+  `ดึงเมื่อ 10:32 · ชื่อคนกด`, or `อัตโนมัติ` for the timer.
+- Each open page asks the script once a minute whether a newer copy exists. The reply is a few hundred
+  characters. When there is one, the page loads it without anyone pressing a button. It waits while someone
+  is typing, so a count being entered isn't lost.
+- If someone is already reading the sheet, ดึงใหม่ waits for their copy instead of starting a second read.
+- The copy is a JSON file in the Drive folder `WMS ข้อมูลกลาง` of the script's owner. The script still
+  doesn't write to the Transaction sheet. Don't move or rename the file; if it's deleted, the next read makes
+  a new one.
+
+`installShared` refreshes the copy every 30 minutes from 8:00 to before 18:00 (the file's time zone). It
+also refreshes the ยอดขายรายวัน copy for the period the Stock Cut Check page used last. `stopShared` turns
+the timer off. Each run takes about as long as pressing ดึงใหม่. A free Google account gets 90 minutes of
+timer runs a day across all scripts, so keep an eye on it if more timers are added.
+
+Until the new `tx-api.gs` is deployed, the page works as before, with each device reading on its own.
 
 ---
 
@@ -587,8 +612,24 @@ The URL works like a key: anyone who has it can read the order numbers and SKUs 
 rows to the fix log, so keep it out of this repo. The result leaves out online order IDs and tracking
 numbers.
 
-The last result stays on the device, so reopening the page doesn't wait for another run. Press ตรวจใหม่
-after the sheet's data changes.
+**Everyone sees the same result (ข้อมูลกลาง).** This works the same way as on Stock by Location:
+
+- Opening the page loads the shared result when it is newer than the one on the device. The page never
+  starts a check by itself, because a check takes minutes.
+- 🔄 ตรวจใหม่ checks again, replaces the shared result, then reads the ledger again for the same period.
+  The bar says `ตรวจเมื่อ … · ชื่อคนกด`.
+- Each open page asks once a minute. It loads a newer result, a newer ledger copy for the same period, or
+  new fix-log rows when someone presses แก้แล้ว on another device. It waits while a popup is open or someone
+  is typing in the search box.
+- While someone else's check is running, the bar says who started it and the button waits for that result.
+
+To check on a timer too, choose `installShared` in the cut file's script and press Run once. It checks every
+2 hours from 8:00 to before 18:00. The first run takes as long as a normal check. This script now saves a file
+in Drive and runs on a timer, so Google asks for those permissions the first time. Until the new `cut-api.gs`
+is deployed, ตรวจใหม่ works as before and only that device sees the result.
+
+The last result also stays on the device, so reopening the page doesn't wait. The Lot & PO Out page reads it
+from there.
 
 ---
 
@@ -742,6 +783,7 @@ public/
 │                          #   tab-*.png: the section tabs of stock-location and cut-check
 │                          #   empty-*.png: empty-state art, chosen with the .art-* classes in wms-theme.css
 ├─ wms-settings.js         # settings backup / restore
+├─ wms-shared.js           # ข้อมูลกลาง: read the shared copy, refresh it, ask every minute for a newer one
 ├─ wms-*.js                # shared helpers (dates, stock, picking, trucks, search…)
 ├─ roster/                 # ตารางกะ (+ roster-sync.js: sharing through the sheet,
 │                          #   roster-people.js: group / day off by date, leave counts)
@@ -754,8 +796,8 @@ public/
 ├─ warehouse-forms/ jobs/ loadplan/ transport-docs/ transport-forms/ settings/
 apps-script/
 ├─ roster-api.gs           # the shared schedule sheet's script (pasted into Apps Script, not served)
-├─ tx-api.gs               # balances from the Transaction sheet, stock count, and nightly backup
-└─ cut-api.gs              # compares stock cuts with the order reports, keeps the fix log
+├─ tx-api.gs               # balances from the Transaction sheet, stock count, nightly backup, shared copy
+└─ cut-api.gs              # compares stock cuts with the order reports, keeps the fix log and the shared result
 src/
 ├─ data/                   # tests for the shared helpers + page-wide checks
 └─ transport/              # tests for the transport helpers
