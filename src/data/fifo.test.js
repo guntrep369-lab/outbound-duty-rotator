@@ -1,0 +1,344 @@
+/**
+ * FIFO สต๊อก: public/wms-fifo.js
+ *
+ * ข้อมูลในเทสต์สมมติขึ้นทั้งหมด repo นี้เป็นสาธารณะ
+ */
+import { describe, it, expect, beforeAll } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+
+const JS = fs.readFileSync(path.resolve(__dirname, '../../public/wms-fifo.js'), 'utf8');
+
+let F;
+beforeAll(() => {
+  const win = {};
+  new Function('window', JS)(win);
+  F = win.WmsFifo;
+});
+
+const TYPE = { รับ: 0, เบิก: 1, ขาย: 2 };
+
+/**
+ * แถวอ่านง่ายเป็นรูปที่ tx-fifo ส่งมา
+ * { sku, lot, po, from, to, qty, type, d, open, gr, count }
+ */
+function ledger(list) {
+  const skus = [], pos = [], locs = [], days = [];
+  const no = (arr, v) => { if (!arr.includes(v)) arr.push(v); return arr.indexOf(v); };
+  const rows = list.map((x, i) => {
+    const sku = x.sku || 'AAA0000000001';
+    if (!skus.some((s) => s[1] === sku)) skus.push([sku.slice(0, 6), sku, `ชื่อ ${sku}`]);
+    const t = TYPE[x.type || 'รับ'];
+    const flag = (x.open ? 1 : 0) + (x.gr ? 2 : 0) + (x.count ? 4 : 0) + (x.own === false ? 0 : 8);
+    return [x.row || 10 + i, skus.findIndex((s) => s[1] === sku), x.lot ?? 8, no(pos, String(x.po ?? '9900000001')),
+      t && x.from ? no(locs, x.from) : -1, x.to ? no(locs, x.to) : -1, x.qty ?? 1, t, x.d ? no(days, x.d) : -1, flag];
+  });
+  return { app: 'transaction', skus, pos, locs, days, rows };
+}
+
+/* ชิ้นส่วนที่ใช้บ่อย: รับเข้าแร็ค เติมเข้าโลขาย ขายจากโลขาย */
+const gr = (o) => ({ type: 'รับ', gr: true, to: 'R1-01-01', ...o });
+const refill = (o) => ({ type: 'เบิก', from: 'R1-01-01', to: 'P1-01', open: true, ...o });
+const sale = (o) => ({ type: 'ขาย', from: 'P1-01', open: true, ...o });
+
+describe('lotMonth — LOT คือเดือนของสินค้า', () => {
+  it('LOT เลขเต็มเป็นเดือนของปีนี้ 0.11 / 0.12 เป็นของปีก่อน', () => {
+    expect(F.lotMonth(9, '2026-10')).toMatchObject({ y: 2026, m: 9 });
+    expect(F.lotMonth('10', '2026-10')).toMatchObject({ y: 2026, m: 10 });
+    expect(F.lotMonth(0.11, '2026-10')).toMatchObject({ y: 2025, m: 11 });
+    expect(F.lotMonth('0.12', '2026-10')).toMatchObject({ y: 2025, m: 12 });
+    expect(F.lotMonth(0.1, '2026-10')).toMatchObject({ y: 2025, m: 10 });
+  });
+
+  it('LOT ที่มากกว่าเดือนของรายงาน เป็นของปีก่อน รายงานเดือนมกราเห็น LOT 12 เก่ากว่า LOT 1', () => {
+    expect(F.lotMonth(12, '2027-01')).toMatchObject({ y: 2026, m: 12 });
+    expect(F.lotMonth(1, '2027-01').key).toBeGreaterThan(F.lotMonth(12, '2027-01').key);
+    expect(F.lotMonth(0.11, '2026-10').key).toBeLessThan(F.lotMonth(3, '2026-10').key);
+  });
+
+  it('LOT 0 ว่าง หรือเลขที่ไม่ใช่เดือน คือไม่รู้', () => {
+    for (const v of [0, '0', '', null, 13, 7.5, 'A', 0.5]) expect(F.lotMonth(v, '2026-10')).toBe(null);
+  });
+
+  it('ป้ายเดือนเป็นปี พ.ศ. สองหลัก', () => {
+    expect(F.monthText(F.lotMonth(9, '2026-10'))).toBe('ก.ย. 69');
+    expect(F.monthText(F.lotMonth(0.12, '2026-10'))).toBe('ธ.ค. 68');
+    expect(F.monthText(null)).toBe('ไม่รู้ LOT');
+  });
+});
+
+describe('analyze — หยิบขาย', () => {
+  it('หยิบ LOT เก่าสุดคือตาม FIFO', () => {
+    const an = F.analyze(ledger([
+      gr({ lot: 7, to: 'P1-01', open: true, qty: 5, d: '2026-09-02' }),
+      gr({ lot: 8, to: 'P1-01', open: true, qty: 5, d: '2026-09-20' }),
+      sale({ lot: 7, qty: 2, d: '2026-10-03' }),
+    ]), '2026-10');
+    expect(an.issues).toHaveLength(1);
+    expect(an.issues[0]).toMatchObject({ kind: 'sale', state: 'ok' });
+    expect(an.totals.sale).toMatchObject({ judged: 2, ok: 2, skip: 0, pct: 100 });
+  });
+
+  it('หยิบ LOT ใหม่ทั้งที่ LOT เก่ายังอยู่ในโลขาย คือข้าม LOT และบอกว่าของเก่าอยู่ที่ไหนกี่ชิ้น', () => {
+    const an = F.analyze(ledger([
+      gr({ lot: 7, to: 'P1-01', open: true, qty: 5, d: '2026-09-02' }),
+      gr({ lot: 8, to: 'P1-02', open: true, qty: 5, d: '2026-09-20' }),
+      sale({ lot: 8, from: 'P1-02', qty: 3, d: '2026-10-03', row: 50 }),
+    ]), '2026-10');
+    const it0 = an.issues[0];
+    expect(it0).toMatchObject({ state: 'lot', row: 50, qty: 3, olderQty: 5 });
+    expect(it0.older[0]).toMatchObject({ lot: '7', qty: 5, by: 'lot' });
+    expect(an.totals.sale).toMatchObject({ judged: 3, ok: 0, lot: 3, skip: 3, skipRows: 1, pct: 0 });
+  });
+
+  it('ของเก่าอยู่แต่บนแร็ค ไม่นับเป็นหยิบข้าม คนหยิบไม่เห็นของเก่า', () => {
+    const an = F.analyze(ledger([
+      gr({ lot: 7, qty: 5, d: '2026-09-02' }),
+      gr({ lot: 8, to: 'P1-01', open: true, qty: 5, d: '2026-09-20' }),
+      sale({ lot: 8, qty: 1, d: '2026-10-03' }),
+    ]), '2026-10');
+    expect(an.issues[0].state).toBe('ok');
+  });
+
+  it('ของเก่าที่หมดแล้ว หรืออยู่ใน QA / IQA / RIB ไม่ทำให้ข้าม', () => {
+    const an = F.analyze(ledger([
+      gr({ lot: 6, to: 'P1-01', open: true, qty: 2, d: '2026-09-01' }),
+      sale({ lot: 6, qty: 2, d: '2026-09-15' }),
+      gr({ lot: 5, to: 'QA', open: true, qty: 9, d: '2026-09-02' }),
+      gr({ lot: 4, to: 'RIB', open: true, qty: 9, d: '2026-09-02' }),
+      gr({ lot: 8, to: 'P1-01', open: true, qty: 5, d: '2026-09-20' }),
+      sale({ lot: 8, qty: 1, d: '2026-10-03' }),
+    ]), '2026-10');
+    expect(an.issues.map((x) => x.state)).toEqual(['ok']);
+  });
+
+  it('ขายจาก QA / IQA / RIB ไม่ตรวจ เพราะไม่ได้เดินตาม FIFO อยู่แล้ว', () => {
+    const an = F.analyze(ledger([
+      gr({ lot: 7, to: 'P1-01', open: true, qty: 5, d: '2026-09-02' }),
+      gr({ lot: 8, to: 'QA', open: true, qty: 5, d: '2026-09-20' }),
+      sale({ lot: 8, from: 'QA', qty: 1, d: '2026-10-03' }),
+    ]), '2026-10');
+    expect(an.issues).toHaveLength(0);
+  });
+
+  it('ขาย LOT ที่ไม่รู้ ตรวจไม่ได้ และของ LOT ไม่รู้ไม่นับเป็นของที่เก่ากว่า', () => {
+    const an = F.analyze(ledger([
+      gr({ lot: 0, to: 'P1-01', open: true, qty: 5, count: true, gr: false }),
+      gr({ lot: 8, to: 'P1-01', open: true, qty: 5, d: '2026-09-20' }),
+      sale({ lot: 0, qty: 2, d: '2026-10-03' }),
+      sale({ lot: 8, qty: 1, d: '2026-10-03' }),
+    ]), '2026-10');
+    expect(an.issues.map((x) => x.state)).toEqual(['unknown', 'ok']);
+    expect(an.totals.sale).toMatchObject({ qty: 3, judged: 1, unknown: 2, unknownRows: 1 });
+  });
+
+  it('LOT 0.11 ของปีก่อนเก่ากว่า LOT 3', () => {
+    const an = F.analyze(ledger([
+      gr({ lot: 0.11, to: 'P1-01', open: true, qty: 1, d: '2026-09-01' }),
+      gr({ lot: 3, to: 'P1-01', open: true, qty: 1, d: '2026-09-01' }),
+      sale({ lot: 3, qty: 1, d: '2026-10-01' }),
+    ]), '2026-10');
+    expect(an.issues[0]).toMatchObject({ state: 'lot' });
+    expect(an.issues[0].older[0].lot).toBe('0.11');
+  });
+});
+
+describe('analyze — PO ใน LOT เดียวกัน เรียงตามวันที่รับเข้า', () => {
+  it('PO ที่รับก่อนยังอยู่ในโลขาย หยิบ PO ที่รับทีหลังคือข้าม PO', () => {
+    const an = F.analyze(ledger([
+      gr({ lot: 9, po: 'PO-A', to: 'P1-01', open: true, qty: 4, d: '2026-09-05' }),
+      gr({ lot: 9, po: 'PO-B', to: 'P1-01', open: true, qty: 4, d: '2026-09-25' }),
+      sale({ lot: 9, po: 'PO-B', qty: 1, d: '2026-10-02' }),
+      sale({ lot: 9, po: 'PO-A', qty: 1, d: '2026-10-02' }),
+    ]), '2026-10');
+    expect(an.issues.map((x) => x.state)).toEqual(['po', 'ok']);
+    expect(an.issues[0].older[0]).toMatchObject({ po: 'PO-A', recv: '2026-09-05', by: 'po' });
+    expect(an.totals.sale).toMatchObject({ po: 1, lot: 0, ok: 1 });
+  });
+
+  it('วันรับคือ GR แถวแรกของ SKU + LOT + PO นั้น รับเพิ่มทีหลังไม่ทำให้ใหม่ขึ้น', () => {
+    const an = F.analyze(ledger([
+      gr({ lot: 9, po: 'PO-A', to: 'P1-01', open: true, qty: 4, d: '2026-09-05' }),
+      gr({ lot: 9, po: 'PO-B', to: 'P1-01', open: true, qty: 4, d: '2026-09-10' }),
+      gr({ lot: 9, po: 'PO-A', to: 'P1-01', open: true, qty: 4, d: '2026-09-28' }),
+      sale({ lot: 9, po: 'PO-B', qty: 1, d: '2026-10-02' }),
+    ]), '2026-10');
+    expect(an.issues[0].state).toBe('po');
+  });
+
+  it('PO จากแถวนับสต๊อกรับก่อนทุก GR และ PO ที่รับวันเดียวกันเก่าเท่ากัน', () => {
+    const an = F.analyze(ledger([
+      { type: 'รับ', lot: 9, po: 'PO-C', to: 'P1-01', open: true, qty: 4, count: true },
+      gr({ lot: 9, po: 'PO-D', to: 'P1-01', open: true, qty: 4, d: '2026-09-05' }),
+      gr({ lot: 9, po: 'PO-E', to: 'P1-01', open: true, qty: 4, d: '2026-09-05' }),
+      sale({ lot: 9, po: 'PO-D', qty: 1, d: '2026-10-02' }),
+    ]), '2026-10');
+    expect(an.issues[0].state).toBe('po');
+    expect(an.issues[0].older.map((o) => o.po)).toEqual(['PO-C']);
+    expect(F.recvText(an.issues[0].older[0].recv)).toBe('ก่อนนับสต๊อก');
+  });
+
+  it('PO 0 หรือ PO ที่ไม่มีวันรับ เทียบในระดับ PO ไม่ได้', () => {
+    const an = F.analyze(ledger([
+      gr({ lot: 9, po: '0', to: 'P1-01', open: true, qty: 4, d: '2026-09-01' }),
+      { type: 'รับ', lot: 9, po: 'PO-R', to: 'P1-01', open: true, qty: 4, d: '2026-09-02' },   // RETURN ไม่มี GR
+      gr({ lot: 9, po: 'PO-F', to: 'P1-01', open: true, qty: 4, d: '2026-09-20' }),
+      sale({ lot: 9, po: 'PO-F', qty: 1, d: '2026-10-02' }),
+    ]), '2026-10');
+    expect(an.issues[0].state).toBe('ok');
+  });
+});
+
+describe('analyze — เติมของ', () => {
+  it('เติม LOT ใหม่เข้าโลขาย ทั้งที่ LOT เก่ายังอยู่บนแร็ค คือเติมข้าม', () => {
+    const an = F.analyze(ledger([
+      gr({ lot: 7, to: 'R1-01-01', qty: 10, d: '2026-09-02' }),
+      gr({ lot: 8, to: 'R2-01-01', qty: 10, d: '2026-09-20' }),
+      refill({ lot: 8, from: 'R2-01-01', qty: 6, d: '2026-10-05' }),
+      refill({ lot: 7, from: 'R1-01-01', qty: 6, d: '2026-10-06' }),
+    ]), '2026-10');
+    expect(an.issues.map((x) => [x.kind, x.state])).toEqual([['refill', 'lot'], ['refill', 'ok']]);
+    expect(an.totals.refill).toMatchObject({ judged: 12, ok: 6, lot: 6, pct: 50 });
+  });
+
+  it('ของเก่าที่อยู่ในโลขายอยู่แล้ว ไม่ทำให้การเติมผิด และการย้ายเข้าที่ไม่เปิดขายไม่ตรวจ', () => {
+    const an = F.analyze(ledger([
+      gr({ lot: 7, to: 'P1-01', open: true, qty: 10, d: '2026-09-02' }),
+      gr({ lot: 8, to: 'DOCK', qty: 10, d: '2026-09-20' }),
+      { type: 'เบิก', lot: 8, from: 'DOCK', to: 'R2-01-01', qty: 10, d: '2026-10-01' },
+      refill({ lot: 8, from: 'R2-01-01', qty: 6, d: '2026-10-05' }),
+    ]), '2026-10');
+    expect(an.issues.map((x) => [x.kind, x.state])).toEqual([['refill', 'ok']]);
+  });
+
+  it('เติมจาก QA / IQA / RIB ไม่ตรวจ', () => {
+    const an = F.analyze(ledger([
+      gr({ lot: 7, to: 'R1-01-01', qty: 10, d: '2026-09-02' }),
+      gr({ lot: 8, to: 'IQA', qty: 10, d: '2026-09-20' }),
+      refill({ lot: 8, from: 'IQA', qty: 6, d: '2026-10-05' }),
+    ]), '2026-10');
+    expect(an.issues).toHaveLength(0);
+  });
+});
+
+describe('analyze — เดือนของรายงาน', () => {
+  it('ตรวจเฉพาะแถวที่วันที่อยู่ในเดือน และยอดคงเหลือคิดถึงวันสุดท้ายของเดือน', () => {
+    const an = F.analyze(ledger([
+      gr({ lot: 8, to: 'P1-01', open: true, qty: 10, d: '2026-09-20' }),
+      sale({ lot: 8, qty: 1, d: '2026-09-30' }),
+      sale({ lot: 8, qty: 2, d: '2026-10-31' }),
+      sale({ lot: 8, qty: 4, d: '2026-11-01' }),
+    ]), '2026-10');
+    expect(an.issues.map((x) => x.qty)).toEqual([2]);
+    expect(an.to).toBe('2026-10-31');
+    expect(an.stock.total).toBe(7);
+  });
+
+  it('แถวที่ไม่มีวันที่ของตัวเองใช้วันที่ของแถวด้านบน (สคริปต์ส่งมาแล้ว) และบอกว่าเป็นวันโดยประมาณ', () => {
+    const an = F.analyze(ledger([
+      gr({ lot: 7, to: 'R1-01-01', qty: 10, d: '2026-09-02' }),
+      gr({ lot: 8, to: 'R2-01-01', qty: 10, d: '2026-09-20' }),
+      refill({ lot: 8, from: 'R2-01-01', qty: 6, d: '2026-10-05', own: false }),
+    ]), '2026-10');
+    expect(an.issues[0]).toMatchObject({ date: '2026-10-05', own: false });
+  });
+});
+
+describe('analyze — ยอดคงเหลือราย LOT', () => {
+  const res = ledger([
+    gr({ sku: 'BBB0000000002', lot: 9, po: 'PO-2', to: 'P1-01', open: true, qty: 3, d: '2026-09-25' }),
+    gr({ sku: 'BBB0000000002', lot: 9, po: 'PO-1', to: 'R1-01-01', qty: 4, d: '2026-09-05' }),
+    gr({ sku: 'BBB0000000002', lot: 0.12, po: 'PO-0', to: 'R1-01-02', qty: 2, d: '2026-09-01' }),
+    gr({ sku: 'BBB0000000002', lot: 0, po: '0', to: 'R1-01-03', qty: 5, count: true, gr: false }),
+    gr({ sku: 'BBB0000000002', lot: 8, po: 'PO-3', to: 'QA', qty: 1, d: '2026-09-01' }),
+    gr({ sku: 'AAA0000000001', lot: 9, to: 'P1-02', open: true, qty: 2, d: '2026-09-01' }),
+    gr({ sku: 'AAA0000000001', lot: 10, to: 'P1-03', open: true, qty: 2, d: '2026-10-02' }),
+    sale({ sku: 'AAA0000000001', lot: 7, from: 'P1-09', qty: 1, d: '2026-10-03' }),
+  ]);
+
+  it('เรียงกองเก่าไปใหม่ เดือนของ LOT แล้ววันรับของ PO LOT ที่ไม่รู้อยู่ท้าย พร้อมลำดับ FIFO และอายุ', () => {
+    const s = F.analyze(res, '2026-10').stock;
+    const b = s.list.find((e) => e.code === 'BBB0000000002');
+    expect(b.batches.map((x) => `${x.lot}/${x.po}`)).toEqual(['0.12/PO-0', '8/PO-3', '9/PO-1', '9/PO-2', '0/0']);
+    expect(b.batches.map((x) => x.rank)).toEqual([1, 2, 3, 4, 0]);
+    expect(b.batches.map((x) => x.age)).toEqual([10, 2, 1, 1, null]);
+    expect(b).toMatchObject({ total: 15, unknown: 5, lots: 3, oldest: 10 });
+    expect(b.batches[1]).toMatchObject({ special: 1, open: 0, rack: 0 });
+  });
+
+  it('กองเก่าอยู่แต่บนแร็คขณะที่กองใหม่กว่าอยู่ในโลขายแล้ว ขึ้นว่าควรเติมกองเก่าก่อน', () => {
+    const s = F.analyze(res, '2026-10').stock;
+    const b = s.list.find((e) => e.code === 'BBB0000000002');
+    expect(b.refill.map((f) => `${f.batch.lot}/${f.batch.po}`)).toEqual(['0.12/PO-0', '9/PO-1']);
+    expect(b.mixed).toBe(false);
+    const a = s.list.find((e) => e.code === 'AAA0000000001');
+    expect(a.refill).toHaveLength(0);
+    expect(a.mixed).toBe(true);
+    expect(a.pick.lot).toBe('9');
+  });
+
+  it('ในโลขายมีกองที่เก่าเท่ากันอยู่แล้ว กองบนแร็คไม่ต้องขึ้นว่าควรเติม', () => {
+    const s = F.analyze(ledger([
+      { type: 'รับ', lot: 7, po: 'PO-A', to: 'P1-01', open: true, qty: 3, count: true },
+      { type: 'รับ', lot: 7, po: 'PO-B', to: 'R1-01-01', qty: 9, count: true },
+      gr({ lot: 9, po: 'PO-C', to: 'P1-02', open: true, qty: 5, d: '2026-09-20' }),
+    ]), '2026-10').stock;
+    expect(s.list[0].refill).toHaveLength(0);
+    expect(s.list[0].pick.po).toBe('PO-A');
+  });
+
+  it('ยอดติดลบไม่นับเป็นของ แต่นับจุดไว้ อายุสต๊อกรวมตามเดือน', () => {
+    const s = F.analyze(res, '2026-10').stock;
+    expect(s.negative).toEqual({ keys: 1, qty: -1 });
+    expect(s.total).toBe(19);
+    expect(s.unknown).toBe(5);
+    expect(s.special).toBe(1);
+    expect(s.aging.map((a) => [F.monthText(a.lm), a.qty, a.skus])).toEqual([
+      ['ธ.ค. 68', 2, 1], ['ส.ค. 69', 1, 1], ['ก.ย. 69', 9, 2], ['ต.ค. 69', 2, 1],
+    ]);
+  });
+
+  it('ตัวกรอง ควรเติม หลาย LOT ไม่รู้ LOT หลายกองในโลขาย และค้นหา PO', () => {
+    const list = F.analyze(res, '2026-10').stock.list;
+    const codes = (o) => F.filterStock(list, o).map((e) => e.code);
+    expect(codes({ only: 'refill' })).toEqual(['BBB0000000002']);
+    expect(codes({ only: 'multi' })).toEqual(['AAA0000000001', 'BBB0000000002']);
+    expect(codes({ only: 'unknown' })).toEqual(['BBB0000000002']);
+    expect(codes({ only: 'mixed' })).toEqual(['AAA0000000001']);
+    expect(codes({ q: 'po-3' })).toEqual(['BBB0000000002']);
+  });
+});
+
+describe('ส่งออก', () => {
+  const res = ledger([
+    gr({ lot: 7, to: 'P1-01', open: true, qty: 5, d: '2026-09-02' }),
+    gr({ lot: 8, to: 'P1-02', open: true, qty: 5, d: '2026-09-20' }),
+    sale({ lot: 8, from: 'P1-02', qty: 3, d: '2026-10-03', row: 50 }),
+    sale({ lot: 7, from: 'P1-01', qty: 1, d: '2026-10-04', row: 51 }),
+  ]);
+
+  it('ข้ามราย SKU บอก % ตาม FIFO ของ SKU นั้น ใหม่สุดขึ้นก่อน', () => {
+    const an = F.analyze(res, '2026-10');
+    const s = F.skipsBySku(res, an, {});
+    expect(s).toHaveLength(1);
+    expect(s[0]).toMatchObject({ code: 'AAA0000000001', sale: 3, refill: 0, rows: 1, judged: 4, pct: 25 });
+    expect(F.skipsBySku(res, an, { kind: 'refill' })).toHaveLength(0);
+  });
+
+  it('ตารางคงเหลือ ตารางเบิกข้าม อายุสต๊อก และสรุป มีหัวตารางและแถวครบ', () => {
+    const an = F.analyze(res, '2026-10');
+    const st = F.stockTable(res, an);
+    expect(st[0]).toContain('ลำดับ FIFO');
+    expect(st).toHaveLength(3);
+    const sk = F.skipTable(res, an);
+    expect(sk).toHaveLength(2);
+    expect(sk[1]).toEqual(expect.arrayContaining(['3/10/2026', 'หยิบขาย', 'ข้าม LOT', 'LOT 7 PO 9900000001 @P1-01 5', 50]));
+    expect(F.agingTable(an).map((r) => r[1])).toEqual(['เดือน', 'ก.ค. 69', 'ส.ค. 69']);
+    const sum = F.summaryTable(an);
+    expect(sum.find((r) => r[0] === 'ตาม FIFO (%)')).toEqual(['ตาม FIFO (%)', 25, '']);
+  });
+
+  it('คัดลอกเป็นคอลัมน์ แท็บและขึ้นบรรทัดในข้อความไม่ทำให้คอลัมน์เลื่อน', () => {
+    expect(F.tsv([['a\tb', 'c\nd'], [1, null]])).toBe('a b\tc d\n1\t');
+  });
+});

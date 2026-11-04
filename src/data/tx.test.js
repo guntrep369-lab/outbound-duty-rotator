@@ -463,6 +463,49 @@ describe('tx-api.gs — จุดที่ข้อมูลผิด', () => {
   });
 });
 
+describe('tx-api.gs — แถวทั้งสมุดให้หน้า FIFO สต๊อก', () => {
+  const fifo = (rows) => script(rows)({ api: 'tx-fifo' });
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-02T12:00:00Z'));
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('ส่งทุกแถวแบบย่อพร้อมเลขแถว ชื่อ PO และ Location เป็นลำดับ', () => {
+    const r = fifo([
+      row({ sku: 'AAA001', long: 'AAA0000000001', lot: 9, po: 9900000001, to: 'R1-01-01', qty: 5, note: 'GR 05-09-26' }),
+      row({ sku: 'AAA001', long: 'AAA0000000001', lot: 9, po: 9900000001, from: 'R1-01-01', to: 'p1-01', qty: 2, type: 'เบิก', status: 'เปิด', note: '' }),
+      sale({ sku: 'AAA001', long: 'AAA0000000001', lot: 9, po: 9900000001, from: 'P1-01', qty: 1, note: day('2026-10-03') }),
+    ]);
+    expect(r.app).toBe('transaction');
+    expect(r.skus).toEqual([['AAA001', 'AAA0000000001', 'สินค้า AAA001']]);
+    expect(r.pos).toEqual(['9900000001']);
+    expect(r.locs).toEqual(['R1-01-01', 'p1-01']);
+    expect(r.days).toEqual(['2026-09-05', '2026-10-03']);
+    expect(r.rows).toEqual([
+      [2, 0, 9, 0, -1, 0, 5, 0, 0, 2 + 8],
+      [3, 0, 9, 0, 0, 1, 2, 1, 0, 1],
+      [4, 0, 9, 0, 1, -1, 1, 2, 1, 1 + 8],
+    ]);
+    expect(r.last).toBe('2026-10-03');
+    expect(r.sheet).toEqual({ url: 'https://docs.example/d/1/edit', gid: 77 });
+  });
+
+  it('แถวนับสต๊อกมีธง Location เบิกของแถวรับไม่ส่ง จำนวนที่เป็นข้อความเป็น 0 แถวที่ B ว่างไม่ส่ง', () => {
+    const r = fifo([
+      row({ lot: 0, po: 0, to: 'R1-01-01', qty: 4, note: 'Stock Count Q3/26' }),
+      row({ from: 'X1', to: 'R1-01-02', qty: 'สิบ', note: 'RETURN' }),
+      row({ long: '', to: 'R1-01-03', qty: 9 }),
+    ]);
+    expect(r.rows).toHaveLength(2);
+    expect(r.rows[0][9]).toBe(4);
+    expect(r.rows[1][4]).toBe(-1);
+    expect(r.rows[1][6]).toBe(0);
+    expect(r.rows[1][8]).toBe(-1);
+  });
+});
+
 describe('tx-api.gs — การตอบกลับ', () => {
   it('ไม่ใส่ api บอกแค่ว่าเป็นสคริปต์นี้ ไม่แตะข้อมูล', () => {
     expect(script([])({})).toEqual({ app: 'transaction' });

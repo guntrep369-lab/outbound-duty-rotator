@@ -18,6 +18,7 @@
  * ?api=tx-count            รายการนับของวันนี้ (ยังไม่มีก็ออกให้) และผลนับย้อนหลัง
  * ?api=tx-daily&from=...&to=...  ยอดแถวขายราย SKU ราย วัน และแถวขายทีละแถว ให้หน้าเช็ครายการตัดสต๊อกเอาไปเทียบ
  *                                พร้อมคู่ SKU จากแท็บ "MASTER แปลงสินค้า" (ถ้ามี) ให้หน้า LOT / PO ที่ขายออก
+ * ?api=tx-fifo             ทุกแถวของสมุดแบบย่อ ให้หน้า FIFO สต๊อกคิดยอดราย LOT และหาการเบิกข้าม LOT เอง
  * POST {op:'count-save'}   บันทึกผลนับ
  * POST {op:'count-add'}    ส่ง SKU ที่ยอดไม่ตรงระบบบริษัทเข้าใบนับ
  * ไม่ใส่ api               บอกแค่ว่าเป็นสคริปต์นี้ ให้หน้าตั้งค่าเช็คว่าใส่ URL ถูกตัว
@@ -63,6 +64,7 @@ function doGet(e) {
     if (p.api === 'tx-history') return out_(history_(String(p.sku || '')));
     if (p.api === 'tx-count') return out_(countLoad_());
     if (p.api === 'tx-daily') return out_(daily_(String(p.from || ''), String(p.to || '')));
+    if (p.api === 'tx-fifo') return out_(fifo_());
   } catch (err) {
     return out_({ error: String(err && err.message || err) });
   }
@@ -566,6 +568,48 @@ function history_(sku) {
     items: list.slice(-HISTORY_MAX).reverse(),
     sheet: { url: ss.getUrl(), gid: sheet.getSheetId() },
   };
+}
+
+/**
+ * ทุกแถวของสมุดแบบย่อ ให้หน้า FIFO สต๊อก (public/fifo) เดินตามลำดับแถวเอง
+ * กติกา FIFO อยู่ที่ public/wms-fifo.js ทั้งหมด ปรับกติกาทีหลังได้โดยไม่ต้องวางสคริปต์นี้ใหม่
+ *   row = [เลขแถว, ลำดับ SKU, LOT, ลำดับ PO, ลำดับ Location เบิก, ลำดับ Location รับ, จำนวน, ประเภท, ลำดับวันที่, ธง]
+ *   Location เบิก ส่งเฉพาะแถวเบิกกับขาย แถวอื่นไม่หักยอดต้นทาง (-1 = ไม่มี)
+ *   ประเภท 0 = รับหรืออื่น ๆ, 1 = เบิก, 2 = ขาย
+ *   วันที่ = วันที่ของแถวเอง หรือของแถวล่าสุดด้านบนที่มีวันที่ (-1 = ยังไม่มี)
+ *   ธง 1 = Status เปิด, 2 = รับเข้าที่มี GR (วันที่คือวันรับ), 4 = แถวนับสต๊อก, 8 = วันที่เป็นของแถวเอง
+ * จำนวนที่พิมพ์เป็นข้อความเป็น 0 และแถวที่ SKU คอลัมน์ B ว่างไม่ถูกส่ง เหมือน balances_
+ */
+function fifo_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var tz = ss.getSpreadsheetTimeZone();
+  var today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  var sheet = ledgerSheet_(ss);
+  var rows = readRows_(sheet, tz);
+  var out = {
+    app: 'transaction', at: Date.now(), today: today, last: sales_(rows, today).last,
+    sheet: { url: ss.getUrl(), gid: sheet.getSheetId() },
+    skus: [], pos: [], locs: [], days: [], rows: [],
+  };
+  var idx = { sku: {}, po: {}, loc: {}, day: {} };
+  function no(kind, list, key, v) {
+    if (idx[kind][key] === undefined) { idx[kind][key] = list.length; list.push(v); }
+    return idx[kind][key];
+  }
+  rows.forEach(function (r) {
+    if (!r.long) return;
+    var s = no('sku', out.skus, same_(r.long), [r.sku, r.long, r.name]);
+    if (!out.skus[s][2] && r.name) out.skus[s][2] = r.name;
+    var t = r.type === 'ขาย' ? 2 : r.type === 'เบิก' ? 1 : 0;
+    var flag = (r.open ? 1 : 0) + (r.date && /^GR/i.test(r.note) ? 2 : 0) + (/stock\s*count/i.test(r.note) ? 4 : 0) + (r.date ? 8 : 0);
+    out.rows.push([
+      r.row, s, r.lot, no('po', out.pos, same_(r.po), r.po),
+      t && r.from ? no('loc', out.locs, same_(r.from), r.from) : -1,
+      r.to ? no('loc', out.locs, same_(r.to), r.to) : -1,
+      r.qty, t, r.near ? no('day', out.days, r.near, r.near) : -1, flag,
+    ]);
+  });
+  return out;
 }
 
 /* ── นับสต๊อก ───────────────────────────────────────────────────────────── */

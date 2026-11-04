@@ -19,7 +19,7 @@ The list lives in [`public/wms-modules.js`](public/wms-modules.js) (the one plac
 | — (hidden) | สรุปเช้า · Morning Brief · ย้อนหลัง · History | `summary/` · `history/` |
 | ออเดอร์ | เทียบ Order · ค้นหาออเดอร์ | `order-compare/` · `order-lookup/` |
 | คลังสินค้า | สต๊อกคงเหลือ · สรุปหยิบของ · เบิกตามออเดอร์ · เอกสารคลังสินค้า | `stock/` · `picking/` · `order-sheet/` · `warehouse-forms/` |
-| สินค้าคงคลัง | สต๊อกราย Location · เช็ครายการตัดสต๊อก · LOT / PO ที่ขายออก | `stock-location/` · `cut-check/` · `lot-po/` |
+| สินค้าคงคลัง | สต๊อกราย Location · เช็ครายการตัดสต๊อก · LOT / PO ที่ขายออก · FIFO สต๊อก | `stock-location/` · `cut-check/` · `lot-po/` · `fifo/` |
 | ขนส่ง | ทำใบงานขนส่ง · เอกสารขนส่ง | `transport-docs/` · `transport-forms/` |
 | ขนส่ง (hidden) | ประเภทงานรถ · ผังงานรถวันนี้ | `jobs/` · `loadplan/` |
 | ทีมและระบบ | **ตารางกะ · Shift Schedule** · ตั้งค่า | `roster/` · `settings/` |
@@ -653,6 +653,61 @@ The fetched month stays on the device. Press ดึงใหม่ after the led
 
 ---
 
+## 🧱 FIFO Stock (`/fifo`)
+
+The monthly report for Supply chain, and a daily view for the Inventory team. It shows what's left in
+the warehouse with the oldest goods first, and every pick or refill that took newer goods while older
+ones were still there. It reads the whole ledger through `tx-api.gs` `?api=tx-fifo` (the Transaction URL
+from the settings page) and never writes to the sheet. The data stays in memory only. It isn't kept on
+the device.
+
+**How old is a batch:**
+
+- A batch is one SKU (column B) + LOT + PO.
+- The LOT is the month the goods are from. `1`–`12` is that month this year, and a LOT bigger than the
+  report month is from last year. `0.11` is November of last year.
+- `LOT 0`, a blank LOT or anything else is ไม่รู้ LOT. It's listed but can't be put in order.
+- Inside one LOT, the PO that came in first is older. Its date is the first `GR` row of that
+  SKU + LOT + PO. Stock from the stock count comes before every receipt. Two POs received on the same
+  day are the same age.
+- QA / IQA / RIB locations aren't counted, either as the goods that went out or as older goods left
+  behind.
+
+**What counts as skipping FIFO (ข้าม FIFO):**
+
+- **หยิบขาย (a `ขาย` row):** an older batch of the same SKU was in an open (`เปิด`) location at that time.
+- **เติมของ (a `เบิก` row into an open location):** an older batch was still on a closed location (the
+  rack).
+- ข้าม LOT means an older LOT month was there. ข้าม PO means the same LOT, but a PO received earlier.
+- Goods with an unknown LOT are counted on their own as ตรวจไม่ได้, not as right or wrong.
+- A row with no date of its own uses the date of the row above it, and the page marks it โดยประมาณ.
+
+**The page:**
+
+- Pick the month at the top. It lists up to 12 months, ending at the ledger's last sale date. The two
+  first tiles give the % of pieces that followed FIFO that month for หยิบขาย and เติมของ, split into
+  ตาม FIFO / ข้าม PO / ข้าม LOT.
+- **คงเหลือราย LOT:** stock as of the month's last day, one row per SKU. The bar shows each batch from
+  oldest (left) to newest, colored by age. Open a SKU to see each batch's order, LOT, PO, receive date,
+  how much is in the selling locations and on the rack, and the locations.
+  - `⚠ ควรเติมของเก่าก่อน` marks a SKU where an older batch is only on the rack while every batch in the
+    selling locations is newer.
+  - `โลขายมีหลายกอง` says which batch to pick first when the selling locations hold different ages.
+  - The filters list these, SKUs with more than one LOT, and SKUs with LOT 0.
+- **เบิกข้าม FIFO:** the month's picks and refills that skipped, grouped by SKU, biggest first. Each line
+  shows what went out, the older goods that were there, and a link to the ledger row.
+- **อายุสต๊อก:** pieces per LOT month, oldest first, and the SKUs holding the oldest goods.
+- A negative balance (more out than in) isn't counted as stock. The page shows how many there are. Fix
+  them in สต๊อกราย Location, แท็บข้อมูลผิด.
+- Copy pastes the open tab into Excel as columns. **⬇️ Excel ส่ง Supply chain** downloads
+  `fifo-YYYY-MM.xlsx` with four sheets: สรุป, คงเหลือราย LOT, เบิกข้าม FIFO and อายุสต๊อก.
+
+**Updating to a version with FIFO:** paste the new `tx-api.gs` into the Transaction ledger file's Apps
+Script, then Deploy → Manage deployments → pencil icon → Version: New version → Deploy. Until then the
+page says the script has no FIFO yet.
+
+---
+
 ## 🗂️ Project structure
 
 ```
@@ -676,6 +731,7 @@ public/
 ├─ stock-location/         # สต๊อกราย Location, from the Transaction sheet (+ wms-tx.js: grouping, refill list)
 ├─ cut-check/              # เช็ครายการตัดสต๊อก, cuts compared with the month-end order reports (+ wms-cut.js: per-day match with the ledger)
 ├─ lot-po/                 # LOT / PO ที่ขายออก, the daily SKU × LOT × PO report for accounting (+ wms-lotpo.js)
+├─ fifo/                   # FIFO สต๊อก, stock by LOT oldest first + picks that skipped FIFO (+ wms-fifo.js)
 ├─ summary/ history/ order-compare/ order-lookup/ stock/ picking/ order-sheet/
 ├─ shiftlog/               # สมุดกะ (+ logis.html: the read-only page for Logis)
 ├─ warehouse-forms/ jobs/ loadplan/ transport-docs/ transport-forms/ settings/
