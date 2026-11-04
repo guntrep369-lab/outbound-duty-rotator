@@ -16,6 +16,7 @@
  * ?api=tx-summary          ยอดคงเหลือทั้งคลัง ยอดขาย และจุดที่ข้อมูลผิด
  * ?api=tx-history&sku=...  ความเคลื่อนไหวของ SKU เดียว
  * ?api=tx-count            รายการนับของวันนี้ (ยังไม่มีก็ออกให้) และผลนับย้อนหลัง
+ * ?api=tx-count&peek=1     ผลนับรวมรายเดือนแบบอ่านอย่างเดียว ให้หน้าภาพรวมสต๊อก ไม่ออกรายการของวันนี้
  * ?api=tx-daily&from=...&to=...  ยอดแถวขายราย SKU ราย วัน และแถวขายทีละแถว ให้หน้าเช็ครายการตัดสต๊อกเอาไปเทียบ
  *                                พร้อมคู่ SKU จากแท็บ "MASTER แปลงสินค้า" (ถ้ามี) ให้หน้า LOT / PO ที่ขายออก
  * ?api=tx-fifo             ทุกแถวของสมุดแบบย่อ ให้หน้า FIFO สต๊อกคิดยอดราย LOT และหาการเบิกข้าม LOT เอง
@@ -25,7 +26,7 @@
  * POST {op:'shared-fresh'} คิดยอดใหม่แล้วเก็บเป็นข้อมูลกลาง (ปุ่มดึงใหม่บนหน้าเว็บ)
  * ไม่ใส่ api               บอกแค่ว่าเป็นสคริปต์นี้ ให้หน้าตั้งค่าเช็คว่าใส่ URL ถูกตัว
  *
- * ข้อมูลกลาง: ผลของ tx-summary กับ tx-daily เก็บเป็นไฟล์ JSON ในโฟลเดอร์ "WMS ข้อมูลกลาง" ใน Drive
+ * ข้อมูลกลาง: ผลของ tx-summary tx-daily และ tx-fifo เก็บเป็นไฟล์ JSON ในโฟลเดอร์ "WMS ข้อมูลกลาง" ใน Drive
  * ของเจ้าของสคริปต์ ทุกเครื่องอ่านชุดเดียวกัน ไม่ได้เขียนลงไฟล์ชีต
  */
 
@@ -67,13 +68,13 @@ function doGet(e) {
   try {
     if (p.api === 'tx-summary') return out_(p.shared ? sharedRead_('tx-summary', null, summary_) : summary_());
     if (p.api === 'tx-history') return out_(history_(String(p.sku || '')));
-    if (p.api === 'tx-count') return out_(countLoad_());
+    if (p.api === 'tx-count') return out_(p.peek ? countPeek_() : countLoad_());
     if (p.api === 'tx-daily') {
       var from = String(p.from || ''), to = String(p.to || '');
       if (!p.shared) return out_(daily_(from, to));
       return out_(sharedRead_('tx-daily', { from: from, to: to }, function () { return daily_(from, to); }));
     }
-    if (p.api === 'tx-fifo') return out_(fifo_());
+    if (p.api === 'tx-fifo') return out_(p.shared ? sharedRead_('tx-fifo', null, fifo_) : fifo_());
     if (p.api === 'shared-at') return out_(sharedAt_());
   } catch (err) {
     return out_({ error: String(err && err.message || err) });
@@ -784,6 +785,36 @@ function countLoad_() {
 }
 
 /**
+ * ผลนับรวมรายเดือนให้หน้าภาพรวมสต๊อก อ่านอย่างเดียว ไม่ออกรายการของวันนี้และไม่สร้างแท็บ
+ * หัวหน้าเปิดดูก่อนทีมเปิดใบนับ ต้องไม่ทำให้รายการของวันนั้นออกก่อนเวลา และไม่ต้องอ่านสมุดรายการทั้งเล่ม
+ * ความแม่นยำนับเฉพาะรายการสุ่มแบบเดียวกับหน้าสต๊อกราย Location นับซ้ำกับเสี่ยงถูกเลือกมาเพราะน่าจะผิดอยู่แล้ว
+ *   todays  รายการของวันนี้ทั้งหมด กับที่นับแล้ว (ยังไม่ออกรายการ = 0 ทั้งคู่)
+ *   last    รายการสุ่มที่นับแล้วในช่วง COUNT_KEEP_DAYS วันล่าสุด ตัวเดียวกับความแม่นยำบนหน้าสต๊อกราย Location
+ *   months  ราย yyyy-mm: counted นับแล้วทั้งหมด, off ไม่ตรง, sample รายการสุ่มที่นับแล้ว, match สุ่มแล้วตรง
+ */
+function countPeek_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var tz = ss.getSpreadsheetTimeZone();
+  var today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+  var sheet = ss.getSheetByName(COUNT_SHEET);
+  var end = dayNo_(today);
+  var out = { app: 'transaction', peek: true, today: today, todays: { total: 0, done: 0 }, last: { sample: 0, match: 0 }, months: {} };
+  (sheet ? readCount_(sheet, tz) : []).forEach(function (p) {
+    if (p.date === today) { out.todays.total++; if (p.qty !== null) out.todays.done++; }
+    if (p.qty === null) return;
+    var ym = p.date.slice(0, 7);
+    var m = out.months[ym] || (out.months[ym] = { counted: 0, off: 0, sample: 0, match: 0 });
+    m.counted++;
+    if (p.diff !== 0) m.off++;
+    if (p.src !== 'สุ่ม') return;
+    m.sample++;
+    if (p.diff === 0) m.match++;
+    if (end - dayNo_(p.date) < COUNT_KEEP_DAYS) { out.last.sample++; if (p.diff === 0) out.last.match++; }
+  });
+  return out;
+}
+
+/**
  * ยอดในระบบคิด ณ ตอนส่ง ไม่ใช่ตอนออกรายการ ของที่ย้ายระหว่างวันจึงไม่กลายเป็นยอดไม่ตรง
  * ผลนับเขียนได้ครั้งเดียว ส่งซ้ำหรือสองคนนับรายการเดียวกัน ผลแรกยังอยู่ และชื่อคนต้องไม่กลายเป็นสูตรในชีต
  */
@@ -963,19 +994,25 @@ function installBackup() {
  *
  * ?api=tx-summary&shared=1               ชุดที่เก็บไว้ ยังไม่มีหรือเก่ากว่า SHARED_MAX_MIN ก็คิดใหม่แล้วเก็บ
  * ?api=tx-daily&from=...&to=...&shared=1  แบบเดียวกัน ใช้ได้เมื่อช่วงวันที่ตรงกับชุดที่เก็บ
+ * ?api=tx-fifo&shared=1                  แถวทั้งสมุดของหน้า FIFO กับหน้าภาพรวม ชุดนี้ใช้ทำรายงานรายเดือน
+ *                                        เปิดหน้าแล้วใช้ชุดที่มี เก่ากว่า SHARED_FIFO_MAX_MIN ค่อยคิดใหม่
  * POST {op:'shared-fresh', api, by}      คิดใหม่แล้วเก็บแทนชุดเดิม ถ้ามีคนกำลังคิดอยู่ตอบ busy แทนการคิดซ้อน
  * ไม่ใส่ shared                          คิดใหม่ทุกครั้งและไม่เก็บ เหมือนรุ่นก่อน
  *
  * ตั้งเวลา: รัน installShared ครั้งเดียวจากหน้าแก้สคริปต์ เลิกด้วย stopShared
  */
 var SHARED_APP = 'transaction';
-var SHARED_NAMES = ['tx-summary', 'tx-daily'];
+var SHARED_NAMES = ['tx-summary', 'tx-daily', 'tx-fifo'];
 var SHARED_FOLDER = 'WMS ข้อมูลกลาง';
 var SHARED_MAX_MIN = 60;          // เปิดหน้าแล้วชุดที่เก็บไว้เก่ากว่านี้ คิดใหม่ให้เลย ตั้งเวลาไว้ทุก 30 นาที ปกติจึงไม่ถึง
 var SHARED_EVERY_MIN = 30;        // ตั้งเวลาดึงเองทุกกี่นาที Apps Script ให้เลือกได้แค่ 1 5 10 15 30
 var SHARED_FROM_HOUR = 8;         // ตั้งเวลาทำงานเฉพาะ 8:00 ถึงก่อน 18:00 ตามเวลาของไฟล์ชีต นอกเวลางานไม่มีใครดู
 var SHARED_TO_HOUR = 18;
 var SHARED_BUSY_MS = 7 * 60000;   // Apps Script ตัดจบที่ 6 นาที ป้ายกำลังคิดที่ค้างนานกว่านี้คือตัวที่ตายไปแล้ว
+/* ชุด FIFO อ่านทั้งสมุดเหมือนยอดคงเหลือ แต่ใช้ดูรายเดือน ตั้งเวลาคิดใหม่ทุก 2 ชั่วโมงก็พอ ประหยัดโควตาเวลา
+   เปิดหน้าแล้วใช้ชุดที่มีอยู่ได้ถึงหนึ่งวัน หัวหน้าเปิดดูตอนเช้าก่อนรอบตั้งเวลาแรกจะได้ไม่ต้องรอ */
+var SHARED_FIFO_EVERY_MIN = 120;
+var SHARED_FIFO_MAX_MIN = 24 * 60;
 
 function sharedJson_(all, k) {
   try { return all[k] ? JSON.parse(all[k]) : null; } catch (err) { return null; }
@@ -1073,7 +1110,7 @@ function sharedFresh_(name, params, who, compute) {
 
 /** เปิดหน้าเว็บ ส่งชุดที่เก็บไว้ ถ้ามีคนกำลังคิดชุดใหม่อยู่ ส่งชุดเก่าไปก่อน ชุดใหม่หน้าเว็บจะโหลดเองตอนถามรอบถัดไป */
 function sharedRead_(name, params, compute) {
-  var kept = sharedLoad_(name, params, SHARED_MAX_MIN);
+  var kept = sharedLoad_(name, params, name === 'tx-fifo' ? SHARED_FIFO_MAX_MIN : SHARED_MAX_MIN);
   if (kept) return kept;
   if (running_(name)) {
     var old = sharedLoad_(name, params, 0);
@@ -1086,6 +1123,7 @@ function sharedRead_(name, params, compute) {
 function sharedPress_(req) {
   var who = { by: plain_(req.by, 60), auto: false };
   if (req.api === 'tx-summary') return sharedFresh_('tx-summary', null, who, summary_);
+  if (req.api === 'tx-fifo') return sharedFresh_('tx-fifo', null, who, fifo_);
   if (req.api === 'tx-daily') {
     var from = String(req.from || ''), to = String(req.to || '');
     if (!/^(\d{4}-\d{2}-\d{2})?$/.test(from) || !/^(\d{4}-\d{2}-\d{2})?$/.test(to)) return { error: 'ช่วงวันที่ไม่ถูกต้อง' };
@@ -1117,6 +1155,7 @@ function workHour_() {
 
 /**
  * คิดทุกชุดใหม่ ยอดรายวันคิดเฉพาะช่วงวันที่ที่หน้าเช็ครายการตัดสต๊อกเปิดดูล่าสุด
+ * ชุด FIFO คิดเมื่อชุดเดิมเก่าถึง SHARED_FIFO_EVERY_MIN (เผื่อ 5 นาทีให้ตรงกับรอบทุก 30 นาที) หรือยังไม่มี
  * ชุดหนึ่งล้มไม่ทำให้อีกชุดไม่ได้คิด ข้อความที่ล้มเก็บไว้ใน shared-err แล้ว
  */
 function sharedAuto_() {
@@ -1129,6 +1168,10 @@ function sharedAuto_() {
     try {
       if (!sharedFresh_('tx-daily', { from: from, to: to }, who, function () { return daily_(from, to); }).busy) done.push('ยอดขายรายวัน');
     } catch (err) {}
+  }
+  var f = sharedProp_('shared:tx-fifo');
+  if (!f || Date.now() - f.at >= (SHARED_FIFO_EVERY_MIN - 5) * 60000) {
+    try { if (!sharedFresh_('tx-fifo', null, who, fifo_).busy) done.push('FIFO'); } catch (err) {}
   }
   return done;
 }

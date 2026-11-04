@@ -19,7 +19,7 @@ The list lives in [`public/wms-modules.js`](public/wms-modules.js) (the one plac
 | — (hidden) | สรุปเช้า · Morning Brief · ย้อนหลัง · History | `summary/` · `history/` |
 | ออเดอร์ | เทียบ Order · ค้นหาออเดอร์ | `order-compare/` · `order-lookup/` |
 | คลังสินค้า | สต๊อกคงเหลือ · สรุปหยิบของ · เบิกตามออเดอร์ · เอกสารคลังสินค้า | `stock/` · `picking/` · `order-sheet/` · `warehouse-forms/` |
-| สินค้าคงคลัง | สต๊อกราย Location · เช็ครายการตัดสต๊อก · LOT / PO ที่ขายออก · FIFO สต๊อก | `stock-location/` · `cut-check/` · `lot-po/` · `fifo/` |
+| สินค้าคงคลัง | ภาพรวมสต๊อก · สต๊อกราย Location · เช็ครายการตัดสต๊อก · LOT / PO ที่ขายออก · FIFO สต๊อก | `dashboard/` · `stock-location/` · `cut-check/` · `lot-po/` · `fifo/` |
 | ขนส่ง | ทำใบงานขนส่ง · เอกสารขนส่ง | `transport-docs/` · `transport-forms/` |
 | ขนส่ง (hidden) | ประเภทงานรถ · ผังงานรถวันนี้ | `jobs/` · `loadplan/` |
 | ทีมและระบบ | **ตารางกะ · Shift Schedule** · ตั้งค่า | `roster/` · `settings/` |
@@ -422,8 +422,8 @@ looking at numbers from different times.
   a new one.
 
 `installShared` refreshes the copy every 30 minutes from 8:00 to before 18:00 (the file's time zone). It
-also refreshes the ยอดขายรายวัน copy for the period the Stock Cut Check page used last. `stopShared` turns
-the timer off. Each run takes about as long as pressing ดึงใหม่. A free Google account gets 90 minutes of
+also refreshes the ยอดขายรายวัน copy for the period the Stock Cut Check page used last, and the FIFO copy
+(see FIFO Stock) every 2 hours. `stopShared` turns the timer off. Each run takes about as long as pressing ดึงใหม่. A free Google account gets 90 minutes of
 timer runs a day across all scripts, so keep an eye on it if more timers are added.
 
 Until the new `tx-api.gs` is deployed, the page works as before, with each device reading on its own.
@@ -706,6 +706,13 @@ ones were still there. It reads the whole ledger through `tx-api.gs` `?api=tx-fi
 from the settings page) and never writes to the sheet. The data stays in memory only. It isn't kept on
 the device.
 
+**Shared copy (ข้อมูลกลาง):** opening the page loads the copy the script kept, the same one the Stock
+Overview page uses, so it doesn't wait for the whole ledger to be read. The bar says when and who
+(`ดึงเมื่อ 05/11 10:00 · อัตโนมัติ`). 🔄 ดึงใหม่ reads the ledger again and replaces the copy for every
+device. The timer from `installShared` refreshes it every 2 hours from 8:00 to before 18:00. If nobody
+refreshes it for a whole day, the next page opened reads the ledger again first. An open page loads a
+newer copy by itself, but waits while you're typing in the search box or have a SKU open.
+
 **How old is a batch:**
 
 - A batch is one SKU (column B) + LOT + PO.
@@ -766,6 +773,49 @@ page says the script has no FIFO yet.
 
 ---
 
+## 📊 Stock Overview (`/dashboard`)
+
+One page for the stock's health now and a monthly summary for the boss. It doesn't have rules of its own:
+every number comes from the page that owns it, using the same shared copies (ข้อมูลกลาง), so the boss sees
+the same numbers as the team. It's read-only, and never asks the cut-check script to run a check.
+
+**ตอนนี้ (now):** six tiles. Each one opens the page and tab it comes from.
+
+| Tile | Comes from |
+| --- | --- |
+| สต๊อกในคลัง: pieces, SKUs, locations, open / reserve / QA·IQA·RIB | Stock by Location |
+| ต้องเติมภายใน 3 วัน: with reserve to pull, and with no reserve | Stock by Location, tab ต้องเติม (3 days) |
+| ข้อมูลผิดในชีต: total, the three biggest kinds | Stock by Location, tab ข้อมูลผิด |
+| อายุสต๊อก: share of stock with a LOT 7 months or older, split by age | FIFO Stock, tab อายุสต๊อก |
+| นับสต๊อกวันนี้: counted / listed today, random-count accuracy over 30 days | Stock by Location, tab นับสต๊อก |
+| ตัดสต๊อก: lines to fix (ตัดผิด / ตัดเกิน and ยังไม่ตัด), % matching the Report, fixes marked | Stock Cut Check |
+
+A tile with something to do carries a label like `! ต้องแก้`. The bar at the top says when each copy is
+from, and the backup state.
+
+**สรุปรายเดือน (monthly):** pick the month. Early in a month the page opens on last month, since a
+summary is about a finished month.
+
+- หยิบขาย pieces, sale days, and the average per sale day. Compared with the month before only when both
+  months have at least 7 sale days, as a daily average. The ledger started on 28 September, so September
+  isn't compared.
+- FIFO ตอนหยิบขาย and ตอนเติมของเข้าโลขาย, the same % as FIFO Stock.
+- อายุสต๊อก as of the month's last day.
+- นับสต๊อก: random counts that matched, and every count that month.
+- ตัดสต๊อกเทียบ Report: only for the month of the cut file set in Settings.
+- A chart of pieces picked each day, split into ตาม FIFO / ข้าม PO / ข้าม LOT / ไม่รู้ LOT. Point at or tap
+  a bar for its numbers. ดูเป็นตาราง shows them all.
+- เทียบรายเดือน: every month side by side.
+- **📋 คัดลอกสรุปส่งหัวหน้า** copies a short summary to paste into LINE.
+
+**Needs:** the new `tx-api.gs` (shared FIFO copy and the read-only count summary `?api=tx-count&peek=1`)
+and, for the cut tile, the new `cut-api.gs`. With an older `tx-api.gs`, the page shows stock and FIFO but
+not counts. An older script would make today's count list just by being asked, so the page doesn't ask.
+With an older `cut-api.gs`, the cut tiles use the last result on this device, if Stock Cut Check was opened
+here.
+
+---
+
 ## 🗂️ Project structure
 
 ```
@@ -791,6 +841,7 @@ public/
 ├─ cut-check/              # เช็ครายการตัดสต๊อก, cuts compared with the month-end order reports (+ wms-cut.js: per-day match with the ledger)
 ├─ lot-po/                 # LOT / PO ที่ขายออก, the daily SKU × LOT × PO report for accounting (+ wms-lotpo.js)
 ├─ fifo/                   # FIFO สต๊อก, stock by LOT oldest first + picks that skipped FIFO (+ wms-fifo.js)
+├─ dashboard/              # ภาพรวมสต๊อก, stock health now + monthly summary from the shared copies (+ wms-dash.js)
 ├─ summary/ history/ order-compare/ order-lookup/ stock/ picking/ order-sheet/
 ├─ shiftlog/               # สมุดกะ (+ logis.html: the read-only page for Logis)
 ├─ warehouse-forms/ jobs/ loadplan/ transport-docs/ transport-forms/ settings/

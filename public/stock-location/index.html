@@ -201,7 +201,8 @@ let ERR = '';
 const SH = { run: null, fresh: 0, err: null };
 /* เปิดมาเจอต้องเติมก่อน เพราะเป็นงานที่ต้องทำทุกวัน ส่วนหาของเปิดเมื่อมีคนถาม
    ?tab=count เอาไว้ส่งลิงก์ให้คนนับ เปิดมาเจอรายการของตัวเองเลย */
-let TAB = new URLSearchParams(location.search).get('tab') === 'count' ? 'count' : 'fill';
+/* ?tab= มาจากลิงก์บนหน้าภาพรวมสต๊อก */
+let TAB = ['fill', 'count', 'diff', 'find', 'bad', 'log'].includes(new URLSearchParams(location.search).get('tab')) ? new URLSearchParams(location.search).get('tab') : 'fill';
 let DAYS = 3;
 let Q = '';           // คำค้นในแท็บหาของ
 let SEL = null;       // { sku } | { loc } ที่กดเลือกจากรายการ

@@ -257,6 +257,7 @@ button.fi-kpi .go{margin-top:auto;padding-top:6px;font-size:12px;font-weight:600
 <script type="module" src="../wms-shell.js"></script>
 <script src="../wms-settings.js"></script>
 <script src="../wms-gas.js"></script>
+<script src="../wms-shared.js"></script>
 <script src="../wms-cut.js"></script>
 <script src="../wms-fifo.js"></script>
 <script>
@@ -273,13 +274,16 @@ const SHOW_MAX = 150;   // SKU ต่อหน้าจอ ทั้งคลั
 let RES = null;     // คำตอบ tx-fifo
 let AN = null;      // WmsFifo.analyze(RES, MONTH)
 let MONTH = '';     // yyyy-mm
-let TAB = 'stock';  // stock | skip | age
+/* ?tab= มาจากลิงก์บนหน้าภาพรวมสต๊อก */
+let TAB = ['stock', 'skip', 'age'].includes(new URLSearchParams(location.search).get('tab')) ? new URLSearchParams(location.search).get('tab') : 'stock';
 let ONLY = '';      // ตัวกรองแท็บคงเหลือ
 let SORT = 'need';  // need | code | old | qty
 let KIND = '';      // ตัวกรองแท็บข้าม FIFO: '' | sale | refill
 let Q = '';
 let BUSY = '';
 let ERR = '';
+let WAIT = null;    // ข้อมูลกลาง: มีคนกำลังดึงชุดใหม่อยู่ { at, by, auto }
+let LOADING = false;
 
 function monthName(m) {
   const [y, mo] = m.split('-').map(Number);
@@ -287,20 +291,7 @@ function monthName(m) {
 }
 
 /** เดือนที่เลือกได้ สิบสองเดือนถึงเดือนที่สมุดลงขายล่าสุด ไม่ก่อนวันแรกที่มีวันที่ในสมุด */
-function months() {
-  if (!RES) return [];
-  const end = (RES.last || RES.today).slice(0, 7);
-  const first = RES.days.filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d) && d <= RES.today).sort()[0] || end;
-  const out = [];
-  const [y, m] = end.split('-').map(Number);
-  for (let i = 0; i < 12; i++) {
-    const d = new Date(y, m - 1 - i, 1);
-    const ym = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
-    if (ym < first.slice(0, 7)) break;
-    out.push(ym);
-  }
-  return out;
-}
+function months() { return RES ? WmsFifo.months(RES) : []; }
 
 /** อายุเป็นสี่ช่วง ตรงกับคำอธิบายสีบนหน้า */
 function ageCls(age) {
@@ -335,15 +326,36 @@ const rowLink = (row) => {
 const isNow = () => RES && AN && AN.to >= (RES.last || RES.today);
 const asOf = () => isNow() ? `ล่าสุด (สมุดลงขายถึง ${dm(RES.last)})` : `ณ ${dm(AN.to)}`;
 
-async function load() {
+/**
+ * ข้อมูลกลาง: เปิดหน้าอ่านชุดที่สคริปต์เก็บไว้ (หน้าภาพรวมสต๊อกใช้ชุดเดียวกัน) กดดึงใหม่ค่อยให้อ่านสมุดทั้งชีต
+ * สคริปต์รุ่นก่อนไม่รู้จัก shared อ่านทั้งชีตให้เหมือนเดิม กดดึงใหม่ได้ OLD ก็ถอยไปเรียกแบบเดิม
+ * quiet = ชุดใหม่ที่มาเองระหว่างเปิดดู ไม่ต้องขึ้นสายพานรอโหลด เดือนกับแท็บที่เลือกไว้ยังอยู่
+ */
+async function load(fresh, quiet) {
   const url = WmsSettings.txUrl();
-  if (BUSY || !url) return;
+  if (LOADING || !url) return;
+  LOADING = true;
   ERR = '';
-  const say = (sec) => { BUSY = `กำลังอ่านสมุด Transaction ทั้งชีต…${sec ? ` ${sec} วินาที` : ''}`; renderSrc(); };
-  say(0);
-  render();
+  const say = (sec) => { BUSY = fresh ? `กำลังอ่านสมุด Transaction ทั้งชีต…${sec ? ` ${sec} วินาที` : ''}` : 'กำลังโหลดชุดล่าสุด…'; renderSrc(); };
+  const opts = { retries: 1, timeoutMs: 240000, onProgress: quiet ? undefined : say };
+  if (!quiet) { say(0); render(); }
   try {
-    const res = await WmsGas.json(url, 'tx-fifo', { retries: 1, timeoutMs: 240000, onProgress: say });
+    let res;
+    if (fresh) {
+      res = await WmsShared.press(url, 'tx-fifo', null, opts);
+      if (res && res.error === WmsShared.OLD) res = await WmsGas.json(url, 'tx-fifo', opts);
+    } else {
+      res = await WmsShared.read(url, 'tx-fifo', opts);
+    }
+    if (res && res.busy && !res.rows) {
+      WAIT = res.busy;
+      WATCH.soon();
+      BUSY = '';
+      LOADING = false;
+      render();
+      return;
+    }
+    WAIT = null;
     if (res.error) throw new Error(res.error);
     if (res.app !== 'transaction') throw new Error('URL ของ Transaction ในหน้าตั้งค่าไม่ใช่สคริปต์ tx-api.gs');
     if (!res.rows) throw new Error('สคริปต์ tx-api.gs ยังเป็นรุ่นที่ไม่มี FIFO ให้วางโค้ดใหม่แล้ว Deploy เป็น New version');
@@ -356,6 +368,7 @@ async function load() {
     if (window.WmsMotion) setTimeout(() => window.WmsMotion.shake(document.querySelector('#src .tx-err')), 0);
   }
   BUSY = '';
+  LOADING = false;
   render();
 }
 
@@ -367,17 +380,22 @@ function renderSrc() {
   if (RES && !BUSY) {
     html += `<span class="pill">📅 <select id="month" aria-label="เดือนของรายงาน">${months().map((x) =>
       `<option value="${x}" ${x === MONTH ? 'selected' : ''}>${esc(monthName(x))}</option>`).join('')}</select></span>`;
-    const when = new Date(RES.at).toLocaleString('th-TH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-    html += `<span class="pill">🕐 ดึงเมื่อ <b>${esc(when)}</b></span>`;
+    const when = new Date(WmsShared.stamp(RES)).toLocaleString('th-TH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const who = WmsShared.who(RES);
+    html += `<span class="pill" title="ทุกเครื่องเห็นชุดเดียวกัน รอบอัตโนมัติดึงใหม่ทุก 2 ชั่วโมงในเวลางาน">🕐 ดึงเมื่อ <b>${esc(when)}</b>${who ? ` · ${esc(who)}` : ''}</span>`;
     if (RES.last) html += `<span class="pill">สมุดลงขายถึง <b>${esc(dm(RES.last))}</b></span>`;
     if (RES.sheet && RES.sheet.url) html += `<span class="pill"><a href="${esc(RES.sheet.url)}" target="_blank" rel="noopener">เปิดชีต ↗</a></span>`;
     const neg = AN.stock.negative;
     if (neg.keys) html += `<span class="pill warn" title="ยอดติดลบ ${f(neg.qty)} ชิ้น ไม่นับเป็นของ — ดูที่หน้าสต๊อกราย Location แท็บข้อมูลผิด">ติดลบ ${f(neg.keys)} จุด ไม่นับ</span>`;
   }
   if (BUSY) html += `<span class="pill">⏳ ${esc(BUSY)}</span>`;
+  if (WAIT && !BUSY) {
+    const at = new Date(WAIT.at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+    html += `<span class="pill warn">⏳ ${esc(WmsShared.runner(WAIT))} กำลังดึงชุดใหม่ (เริ่ม ${esc(at)}) เสร็จแล้วขึ้นให้เอง</span>`;
+  }
   html += '<span class="sp"></span>';
   if (url) {
-    html += `<button id="loadBtn" class="${RES ? '' : 'p'}" ${BUSY ? 'disabled' : ''}>${BUSY ? 'กำลังดึง…' : RES ? '🔄 ดึงใหม่' : '▶️ ดึงข้อมูล'}</button>`;
+    html += `<button id="loadBtn" class="${RES ? '' : 'p'}" ${BUSY || WAIT ? 'disabled' : ''}>${BUSY ? 'กำลังดึง…' : WAIT ? 'รอชุดใหม่…' : RES ? '🔄 ดึงใหม่' : '▶️ ดึงข้อมูล'}</button>`;
     if (RES && !BUSY) html += `<button id="xlsxBtn" class="p" title="สรุป · คงเหลือราย LOT · เบิกข้าม FIFO · อายุสต๊อก">⬇️ Excel ส่ง Supply chain</button>`;
   } else {
     html += `<span class="pill">ยังไม่ได้ตั้ง Apps Script URL ของ Transaction — <a href="../settings/">ตั้งที่หน้าตั้งค่า</a></span>`;
@@ -385,7 +403,7 @@ function renderSrc() {
   if (ERR) html += `<div class="tx-err">ดึงข้อมูลไม่สำเร็จ: ${esc(ERR)}</div>`;
   $('src').innerHTML = html;
   const btn = $('loadBtn');
-  if (btn) btn.onclick = load;
+  if (btn) btn.onclick = () => load(!!RES);
   const x = $('xlsxBtn');
   if (x) x.onclick = downloadXlsx;
   const m = $('month');
@@ -843,8 +861,28 @@ $('body').addEventListener('input', (e) => {
   if (TAB === 'skip') renderSkipList(); else renderStockList();
 });
 
+/**
+ * ถามทุกนาทีว่ามีชุดใหม่ไหม มีแล้วโหลดเองโดยไม่ต้องกด
+ * รอก่อนถ้ากำลังพิมพ์ค้นหาหรือเปิดดูรายละเอียดของ SKU ค้างอยู่ วาดใหม่ตอนนั้นกล่องที่เปิดไว้จะปิดเอง
+ */
+async function checkShared() {
+  const url = WmsSettings.txUrl();
+  if (!url || LOADING) return false;
+  const st = await WmsShared.status(url);
+  if (!WmsShared.knows(st, 'transaction')) return false;
+  const run = WmsShared.running(st, 'tx-fifo');
+  const had = !!WAIT;
+  WAIT = run;
+  if (run) { if (!had) renderSrc(); return true; }
+  if (!RES || !WmsShared.newer(st, 'tx-fifo', RES)) { if (had) renderSrc(); return false; }
+  if (WmsShared.typing() || document.querySelector('#body details[open]')) { if (had) renderSrc(); return true; }
+  await load(false, true);
+  return false;
+}
+
 render();
-if (WmsSettings.txUrl()) load();
+const WATCH = WmsShared.watch(checkShared);
+if (WmsSettings.txUrl()) load(false);
 </script>
 </body>
 </html>

@@ -67,6 +67,24 @@
     return ym + '-' + ('0' + new Date(Date.UTC(y, m, 0)).getUTCDate()).slice(-2);
   }
 
+  /**
+   * เดือนที่เลือกทำรายงานได้ ใหม่ไปเก่า ถึงเดือนที่สมุดลงขายล่าสุด ไม่ก่อนวันแรกที่มีวันที่ในสมุด ไม่เกิน max เดือน
+   * หน้า FIFO สต๊อกกับหน้าภาพรวมใช้รายการเดียวกัน
+   */
+  function months(res, max) {
+    var end = (res.last || res.today).slice(0, 7);
+    var first = res.days.filter(function (d) { return /^\d{4}-\d{2}-\d{2}$/.test(d) && d <= res.today; }).sort()[0] || end;
+    var out = [];
+    var y = +end.slice(0, 4), m = +end.slice(5, 7);
+    for (var i = 0; i < (max || 12); i++) {
+      var ym = y + '-' + ('0' + m).slice(-2);
+      if (ym < first.slice(0, 7)) break;
+      out.push(ym);
+      if (--m < 1) { m = 12; y--; }
+    }
+    return out;
+  }
+
   /** แถวแบบย่อเป็นออบเจกต์ ชื่อ Location ยุบตัวพิมพ์เล็กใหญ่ไว้ที่สคริปต์แล้ว */
   function parse(res) {
     return res.rows.map(function (x) {
@@ -440,7 +458,7 @@
   function tsv(table) { return table.map(function (l) { return l.map(cell).join('\t'); }).join('\n'); }
 
   window.WmsFifo = {
-    lotMonth: lotMonth, monthText: monthText, lastDay: lastDay, analyze: analyze, older: older, noPo: noPo, basePo: basePo,
+    lotMonth: lotMonth, monthText: monthText, lastDay: lastDay, months: months, analyze: analyze, older: older, noPo: noPo, basePo: basePo,
     filterStock: filterStock, skipsBySku: skipsBySku, recvText: recvText, roundsText: roundsText,
     stockTable: stockTable, skipTable: skipTable, agingTable: agingTable, summaryTable: summaryTable, tsv: tsv,
     KIND: KIND, STATE: STATE, COUNT_DAY: COUNT_DAY,

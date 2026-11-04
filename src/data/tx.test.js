@@ -568,6 +568,38 @@ describe('tx-api.gs — นับสต๊อก', () => {
   });
   afterEach(() => vi.useRealTimers());
 
+  it('peek อ่านผลนับรวมรายเดือนอย่างเดียว ไม่สร้างแท็บ ไม่ออกรายการของวันนี้', () => {
+    const api = script([shelf(1), shelf(2), shelf(3)]);
+    const peek = () => api({ api: 'tx-count', peek: '1' });
+    expect(peek()).toEqual({
+      app: 'transaction', peek: true, today: '2026-03-10', todays: { total: 0, done: 0 }, last: { sample: 0, match: 0 }, months: {},
+    });
+    expect(api.tabs[COUNT]).toBeUndefined();
+
+    const v = load(api);
+    expect(peek().todays).toEqual({ total: 3, done: 0 });
+    api.post({ op: 'count-save', date: v.today, who: 'สมมติ', items: todo(v).map((l, i) => ({ k: l.k, qty: i === 2 ? 9 : 10 })) });
+    const mar = { '2026-03': { counted: 3, off: 1, sample: 3, match: 2 } };
+    expect(peek()).toMatchObject({ todays: { total: 3, done: 3 }, last: { sample: 3, match: 2 }, months: mar });
+
+    onDay('2026-03-11');
+    const rows = api.tabs[COUNT].grid.length;
+    expect(peek()).toMatchObject({ today: '2026-03-11', todays: { total: 0, done: 0 }, months: mar });
+    expect(api.tabs[COUNT].grid).toHaveLength(rows);
+
+    /* ความแม่นยำของหน้าสต๊อกนับย้อนหลัง 30 วัน รายเดือนยังอยู่ครบ */
+    onDay('2026-04-20');
+    expect(peek()).toMatchObject({ last: { sample: 0, match: 0 }, months: mar });
+  });
+
+  it('peek นับความแม่นยำเฉพาะรายการสุ่ม รายการเสี่ยงนับแล้วอยู่ใน counted กับ off', () => {
+    const api = script([row({ sku: 'NEG1', to: 'A-01-01', qty: 1 }), sale({ sku: 'NEG1', from: 'A-01-01', qty: 3, note: day('2026-03-01') }), shelf(1)]);
+    const v = load(api);
+    expect(v.lines.map((l) => l.src).sort()).toEqual(['สุ่ม', 'เสี่ยง']);
+    saveAll(api, v, 10);
+    expect(api({ api: 'tx-count', peek: '1' }).months['2026-03']).toEqual({ counted: 2, off: 1, sample: 1, match: 1 });
+  });
+
   it('เปิดครั้งแรกสร้างแท็บและออกรายการ โดยสมุดรายการไม่เปลี่ยนสักช่อง', () => {
     const api = script([shelf(1), shelf(2)]);
     const before = JSON.stringify(api.ledger);
@@ -1211,6 +1243,40 @@ describe('tx-api.gs — ข้อมูลกลาง', () => {
     expect(api({ api: 'shared-at' }).err).toEqual({});
   });
 
+  it('ชุด FIFO เปิดหน้าแล้วใช้ชุดที่มีได้ถึงหนึ่งวัน กดดึงใหม่ได้ ไม่ใส่ shared ไม่แตะ Drive', () => {
+    const { g, api } = setup();
+    expect(api({ api: 'tx-fifo' }).shared).toBeUndefined();
+    expect(g.files).toEqual({});
+    const first = api({ api: 'tx-fifo', shared: '1' });
+    expect(first.rows).toHaveLength(2);
+    expect(g.files[g.info('tx-fifo').file].name).toBe('tx-fifo · สมุดสมมติ.json');
+    api.ledger.push(row({ to: 'A-01-01', qty: 1 }));
+    at(23 * 60 * MIN);
+    expect(api({ api: 'tx-fifo', shared: '1' })).toEqual(first);
+    at(25 * 60 * MIN);
+    expect(api({ api: 'tx-fifo', shared: '1' }).rows).toHaveLength(3);
+    api.ledger.push(row({ to: 'A-01-01', qty: 1 }));
+    const pressed = api.post({ op: 'shared-fresh', api: 'tx-fifo', by: 'คนเอ' });
+    expect(pressed.rows).toHaveLength(4);
+    expect(api({ api: 'shared-at' }).shared['tx-fifo']).toMatchObject({ by: 'คนเอ', auto: false });
+  });
+
+  it('รอบตั้งเวลาคิดชุด FIFO เมื่อยังไม่มีหรือเก่าถึง 2 ชั่วโมง รอบอื่นคิดแค่ยอดคงเหลือ', () => {
+    const { g, api } = setup();
+    api.api.sharedTick();
+    expect(g.info('tx-fifo')).toMatchObject({ at: T0.getTime(), auto: true });
+    at(30 * MIN);
+    api.api.sharedTick();
+    expect(g.info('tx-summary').at).toBe(T0.getTime() + 30 * MIN);
+    expect(g.info('tx-fifo').at).toBe(T0.getTime());
+    at(90 * MIN);
+    api.api.sharedTick();
+    expect(g.info('tx-fifo').at).toBe(T0.getTime());
+    at(120 * MIN);
+    api.api.sharedTick();
+    expect(g.info('tx-fifo').at).toBe(T0.getTime() + 120 * MIN);
+  });
+
   it('installShared ตั้งเวลาทุก 30 นาทีทับตัวเดิมของตัวเอง ไม่แตะตัวตั้งเวลาอื่น และเก็บชุดแรกทันที', () => {
     const { g, api } = setup();
     g.triggers.push({ fn: 'backupNow', days: 1 }, { fn: 'sharedTick', minutes: 5 });
@@ -1218,6 +1284,7 @@ describe('tx-api.gs — ข้อมูลกลาง', () => {
     expect(g.triggers).toEqual([{ fn: 'backupNow', days: 1 }, { fn: 'sharedTick', minutes: 30 }]);
     expect(g.info('tx-summary')).toMatchObject({ auto: true });
     expect(msg).toContain('ยอดคงเหลือ');
+    expect(msg).toContain('FIFO');
     api.api.stopShared();
     expect(g.triggers).toEqual([{ fn: 'backupNow', days: 1 }]);
   });

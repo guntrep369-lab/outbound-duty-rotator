@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>ภาพรวมสต๊อก — WMS</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../wms-icon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="../wms-logo.png">
+<link rel="apple-touch-icon" href="../wms-icon-180.png">
+<link rel="stylesheet" href="../wms-theme.css">
+<link rel="stylesheet" href="../wms-gate.css">
+<script src="../wms-gate.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+
+/* สีชุดเดียวกับหน้า FIFO สต๊อก ตรวจด้วยตัวตรวจสีสำหรับคนตาบอดสีแล้ว
+   ผล: ตาม FIFO / ข้าม PO / ข้าม LOT เป็นสีสถานะ มีชื่อกำกับทุกที่ ไม่รู้ LOT เป็นลายเทา
+   อายุ: สีเดียว อ่อนคือของใหม่ เข้มคือของเก่า */
+.wms-main{--db-ok:#059669;--db-po:#F59E0B;--db-lot:#DC2626;
+  --db-unk:repeating-linear-gradient(135deg,#CBD5E1 0 3px,#E2E8F0 3px 6px);
+  --db-a1:#9AA6F9;--db-a2:#7C83F2;--db-a3:#4F46E5;--db-a4:#312E81}
+
+/* ── แถบแหล่งข้อมูล ชุดเดียวกับหน้า FIFO ── */
+.tx-src{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 20px;
+  background:var(--wms-surface2);border-bottom:1px solid var(--wms-border);font-size:12px}
+.tx-src .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;
+  background:var(--wms-surface);border:1px solid var(--wms-border);color:var(--wms-muted)}
+.tx-src .pill b{color:var(--wms-text);font-weight:600}
+.tx-src .pill.warn{background:#FEF3C7;border-color:#FDE68A;color:#92400E}
+.tx-src .sp{flex:1}
+.tx-src button{padding:4px 12px;border-radius:999px;border:1px solid var(--wms-border2);
+  background:var(--wms-surface);font-family:var(--wms-font);font-size:13px;color:#334155;cursor:pointer}
+.tx-src button:hover:not(:disabled){background:var(--wms-primary-light);border-color:var(--wms-primary);
+  color:var(--wms-primary-dark)}
+.tx-src button:disabled{opacity:.6;cursor:default}
+.tx-err{width:100%;font-size:13px;color:#B91C1C;font-weight:600}
+
+/* ── ส่วนของหน้า ── */
+.tx-body{padding:14px 20px 60px}
+.db-sec{margin-bottom:26px}
+.db-h{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;margin-bottom:10px}
+.db-h h3{font-size:15px;font-weight:700;color:var(--wms-text)}
+.db-h .sub{font-size:12px;color:var(--wms-muted)}
+.db-h .sp{flex:1}
+.db-sel{padding:6px 10px;border-radius:10px;border:1.5px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:14px;font-weight:600;color:var(--wms-text)}
+.db-btn{padding:6px 14px;border-radius:999px;border:1px solid var(--wms-primary);background:var(--wms-primary);
+  font-family:var(--wms-font);font-size:13px;font-weight:600;color:#fff;cursor:pointer}
+.db-btn:hover{filter:brightness(1.08)}
+.tx-note{font-size:13px;color:var(--wms-muted);line-height:1.6}
+.tx-note b{color:var(--wms-text)}
+.tx-warn{margin-bottom:12px;padding:10px 13px;border-radius:var(--wms-radius-sm);background:#FEF3C7;
+  border:1px solid #FDE68A;color:#92400E;font-size:13px;line-height:1.6}
+.tx-empty{padding:34px 20px;text-align:center;color:var(--wms-muted);font-size:14px;line-height:1.7;
+  background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:var(--wms-radius)}
+.tx-empty a{color:var(--wms-primary-dark);font-weight:600}
+
+/* ── การ์ดตัวเลข ── */
+.db-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.db-tile{display:flex;flex-direction:column;gap:3px;min-width:0;padding:13px 15px;border-radius:var(--wms-radius-sm);
+  background:var(--wms-surface);border:1px solid var(--wms-border);color:var(--wms-text);text-decoration:none}
+a.db-tile:hover{border-color:var(--wms-primary);box-shadow:0 1px 0 var(--wms-primary)}
+a.db-tile:focus-visible{outline:2px solid var(--wms-primary-dark);outline-offset:2px}
+.db-tile .top{display:flex;align-items:center;gap:8px}
+.db-tile small{font-size:12px;color:var(--wms-muted);font-weight:600}
+.db-tile .v{font-size:28px;font-weight:700;line-height:1.15;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+.db-tile .v span{font-size:14px;font-weight:600;color:var(--wms-muted);margin-left:4px}
+.db-tile .v.dim{font-size:18px;color:var(--wms-muted)}
+.db-tile i{font-style:normal;font-size:12px;color:var(--wms-muted);line-height:1.55}
+.db-tile i b{color:var(--wms-text);font-weight:600;font-variant-numeric:tabular-nums}
+.db-tile .go{margin-top:auto;padding-top:8px;font-size:12px;font-weight:600;color:var(--wms-primary-dark)}
+.db-tile ul{list-style:none;font-size:12px;color:var(--wms-muted);line-height:1.6}
+.db-tile ul b{color:var(--wms-text);font-weight:600;font-variant-numeric:tabular-nums}
+/* เปลี่ยนจากเดือนก่อน ขึ้นหรือลงไม่ได้แปลว่าดีหรือแย่เสมอไป จึงเป็นสีหมึก ไม่ใช่สีสถานะ */
+.db-tile .chg{font-size:12px;font-weight:600;color:#334155;font-variant-numeric:tabular-nums}
+.db-tile .chg em{font-style:normal;font-weight:500;color:var(--wms-muted)}
+
+/* สถานะ มีเครื่องหมายกับคำกำกับเสมอ ไม่ได้บอกด้วยสีอย่างเดียว */
+.db-st{display:inline-flex;align-items:center;gap:4px;margin-left:auto;padding:1px 8px;border-radius:999px;
+  font-size:11px;font-weight:700;font-style:normal;white-space:nowrap}
+.db-st.ok{background:#D1FAE5;color:#065F46}
+.db-st.warn{background:#FEF3C7;color:#92400E}
+.db-st.bad{background:#FEE2E2;color:#991B1B}
+.db-st.idle{background:var(--wms-surface2);color:var(--wms-muted)}
+
+/* แถบแบ่งส่วนเส้นบาง ไม่มีตัวเลขบนแถบ ตัวเลขอยู่ในคำอธิบายด้านล่าง */
+.db-split{display:flex;gap:2px;height:8px;margin:7px 0 5px;border-radius:999px;overflow:hidden;background:var(--wms-border)}
+.db-split span{display:block;height:100%;min-width:2px}
+.db-key{display:flex;flex-wrap:wrap;gap:3px 12px;list-style:none;font-size:12px;color:var(--wms-muted)}
+.db-key li{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.db-key b{color:var(--wms-text);font-weight:600;font-variant-numeric:tabular-nums}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;flex-shrink:0}
+.c-ok{background:var(--db-ok)}
+.c-po{background:var(--db-po)}
+.c-lot{background:var(--db-lot)}
+.c-u{background:var(--db-unk)}
+.c-a1{background:var(--db-a1)}
+.c-a2{background:var(--db-a2)}
+.c-a3{background:var(--db-a3)}
+.c-a4{background:var(--db-a4)}
+
+/* ── กราฟหยิบขายรายวัน ── */
+.db-card{margin-top:10px;padding:14px 15px;background:var(--wms-surface);border:1px solid var(--wms-border);
+  border-radius:var(--wms-radius-sm)}
+.db-card h4{font-size:14px;font-weight:700;color:var(--wms-text)}
+.db-card .sub{display:block;margin:2px 0 8px;font-size:12px;color:var(--wms-muted)}
+.db-chart{display:grid;grid-template-columns:44px 1fr;margin-top:6px}
+.db-y{position:relative;height:200px}
+.db-y span{position:absolute;right:6px;transform:translateY(-50%);font-size:11px;color:var(--wms-muted);
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.db-plot{position:relative;height:200px}
+.db-line{position:absolute;left:0;right:0;border-top:1px solid #EEF2F6}
+.db-line.base{border-top-color:var(--wms-border2)}
+.db-cols{position:absolute;inset:0;display:flex;align-items:flex-end;gap:2px}
+.db-col{flex:1;min-width:0;height:100%;display:flex;align-items:flex-end;justify-content:center;padding:0;border:0;
+  background:none;cursor:default;font:inherit}
+.db-col:hover,.db-col:focus-visible{background:rgba(79,70,229,.06);outline:none}
+.db-col:focus-visible{box-shadow:inset 0 0 0 2px var(--wms-primary-dark)}
+/* ส่วนแรกอยู่ติดฐาน ส่วนบนสุดมุมมน 4px ฐานเหลี่ยม ช่องว่าง 2px สีพื้นคั่นทุกส่วน */
+.db-stack{width:100%;max-width:24px;display:flex;flex-direction:column-reverse;gap:2px}
+.db-stack span{display:block;min-height:1px}
+.db-stack span:last-child{border-radius:4px 4px 0 0}
+.db-x{display:flex;gap:2px;margin:4px 0 0 44px}
+.db-x span{flex:1;min-width:0;text-align:center;font-size:11px;color:var(--wms-muted);white-space:nowrap;overflow:visible}
+.db-tip{position:absolute;top:4px;z-index:5;min-width:150px;padding:8px 10px;border-radius:8px;
+  background:var(--wms-surface);border:1px solid var(--wms-border2);box-shadow:0 6px 18px rgba(15,23,42,.12);
+  font-size:12px;color:var(--wms-muted);pointer-events:none}
+.db-tip[hidden]{display:none}
+.db-tip .d{font-weight:600;color:var(--wms-text);margin-bottom:3px}
+.db-tip .t{font-size:13px;color:var(--wms-text);margin-bottom:4px}
+.db-tip .t strong{font-weight:700}
+.db-tip .r{display:flex;align-items:center;gap:6px;line-height:1.6}
+.db-tip .r strong{color:var(--wms-text);font-weight:600;font-variant-numeric:tabular-nums}
+.db-tip .k{display:inline-block;width:12px;height:3px;border-radius:2px;flex-shrink:0}
+.db-legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--wms-muted)}
+.db-legend span{display:inline-flex;align-items:center;gap:5px}
+.db-legend b{color:var(--wms-text);font-weight:600;font-variant-numeric:tabular-nums}
+.db-more{margin-top:10px;font-size:13px}
+.db-more summary{cursor:pointer;color:var(--wms-primary-dark);font-weight:600}
+
+/* ── ตาราง ── */
+.tx-wrap{overflow-x:auto;margin-top:8px;border:1px solid var(--wms-border);border-radius:var(--wms-radius-sm)}
+.tx-tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tx-tbl th{text-align:left;padding:8px 10px;background:var(--wms-surface2);font-size:12px;
+  font-weight:600;color:var(--wms-muted);border-bottom:1px solid var(--wms-border);white-space:nowrap}
+.tx-tbl td{padding:8px 10px;border-bottom:1px solid #F1F5F9;white-space:nowrap;font-variant-numeric:tabular-nums}
+.tx-tbl tr:last-child td{border-bottom:0}
+.tx-tbl .num{text-align:right}
+.tx-tbl tr.on td{background:var(--wms-primary-light)}
+.tx-tbl .dim{color:var(--wms-faint)}
+
+@media (max-width:1100px){ .db-grid{grid-template-columns:repeat(2,minmax(0,1fr))} }
+@media (max-width:640px){
+  .mod-title h2 .en,.mod-title p{display:none}
+  .tx-src{padding:9px 16px}
+  .tx-body{padding:12px 16px 60px}
+  .db-grid{grid-template-columns:minmax(0,1fr)}
+  .db-tile .v{font-size:24px}
+  .db-chart{grid-template-columns:36px 1fr}
+  .db-x{margin-left:36px}
+  .db-y,.db-plot{height:170px}
+}
+@media print{
+  .tx-src button,.db-btn,.db-tile .go,.db-more{display:none}
+  .db-tile,.db-card{break-inside:avoid}
+}
+</style>
+</head>
+<body data-wms-module="dashboard">
+
+<div class="wms-shell">
+<div data-wms-shell="dashboard" data-root="../"></div>
+<div class="wms-main">
+
+  <div class="mod-head">
+    <div class="mod-title">
+      <div class="ic"><img src="../icons/boxes.png" alt="" width="38" height="38"></div>
+      <div>
+        <h2>ภาพรวมสต๊อก<span class="en"> · Stock Overview</span></h2>
+        <p>สุขภาพสต๊อกตอนนี้ และสรุปรายเดือนให้หัวหน้า — ตัวเลขชุดเดียวกับหน้าสต๊อกราย Location, FIFO และเช็ครายการตัดสต๊อก อ่านอย่างเดียว ไม่แก้ชีต</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="tx-src" id="src"></div>
+  <div class="tx-body">
+    <section class="db-sec" aria-labelledby="nowH">
+      <div class="db-h"><h3 id="nowH">ตอนนี้</h3><span class="sub" id="nowSub"></span></div>
+      <div id="now"></div>
+    </section>
+    <section class="db-sec" aria-labelledby="monthH">
+      <div class="db-h" id="monthBar"><h3 id="monthH">สรุปรายเดือน</h3></div>
+      <div id="month"></div>
+    </section>
+  </div>
+
+</div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+
+<script type="module" src="../wms-shell.js"></script>
+<script src="../wms-settings.js"></script>
+<script src="../wms-gas.js"></script>
+<script src="../wms-shared.js"></script>
+<script src="../wms-tx.js"></script>
+<script src="../wms-fifo.js"></script>
+<script src="../wms-dash.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const f = n => Math.round(n).toLocaleString('en-US');
+const dm = d => { const p = String(d || '').split('-'); return p.length === 3 ? `${+p[2]}/${+p[1]}` : ''; };
+const when = ms => new Date(ms).toLocaleString('th-TH', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
+const hm = ms => new Date(ms).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+
+const TXU = WmsSettings.txUrl();
+const CUTU = WmsSettings.cutUrl();
+const CUT_CACHE = 'wms:cut:result';   // ผลตรวจล่าสุดบนเครื่องนี้ของหน้าเช็ครายการตัดสต๊อก
+const PEEK_EVERY = 5 * 60000;         // ผลนับเข้ามาทั้งวัน ถามซ้ำทุก 5 นาทีพอ
+
+/* ข้อมูลกลางแต่ละชุด หน้านี้ไม่คิดอะไรจากชีตเอง */
+let SUM = null;    // tx-summary
+let FIFO = null;   // tx-fifo
+let PEEK = null;   // tx-count&peek=1
+let PEEK_AT = 0;
+let CUT = null;    // cut-check
+let LOG = null;    // cut-fixlog
+let CUT_LOCAL = false;   // ผลตรวจมาจากเครื่องนี้ สคริปต์ยังไม่มีชุดกลาง
+const LOAD = { sum: '', fifo: '', cut: '' };
+const ERR = { sum: '', fifo: '', cut: '', peek: '' };
+const RUN = { sum: null, fifo: null, cut: null };   // มีคนกำลังดึงชุดใหม่อยู่
+let MONTH = '';
+const DONE = new Map();   // เดือน → WmsDash.month() ของชุด FIFO ที่ถืออยู่
+let FILLING = 0;
+
+/* ── โหลด ───────────────────────────────────────────────────────────────── */
+
+async function loadSum(fresh, quiet) {
+  if (!TXU || LOAD.sum) return;
+  LOAD.sum = fresh ? 'กำลังอ่านยอดคงเหลือใหม่…' : 'กำลังโหลดยอดคงเหลือ…';
+  ERR.sum = '';
+  if (!quiet) render();
+  try {
+    const opts = { retries: 1, timeoutMs: 240000 };
+    const r = fresh ? await WmsTx.pull(TXU, opts) : await WmsTx.pullShared(TXU, opts);
+    if (r.busy) { RUN.sum = r.busy; WATCH.soon(); }
+    else { SUM = r; RUN.sum = null; }
+  } catch (e) { ERR.sum = e.message; }
+  LOAD.sum = '';
+  render();
+}
+
+/**
+ * ชุด FIFO มี shared ติดมาแปลว่าสคริปต์เป็นรุ่นที่มีผลนับแบบ peek ด้วย (มาพร้อมกัน)
+ * สคริปต์รุ่นก่อนไม่รู้จัก peek จะออกรายการนับของวันนี้ให้ทันที หน้านี้จึงไม่ถามจนกว่าจะรู้ว่าเป็นรุ่นใหม่
+ */
+async function loadFifo(fresh, quiet) {
+  if (!TXU || LOAD.fifo) return;
+  LOAD.fifo = fresh ? 'กำลังอ่านสมุดทั้งชีตใหม่…' : 'กำลังโหลดชุด FIFO…';
+  ERR.fifo = '';
+  if (!quiet) render();
+  try {
+    const opts = { retries: 1, timeoutMs: 240000 };
+    let r;
+    if (fresh) {
+      r = await WmsShared.press(TXU, 'tx-fifo', null, opts);
+      if (r && r.error === WmsShared.OLD) r = await WmsGas.json(TXU, 'tx-fifo', opts);
+    } else {
+      r = await WmsShared.read(TXU, 'tx-fifo', opts);
+    }
+    if (r && r.busy && !r.rows) { RUN.fifo = r.busy; WATCH.soon(); }
+    else {
+      if (r.error) throw new Error(r.error);
+      if (r.app !== 'transaction' || !r.rows) throw new Error('สคริปต์ tx-api.gs ยังเป็นรุ่นที่ไม่มี FIFO ให้วางโค้ดใหม่แล้ว Deploy เป็น New version');
+      FIFO = r;
+      RUN.fifo = null;
+      DONE.clear();
+      const list = WmsFifo.months(FIFO);
+      if (!list.includes(MONTH)) MONTH = defaultMonth(list);
+      if (FIFO.shared && !PEEK) loadPeek();
+    }
+  } catch (e) { ERR.fifo = e.message; }
+  LOAD.fifo = '';
+  render();
+  fillMonths();
+}
+
+async function loadPeek() {
+  if (!TXU) return;
+  PEEK_AT = Date.now();
+  try {
+    const r = await WmsGas.json(TXU, 'tx-count&peek=1', { retries: 1 });
+    if (r && r.error) throw new Error(r.error);
+    if (r && r.peek) { PEEK = r; ERR.peek = ''; }
+  } catch (e) { ERR.peek = e.message; }
+  render();
+}
+
+function localCut() {
+  try {
+    const r = JSON.parse(localStorage.getItem(CUT_CACHE) || 'null');
+    return r && r.app === 'cut' && r.kinds ? r : null;
+  } catch (e) { return null; }
+}
+
+/**
+ * ผลตรวจตัดสต๊อก หน้านี้ไม่สั่งตรวจเอง (ตรวจหนึ่งรอบใช้หลายนาที) อ่านแค่ชุดกลางที่มีคนตรวจไว้
+ * สคริปต์ที่ยังไม่มีชุดกลาง ใช้ผลบนเครื่องนี้ถ้าเคยเปิดหน้าเช็ครายการตัดสต๊อก
+ * ผลบนเครื่องเป็นชุดเดียวกับชุดกลางอยู่แล้ว ไม่ต้องโหลดซ้ำ ไฟล์ราวสี่ร้อยกิโลไบต์
+ */
+async function loadCut(st) {
+  if (!CUTU || LOAD.cut) return;
+  LOAD.cut = 'กำลังโหลดผลตรวจตัดสต๊อก…';
+  ERR.cut = '';
+  render();
+  try {
+    st = st || await WmsShared.status(CUTU);
+    const info = WmsShared.knows(st, 'cut') && st.shared['cut-check'];
+    const mine = localCut();
+    if (info) {
+      CUT = mine && WmsShared.stamp(mine) >= info.at ? mine : await WmsShared.read(CUTU, 'cut-check', { retries: 1, timeoutMs: 120000 });
+      if (CUT.error) throw new Error(CUT.error);
+      CUT_LOCAL = false;
+    } else {
+      CUT = mine;
+      CUT_LOCAL = !!mine;
+    }
+    if (CUT) await loadLog();
+  } catch (e) { ERR.cut = e.message; }
+  LOAD.cut = '';
+  render();
+}
+
+async function loadLog() {
+  try {
+    const r = await WmsGas.json(CUTU, 'cut-fixlog', { retries: 1 });
+    LOG = r && r.log ? r : null;
+  } catch (e) { LOG = null; }
+}
+
+/** ปุ่มดึงใหม่: ยอดคงเหลือกับชุด FIFO ผลตรวจตัดสต๊อกกดตรวจใหม่ที่หน้าของมันเอง */
+async function refresh() {
+  await Promise.all([loadSum(true), loadFifo(true)]);
+  if (FIFO && FIFO.shared) loadPeek();
+}
+
+/**
+ * ถามทุกนาทีว่ามีชุดใหม่ไหม มีแล้วโหลดเอง ไม่ต้องกด
+ * กำลังเลือกเดือนอยู่ (เปิดรายการค้าง) รอรอบหน้า ไม่งั้นรายการจะปิดเอง
+ */
+async function checkShared() {
+  if (WmsShared.typing()) return true;
+  let soon = false;
+  if (TXU) {
+    const st = await WmsShared.status(TXU);
+    if (WmsShared.knows(st, 'transaction')) {
+      RUN.sum = LOAD.sum ? RUN.sum : WmsShared.running(st, 'tx-summary');
+      RUN.fifo = LOAD.fifo ? RUN.fifo : WmsShared.running(st, 'tx-fifo');
+      soon = !!(RUN.sum || RUN.fifo);
+      const jobs = [];
+      if (!RUN.sum && !LOAD.sum && WmsShared.newer(st, 'tx-summary', SUM)) jobs.push(loadSum(false, true));
+      if (!RUN.fifo && !LOAD.fifo && WmsShared.newer(st, 'tx-fifo', FIFO)) jobs.push(loadFifo(false, true));
+      if (PEEK && Date.now() - PEEK_AT >= PEEK_EVERY) jobs.push(loadPeek());
+      await Promise.all(jobs);
+    }
+  }
+  if (CUTU) {
+    const st = await WmsShared.status(CUTU);
+    if (WmsShared.knows(st, 'cut')) {
+      RUN.cut = WmsShared.running(st, 'cut-check');
+      soon = soon || !!RUN.cut;
+      if (!RUN.cut && (CUT_LOCAL || WmsShared.newer(st, 'cut-check', CUT)) && st.shared['cut-check']) await loadCut(st);
+      else if (CUT && LOG && st.logRows !== undefined && st.logRows !== LOG.rows) await loadLog();
+    }
+  }
+  render();
+  return soon;
+}
+
+/* ── เดือน ──────────────────────────────────────────────────────────────── */
+
+/** สรุปรายเดือนพูดถึงเดือนที่จบแล้ว ต้นเดือนเปิดมาจึงเห็นเดือนก่อน เดือนนี้เลือกดูเองได้ */
+function defaultMonth(list) {
+  const now = FIFO.today.slice(0, 7);
+  return list.find((m) => m < now) || list[0] || now;
+}
+
+function monthOf(ym) {
+  if (!FIFO || !WmsFifo.months(FIFO).includes(ym)) return null;
+  if (!DONE.has(ym)) DONE.set(ym, WmsDash.month(WmsFifo.analyze(FIFO, ym), FIFO.last || FIFO.today));
+  return DONE.get(ym);
+}
+
+/** ตารางเทียบรายเดือนคิดทีละเดือนตอนว่าง เดือนละราวหนึ่งในสิบวินาที สมุดยิ่งยาวยิ่งนาน ไม่ให้หน้าค้าง */
+function fillMonths() {
+  clearTimeout(FILLING);
+  if (!FIFO) return;
+  const left = WmsFifo.months(FIFO).filter((m) => !DONE.has(m));
+  if (!left.length) return;
+  FILLING = setTimeout(() => {
+    monthOf(left[0]);
+    renderTable();
+    fillMonths();
+  }, 30);
+}
+
+/** ผลตรวจตัดสต๊อกของเดือนนี้ ไฟล์ตัดสต๊อกเป็นของเดือนอื่นได้ null */
+function cutOf(ym) {
+  if (!CUT) return null;
+  const c = WmsDash.cut(CUT, LOG);
+  return c.ym === ym ? c : null;
+}
+
+/* ── แถบบน ─────────────────────────────────────────────────────────────── */
+
+function srcPill(label, data, run, load) {
+  if (load) return `<span class="pill">⏳ ${esc(load)}</span>`;
+  if (run) return `<span class="pill warn">⏳ ${esc(label)}: ${esc(WmsShared.runner(run))} กำลังดึงชุดใหม่ (เริ่ม ${esc(hm(run.at))})</span>`;
+  if (!data) return '';
+  const who = WmsShared.who(data);
+  return `<span class="pill" title="ทุกเครื่องเห็นชุดเดียวกัน">🕐 ${esc(label)} <b>${esc(when(WmsShared.stamp(data)))}</b>${who ? ` · ${esc(who)}` : ''}</span>`;
+}
+
+function backupPill() {
+  if (!SUM) return '';
+  const b = WmsTx.backupState(SUM.backup, Date.now());
+  if (b.days === null) return `<span class="pill warn">⚠️ ยังไม่ได้ตั้ง Backup</span>`;
+  if (!b.ok) return `<span class="pill warn">⚠️ Backup ล่าสุด ${b.days} วันก่อน</span>`;
+  return `<span class="pill">💾 Backup <b>${esc(when(SUM.backup.at))}</b></span>`;
+}
+
+function renderSrc() {
+  let html = '';
+  if (!TXU) {
+    html = `<span class="pill">ยังไม่ได้ตั้ง Apps Script URL ของ Transaction — <a href="../settings/">ตั้งที่หน้าตั้งค่า</a></span>`;
+  } else {
+    html += srcPill('ยอดคงเหลือ', SUM, RUN.sum, LOAD.sum) + srcPill('FIFO', FIFO, RUN.fifo, LOAD.fifo);
+    if (CUT && !LOAD.cut) {
+      html += RUN.cut ? srcPill('ตัดสต๊อก', CUT, RUN.cut, '')
+        : `<span class="pill" title="${CUT_LOCAL ? 'ผลตรวจบนเครื่องนี้ สคริปต์ตัดสต๊อกยังไม่มีชุดกลาง' : 'ทุกเครื่องเห็นชุดเดียวกัน'}">🕐 ตัดสต๊อก ตรวจ <b>${esc(when(WmsShared.stamp(CUT) || Date.parse(CUT.at)))}</b>${CUT_LOCAL ? ' · เครื่องนี้' : WmsShared.who(CUT) ? ` · ${esc(WmsShared.who(CUT))}` : ''}</span>`;
+    }
+    html += backupPill();
+    html += '<span class="sp"></span>';
+    const busy = LOAD.sum || LOAD.fifo || RUN.sum || RUN.fifo;
+    html += `<button id="loadBtn" ${busy ? 'disabled' : ''} title="อ่านสมุดใหม่ทั้งยอดคงเหลือและชุด FIFO ทุกเครื่องจะเห็นชุดนี้">${busy ? 'รอชุดใหม่…' : '🔄 ดึงใหม่'}</button>`;
+  }
+  const errs = [ERR.sum && `ยอดคงเหลือ: ${ERR.sum}`, ERR.fifo && `FIFO: ${ERR.fifo}`, ERR.cut && `ตัดสต๊อก: ${ERR.cut}`].filter(Boolean);
+  if (errs.length) html += `<div class="tx-err">ดึงข้อมูลไม่สำเร็จ — ${esc(errs.join(' · '))}</div>`;
+  $('src').innerHTML = html;
+  const btn = $('loadBtn');
+  if (btn) btn.onclick = refresh;
+}
+
+/* ── ตอนนี้ ─────────────────────────────────────────────────────────────── */
+
+const st = (tone, text) => `<em class="db-st ${tone}">${tone === 'ok' ? '✓' : tone === 'idle' ? '•' : '!'} ${esc(text)}</em>`;
+const tile = (o) => `<${o.href ? `a href="${esc(o.href)}"` : 'div'} class="db-tile">
+    <div class="top"><small>${esc(o.title)}</small>${o.st || ''}</div>
+    ${o.body}
+    ${o.href ? `<span class="go">${esc(o.go)} →</span>` : ''}
+  </${o.href ? 'a' : 'div'}>`;
+const waiting = (title, text) => tile({ title, body: `<div class="v dim">${esc(text)}</div>` });
+
+/** แถบแบ่งส่วนกับคำอธิบาย ตัวเลขทุกส่วนอยู่ในคำอธิบาย ไม่ต้องอ่านจากสี */
+function split(parts, what) {
+  const all = parts.reduce((a, p) => a + p.qty, 0);
+  if (!all) return '';
+  const label = parts.map((p) => `${p.label} ${f(p.qty)} ชิ้น`).join(', ');
+  return `<div class="db-split" role="img" aria-label="${esc(`${what}: ${label}`)}">${parts.filter((p) => p.qty > 0)
+      .map((p) => `<span class="c-${p.cls}" style="flex:${p.qty}" title="${esc(`${p.label} ${f(p.qty)} ชิ้น (${Math.round(p.qty / all * 1000) / 10}%)`)}"></span>`).join('')}</div>
+    <ul class="db-key">${parts.map((p) => `<li><i class="sw c-${p.cls}"></i>${esc(p.label)} <b>${f(p.qty)}</b></li>`).join('')}</ul>`;
+}
+
+function stockTile(now) {
+  if (!now) return waiting('สต๊อกในคลัง', LOAD.sum || (ERR.sum ? 'ดึงไม่สำเร็จ' : 'ยังไม่มีข้อมูล'));
+  return tile({
+    title: 'สต๊อกในคลัง', href: '../stock-location/?tab=find', go: 'หาของ',
+    body: `<div class="v">${f(now.net)}<span>ชิ้น</span></div>
+      <i><b>${f(now.skus)}</b> SKU · <b>${f(now.locs)}</b> Location</i>
+      <i>โลเปิด <b>${f(now.open)}</b> · สำรอง <b>${f(now.reserve)}</b>${now.special ? ` · QA/IQA/RIB <b>${f(now.special)}</b>` : ''}</i>`,
+  });
+}
+
+function ageTile() {
+  const list = FIFO ? WmsFifo.months(FIFO) : [];
+  const m = list.length ? monthOf(list[0]) : null;
+  if (!m) return waiting('อายุสต๊อก', LOAD.fifo || (ERR.fifo ? 'ดึงไม่สำเร็จ' : 'ยังไม่มีข้อมูล'));
+  const a = m.ages;
+  return tile({
+    title: 'อายุสต๊อก (ตามเดือนของ LOT)', href: '../fifo/?tab=age', go: 'ดูอายุสต๊อก',
+    body: `<div class="v">${a.oldPct === null ? '—' : `${a.oldPct}%`}<span>อายุ 7 เดือนขึ้นไป</span></div>
+      <i><b>${f(a.old)}</b> ชิ้น จากที่รู้ LOT <b>${f(a.known)}</b> ชิ้น</i>
+      ${split(a.parts, 'อายุสต๊อก')}`,
+  });
+}
+
+function refillTile(now) {
+  if (!now) return waiting(`ต้องเติมภายใน ${WmsDash.REFILL_DAYS} วัน`, LOAD.sum || '—');
+  const r = now.refill;
+  if (!r.saleDays) return tile({ title: `ต้องเติมภายใน ${r.days} วัน`, href: '../stock-location/?tab=fill', go: 'ดูเหตุผล', st: st('warn', 'คิดไม่ได้'), body: '<i>ไม่พบวันที่ขายที่อ่านออกในชีต จึงคิดยอดขายต่อวันไม่ได้</i>' });
+  const n = r.ready + r.none;
+  return tile({
+    title: `ต้องเติมภายใน ${r.days} วัน`, href: '../stock-location/?tab=fill', go: 'ดูรายการต้องเติม',
+    st: !n ? st('ok', 'ไม่มี') : r.none ? st('warn', `ไม่มีสำรอง ${r.none}`) : st('warn', 'ต้องเติม'),
+    body: `<div class="v">${f(n)}<span>SKU</span></div>
+      <i>ไปดึงของมาเติม <b>${f(r.ready)}</b> · ไม่มีสำรองให้เติม <b>${f(r.none)}</b></i>
+      <i>คิดจากยอดขายเฉลี่ย ${r.saleDays} วันล่าสุด</i>`,
+  });
+}
+
+function issueTile(now) {
+  if (!now) return waiting('ข้อมูลผิดในชีต', LOAD.sum || '—');
+  const i = now.issues;
+  return tile({
+    title: 'ข้อมูลผิดในชีต Transaction', href: '../stock-location/?tab=bad', go: 'ดูจุดที่ผิด',
+    st: i.total ? st('warn', 'ต้องแก้') : st('ok', 'ไม่มี'),
+    body: `<div class="v">${f(i.total)}<span>จุด</span></div>
+      ${i.kinds.length ? `<ul>${i.kinds.slice(0, 3).map((k) => `<li>${esc(k.label)} <b>${f(k.n)}</b></li>`).join('')}${i.kinds.length > 3 ? `<li>และอีก ${i.kinds.length - 3} เรื่อง</li>` : ''}</ul>` : '<i>ชีตไม่มีจุดที่ทำให้ยอดเพี้ยน</i>'}`,
+  });
+}
+
+function countTile() {
+  const c = WmsDash.countNow(PEEK);
+  if (!c) {
+    const why = FIFO && !FIFO.shared ? 'วาง tx-api.gs รุ่นล่าสุดก่อน จึงจะเห็นผลนับที่นี่' : ERR.peek ? `ดึงไม่สำเร็จ: ${ERR.peek}`
+      : FIFO || LOAD.fifo ? 'กำลังโหลด…' : 'ยังไม่มีข้อมูล';
+    return tile({ title: 'นับสต๊อก', href: '../stock-location/?tab=count', go: 'เปิดใบนับ', body: `<i>${esc(why)}</i>` });
+  }
+  const tone = !c.total ? st('idle', 'ยังไม่เปิดใบนับ') : c.done < c.total ? st('warn', `ค้าง ${c.total - c.done}`) : st('ok', 'นับครบ');
+  return tile({
+    title: 'นับสต๊อกวันนี้', href: '../stock-location/?tab=count', go: 'เปิดใบนับ', st: tone,
+    body: `${c.total ? `<div class="v">${f(c.done)}<span>/ ${f(c.total)} รายการ</span></div>` : '<div class="v dim">ยังไม่มีรายการ</div>'}
+      <i>${c.pct === null ? 'ยังไม่มีผลสุ่มนับใน 30 วันล่าสุด' : `สุ่มนับตรง <b>${c.pct}%</b> (${f(c.match)} จาก ${f(c.sample)} รายการ ใน 30 วัน)`}</i>`,
+  });
+}
+
+function cutTile() {
+  if (!CUTU) return tile({ title: 'ตัดสต๊อก', href: '../settings/', go: 'ไปหน้าตั้งค่า', body: '<i>ยังไม่ได้ตั้ง Apps Script URL ของไฟล์ตัดสต๊อก</i>' });
+  if (!CUT) return tile({ title: 'ตัดสต๊อก', href: '../cut-check/', go: 'ไปตรวจ', body: `<i>${esc(LOAD.cut || 'ยังไม่มีผลตรวจ — เปิดหน้าเช็ครายการตัดสต๊อกแล้วกดตรวจ')}</i>` });
+  const c = WmsDash.cut(CUT, LOG);
+  const span = c.ym ? WmsDash.monthShort(c.ym) : `${dm(c.from)}–${dm(c.to)}`;
+  return tile({
+    title: `ตัดสต๊อก ${span}`, href: '../cut-check/', go: 'ดูรายการต้องแก้',
+    st: c.todo ? st('warn', 'ต้องแก้') : st('ok', 'ตรงหมด'),
+    body: `<div class="v">${f(c.todo)}<span>รายการต้องแก้</span></div>
+      <i>ตัดผิด / ตัดเกิน <b>${f(c.fix)}</b> · ยังไม่ตัด <b>${f(c.under)}</b></i>
+      <i>ตรงกับ Report <b>${c.okPct === null ? '—' : `${c.okPct}%`}</b> ของบรรทัด${c.marks ? ` · กดแก้แล้ว <b>${f(c.marks.fixed)}</b>` : ''}</i>`,
+  });
+}
+
+function renderNow() {
+  if (!TXU) {
+    $('now').innerHTML = `<div class="tx-empty art-link">ตั้ง Apps Script URL ของ Transaction ก่อน — <a href="../settings/">ไปหน้าตั้งค่า</a></div>`;
+    $('nowSub').textContent = '';
+    return;
+  }
+  const now = SUM ? WmsDash.stockNow(SUM, Date.now()) : null;
+  $('nowSub').textContent = SUM && SUM.lastDate ? `สมุดลงขายถึง ${dm(SUM.lastDate)}` : '';
+  $('now').innerHTML = `<div class="db-grid">${stockTile(now)}${refillTile(now)}${issueTile(now)}${ageTile()}${countTile()}${cutTile()}</div>`;
+}
+
+/* ── รายเดือน ───────────────────────────────────────────────────────────── */
+
+/** ▲ 4.1% จาก ก.ย. 69 — เทียบไม่ได้ไม่ใส่อะไร */
+function chg(now, before, unit) {
+  const c = WmsDash.change(now, before, unit);
+  if (!c) return '';
+  const sign = c.d > 0 ? '▲' : c.d < 0 ? '▼' : '';
+  const amount = c.d === 0 ? 'เท่าเดิม' : `${sign} ${Math.abs(c.d)}${c.unit === 'pt' ? ' จุด' : '%'}`;
+  return `<span class="chg">${amount} <em>จาก ${esc(WmsDash.monthShort(WmsDash.prevMonth(MONTH)))}</em></span>`;
+}
+
+function fifoTile(title, g, prev, what, ok) {
+  const parts = [{ cls: 'ok', label: 'ตาม FIFO', qty: g.ok }, { cls: 'po', label: 'ข้าม PO', qty: g.po }, { cls: 'lot', label: 'ข้าม LOT', qty: g.lot }];
+  return tile({
+    title, href: '../fifo/?tab=skip', go: 'ดูรายการที่ข้าม',
+    body: `<div class="v">${g.pct === null ? '—' : `${g.pct}%`}<span>ตาม FIFO</span></div>
+      ${ok && g.pct !== null ? chg(g.pct, prev ? prev.pct : null, 'pt') : ''}
+      <i>จาก <b>${f(g.judged)}</b> ชิ้นที่ตรวจได้${g.unknown ? ` · ไม่รู้ LOT ตรวจไม่ได้ ${f(g.unknown)}` : ''}</i>
+      ${split(parts, what)}`,
+  });
+}
+
+function renderMonth() {
+  const bar = $('monthBar');
+  const list = FIFO ? WmsFifo.months(FIFO) : [];
+  bar.innerHTML = `<h3 id="monthH">สรุปรายเดือน</h3>` + (list.length ? `<select class="db-sel" id="pick" aria-label="เดือนของสรุป">${list.map((x) =>
+      `<option value="${x}" ${x === MONTH ? 'selected' : ''}>${esc(WmsDash.monthName(x))}</option>`).join('')}</select>
+    <span class="sp"></span><button class="db-btn" id="copyBtn" title="ข้อความสั้น ๆ วางใน LINE ได้เลย">📋 คัดลอกสรุปส่งหัวหน้า</button>` : '');
+  const pick = $('pick');
+  if (pick) pick.onchange = (e) => { MONTH = e.target.value; pick.blur(); renderMonth(); };
+  const copy = $('copyBtn');
+  if (copy) copy.onclick = copyBrief;
+
+  if (!TXU) { $('month').innerHTML = ''; return; }
+  const m = monthOf(MONTH);
+  if (!m) {
+    $('month').innerHTML = `<div class="tx-empty">${esc(LOAD.fifo || (ERR.fifo ? 'ดึงชุด FIFO ไม่สำเร็จ ดูข้อความด้านบน' : 'ยังไม่มีข้อมูล'))}</div>`;
+    return;
+  }
+  const prevYm = WmsDash.prevMonth(MONTH);
+  const prev = list.includes(prevYm) ? monthOf(prevYm) : null;
+  const ok = WmsDash.comparable(m, prev);
+  const now = MONTH >= (FIFO.last || FIFO.today).slice(0, 7);
+  const count = WmsDash.countMonth(PEEK, MONTH);
+  const cut = cutOf(MONTH);
+
+  const tiles = [
+    tile({
+      title: 'ยอดหยิบขาย', body: `<div class="v">${f(m.sale.qty)}<span>ชิ้น</span></div>
+        ${ok ? chg(m.perDay, prev.perDay) : ''}
+        <i>ใน <b>${m.saleDays}</b> วันที่มีขาย · เฉลี่ยวันละ <b>${f(m.perDay)}</b> ชิ้น</i>
+        <i>เติมของเข้าโลขาย <b>${f(m.refill.qty)}</b> ชิ้น</i>
+        ${!ok && prev ? `<i>ไม่เทียบกับ ${esc(WmsDash.monthShort(prevYm))} เพราะมีวันขายไม่ถึง ${WmsDash.COMPARE_DAYS} วัน</i>` : ''}`,
+    }),
+    fifoTile('FIFO ตอนหยิบขาย', m.sale, prev && prev.sale, 'หยิบขาย', ok),
+    fifoTile('FIFO ตอนเติมของเข้าโลขาย', m.refill, prev && prev.refill, 'เติมของ', ok),
+    tile({
+      title: now ? 'อายุสต๊อก ล่าสุด' : `อายุสต๊อก ณ สิ้นเดือน`, href: '../fifo/?tab=age', go: 'ดูอายุสต๊อก',
+      body: `<div class="v">${m.ages.oldPct === null ? '—' : `${m.ages.oldPct}%`}<span>อายุ 7 เดือนขึ้นไป</span></div>
+        <i>คงเหลือ <b>${f(m.ages.total)}</b> ชิ้น · อายุ 7 เดือนขึ้นไป <b>${f(m.ages.old)}</b></i>
+        ${split(m.ages.parts, 'อายุสต๊อก')}`,
+    }),
+    count ? tile({
+      title: 'นับสต๊อก', href: '../stock-location/?tab=count', go: 'ดูผลนับ',
+      body: `<div class="v">${count.pct === null ? '—' : `${count.pct}%`}<span>สุ่มนับตรง</span></div>
+        <i>สุ่มนับ <b>${f(count.sample)}</b> รายการ ตรง <b>${f(count.match)}</b></i>
+        <i>นับทั้งหมด <b>${f(count.counted)}</b> รายการ ไม่ตรง <b>${f(count.off)}</b></i>`,
+    }) : tile({ title: 'นับสต๊อก', body: `<i>${PEEK ? 'เดือนนี้ยังไม่มีผลนับ' : FIFO.shared ? 'กำลังโหลดผลนับ…' : 'วาง tx-api.gs รุ่นล่าสุดก่อน จึงจะเห็นผลนับ'}</i>` }),
+    cut ? tile({
+      title: 'ตัดสต๊อกเทียบ Report', href: '../cut-check/', go: 'ดูรายการต้องแก้',
+      st: cut.todo ? st('warn', `ต้องแก้ ${f(cut.todo)}`) : st('ok', 'ตรงหมด'),
+      body: `<div class="v">${cut.okPct === null ? '—' : `${cut.okPct}%`}<span>ตรงกับ Report</span></div>
+        <i>${f(cut.okLines)} บรรทัดตรงกัน</i>
+        <ul>${cut.kinds.slice(0, 4).map((k) => `<li>${esc(k.label)} <b>${f(k.n)}</b></li>`).join('')}</ul>`,
+    }) : tile({ title: 'ตัดสต๊อกเทียบ Report', href: CUTU ? '../cut-check/' : '', go: 'ไปหน้าเช็ครายการตัดสต๊อก',
+      body: `<i>${CUT ? `ผลตรวจที่มีเป็นของ ${esc(WmsDash.cut(CUT, LOG).ym ? WmsDash.monthName(WmsDash.cut(CUT, LOG).ym) : 'ช่วงอื่น')} เปิดไฟล์ตัดสต๊อกของเดือนนี้แล้วตรวจ` : 'ยังไม่มีผลตรวจของเดือนนี้'}</i>` }),
+  ];
+
+  $('month').innerHTML = `<div class="db-grid">${tiles.join('')}</div>
+    <div class="db-card" id="chart">${chartHtml(m, now)}</div>
+    <div class="db-card"><h4>เทียบรายเดือน</h4><span class="sub">FIFO กับอายุสต๊อกคิดแบบเดียวกับหน้า FIFO สต๊อก ตัดสต๊อกมีเฉพาะเดือนของไฟล์ที่ตั้งไว้</span><div id="table"></div></div>`;
+  renderTable();
+}
+
+/* ── กราฟหยิบขายรายวัน ─────────────────────────────────────────────────── */
+
+const SERIES = [
+  { k: 'ok', cls: 'ok', label: 'ตาม FIFO', key: 'var(--db-ok)' },
+  { k: 'po', cls: 'po', label: 'ข้าม PO', key: 'var(--db-po)' },
+  { k: 'lot', cls: 'lot', label: 'ข้าม LOT', key: 'var(--db-lot)' },
+  { k: 'unknown', cls: 'u', label: 'ไม่รู้ LOT', key: '#94A3B8' },
+];
+
+/** ขั้นของแกนเป็นเลขกลม 1 2 2.5 5 คูณสิบ สี่ห้าเส้นพอ */
+function niceStep(max) {
+  const raw = max / 4;
+  const p = Math.pow(10, Math.floor(Math.log10(raw)));
+  const n = raw / p;
+  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p;
+}
+const dayName = (d) => new Date(`${d}T00:00:00`).toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' });
+
+function chartHtml(m, now) {
+  const top0 = Math.max(1, ...m.days.map((d) => d.qty));
+  const step = niceStep(top0);
+  const top = Math.ceil(top0 / step) * step;
+  const ticks = [];
+  for (let v = 0; v <= top + 1e-9; v += step) ticks.push(v);
+  const total = (k) => m.days.reduce((a, d) => a + d[k], 0);
+  const cols = m.days.map((d, i) => {
+    const label = `${dayName(d.d)} หยิบขาย ${f(d.qty)} ชิ้น: ${SERIES.map((s) => `${s.label} ${f(d[s.k])}`).join(', ')}`;
+    return `<button class="db-col" type="button" data-i="${i}" aria-label="${esc(label)}">${d.qty ? `<span class="db-stack" style="height:${d.qty / top * 100}%">${SERIES.filter((s) => d[s.k] > 0)
+      .map((s) => `<span class="c-${s.cls}" style="flex:${d[s.k]}"></span>`).join('')}</span>` : ''}</button>`;
+  }).join('');
+  const xs = m.days.map((d) => { const n = +d.d.slice(8); return `<span>${n === 1 || n % 5 === 0 ? n : ''}</span>`; }).join('');
+  const rows = m.days.map((d) => `<tr><td>${esc(dayName(d.d))}</td><td class="num">${f(d.qty)}</td>${SERIES.map((s) => `<td class="num">${f(d[s.k])}</td>`).join('')}</tr>`).join('');
+  return `<h4>หยิบขายรายวัน — ${esc(WmsDash.monthName(m.ym))}</h4>
+    <span class="sub">ชิ้นที่หยิบขายแต่ละวัน แยกตามว่าหยิบตาม FIFO ไหม${now ? ` · ถึงวันที่สมุดลงขายล่าสุด ${dm(m.days.length ? m.days[m.days.length - 1].d : '')}` : ''} · ชี้หรือแตะแท่งเพื่อดูตัวเลข</span>
+    <div class="db-legend">${SERIES.map((s) => `<span><i class="sw c-${s.cls}"></i>${s.label} <b>${f(total(s.k))}</b></span>`).join('')}</div>
+    <div class="db-chart">
+      <div class="db-y" aria-hidden="true">${ticks.map((v) => `<span style="bottom:${v / top * 100}%;transform:translateY(50%)">${f(v)}</span>`).join('')}</div>
+      <div class="db-plot" id="plot">
+        ${ticks.map((v) => `<div class="db-line ${v === 0 ? 'base' : ''}" style="bottom:${v / top * 100}%"></div>`).join('')}
+        <div class="db-cols" role="group" aria-label="${esc(`หยิบขายรายวัน ${WmsDash.monthName(m.ym)}`)}">${cols}</div>
+        <div class="db-tip" id="tip" hidden></div>
+      </div>
+    </div>
+    <div class="db-x" aria-hidden="true">${xs}</div>
+    <details class="db-more"><summary>ดูเป็นตาราง</summary>
+      <div class="tx-wrap"><table class="tx-tbl"><thead><tr><th>วันที่</th><th class="num">หยิบขาย</th>${SERIES.map((s) => `<th class="num">${s.label}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>
+    </details>`;
+}
+
+/** ป้ายตัวเลขของแท่ง สร้างด้วย textContent ตัวเลขทั้งหมดอยู่ในตารางด้วย ป้ายนี้แค่ช่วยให้ดูเร็ว */
+function showTip(col) {
+  const m = monthOf(MONTH);
+  const tip = $('tip');
+  if (!m || !tip) return;
+  const d = m.days[+col.dataset.i];
+  tip.textContent = '';
+  const add = (cls, parts) => {
+    const el = document.createElement('div');
+    el.className = cls;
+    parts.forEach((p) => el.appendChild(p));
+    tip.appendChild(el);
+    return el;
+  };
+  const text = (t, strong) => { const el = document.createElement(strong ? 'strong' : 'span'); el.textContent = t; return el; };
+  add('d', [text(dayName(d.d))]);
+  add('t', [text(f(d.qty), true), text(' ชิ้น หยิบขาย')]);
+  SERIES.forEach((s) => {
+    const k = document.createElement('i');
+    k.className = 'k';
+    k.style.background = s.key;
+    add('r', [k, text(f(d[s.k]), true), text(s.label)]);
+  });
+  const judged = d.ok + d.po + d.lot;
+  if (judged) add('r', [text(`ตาม FIFO ${Math.round(d.ok / judged * 1000) / 10}% ของที่ตรวจได้`)]);
+  tip.hidden = false;
+  const plot = $('plot').getBoundingClientRect();
+  const c = col.getBoundingClientRect();
+  const w = tip.offsetWidth;
+  const x = c.left - plot.left + c.width / 2;
+  tip.style.left = `${Math.max(0, Math.min(plot.width - w, x + 10 + w > plot.width ? x - w - 10 : x + 10))}px`;
+}
+function hideTip() { const tip = $('tip'); if (tip) tip.hidden = true; }
+
+/* ── ตารางเทียบรายเดือน ─────────────────────────────────────────────────── */
+
+function renderTable() {
+  const box = $('table');
+  if (!box || !FIFO) return;
+  const list = WmsFifo.months(FIFO);
+  const pctCell = (v) => `<td class="num">${v === null || v === undefined ? '<span class="dim">—</span>' : `${v}%`}</td>`;
+  const rows = list.map((ym) => {
+    const m = DONE.get(ym);
+    if (!m) return `<tr><td>${esc(WmsDash.monthName(ym))}</td><td class="num dim" colspan="7">กำลังคิด…</td></tr>`;
+    const c = WmsDash.countMonth(PEEK, ym);
+    const cut = cutOf(ym);
+    return `<tr class="${ym === MONTH ? 'on' : ''}"><td>${esc(WmsDash.monthName(ym))}</td>
+      <td class="num">${f(m.sale.qty)}</td><td class="num">${f(m.perDay)}</td>
+      ${pctCell(m.sale.pct)}${pctCell(m.refill.pct)}${pctCell(m.ages.oldPct)}
+      ${pctCell(c ? c.pct : null)}
+      <td class="num">${cut ? `${f(cut.todo)} <span class="dim">(ตรง ${cut.okPct}%)</span>` : '<span class="dim">—</span>'}</td></tr>`;
+  }).join('');
+  box.innerHTML = `<div class="tx-wrap"><table class="tx-tbl"><thead><tr><th>เดือน</th><th class="num">หยิบขาย (ชิ้น)</th><th class="num">เฉลี่ย/วัน</th>
+    <th class="num">หยิบขายตาม FIFO</th><th class="num">เติมของตาม FIFO</th><th class="num">อายุ 7 เดือน+</th>
+    <th class="num">สุ่มนับตรง</th><th class="num">ตัดสต๊อกต้องแก้</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+/* ── คัดลอกสรุป ─────────────────────────────────────────────────────────── */
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (e) {
+    /* เบราว์เซอร์ที่ไม่ให้ใช้ clipboard ตรงๆ ใช้วิธีเลือกข้อความแล้วคัดลอกแทน */
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (err) {}
+    ta.remove();
+    return ok;
+  }
+}
+
+function briefText() {
+  const list = WmsFifo.months(FIFO);
+  const prevYm = WmsDash.prevMonth(MONTH);
+  return WmsDash.briefText({
+    ym: MONTH,
+    m: monthOf(MONTH),
+    prev: list.includes(prevYm) ? monthOf(prevYm) : null,
+    count: WmsDash.countMonth(PEEK, MONTH),
+    cut: cutOf(MONTH),
+    now: SUM ? WmsDash.stockNow(SUM, Date.now()) : null,
+    asOf: when(WmsShared.stamp(FIFO)),
+  });
+}
+
+function copyBrief() {
+  const btn = $('copyBtn');
+  copyText(briefText()).then((ok) => {
+    btn.textContent = ok ? 'คัดลอกแล้ว วางใน LINE ได้เลย' : 'คัดลอกไม่ได้ ลองกดอีกครั้ง';
+    if (ok) window.WmsMotion?.saved(btn); else window.WmsMotion?.shake(btn);
+    setTimeout(() => { if ($('copyBtn')) $('copyBtn').textContent = '📋 คัดลอกสรุปส่งหัวหน้า'; }, 2500);
+  });
+}
+
+/* ── วาด ────────────────────────────────────────────────────────────────── */
+
+function render() {
+  renderSrc();
+  renderNow();
+  renderMonth();
+}
+
+$('month').addEventListener('pointerover', (e) => { const c = e.target.closest('.db-col'); if (c) showTip(c); });
+$('month').addEventListener('pointerleave', hideTip);
+$('month').addEventListener('focusin', (e) => { const c = e.target.closest('.db-col'); if (c) showTip(c); });
+$('month').addEventListener('focusout', (e) => { if (e.target.closest('.db-col')) hideTip(); });
+
+render();
+const WATCH = WmsShared.watch(checkShared);
+if (TXU) { loadSum(false); loadFifo(false); }
+if (CUTU) loadCut();
+</script>
+</body>
+</html>
