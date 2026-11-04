@@ -101,6 +101,39 @@ describe('build', () => {
   });
 });
 
+describe('PO ที่ลง -01 -02 ต่อท้ายคือ PO เดียวกันที่รับคนละวัน', () => {
+  it('ตัดส่วนท้ายสองหลัก เลขแบบอื่นไม่ตัด', () => {
+    expect(L.basePo('9900000001-05')).toBe('9900000001');
+    expect(L.basePo('99000001-7')).toBe('99000001');
+    for (const v of ['9900000001', 'PO-111', 'PO-111-01', '12-03', '9900000001-123', '0', '']) expect(L.basePo(v)).toBe(v);
+  });
+
+  it('รอบ -05 กับ -20 ใน LOT เดียวกันรวมเป็นบรรทัดเดียว ใช้เลข PO และบอกว่ารวมรอบไหน', () => {
+    const rows = L.build(ledger([
+      { date: '2026-03-05', sku: A, lot: 9, po: '9900000001-20', qty: 2, row: 10 },
+      { date: '2026-03-05', sku: A, lot: 9, po: '9900000001-05', qty: 3, row: 11 },
+      { date: '2026-03-05', sku: A, lot: 9, po: '9900000001', qty: 1, row: 12 },
+      { date: '2026-03-05', sku: A, lot: 10, po: '9900000001-14', qty: 4, row: 13 },
+    ]));
+    expect(rows.map((r) => [r.lot, r.po, r.qty, r.parts, r.split])).toEqual([
+      ['9', '9900000001', 6, ['-05', '-20'], 2],
+      ['10', '9900000001', 4, ['-14'], 2],
+    ]);
+    expect(L.table(rows)[1]).toEqual(['2026-03-05', A, '', `ชื่อ ${A}`, '9', '9900000001', 6, '']);
+    expect(L.filter(rows, { q: '9900000001-20' })).toHaveLength(2);
+  });
+
+  it('รายออเดอร์ปันจากบรรทัดที่รวมแล้ว และพารอบที่รวมไปด้วย', () => {
+    const rows = L.build(ledger([
+      { date: '2026-03-05', sku: A, lot: 9, po: '9900000001-05', qty: 2 },
+      { date: '2026-03-05', sku: A, lot: 9, po: '9900000001-20', qty: 2 },
+    ]));
+    const out = L.allocate(rows, { days: ['2026-03-05'], skus: [[A, 'x']], srcs: ['WEB'], lines: [[0, 'ORD-1', 0, 3, 0]] });
+    expect(out.map((r) => [r.ref, r.po, r.qty, r.miss])).toEqual([['ORD-1', '9900000001', 3, ''], ['', '9900000001', 1, 'order']]);
+    expect(out[0].parts).toEqual(['-05', '-20']);
+  });
+});
+
 describe('totals และ filter', () => {
   const list = [
     { date: '2026-03-05', sku: A, lot: 1, po: 'PO-1', qty: 5 },

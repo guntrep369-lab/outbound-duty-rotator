@@ -509,6 +509,20 @@ function lotHtml(v, unknown, what) {
   return `<span class="tx-mid">${esc(v === '' ? 'ว่าง' : v)}</span><span class="tx-sub">ไม่รู้ ${what}</span>`;
 }
 
+/** PO ที่ลง -01 -02 ต่อท้ายรวมเป็น PO เดียวกันแล้ว บอกว่ารวมรอบไหนไว้ */
+function poHtml(r) {
+  const p = r.parts || [];
+  return lotHtml(r.po, r.noPo, 'PO') + (p.length > 1
+    ? `<span class="tx-sub" title="PO เดียวกันที่รับคนละวัน ส่วนท้ายคือวันที่รับเข้า">รวมรอบ ${esc(p.join(' '))}</span>` : '');
+}
+
+/** บอกกติกาเมื่อช่วงที่ดูมีบรรทัดที่รวม PO -01 -02 ไว้ */
+function poNote(scope) {
+  const n = scope.filter((r) => (r.parts || []).length > 1).length;
+  return n ? `<div class="tx-note">PO ที่ลง <b>-01 -02</b> ต่อท้าย (วันที่รับเข้าคลัง) คือ <b>PO เดียวกัน</b> รายงานใช้เลข PO โดยตัดส่วนท้ายออก
+    · รวมไว้ ${f(n)} บรรทัด</div>` : '';
+}
+
 /** ที่มาของบรรทัด: หยิบจาก Location ไหน และลิงก์ไปแถวในชีต ไว้แก้ LOT/PO ที่ผิด */
 function srcHtml(r) {
   const links = r.rows.slice(0, 3).map((row) => {
@@ -542,7 +556,7 @@ function orderListHtml(rows) {
       <td class="nw k-ord">${ord}</td>
       <td class="k-sku">${skuHtml(r, r.split > 1 ? `<span class="tx-tag">ได้ ${r.split} LOT/PO</span>` : '')}</td>
       <td class="nw k-lot" data-label="LOT">${none ? '—' : lotHtml(r.lot, r.noLot, 'LOT')}</td>
-      <td class="nw k-po" data-label="PO">${none ? '—' : lotHtml(r.po, r.noPo, 'PO')}</td>
+      <td class="nw k-po" data-label="PO">${none ? '—' : poHtml(r)}</td>
       <td class="num k-qty" data-label="จำนวน">${f(r.qty)}</td>
       <td class="k-note">${note ? `<span class="tx-sub tx-neg">${esc(note)}</span>` : ''}</td>
     </tr>`;
@@ -576,7 +590,7 @@ function listHtml() {
       ${DAY ? '' : `<td class="nw k-date">${esc(dm(r.date))}</td>`}
       <td class="k-sku">${sku}</td>
       <td class="nw k-lot" data-label="LOT">${lotHtml(r.lot, r.noLot, 'LOT')}</td>
-      <td class="nw k-po" data-label="PO">${lotHtml(r.po, r.noPo, 'PO')}</td>
+      <td class="nw k-po" data-label="PO">${poHtml(r)}</td>
       <td class="num k-qty" data-label="จำนวน">${f(r.qty)}</td>
       <td class="k-src">${srcHtml(r)}</td>
     </tr>`;
@@ -636,7 +650,7 @@ function renderBody() {
     ? opt('', 'ทั้งหมด') + opt('split', 'ได้หลาย LOT/PO') + opt('unknown', 'ไม่รู้ LOT/PO') + opt('gap', 'ยอดไม่ลงกัน') + conv
     : opt('', 'ทั้งหมด') + opt('split', 'ออกหลาย LOT/PO') + opt('unknown', 'ไม่รู้ LOT/PO') + conv;
   const cols = byOrder() ? 'วันที่ · ระบบ · เลขออเดอร์ · SKU · SKU ที่ขาย · ชื่อสินค้า · LOT · PO · จำนวน · หมายเหตุ' : 'วันที่ · SKU · SKU ที่ขาย · ชื่อสินค้า · LOT · PO · จำนวน · หมายเหตุ';
-  $('body').innerHTML = `${views}${statusHtml()}${convNote(scope)}${byOrder() ? orderNote() : ''}
+  $('body').innerHTML = `${views}${statusHtml()}${convNote(scope)}${poNote(scope)}${byOrder() ? orderNote() : ''}
     <div class="tx-bar">
       <input id="q" class="tx-input" type="search" placeholder="ค้นหา${byOrder() ? 'เลขออเดอร์' : ''} SKU ชื่อสินค้า LOT หรือ PO" value="${esc(Q)}" autocomplete="off">
       ${opts}

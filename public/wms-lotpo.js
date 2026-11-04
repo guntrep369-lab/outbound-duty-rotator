@@ -8,6 +8,9 @@
  * รวมแถวที่ วัน + SKU + LOT + PO เดียวกันเป็นบรรทัดเดียว Location ไม่อยู่ในคีย์
  * บัญชีอยากรู้ว่าของล็อตไหนออก ไม่ได้สนว่าหยิบจากชั้นไหน
  *
+ * PO ที่ลง -01 -02 ต่อท้าย (เลขวันที่ที่รับเข้าคลัง) คือ PO เดียวกันที่ทยอยรับ (ผู้ใช้ยืนยัน 2026-11-04)
+ * ตัดส่วนท้ายออกก่อนรวม บัญชีเห็นเลข PO จริง ส่วนท้ายที่รวมไว้อยู่ใน parts กติกาเดียวกับ basePo ใน wms-fifo.js
+ *
  * จำนวนที่พิมพ์เป็นข้อความไม่ถูกบวก ให้ตรงกับ SUMIFS ในชีตยอดและยอดในแท็บเทียบรายวัน
  * แต่ติดป้ายไว้ให้เห็นว่ามีแถวที่ยอดหายไป
  *
@@ -38,20 +41,26 @@
 
   function text(v) { return v === null || v === undefined ? '' : String(v).trim(); }
 
+  /** 9900000001-01 กับ 9900000001-02 เป็น PO 9900000001 ส่วนท้ายคือวันที่รับเข้า ไม่ใช่อีก PO */
+  function basePo(v) { var s = text(v); var m = /^(\d{6,})-\d{1,2}$/.exec(s); return m ? m[1] : s; }
+
   function build(ledger) {
     var at = {}, rows = [];
     var days = ledger.days || [], skus = ledger.skus || [], locs = ledger.locs || [];
     (ledger.lines || []).forEach(function (l) {
       var date = days[l[0]], s = skus[l[1]] || [];
-      var lot = text(l[4]), po = text(l[5]);
+      var lot = text(l[4]), raw = text(l[5]), po = basePo(raw);
       /* พิมพ์เล็กใหญ่ต่างกันคือล็อตเดียวกัน เหมือนที่ชีตยอดใช้ SUMIFS */
       var k = [date, s[0], lot.toUpperCase(), po.toUpperCase()].join('|');
       var r = at[k];
       if (!r) {
         r = at[k] = { date: date, sku: s[0] || '', name: s[1] || '', lot: lot, po: po, qty: 0,
-          rows: [], locs: [], bad: [], noLot: noLot(lot), noPo: noPo(po), split: 1 };
+          rows: [], locs: [], bad: [], parts: [], noLot: noLot(lot), noPo: noPo(po), split: 1 };
         rows.push(r);
       }
+      /* รอบรับที่รวมไว้ในบรรทัดนี้ -05 -20 (เลขที่ไม่มีส่วนท้ายไม่นับเป็นรอบ) */
+      var part = raw.length > po.length ? raw.slice(po.length) : '';
+      if (part && r.parts.indexOf(part) < 0) r.parts.push(part);
       if (typeof l[6] === 'number') r.qty += l[6]; else r.bad.push(text(l[6]));
       r.rows.push(l[2]);
       var loc = locs[l[3]];
@@ -61,7 +70,7 @@
     /* วันเดียวกัน SKU เดียวกันออกมากี่ LOT/PO บัญชีต้องแบ่งต้นทุนตามนี้ */
     var n = {};
     rows.forEach(function (r) { n[r.date + '|' + r.sku] = (n[r.date + '|' + r.sku] || 0) + 1; });
-    rows.forEach(function (r) { r.split = n[r.date + '|' + r.sku]; });
+    rows.forEach(function (r) { r.split = n[r.date + '|' + r.sku]; r.parts.sort(); });
 
     rows.sort(function (a, b) {
       if (a.date !== b.date) return a.date < b.date ? -1 : 1;
@@ -100,7 +109,7 @@
       out.push({
         date: date, sku: sku, name: (lot && lot.name) || (o && o.name) || '',
         ref: o ? o.ref : '', src: o ? o.src : '', seq: o ? seq[date + '|' + o.ref] : Infinity,
-        lot: lot ? lot.lot : '', po: lot ? lot.po : '', qty: qty,
+        lot: lot ? lot.lot : '', po: lot ? lot.po : '', parts: lot ? lot.parts : [], qty: qty,
         noLot: lot ? lot.noLot : false, noPo: lot ? lot.noPo : false, miss: miss || '', split: 1,
       });
     }
@@ -221,6 +230,7 @@
    */
   function filter(rows, o) {
     var q = text(o && o.q).toUpperCase(), date = o && o.date, only = o && o.only;
+    var qp = basePo(q);   // ค้น 9900000001-02 ก็เจอบรรทัด PO 9900000001
     return rows.filter(function (r) {
       if (date && r.date !== date) return false;
       if (only === 'split' && r.split < 2) return false;
@@ -228,7 +238,8 @@
       if (only === 'gap' && !r.miss) return false;
       if (only === 'conv' && !r.sold && !r.many) return false;
       if (!q) return true;
-      return [r.sku, r.sold || '', r.name, r.lot, r.po, r.ref || ''].some(function (v) { return v.toUpperCase().indexOf(q) >= 0; });
+      return r.po.toUpperCase().indexOf(qp) >= 0 ||
+        [r.sku, r.sold || '', r.name, r.lot, r.po, r.ref || ''].some(function (v) { return v.toUpperCase().indexOf(q) >= 0; });
     });
   }
 
@@ -285,7 +296,7 @@
   }
 
   window.WmsLotPo = {
-    HEAD: HEAD, ORDER_HEAD: ORDER_HEAD, build: build, allocate: allocate, convert: convert, totals: totals, filter: filter,
+    HEAD: HEAD, ORDER_HEAD: ORDER_HEAD, basePo: basePo, build: build, allocate: allocate, convert: convert, totals: totals, filter: filter,
     note: note, table: table, tsv: tsv, csv: csv,
   };
 })();

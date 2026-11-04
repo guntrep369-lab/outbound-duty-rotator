@@ -601,6 +601,10 @@ from the settings page. It never writes to the sheet.
 - Rows with the same day, SKU (column B), LOT and PO become one line. The location isn't part of the
   line, but it's shown, with links to the ledger rows behind it.
 - A SKU that went out from several LOT/PO on one day gets one line for each, oldest LOT first.
+- A PO written with `-01`, `-02` and so on at the end (`9900000001-05`) is the same PO, received over
+  several days. The two digits are the day it came in. The report drops them, so accounting sees the
+  real PO, and rounds in the same LOT become one line. The page shows which rounds a line holds
+  (`รวมรอบ -05 -20`). Searching with the ending still finds the line.
 - `LOT 0`, `PO 0` or a blank one means the LOT or PO isn't known (mostly stock from the last count). These
   lines are marked and can be listed on their own.
 - A quantity typed as text isn't added, the same as the balance sheet's SUMIFS, and the line says so.
