@@ -287,6 +287,22 @@ describe('analyze — ยอดคงเหลือราย LOT', () => {
     expect(s.list[0].pick.po).toBe('PO-A');
   });
 
+  it('ของที่ยังไม่เปิดขายแยกเป็นบนแร็ค (Location R) กับตั้งพื้น กองตั้งพื้นก็ขึ้นว่าควรเติมได้', () => {
+    const s = F.analyze(ledger([
+      gr({ lot: 7, po: 'PO-A', to: 'R1-01-01', qty: 4, d: '2026-07-02' }),
+      gr({ lot: 7, po: 'PO-B', to: 'D-01-01', qty: 6, d: '2026-07-03' }),
+      gr({ lot: 9, po: 'PO-C', to: 'P1-01', open: true, qty: 5, d: '2026-09-20' }),
+      gr({ lot: 9, po: 'PO-C', to: 'D-01-02', qty: 2, d: '2026-09-21' }),
+    ]), '2026-10').stock;
+    const e = s.list[0];
+    expect(e.batches.map((x) => [x.po, x.open, x.floor, x.rack, x.store])).toEqual([
+      ['PO-A', 0, 0, 4, 4], ['PO-B', 0, 6, 0, 6], ['PO-C', 5, 2, 0, 2],
+    ]);
+    expect(e.batches[0].locs[0]).toMatchObject({ rack: true, open: false });
+    expect(e.batches[1].locs[0]).toMatchObject({ rack: false, open: false });
+    expect(e.refill.map((f) => f.batch.po)).toEqual(['PO-A', 'PO-B']);
+  });
+
   it('ยอดติดลบไม่นับเป็นของ แต่นับจุดไว้ อายุสต๊อกรวมตามเดือน', () => {
     const s = F.analyze(res, '2026-10').stock;
     expect(s.negative).toEqual({ keys: 1, qty: -1 });
@@ -329,6 +345,8 @@ describe('ส่งออก', () => {
     const an = F.analyze(res, '2026-10');
     const st = F.stockTable(res, an);
     expect(st[0]).toContain('ลำดับ FIFO');
+    expect(st[0].slice(9, 13)).toEqual(['คงเหลือ', 'ในโลขาย', 'ตั้งพื้น (ไม่เปิดขาย)', 'บนแร็ค']);
+    expect(st.every((r) => r.length === st[0].length)).toBe(true);
     expect(st).toHaveLength(3);
     const sk = F.skipTable(res, an);
     expect(sk).toHaveLength(2);

@@ -14,8 +14,11 @@
  *
  * การเบิกที่ตรวจ (ไม่นับ QA / IQA / RIB เพราะไม่ได้เดินตาม FIFO อยู่แล้ว ผู้ใช้ยืนยัน)
  *   หยิบขาย  แถวขาย ข้าม = ตอนนั้นมีของที่เก่ากว่าอยู่ในโลที่เปิดขาย
- *   เติมของ  แถวเบิกเข้าโลที่เปิดขาย ข้าม = ตอนนั้นมีของที่เก่ากว่าอยู่ในโลที่ไม่เปิด (แร็ค)
- *   ขายของใหม่ตอนที่ของเก่าอยู่แต่บนแร็ค ไม่นับเป็นหยิบข้าม คนหยิบไม่เห็นของเก่า พลาดตั้งแต่ตอนเติมของ
+ *   เติมของ  แถวเบิกเข้าโลที่เปิดขาย ข้าม = ตอนนั้นมีของที่เก่ากว่าอยู่ในโลที่ไม่เปิด (บนแร็คหรือตั้งพื้น)
+ *   ขายของใหม่ตอนที่ของเก่ายังไม่อยู่ในโลขาย ไม่นับเป็นหยิบข้าม คนหยิบไม่เห็นของเก่า พลาดตั้งแต่ตอนเติมของ
+ *
+ * ที่เก็บ (ผู้ใช้ยืนยัน 2026-11-04) แร็คมีแต่ Location R ตามด้วยเลข (R16-12-03)
+ *   A B C D และอื่น ๆ ยังตั้งพื้น จุดไหนเป็นโลขายดูจาก Status เปิด ไม่ใช่จากตัวอักษร
  *   แถวที่ LOT ไม่รู้ ตรวจไม่ได้ ของที่ LOT ไม่รู้ก็ไม่นับเป็นของที่เก่ากว่า
  *
  * Status ของจุดหนึ่งยึดแถวรับล่าสุด และยอดคิดแบบเดียวกับ balances_ ใน tx-api.gs
@@ -26,6 +29,7 @@
   'use strict';
 
   var SPECIAL = /^(QA|IQA|RIB)$/;
+  var RACK = /^R\d/;             // Location แร็ค ที่เหลือตั้งพื้น
   var MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
   var COUNT_DAY = '0000-00-00';   // วันรับของ PO ที่อยู่ในแถวนับสต๊อก ก่อนทุกวันที่จริง
   var OLDER_MAX = 5;              // ของที่เก่ากว่าที่แนบไปต่อหนึ่งรายการ
@@ -138,7 +142,7 @@
             if (!(q > 0)) return;
             var loc = +k.slice(k.lastIndexOf('|') + 1);
             if (SPECIAL.test(up(res.locs[loc]))) return;
-            /* หยิบขายดูของในโลเปิด เติมของดูของบนแร็ค */
+            /* หยิบขายดูของในโลเปิด เติมของดูของที่ยังไม่อยู่ในโลขาย (บนแร็คหรือตั้งพื้น) */
             if (!!walk.open[k] !== (kind === 'sale')) return;
             var o = info(walk, k.slice(0, k.lastIndexOf('|')));
             var by = older(o, me);
@@ -178,13 +182,18 @@
       var x = e.batches[b];
       if (!x) {
         var i = info(st, b);
-        x = e.batches[b] = { lot: i.lot, po: i.po, lm: i.lm, recv: i.recv, qty: 0, open: 0, rack: 0, special: 0, locs: [] };
+        /* store = ยังไม่อยู่ในโลขาย แยกเป็น rack (Location R) กับ floor (ตั้งพื้นที่ยังไม่เปิด) */
+        x = e.batches[b] = { lot: i.lot, po: i.po, lm: i.lm, recv: i.recv, qty: 0, open: 0, store: 0, rack: 0, floor: 0, special: 0, locs: [] };
       }
-      var sp = SPECIAL.test(up(res.locs[loc]));
+      var name = up(res.locs[loc]);
+      var sp = SPECIAL.test(name);
       var isOpen = !!st.open[k];
+      var isRack = !sp && RACK.test(name);
       x.qty += q;
-      if (sp) x.special += q; else if (isOpen) x.open += q; else x.rack += q;
-      x.locs.push({ loc: loc, qty: q, open: isOpen, special: sp });
+      if (sp) x.special += q;
+      else if (isOpen) x.open += q;
+      else { x.store += q; if (isRack) x.rack += q; else x.floor += q; }
+      x.locs.push({ loc: loc, qty: q, open: isOpen, special: sp, rack: isRack });
     });
 
     var list = Object.keys(by).map(function (s) {
@@ -204,13 +213,13 @@
         x.rank = x.lm ? i + 1 : 0;
       });
       /*
-       * ควรเติมของเก่า: กองที่อยู่แต่บนแร็ค ขณะที่ทุกกองในโลขายใหม่กว่ากองนั้น
+       * ควรเติมของเก่า: กองที่ยังไม่อยู่ในโลขายเลย (บนแร็คหรือตั้งพื้น) ขณะที่ทุกกองในโลขายใหม่กว่ากองนั้น
        * ถ้าในโลขายมีกองที่เก่าเท่ากันอยู่แล้ว (เช่น PO อื่นของ LOT เดียวกันจากนับสต๊อก) คนหยิบยังหยิบของเก่าได้ ไม่ต้องเติม
        */
       var openKnown = known.filter(function (x) { return x.open > 0; });
       var refill = [];
       known.forEach(function (o) {
-        if (!(o.rack > 0) || o.open > 0 || !openKnown.length) return;
+        if (!(o.store > 0) || o.open > 0 || !openKnown.length) return;
         if (openKnown.every(function (n) { return older(o, n); })) refill.push({ batch: o, newer: openKnown });
       });
       /* หลายกองอยู่ในโลขายพร้อมกัน คนหยิบต้องเลือกกองเก่าก่อน pick คือกองที่ควรหยิบก่อน */
@@ -333,7 +342,7 @@
   /** ตารางคงเหลือราย LOT หนึ่งแถวต่อ SKU + LOT + PO */
   function stockTable(res, an, list) {
     var head = ['SKU', 'SKU สั้น', 'ชื่อสินค้า', 'ลำดับ FIFO', 'LOT', 'เดือนของ LOT', 'อายุ (เดือน)', 'PO', 'รับเข้า',
-      'คงเหลือ', 'ในโลขาย', 'บนแร็ค', 'QA / IQA / RIB', 'Location', 'หมายเหตุ'];
+      'คงเหลือ', 'ในโลขาย', 'ตั้งพื้น (ไม่เปิดขาย)', 'บนแร็ค', 'QA / IQA / RIB', 'Location', 'หมายเหตุ'];
     var out = [head];
     (list || an.stock.list).forEach(function (e) {
       e.batches.forEach(function (x) {
@@ -342,7 +351,7 @@
         if (x.lm && noPo(x.po)) notes.push('ไม่รู้ PO');
         if (e.refill.some(function (f) { return f.batch === x; })) notes.push('ควรเติมกองนี้ก่อน กองใหม่กว่าอยู่ในโลขายแล้ว');
         out.push([e.code, e.short, e.name, x.rank || '', x.lot, x.lm ? monthText(x.lm) : '', x.age === null ? '' : x.age,
-          x.po, recvText(x.recv), x.qty, x.open, x.rack, x.special,
+          x.po, recvText(x.recv), x.qty, x.open, x.floor, x.rack, x.special,
           x.locs.map(function (l) { return res.locs[l.loc] + ' (' + l.qty + ')'; }).join(', '), notes.join(' · ')]);
       });
     });
@@ -399,7 +408,8 @@
       ['อยู่ใน QA / IQA / RIB (ชิ้น)', s.special],
       [],
       ['หยิบขาย = แถวขายที่ตอนนั้นมี LOT หรือ PO ที่เก่ากว่าอยู่ในโลที่เปิดขาย'],
-      ['เติมของ = แถวเบิกเข้าโลที่เปิดขาย ที่ตอนนั้นมีของเก่ากว่าอยู่บนแร็ค'],
+      ['เติมของ = แถวเบิกเข้าโลที่เปิดขาย ที่ตอนนั้นมีของเก่ากว่ายังไม่อยู่ในโลขาย (บนแร็คหรือตั้งพื้น)'],
+      ['ในโลขาย = Location ที่ Status เปิด · บนแร็ค = Location R · ตั้งพื้น = Location อื่นที่ยังไม่เปิดขาย'],
       ['ลำดับเก่าไปใหม่ = เดือนของ LOT แล้ววันที่รับเข้าของ PO ไม่นับ QA / IQA / RIB'],
     ];
   }

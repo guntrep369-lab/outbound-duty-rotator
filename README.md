@@ -673,11 +673,18 @@ the device.
 - QA / IQA / RIB locations aren't counted, either as the goods that went out or as older goods left
   behind.
 
+**Where the goods are:** a location is a selling location (ในโลขาย) when its Status is `เปิด`, whatever
+its letter. The rest is split in two:
+
+- **บนแร็ค:** only `R` locations followed by a number (`R16-12-03`) are racks.
+- **ตั้งพื้น:** A, B, C, D and every other location are floor stacks. Here that means the floor stacks that
+  aren't open for selling.
+
 **What counts as skipping FIFO (ข้าม FIFO):**
 
 - **หยิบขาย (a `ขาย` row):** an older batch of the same SKU was in an open (`เปิด`) location at that time.
-- **เติมของ (a `เบิก` row into an open location):** an older batch was still on a closed location (the
-  rack).
+- **เติมของ (a `เบิก` row into an open location):** an older batch was still in a location that isn't
+  open, on a rack or on the floor.
 - ข้าม LOT means an older LOT month was there. ข้าม PO means the same LOT, but a PO received earlier.
 - Goods with an unknown LOT are counted on their own as ตรวจไม่ได้, not as right or wrong.
 - A row with no date of its own uses the date of the row above it, and the page marks it โดยประมาณ.
@@ -689,9 +696,9 @@ the device.
   ตาม FIFO / ข้าม PO / ข้าม LOT.
 - **คงเหลือราย LOT:** stock as of the month's last day, one row per SKU. The bar shows each batch from
   oldest (left) to newest, colored by age. Open a SKU to see each batch's order, LOT, PO, receive date,
-  how much is in the selling locations and on the rack, and the locations.
-  - `⚠ ควรเติมของเก่าก่อน` marks a SKU where an older batch is only on the rack while every batch in the
-    selling locations is newer.
+  how much is in the selling locations, on the floor and on racks, and the locations.
+  - `⚠ ควรเติมของเก่าก่อน` marks a SKU where an older batch isn't in any selling location (it's on a rack
+    or on the floor) while every batch in the selling locations is newer.
   - `โลขายมีหลายกอง` says which batch to pick first when the selling locations hold different ages.
   - The filters list these, SKUs with more than one LOT, and SKUs with LOT 0.
 - **เบิกข้าม FIFO:** the month's picks and refills that skipped, grouped by SKU, biggest first. Each line

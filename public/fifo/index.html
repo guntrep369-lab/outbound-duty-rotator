@@ -209,13 +209,14 @@ button.fi-kpi .go{margin-top:auto;padding-top:6px;font-size:12px;font-weight:600
   .fi-dt tr.fi-hot{background:#FFF7ED}
   .fi-tag{white-space:normal;max-width:100%}
   .fi-dt td[data-label]::before{content:attr(data-label);display:block;font-size:12px;font-weight:500;color:var(--wms-muted)}
-  .dt-stock tr{grid-template-columns:28px minmax(0,1fr) auto}
+  .dt-stock tr{grid-template-columns:28px repeat(3,minmax(0,1fr))}
   .dt-stock .k-rank{grid-row:1/3}
-  .dt-stock .k-lot{grid-column:2;grid-row:1}
-  .dt-stock .k-qty{grid-column:3;grid-row:1;font-size:16px}
-  .dt-stock .k-po{grid-column:2/4;grid-row:2}
+  .dt-stock .k-lot{grid-column:2/4;grid-row:1}
+  .dt-stock .k-qty{grid-column:4;grid-row:1;font-size:16px}
+  .dt-stock .k-po{grid-column:2/-1;grid-row:2}
   .dt-stock .k-open{grid-column:2;grid-row:3;text-align:left}
-  .dt-stock .k-rack{grid-column:3;grid-row:3}
+  .dt-stock .k-floor{grid-column:3;grid-row:3;text-align:left}
+  .dt-stock .k-rack{grid-column:4;grid-row:3}
   .dt-stock .k-loc{grid-column:1/-1;grid-row:4}
   .dt-skip tr{grid-template-columns:minmax(0,1fr) auto}
   .dt-skip .k-date{grid-column:1;grid-row:1;font-weight:600}
@@ -416,7 +417,7 @@ function renderSum() {
     <button class="fi-kpi" data-go="refill">
       <small>ควรเติม LOT เก่าก่อน</small>
       <div class="v"><b data-count="${refill}">${f(refill)}</b><span>SKU</span></div>
-      <i>กองเก่ายังอยู่แต่บนแร็ค ทั้งที่กองใหม่กว่าอยู่ในโลขายแล้ว</i>
+      <i>กองเก่ายังไม่ได้เติมเข้าโลขาย (อยู่บนแร็คหรือตั้งพื้น) ทั้งที่กองใหม่กว่าอยู่ในโลขายแล้ว</i>
       <span class="go">ดูรายการ →</span>
     </button>`;
 }
@@ -471,11 +472,20 @@ function batchWords(list, open) {
   }).join(', ');
 }
 
+/** ของที่ยังไม่อยู่ในโลขาย: บนแร็ค 120 · ตั้งพื้น 64 ชิ้น */
+function storeWords(rack, floor) {
+  const p = [];
+  if (rack) p.push(`บนแร็ค ${f(rack)}`);
+  if (floor) p.push(`ตั้งพื้น ${f(floor)}`);
+  return p.length ? `${p.join(' · ')} ชิ้น` : '';
+}
+
 function stockTags(e) {
   const out = [];
   if (e.refill.length) {
     const list = e.refill.map((r) => r.batch);
-    out.push(`<span class="fi-tag t-lot">⚠ ควรเติมของเก่าก่อน: ${esc(batchWords(list, e.refill[0].newer))} · บนแร็ค ${f(list.reduce((a, x) => a + x.rack, 0))} ชิ้น</span>`);
+    const sum = (k) => list.reduce((a, x) => a + x[k], 0);
+    out.push(`<span class="fi-tag t-lot">⚠ ควรเติมของเก่าก่อน: ${esc(batchWords(list, e.refill[0].newer))} · ${storeWords(sum('rack'), sum('floor'))}</span>`);
   }
   if (e.pick) out.push(`<span class="fi-tag t-mix">โลขายมีหลายกอง หยิบ LOT ${esc(e.pick.lot)}${WmsFifo.noPo(e.pick.po) ? '' : ` PO ${esc(e.pick.po)}`} ก่อน</span>`);
   if (e.unknown) out.push(`<span class="fi-tag">ไม่รู้ LOT ${f(e.unknown)} ชิ้น</span>`);
@@ -486,19 +496,20 @@ function stockDetail(e) {
   const hot = new Set(e.refill.map((r) => r.batch));
   const rows = e.batches.map((x) => {
     const locs = x.locs.slice().sort((a, b) => (b.open - a.open) || b.qty - a.qty).map((l) =>
-      `<span class="fi-loc${l.special ? ' sp' : l.open ? ' open' : ''}" title="${l.special ? 'QA / IQA / RIB' : l.open ? 'เปิดขาย' : 'ไม่เปิดขาย'}">${l.open && !l.special ? '● ' : ''}${esc(loc(l.loc))} · ${f(l.qty)}</span>`).join('');
+      `<span class="fi-loc${l.special ? ' sp' : l.open ? ' open' : ''}" title="${l.special ? 'QA / IQA / RIB' : l.open ? 'เปิดขาย' : l.rack ? 'บนแร็ค ยังไม่เปิดขาย' : 'ตั้งพื้น ยังไม่เปิดขาย'}">${l.open && !l.special ? '● ' : ''}${esc(loc(l.loc))} · ${f(l.qty)}</span>`).join('');
     return `<tr class="${hot.has(x) ? 'fi-hot' : ''}">
       <td class="nw k-rank">${x.rank ? `<span class="fi-rank${x.rank === 1 ? ' first' : ''}" title="ลำดับ FIFO">${x.rank}</span>` : '<span class="tx-sub">—</span>'}</td>
       <td class="nw k-lot">${lotText(x)}${x.age !== null ? `<span class="tx-sub">อายุ ${f(x.age)} เดือน</span>` : ''}</td>
       <td class="nw k-po">${poText(x.po)}<span class="tx-sub">${x.recv ? `รับ ${esc(x.recv === WmsFifo.COUNT_DAY ? 'ก่อนนับสต๊อก' : dm(x.recv))}` : 'ไม่มีวันรับ'}</span></td>
       <td class="num k-qty"><b>${f(x.qty)}</b></td>
       <td class="num k-open" data-label="ในโลขาย">${x.open ? f(x.open) : '—'}</td>
+      <td class="num k-floor" data-label="ตั้งพื้น">${x.floor ? f(x.floor) : '—'}</td>
       <td class="num k-rack" data-label="บนแร็ค">${x.rack ? f(x.rack) : '—'}${x.special ? `<span class="tx-sub">QA ${f(x.special)}</span>` : ''}</td>
-      <td class="k-loc"><div class="fi-locs">${locs}</div>${hot.has(x) ? '<span class="tx-sub fi-warn">กองนี้ยังอยู่แต่บนแร็ค ทุกกองในโลขายใหม่กว่า ควรเติมกองนี้ก่อน</span>' : ''}</td>
+      <td class="k-loc"><div class="fi-locs">${locs}</div>${hot.has(x) ? '<span class="tx-sub fi-warn">กองนี้ยังไม่อยู่ในโลขาย ทุกกองในโลขายใหม่กว่า ควรเติมกองนี้ก่อน</span>' : ''}</td>
     </tr>`;
   }).join('');
   return `<div class="tx-wrap"><table class="tx-tbl fi-dt dt-stock">
-    <thead><tr><th>ลำดับ</th><th>LOT · เดือน</th><th>PO · รับเข้า</th><th class="num">คงเหลือ</th><th class="num">ในโลขาย</th><th class="num">บนแร็ค</th><th>Location (● = เปิดขาย)</th></tr></thead>
+    <thead><tr><th>ลำดับ</th><th>LOT · เดือน</th><th>PO · รับเข้า</th><th class="num">คงเหลือ</th><th class="num">ในโลขาย</th><th class="num" title="Location ตั้งพื้นที่ยังไม่เปิดขาย">ตั้งพื้น</th><th class="num" title="Location R">บนแร็ค</th><th>Location (● = เปิดขาย)</th></tr></thead>
     <tbody>${rows}</tbody></table></div>`;
 }
 
@@ -572,7 +583,7 @@ function renderSkip() {
   const t = AN.totals;
   const opt = (v, label, n) => `<button class="tx-opt${KIND === v ? ' on' : ''}" data-kind="${v}">${label} ${f(n)} แถว</button>`;
   $('body').innerHTML = `<div class="tx-note"><b>หยิบขาย</b> = ขาย LOT หรือ PO ที่ใหม่กว่า ทั้งที่ของเก่ากว่ายังอยู่ในโลที่เปิดขาย ·
-      <b>เติมของ</b> = เติมของใหม่กว่าเข้าโลขาย ทั้งที่ของเก่ากว่ายังอยู่บนแร็ค ·
+      <b>เติมของ</b> = เติมของใหม่กว่าเข้าโลขาย ทั้งที่ของเก่ากว่ายังอยู่บนแร็คหรือตั้งพื้น ·
       ไม่นับ QA / IQA / RIB และแถวที่ไม่รู้ LOT — ${esc(monthName(MONTH))}</div>
     <div class="tx-legend"><span><i class="sw c-lot"></i>ข้าม LOT = มี LOT เดือนเก่ากว่า</span><span><i class="sw c-po"></i>ข้าม PO = LOT เดียวกัน แต่มี PO ที่รับเข้าก่อน</span></div>
     <div class="tx-bar">
@@ -641,7 +652,7 @@ function renderAge() {
       <td><b>${esc(e.code)}</b><span class="tx-sub">${esc(e.name)}</span></td>
       <td class="nw">${lotText(x)}<span class="tx-sub">อายุ ${f(x.age)} เดือน</span></td>
       <td class="num"><b>${f(x.qty)}</b><span class="tx-sub">จาก ${f(e.total)}</span></td>
-      <td class="nw">${x.open ? `ในโลขาย ${f(x.open)}` : ''}${x.open && x.rack ? ' · ' : ''}${x.rack ? `บนแร็ค ${f(x.rack)}` : ''}${x.special ? `${x.open || x.rack ? ' · ' : ''}QA ${f(x.special)}` : ''}</td>
+      <td class="nw">${[x.open ? `ในโลขาย ${f(x.open)}` : '', x.floor ? `ตั้งพื้น ${f(x.floor)}` : '', x.rack ? `บนแร็ค ${f(x.rack)}` : '', x.special ? `QA ${f(x.special)}` : ''].filter(Boolean).join(' · ')}</td>
     </tr>`;
   }).join('');
   $('body').innerHTML = `<div class="tx-note">สต๊อก${esc(asOf())} รวมทั้งคลังตามเดือนของ LOT อายุนับจากเดือนของ LOT ถึง${esc(monthName(MONTH))}
