@@ -17,6 +17,7 @@
  * ?api=tx-history&sku=...  ความเคลื่อนไหวของ SKU เดียว
  * ?api=tx-count            รายการนับของวันนี้ (ยังไม่มีก็ออกให้) และผลนับย้อนหลัง
  * ?api=tx-daily&from=...&to=...  ยอดแถวขายราย SKU ราย วัน และแถวขายทีละแถว ให้หน้าเช็ครายการตัดสต๊อกเอาไปเทียบ
+ *                                พร้อมคู่ SKU จากแท็บ "MASTER แปลงสินค้า" (ถ้ามี) ให้หน้า LOT / PO ที่ขายออก
  * POST {op:'count-save'}   บันทึกผลนับ
  * POST {op:'count-add'}    ส่ง SKU ที่ยอดไม่ตรงระบบบริษัทเข้าใบนับ
  * ไม่ใส่ api               บอกแค่ว่าเป็นสคริปต์นี้ ให้หน้าตั้งค่าเช็คว่าใส่ URL ถูกตัว
@@ -37,6 +38,9 @@ var RACK = /^[A-Z]+\d{0,2}-\d{2}-\d{2}(-\d{2})?$/;
 var HISTORY_MAX = 500;      // SKU ขายดีมีหลายพันแถว ส่งแค่ช่วงล่าสุดพอ
 var ISSUE_ROWS = 6;         // เลขแถวที่แนบไปต่อหนึ่งรายการ
 var ISSUE_MAX = 200;        // รายการต่อหนึ่งเรื่อง ถ้าเกินบอกจำนวนจริงแล้วส่งแค่ที่หนักสุด
+
+// แท็บคู่ SKU ตอนซื้อ กับ SKU หลังแปลง (1 ต่อ 1) หน้า LOT / PO ใช้คืน SKU ที่ขายกลับเป็น SKU ตอนซื้อ สคริปต์อ่านอย่างเดียว
+var CONVERT_SHEET = 'MASTER แปลงสินค้า';
 
 var COUNT_SHEET = 'นับสต๊อก';
 var COUNT_PER_DAY = 20;     // รายการนับต่อวัน
@@ -446,6 +450,7 @@ function summary_() {
  * แถวที่นับไม่ได้ต้องบอกจำนวนกลับไป ไม่งั้นยอดที่หายไปจะดูเหมือนตัดไม่ตรงทั้งที่จริงกรอกไม่ครบ
  * lines คือแถวขายทีละแถวในช่วงที่ขอ หน้าเว็บใช้ชี้ว่ายอดของช่องที่ไม่ตรงมาจากแถวไหนในชีต
  *   [ลำดับวัน, ลำดับ SKU, เลขแถว, ลำดับ Location, LOT, PO, จำนวน (ข้อความถ้าพิมพ์ไม่ใช่ตัวเลข), ลำดับคนลง]
+ * convert คือ MASTER แปลงสินค้า (ดู convert_) ให้หน้า LOT / PO ที่ขายออก
  */
 function daily_(from, to) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -492,6 +497,45 @@ function daily_(from, to) {
     });
   });
   out.lines.forEach(function (l) { l[0] = dayIdx[l[0]]; });
+  out.convert = convert_(ss, rows);
+  return out;
+}
+
+/**
+ * คู่ SKU จากแท็บ MASTER แปลงสินค้า ไม่มีแท็บส่ง null หน้าเว็บจะได้แยกออกจากสคริปต์รุ่นเก่าที่ไม่มีช่องนี้เลย
+ * แถวแรกเป็นหัวตาราง หาคอลัมน์ SKU ที่หัวมีคำว่า ซื้อ กับ แปลง หรือ ขาย หาไม่เจอใช้คอลัมน์ A กับ B
+ * ชื่อสินค้าของ SKU ตอนซื้อเอาจากสมุด สมุดไม่มี SKU นั้นส่งว่าง หน้าเว็บใช้ชื่อของ SKU ที่ขายแทน
+ *   pairs = [[SKU หลังแปลง, SKU ตอนซื้อ, ชื่อ SKU ตอนซื้อ]]
+ */
+function convert_(ss, rows) {
+  var sheet = ss.getSheetByName(CONVERT_SHEET);
+  if (!sheet) return null;
+  var out = { tab: CONVERT_SHEET, cols: ['', ''], pairs: [], blank: 0 };
+  var h = sheet.getLastRow();
+  if (h < 1) return out;
+  var vals = sheet.getRange(1, 1, h, Math.max(sheet.getLastColumn(), 2)).getDisplayValues();
+  var head = vals[0].map(function (v) { return String(v).trim(); });
+  function find(re, skip) {
+    for (var i = 0; i < head.length; i++) if (i !== skip && re.test(head[i]) && /SKU|รหัส/i.test(head[i])) return i;
+    return -1;
+  }
+  var buy = find(/ซื้อ/, -1), after = find(/แปลง|ขาย/, buy);
+  if (buy < 0 || after < 0) { buy = 0; after = 1; }
+  out.cols = [head[buy] || '', head[after] || ''];
+
+  var names = {};
+  rows.forEach(function (r) {
+    if (r.long && r.name && !names[same_(r.long)]) names[same_(r.long)] = r.name;
+  });
+  var seen = {};
+  for (var i = 1; i < vals.length; i++) {
+    var b = same_(vals[i][buy]), a = same_(vals[i][after]);
+    if (!a && !b) continue;
+    if (!a || !b) { out.blank++; continue; }
+    if (a === b || seen[a + '|' + b]) continue;
+    seen[a + '|' + b] = 1;
+    out.pairs.push([a, b, names[b] || '']);
+  }
   return out;
 }
 

@@ -191,10 +191,11 @@ const CACHE = 'wms:lotpo:ledger';
 const SHOW_MAX = 500;   // ทั้งเดือนมีเป็นหมื่นบรรทัด วาดหมดหน้าจะหน่วง คัดลอกกับดาวน์โหลดยังได้ครบ
 
 let LED = null;     // คำตอบ tx-daily ของเดือนที่เลือก
-let ROWS = [];      // WmsLotPo.build(LED)
+let RAW = [];       // WmsLotPo.build(LED) ยังเป็น SKU ที่ขาย ใช้ปันล็อตให้ออเดอร์ที่ตัดด้วย SKU เดียวกัน
+let ROWS = [];      // RAW ที่แปลงคืนเป็น SKU ตอนซื้อแล้ว
 let MONTH = '';     // yyyy-mm
 let DAY = '';       // '' = ทั้งเดือน
-let ONLY = '';      // '' | split | unknown | gap
+let ONLY = '';      // '' | split | unknown | gap | conv
 let Q = '';
 let BUSY = '';
 let ERR = '';
@@ -258,7 +259,8 @@ function readCache() {
 function take(l) {
   LED = l;
   MONTH = l.from.slice(0, 7);
-  ROWS = WmsLotPo.build(l);
+  RAW = WmsLotPo.build(l);
+  ROWS = WmsLotPo.convert(RAW, l.convert);
   /* วันล่าสุดที่มีขายคือวันที่ทำรายงานบ่อยสุด */
   if (!DAY || !l.days.includes(DAY)) DAY = l.days[l.days.length - 1] || '';
   pair();
@@ -282,7 +284,7 @@ function pair() {
     return false;
   });
   LATE = Object.keys(late).sort();
-  OLINES = WmsLotPo.allocate(ROWS, Object.assign({}, ORD, { lines }));
+  OLINES = WmsLotPo.convert(WmsLotPo.allocate(RAW, Object.assign({}, ORD, { lines })), LED.convert);
 }
 
 async function loadOrders() {
@@ -468,6 +470,40 @@ function statusHtml() {
   return `<div class="tx-warn bad">วันที่ ${esc(dm(DAY))} เทียบรายวันยังไม่ตรง${n ? ` ${f(n)} SKU` : ''} — แก้ให้ตรงที่${goCut}ก่อนส่งบัญชี${stale}${at}</div>`;
 }
 
+/** SKU ตอนซื้อตัวหนา ใต้ชื่อบอก SKU ที่ขายถ้าแปลงคืนมา */
+function skuHtml(r, tag) {
+  const conv = r.sold ? `<span class="tx-sub">ขายเป็น ${esc(r.sold)}</span>`
+    : r.many ? '<span class="tx-sub tx-mid">MASTER มี SKU ตอนซื้อหลายตัว ยังไม่แปลงคืน</span>' : '';
+  return `<b>${esc(r.sku)}</b><span class="tx-sub">${esc(r.name)}</span>${conv}${tag}`;
+}
+
+/** SKU ในรายงานเป็น SKU ตอนซื้อหรือยัง บอกไว้ก่อนส่งบัญชี scope คือบรรทัดของวันหรือเดือนที่เลือก */
+function convNote(scope) {
+  const c = LED.convert;
+  const tab = '<b>MASTER แปลงสินค้า</b>';
+  const still = 'SKU ในรายงานยังเป็น SKU ที่ขาย ยังไม่ได้แปลงคืนเป็น SKU ตอนซื้อ';
+  if (c === undefined) return `<div class="tx-note">${still} — สคริปต์ tx-api.gs ยังเป็นรุ่นที่ไม่อ่านแท็บ ${tab} ให้วางโค้ดใหม่ Deploy เป็น New version แล้วกดดึงใหม่</div>`;
+  if (!c) return `<div class="tx-note">${still} — ไฟล์สมุด Transaction ยังไม่มีแท็บ ${tab}</div>`;
+  if (!c.pairs.length) return `<div class="tx-warn">แท็บ ${tab} ยังไม่มีคู่ SKU — แถวแรกเป็นหัวตาราง ใส่ SKU ตอนซื้อกับ SKU หลังแปลงตั้งแต่แถวที่ 2</div>`;
+  const t = WmsLotPo.totals(scope);
+  /* หัวคอลัมน์ไม่บอกว่าอันไหนเป็นอะไร สคริปต์ใช้ A กับ B บอกไว้ให้เห็นถ้ากรอกสลับกัน */
+  const col = (v) => `"${esc(v || 'ไม่มีหัว')}"`;
+  const plain = /ซื้อ/.test(c.cols[0]) && /แปลง|ขาย/.test(c.cols[1]);
+  const out = [`<div class="tx-note">คืน SKU ที่แปลงแล้วเป็น SKU ตอนซื้อตามแท็บ ${tab} (${f(c.pairs.length)} คู่)
+    · ${DAY ? `วันที่ ${esc(dm(DAY))}` : esc(monthName(MONTH))} แปลงคืน <b>${f(t.conv.lines)}</b> บรรทัด ${f(t.conv.qty)} ชิ้น
+    — SKU เดิมอยู่ในคอลัมน์ SKU ที่ขาย</div>`];
+  if (!plain) {
+    out.push(`<div class="tx-warn">หัวตารางในแท็บ ${tab} ไม่ได้บอกว่าคอลัมน์ไหนเป็นอะไร จึงใช้ ${col(c.cols[0])} เป็น SKU ตอนซื้อ ${col(c.cols[1])} เป็น SKU หลังแปลง
+      — ถ้าสลับกัน ตั้งหัวคอลัมน์เป็น <b>SKU ตอนซื้อ</b> กับ <b>SKU หลังแปลง</b></div>`);
+  }
+  if (t.many.lines) {
+    out.push(`<div class="tx-warn">${f(t.many.lines)} บรรทัด (${f(t.many.qty)} ชิ้น) ยังไม่แปลงคืน เพราะ SKU หลังแปลงตัวเดียวมี SKU ตอนซื้อหลายตัวในแท็บ ${tab}
+      — กดตัวกรอง <b>แปลงคืน</b> เพื่อดู</div>`);
+  }
+  if (c.blank) out.push(`<div class="tx-note">แท็บ ${tab} มี ${f(c.blank)} แถวที่กรอกไม่ครบสองช่อง ไม่ได้ใช้</div>`);
+  return out.join('');
+}
+
 function lotHtml(v, unknown, what) {
   if (!unknown) return esc(v);
   return `<span class="tx-mid">${esc(v === '' ? 'ว่าง' : v)}</span><span class="tx-sub">ไม่รู้ ${what}</span>`;
@@ -504,7 +540,7 @@ function orderListHtml(rows) {
     return `<tr${cls ? ` class="${cls}"` : ''}>
       ${DAY ? '' : `<td class="nw k-date">${esc(dm(r.date))}</td>`}
       <td class="nw k-ord">${ord}</td>
-      <td class="k-sku"><b>${esc(r.sku)}</b><span class="tx-sub">${esc(r.name)}</span>${r.split > 1 ? `<span class="tx-tag">ได้ ${r.split} LOT/PO</span>` : ''}</td>
+      <td class="k-sku">${skuHtml(r, r.split > 1 ? `<span class="tx-tag">ได้ ${r.split} LOT/PO</span>` : '')}</td>
       <td class="nw k-lot" data-label="LOT">${none ? '—' : lotHtml(r.lot, r.noLot, 'LOT')}</td>
       <td class="nw k-po" data-label="PO">${none ? '—' : lotHtml(r.po, r.noPo, 'PO')}</td>
       <td class="num k-qty" data-label="จำนวน">${f(r.qty)}</td>
@@ -530,11 +566,12 @@ function listHtml() {
   const show = rows.slice(0, SHOW_MAX);
   const body = show.map((r, i) => {
     const prev = show[i - 1], next = show[i + 1];
-    const same = (a) => a && a.date === r.date && a.sku === r.sku;
+    /* SKU ตอนซื้อเดียวกันแต่ขายเป็นคนละ SKU เป็นคนละกลุ่ม จำนวน LOT/PO บนป้ายนับตาม SKU ที่ขาย */
+    const same = (a) => a && a.date === r.date && a.sku === r.sku && (a.sold || '') === (r.sold || '');
     const cls = [same(prev) ? 'lp-in' : '', same(next) ? 'lp-grp' : ''].filter(Boolean).join(' ');
     const sku = same(prev)
       ? `<span class="tx-sub">${esc(r.sku)}</span>`
-      : `<b>${esc(r.sku)}</b><span class="tx-sub">${esc(r.name)}</span>${r.split > 1 ? `<span class="tx-tag">ออก ${r.split} LOT/PO</span>` : ''}`;
+      : skuHtml(r, r.split > 1 ? `<span class="tx-tag">ออก ${r.split} LOT/PO</span>` : '');
     return `<tr${cls ? ` class="${cls}"` : ''}>
       ${DAY ? '' : `<td class="nw k-date">${esc(dm(r.date))}</td>`}
       <td class="k-sku">${sku}</td>
@@ -594,11 +631,12 @@ function renderBody() {
   const count = (only) => WmsLotPo.filter(scope, { only }).length;
   /* ตัวเลขบนปุ่มนับเป็นบรรทัดทุกปุ่ม ตรงกับจำนวนที่ปุ่มคัดลอกจะได้ */
   const opt = (v, label) => `<button class="tx-opt${ONLY === v ? ' on' : ''}" data-only="${v}">${label} ${f(count(v))} บรรทัด</button>`;
+  const conv = LED.convert && LED.convert.pairs.length ? opt('conv', 'แปลงคืน') : '';
   const opts = byOrder()
-    ? opt('', 'ทั้งหมด') + opt('split', 'ได้หลาย LOT/PO') + opt('unknown', 'ไม่รู้ LOT/PO') + opt('gap', 'ยอดไม่ลงกัน')
-    : opt('', 'ทั้งหมด') + opt('split', 'ออกหลาย LOT/PO') + opt('unknown', 'ไม่รู้ LOT/PO');
-  const cols = byOrder() ? 'วันที่ · ระบบ · เลขออเดอร์ · SKU · ชื่อสินค้า · LOT · PO · จำนวน · หมายเหตุ' : 'วันที่ · SKU · ชื่อสินค้า · LOT · PO · จำนวน · หมายเหตุ';
-  $('body').innerHTML = `${views}${statusHtml()}${byOrder() ? orderNote() : ''}
+    ? opt('', 'ทั้งหมด') + opt('split', 'ได้หลาย LOT/PO') + opt('unknown', 'ไม่รู้ LOT/PO') + opt('gap', 'ยอดไม่ลงกัน') + conv
+    : opt('', 'ทั้งหมด') + opt('split', 'ออกหลาย LOT/PO') + opt('unknown', 'ไม่รู้ LOT/PO') + conv;
+  const cols = byOrder() ? 'วันที่ · ระบบ · เลขออเดอร์ · SKU · SKU ที่ขาย · ชื่อสินค้า · LOT · PO · จำนวน · หมายเหตุ' : 'วันที่ · SKU · SKU ที่ขาย · ชื่อสินค้า · LOT · PO · จำนวน · หมายเหตุ';
+  $('body').innerHTML = `${views}${statusHtml()}${convNote(scope)}${byOrder() ? orderNote() : ''}
     <div class="tx-bar">
       <input id="q" class="tx-input" type="search" placeholder="ค้นหา${byOrder() ? 'เลขออเดอร์' : ''} SKU ชื่อสินค้า LOT หรือ PO" value="${esc(Q)}" autocomplete="off">
       ${opts}

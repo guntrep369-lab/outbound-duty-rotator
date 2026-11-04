@@ -15,12 +15,16 @@
  * ใน apps-script/cut-api.gs (?api=cut-orders) แล้วปันล็อตให้ ล็อตเก่าก่อน ให้ออเดอร์ตามลำดับแถวในแท็บนั้น
  * จึงเป็นการปันส่วน ไม่ใช่ของที่บันทึกไว้ว่าออเดอร์นี้หยิบจากล็อตนี้ วันที่ยอดสองฝั่งเท่ากันทุกชิ้นได้ล็อตครบ
  *
+ * แปลงคืน (convert): บางสินค้าซื้อเข้ามาด้วย SKU หนึ่งแล้วแปลงเป็นอีก SKU ก่อนขาย บัญชีต้องการ SKU ตอนซื้อ
+ * คู่ SKU มาจากแท็บ MASTER แปลงสินค้า ในไฟล์สมุด (ช่อง convert ของ tx-daily) ทำหลัง build และ allocate
+ * เพราะสมุดกับแท็บตัดลงขายด้วย SKU หลังแปลง ต้องจับคู่กันด้วยรหัสนั้นก่อน
+ *
  * โหลดเป็น classic script เปิดเป็น window.WmsLotPo
  */
 (function () {
   'use strict';
 
-  var HEAD = ['วันที่', 'SKU', 'ชื่อสินค้า', 'LOT', 'PO', 'จำนวน', 'หมายเหตุ'];
+  var HEAD = ['วันที่', 'SKU', 'SKU ที่ขาย', 'ชื่อสินค้า', 'LOT', 'PO', 'จำนวน', 'หมายเหตุ'];
 
   /** LOT 0 คือไม่รู้ล็อต (ของที่ลงไว้ตอนนับสต๊อกก่อนเริ่มแยกล็อต) ช่องว่างก็ไม่รู้เหมือนกัน */
   function noLot(v) { return v === '' || +v === 0; }
@@ -135,10 +139,63 @@
     return out;
   }
 
+  /**
+   * SKU หลังแปลง → { sku, name } ของ SKU ตอนซื้อ แปลงหลายทอด (ซื้อ A แปลงเป็น B แล้วเป็น C) ย้อนจนถึงตัวที่ซื้อ
+   * SKU หลังแปลงที่ MASTER ให้ SKU ตอนซื้อมากกว่าหนึ่งตัว ไม่รู้ว่าคืนเป็นตัวไหน ได้ { many: [...] }
+   */
+  function buyMap(master) {
+    var to = {}, many = {};
+    ((master && master.pairs) || []).forEach(function (p) {
+      var a = text(p[0]).toUpperCase(), b = text(p[1]).toUpperCase();
+      if (!a || !b || a === b) return;
+      if (!to[a]) { to[a] = { sku: b, name: text(p[2]) }; return; }
+      if (to[a].sku === b) return;
+      many[a] = many[a] || [to[a].sku];
+      if (many[a].indexOf(b) < 0) many[a].push(b);
+    });
+    var map = {};
+    Object.keys(to).forEach(function (a) {
+      if (many[a]) { map[a] = { many: many[a] }; return; }
+      var at = to[a], hop = {};
+      hop[a] = 1;
+      /* MASTER กรอกวนกลับหาตัวเอง หยุดก่อนถึงตัวที่ผ่านมาแล้ว */
+      while (to[at.sku] && !many[at.sku] && !hop[to[at.sku].sku]) { hop[at.sku] = 1; at = to[at.sku]; }
+      map[a] = at;
+    });
+    return map;
+  }
+
+  /**
+   * rows คือผลของ build หรือ allocate master คือช่อง convert ของ tx-daily ไม่ได้แก้ rows เดิม
+   * sold = SKU ที่ขาย มีเฉพาะบรรทัดที่แปลงคืน, many = SKU ตอนซื้อที่ MASTER ให้ไว้หลายตัว บรรทัดนั้นไม่แปลง
+   * SKU ตอนซื้อที่สมุดไม่มีชื่อ ใช้ชื่อของ SKU ที่ขายไปก่อน
+   */
+  function convert(rows, master) {
+    var map = buyMap(master);
+    var out = rows.map(function (r, i) {
+      var m = map[text(r.sku).toUpperCase()];
+      var o = m ? Object.assign({}, r) : r;
+      if (m && m.many) o.many = m.many;
+      else if (m) { o.sold = r.sku; o.sku = m.sku; o.name = m.name || r.name; }
+      return { r: o, i: i };
+    });
+    /* เรียงใหม่ด้วย SKU ตอนซื้อ รายออเดอร์ยังเรียงตามออเดอร์ก่อน ที่เหลือคงลำดับเดิม (ล็อตเก่าก่อน) */
+    out.sort(function (x, y) {
+      var a = x.r, b = y.r;
+      if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+      if (a.seq !== b.seq) return a.seq < b.seq ? -1 : 1;
+      if (a.sku !== b.sku) return a.sku < b.sku ? -1 : 1;
+      var sa = a.sold || '', sb = b.sold || '';
+      if (sa !== sb) return sa < sb ? -1 : 1;
+      return x.i - y.i;
+    });
+    return out.map(function (x) { return x.r; });
+  }
+
   function totals(rows) {
     /* split นับเป็น SKU ต่อวัน splitLines นับเป็นบรรทัด ตัวหลังเท่ากับจำนวนที่ตัวกรอง split ได้ */
     var t = { qty: 0, lines: rows.length, skus: 0, split: 0, splitLines: 0, unknown: { lines: 0, qty: 0 }, bad: 0,
-      orders: 0, gap: { lines: 0, qty: 0 } };
+      orders: 0, gap: { lines: 0, qty: 0 }, conv: { lines: 0, qty: 0 }, many: { lines: 0, qty: 0 } };
     var sku = {}, split = {}, orders = {};
     rows.forEach(function (r) {
       t.qty += r.qty;
@@ -146,6 +203,8 @@
       if (r.split > 1) { split[r.date + '|' + (r.ref || '') + '|' + r.sku] = 1; t.splitLines++; }
       if (r.noLot || r.noPo) { t.unknown.lines++; t.unknown.qty += r.qty; }
       if (r.miss) { t.gap.lines++; t.gap.qty += r.qty; }
+      if (r.sold) { t.conv.lines++; t.conv.qty += r.qty; }
+      if (r.many) { t.many.lines++; t.many.qty += r.qty; }
       if (r.ref) orders[r.date + '|' + r.ref] = 1;
       t.bad += r.bad ? r.bad.length : 0;
     });
@@ -157,7 +216,8 @@
 
   /**
    * only: '' ทั้งหมด | 'split' ออกหลาย LOT/PO | 'unknown' ไม่รู้ LOT หรือ PO | 'gap' รายออเดอร์ที่หาคู่ไม่ได้
-   * q ค้นใน SKU ชื่อ LOT PO และเลขออเดอร์ ไม่สนตัวพิมพ์เล็กใหญ่
+   *       | 'conv' แปลงคืนเป็น SKU ตอนซื้อ หรือแปลงไม่ได้เพราะ MASTER มีหลายตัว
+   * q ค้นใน SKU (ทั้งตอนซื้อและที่ขาย) ชื่อ LOT PO และเลขออเดอร์ ไม่สนตัวพิมพ์เล็กใหญ่
    */
   function filter(rows, o) {
     var q = text(o && o.q).toUpperCase(), date = o && o.date, only = o && o.only;
@@ -166,8 +226,9 @@
       if (only === 'split' && r.split < 2) return false;
       if (only === 'unknown' && !r.noLot && !r.noPo) return false;
       if (only === 'gap' && !r.miss) return false;
+      if (only === 'conv' && !r.sold && !r.many) return false;
       if (!q) return true;
-      return [r.sku, r.name, r.lot, r.po, r.ref || ''].some(function (v) { return v.toUpperCase().indexOf(q) >= 0; });
+      return [r.sku, r.sold || '', r.name, r.lot, r.po, r.ref || ''].some(function (v) { return v.toUpperCase().indexOf(q) >= 0; });
     });
   }
 
@@ -183,21 +244,22 @@
     else if (r.noLot && r.noPo) out.push('ไม่รู้ LOT และ PO');
     else if (r.noLot) out.push('ไม่รู้ LOT');
     else if (r.noPo) out.push('ไม่รู้ PO');
+    if (r.many) out.push('MASTER แปลงสินค้ามี SKU ตอนซื้อหลายตัว (' + r.many.join(', ') + ') ยังไม่แปลงคืน');
     if (r.bad && r.bad.length) out.push('จำนวนพิมพ์ไม่ใช่ตัวเลข ' + r.bad.length + ' แถว ไม่ได้นับ');
     return out.join(' · ');
   }
 
-  var ORDER_HEAD = ['วันที่', 'ระบบ', 'เลขออเดอร์', 'SKU', 'ชื่อสินค้า', 'LOT', 'PO', 'จำนวน', 'หมายเหตุ'];
+  var ORDER_HEAD = ['วันที่', 'ระบบ', 'เลขออเดอร์', 'SKU', 'SKU ที่ขาย', 'ชื่อสินค้า', 'LOT', 'PO', 'จำนวน', 'หมายเหตุ'];
 
-  /** ตารางเรียบ ๆ ทุกบรรทัดมี SKU ครบ วางใน Excel แล้วกรองหรือทำ Pivot ต่อได้ทันที */
+  /** ตารางเรียบ ๆ ทุกบรรทัดมี SKU ครบ วางใน Excel แล้วกรองหรือทำ Pivot ต่อได้ทันที SKU ที่ขายว่างไว้ถ้าไม่ได้แปลง */
   function table(rows, byOrder) {
     if (byOrder) {
       return [ORDER_HEAD].concat(rows.map(function (r) {
-        return [r.date, r.src, r.ref, r.sku, r.name, r.lot, r.po, r.qty, note(r)];
+        return [r.date, r.src, r.ref, r.sku, r.sold || '', r.name, r.lot, r.po, r.qty, note(r)];
       }));
     }
     return [HEAD].concat(rows.map(function (r) {
-      return [r.date, r.sku, r.name, r.lot, r.po, r.qty, note(r)];
+      return [r.date, r.sku, r.sold || '', r.name, r.lot, r.po, r.qty, note(r)];
     }));
   }
 
@@ -223,7 +285,7 @@
   }
 
   window.WmsLotPo = {
-    HEAD: HEAD, ORDER_HEAD: ORDER_HEAD, build: build, allocate: allocate, totals: totals, filter: filter,
+    HEAD: HEAD, ORDER_HEAD: ORDER_HEAD, build: build, allocate: allocate, convert: convert, totals: totals, filter: filter,
     note: note, table: table, tsv: tsv, csv: csv,
   };
 })();

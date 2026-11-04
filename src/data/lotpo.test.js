@@ -204,10 +204,10 @@ describe('allocate ปันล็อตให้ออเดอร์', () => {
     const out = L.allocate(rows, orders([{ date: D, ref: 'X-77', sku: A, qty: 2, src: 'โอนย้าย' }]));
     expect(L.filter(out, { q: 'x-7' })).toHaveLength(1);
     expect(L.table(out, true)).toEqual([
-      ['วันที่', 'ระบบ', 'เลขออเดอร์', 'SKU', 'ชื่อสินค้า', 'LOT', 'PO', 'จำนวน', 'หมายเหตุ'],
-      [D, 'โอนย้าย', 'X-77', A, `ชื่อ ${A}`, '1', 'PO-1', 2, ''],
+      ['วันที่', 'ระบบ', 'เลขออเดอร์', 'SKU', 'SKU ที่ขาย', 'ชื่อสินค้า', 'LOT', 'PO', 'จำนวน', 'หมายเหตุ'],
+      [D, 'โอนย้าย', 'X-77', A, '', `ชื่อ ${A}`, '1', 'PO-1', 2, ''],
     ]);
-    expect(L.tsv(out, true).split('\n')[1].split('\t')).toHaveLength(9);
+    expect(L.tsv(out, true).split('\n')[1].split('\t')).toHaveLength(10);
   });
 });
 
@@ -218,9 +218,9 @@ describe('ส่งออก', () => {
       { date: '2026-03-05', sku: A, lot: 0, po: '0', qty: 3 },
     ]));
     expect(L.table(rows)).toEqual([
-      ['วันที่', 'SKU', 'ชื่อสินค้า', 'LOT', 'PO', 'จำนวน', 'หมายเหตุ'],
-      ['2026-03-05', A, `ชื่อ ${A}`, '1', 'PO-1', 5, ''],
-      ['2026-03-05', A, `ชื่อ ${A}`, '0', '0', 3, 'ไม่รู้ LOT และ PO'],
+      ['วันที่', 'SKU', 'SKU ที่ขาย', 'ชื่อสินค้า', 'LOT', 'PO', 'จำนวน', 'หมายเหตุ'],
+      ['2026-03-05', A, '', `ชื่อ ${A}`, '1', 'PO-1', 5, ''],
+      ['2026-03-05', A, '', `ชื่อ ${A}`, '0', '0', 3, 'ไม่รู้ LOT และ PO'],
     ]);
   });
 
@@ -229,7 +229,7 @@ describe('ส่งออก', () => {
     led.skus[0][1] = 'ชื่อ\nสองบรรทัด';
     const lines = L.tsv(L.build(led)).split('\n');
     expect(lines).toHaveLength(2);
-    expect(lines[1].split('\t')).toEqual(['2026-03-05', A, 'ชื่อ สองบรรทัด', '1', 'PO 1', '5', '']);
+    expect(lines[1].split('\t')).toEqual(['2026-03-05', A, '', 'ชื่อ สองบรรทัด', '1', 'PO 1', '5', '']);
   });
 
   it('CSV มี BOM ครอบช่องที่มีจุลภาค และกันช่องที่ Excel จะอ่านเป็นสูตร', () => {
@@ -238,11 +238,71 @@ describe('ส่งออก', () => {
     const text = L.csv(L.build(led));
     expect(text.startsWith('﻿')).toBe(true);
     const row = text.split('\r\n')[1];
-    expect(row).toBe(`2026-03-05,${A},"ผ้า, สีขาว ""ใหญ่""",1,'=1+1,5,`);
+    expect(row).toBe(`2026-03-05,${A},,"ผ้า, สีขาว ""ใหญ่""",1,'=1+1,5,`);
   });
 
   it('จำนวนติดลบยังเป็นตัวเลข ไม่ถูกใส่ เครื่องหมายนำหน้า', () => {
     const rows = L.build(ledger([{ date: '2026-03-05', sku: A, lot: 1, po: 'PO-1', qty: -2 }]));
-    expect(L.tsv(rows).split('\n')[1].split('\t')[5]).toBe('-2');
+    expect(L.tsv(rows).split('\n')[1].split('\t')[6]).toBe('-2');
+  });
+});
+
+describe('convert คืน SKU ที่แปลงแล้วเป็น SKU ตอนซื้อ', () => {
+  const D = '2026-03-05';
+  const AS = `${A}-S`, AM = `${A}-M`;
+
+  it('แปลงคืนตาม MASTER เก็บ SKU ที่ขายไว้ เรียงตาม SKU ตอนซื้อ ไม่แก้บรรทัดเดิม', () => {
+    const rows = L.build(ledger([
+      { date: D, sku: AS, lot: 2, po: 'PO-2', qty: 4 },
+      { date: D, sku: B, lot: 1, po: 'PO-1', qty: 1 },
+      { date: D, sku: A, lot: 1, po: 'PO-1', qty: 3 },
+    ]));
+    const out = L.convert(rows, { pairs: [[AS, A, 'ชื่อตอนซื้อ']] });
+    expect(out.map((r) => [r.sku, r.sold || '', r.name, r.qty])).toEqual([
+      [A, '', `ชื่อ ${A}`, 3],
+      [A, AS, 'ชื่อตอนซื้อ', 4],
+      [B, '', `ชื่อ ${B}`, 1],
+    ]);
+    expect(rows.find((r) => r.qty === 4).sku).toBe(AS);
+    expect(L.table(out)[2]).toEqual([D, A, AS, 'ชื่อตอนซื้อ', '2', 'PO-2', 4, '']);
+    expect(L.totals(out).conv).toEqual({ lines: 1, qty: 4 });
+    expect(L.filter(out, { only: 'conv' })).toHaveLength(1);
+    expect(L.filter(out, { q: '-s' })).toHaveLength(1);
+  });
+
+  it('สมุดไม่มีชื่อ SKU ตอนซื้อ ใช้ชื่อของ SKU ที่ขาย ไม่มี MASTER ก็ไม่แปลง', () => {
+    const rows = L.build(ledger([{ date: D, sku: AS, lot: 2, po: 'PO-2', qty: 4 }]));
+    expect(L.convert(rows, { pairs: [[AS, A, '']] })[0]).toMatchObject({ sku: A, sold: AS, name: `ชื่อ ${AS}` });
+    expect(L.convert(rows, null)[0]).toMatchObject({ sku: AS });
+    expect(L.convert(rows, undefined)[0].sold).toBeUndefined();
+  });
+
+  it('แปลงหลายทอดย้อนถึงตัวที่ซื้อ SKU ตอนซื้อหลายตัวไม่แปลงแต่ติดป้าย', () => {
+    const rows = L.build(ledger([
+      { date: D, sku: AM, lot: 1, po: 'PO-1', qty: 2 },
+      { date: D, sku: B, lot: 1, po: 'PO-1', qty: 5 },
+    ]));
+    const out = L.convert(rows, { pairs: [[AM, AS, ''], [AS, A, 'ชื่อตอนซื้อ'], [B, 'P-1', ''], [B, 'P-2', ''], [B, 'p-1', '']] });
+    expect(out[0]).toMatchObject({ sku: A, sold: AM, name: 'ชื่อตอนซื้อ' });
+    expect(out[1]).toMatchObject({ sku: B, many: ['P-1', 'P-2'] });
+    expect(out[1].sold).toBeUndefined();
+    expect(L.note(out[1])).toContain('P-1, P-2');
+    expect(L.totals(out).many).toEqual({ lines: 1, qty: 5 });
+    expect(L.filter(out, { only: 'conv' })).toHaveLength(2);
+  });
+
+  it('MASTER วนกลับหาตัวเองไม่ค้าง', () => {
+    const rows = L.build(ledger([{ date: D, sku: AS, lot: 1, po: 'PO-1', qty: 1 }]));
+    expect(L.convert(rows, { pairs: [[AS, A, ''], [A, AS, '']] })[0].sku).toBe(A);
+  });
+
+  it('รายออเดอร์ปันล็อตด้วย SKU ที่ขาย แล้วค่อยแปลงคืน ลำดับออเดอร์คงเดิม', () => {
+    const rows = L.build(ledger([{ date: D, sku: AS, lot: 1, po: 'PO-1', qty: 3 }]));
+    const out = L.convert(L.allocate(rows, orders([
+      { date: D, ref: 'R2', sku: AS, qty: 1 },
+      { date: D, ref: 'R1', sku: AS, qty: 2 },
+    ])), { pairs: [[AS, A, 'ชื่อตอนซื้อ']] });
+    expect(out.map((r) => [r.ref, r.sku, r.sold, r.qty, r.miss])).toEqual([['R2', A, AS, 1, ''], ['R1', A, AS, 2, '']]);
+    expect(L.table(out, true)[1]).toEqual([D, 'JST', 'R2', A, AS, 'ชื่อตอนซื้อ', '1', 'PO-1', 1, '']);
   });
 });

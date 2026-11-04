@@ -48,7 +48,7 @@ function writableTab() {
   };
 }
 
-function script(rows, { props = {}, extraSheets = [] } = {}) {
+function script(rows, { props = {}, extraSheets = [], named = {} } = {}) {
   const grid = [HEAD, ...rows];
   const sheet = {
     getLastRow: () => grid.length,
@@ -58,7 +58,7 @@ function script(rows, { props = {}, extraSheets = [] } = {}) {
       getValues: () => grid.slice(r - 1, r - 1 + nr).map((x) => x.slice(c - 1, c - 1 + nc)),
     }),
   };
-  const tabs = {};
+  const tabs = { ...named };
   const ss = {
     getSheets: () => [...extraSheets, sheet, ...Object.values(tabs)],
     getSheetByName: (name) => tabs[name] || null,
@@ -83,6 +83,17 @@ function script(rows, { props = {}, extraSheets = [] } = {}) {
 }
 
 const summary = (rows, o) => script(rows, o)({ api: 'tx-summary' });
+
+/** แท็บที่ทีมกรอกเอง สคริปต์อ่านเป็นข้อความที่เห็นบนจอ */
+function masterTab(grid) {
+  return {
+    getLastRow: () => grid.length,
+    getLastColumn: () => (grid[0] ? grid[0].length : 0),
+    getRange: (r, c, nr, nc) => ({
+      getDisplayValues: () => grid.slice(r - 1, r - 1 + nr).map((x) => Array.from({ length: nc }, (_, j) => String(x[c - 1 + j] ?? ''))),
+    }),
+  };
+}
 
 /** ยอดของคีย์หนึ่งจากคำตอบแบบย่อ */
 function bal(s, sku, loc, lot = 8) {
@@ -179,6 +190,37 @@ describe('tx-api.gs — ยอดขายรายวัน', () => {
     const call = script([sale({ qty: 1, note: day('2026-01-10') })]);
     call({ api: 'tx-daily' });
     expect(Object.keys(call.tabs)).toEqual([]);
+  });
+
+  it('ไม่มีแท็บ MASTER แปลงสินค้า ส่ง convert เป็น null', () => {
+    expect(daily([sale({ qty: 1, note: day('2026-01-10') })]).convert).toBeNull();
+  });
+
+  it('อ่านคู่ SKU จากหัวตาราง ชื่อ SKU ตอนซื้อเอาจากสมุด แถวไม่ครบนับไว้', () => {
+    const master = masterTab([
+      ['ชื่อสินค้าตอนซื้อ', 'SKU หลังแปลง', 'SKU ตอนซื้อ'],
+      ['ชุดตัวอย่าง', 'aaa0000000001-s ', 'AAA0000000001'],
+      ['', 'AAA0000000001-M', 'AAA0000000001'],
+      ['', 'AAA0000000001-M', 'aaa0000000001'],
+      ['', 'BBB0000000002', 'BBB0000000002'],
+      ['', 'CCC0000000003-S', ''],
+      ['', '', ''],
+    ]);
+    const r = script([
+      row({ long: 'AAA0000000001', name: 'สินค้าตอนซื้อ', to: 'A-01-01', qty: 9 }),
+      sale({ long: 'AAA0000000001-S', name: 'สินค้าแปลงแล้ว', qty: 1, note: day('2026-01-10') }),
+    ], { named: { 'MASTER แปลงสินค้า': master } })({ api: 'tx-daily' });
+    expect(r.convert).toEqual({
+      tab: 'MASTER แปลงสินค้า', cols: ['SKU ตอนซื้อ', 'SKU หลังแปลง'], blank: 1,
+      pairs: [['AAA0000000001-S', 'AAA0000000001', 'สินค้าตอนซื้อ'], ['AAA0000000001-M', 'AAA0000000001', 'สินค้าตอนซื้อ']],
+    });
+  });
+
+  it('หัวตารางไม่บอกว่าคอลัมน์ไหนเป็นอะไร ใช้ A เป็น SKU ตอนซื้อ B เป็น SKU หลังแปลง', () => {
+    const master = masterTab([['รหัส 1', 'รหัส 2'], ['AAA0000000001', 'AAA0000000001-S']]);
+    const r = script([sale({ qty: 1, note: day('2026-01-10') })], { named: { 'MASTER แปลงสินค้า': master } })({ api: 'tx-daily' });
+    expect(r.convert.cols).toEqual(['รหัส 1', 'รหัส 2']);
+    expect(r.convert.pairs).toEqual([['AAA0000000001-S', 'AAA0000000001', '']]);
   });
 });
 

@@ -566,8 +566,8 @@ after the sheet's data changes.
 ## 🏷️ Lot & PO Out (`/lot-po`)
 
 The report for accounting: on each day, which LOT and PO every SKU that was sold came from. It reads
-the ledger's `ขาย` rows through the same `tx-daily` call that เทียบรายวัน uses, so it needs no new
-script, only the Transaction URL from the settings page. It never writes to the sheet.
+the ledger's `ขาย` rows through the same `tx-daily` call that เทียบรายวัน uses, with the Transaction URL
+from the settings page. It never writes to the sheet.
 
 - Rows with the same day, SKU (column B), LOT and PO become one line. The location isn't part of the
   line, but it's shown, with links to the ledger rows behind it.
@@ -575,7 +575,7 @@ script, only the Transaction URL from the settings page. It never writes to the 
 - `LOT 0`, `PO 0` or a blank one means the LOT or PO isn't known (mostly stock from the last count). These
   lines are marked and can be listed on their own.
 - A quantity typed as text isn't added, the same as the balance sheet's SUMIFS, and the line says so.
-- Copy pastes into Excel as columns (วันที่, SKU, ชื่อสินค้า, LOT, PO, จำนวน, หมายเหตุ), with the SKU on
+- Copy pastes into Excel as columns (วันที่, SKU, SKU ที่ขาย, ชื่อสินค้า, LOT, PO, จำนวน, หมายเหตุ), with the SKU on
   every line. Download gives the same table as a CSV that Excel opens in Thai. Both take the whole
   selection, even when the page only draws the first 500 lines.
 
@@ -586,11 +586,34 @@ LOT first, to orders in the tab's row order. It's an allocation, not a record of
 which lot. On a day where เทียบรายวัน matches, every piece gets a LOT/PO. Otherwise the rest shows as
 ยอดไม่ลงกัน, either an order the ledger didn't sell or a sale with no order. Days after the ledger's last
 sale date are left out until the ledger reaches them. Copy and the CSV get วันที่, ระบบ, เลขออเดอร์, SKU,
-ชื่อสินค้า, LOT, PO, จำนวน, หมายเหตุ. The orders are fetched when the view is opened (about 2 MB a
+SKU ที่ขาย, ชื่อสินค้า, LOT, PO, จำนวน, หมายเหตุ. The orders are fetched when the view is opened (about 2 MB a
 month) and aren't kept on the device.
 
-**Updating to a version with รายออเดอร์:** paste the new `cut-api.gs`, then Deploy → Manage deployments →
-pencil icon → Version: New version → Deploy. Until then the view says the script is out of date.
+**Back to the purchase SKU (แปลงคืน):** some goods are bought under one SKU and converted to another
+before they're sold, but accounting wants the SKU they were bought as. Add a tab named
+`MASTER แปลงสินค้า` to the Transaction ledger file (the one `tx-api.gs` is attached to). Row 1 is the
+header, then one pair per row:
+
+| SKU ตอนซื้อ | SKU หลังแปลง |
+|---|---|
+| ABC-1001 | ABC-1001-S |
+
+- One piece after converting is one piece as bought (1 to 1), so quantities don't change.
+- The script finds the columns by their headers: a SKU header with ซื้อ is the purchase SKU, one with
+  แปลง or ขาย is the converted SKU. If it can't tell, it uses A as the purchase SKU and B as the
+  converted one, and the page says so.
+- Lines are matched to orders with the SKU that was sold, then turned back. The SKU column shows the
+  purchase SKU and the name the ledger has for it. The SKU as sold moves to the SKU ที่ขาย column, which
+  stays blank on lines that weren't converted.
+- A chain (bought as A, converted to B, then to C) goes all the way back to A.
+- A converted SKU paired with more than one purchase SKU isn't turned back, since there's no telling
+  which one. Its lines are flagged.
+- The แปลงคืน filter lists the converted lines and the flagged ones.
+
+**Updating to a version with รายออเดอร์ and แปลงคืน:** paste the new `cut-api.gs` (รายออเดอร์) and the
+new `tx-api.gs` (แปลงคืน), each into its own Apps Script project. Then for each one, Deploy → Manage
+deployments → pencil icon → Version: New version → Deploy. Until then the page says which script is out
+of date.
 
 **Is the day ready to send?** The report is only as right as the ledger. The page reads the last
 เทียบรายวัน result saved on this device by the cut-check page, then marks each day ✓ (matches all
