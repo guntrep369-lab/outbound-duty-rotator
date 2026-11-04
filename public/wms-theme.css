@@ -55,9 +55,28 @@ body {
 .sysbar-title { font-size:15px; font-weight:700; letter-spacing:-.01em; }
 .sysbar-by { font-size:11px; font-weight:500; color:#A5B4FC; margin-left:4px; }
 .sysbar-sub { display:none; font-size:11px; color:#94A3B8; }
-.sysbar-modlabel { display:none; font-size:10px; font-weight:600; letter-spacing:.06em;
-                   text-transform:uppercase; color:#64748B; padding:8px 4px 4px; }
 .sysbar-mods { display:flex; gap:4px; overflow-x:auto; padding:0 12px 8px; }
+/* Folding groups (wms-shell.js), one open at a time. On a phone the menu is a
+   sideways strip: each group is a chip, and its pages line up after it when open. */
+.sysgrp, .sysgrp-items { display:contents; }
+.sysgrp-items[hidden] { display:none; }
+.sysgrp-head { display:flex; align-items:center; gap:8px; flex-shrink:0; padding:7px 12px;
+               border:1px solid #334155; border-radius:8px; background:transparent; cursor:pointer;
+               font-family:var(--wms-font); font-size:14px; font-weight:600; color:#94A3B8;
+               text-align:left; transition:background .15s, color .15s, border-color .15s; }
+.sysgrp-head:hover { background:#1E293B; color:#fff; }
+.sysgrp-head:focus-visible { outline:2px solid #A5B4FC; outline-offset:2px; }
+.sysgrp-head span { white-space:nowrap; }
+.sysgrp-head em { font-style:normal; font-size:11px; font-weight:500; opacity:.7; display:none; }
+.sysgrp-ic { width:16px; height:16px; flex-shrink:0; transition:transform .15s; }
+.sysgrp.open .sysgrp-ic { transform:rotate(90deg); }
+.sysgrp.open .sysgrp-head { color:#fff; border-color:#475569; }
+/* The group this page is in, folded shut: tint it so you still see where you are. */
+.sysgrp.here:not(.open) .sysgrp-head { color:#C7D2FE; border-color:#4F46E5; }
+.sysgrp-n { min-width:18px; height:18px; padding:0 5px; border-radius:9px; background:#1E293B;
+            color:#94A3B8; font-size:11px; font-weight:600; line-height:18px; text-align:center;
+            font-variant-numeric:tabular-nums; }
+.sysgrp.open .sysgrp-n { display:none; }
 .sysmod { display:flex; align-items:center; gap:10px; flex-shrink:0; padding:8px 12px;
           border-radius:8px; text-decoration:none; font-size:14px; font-weight:500;
           color:#CBD5E1; cursor:pointer; transition:background .15s, color .15s; }
@@ -107,10 +126,18 @@ body {
   .sysbar { overflow-y:auto; overflow-x:hidden; scrollbar-width:thin; scrollbar-color:#334155 transparent; }
   .sysbar-brand { display:block; }
   .sysbar-brand .sysbar-logo { margin-bottom:8px; }
-  .sysbar-sub, .sysbar-modlabel { display:block; }
+  .sysbar-sub { display:block; }
   .sysmod em { display:inline; }
   .sysbar-mods { flex-direction:column; overflow:visible; }
   .sysmod { width:100%; }
+  /* A group is a row with a fold arrow; open, its pages sit inside one tinted block. */
+  .sysgrp { display:block; border-radius:10px; }
+  .sysgrp.open { background:#131C2E; }
+  .sysgrp-items { display:flex; flex-direction:column; gap:2px; padding-bottom:4px; }
+  .sysgrp-head { width:100%; gap:10px; padding:9px 12px; border:0; font-size:14px; }
+  .sysgrp-head em { display:inline; }
+  .sysgrp-n { margin-left:auto; }
+  .sysgrp.here:not(.open) .sysgrp-head { box-shadow:inset 3px 0 0 #6366F1; }
 }
 
 @media print {

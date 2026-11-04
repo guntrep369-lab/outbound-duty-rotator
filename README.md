@@ -30,6 +30,14 @@ The site root redirects to `roster/`, so the main link opens the shift schedule.
 work by their links, and the sidebar shows them while you're on them. Remove `hidden` to put them
 back.
 
+Groups in the sidebar fold. Only one is open at a time, so the menu fits on a laptop screen without
+scrolling. Each folded group shows how many pages it holds. Click a group's head to see its pages;
+opening one group closes the one that was open. The group of the page you're on opens by
+itself, and if you fold it shut, a purple mark shows you're still in it. A page with no group
+(สมุดกะ) keeps whichever group was open on the page before, so the menu doesn't jump while the
+page changes. On a phone the groups are chips in the menu strip. Tap one and it slides to the
+left with its pages after it.
+
 Moving between modules uses a page transition in Chrome, Edge, and Safari 18.2+. The sidebar stays
 still while the new page fades and slides in, and the sidebar keeps its scroll position. Other
 browsers, and devices set to reduce motion, switch pages the normal way. The styles are in
