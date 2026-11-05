@@ -547,6 +547,31 @@ the same Uploadยิงออก label for the Transaction cut tab.
   who entered it. The ledger has no order numbers, so this is as close as it gets. The row number opens
   the sheet at that row.
 
+**Tab TRcloud เทียบ Report:** compares what TRcloud cut each day with what the report says should have left
+that day (the same Report ควรออก as เทียบรายวัน), one row per order + SKU + day. Each day shows the pieces
+short and over, and that day's totals for both sides. Three cards split the rows; press one to show only
+that group:
+
+- TRcloud ตัดขาด · ต้องตัดเพิ่ม: TRcloud cut less than the report, or nothing.
+- TRcloud ตัดเกิน · ต้องคืน: TRcloud cut more than the report. This includes wrong SKUs, orders that aren't in
+  the report, and orders cancelled before they left.
+- ตัดคนละวันกับ Report: the month total is right, but TRcloud entered it on another day. The row says which.
+  Fixing it takes two rows, one on each day.
+
+This tab only looks at TRcloud. A row where Uploadยิงออก is wrong but TRcloud is right doesn't appear.
+
+Tick rows, a whole day (เลือกทั้งวัน) or everything the filters show (เลือกทุกรายการที่เห็น), then press
+**⬇️ Excel ลง TRcloud**. The file has one sheet in the team's TRcloud layout: `SKU`, `วันที่`,
+`จำนวนที่เพิ่มขึ้น`, `จำนวนที่ลดลง`, two blank columns, `ออเดอร์`, `แผนก`, `คลังสินค้า`, `ขนส่ง`.
+
+- A short row goes in `จำนวนที่ลดลง` (cut more). An over row goes in `จำนวนที่เพิ่มขึ้น` (give stock back).
+- `วันที่` is the day that differs, not today, so TRcloud's daily totals line up with the report.
+- `แผนก`, `คลังสินค้า` and `ขนส่ง` come from that order's TRcloud rows. An order TRcloud doesn't have yet gets the
+  department and warehouse TRcloud uses most for cuts, and the report's carrier.
+
+The rows come from a newer `cut-api.gs`. With an older script, the tab says to paste the new one and press
+ตรวจใหม่.
+
 **Tab แก้แยกตามระบบ:** everything from the other tabs, sorted by the system where it has to be fixed rather
 than by JST or CRM, so each list can go to whoever looks after that system. Each item says how many pieces
 to add (+) or take back (−), and the copy button puts the list on the clipboard as columns to paste into a

@@ -116,3 +116,33 @@ describe('exportSheets — ชีตแถวใน Report', () => {
     expect(sum.widths).toHaveLength(sum.aoa[0].length);
   });
 });
+
+describe('ไฟล์แก้ยอดลง TRcloud (trcLines + trcSheet)', () => {
+  const TRC = {
+    dept: 'OB', wh: 'WH-02', total: 3,
+    lines: [
+      ['2026-03-06', '5002', B, 'JST', 'ขนส่งเอ', 0, 2, 'over', [], [], 'OB', 'WH-09'],
+      ['2026-03-05', '5001', A, 'JST', 'ขนส่งเอ', 3, 1, 'under', [], [], '', ''],
+      ['2026-03-05', 'C-77', C, 'CRM', 'ขนส่งบี', 1, 0, 'moved', ['2026-03-07'], [], '', ''],
+    ],
+  };
+
+  it('แปลงแถวเป็นวัตถุ ต่าง = TRcloud − Report แผนกกับคลังที่ว่างใช้ค่าที่ใช้บ่อย', () => {
+    const [over, under] = WmsCut.trcLines(TRC);
+    expect(over).toMatchObject({ key: `2026-03-06|5002|${B}`, r: 0, t: 2, diff: 2, dept: 'OB', wh: 'WH-09' });
+    expect(under).toMatchObject({ diff: -2, dept: 'OB', wh: 'WH-02' });
+    expect(WmsCut.trcLines(undefined)).toEqual([]);
+  });
+
+  it('หัวตารางตามแบบของทีม ขาดลงช่องจำนวนที่ลดลง เกินลงช่องจำนวนที่เพิ่มขึ้น เรียงตามวันที่', () => {
+    const s = WmsCut.trcSheet(WmsCut.trcLines(TRC));
+    expect(s.name).toBe('TRcloud');
+    expect(s.aoa[0]).toEqual(['SKU', 'วันที่', 'จำนวนที่เพิ่มขึ้น', 'จำนวนที่ลดลง', '', '', 'ออเดอร์', 'แผนก', 'คลังสินค้า', 'ขนส่ง']);
+    expect(s.aoa.slice(1)).toEqual([
+      [A, '2026-03-05', '', 2, '', '', '5001', 'OB', 'WH-02', 'ขนส่งเอ'],
+      [C, '2026-03-05', '', 1, '', '', 'C-77', 'OB', 'WH-02', 'ขนส่งบี'],
+      [B, '2026-03-06', 2, '', '', '', '5002', 'OB', 'WH-09', 'ขนส่งเอ'],
+    ]);
+    expect(s.widths).toHaveLength(s.aoa[0].length);
+  });
+});

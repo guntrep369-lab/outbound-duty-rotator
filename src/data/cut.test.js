@@ -38,7 +38,7 @@ const tf = (slip, sku, qty, o = {}) => [
   slip, `EX${slip}`, 'จัดส่งแล้ว', o.store ?? 'Store_สมมติ', 99, qty, o.date ?? when(DAY), sku, o.name ?? `สินค้า ${sku}`, qty,
 ];
 const tr = (ref, sku, out, o = {}) => [
-  o.date ?? when(DAY), 1, when(DAY), sku, ref, 'Unit', o.lot ?? 'ขนส่งเอ', '', '', '', '', o.dept ?? 'OB', '', 'WH', 'import', o.inq ?? 0, out,
+  o.date ?? when(DAY), 1, when(DAY), sku, ref, 'Unit', o.lot ?? 'ขนส่งเอ', '', '', '', '', o.dept ?? 'OB', '', o.wh ?? 'WH', 'import', o.inq ?? 0, out,
 ];
 
 function sheet(rows) {
@@ -1056,5 +1056,89 @@ describe('cut-api.gs — แถว Report ของออเดอร์ที�
     expect(ask(['5001', '5001', ' 5001 ']).refs).toBe(1);
     const many = Array.from({ length: 600 }, (_, i) => `R${i}`);
     expect(ask(many).refs).toBe(500);
+  });
+});
+
+describe('cut-api.gs — TRcloud เทียบ Report รายวัน', () => {
+  const D6 = '2026-03-06';
+  /* แถวแบบอ่านง่าย ตามลำดับที่สคริปต์ส่ง */
+  const linesOf = (r) => r.trc.lines.map(([d, ref, sku, sys, sup, rep, t, k, to, ro, dept, wh]) => ({ d, ref, sku, sys, sup, rep, t, k, to, ro, dept, wh }));
+
+  it('ตรงทุกวันไม่มีแถว', () => {
+    const r = run(join(fine('5001'), fine('5002', B, 2)));
+    expect(r.trc).toMatchObject({ lines: [], total: 0, dept: 'OB', wh: 'WH' });
+  });
+
+  it('TRcloud ยังไม่ตัด ได้แถวขาด แผนกกับคลังว่างให้ใช้ค่าที่ใช้บ่อย', () => {
+    const r = run(join(fine('5001'), { jst: [jst('5002', B, 3)], tx: [tx('5002', B, 3)] }));
+    expect(linesOf(r)).toEqual([
+      { d: DAY, ref: '5002', sku: B, sys: 'JST', sup: 'ขนส่งเอ', rep: 3, t: 0, k: 'under', to: [], ro: [], dept: '', wh: '' },
+    ]);
+    expect(r.trc).toMatchObject({ dept: 'OB', wh: 'WH' });
+  });
+
+  it('TRcloud ตัดเกิน ได้แถวเกิน พร้อมแผนก คลัง และขนส่งจากแถวของ TRcloud', () => {
+    const r = run({ jst: [jst('5001', A, 1)], tx: [tx('5001', A, 1)], tr: [tr('5001', A, 3, { wh: 'WH-09', lot: 'ขนส่งเอ' })] });
+    expect(linesOf(r)).toEqual([
+      { d: DAY, ref: '5001', sku: A, sys: 'JST', sup: 'ขนส่งเอ', rep: 1, t: 3, k: 'over', to: [], ro: [], dept: 'OB', wh: 'WH-09' },
+    ]);
+  });
+
+  it('ยอดทั้งเดือนตรงแต่ TRcloud ลงคนละวัน ได้สองแถว บอกวันอีกฝั่ง', () => {
+    const r = run({ jst: [jst('5001', A, 2)], tx: [tx('5001', A, 2)], tr: [tr('5001', A, 2, { date: when(D6) })] });
+    expect(linesOf(r).map(({ d, rep, t, k, to, ro }) => ({ d, rep, t, k, to, ro }))).toEqual([
+      { d: DAY, rep: 2, t: 0, k: 'moved', to: [D6], ro: [] },
+      { d: D6, rep: 0, t: 2, k: 'moved', to: [], ro: [DAY] },
+    ]);
+  });
+
+  it('Upload ผิดแต่ TRcloud ถูก ไม่มีแถว เพราะแท็บนี้ดูแค่ TRcloud', () => {
+    const r = run({ jst: [jst('5001', A, 1)], tx: [tx('5001', A, 4)], tr: [tr('5001', A, 1)] });
+    expect(rowsOf(r, 'over')).toHaveLength(1);
+    expect(r.trc.lines).toEqual([]);
+  });
+
+  it('ขนส่งยกเลิกก่อนของออกแต่ TRcloud ตัดแล้ว ยอดควรออกเป็นศูนย์', () => {
+    const r = run({ jst: [jst('5001', A, 2, { ship: 'ยกเลิกแล้ว', status: 'ยกเลิก' })], tx: [tx('5001', A, 2)], tr: [tr('5001', A, 2)] });
+    expect(linesOf(r).map(({ rep, t, k }) => ({ rep, t, k }))).toEqual([{ rep: 0, t: 2, k: 'cancel' }]);
+  });
+
+  it('ตัดผิด SKU กับตัดแต่ไม่มีใน Report บอกเรื่องตามถัง', () => {
+    const r = run(join(
+      fine('5001'),
+      { tx: [tx('5001', B, 1)], tr: [tr('5001', B, 1)] },
+      { tx: [tx('7001', C, 2)], tr: [tr('7001', C, 2)] },
+    ));
+    expect(linesOf(r).map(({ ref, sku, rep, t, k }) => ({ ref, sku, rep, t, k }))).toEqual([
+      { ref: '5001', sku: B, rep: 0, t: 1, k: 'wrong' },
+      { ref: '7001', sku: C, rep: 0, t: 2, k: 'ghost' },
+    ]);
+  });
+
+  it('คืนยอดวันเดียวกับที่ตัดหักกันเป็นศูนย์ ไม่มีแถว แผนก IV ไม่นับ', () => {
+    const r = run(join(
+      fine('5001'),
+      { jst: [jst('5002', A, 1)], tx: [tx('5002', A, 1)], tr: [tr('5002', A, 2), tr('5002', A, 0, { inq: 1 })] },
+      { tr: [tr('ADJ', A, 5, { dept: 'IV' })] },
+    ));
+    expect(r.trc.lines).toEqual([]);
+  });
+
+  it('ไม่มีรายงานโอนย้าย งานโอนย้ายเทียบกับยอดที่ตัดใน Upload', () => {
+    const r = run(join(fine('5001'), { tx: [tx('T9', A, 4, { src: 'โอนย้าย' })], tr: [tr('T9', A, 3)] }));
+    expect(linesOf(r).map(({ ref, rep, t, k }) => ({ ref, rep, t, k }))).toEqual([{ ref: 'T9', rep: 4, t: 3, k: 'transferDiff' }]);
+  });
+
+  it('รวมทุกแถวของวันแล้วเท่ากับ TRcloud ลบ Report ของวันนั้นในเทียบรายวัน', () => {
+    const r = run(join(
+      fine('5001'), fine('5002', B, 2),
+      { jst: [jst('5003', A, 3)], tx: [tx('5003', A, 3)], tr: [tr('5003', A, 1, { date: when(D6) })] },
+      { tx: [tx('7001', C, 2)], tr: [tr('7001', C, 2)] },
+    ));
+    const d = r.daily, sum = (side, day) => side.filter((c) => d.days[c[0]] === day).reduce((s, c) => s + c[2], 0);
+    for (const day of [DAY, D6]) {
+      const lines = r.trc.lines.filter((l) => l[0] === day).reduce((s, l) => s + l[6] - l[5], 0);
+      expect(lines).toBe(sum(d.t, day) - sum(d.r, day));
+    }
   });
 });

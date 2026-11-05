@@ -518,9 +518,42 @@
     return out;
   }
 
+  /**
+   * แถว TRcloud เทียบ Report จาก cut-api.gs (trc.lines) เป็นวัตถุที่หน้าเว็บใช้
+   * diff = TRcloud − Report ลบคือ TRcloud ตัดขาด ต้องตัดเพิ่ม บวกคือตัดเกิน ต้องคืน
+   * แผนกกับคลังที่ว่างคือ TRcloud ยังไม่มีแถวของรายการนี้ ใช้ค่าที่ TRcloud ใช้บ่อยสุดแทน
+   */
+  function trcLines(trc) {
+    if (!trc || !trc.lines) return [];
+    return trc.lines.map(function (l) {
+      return {
+        key: l[0] + '|' + l[1] + '|' + l[2], d: l[0], ref: l[1], sku: l[2], sys: l[3], sup: l[4], r: l[5], t: l[6],
+        k: l[7], to: l[8] || [], ro: l[9] || [], dept: l[10] || trc.dept || '', wh: l[11] || trc.wh || '', diff: l[6] - l[5],
+      };
+    });
+  }
+
+  /* หัวตารางตามไฟล์ที่ทีมใช้ลง TRcloud สองช่องที่หัวว่างคงไว้ ให้คอลัมน์ตรงกับไฟล์เดิม */
+  var TRC_HEAD = ['SKU', 'วันที่', 'จำนวนที่เพิ่มขึ้น', 'จำนวนที่ลดลง', '', '', 'ออเดอร์', 'แผนก', 'คลังสินค้า', 'ขนส่ง'];
+
+  /**
+   * ไฟล์แก้ยอดลง TRcloud ทีละ ออเดอร์ + SKU + วัน
+   * TRcloud ตัดขาด ต้องตัดเพิ่ม ลงช่องจำนวนที่ลดลง (สต๊อกลด) ตัดเกิน ต้องคืน ลงช่องจำนวนที่เพิ่มขึ้น (สต๊อกเพิ่ม)
+   * วันที่คือวันที่ยอดต่าง ไม่ใช่วันที่กดแก้ ยอดรายวันของ TRcloud จะได้ตรงกับ Report
+   */
+  function trcSheet(lines) {
+    var rows = lines.slice().sort(function (a, b) {
+      return a.d < b.d ? -1 : a.d > b.d ? 1 : a.ref < b.ref ? -1 : a.ref > b.ref ? 1 : a.sku < b.sku ? -1 : 1;
+    }).filter(function (l) { return l.diff; }).map(function (l) {
+      return [l.sku, l.d, l.diff > 0 ? l.diff : '', l.diff < 0 ? -l.diff : '', '', '', l.ref, l.dept, l.wh, l.sup];
+    });
+    var aoa = [TRC_HEAD.slice()].concat(rows);
+    return { name: 'TRcloud', aoa: aoa, widths: [16, 12, 16, 14, 6, 6, 14, 8, 12, 14] };
+  }
+
   window.WmsCut = {
     LABEL: LABEL, oddOne: oddOne, diffWords: diffWords, reportWords: reportWords, compareDaily: compareDaily,
     cellIndex: cellIndex, dateWords: dateWords, fixHint: fixHint, rowUrl: rowUrl, fixLists: fixLists,
-    fixKey: fixKey, fixState: fixState, rowDiff: rowDiff, exportSheets: exportSheets,
+    fixKey: fixKey, fixState: fixState, rowDiff: rowDiff, exportSheets: exportSheets, trcLines: trcLines, trcSheet: trcSheet,
   };
 })();

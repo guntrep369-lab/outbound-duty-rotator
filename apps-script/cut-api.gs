@@ -15,7 +15,7 @@
  * พร้อมยอดที่ควรออกตาม Report ของแต่ละวัน ถ้าไม่มีรายงานโอนย้าย ส่วนของงานโอนย้ายใช้ยอดที่ตัดจริง
  * ช่องรายวันที่สามแหล่งนี้ไม่เท่ากันส่งรายออเดอร์ไปด้วย ให้ชี้ได้ว่าต่างเพราะออเดอร์ไหน
  *
- * ?api=cut-check   ผลการเทียบ
+ * ?api=cut-check   ผลการเทียบ (trc คือ TRcloud เทียบ Report ทีละ ออเดอร์ + SKU + วัน ให้แท็บ TRcloud เทียบ Report)
  * ?api=cut-orders&from=...&to=...  แถวตัดของแท็บ Transaction ทีละออเดอร์ ให้หน้า LOT / PO ที่ขายออกปันล็อตให้แต่ละออเดอร์
  * ?api=cut-fixlog  บันทึกการแก้ทั้งหมด (รายการที่กดแก้แล้ว ยกเลิก หรือตรวจแล้วหาย)
  * ?api=shared-at   เวลาของผลตรวจชุดกลางล่าสุด (ดูส่วน "ข้อมูลกลาง" ท้ายไฟล์)
@@ -155,6 +155,7 @@ function newWork_() {
     outsideTr: { rows: 0, qty: 0, from: '', to: '' },
     adjust: { rows: 0, inq: 0, outq: 0 },
     daily: { x: newSide_(), t: newSide_(), r: newSide_() },
+    trUse: { dept: {}, wh: {} },
   };
 }
 
@@ -176,6 +177,7 @@ function key_(w, ref, sku) {
   var id = ref + '|' + sku;
   return w.keys[id] || (w.keys[id] = {
     ref: ref, sku: sku, r: 0, x: 0, out: 0, inq: 0, t: 0, ship: '', back: false, xd: {}, td: {}, rd: {}, note: '', sup: '', src: '',
+    lot: '', dept: '', wh: '',
   });
 }
 
@@ -259,6 +261,12 @@ function addTrcloud_(w, row, at, tz) {
     return;
   }
   tally_(w.daily.t, d, sku, outq - inq);
+  /* แผนกกับคลังที่ใช้บ่อยสุดตอนตัดออก ใช้เติมแถวแก้ของออเดอร์ที่ TRcloud ยังไม่มีสักแถว */
+  var dept = text_(row[at.dept]), wh = text_(row[at.wh]);
+  if (outq > 0) {
+    if (dept) w.trUse.dept[dept] = (w.trUse.dept[dept] || 0) + 1;
+    if (wh) w.trUse.wh[wh] = (w.trUse.wh[wh] || 0) + 1;
+  }
   if (outside_(w, ref, d)) {
     var o = w.outsideTr;
     o.rows++;
@@ -273,6 +281,9 @@ function addTrcloud_(w, row, at, tz) {
   /* ช่องนี้เก็บชื่อขนส่ง หรือเหตุผลที่พิมพ์เองตอนแก้ยอด อันที่ไม่ใช่ชื่อขนส่งคือเหตุผล */
   var lot = text_(row[at.lot]);
   if (lot && !k.note && !w.carriers[lot]) k.note = lot;
+  if (lot && !k.lot && w.carriers[lot]) k.lot = lot;
+  if (dept && !k.dept) k.dept = dept;
+  if (wh && !k.wh) k.wh = wh;
 }
 
 /** แถวนอกช่วงของ Report ที่ออเดอร์ไม่อยู่ใน Report เช่นวันที่ 1 ของเดือนถัดไป ยังเทียบไม่ได้ ไม่ใช่ตัดผิด */
@@ -597,7 +608,59 @@ function compare_(w) {
     info: info_(w, list, buckets),
     warnings: warnings_(w),
     daily: dailyOf_(w, list),
+    trc: trFix_(w, list),
   };
+}
+
+/* ── TRcloud เทียบ Report รายวัน ───────────────────────────────────────── */
+
+var TRC_MAX = 5000;          // แถวต่อเดือน เกินนี้ส่งแค่วันแรกๆ แล้วบอกจำนวนจริง
+var TRC_KEEP = ['wrong', 'ghost', 'cancel', 'blankCut'];
+
+/** ค่าที่พบบ่อยสุด */
+function most_(count) {
+  var best = '';
+  Object.keys(count).forEach(function (v) { if (!best || count[v] > count[best]) best = v; });
+  return best;
+}
+
+/**
+ * ทุกวันที่ยอดตัดของ TRcloud ไม่เท่ากับยอดที่ควรออกตาม Report ทีละ ออเดอร์ + SKU + วัน
+ * หน้าเว็บเอาไปทำไฟล์แก้ยอดลง TRcloud ได้เลย จึงต้องลงถึงวันและออเดอร์ ไม่ใช่ยอดรวมทั้งเดือน
+ * ยอดควรออกใช้กติกาเดียวกับยอดรายวัน (addShould_) ไม่มีรายงานโอนย้าย งานโอนย้ายเทียบกับยอดที่ตัดใน Upload
+ * ถังของ TRcloud คิดจากยอด TRcloud อย่างเดียว ถังรวมของรายการดู Upload ด้วย จึงอาจคนละอัน
+ *   moved  ยอดทั้งเดือนของ TRcloud ตรงแล้ว แต่ลงคนละวันกับ Report
+ *   under / gap  TRcloud ตัดขาด (gap คือทั้งวันยังไม่ลง)   over  ตัดเกิน
+ *   wrong, ghost, cancel, blankCut, transferDiff  ตามถังของรายการ
+ *   lines: [[วันที่, ออเดอร์, SKU, ระบบ, ขนส่ง, Report, TRcloud, ถัง, วันอื่นที่ TRcloud ตัด, วันอื่นใน Report, แผนก, คลัง], ...]
+ *   แผนกกับคลังว่างคือ TRcloud ยังไม่มีแถวของรายการนี้ ให้ใช้ dept / wh ที่ส่งไปด้วย
+ */
+function trFix_(w, list) {
+  var lines = [];
+  list.forEach(function (k) {
+    var o = w.orders[k.ref];
+    var noTf = !o && w.transfer[k.ref] && !w.hasTf;
+    var goal = o ? should_(k) : noTf ? k.x : 0;
+    var days = {};
+    Object.keys(k.td).forEach(function (d) { days[d] = 1; });
+    if (o && goal) Object.keys(k.rd).forEach(function (d) { days[d] = 1; });
+    if (noTf) Object.keys(k.xd).forEach(function (d) { days[d] = 1; });
+    var kind = k.bucket === 'transferDiff' ? 'transferDiff'
+      : k.t === goal ? 'moved'
+      : k.t < goal ? (k.bucket === 'gap' ? 'gap' : 'under')
+      : TRC_KEEP.indexOf(k.bucket) >= 0 ? k.bucket : 'over';
+    Object.keys(days).sort().forEach(function (d) {
+      var t = k.td[d] || 0;
+      var r = o ? shouldOn_(k, d) : noTf ? k.xd[d] || 0 : 0;
+      if (t === r) return;
+      lines.push([d, k.ref, k.sku, o ? o.sys : k.src, k.lot || (o && o.sup) || k.sup, r, t, kind,
+        otherDays_(k.td, d), o && goal ? otherDays_(k.rd, d) : [], k.dept, k.wh]);
+    });
+  });
+  lines.sort(function (a, b) {
+    return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : a[2] < b[2] ? -1 : 1;
+  });
+  return { lines: lines.slice(0, TRC_MAX), total: lines.length, dept: most_(w.trUse.dept), wh: most_(w.trUse.wh) };
 }
 
 /** ยอดที่ต่างจาก Report แตกตามถัง ทั้งหมดบวกกับยอด Report แล้วต้องได้ยอดรวมที่นับตอนอ่านแถว */
@@ -765,7 +828,8 @@ function check_() {
 
   var tr = tab_(ss, TAB_TR, {
     date: /^วันที่/, sku: /^รหัสสินค้า/, ref: /^อธิบายรายการ/, lot: /^Serial/i, dept: /^แผนก/, inq: /^รับเข้า/, outq: /^เบิกออก/,
-  });
+    wh: /^คลังสินค้า/,
+  }, { wh: 1 });
   w.tabs.tr.lastRow = tr.lastRow;
   eachRow_(tr, function (row, at) { addTrcloud_(w, row, at, tz); });
 

@@ -143,6 +143,9 @@ span.tx-ok::before{content:'✓ '}
 .pk-go:disabled{opacity:.6;cursor:default}
 .pk-msg{flex-basis:100%;font-size:12px;color:var(--wms-muted);line-height:1.5}
 .pk-msg.bad{color:#B91C1C;font-weight:600}
+.tk-top{margin:-4px 0 10px}
+.tk-top .pk-all{margin-left:0;font-size:13px}
+.tk-kind{min-width:130px}
 
 /* ── การ์ดแต่ละประเภท กดเพื่อดูเฉพาะประเภทนั้น ── */
 .tx-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:12px}
@@ -398,7 +401,7 @@ let RAW = null;
 let BUSY = '';
 let ERR = '';
 /* ?tab= มาจากลิงก์บนหน้าภาพรวมสต๊อก */
-let TAB = ['fix', 'under', 'daily', 'sys', 'recon'].includes(new URLSearchParams(location.search).get('tab')) ? new URLSearchParams(location.search).get('tab') : 'fix';
+let TAB = ['fix', 'under', 'daily', 'trc', 'sys', 'recon'].includes(new URLSearchParams(location.search).get('tab')) ? new URLSearchParams(location.search).get('tab') : 'fix';
 let KIND = '';    // การ์ดที่กดเลือก
 let SYS = '';     // JST | CRM | โอนย้าย
 let Q = '';
@@ -409,6 +412,10 @@ let PICK_BUSY = '';     // ข้อความระหว่างกำล�
 let PICK_MSG = null;    // { text, bad } ผลการกด Export ครั้งล่าสุด
 const PICK_MAX = 500;   // เท่ากับ REPORT_REFS_MAX ใน cut-api.gs
 const XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+let TPICK = new Set();  // รายการ วัน|ออเดอร์|SKU ที่ติ๊กในแท็บ TRcloud เทียบ Report
+let TPICK_MSG = null;
+let TPICK_BUSY = false;
+let TDIR = '';          // short | over | moved การ์ดที่กดเลือกในแท็บ TRcloud เทียบ Report
 let DAILY = null;       // ผลเทียบรายวัน คิดครั้งเดียวต่อข้อมูลหนึ่งชุด
 let VIEW = 'day';       // day | sku
 /* หน้าต่างที่เปิดอยู่: day = วันที่กดเข้ามา, cell = วัน|SKU ที่กดดูรายออเดอร์ ถ้ามีทั้งคู่จะมีปุ่มกลับไปรายการ SKU */
@@ -802,6 +809,7 @@ function renderTabs() {
     tab('fix', 'ตัดผิด / ตัดเกิน', 'ตัดผิด', '../icons/tab-cut.png', fixCount()) +
     tab('under', 'ยังไม่ตัด', 'ยังไม่ตัด', '../icons/tab-wait.png', underCount()) +
     tab('daily', 'เทียบรายวัน', 'รายวัน', '../icons/tab-daily.png', dailyResult() ? dailyResult().counts.daysBad : null) +
+    tab('trc', 'TRcloud เทียบ Report', 'TRcloud', '../icons/sys-trcloud.png', RAW.trc ? RAW.trc.total : null) +
     tab('sys', 'แก้แยกตามระบบ', 'แก้ตามระบบ', '../icons/tab-fix.png', sysCount()) +
     tab('recon', 'ที่มาของยอด', 'ที่มา', '../icons/tab-source.png', null);
 }
@@ -991,6 +999,167 @@ async function exportPicked() {
   } finally {
     PICK_BUSY = '';
     renderPickBar();
+  }
+}
+
+/* ── แท็บ TRcloud เทียบ Report ──────────────────────────────────────────── */
+
+/* เรื่องของรายการ ตามที่ cut-api.gs คิดจากยอด TRcloud อย่างเดียว */
+const TRC_KIND = {
+  under: 'ยังไม่ตัดหรือตัดไม่ครบ', gap: 'ทั้งวันยังไม่ลง', over: 'ตัดเกิน', moved: 'ตัดคนละวันกับ Report',
+  wrong: 'ตัดผิด SKU', ghost: 'ตัดแต่ไม่มีใน Report', cancel: 'ขนส่งยกเลิกแต่ตัดแล้ว',
+  blankCut: 'สถานะขนส่งว่างแต่ตัดแล้ว', transferDiff: 'โอนย้ายไม่ตรงกัน',
+};
+const TRC_DAY_MAX = 200;   // แถวต่อวันที่วาดบนจอ วันที่ลืมลงทั้งวันมีได้หลายร้อยแถว ปุ่มเลือกทั้งวันยังเลือกครบ
+const TRC_HEAD = `<tr><th>ออเดอร์</th><th>SKU</th><th>เรื่อง</th><th class="num">Report</th><th class="num">${L.t}</th><th class="num">ต้องแก้</th><th>ลงในไฟล์</th></tr>`;
+
+/** ตัดขาดกับตัดเกินไม่นับแถวที่ลงคนละวัน การ์ดสามใบจึงไม่ซ้อนกัน */
+const trcGroup = (l) => (l.k === 'moved' ? 'moved' : l.diff < 0 ? 'short' : 'over');
+
+let TRC_SRC = null;
+let TRC = { all: [], names: {}, days: {} };
+/** แปลงครั้งเดียวต่อผลตรวจ รายการทั้งเดือนมีได้หลายพันแถว */
+function trcData() {
+  if (!RAW || RAW.trc === TRC_SRC) return TRC;
+  TRC_SRC = RAW.trc;
+  const names = {}, days = {};
+  const d = RAW.daily;
+  if (d) {
+    d.skus.forEach(([sku, name]) => { names[sku] = name; });
+    const add = (cells, side) => cells.forEach(([i, , q]) => {
+      const day = days[d.days[i]] || (days[d.days[i]] = { r: 0, t: 0 });
+      day[side] += q;
+    });
+    add(d.r, 'r');
+    add(d.t, 't');
+  }
+  TRC = { all: WmsCut.trcLines(RAW.trc), names, days };
+  return TRC;
+}
+const trcAll = () => trcData().all;
+const trcShown = () => trcAll().filter((l) => (!TDIR || trcGroup(l) === TDIR) && matches(l));
+const trcPicked = () => trcAll().filter((l) => TPICK.has(l.key));
+
+function trcHtml() {
+  if (!RAW.trc) {
+    return `<div class="tx-warn">แท็บนี้ต้องใช้ <b>cut-api.gs</b> ตัวใหม่ ให้วางโค้ดใหม่แล้ว Deploy เป็น New version จากนั้นกด <b>ตรวจใหม่</b></div>`;
+  }
+  const all = trcAll();
+  if (!all.length) return `<div class="tx-empty art-done">TRcloud ตัดตรงกับ Report ทุกวัน — <b>เป็นเรื่องดี</b></div>`;
+  const sum = { short: [0, 0], over: [0, 0], moved: [0, 0] };
+  all.forEach((l) => { const s = sum[trcGroup(l)]; s[0]++; s[1] += Math.abs(l.diff); });
+  const card = (id, label, sub) => {
+    const [n, q] = sum[id];
+    return `<button class="tx-card ${TDIR === id ? 'on' : ''}" data-tdir="${id}"><small>${esc(label)}</small>
+      <b class="${n ? (id === 'moved' ? 'tx-mid' : 'tx-neg') : 'tx-ok'}">${f(n)}</b><i>${n ? `${f(q)} ชิ้น · ${esc(sub)}` : 'ไม่มี'}</i></button>`;
+  };
+  const capped = RAW.trc.total > all.length
+    ? `<div class="tx-warn">มีทั้งหมด ${f(RAW.trc.total)} รายการ แสดง ${f(all.length)} รายการแรกตามวันที่ แก้ชุดนี้แล้วกดตรวจใหม่จะเห็นที่เหลือ</div>` : '';
+  return `<div class="tx-why">เทียบยอดที่ TRcloud ตัด กับยอดที่ควรออกตาม Report ทีละวัน ติ๊กรายการแล้วกด Export จะได้ไฟล์ตามแบบที่ใช้ลง TRcloud
+      — TRcloud ตัดขาดลงช่อง <b>จำนวนที่ลดลง</b> (ตัดเพิ่ม) ตัดเกินลงช่อง <b>จำนวนที่เพิ่มขึ้น</b> (คืนยอด) วันที่ในไฟล์คือวันที่ยอดต่าง</div>
+    ${capped}
+    <div class="tx-cards">${card('short', 'TRcloud ตัดขาด · ต้องตัดเพิ่ม', 'ช่องจำนวนที่ลดลง')}${card('over', 'TRcloud ตัดเกิน · ต้องคืน', 'ช่องจำนวนที่เพิ่มขึ้น')}${card('moved', 'ตัดคนละวันกับ Report', 'ยอดทั้งเดือนตรงแล้ว')}</div>
+    ${filterBar()}<div id="tlist"></div><div class="pk-bar" id="tkBar"></div>`;
+}
+
+function trcRow(l) {
+  const on = TPICK.has(l.key);
+  const other = [
+    l.to.length ? `TRcloud ตัดวันที่ ${l.to.map(dm).join(', ')}` : '',
+    l.ro.length ? `Report ลงวันที่ ${l.ro.map(dm).join(', ')}` : '',
+  ].filter(Boolean).join(' · ');
+  const act = l.diff < 0 ? `ตัดเพิ่ม ${f(-l.diff)}` : `คืน ${f(l.diff)}`;
+  return `<tr${on ? ' class="pk-on"' : ''}>
+    <td class="nw k-top"><label class="pk"><input type="checkbox" data-tpick="${esc(l.key)}"${on ? ' checked' : ''} aria-label="เลือก ${esc(l.ref)} ${esc(l.sku)} วันที่ ${esc(dm(l.d))}"><span><span class="tx-ref">${esc(l.ref)}</span><span class="tx-sub">${esc(l.sys || '-')}${l.sup ? ' · ' + esc(l.sup) : ''}</span></span></label></td>
+    <td class="tx-name k-main"><b>${esc(l.sku)}</b><span class="tx-sub">${esc(RAW.names[l.sku] || trcData().names[l.sku] || '')}</span></td>
+    <td class="k-side tk-kind"><span class="tx-sub">${esc(TRC_KIND[l.k] || l.k)}</span></td>
+    <td class="num" data-label="Report">${f(l.r)}</td>
+    <td class="num tx-neg${dir(l.t, l.r)}" data-label="${esc(L.t)}">${f(l.t)}</td>
+    <td class="num ${l.diff < 0 ? 'tx-neg' : 'tx-mid'}" data-label="ต้องแก้">${esc(act)}</td>
+    <td class="tx-res k-res">ช่อง${l.diff < 0 ? 'จำนวนที่ลดลง' : 'จำนวนที่เพิ่มขึ้น'}${other ? `<span class="tx-sub">${esc(other)}</span>` : ''}</td>
+  </tr>`;
+}
+
+function renderTrcList() {
+  const box = $('tlist');
+  if (!box) return;
+  const shown = trcShown();
+  if (!shown.length) {
+    box.innerHTML = `<div class="tx-empty art-search">ไม่พบรายการที่ตรงกับตัวกรอง</div>`;
+    syncTrc();
+    return;
+  }
+  const byDay = new Map();
+  shown.forEach((l) => { if (!byDay.has(l.d)) byDay.set(l.d, []); byDay.get(l.d).push(l); });
+  const tot = trcData().days;
+  box.innerHTML = `<div class="tk-top"><label class="pk-all"><input type="checkbox" data-tpick-all> เลือกทุกรายการที่เห็น (${f(shown.length)})</label></div>` +
+    [...byDay].map(([d, list]) => {
+      const short = list.reduce((s, l) => s + (l.diff < 0 ? -l.diff : 0), 0);
+      const over = list.reduce((s, l) => s + (l.diff > 0 ? l.diff : 0), 0);
+      const t = tot[d] || { r: 0, t: 0 };
+      const more = list.length > TRC_DAY_MAX
+        ? `<div class="tx-note">แสดง ${f(TRC_DAY_MAX)} จาก ${f(list.length)} รายการของวันนี้ ค้นด้วยเลขออเดอร์หรือ SKU เพื่อดูที่เหลือ ปุ่มเลือกทั้งวันเลือกครบทุกรายการ</div>` : '';
+      return `<h3 class="tx-h">${esc(dm(d))}<span class="n">${[short ? `ขาด ${f(short)} ชิ้น` : '', over ? `เกิน ${f(over)} ชิ้น` : ''].filter(Boolean).join(' · ')}</span><label class="pk-all"><input type="checkbox" data-tpick-day="${d}" aria-label="เลือกทุกรายการของวันที่ ${esc(dm(d))}"> เลือกทั้งวัน</label></h3>
+        <div class="tx-why">ทั้งวัน Report ควรออก ${f(t.r)} · TRcloud ตัด ${f(t.t)}${t.t !== t.r ? ` (${plus(t.t - t.r)})` : ''}</div>
+        <div class="tx-wrap"><table class="tx-tbl tx-mc"><thead>${TRC_HEAD}</thead><tbody>${list.slice(0, TRC_DAY_MAX).map(trcRow).join('')}</tbody></table></div>${more}`;
+    }).join('');
+  syncTrc();
+}
+
+/** ไม่วาดตารางใหม่ตอนติ๊ก ตำแหน่งที่เลื่อนอยู่จะได้ไม่หลุด */
+function syncTrc() {
+  document.querySelectorAll('input[data-tpick]').forEach((b) => {
+    b.checked = TPICK.has(b.dataset.tpick);
+    b.closest('tr').classList.toggle('pk-on', b.checked);
+  });
+  const shown = trcShown();
+  const mark = (b, list) => {
+    const n = list.filter((l) => TPICK.has(l.key)).length;
+    b.checked = list.length > 0 && n === list.length;
+    b.indeterminate = n > 0 && n < list.length;
+  };
+  document.querySelectorAll('input[data-tpick-day]').forEach((b) => mark(b, shown.filter((l) => l.d === b.dataset.tpickDay)));
+  const all = document.querySelector('input[data-tpick-all]');
+  if (all) mark(all, shown);
+  renderTrcBar();
+}
+
+function renderTrcBar() {
+  const bar = $('tkBar');
+  if (!bar) return;
+  const list = trcPicked();
+  if (!list.length && !TPICK_MSG) { bar.innerHTML = ''; return; }
+  const short = list.reduce((s, l) => s + (l.diff < 0 ? -l.diff : 0), 0);
+  const over = list.reduce((s, l) => s + (l.diff > 0 ? l.diff : 0), 0);
+  const msg = TPICK_MSG ? `<div class="pk-msg${TPICK_MSG.bad ? ' bad' : ''}" role="status">${esc(TPICK_MSG.text)}</div>` : '';
+  const off = TPICK_BUSY ? ' disabled' : '';
+  bar.innerHTML = `<span class="pk-n">เลือก <b>${f(list.length)}</b> รายการ${list.length ? `<span class="tx-sub tx-in"> · ตัดเพิ่ม ${f(short)} · คืน ${f(over)} ชิ้น</span>` : ''}</span><span class="sp"></span>${list.length
+    ? `<button class="tx-opt" data-tpick-clear${off}>ล้างที่เลือก</button><button class="pk-go" data-texport${off}>${TPICK_BUSY ? 'กำลังสร้างไฟล์…' : '⬇️ Excel ลง TRcloud'}</button>`
+    : ''}${msg}`;
+}
+
+/** ไฟล์ชีตเดียวตามแบบที่ทีมใช้ลง TRcloud ข้อมูลมีครบในผลตรวจแล้ว ไม่ต้องถามสคริปต์อีก */
+async function exportTrc() {
+  const list = trcPicked();
+  if (!list.length || TPICK_BUSY) return;
+  TPICK_BUSY = true;
+  renderTrcBar();
+  try {
+    const X = await xlsxLib();
+    const s = WmsCut.trcSheet(list);
+    const wb = X.utils.book_new();
+    const ws = X.utils.aoa_to_sheet(s.aoa);
+    ws['!cols'] = s.widths.map((w) => ({ wch: w }));
+    X.utils.book_append_sheet(wb, ws, s.name);
+    const days = list.map((l) => l.d).sort();
+    const first = days[0], last = days[days.length - 1];
+    X.writeFile(wb, `แก้TRcloud_${first}${last !== first ? `_ถึง_${last}` : ''}.xlsx`);
+    TPICK_MSG = { text: `ดาวน์โหลดแล้ว ${f(s.aoa.length - 1)} แถว ลงใน TRcloud แล้วกดตรวจใหม่ รายการที่แก้แล้วจะหายจากแท็บนี้`, bad: false };
+  } catch (e) {
+    TPICK_MSG = { text: `Export ไม่สำเร็จ: ${e.message}`, bad: true };
+  } finally {
+    TPICK_BUSY = false;
+    renderTrcBar();
   }
 }
 
@@ -1725,6 +1894,7 @@ function renderBody() {
   if (TAB === 'recon') { $('body').innerHTML = warnings() + reconHtml(); return; }
   if (TAB === 'daily') { $('body').innerHTML = dailyHtml(); renderList(); return; }
   if (TAB === 'sys') { $('body').innerHTML = warnings() + sysHtml(); return; }
+  if (TAB === 'trc') { $('body').innerHTML = warnings() + trcHtml(); renderTrcList(); return; }
   const top = TAB === 'fix' ? cards(FIX_KINDS) : RAW.gaps.map(gapBlock).join('');
   $('body').innerHTML = warnings() + top + filterBar() + '<div id="list"></div>' + (TAB === 'fix' ? '<div class="pk-bar" id="pkBar"></div>' : '');
   renderList();
@@ -1737,6 +1907,7 @@ $('tabs').addEventListener('click', (e) => {
   if (!b) return;
   TAB = b.dataset.tab;
   KIND = '';
+  TDIR = '';
   Q = '';   // รหัสที่ค้นค้างจากแท็บอื่นจะทำให้แท็บนี้ดูเหมือนว่างเปล่า
   POP = null;
   render();
@@ -1783,12 +1954,26 @@ $('body').addEventListener('change', (e) => {
     sectionRefs(all.dataset.pickKind).forEach((x) => (all.checked ? PICK.add(x) : PICK.delete(x)));
     PICK_MSG = null;
     syncPicks();
+    return;
+  }
+  /* แท็บ TRcloud เทียบ Report ติ๊กทีละรายการ ทั้งวัน หรือทุกรายการที่เห็นตามตัวกรอง */
+  const t = e.target.closest('input[data-tpick], input[data-tpick-day], input[data-tpick-all]');
+  if (t) {
+    const list = t.dataset.tpick ? trcAll().filter((l) => l.key === t.dataset.tpick)
+      : t.dataset.tpickDay ? trcShown().filter((l) => l.d === t.dataset.tpickDay) : trcShown();
+    list.forEach((l) => (t.checked ? TPICK.add(l.key) : TPICK.delete(l.key)));
+    TPICK_MSG = null;
+    syncTrc();
   }
 });
 
 $('body').addEventListener('click', (e) => {
   if (e.target.closest('[data-export]')) { exportPicked(); return; }
   if (e.target.closest('[data-pick-clear]')) { PICK.clear(); PICK_MSG = null; syncPicks(); return; }
+  if (e.target.closest('[data-texport]')) { exportTrc(); return; }
+  if (e.target.closest('[data-tpick-clear]')) { TPICK.clear(); TPICK_MSG = null; syncTrc(); return; }
+  const tdir = e.target.closest('[data-tdir]');
+  if (tdir) { TDIR = TDIR === tdir.dataset.tdir ? '' : tdir.dataset.tdir; renderBody(); return; }
   /* มียอดขายของช่วงนี้แล้ว กดคือขอชุดใหม่ ยังไม่มีอ่านชุดกลางที่เก็บไว้ก่อน เร็วกว่า */
   if (e.target.closest('[data-reload]')) { loadLedger(ledgerFits()); return; }
   const mark = e.target.closest('[data-mark]');
@@ -1857,7 +2042,7 @@ $('body').addEventListener('click', (e) => {
 $('body').addEventListener('input', (e) => {
   if (e.target.id !== 'q') return;
   Q = e.target.value.trim().toUpperCase();
-  renderList();   // ไม่วาดช่องค้นใหม่ ไม่งั้นเคอร์เซอร์จะหลุดระหว่างพิมพ์
+  if (TAB === 'trc') renderTrcList(); else renderList();   // ไม่วาดช่องค้นใหม่ ไม่งั้นเคอร์เซอร์จะหลุดระหว่างพิมพ์
 });
 
 readCache();
