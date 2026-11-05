@@ -435,9 +435,92 @@
     return String(sheet.url).split('#')[0] + '#gid=' + sheet.gid + '&range=A' + row;
   }
 
+  /**
+   * แถวในแท็บตัดผิด / ตัดเกิน ต่างจาก Report ยังไงและฝั่งไหน อ่านแล้วไม่ต้องลบเลขเอง
+   * r = แถวจาก cut-check มี goal (ยอดที่ควรตัด) x (Uploadยิงออก) t (TRcloud)
+   */
+  function rowDiff(r) {
+    var word = function (d) {
+      if (r.goal === 0) return d > 0 ? 'ตัดอยู่ ' + fmt(d) : 'ติดลบ ' + fmt(-d);
+      return d > 0 ? 'เกิน ' + fmt(d) : 'ขาด ' + fmt(-d);
+    };
+    var dx = r.x - r.goal, dt = r.t - r.goal;
+    if (dx === dt) return dx ? word(dx) + ' ทั้งสองระบบ' : '';
+    return [dx ? LABEL.x + ' ' + word(dx) : '', dt ? LABEL.t + ' ' + word(dt) : ''].filter(Boolean).join(' · ');
+  }
+
+  /* เลขออเดอร์แบบเดียวกับ ref_ ใน cut-api.gs บางแถวมีวันที่ต่อท้ายหลัง · */
+  function refKey(v) { return String(v == null ? '' : v).split(' · ')[0].trim().toUpperCase(); }
+
+  var EXPORT_HEAD = ['ออเดอร์', 'ระบบ', 'ขนส่ง', 'เรื่อง', 'SKU', 'ชื่อสินค้า', 'วันที่ Report', 'สถานะขนส่ง',
+    'Report', LABEL.x, LABEL.t, 'ต่างกันยังไง', 'วันที่ตัด ' + LABEL.x, 'วันที่ตัด ' + LABEL.t, 'เหตุผลใน TRcloud'];
+  var REPORT_SHEET = { JST: 'Report JST', CRM: 'Report CRM', 'โอนย้าย': 'Report โอนย้าย' };
+  var SKU_HEAD = /^(รหัสสินค้า|SKU)/i;
+
+  /** กว้างพอให้อ่านค่ายาวสุดใน 200 แถวแรก แต่ไม่เกิน 45 ตัวอักษร */
+  function widthsOf(aoa) {
+    var out = [];
+    aoa.slice(0, 200).forEach(function (row) {
+      row.forEach(function (v, i) { out[i] = Math.max(out[i] || 6, Math.min(45, String(v == null ? '' : v).length + 2)); });
+    });
+    return out;
+  }
+
+  /**
+   * ชีตของไฟล์ Excel ออเดอร์ที่ติ๊กในแท็บตัดผิด / ตัดเกิน
+   *   o.rows   แถวจาก cut-check ทุกเรื่อง (RAW.rows) ชีตสรุปเอาทุกแถวของออเดอร์ที่เลือก รวมยังไม่ตัดด้วย
+   *   o.names  ชื่อสินค้าราย SKU
+   *   o.refs   เลขออเดอร์ที่ติ๊ก เรียงตามที่จะลงในไฟล์
+   *   o.kinds  ชื่อเรื่องราย k
+   *   o.back   คำที่ใช้แทนสถานะขนส่ง เมื่อของส่งออกไปแล้วลูกค้ายกเลิกทีหลัง
+   *   o.rep    คำตอบ report-rows จาก cut-api.gs ไม่มีคือสคริปต์รุ่นเก่า ได้แค่ชีตสรุป
+   * ได้ [{ name, aoa, widths }] ชีตแรกสรุปปัญหา ชีตถัดไปแถวใน Report ทุกคอลัมน์ทีละแท็บ
+   * คอลัมน์แรกของชีต Report บอกเรื่องของ SKU นั้น ช่องว่างคือ SKU นั้นในออเดอร์ไม่มีปัญหา
+   */
+  function exportSheets(o) {
+    var order = {};
+    o.refs.forEach(function (ref, i) { order[refKey(ref)] = i; });
+    var mine = o.rows.filter(function (r) { return r.ref && order[refKey(r.ref)] !== undefined; })
+      .map(function (r, i) { return { r: r, i: i }; })
+      .sort(function (a, b) { return order[refKey(a.r.ref)] - order[refKey(b.r.ref)] || a.i - b.i; })
+      .map(function (x) { return x.r; });
+    var label = function (r) { return (o.kinds[r.k] || r.k) + (r.sku ? '' : ' (ทั้งออเดอร์ ' + fmt(r.lines || 0) + ' SKU)'); };
+
+    var summary = [EXPORT_HEAD].concat(mine.map(function (r) {
+      return [r.ref, r.sys || '', r.sup || '', label(r), r.sku || '', r.sku ? (o.names[r.sku] || '') : '', r.date || '',
+        r.back && o.back ? o.back : (r.ship || ''), r.r, r.x, r.t, rowDiff(r),
+        (r.xd || []).join(', '), (r.td || []).join(', '), r.note || ''];
+    }));
+    var out = [{ name: 'สรุปปัญหา', aoa: summary, widths: widthsOf(summary) }];
+
+    var tabs = (o.rep && o.rep.tabs) || [];
+    tabs.forEach(function (tab) {
+      if (!tab.rows || !tab.rows.length) return;
+      var skuAt = -1;
+      tab.head.forEach(function (h, i) { if (skuAt < 0 && SKU_HEAD.test(String(h))) skuAt = i; });
+      var why = function (row) {
+        var ref = refKey(row[tab.ref]);
+        var sku = skuAt < 0 ? '' : String(row[skuAt] == null ? '' : row[skuAt]).trim().toUpperCase();
+        var seen = {};
+        return mine.filter(function (r) { return refKey(r.ref) === ref && (!r.sku || r.sku === sku); })
+          .map(function (r) { return o.kinds[r.k] || r.k; })
+          .filter(function (w) { return seen[w] ? false : (seen[w] = true); }).join(', ');
+      };
+      var body = tab.rows.map(function (row, i) { return { row: row, i: i }; })
+        .sort(function (a, b) {
+          var x = order[refKey(a.row[tab.ref])], y = order[refKey(b.row[tab.ref])];
+          return (x === undefined ? 1e9 : x) - (y === undefined ? 1e9 : y) || a.i - b.i;
+        })
+        .map(function (x) { return [why(x.row)].concat(x.row); });
+      var aoa = [['ปัญหา'].concat(tab.head)].concat(body);
+      out.push({ name: REPORT_SHEET[tab.sys] || String(tab.name).slice(0, 31), aoa: aoa, widths: widthsOf(aoa) });
+    });
+    return out;
+  }
+
   window.WmsCut = {
     LABEL: LABEL, oddOne: oddOne, diffWords: diffWords, reportWords: reportWords, compareDaily: compareDaily,
     cellIndex: cellIndex, dateWords: dateWords, fixHint: fixHint, rowUrl: rowUrl, fixLists: fixLists,
-    fixKey: fixKey, fixState: fixState,
+    fixKey: fixKey, fixState: fixState, rowDiff: rowDiff, exportSheets: exportSheets,
   };
 })();

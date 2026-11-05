@@ -21,6 +21,7 @@
  * ?api=shared-at   เวลาของผลตรวจชุดกลางล่าสุด (ดูส่วน "ข้อมูลกลาง" ท้ายไฟล์)
  * POST {op:'fix-log'}  เพิ่มแถวในบันทึกการแก้
  * POST {op:'shared-fresh'}  ตรวจใหม่แล้วเก็บเป็นผลกลางให้ทุกเครื่องเห็นชุดเดียวกัน (ปุ่มตรวจใหม่บนหน้าเว็บ)
+ * POST {op:'report-rows', refs:[...]}  แถวใน Report ทุกคอลัมน์ของออเดอร์ที่ติ๊กไว้ ให้ปุ่ม Export บนหน้าเว็บ (อ่านอย่างเดียว)
  * ไม่ใส่ api        บอกแค่ว่าเป็นสคริปต์นี้ ให้หน้าตั้งค่าเช็คว่าใส่ URL ถูกตัว
  *
  * ผลตรวจชุดกลางเก็บเป็นไฟล์ JSON ในโฟลเดอร์ "WMS ข้อมูลกลาง" ใน Drive ของเจ้าของสคริปต์ ไม่ได้เขียนลงไฟล์ชีต
@@ -774,6 +775,65 @@ function check_() {
   return compare_(w);
 }
 
+/* ── แถว Report ของออเดอร์ที่เลือก ──────────────────────────────────────── */
+
+/*
+ * หน้าเว็บติ๊กออเดอร์ที่มีปัญหาแล้วกด Export ต้องการแถวใน Report ของออเดอร์นั้นครบทุกคอลัมน์
+ * ผลตรวจส่งมาแค่ช่องที่ใช้เทียบ จึงต้องอ่านแท็บ Report ใหม่ เฉพาะเลขที่ส่งมา อ่านอย่างเดียวเหมือนส่วนบน
+ */
+var REPORT_REFS_MAX = 500;    // ออเดอร์ต่อการกดหนึ่งครั้ง
+var REPORT_ROWS_MAX = 10000;  // แถวรวมทุกแท็บ กันผลใหญ่เกินที่ Apps Script ส่งกลับได้
+var REPORT_TABS = [
+  { name: TAB_JST, sys: 'JST', ref: /^หมายเลขออเดอร์ภายใน/ },
+  { name: TAB_CRM, sys: 'CRM', ref: /^Order ID/i },
+  { name: TAB_TF, sys: TRANSFER, ref: /^หมายเลขใบโอนย้าย/ },
+];
+
+function reportRows_(req) {
+  var want = {};
+  var n = 0;
+  var refs = Array.isArray(req.refs) ? req.refs : [];
+  for (var i = 0; i < refs.length && n < REPORT_REFS_MAX; i++) {
+    var r = ref_(refs[i]);
+    if (r && !want[r]) { want[r] = 1; n++; }
+  }
+  if (!n) throw new Error('ยังไม่ได้เลือกออเดอร์');
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var tz = ss.getSpreadsheetTimeZone();
+  var out = { app: 'cut', refs: n, cut: false, tabs: [] };
+  var total = 0;
+  REPORT_TABS.forEach(function (spec) {
+    var sh = ss.getSheetByName(spec.name);
+    if (!sh || sh.getLastRow() < 2 || !sh.getLastColumn()) return;
+    var t = tab_(ss, spec.name, { ref: spec.ref });
+    var head = sh.getRange(1, 1, 1, t.lastCol).getValues()[0].map(text_);
+    var width = head.length;
+    while (width > t.at.ref + 1 && !head[width - 1]) width--;   // คอลัมน์ว่างท้ายตารางไม่ต้องส่ง
+    var rows = [];
+    for (var from = 2; from <= t.lastRow && !out.cut; from += READ_ROWS) {
+      var part = sh.getRange(from, 1, Math.min(READ_ROWS, t.lastRow - from + 1), width).getValues();
+      for (var j = 0; j < part.length; j++) {
+        if (!want[ref_(part[j][t.at.ref])]) continue;
+        if (total >= REPORT_ROWS_MAX) { out.cut = true; break; }
+        rows.push(part[j].map(function (v) { return cell_(v, tz); }));
+        total++;
+      }
+    }
+    out.tabs.push({ name: spec.name, sys: spec.sys, head: head.slice(0, width), ref: t.at.ref, rows: rows });
+  });
+  return out;
+}
+
+/** วันที่ในชีตเป็นวัตถุ Date ส่งเป็นข้อความที่อ่านออก ถ้าไม่มีเวลาก็ไม่ต่อเวลาท้าย */
+function cell_(v, tz) {
+  if (v && typeof v.getTime === 'function') {
+    if (isNaN(v.getTime())) return '';
+    return Utilities.formatDate(v, tz, 'yyyy-MM-dd HH:mm:ss').replace(/ 00:00:00$/, '');
+  }
+  return v === null || v === undefined ? '' : v;
+}
+
 /* ── บันทึกการแก้ ───────────────────────────────────────────────────────── */
 
 /* แท็บเดียวที่สคริปต์นี้เขียน สร้างเองตอนกดแก้แล้วครั้งแรก เว็บเติมได้แค่แถวต่อท้าย แก้หรือลบแถวเดิมไม่ได้ */
@@ -790,6 +850,7 @@ function doPost(e) {
     var req = JSON.parse(e.postData.contents);
     if (req.op === 'fix-log') return out_(fixAdd_(req));
     if (req.op === 'shared-fresh') return out_(sharedPress_(req));
+    if (req.op === 'report-rows') return out_(reportRows_(req));
     return out_({ error: 'ไม่รู้จักคำสั่งนี้' });
   } catch (err) {
     return out_({ error: String(err && err.message || err) });

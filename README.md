@@ -489,6 +489,19 @@ that way.
 | สถานะขนส่งว่างแต่ตัดแล้ว | A blank shipping status means the order hasn't shipped, yet stock was cut. The cut should be reversed |
 | โอนย้ายไม่ตรงกัน | A transfer whose quantity differs between the two systems |
 
+**Export the orders you pick:** each row on this tab has a tick box, and ticking one row picks the whole
+order. **เลือกทั้งหมด** next to a heading picks every order of that type that the search and filters show.
+A bar at the bottom counts the orders and has **⬇️ Export Excel**. Up to 500 orders go in one file:
+
+- Sheet `สรุปปัญหา` lists every problem line of those orders, including lines from ยังไม่ตัด, with the
+  numbers and dates shown on the page.
+- Sheets `Report JST`, `Report CRM` and `Report โอนย้าย` hold those orders' rows from the report tabs, with
+  every column. The first column, `ปัญหา`, names the problem for that SKU. A blank means that SKU is fine.
+  An order that isn't in any report only shows in the summary.
+
+The report rows come from a new script call, so an older `cut-api.gs` gives the summary sheet only, and
+the page says so.
+
 **Tab ยังไม่ตัด:** lines where the report has more than was cut. If a whole day of a system (at least 5
 orders) is missing from one side, those lines are grouped into one notice. An order missing entirely
 from one side with 5 or more SKUs becomes one row.
@@ -617,8 +630,8 @@ Until then, the แก้แยกตามระบบ tab says the script is o
 the page works as before.
 
 The URL works like a key: anyone who has it can read the order numbers and SKUs in the result, and can add
-rows to the fix log, so keep it out of this repo. The result leaves out online order IDs and tracking
-numbers.
+rows to the fix log, so keep it out of this repo. The check result leaves out online order IDs and tracking
+numbers. The Export call returns whole report rows, those included, but only for the orders you picked.
 
 **Everyone sees the same result (ข้อมูลกลาง).** This works the same way as on Stock by Location:
 

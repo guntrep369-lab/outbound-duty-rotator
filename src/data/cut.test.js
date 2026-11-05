@@ -982,3 +982,79 @@ describe('cut-api.gs — ข้อมูลกลาง', () => {
     expect(c.g.triggers).toEqual([{ fn: 'sharedTick', hours: 2 }]);
   });
 });
+
+describe('cut-api.gs — แถว Report ของออเดอร์ที่เลือก (ปุ่ม Export)', () => {
+  /* แท็บมีแต่เมธอดอ่าน ถ้าส่วนนี้เผลอเขียนลงชีต เทสต์จะล้ม */
+  function reports(book) {
+    const ss = {
+      getSheetByName: (n) => (book[n] ? sheet(book[n]) : null),
+      getSpreadsheetTimeZone: () => 'Asia/Bangkok',
+    };
+    const env = {
+      SpreadsheetApp: { getActiveSpreadsheet: () => ss },
+      Utilities: { formatDate: (d, tz, fmt) => (fmt.includes('HH') ? d.toISOString().slice(0, 19).replace('T', ' ') : d.toISOString().slice(0, 10)) },
+      ContentService: { createTextOutput: (s) => ({ text: s, setMimeType() { return this; } }), MimeType: { JSON: 'json' } },
+    };
+    const s = new Function(...Object.keys(env), `${GS}\nreturn { doPost: doPost };`)(...Object.values(env));
+    return (refs) => JSON.parse(s.doPost({ postData: { contents: JSON.stringify({ op: 'report-rows', refs }) } }).text);
+  }
+
+  const book = (d) => bookOf(d);
+
+  it('ส่งแถวของเลขที่ขอครบทุกคอลัมน์ ทั้ง JST CRM และโอนย้าย เลขอื่นไม่ส่ง', () => {
+    const ask = reports(book({
+      jst: [jst('5001', A, 2), jst('5001', B, 1), jst('5002', A, 4)],
+      crm: [crm('C-77', C, 3), crm('C-78', C, 1)],
+      tf: [tf('TF9001', A, 6)],
+    }));
+    const r = ask(['5001', 'C-77', 'TF9001']);
+    expect(r.error).toBeUndefined();
+    expect(r.refs).toBe(3);
+    expect(r.cut).toBe(false);
+    expect(r.tabs.map((t) => t.sys)).toEqual(['JST', 'CRM', 'โอนย้าย']);
+    const [j, c, t] = r.tabs;
+    expect(j.head).toEqual(HEADS.jst);
+    expect(j.ref).toBe(1);
+    expect(j.rows.map((x) => [x[1], x[8], x[10]])).toEqual([['5001', A, 2], ['5001', B, 1]]);
+    /* หน้า Export อยากได้รายละเอียดตาม Report ทั้งแถว รวมเลขคำสั่งซื้อออนไลน์กับเลขพัสดุ */
+    expect(j.rows[0][0]).toBe('ON5001');
+    expect(j.rows[0][4]).toBe('TRK5001');
+    expect(j.rows[0][7]).toBe(`${DAY} 12:00:00`);
+    expect(c.rows).toHaveLength(1);
+    expect(c.rows[0][2]).toBe('C-77');
+    expect(t.rows.map((x) => x[0])).toEqual(['TF9001']);
+  });
+
+  it('เลขที่มีวันที่ต่อท้ายหรือตัวพิมพ์เล็กยังหาเจอ วันที่ไม่มีเวลาไม่ต่อเวลาท้าย', () => {
+    const ask = reports(book({ crm: [crm('C-77', C, 3, { date: new Date(`${DAY}T00:00:00Z`) })] }));
+    const r = ask(['c-77 · 2026-03-05']);
+    expect(r.tabs.map((t) => t.sys)).toEqual(['CRM']);   // แท็บที่มีแต่หัวตารางไม่ต้องส่ง
+    const c = r.tabs[0];
+    expect(c.rows).toEqual([[DAY, 'ขนส่งบี', 'C-77', C, 'แบรนด์', '', 3]]);
+  });
+
+  it('ตัดคอลัมน์ว่างท้ายหัวตาราง ไม่มีแท็บโอนย้ายก็ใช้ได้', () => {
+    const b = book({ crm: [[...crm('C-77', C, 3), 'ค่าค้าง']] });
+    b[NAMES.crm][0] = [...HEADS.crm, ''];
+    delete b[NAMES.tf];
+    const r = reports(b)(['C-77']);
+    const c = r.tabs.find((t) => t.sys === 'CRM');
+    expect(c.head).toEqual(HEADS.crm);
+    expect(c.rows[0]).toHaveLength(HEADS.crm.length);
+    expect(r.tabs.some((t) => t.sys === 'โอนย้าย')).toBe(false);
+  });
+
+  it('ไม่ได้ส่งเลขมา บอกให้เลือกก่อน หาคอลัมน์เลขออเดอร์ไม่เจอ ล้มดัง ๆ', () => {
+    expect(reports(book({ jst: [jst('5001', A, 1)] }))([]).error).toContain('ยังไม่ได้เลือก');
+    const b = book({ jst: [jst('5001', A, 1)] });
+    b[NAMES.jst][0] = HEADS.jst.map((h) => (h === 'หมายเลขออเดอร์ภายใน' ? 'เลขอื่น' : h));
+    expect(reports(b)(['5001']).error).toContain('หาคอลัมน์ ref ไม่เจอ');
+  });
+
+  it('เลขซ้ำนับครั้งเดียว และรับไม่เกิน 500 เลขต่อครั้ง', () => {
+    const ask = reports(book({ jst: [jst('5001', A, 1)] }));
+    expect(ask(['5001', '5001', ' 5001 ']).refs).toBe(1);
+    const many = Array.from({ length: 600 }, (_, i) => `R${i}`);
+    expect(ask(many).refs).toBe(500);
+  });
+});

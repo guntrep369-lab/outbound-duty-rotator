@@ -124,6 +124,26 @@ span.tx-ok::before{content:'✓ '}
   background:var(--wms-surface);font-family:var(--wms-font);font-size:14px;color:var(--wms-text);outline:none}
 .tx-input:focus{border-color:var(--wms-primary)}
 
+/* ── ติ๊กเลือกออเดอร์ แล้ว Export แถวใน Report ของออเดอร์นั้น แถบปุ่มลอยติดล่างจอระหว่างเลื่อนดูรายการ ── */
+.pk{display:inline-flex;align-items:flex-start;gap:8px;padding:6px;margin:-6px;border-radius:8px;cursor:pointer}
+.pk>span{min-width:0}
+.pk input,.pk-all input{flex-shrink:0;width:18px;height:18px;margin:1px 0 0;accent-color:var(--wms-primary);cursor:pointer}
+.tx-tbl tr.pk-on td{background:var(--wms-primary-light)}
+.pk-all{display:inline-flex;align-items:center;gap:6px;margin-left:12px;font-size:12px;font-weight:500;
+  color:var(--wms-muted);cursor:pointer;vertical-align:middle}
+.pk-bar{position:sticky;bottom:12px;z-index:20;display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;
+  margin-top:14px;padding:10px 12px;background:var(--wms-surface);border:1px solid var(--wms-primary);
+  border-radius:var(--wms-radius);box-shadow:0 8px 24px rgba(15,23,42,.14);font-size:13px}
+.pk-bar:empty{display:none}
+.pk-bar .sp{flex:1}
+.pk-n b{font-size:16px;font-variant-numeric:tabular-nums}
+.pk-go{padding:7px 16px;border-radius:999px;border:1px solid var(--wms-primary);background:var(--wms-primary);
+  color:#fff;font-family:var(--wms-font);font-size:13px;font-weight:600;cursor:pointer}
+.pk-go:hover:not(:disabled){filter:brightness(1.08)}
+.pk-go:disabled{opacity:.6;cursor:default}
+.pk-msg{flex-basis:100%;font-size:12px;color:var(--wms-muted);line-height:1.5}
+.pk-msg.bad{color:#B91C1C;font-weight:600}
+
 /* ── การ์ดแต่ละประเภท กดเพื่อดูเฉพาะประเภทนั้น ── */
 .tx-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:12px}
 .tx-card{padding:9px 12px;border-radius:var(--wms-radius-sm);background:var(--wms-surface);
@@ -218,6 +238,11 @@ html.pop-open{overflow:hidden}
   /* ปุ่มและช่องที่ต้องแตะ สูงอย่างน้อย 44px นิ้วจะได้ไม่พลาด */
   .tx-opt{display:inline-flex;align-items:center;min-height:44px;padding:0 15px}
   .tx-input{min-height:44px;font-size:16px}   /* ต่ำกว่า 16px iPhone จะซูมหน้าเองตอนแตะช่องค้น */
+  .pk{padding:10px;margin:-10px}
+  .pk-all{min-height:44px}
+  .pk-go,.pk-bar .tx-opt{min-height:44px}
+  .pk-bar{bottom:8px}
+  .pk-go{flex:1 0 100%}   /* จอแคบปุ่มตกลงบรรทัดล่างอยู่แล้ว เต็มแถวไปเลย เห็นชัดว่าเป็นปุ่มหลัก */
   .tx-int summary{padding:12px 0}
   .pop-back{display:flex;align-items:center;min-height:44px;margin:-10px 0 0}
   .tx-row{display:inline-block;padding:10px 6px;margin:-10px -6px}
@@ -246,6 +271,7 @@ html.pop-open{overflow:hidden}
   .tx-tbl.tx-mc.mc-4 tr{grid-template-columns:repeat(4,minmax(0,1fr))}
   .tx-tbl.tx-mc tr:last-child{border-bottom:0}
   .tx-tbl.tx-mc tr.sum{background:var(--wms-surface2)}
+  .tx-tbl.tx-mc tr.pk-on{background:var(--wms-primary-light)}
   .tx-tbl.tx-mc td{display:block;min-width:0;padding:0;border:0;white-space:normal}
   .tx-tbl.tx-mc td:empty{display:none}
   .tx-tbl.tx-mc .k-top{grid-row:1;grid-column:1/-2}
@@ -378,6 +404,11 @@ let SYS = '';     // JST | CRM | โอนย้าย
 let Q = '';
 let LEDGER = null;      // คำตอบจาก tx-daily
 let LEDGER_ERR = '';
+let PICK = new Set();   // เลขออเดอร์ที่ติ๊กในแท็บตัดผิด / ตัดเกิน
+let PICK_BUSY = '';     // ข้อความระหว่างกำลัง Export
+let PICK_MSG = null;    // { text, bad } ผลการกด Export ครั้งล่าสุด
+const PICK_MAX = 500;   // เท่ากับ REPORT_REFS_MAX ใน cut-api.gs
+const XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
 let DAILY = null;       // ผลเทียบรายวัน คิดครั้งเดียวต่อข้อมูลหนึ่งชุด
 let VIEW = 'day';       // day | sku
 /* หน้าต่างที่เปิดอยู่: day = วันที่กดเข้ามา, cell = วัน|SKU ที่กดดูรายออเดอร์ ถ้ามีทั้งคู่จะมีปุ่มกลับไปรายการ SKU */
@@ -777,16 +808,8 @@ function renderTabs() {
 
 /* ── ตารางรายการ ────────────────────────────────────────────────────────── */
 
-/** คอลัมน์สุดท้ายอ่านแล้วต้องรู้เลยว่าต่างกันยังไงและฝั่งไหน ไม่ต้องลบเลขเอง */
-function diffText(r) {
-  const word = (d) => {
-    if (r.goal === 0) return d > 0 ? `ตัดอยู่ ${f(d)}` : `ติดลบ ${f(-d)}`;
-    return d > 0 ? `เกิน ${f(d)}` : `ขาด ${f(-d)}`;
-  };
-  const dx = r.x - r.goal, dt = r.t - r.goal;
-  if (dx === dt) return dx ? `${word(dx)} ทั้งสองระบบ` : '';
-  return [dx ? `${L.x} ${word(dx)}` : '', dt ? `${L.t} ${word(dt)}` : ''].filter(Boolean).join(' · ');
-}
+/** คอลัมน์สุดท้ายอ่านแล้วต้องรู้เลยว่าต่างกันยังไงและฝั่งไหน ไม่ต้องลบเลขเอง ไฟล์ Export ใช้คำเดียวกัน */
+const diffText = WmsCut.rowDiff;
 
 function cutDays(r) {
   const days = r.xd.length ? r.xd : r.td;
@@ -799,8 +822,14 @@ function rowHtml(r) {
   const name = r.sku ? (RAW.names[r.sku] || '') : '';
   const cut = cutDays(r);
   const bad = (v) => (v !== r.goal ? 'tx-neg' + dir(v, r.goal) : '');
-  return `<tr>
-    <td class="nw k-top"><span class="tx-ref">${esc(r.ref || '(ไม่มีเลขออเดอร์)')}</span><span class="tx-sub">${esc(r.sys || '-')}${r.sup ? ' · ' + esc(r.sup) : ''}</span></td>
+  const who = `<span class="tx-ref">${esc(r.ref || '(ไม่มีเลขออเดอร์)')}</span><span class="tx-sub">${esc(r.sys || '-')}${r.sup ? ' · ' + esc(r.sup) : ''}</span>`;
+  /* แท็บตัดผิด / ตัดเกิน ติ๊กเลือกออเดอร์ไป Export ได้ แถวที่ไม่มีเลขออเดอร์หาใน Report ไม่ได้ จึงไม่มีช่องติ๊ก */
+  const pick = TAB === 'fix' && r.ref;
+  const on = pick && PICK.has(r.ref);
+  return `<tr${on ? ' class="pk-on"' : ''}>
+    <td class="nw k-top">${pick
+      ? `<label class="pk"><input type="checkbox" data-pick="${esc(r.ref)}"${on ? ' checked' : ''} aria-label="เลือกออเดอร์ ${esc(r.ref)}"><span>${who}</span></label>`
+      : who}</td>
     <td class="tx-name k-main">${r.sku ? `<b>${esc(r.sku)}</b><span class="tx-sub">${esc(name)}</span>` : `<b>ทั้งออเดอร์ ${f(r.lines)} SKU</b>`}</td>
     <td class="nw k-side">${esc(dm(r.date))}${cut ? `<span class="tx-sub">${esc(cut)}</span>` : ''}${r.ship ? `<span class="tx-sub">${esc(r.back ? BACK : r.ship)}</span>` : ''}</td>
     <td class="num" data-label="Report">${f(r.r)}</td>
@@ -824,7 +853,9 @@ function section(kind) {
   const rows = RAW.rows.filter((r) => r.k === kind && matches(r));
   if (!rows.length) return '';
   const capped = sum.shown < sum.total ? `<div class="tx-note">แสดง ${f(sum.shown)} รายการที่หนักสุด จากทั้งหมด ${f(sum.total)} รายการ</div>` : '';
-  return `<h3 class="tx-h">${esc(info.label)}<span class="n">${f(rows.length)} รายการ</span></h3>
+  const all = TAB === 'fix' && rows.some((r) => r.ref)
+    ? `<label class="pk-all"><input type="checkbox" data-pick-kind="${kind}" aria-label="เลือกทุกออเดอร์ในเรื่อง${esc(info.label)}"> เลือกทั้งหมด</label>` : '';
+  return `<h3 class="tx-h">${esc(info.label)}<span class="n">${f(rows.length)} รายการ</span>${all}</h3>
     <div class="tx-why">${esc(info.why)}</div>
     <div class="tx-wrap"><table class="tx-tbl tx-mc"><thead>${TABLE_HEAD}</thead><tbody>${rows.map(rowHtml).join('')}</tbody></table></div>${capped}`;
 }
@@ -856,6 +887,111 @@ function renderList() {
   box.innerHTML = html || (total
     ? `<div class="tx-empty art-search">ไม่พบรายการที่ตรงกับตัวกรอง</div>`
     : `<div class="tx-empty art-done">${TAB === 'fix' ? 'ไม่พบรายการตัดผิดหรือตัดเกิน' : 'ไม่พบรายการที่ยังไม่ตัด'} — <b>เป็นเรื่องดี</b></div>`);
+  if (TAB === 'fix') syncPicks();
+}
+
+/* ── ติ๊กเลือกออเดอร์ แล้ว Export ───────────────────────────────────────── */
+
+/** เลขออเดอร์ที่ติ๊กไว้และยังอยู่ในผลตรวจรอบนี้ เรียงตามที่ขึ้นบนจอ ตรวจใหม่แล้วออเดอร์ที่หายไปก็หลุดเอง */
+function picked() {
+  const seen = new Set();
+  for (const r of RAW ? RAW.rows : []) if (r.ref && PICK.has(r.ref)) seen.add(r.ref);
+  return [...seen];
+}
+
+/** ออเดอร์ในเรื่องนั้นที่ขึ้นบนจอตามตัวกรองตอนนี้ ปุ่มเลือกทั้งหมดเลือกแค่ที่เห็น */
+function sectionRefs(kind) {
+  return [...new Set(RAW.rows.filter((r) => r.k === kind && r.ref && matches(r)).map((r) => r.ref))];
+}
+
+/** ติ๊กหนึ่งแถวคือเลือกทั้งออเดอร์ ทุกแถวของเลขเดียวกันติ๊กตาม ไม่วาดตารางใหม่ ตำแหน่งที่เลื่อนอยู่จะได้ไม่หลุด */
+function syncPicks() {
+  document.querySelectorAll('input[data-pick]').forEach((b) => {
+    b.checked = PICK.has(b.dataset.pick);
+    b.closest('tr').classList.toggle('pk-on', b.checked);
+  });
+  document.querySelectorAll('input[data-pick-kind]').forEach((b) => {
+    const refs = sectionRefs(b.dataset.pickKind);
+    const n = refs.filter((x) => PICK.has(x)).length;
+    b.checked = refs.length > 0 && n === refs.length;
+    b.indeterminate = n > 0 && n < refs.length;
+  });
+  renderPickBar();
+}
+
+function renderPickBar() {
+  const bar = $('pkBar');
+  if (!bar) return;
+  const n = picked().length;
+  if (!n && !PICK_MSG) { bar.innerHTML = ''; return; }
+  const text = PICK_BUSY || (PICK_MSG ? PICK_MSG.text : '');
+  const msg = text ? `<div class="pk-msg${!PICK_BUSY && PICK_MSG && PICK_MSG.bad ? ' bad' : ''}" role="status">${esc(text)}</div>` : '';
+  const off = PICK_BUSY ? ' disabled' : '';
+  bar.innerHTML = `<span class="pk-n">เลือก <b>${f(n)}</b> ออเดอร์</span><span class="sp"></span>${n
+    ? `<button class="tx-opt" data-pick-clear${off}>ล้างที่เลือก</button><button class="pk-go" data-export${off}>${PICK_BUSY ? 'กำลังสร้างไฟล์…' : '⬇️ Export Excel'}</button>`
+    : ''}${msg}`;
+}
+
+let XLSX_LOAD = null;
+function xlsxLib() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  if (!XLSX_LOAD) {
+    XLSX_LOAD = new Promise((ok, bad) => {
+      const s = document.createElement('script');
+      s.src = XLSX_URL;
+      s.onload = () => ok(window.XLSX);
+      s.onerror = () => { XLSX_LOAD = null; bad(new Error('โหลดตัวสร้างไฟล์ Excel ไม่ได้ ลองใหม่อีกครั้ง')); };
+      document.head.appendChild(s);
+    });
+  }
+  return XLSX_LOAD;
+}
+
+/** แถวใน Report ทุกคอลัมน์ของออเดอร์ที่เลือก สคริปต์รุ่นเก่าไม่รู้จักคำสั่งนี้ ได้ null แล้วไฟล์มีแค่ชีตสรุป */
+async function reportRows(refs, say) {
+  const url = WmsSettings.cutUrl();
+  if (!url) throw new Error('ยังไม่ได้ตั้ง URL ของสคริปต์ cut-api.gs');
+  const r = await WmsGas.post(url, { op: 'report-rows', refs }, { timeoutMs: TIMEOUT, onProgress: say });
+  if (r && r.error === 'ไม่รู้จักคำสั่งนี้') return null;
+  if (!r || r.error) throw new Error(r ? r.error : 'สคริปต์ไม่ตอบ');
+  return Array.isArray(r.tabs) ? r : null;
+}
+
+/** ไฟล์มีชีตสรุปปัญหาของออเดอร์ที่เลือก กับแถวใน Report ทุกคอลัมน์ทีละระบบ */
+async function exportPicked() {
+  const refs = picked();
+  if (!refs.length || PICK_BUSY) return;
+  if (refs.length > PICK_MAX) {
+    PICK_MSG = { text: `Export ได้ครั้งละไม่เกิน ${f(PICK_MAX)} ออเดอร์ ตอนนี้เลือกไว้ ${f(refs.length)} ออเดอร์`, bad: true };
+    renderPickBar();
+    return;
+  }
+  const say = (s) => { PICK_BUSY = `กำลังดึงแถว Report ของ ${f(refs.length)} ออเดอร์${s ? ` · ${s} วินาที` : ''}`; renderPickBar(); };
+  say(0);
+  try {
+    const [X, rep] = await Promise.all([xlsxLib(), reportRows(refs, say)]);
+    const kinds = Object.fromEntries(Object.keys(KINDS).map((k) => [k, KINDS[k].label]));
+    const sheets = WmsCut.exportSheets({ rows: RAW.rows, names: RAW.names, refs, kinds, back: BACK, rep });
+    const wb = X.utils.book_new();
+    sheets.forEach((s) => {
+      const ws = X.utils.aoa_to_sheet(s.aoa);
+      ws['!cols'] = s.widths.map((w) => ({ wch: w }));
+      if (s.aoa.length > 1) ws['!autofilter'] = { ref: X.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: s.aoa.length - 1, c: s.aoa[0].length - 1 } }) };
+      X.utils.book_append_sheet(wb, ws, s.name);
+    });
+    X.writeFile(wb, `ออเดอร์มีปัญหา_${RAW.period.from}_ถึง_${RAW.period.to}.xlsx`);
+    const lines = sheets.slice(1).reduce((s, x) => s + x.aoa.length - 1, 0);
+    PICK_MSG = !rep
+      ? { text: 'ดาวน์โหลดแล้ว แต่มีแค่ชีตสรุป เพราะ cut-api.gs ยังเป็นรุ่นเก่า ให้วางโค้ดใหม่แล้ว Deploy เป็น New version ถึงจะได้แถวใน Report ครบทุกคอลัมน์', bad: true }
+      : rep.cut
+        ? { text: `ดาวน์โหลดแล้ว แต่แถวใน Report เยอะเกินที่สคริปต์ส่งได้ ได้มา ${f(lines)} แถว ไม่ครบ ให้เลือกออเดอร์น้อยลงแล้วกดใหม่`, bad: true }
+        : { text: `ดาวน์โหลดแล้ว ${f(refs.length)} ออเดอร์ · แถวใน Report ${f(lines)} แถว`, bad: false };
+  } catch (e) {
+    PICK_MSG = { text: `Export ไม่สำเร็จ: ${e.message}`, bad: true };
+  } finally {
+    PICK_BUSY = '';
+    renderPickBar();
+  }
 }
 
 function gapBlock(g) {
@@ -1590,7 +1726,7 @@ function renderBody() {
   if (TAB === 'daily') { $('body').innerHTML = dailyHtml(); renderList(); return; }
   if (TAB === 'sys') { $('body').innerHTML = warnings() + sysHtml(); return; }
   const top = TAB === 'fix' ? cards(FIX_KINDS) : RAW.gaps.map(gapBlock).join('');
-  $('body').innerHTML = warnings() + top + filterBar() + '<div id="list"></div>';
+  $('body').innerHTML = warnings() + top + filterBar() + '<div id="list"></div>' + (TAB === 'fix' ? '<div class="pk-bar" id="pkBar"></div>' : '');
   renderList();
 }
 
@@ -1634,7 +1770,25 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && POP) closePop();
 });
 
+$('body').addEventListener('change', (e) => {
+  const one = e.target.closest('input[data-pick]');
+  if (one) {
+    if (one.checked) PICK.add(one.dataset.pick); else PICK.delete(one.dataset.pick);
+    PICK_MSG = null;
+    syncPicks();
+    return;
+  }
+  const all = e.target.closest('input[data-pick-kind]');
+  if (all) {
+    sectionRefs(all.dataset.pickKind).forEach((x) => (all.checked ? PICK.add(x) : PICK.delete(x)));
+    PICK_MSG = null;
+    syncPicks();
+  }
+});
+
 $('body').addEventListener('click', (e) => {
+  if (e.target.closest('[data-export]')) { exportPicked(); return; }
+  if (e.target.closest('[data-pick-clear]')) { PICK.clear(); PICK_MSG = null; syncPicks(); return; }
   /* มียอดขายของช่วงนี้แล้ว กดคือขอชุดใหม่ ยังไม่มีอ่านชุดกลางที่เก็บไว้ก่อน เร็วกว่า */
   if (e.target.closest('[data-reload]')) { loadLedger(ledgerFits()); return; }
   const mark = e.target.closest('[data-mark]');
