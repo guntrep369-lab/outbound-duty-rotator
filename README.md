@@ -759,14 +759,25 @@ its letter. The rest is split in two:
 - Pick the month at the top. It lists up to 12 months, ending at the ledger's last sale date. The two
   first tiles give the % of pieces that followed FIFO that month for หยิบขาย and เติมของ, split into
   ตาม FIFO / ข้าม PO / ข้าม LOT.
-- **คงเหลือราย LOT:** stock as of the month's last day, one row per SKU. The bar shows each batch from
-  oldest (left) to newest, colored by age. Open a SKU to see each batch's order, LOT, PO, receive date
-  (with every round, such as `รับ 3 รอบ 29/9 · 5/10 · 7/10`), how much is in the selling locations, on
-  the floor and on racks, and the locations.
-  - `⚠ ควรเติมของเก่าก่อน` marks a SKU where an older batch isn't in any selling location (it's on a rack
-    or on the floor) while every batch in the selling locations is newer.
-  - `โลขายมีหลายกอง` says which batch to pick first when the selling locations hold different ages.
-  - The filters list these, SKUs with more than one LOT, and SKUs with LOT 0.
+- **คงเหลือราย LOT:** stock as of the month's last day, split into work queues. Four cards at the top
+  pick the queue and show how many SKUs are in each. The page opens on the first queue that has work.
+  - **ต้องเติมของเก่า**: an older batch isn't in any selling location (it's on a rack or on the floor),
+    and every batch in the selling locations is newer. The row says which LOT to move, from which
+    locations, and into which selling location, for example `เอา LOT 4 เข้าโลขายก่อน`.
+  - **บอกคนหยิบ**: the selling locations hold batches of different ages. The row says which batch to
+    pick first and where it is. It adds the PO only when the same LOT has more than one batch there.
+  - **ไม่รู้ LOT**: stock with LOT 0 or no LOT. The row says how many pieces and where.
+  - **ดูทั้งหมด**: a short table of every SKU with its stock, LOT count, oldest age, and its most
+    urgent state, or `✓ ตาม FIFO` when nothing needs doing.
+  - One SKU can sit in more than one queue, because each queue is a different person's job.
+  - Each row in a queue lists its batches oldest to newest as tags: LOT, age, pieces, and where the
+    batch is (`● โลขาย` means it's in a selling location). The batches to act on are in red (move) or
+    blue (pick first).
+  - Age uses three colors, each with its age written next to it: gray for 0–3 months, amber for 4–6,
+    and red for 7 or more. The age tab uses the same colors.
+  - Open a row to see each batch's order, LOT, PO, receive date (with every round, such as
+    `รับ 3 รอบ 29/9 · 5/10 · 7/10`), how much is in the selling locations, on the floor and on racks,
+    and the locations.
 - **เบิกข้าม FIFO:** the month's picks and refills that skipped, grouped by SKU, biggest first. Each line
   shows what went out, the older goods that were there, and a link to the ledger row.
 - **อายุสต๊อก:** pieces per LOT month, oldest first, and the SKUs holding the oldest goods.

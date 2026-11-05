@@ -382,6 +382,60 @@ describe('analyze — ยอดคงเหลือราย LOT', () => {
     expect(codes({ only: 'mixed' })).toEqual(['AAA0000000001']);
     expect(codes({ q: 'po-3' })).toEqual(['BBB0000000002']);
   });
+
+  it('คิวงาน: เปิดหน้ามาอยู่คิวแรกที่มีงาน ไม่มีงานเลยไปดูทั้งหมด สถานะเลือกงานที่ด่วนที่สุด', () => {
+    const list = F.analyze(res, '2026-10').stock.list;
+    const a = list.find((e) => e.code === 'AAA0000000001');
+    const b = list.find((e) => e.code === 'BBB0000000002');
+    expect(F.QUEUES.map((q) => q.id)).toEqual(['refill', 'mixed', 'unknown', '']);
+    expect(F.firstQueue(list)).toBe('refill');
+    expect(F.firstQueue([a])).toBe('mixed');
+    expect(F.stockState(b)).toBe('refill');
+    expect(F.stockState(a)).toBe('mixed');
+    const calm = F.analyze(ledger([gr({ lot: 9, to: 'P1-01', open: true, qty: 3, d: '2026-09-25' })]), '2026-10').stock.list;
+    expect(F.firstQueue(calm)).toBe('');
+    expect(F.stockState(calm[0])).toBe('ok');
+  });
+
+  it('งานเติมของเก่า: เอากองไหน จาก Location ไหน มากไปน้อย เข้าโลขายไหน ที่ตอนนี้มี LOT อะไร', () => {
+    const b = F.analyze(res, '2026-10').stock.list.find((e) => e.code === 'BBB0000000002');
+    const t = F.refillTask(res, b);
+    expect(t.what).toBe('LOT 0.12, LOT 9 PO PO-1');
+    expect(t.from).toEqual([{ loc: 'R1-01-01', qty: 4, rack: true }, { loc: 'R1-01-02', qty: 2, rack: true }]);
+    expect(t.to).toEqual(['P1-01']);
+    expect(t.now).toBe('LOT 9');
+    expect(t.qty).toBe(6);
+    expect(t.batches.map((x) => x.po)).toEqual(['PO-0', 'PO-1']);
+    expect(F.refillTask(res, F.analyze(res, '2026-10').stock.list[0])).toBe(null);
+  });
+
+  it('งานบอกคนหยิบ: กองในโลขายเก่าไปใหม่ บอก PO เฉพาะตอน LOT เดียวกันมีหลายกองในโลขาย', () => {
+    const a = F.analyze(res, '2026-10').stock.list.find((e) => e.code === 'AAA0000000001');
+    expect(F.pickTask(res, a)).toMatchObject({ lot: '9', po: '', qty: 2, at: ['P1-02'] });
+    expect(F.pickTask(res, a).batches.map((x) => x.lot)).toEqual(['9', '10']);
+    const two = ledger([
+      gr({ lot: 8, po: '9900000002', to: 'P1-01', open: true, qty: 4, d: '2026-09-20' }),
+      gr({ lot: 8, po: '9900000001', to: 'P1-01', open: true, qty: 3, d: '2026-09-02' }),
+    ]);
+    const e = F.analyze(two, '2026-10').stock.list[0];
+    expect(F.pickTask(two, e)).toMatchObject({ lot: '8', po: '9900000001', qty: 3, at: ['P1-01'] });
+  });
+
+  it('งานแก้ LOT: LOT ที่ไม่รู้เดือนกับ Location ที่อยู่ มากไปน้อย', () => {
+    const b = F.analyze(res, '2026-10').stock.list.find((e) => e.code === 'BBB0000000002');
+    expect(F.unknownTask(res, b)).toEqual({ lots: ['0'], qty: 5, at: [{ loc: 'R1-01-03', qty: 5 }] });
+    expect(F.lotName({ lot: '' })).toBe('ว่าง');
+    expect(F.lotName({ lot: '0' })).toBe('0');
+  });
+
+  it('คำสั้นของกอง: รวม PO ของ LOT เดียวกัน LOT ไม่ซ้ำ กองอยู่ตรงไหนบ้าง', () => {
+    expect(F.batchWords([{ lot: '8', po: 'A' }, { lot: '8', po: 'B' }, { lot: '9', po: 'C' }])).toBe('LOT 8 (2 PO), LOT 9');
+    expect(F.batchWords([{ lot: '8', po: 'A' }], [{ lot: '8', po: 'B' }])).toBe('LOT 8 PO A');
+    expect(F.batchWords([{ lot: '8', po: '0' }], [{ lot: '8', po: 'B' }])).toBe('LOT 8');
+    expect(F.lotWords([{ lot: '8' }, { lot: '8' }, { lot: '9' }])).toBe('LOT 8, LOT 9');
+    expect(F.placeWords({ open: 5, floor: 2, rack: 0, special: 0 })).toEqual(['โลขาย', 'ตั้งพื้น']);
+    expect(F.placeWords({ open: 0, floor: 0, rack: 4, special: 1 })).toEqual(['บนแร็ค', 'QA']);
+  });
 });
 
 describe('ส่งออก', () => {

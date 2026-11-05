@@ -313,6 +313,132 @@
     return out;
   }
 
+  /* ── คิวงานของแท็บคงเหลือ ──────────────────────────────────────────────
+   * หน้าเดิมขึ้นทั้งห้าร้อยกว่า SKU ปนกัน สิบ SKU ที่ต้องทำจริงจมอยู่ในแถวที่ไม่มีปัญหา
+   * เลยแบ่งเป็นคิวตามคนที่ต้องทำ แต่ละแถวบอกสิ่งที่ต้องทำเป็นประโยคเดียว
+   * id ตรงกับตัวกรองของ filterStock SKU เดียวอยู่ได้หลายคิว เพราะเป็นงานของคนละคน */
+  var QUEUES = [
+    { id: 'refill', label: 'ต้องเติมของเก่า', sub: 'งานคนเติมของ',
+      hint: 'กองเก่ายังอยู่บนแร็คหรือตั้งพื้น แต่โลขายมีแต่กองใหม่กว่า ให้เอากองเก่าเข้าโลขายก่อน' },
+    { id: 'mixed', label: 'บอกคนหยิบ', sub: 'โลขายมีหลายกอง',
+      hint: 'ในโลขายมีหลายกองปนกัน บอกคนหยิบว่าต้องหยิบกองไหนก่อน' },
+    { id: 'unknown', label: 'ไม่รู้ LOT', sub: 'ข้อมูลต้องแก้',
+      hint: 'ของที่ LOT เป็น 0 หรือว่าง เรียงอายุไม่ได้ ต้องแก้ LOT ในสมุดให้ตรงกับป้ายที่กอง' },
+    { id: '', label: 'ดูทั้งหมด', sub: 'ทุก SKU',
+      hint: 'ทุก SKU ที่มีของ กดแถวเพื่อดูว่าแต่ละกองอยู่ Location ไหน' },
+  ];
+
+  /** เปิดหน้ามาอยู่ที่คิวแรกที่มีงาน ไม่มีงานเลยค่อยไปดูทั้งหมด */
+  function firstQueue(list) {
+    for (var i = 0; i < QUEUES.length - 1; i++) {
+      var id = QUEUES[i].id;
+      if (filterStock(list, { only: id }).length) return id;
+    }
+    return '';
+  }
+
+  /** สถานะคำเดียวของ SKU เรียงตามความด่วน */
+  function stockState(e) {
+    return e.refill.length ? 'refill' : e.mixed ? 'mixed' : e.unknown ? 'unknown' : 'ok';
+  }
+
+  /** LOT ของกองที่ไม่รู้เดือน: 0 หรือว่าง */
+  function lotName(x) { return text(x.lot) === '' ? 'ว่าง' : text(x.lot); }
+
+  /**
+   * กองชุดหนึ่งเป็นคำสั้น: LOT 7 (3 PO), LOT 9
+   * ถ้า LOT นั้นมีอีกกองอยู่ใน other ด้วย ต่อ PO ให้เห็นว่าเป็นคนละกอง
+   */
+  function batchWords(list, other) {
+    var by = {}, order = [];
+    var inOther = {};
+    (other || []).forEach(function (x) { inOther[x.lot] = 1; });
+    list.forEach(function (x) {
+      if (!by[x.lot]) { by[x.lot] = []; order.push(x.lot); }
+      by[x.lot].push(x);
+    });
+    return order.map(function (lot) {
+      var g = by[lot];
+      if (g.length > 1) return 'LOT ' + lot + ' (' + g.length + ' PO)';
+      return 'LOT ' + lot + (inOther[lot] && !noPo(g[0].po) ? ' PO ' + g[0].po : '');
+    }).join(', ');
+  }
+
+  /** LOT ที่ไม่ซ้ำกันของชุดกอง: LOT 8, LOT 9 */
+  function lotWords(list) {
+    var seen = {}, out = [];
+    list.forEach(function (x) { if (!seen[x.lot]) { seen[x.lot] = 1; out.push('LOT ' + x.lot); } });
+    return out.join(', ');
+  }
+
+  /** กองนี้อยู่ตรงไหนบ้าง ตามที่มีของจริง */
+  function placeWords(x) {
+    var p = [];
+    if (x.open) p.push('โลขาย');
+    if (x.floor) p.push('ตั้งพื้น');
+    if (x.rack) p.push('บนแร็ค');
+    if (x.special) p.push('QA');
+    return p;
+  }
+
+  function locName(res, l) { return res.locs[l.loc] || ''; }
+
+  /**
+   * งานเติมของเก่าของหนึ่ง SKU: เอากองไหน จาก Location ไหน เข้าโลขายไหน
+   * from = ที่ของกองเก่าที่ยังไม่เปิดขาย มากไปน้อย  to = โลขายของกองใหม่กว่าที่อยู่ตอนนี้
+   */
+  function refillTask(res, e) {
+    if (!e.refill.length) return null;
+    var olds = e.refill.map(function (r) { return r.batch; });
+    var newer = e.refill[0].newer;
+    var from = [], to = [];
+    olds.forEach(function (x) {
+      x.locs.forEach(function (l) {
+        if (!l.open && !l.special) from.push({ loc: locName(res, l), qty: l.qty, rack: l.rack });
+      });
+    });
+    from.sort(function (a, b) { return b.qty - a.qty; });
+    newer.forEach(function (x) {
+      x.locs.forEach(function (l) {
+        var n = locName(res, l);
+        if (l.open && !l.special && to.indexOf(n) < 0) to.push(n);
+      });
+    });
+    var qty = olds.reduce(function (a, x) { return a + x.store; }, 0);
+    return { what: batchWords(olds, newer), qty: qty, from: from, to: to, now: lotWords(newer), batches: olds };
+  }
+
+  /**
+   * งานบอกคนหยิบ: กองในโลขายเรียงเก่าไปใหม่ กองแรกคือกองที่ต้องหยิบก่อน
+   * บอก PO เฉพาะตอนที่ LOT เดียวกันมีหลายกองในโลขาย ไม่งั้นแค่ LOT ก็พอ
+   */
+  function pickTask(res, e) {
+    if (!e.mixed || !e.pick) return null;
+    var open = e.batches.filter(function (x) { return x.lm && x.open > 0; });
+    var p = e.pick;
+    var same = open.filter(function (x) { return x.lot === p.lot; }).length > 1;
+    var at = [];
+    p.locs.forEach(function (l) {
+      var n = locName(res, l);
+      if (l.open && !l.special && at.indexOf(n) < 0) at.push(n);
+    });
+    return { lot: p.lot, po: same && !noPo(p.po) ? p.po : '', qty: p.open, at: at, batches: open };
+  }
+
+  /** งานแก้ LOT: กองที่ไม่รู้เดือนกับ Location ที่อยู่ มากไปน้อย */
+  function unknownTask(res, e) {
+    if (!e.unknown) return null;
+    var bs = e.batches.filter(function (x) { return !x.lm; });
+    var lots = [], at = [];
+    bs.forEach(function (x) {
+      var n = lotName(x);
+      if (lots.indexOf(n) < 0) lots.push(n);
+      x.locs.forEach(function (l) { at.push({ loc: locName(res, l), qty: l.qty }); });
+    });
+    at.sort(function (a, b) { return b.qty - a.qty; });
+    return { lots: lots, qty: e.unknown, at: at };
+  }
+
   /** ตัวกรองแท็บคงเหลือ only = '' | refill | multi | unknown | mixed */
   function filterStock(list, o) {
     var q = up(o.q || '');
@@ -460,6 +586,8 @@
   window.WmsFifo = {
     lotMonth: lotMonth, monthText: monthText, lastDay: lastDay, months: months, analyze: analyze, older: older, noPo: noPo, basePo: basePo,
     filterStock: filterStock, skipsBySku: skipsBySku, recvText: recvText, roundsText: roundsText,
+    QUEUES: QUEUES, firstQueue: firstQueue, stockState: stockState, lotName: lotName, batchWords: batchWords, lotWords: lotWords,
+    placeWords: placeWords, refillTask: refillTask, pickTask: pickTask, unknownTask: unknownTask,
     stockTable: stockTable, skipTable: skipTable, agingTable: agingTable, summaryTable: summaryTable, tsv: tsv,
     KIND: KIND, STATE: STATE, COUNT_DAY: COUNT_DAY,
   };
