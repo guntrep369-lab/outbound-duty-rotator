@@ -112,6 +112,24 @@
 /* สลับมุมมองอยู่บนสุดของเนื้อหา เส้นใต้แยกจากตัวกรองด้านล่าง */
 .lp-view{padding-bottom:12px;border-bottom:1px solid var(--wms-border)}
 
+/* ── ประมาณ LOT ให้ของ LOT 0 ── ป้ายเขียนคำว่า ประมาณ ไม่ได้บอกด้วยสีอย่างเดียว */
+.lp-guess{display:inline-block;margin-left:6px;padding:0 7px;border-radius:999px;background:#FEF3C7;color:#92400E;
+  font-size:11px;font-weight:700;vertical-align:1px;white-space:nowrap}
+.lp-est{margin-bottom:12px;padding:11px 14px;border-radius:var(--wms-radius-sm);background:var(--wms-surface);
+  border:1px solid var(--wms-border);border-left:4px solid #F59E0B;font-size:13px;line-height:1.6;color:var(--wms-text)}
+.lp-est .say{font-weight:600}
+.lp-est .say b{font-variant-numeric:tabular-nums}
+.lp-est ul{margin:6px 0 0 18px;color:var(--wms-muted)}
+.lp-est li b{color:var(--wms-text);font-variant-numeric:tabular-nums}
+.lp-est .act{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:9px;font-size:12px;color:var(--wms-muted)}
+.lp-sub{margin-top:8px;padding-top:8px;border-top:1px dashed var(--wms-border);color:var(--wms-muted)}
+.lp-sub b{color:var(--wms-text);font-variant-numeric:tabular-nums}
+.lp-how{margin-top:6px}
+.lp-how summary{cursor:pointer;font-weight:600;color:var(--wms-primary-dark)}
+.lp-how ol{margin:6px 0 4px 20px}
+.lp-how li{margin-bottom:3px}
+.lp-how small{display:block;font-size:12px}
+
 @media (max-width:640px){
   .mod-title h2 .en,.mod-title p{display:none}
   .tx-src,.lp-days,.tx-sum{padding-left:16px;padding-right:16px}
@@ -147,6 +165,8 @@
   .lp-tbl .k-src{grid-column:1/-1;min-width:0}
   .lp-tbl tr.sum{display:flex;justify-content:space-between;background:var(--wms-surface2)}
   .lp-tbl tr.sum .k-qty::before{display:none}
+  .lp-est{padding:11px 12px}
+  .lp-est .act .tx-opt{flex:1;justify-content:center}
 }
 </style>
 </head>
@@ -177,8 +197,10 @@
 <script type="module" src="../wms-shell.js"></script>
 <script src="../wms-settings.js"></script>
 <script src="../wms-gas.js"></script>
+<script src="../wms-shared.js"></script>
 <script src="../wms-cut.js"></script>
 <script src="../wms-lotpo.js"></script>
+<script src="../wms-lot0.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -206,6 +228,18 @@ let ORD = null;
 let ORD_ERR = '';
 let OLINES = [];    // WmsLotPo.allocate(ROWS, ORD)
 let LATE = [];      // วันที่มีออเดอร์ แต่สมุดยังลงขายไม่ถึง
+
+/*
+ * ประมาณ LOT ให้ของ LOT 0 (public/wms-lot0.js) ต้องอ่านสมุดทั้งชีต (tx-fifo ชุดกลาง) ไม่ใช่แค่แถวขายของเดือน
+ * เก็บลงเครื่องเฉพาะแถวขายของเดือนที่ดึงไว้ ผูกกับเวลาที่ดึงแถวขาย ดึงแถวขายใหม่ก็ประมาณใหม่
+ */
+const EST_CACHE = 'wms:lotpo:lot0';
+const GUESS_KEY = 'wms:lotpo:guess';
+let EST = null;     // WmsLot0.only(WmsLot0.run(tx-fifo), แถวขายของ LED) + led = LED.at
+let EST_BUSY = '';
+let EST_ERR = '';
+let GUESS = true;   // ปิดได้ อยากดู LOT 0 ตามที่สมุดลงไว้
+try { GUESS = localStorage.getItem(GUESS_KEY) !== '0'; } catch (e) {}
 
 function monthRange(m) {
   const [y, mo] = m.split('-').map(Number);
@@ -252,18 +286,64 @@ function dayState(d) {
 function readCache() {
   try {
     const l = JSON.parse(localStorage.getItem(CACHE) || 'null');
-    if (l && l.app === 'transaction' && l.lines && l.from) take(l);
+    if (!l || l.app !== 'transaction' || !l.lines || !l.from) return;
+    const e = JSON.parse(localStorage.getItem(EST_CACHE) || 'null');
+    if (e && e.rows && e.led === l.at) EST = e;
+    take(l);
   } catch (e) {}
 }
 
 function take(l) {
   LED = l;
   MONTH = l.from.slice(0, 7);
-  RAW = WmsLotPo.build(l);
-  ROWS = WmsLotPo.convert(RAW, l.convert);
+  if (EST && EST.led !== l.at) EST = null;
   /* วันล่าสุดที่มีขายคือวันที่ทำรายงานบ่อยสุด */
   if (!DAY || !l.days.includes(DAY)) DAY = l.days[l.days.length - 1] || '';
+  rebuild();
+}
+
+/** ค่าประมาณที่ใช้ได้ตอนนี้ ปิดไว้หรือสคริปต์รุ่นเก่าที่แยกแถวรับคืนไม่ได้ ไม่ใช้ */
+const useEst = () => (GUESS && EST && EST.ok ? EST : null);
+
+function rebuild() {
+  if (!LED) return;
+  RAW = WmsLotPo.build(LED, useEst());
+  ROWS = WmsLotPo.convert(RAW, LED.convert);
   pair();
+}
+
+/**
+ * อ่านสมุดทั้งชีตแล้วประมาณ LOT ให้แถวขาย LOT 0 ปกติอ่านชุดกลางที่สคริปต์เก็บไว้ fresh = ให้สคริปต์อ่านชีตใหม่
+ * ไม่บังหน้ารายงาน ระหว่างรอยังดูและคัดลอกได้ เสร็จแล้วบรรทัด LOT 0 ค่อยแยกเป็น LOT ที่ประมาณได้
+ */
+async function loadEst(fresh) {
+  const url = WmsSettings.txUrl();
+  if (EST_BUSY || !url || !LED) return;
+  EST_ERR = '';
+  const say = (sec) => { EST_BUSY = `กำลังอ่านสมุดทั้งชีตเพื่อประมาณ LOT ให้ของ LOT 0…${sec ? ` ${sec} วินาที` : ''}`; renderEst(); };
+  const opts = { retries: 1, timeoutMs: 240000, onProgress: say };
+  say(0);
+  try {
+    let res;
+    if (fresh) {
+      res = await WmsShared.press(url, 'tx-fifo', null, opts);
+      if (res && res.error === WmsShared.OLD) res = await WmsGas.json(url, 'tx-fifo', opts);
+    } else {
+      res = await WmsShared.read(url, 'tx-fifo', opts);
+    }
+    if (res && res.busy && !res.rows) throw new Error(`${WmsShared.runner(res.busy)} กำลังดึงสมุดชุดใหม่อยู่ รอสักครู่แล้วกดอีกครั้ง`);
+    if (res.error) throw new Error(res.error);
+    if (res.app !== 'transaction') throw new Error('URL ของ Transaction ในหน้าตั้งค่าไม่ใช่สคริปต์ tx-api.gs');
+    if (!res.rows) throw new Error('สคริปต์ tx-api.gs ยังเป็นรุ่นที่ไม่ส่งแถวของสมุด ให้วางโค้ดใหม่แล้ว Deploy เป็น New version');
+    EST = Object.assign(WmsLot0.only(WmsLot0.run(res), LED.lines.map((l) => l[2])), { led: LED.at });
+    try { localStorage.setItem(EST_CACHE, JSON.stringify(EST)); } catch (e) {}
+  } catch (e) {
+    EST_ERR = e.message;
+  }
+  EST_BUSY = '';
+  rebuild();
+  renderSum();
+  renderBody();
 }
 
 /**
@@ -332,6 +412,8 @@ async function load() {
   }
   BUSY = '';
   CUT = readCut();
+  /* แถวขายชุดใหม่ต้องประมาณใหม่ เลขแถวของชุดเก่าอาจเลื่อนไปแล้ว */
+  if (!ERR && GUESS) loadEst(false);
   /* ดึงใหม่ตอนดูรายออเดอร์ ออเดอร์ต้องใหม่ด้วย ไม่งั้นจะปันล็อตชุดใหม่ให้ออเดอร์ชุดเก่า */
   if (!ERR && VIEW === 'order' && WmsSettings.cutUrl()) {
     ORD = null;
@@ -421,6 +503,7 @@ function renderSum() {
       stat('ชิ้นที่ออก', o.qty, DAY ? `วันที่ ${dm(DAY)}` : monthName(MONTH)) +
       stat('ออเดอร์', o.orders, `${f(o.lines)} บรรทัด ออเดอร์ × SKU × LOT/PO`) +
       stat('ไม่รู้ LOT หรือ PO', o.unknown.qty, `${f(o.unknown.lines)} บรรทัด · LOT 0 หรือ PO 0`, o.unknown.qty ? 'tx-mid' : '') +
+      guessStat(o) +
       stat('ยอดไม่ลงกัน', o.gap.qty, `${f(o.gap.lines)} บรรทัด · สมุดกับแท็บ Transaction`, o.gap.qty ? 'tx-neg' : '');
     return;
   }
@@ -429,7 +512,15 @@ function renderSum() {
     stat('ชิ้นที่ขายออก', t.qty, DAY ? `วันที่ ${dm(DAY)}` : monthName(MONTH)) +
     stat('SKU', t.skus, `${f(t.lines)} บรรทัด SKU × LOT/PO`) +
     stat('SKU ที่ออกหลาย LOT/PO', t.split, `${f(t.splitLines)} บรรทัด${DAY ? '' : ' · นับเป็น SKU ต่อวัน'}`) +
-    stat('ไม่รู้ LOT หรือ PO', t.unknown.qty, `${f(t.unknown.lines)} บรรทัด · LOT 0 หรือ PO 0`, t.unknown.qty ? 'tx-mid' : '');
+    stat('ไม่รู้ LOT หรือ PO', t.unknown.qty, `${f(t.unknown.lines)} บรรทัด · LOT 0 หรือ PO 0`, t.unknown.qty ? 'tx-mid' : '') +
+    guessStat(t);
+}
+
+/** ช่องนี้ขึ้นเฉพาะตอนมีบรรทัดที่ประมาณ LOT ได้ */
+function guessStat(t) {
+  if (!t.guess.qty) return '';
+  return `<div class="tx-stat"><small>LOT/PO ประมาณ</small><b class="tx-mid" data-count="${t.guess.qty}">${f(t.guess.qty)}</b>
+    <i>${f(t.guess.lines)} บรรทัด · ไม่ใช่ที่สมุดบันทึก</i></div>`;
 }
 
 /* ── เนื้อหา ───────────────────────────────────────────────────────────── */
@@ -509,6 +600,29 @@ function lotHtml(v, unknown, what) {
   return `<span class="tx-mid">${esc(v === '' ? 'ว่าง' : v)}</span><span class="tx-sub">ไม่รู้ ${what}</span>`;
 }
 
+/** LOT ที่ประมาณได้มีป้ายติดไว้ ชี้ค้างเห็นว่าประมาณจากอะไร */
+function lotCell(r) {
+  if (r.guess) return `${esc(r.lot)}<span class="lp-guess" title="${esc(WmsLotPo.GUESS[r.guess] || '')}">ประมาณ</span>`;
+  return lotHtml(r.lot, r.noLot, 'LOT');
+}
+
+function rowLinks(rows) {
+  const links = rows.slice(0, 3).map((row) => {
+    const u = WmsCut.rowUrl(LED.sheet, row);
+    return u ? `<a class="tx-row" href="${esc(u)}" target="_blank" rel="noopener">${row}</a>` : String(row);
+  }).join(' · ');
+  return links + (rows.length > 3 ? ` +${rows.length - 3}` : '');
+}
+
+/** ประมาณจากแถวไหน หรือยังไม่รู้เพราะอะไร */
+function guessHtml(r) {
+  const from = (r.from || []).length ? ` · แถว ${rowLinks(r.from)}` : '';
+  if (r.guess) return `<span class="tx-sub">${esc(WmsLotPo.GUESS[r.guess] || '')}${from}</span>`;
+  /* stale กับ none ไม่มีแถวต้นทางให้ดู (none ชี้กลับแถวขายเอง) */
+  if (r.why && r.noLot && r.noPo) return `<span class="tx-sub tx-mid">${esc(WmsLotPo.WHY[r.why] || '')}${r.why === 'stale' || r.why === 'none' ? '' : from}</span>`;
+  return '';
+}
+
 /** PO ที่ลง -01 -02 ต่อท้ายรวมเป็น PO เดียวกันแล้ว บอกว่ารวมรอบไหนไว้ */
 function poHtml(r) {
   const p = r.parts || [];
@@ -525,13 +639,8 @@ function poNote(scope) {
 
 /** ที่มาของบรรทัด: หยิบจาก Location ไหน และลิงก์ไปแถวในชีต ไว้แก้ LOT/PO ที่ผิด */
 function srcHtml(r) {
-  const links = r.rows.slice(0, 3).map((row) => {
-    const u = WmsCut.rowUrl(LED.sheet, row);
-    return u ? `<a class="tx-row" href="${esc(u)}" target="_blank" rel="noopener">${row}</a>` : String(row);
-  }).join(' · ');
-  const more = r.rows.length > 3 ? ` +${r.rows.length - 3}` : '';
   const bad = r.bad.length ? `<span class="tx-sub tx-neg">จำนวนพิมพ์ไม่ใช่ตัวเลข ${f(r.bad.length)} แถว ไม่ได้นับ</span>` : '';
-  return `<span class="tx-sub">${esc(r.locs.join(', '))}</span><span class="tx-sub">แถว ${links}${more}</span>${bad}`;
+  return `<span class="tx-sub">${esc(r.locs.join(', '))}</span><span class="tx-sub">แถว ${rowLinks(r.rows)}</span>${bad}${guessHtml(r)}`;
 }
 
 const cutNote = (rows) => rows.length > SHOW_MAX
@@ -549,16 +658,16 @@ function orderListHtml(rows) {
       ? '<span class="tx-neg">ไม่มีออเดอร์</span>'
       : same(prev) ? `<span class="tx-sub">${esc(r.ref)}</span>` : `<b>${esc(r.ref)}</b><span class="tx-sub">${esc(r.src)}</span>`;
     const none = r.miss === 'ledger' || r.miss === 'minus';
-    /* ไม่รู้ LOT/PO บอกอยู่ในช่องแล้ว ช่องหมายเหตุบนจอเหลือแค่เรื่องยอดไม่ลงกัน ไฟล์ที่ส่งออกยังมีครบ */
-    const note = r.miss ? WmsLotPo.note(r) : '';
+    /* ไม่รู้ LOT/PO บอกอยู่ในช่องแล้ว ช่องหมายเหตุบนจอเหลือเรื่องยอดไม่ลงกันกับที่มาของ LOT ประมาณ ไฟล์ที่ส่งออกยังมีครบ */
+    const note = r.miss ? `<span class="tx-sub tx-neg">${esc(WmsLotPo.note(r))}</span>` : guessHtml(r);
     return `<tr${cls ? ` class="${cls}"` : ''}>
       ${DAY ? '' : `<td class="nw k-date">${esc(dm(r.date))}</td>`}
       <td class="nw k-ord">${ord}</td>
       <td class="k-sku">${skuHtml(r, r.split > 1 ? `<span class="tx-tag">ได้ ${r.split} LOT/PO</span>` : '')}</td>
-      <td class="nw k-lot" data-label="LOT">${none ? '—' : lotHtml(r.lot, r.noLot, 'LOT')}</td>
+      <td class="nw k-lot" data-label="LOT">${none ? '—' : lotCell(r)}</td>
       <td class="nw k-po" data-label="PO">${none ? '—' : poHtml(r)}</td>
       <td class="num k-qty" data-label="จำนวน">${f(r.qty)}</td>
-      <td class="k-note">${note ? `<span class="tx-sub tx-neg">${esc(note)}</span>` : ''}</td>
+      <td class="k-note">${note}</td>
     </tr>`;
   }).join('');
   const t = WmsLotPo.totals(rows);
@@ -589,7 +698,7 @@ function listHtml() {
     return `<tr${cls ? ` class="${cls}"` : ''}>
       ${DAY ? '' : `<td class="nw k-date">${esc(dm(r.date))}</td>`}
       <td class="k-sku">${sku}</td>
-      <td class="nw k-lot" data-label="LOT">${lotHtml(r.lot, r.noLot, 'LOT')}</td>
+      <td class="nw k-lot" data-label="LOT">${lotCell(r)}</td>
       <td class="nw k-po" data-label="PO">${poHtml(r)}</td>
       <td class="num k-qty" data-label="จำนวน">${f(r.qty)}</td>
       <td class="k-src">${srcHtml(r)}</td>
@@ -646,11 +755,12 @@ function renderBody() {
   /* ตัวเลขบนปุ่มนับเป็นบรรทัดทุกปุ่ม ตรงกับจำนวนที่ปุ่มคัดลอกจะได้ */
   const opt = (v, label) => `<button class="tx-opt${ONLY === v ? ' on' : ''}" data-only="${v}">${label} ${f(count(v))} บรรทัด</button>`;
   const conv = LED.convert && LED.convert.pairs.length ? opt('conv', 'แปลงคืน') : '';
+  const guess = count('guess') || ONLY === 'guess' ? opt('guess', 'LOT ประมาณ') : '';
   const opts = byOrder()
-    ? opt('', 'ทั้งหมด') + opt('split', 'ได้หลาย LOT/PO') + opt('unknown', 'ไม่รู้ LOT/PO') + opt('gap', 'ยอดไม่ลงกัน') + conv
-    : opt('', 'ทั้งหมด') + opt('split', 'ออกหลาย LOT/PO') + opt('unknown', 'ไม่รู้ LOT/PO') + conv;
+    ? opt('', 'ทั้งหมด') + opt('split', 'ได้หลาย LOT/PO') + opt('unknown', 'ไม่รู้ LOT/PO') + guess + opt('gap', 'ยอดไม่ลงกัน') + conv
+    : opt('', 'ทั้งหมด') + opt('split', 'ออกหลาย LOT/PO') + opt('unknown', 'ไม่รู้ LOT/PO') + guess + conv;
   const cols = byOrder() ? 'วันที่ · ระบบ · เลขออเดอร์ · SKU · SKU ที่ขาย · ชื่อสินค้า · LOT · PO · จำนวน · หมายเหตุ' : 'วันที่ · SKU · SKU ที่ขาย · ชื่อสินค้า · LOT · PO · จำนวน · หมายเหตุ';
-  $('body').innerHTML = `${views}${statusHtml()}${convNote(scope)}${poNote(scope)}${byOrder() ? orderNote() : ''}
+  $('body').innerHTML = `${views}${statusHtml()}<div id="est">${estHtml(scope)}</div>${convNote(scope)}${poNote(scope)}${byOrder() ? orderNote() : ''}
     <div class="tx-bar">
       <input id="q" class="tx-input" type="search" placeholder="ค้นหา${byOrder() ? 'เลขออเดอร์' : ''} SKU ชื่อสินค้า LOT หรือ PO" value="${esc(Q)}" autocomplete="off">
       ${opts}
@@ -662,6 +772,108 @@ function renderBody() {
     </div>
     <div id="list"></div>`;
   renderList();
+}
+
+/** บรรทัดของวันหรือเดือนที่เลือก ในมุมที่กำลังดู */
+const scopeRows = () => (byOrder() ? OLINES : ROWS).filter((r) => !DAY || r.date === DAY);
+
+/** ระหว่างอ่านสมุดทั้งชีต วาดแค่กล่องนี้ ไม่วาดทั้งหน้า ช่องค้นหาจะได้ไม่หลุดตอนพิมพ์ */
+function renderEst() {
+  const box = $('est');
+  if (box) box.innerHTML = estHtml(scopeRows());
+}
+
+/**
+ * ของ LOT 0 ที่ขายออกในช่วงนี้ ประมาณ LOT ได้เท่าไร ที่เหลือรออะไร
+ * เป็นค่าประมาณ ต้องบอกกติกาไว้ตรงนี้ คนส่งบัญชีจะได้อธิบายได้
+ */
+function estHtml(scope) {
+  const t = WmsLotPo.totals(scope);
+  const left = Object.values(t.why).reduce((a, b) => a + b, 0);
+  const lot0 = scope.some((r) => r.noLot && r.noPo) || t.guess.qty;
+  if (!lot0) return '';
+  const where = DAY ? `วันที่ ${esc(dm(DAY))}` : esc(monthName(MONTH));
+  if (!GUESS) {
+    return `<div class="tx-note">ปิดการประมาณ LOT ให้ของ LOT 0 อยู่ รายงานแสดง LOT 0 ตามที่สมุดลงไว้
+      <button class="tx-opt" data-guess>เปิดการประมาณ</button></div>`;
+  }
+  if (EST_BUSY) return `<div class="lp-est">⏳ ${esc(EST_BUSY)} <small>ระหว่างนี้รายงานยังเป็น LOT 0 ตามที่สมุดลงไว้</small></div>`;
+  if (EST_ERR) {
+    return `<div class="tx-warn bad">อ่านสมุดทั้งชีตไม่สำเร็จ ยังประมาณ LOT ให้ของ LOT 0 ไม่ได้: ${esc(EST_ERR)}
+      <button class="tx-opt" data-est-load>ลองอีกครั้ง</button></div>`;
+  }
+  if (!EST) {
+    return `<div class="lp-est">ของ LOT 0 ยังไม่ได้ประมาณ LOT — ต้องอ่านสมุดทั้งชีตก่อน
+      <div class="act"><button class="tx-opt" data-est-load>▶️ ประมาณ LOT</button></div></div>`;
+  }
+  if (!EST.ok) {
+    return `<div class="tx-warn">สคริปต์ tx-api.gs ยังเป็นรุ่นที่แยกแถวรับคืนกับ M/E ไม่ได้ จึงยังประมาณ LOT ให้ของ LOT 0 ไม่ได้
+      — วางโค้ดใหม่ Deploy เป็น New version แล้วกด <button class="tx-opt" data-est-fresh>🔄 อ่านสมุดใหม่</button></div>`;
+  }
+  const when = new Date(EST.at).toLocaleString('th-TH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const n = (v) => `<b>${f(v || 0)}</b>`;
+  const g = t.guess.by, w = t.why;
+  const got = [['before', 'จากยอดก่อนนับ'], ['return', 'จากรับคืน'], ['me', 'จาก M/E'], ['conv', 'จากแปลงสินค้า']]
+    .filter(([k]) => g[k]).map(([k, label]) => `${label} ${n(g[k])}`).join(' · ');
+  /* กติกาของที่มาที่มีในช่วงนี้ คนส่งบัญชีจะได้อธิบายได้ว่าเลขมาจากไหน */
+  const rules = [
+    g.before ? 'ของนับที่ไม่รู้ LOT แบ่งตามแท็บยอดก่อนนับ ล็อตที่เข้าหลังสุดก่อน (ของเก่าควรออกไปก่อนแล้ว)' : '',
+    g.return || g.me ? 'รับคืนกับ M/E ใช้ LOT/PO ที่ SKU นั้นขายออกล่าสุดก่อนรับเข้า' : '',
+    g.conv ? 'แปลงสินค้าใช้ LOT/PO ของ SKU ต้นทาง' : '',
+  ].filter(Boolean).join(' · ');
+  const wait = [
+    ['count', 'มาจากนับสต๊อก ต้องใช้ยอดก่อนวันนับ'],
+    ['short', 'มาจากนับสต๊อก แต่แท็บยอดก่อนนับไม่มี SKU นี้หรือมีไม่พอ'],
+    ['return', 'รับคืนแต่ไม่มีแถวขายก่อนหน้าให้ย้อนดู'],
+    ['me', 'M/E แต่ไม่มีแถวขายก่อนหน้า'],
+    ['none', 'สมุดขายจากกอง LOT 0 เกินที่รับเข้า'],
+    ['conv', 'แปลงสินค้าแต่หาแถวเบิกคู่ไม่เจอ'],
+    ['other', 'รับเข้าจากแถวที่ไม่บอกว่ามาจากไหน'],
+    ['stale', 'ยังไม่ได้ประมาณ สมุดที่อ่านไว้เก่ากว่าแถวขาย กดอ่านสมุดใหม่'],
+  ].filter(([k]) => w[k]).map(([k, label]) => `<li>${label} ${n(w[k])} ชิ้น</li>`).join('');
+  return `<div class="lp-est">
+    <div class="say">ของ LOT 0 ที่ขายออก${where} ${n(t.guess.qty + left)} ชิ้น · ประมาณ LOT/PO ได้ ${n(t.guess.qty)} ชิ้น · ยังไม่รู้ ${n(left)} ชิ้น</div>
+    <ul>
+      ${t.guess.qty ? `<li>ประมาณได้ ${got} ชิ้น — ${rules} เป็นค่าประมาณ ไม่ใช่ที่สมุดบันทึกไว้ บรรทัดเหล่านี้มีป้าย <span class="lp-guess">ประมาณ</span></li>` : ''}
+      ${wait}
+    </ul>
+    ${beforeHtml(w)}
+    <div class="act">
+      ${t.guess.qty ? `<button class="tx-opt${ONLY === 'guess' ? ' on' : ''}" data-only="guess">ดูบรรทัดที่ประมาณ</button>` : ''}
+      <button class="tx-opt" data-est-fresh>🔄 อ่านสมุดใหม่</button>
+      <button class="tx-opt" data-guess>ปิดการประมาณ</button>
+      <span>อ่านสมุดทั้งชีตเมื่อ ${esc(when)} · สมุดไม่ถูกแก้</span>
+    </div>
+  </div>`;
+}
+
+/**
+ * แท็บยอดก่อนนับอยู่ในสภาพไหน ยังไม่มีบอกวิธีใส่ มีแล้วบอกว่าใช้ได้เท่าไร (นับทั้งชีต ไม่ใช่แค่ช่วงที่เลือก)
+ * w คือชิ้นที่ยังไม่รู้ของช่วงที่เลือก แยกตามเหตุ
+ */
+function beforeHtml(w) {
+  const b = EST.before;
+  const tab = '<b>ยอดก่อนนับ</b>';
+  const how = `<details class="lp-how"${b === null && w.count ? ' open' : ''}><summary>วิธีใส่ยอดก่อนนับ</summary>
+    <ol>
+      <li>เพิ่มแท็บชื่อ ${tab} ในไฟล์สมุด Transaction (ไฟล์เดียวกับแท็บ MASTER แปลงสินค้า)</li>
+      <li>วางได้สองแบบ — <b>มีสมุด Transaction รอบก่อนนับ</b>: ก๊อปทั้งชีตรวมหัวตารางมาวาง ระบบคิดยอดคงเหลือแต่ละ LOT/PO เอง
+        · <b>มีรายงานยอดหรือรายงานรับเข้า</b>: แถวแรกเป็นหัวตาราง <b>SKU · LOT · PO · จำนวน</b> (วันที่รับ ใส่หรือไม่ใส่ก็ได้)</li>
+      <li>กด 🔄 อ่านสมุดใหม่ ด้านล่าง</li>
+    </ol>
+    <small>ของนับที่ไม่รู้ LOT จะถูกแบ่งตามยอดนี้ เริ่มจากล็อตที่เข้าหลังสุด ส่วนที่นับแล้วรู้ LOT หักออกจากล็อตนั้นก่อน</small></details>`;
+  if (b === undefined) {
+    return w.count ? `<div class="lp-sub">สคริปต์ tx-api.gs ยังเป็นรุ่นที่ไม่อ่านแท็บ ${tab} — วางโค้ดใหม่ Deploy เป็น New version ก่อน${how}</div>` : '';
+  }
+  if (b === null) return w.count ? `<div class="lp-sub">ไฟล์สมุดยังไม่มีแท็บ ${tab}${how}</div>` : '';
+  const NAME = { sku: 'SKU', lot: 'LOT', po: 'PO', qty: 'จำนวน' };
+  if (b.missing.length) {
+    return `<div class="lp-sub tx-neg">แท็บ ${tab} หาคอลัมน์ ${b.missing.map((k) => NAME[k]).join(', ')} ไม่เจอ — แถวแรกต้องเป็นหัวตาราง${how}</div>`;
+  }
+  const mode = b.mode === 'ledger' ? `สมุดรอบก่อน ${f(b.rows)} แถว` : `ตาราง ${f(b.rows)} แถว`;
+  const miss = b.missN ? `<br>SKU ในแท็บที่ไม่มีในสมุดนี้ ${f(b.missN)} ตัว: ${esc(b.miss.join(', '))}${b.missN > b.miss.length ? ' …' : ''}` : '';
+  return `<div class="lp-sub">ใช้แท็บ ${tab} (${mode}) มียอดของ ${f(b.skus)} SKU · ทั้งชีตแบ่งให้ของนับที่ไม่รู้ LOT ได้ <b>${f(b.used)}</b> ชิ้น
+    ยังขาด <b>${f(b.short)}</b> ชิ้น${miss}${how}</div>`;
 }
 
 /** รายออเดอร์เป็นการปันส่วน ต้องบอกให้ชัดว่ามาจากไหนและเชื่อได้แค่ไหน */
@@ -743,6 +955,18 @@ $('body').addEventListener('click', (e) => {
     return;
   }
   if (e.target.closest('[data-orders]')) { loadOrders(); return; }
+  if (e.target.closest('[data-est-load]')) { loadEst(false); return; }
+  if (e.target.closest('[data-est-fresh]')) { loadEst(true); return; }
+  if (e.target.closest('[data-guess]')) {
+    GUESS = !GUESS;
+    try { localStorage.setItem(GUESS_KEY, GUESS ? '1' : '0'); } catch (err) {}
+    if (!GUESS && ONLY === 'guess') ONLY = '';
+    rebuild();
+    renderSum();
+    renderBody();
+    if (GUESS && !EST) loadEst(false);
+    return;
+  }
   const only = e.target.closest('[data-only]');
   if (only) {
     ONLY = only.dataset.only;
@@ -772,6 +996,7 @@ CUT = readCut();
 if (!MONTH) MONTH = CUT ? CUT.period.from.slice(0, 7) : thisMonth();
 render();
 if (!LED && WmsSettings.txUrl()) load();
+else if (LED && !EST && GUESS && WmsSettings.txUrl()) loadEst(false);
 </script>
 </body>
 </html>

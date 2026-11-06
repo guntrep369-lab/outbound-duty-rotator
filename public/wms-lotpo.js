@@ -22,6 +22,10 @@
  * คู่ SKU มาจากแท็บ MASTER แปลงสินค้า ในไฟล์สมุด (ช่อง convert ของ tx-daily) ทำหลัง build และ allocate
  * เพราะสมุดกับแท็บตัดลงขายด้วย SKU หลังแปลง ต้องจับคู่กันด้วยรหัสนั้นก่อน
  *
+ * ประมาณ LOT 0 (build รับ est): แถวขายที่สมุดลงเป็น LOT 0 PO 0 แยกเป็นบรรทัดตาม LOT/PO ที่ public/wms-lot0.js
+ * ประมาณจากแถวรับคืน M/E และแปลงสินค้า บรรทัดเหล่านี้มี guess และหมายเหตุขึ้นต้นด้วย ประมาณ
+ * ส่วนที่ยังประมาณไม่ได้ (เช่นของนับสต๊อก) ยังเป็น LOT 0 แต่บอกเหตุไว้ใน why
+ *
  * โหลดเป็น classic script เปิดเป็น window.WmsLotPo
  */
 (function () {
@@ -44,27 +48,52 @@
   /** 9900000001-01 กับ 9900000001-02 เป็น PO 9900000001 ส่วนท้ายคือวันที่รับเข้า ไม่ใช่อีก PO */
   function basePo(v) { var s = text(v); var m = /^(\d{6,})-\d{1,2}$/.exec(s); return m ? m[1] : s; }
 
-  function build(ledger) {
+  /** ค่าประมาณใช้ได้กับแถวนี้ไหม แถวในชีตเลื่อนหลังอ่านสมุดทั้งชีต (แทรกหรือลบแถว) SKU กับจำนวนจะไม่ตรง */
+  function guessOf(est, l, sku) {
+    var e = est.rows[l[2]];
+    return e && e.s === text(sku).toUpperCase() && e.q === l[6] ? e : null;
+  }
+
+  /**
+   * est คือผลของ WmsLot0.run (ไม่ส่งก็ไม่ประมาณ) แถวขาย LOT 0 PO 0 แยกเป็นบรรทัดตามค่าประมาณ
+   *   guess = ที่มาของ LOT/PO ที่ประมาณได้ (return | me | conv)
+   *   why   = ยังไม่รู้เพราะอะไร (count | other | none | return | me | conv) stale = ยังไม่ได้ประมาณ สมุดทั้งชีตที่อ่านไว้เก่ากว่าแถวนี้
+   *   from  = แถวในชีตที่เป็นต้นทางของค่าประมาณ (แถวรับคืน แถวนับสต๊อก)
+   * บรรทัดประมาณไม่รวมกับบรรทัดที่สมุดลงล็อตไว้จริง บัญชีจะได้แยกได้
+   */
+  function build(ledger, est) {
     var at = {}, rows = [];
     var days = ledger.days || [], skus = ledger.skus || [], locs = ledger.locs || [];
-    (ledger.lines || []).forEach(function (l) {
-      var date = days[l[0]], s = skus[l[1]] || [];
-      var lot = text(l[4]), raw = text(l[5]), po = basePo(raw);
+    function add(l, date, s, lot, raw, qty, tag) {
+      var po = basePo(raw);
       /* พิมพ์เล็กใหญ่ต่างกันคือล็อตเดียวกัน เหมือนที่ชีตยอดใช้ SUMIFS */
-      var k = [date, s[0], lot.toUpperCase(), po.toUpperCase()].join('|');
+      var k = [date, s[0], lot.toUpperCase(), po.toUpperCase(), tag.guess ? 'g' + tag.guess : tag.why ? 'u' + tag.why : ''].join('|');
       var r = at[k];
       if (!r) {
         r = at[k] = { date: date, sku: s[0] || '', name: s[1] || '', lot: lot, po: po, qty: 0,
-          rows: [], locs: [], bad: [], parts: [], noLot: noLot(lot), noPo: noPo(po), split: 1 };
+          rows: [], locs: [], bad: [], parts: [], noLot: noLot(lot), noPo: noPo(po), split: 1,
+          guess: tag.guess || '', why: tag.why || '', from: [] };
         rows.push(r);
       }
       /* รอบรับที่รวมไว้ในบรรทัดนี้ -05 -20 (เลขที่ไม่มีส่วนท้ายไม่นับเป็นรอบ) */
       var part = raw.length > po.length ? raw.slice(po.length) : '';
       if (part && r.parts.indexOf(part) < 0) r.parts.push(part);
-      if (typeof l[6] === 'number') r.qty += l[6]; else r.bad.push(text(l[6]));
-      r.rows.push(l[2]);
+      if (typeof qty === 'number') r.qty += qty; else r.bad.push(text(qty));
+      if (r.rows.indexOf(l[2]) < 0) r.rows.push(l[2]);
+      if (tag.from && r.from.indexOf(tag.from) < 0) r.from.push(tag.from);
       var loc = locs[l[3]];
       if (loc && r.locs.indexOf(loc) < 0) r.locs.push(loc);
+    }
+    (ledger.lines || []).forEach(function (l) {
+      var date = days[l[0]], s = skus[l[1]] || [];
+      var lot = text(l[4]), raw = text(l[5]);
+      if (!est || typeof l[6] !== 'number' || !noLot(lot) || !noPo(raw)) return add(l, date, s, lot, raw, l[6], {});
+      var e = guessOf(est, l, s[0]);
+      if (!e) return add(l, date, s, lot, raw, l[6], { why: 'stale' });
+      e.p.forEach(function (p) {
+        var plot = text(p[0]), praw = text(p[1]), ok = !noLot(plot) || !noPo(praw);
+        add(l, date, s, ok ? plot : lot, ok ? praw : raw, p[2], ok ? { guess: p[3], from: p[4] } : { why: p[3], from: p[4] });
+      });
     });
 
     /* วันเดียวกัน SKU เดียวกันออกมากี่ LOT/PO บัญชีต้องแบ่งต้นทุนตามนี้ */
@@ -77,7 +106,9 @@
       if (a.sku !== b.sku) return a.sku < b.sku ? -1 : 1;
       var la = lotNo(a), lb = lotNo(b);
       if (la !== lb) return la < lb ? -1 : 1;
-      return a.po < b.po ? -1 : a.po > b.po ? 1 : 0;
+      if (a.po !== b.po) return a.po < b.po ? -1 : 1;
+      /* ล็อตเดียวกัน ที่สมุดลงไว้จริงขึ้นก่อนที่ประมาณ */
+      return (a.guess ? 1 : 0) - (b.guess ? 1 : 0);
     });
     return rows;
   }
@@ -111,6 +142,7 @@
         ref: o ? o.ref : '', src: o ? o.src : '', seq: o ? seq[date + '|' + o.ref] : Infinity,
         lot: lot ? lot.lot : '', po: lot ? lot.po : '', parts: lot ? lot.parts : [], qty: qty,
         noLot: lot ? lot.noLot : false, noPo: lot ? lot.noPo : false, miss: miss || '', split: 1,
+        guess: (lot && lot.guess) || '', why: (lot && lot.why) || '', from: (lot && lot.from) || [],
       });
     }
     keys.forEach(function (k) {
@@ -203,14 +235,18 @@
 
   function totals(rows) {
     /* split นับเป็น SKU ต่อวัน splitLines นับเป็นบรรทัด ตัวหลังเท่ากับจำนวนที่ตัวกรอง split ได้ */
+    /* guess = LOT/PO ที่ประมาณได้ แยกตามที่มา, why = ชิ้นที่ยังไม่รู้ แยกตามเหตุ (นับเฉพาะ LOT 0 PO 0) */
     var t = { qty: 0, lines: rows.length, skus: 0, split: 0, splitLines: 0, unknown: { lines: 0, qty: 0 }, bad: 0,
-      orders: 0, gap: { lines: 0, qty: 0 }, conv: { lines: 0, qty: 0 }, many: { lines: 0, qty: 0 } };
+      orders: 0, gap: { lines: 0, qty: 0 }, conv: { lines: 0, qty: 0 }, many: { lines: 0, qty: 0 },
+      guess: { lines: 0, qty: 0, by: {} }, why: {} };
     var sku = {}, split = {}, orders = {};
     rows.forEach(function (r) {
       t.qty += r.qty;
       sku[r.sku] = 1;
       if (r.split > 1) { split[r.date + '|' + (r.ref || '') + '|' + r.sku] = 1; t.splitLines++; }
       if (r.noLot || r.noPo) { t.unknown.lines++; t.unknown.qty += r.qty; }
+      if (r.guess) { t.guess.lines++; t.guess.qty += r.qty; t.guess.by[r.guess] = (t.guess.by[r.guess] || 0) + r.qty; }
+      if (r.why && r.noLot && r.noPo) t.why[r.why] = (t.why[r.why] || 0) + r.qty;
       if (r.miss) { t.gap.lines++; t.gap.qty += r.qty; }
       if (r.sold) { t.conv.lines++; t.conv.qty += r.qty; }
       if (r.many) { t.many.lines++; t.many.qty += r.qty; }
@@ -225,7 +261,7 @@
 
   /**
    * only: '' ทั้งหมด | 'split' ออกหลาย LOT/PO | 'unknown' ไม่รู้ LOT หรือ PO | 'gap' รายออเดอร์ที่หาคู่ไม่ได้
-   *       | 'conv' แปลงคืนเป็น SKU ตอนซื้อ หรือแปลงไม่ได้เพราะ MASTER มีหลายตัว
+   *       | 'conv' แปลงคืนเป็น SKU ตอนซื้อ หรือแปลงไม่ได้เพราะ MASTER มีหลายตัว | 'guess' LOT/PO ประมาณจากแถวรับคืน M/E หรือแปลงสินค้า
    * q ค้นใน SKU (ทั้งตอนซื้อและที่ขาย) ชื่อ LOT PO และเลขออเดอร์ ไม่สนตัวพิมพ์เล็กใหญ่
    */
   function filter(rows, o) {
@@ -235,6 +271,7 @@
       if (date && r.date !== date) return false;
       if (only === 'split' && r.split < 2) return false;
       if (only === 'unknown' && !r.noLot && !r.noPo) return false;
+      if (only === 'guess' && !r.guess) return false;
       if (only === 'gap' && !r.miss) return false;
       if (only === 'conv' && !r.sold && !r.many) return false;
       if (!q) return true;
@@ -249,10 +286,32 @@
     minus: 'ยอดติดลบในแท็บ Transaction ไม่ได้ปันล็อต',
   };
 
+  /** LOT/PO ประมาณมาจากไหน ข้อความขึ้นต้นด้วยคำว่า ประมาณ บัญชีกรองใน Excel ได้ */
+  var GUESS = {
+    return: 'ประมาณจากรับคืน ใช้ LOT/PO ที่ขายออกล่าสุดก่อนรับคืน',
+    me: 'ประมาณจาก M/E ใช้ LOT/PO ที่ขายออกล่าสุดก่อนรับเข้า',
+    conv: 'ประมาณจากแปลงสินค้า ใช้ LOT/PO ของ SKU ต้นทาง',
+    before: 'ประมาณจากยอดก่อนนับ ของนับที่ไม่รู้ LOT แบ่งตามล็อตที่เข้าหลังสุดก่อน',
+  };
+
+  /** ของ LOT 0 ที่ยังประมาณไม่ได้ เพราะอะไร */
+  var WHY = {
+    count: 'มาจากนับสต๊อก ต้องใช้ยอดก่อนวันนับมาประมาณ',
+    short: 'มาจากนับสต๊อก แต่แท็บยอดก่อนนับไม่มี SKU นี้หรือมีไม่พอ',
+    return: 'รับคืนแต่ไม่มีแถวขายก่อนหน้าให้ย้อนดู',
+    me: 'M/E แต่ไม่มีแถวขายก่อนหน้าให้ย้อนดู',
+    conv: 'แปลงสินค้าแต่หาแถวเบิกคู่ไม่เจอ',
+    other: 'รับเข้าจากแถวที่ไม่บอกว่ามาจากไหน',
+    none: 'สมุดขายจากกอง LOT 0 เกินที่รับเข้า',
+    stale: 'ยังไม่ได้ประมาณ สมุดทั้งชีตที่อ่านไว้เก่ากว่าแถวนี้',
+  };
+
   function note(r) {
     var out = [];
+    var from = r.from && r.from.length ? ' (แถว ' + r.from.slice(0, 3).join(', ') + (r.from.length > 3 ? ' +' + (r.from.length - 3) : '') + ')' : '';
     if (r.miss) out.push(MISS[r.miss]);
-    else if (r.noLot && r.noPo) out.push('ไม่รู้ LOT และ PO');
+    else if (r.guess) out.push((GUESS[r.guess] || 'ประมาณ') + from);
+    else if (r.noLot && r.noPo) out.push('ไม่รู้ LOT และ PO' + (r.why ? ' · ' + (WHY[r.why] || '') + (r.why === 'stale' || r.why === 'none' ? '' : from) : ''));
     else if (r.noLot) out.push('ไม่รู้ LOT');
     else if (r.noPo) out.push('ไม่รู้ PO');
     if (r.many) out.push('MASTER แปลงสินค้ามี SKU ตอนซื้อหลายตัว (' + r.many.join(', ') + ') ยังไม่แปลงคืน');
@@ -296,7 +355,7 @@
   }
 
   window.WmsLotPo = {
-    HEAD: HEAD, ORDER_HEAD: ORDER_HEAD, basePo: basePo, build: build, allocate: allocate, convert: convert, totals: totals, filter: filter,
-    note: note, table: table, tsv: tsv, csv: csv,
+    HEAD: HEAD, ORDER_HEAD: ORDER_HEAD, GUESS: GUESS, WHY: WHY, basePo: basePo, build: build, allocate: allocate, convert: convert,
+    totals: totals, filter: filter, note: note, table: table, tsv: tsv, csv: csv,
   };
 })();

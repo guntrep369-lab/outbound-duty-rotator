@@ -754,6 +754,39 @@ header, then one pair per row:
   which one. Its lines are flagged.
 - The แปลงคืน filter lists the converted lines and the flagged ones.
 
+**Estimated LOT for LOT 0 (ประมาณ LOT):** LOT 0 PO 0 comes from goods returned by customers, which
+can't be told apart by lot, and from the Q3 count, where pillows, bedding sets and duvets had no LOT or
+PO printed on them. `public/wms-lot0.js` reads the whole ledger (the shared `tx-fifo` copy) and gives
+each LOT 0 sale an estimated LOT/PO from where its goods came in.
+
+- Each SKU + location's LOT 0 pile is a queue. Sales and issues take from the front, first in first
+  out. A transfer moves its part of the queue to the new location.
+- A return (Note has `RETURN` or `คืน`) or an `M/E` receipt is taken to be what that SKU shipped most
+  recently: the LOT/PO of the sales rows above it, newest first. Each sold piece can be claimed by one
+  return only.
+- A product conversion (แปลงสินค้า) takes the LOT/PO of the source SKU in its pair.
+- Stock-count pieces need the balance from before the count, which isn't in the ledger. Add a tab
+  named `ยอดก่อนนับ` to the Transaction file (the same file as `MASTER แปลงสินค้า`) and paste one of:
+  - the old ledger as it was, headers included (columns A..L like the Transaction sheet). The script
+    adds receipts and takes off issues and sales per SKU + LOT + PO, and dates each lot by its GR row;
+  - or a table with headers `SKU` · `LOT` · `PO` · `จำนวน`, plus `วันที่รับ` if known. Header names
+    can vary a little (`รหัส`, `ล็อต`, `qty`, `คงเหลือ`, `ยอด`, `date`).
+
+  Counted pieces with a known LOT are taken off their own lot first. The rest of the count's LOT 0 is
+  split over the remaining lots newest first (latest receive date, then latest LOT month), because
+  older goods should have shipped first. If the tab lacks a SKU or has too little, those pieces stay
+  unknown and the box names the SKUs. Without the tab, the box shows these steps.
+- Pieces with no source (the ledger sold more LOT 0 than it received) stay unknown.
+- Estimated pieces become their own lines with a `ประมาณ` tag, never merged with lines the ledger
+  recorded. The หมายเหตุ column starts with `ประมาณจาก…` and the row it came from, so accounting can
+  filter them in Excel. A box above the table says how much was estimated and what the rest is
+  waiting for. The `LOT ประมาณ` filter lists the estimated lines, and the box can turn estimating off.
+- The ledger isn't changed. Only the estimates for the month's sales rows are kept on the device. If
+  the ledger copy that was read is older than a sales row, that row says so and isn't estimated.
+- This needs the `tx-api.gs` version that flags return (32) and M/E (64) rows and reads the
+  `ยอดก่อนนับ` tab (`lot0: 1` and `before` in `tx-fifo`). Until it's deployed, the box says the script
+  is out of date and the report shows LOT 0 as recorded.
+
 **Updating to a version with รายออเดอร์ and แปลงคืน:** paste the new `cut-api.gs` (รายออเดอร์) and the
 new `tx-api.gs` (แปลงคืน), each into its own Apps Script project. Then for each one, Deploy → Manage
 deployments → pencil icon → Version: New version → Deploy. Until then the page says which script is out
@@ -920,7 +953,7 @@ public/
 │                          #   roster-people.js: group / day off by date, leave counts)
 ├─ stock-location/         # สต๊อกราย Location, from the Transaction sheet (+ wms-tx.js: grouping, refill list)
 ├─ cut-check/              # เช็ครายการตัดสต๊อก, cuts compared with the month-end order reports (+ wms-cut.js: per-day match with the ledger)
-├─ lot-po/                 # LOT / PO ที่ขายออก, the daily SKU × LOT × PO report for accounting (+ wms-lotpo.js)
+├─ lot-po/                 # LOT / PO ที่ขายออก, the daily SKU × LOT × PO report for accounting (+ wms-lotpo.js, wms-lot0.js)
 ├─ fifo/                   # FIFO สต๊อก, stock by LOT oldest first + picks that skipped FIFO (+ wms-fifo.js)
 ├─ dashboard/              # ภาพรวมสต๊อก, stock health now + monthly summary from the shared copies (+ wms-dash.js)
 ├─ summary/ history/ order-compare/ order-lookup/ stock/ picking/ order-sheet/

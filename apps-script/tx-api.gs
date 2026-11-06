@@ -21,6 +21,8 @@
  *                                พร้อมคู่ SKU จากแท็บ "MASTER แปลงสินค้า" (ถ้ามี) ให้หน้า LOT / PO ที่ขายออก
  * ?api=tx-fifo             ทุกแถวของสมุดแบบย่อ ให้หน้า FIFO สต๊อกคิดยอดราย LOT และหาการเบิกข้าม LOT เอง
  *                          หน้าเช็ครายการตัดสต๊อกใช้ชุดเดียวกันบอกว่าทำไมชีตทีมไม่ได้ตัด (ปุ่มดูที่มา)
+ *                          หน้า LOT / PO ที่ขายออกใช้ประมาณ LOT/PO ให้ของที่ลงไว้เป็น LOT 0 จากแถวรับคืนกับ M/E
+ *                          และจากแท็บ "ยอดก่อนนับ" (ถ้ามี) ให้ของที่นับได้แต่ไม่รู้ LOT
  * ?api=shared-at           เวลาของข้อมูลกลางชุดล่าสุด (ดูส่วน "ข้อมูลกลาง" ท้ายไฟล์)
  * POST {op:'count-save'}   บันทึกผลนับ
  * POST {op:'count-add'}    ส่ง SKU ที่ยอดไม่ตรงระบบบริษัทเข้าใบนับ
@@ -49,6 +51,10 @@ var ISSUE_MAX = 200;        // รายการต่อหนึ่งเร�
 
 // แท็บคู่ SKU ตอนซื้อ กับ SKU หลังแปลง (1 ต่อ 1) หน้า LOT / PO ใช้คืน SKU ที่ขายกลับเป็น SKU ตอนซื้อ สคริปต์อ่านอย่างเดียว
 var CONVERT_SHEET = 'MASTER แปลงสินค้า';
+
+// แท็บยอดก่อนวันนับสต๊อก ผู้ใช้วางเอง (สมุดรอบก่อนทั้งชีต หรือตาราง SKU LOT PO จำนวน) สคริปต์อ่านอย่างเดียว
+// หน้า LOT / PO ใช้แบ่งของที่นับได้แต่ไม่รู้ LOT (LOT 0) ออกเป็น LOT/PO ประมาณ
+var BEFORE_SHEET = 'ยอดก่อนนับ';
 
 var COUNT_SHEET = 'นับสต๊อก';
 var COUNT_PER_DAY = 20;     // รายการนับต่อวัน
@@ -592,7 +598,11 @@ function history_(sku) {
  *   วันที่ = วันที่ของแถวเอง หรือของแถวล่าสุดด้านบนที่มีวันที่ (-1 = ยังไม่มี)
  *   ธง 1 = Status เปิด, 2 = รับเข้าที่มี GR (วันที่คือวันรับ), 4 = แถวนับสต๊อก, 8 = วันที่เป็นของแถวเอง,
  *      16 = แถวแปลงสินค้า (Note มีคำว่า แปลง) หน้าเช็ครายการตัดสต๊อกใช้จับคู่ SKU ที่เบิกออกกับ SKU ที่รับเข้าแทน
+ *      32 = แถวรับคืน (Note มี RETURN หรือ คืน), 64 = แถว M/E (Note มี M/E)
+ *      หน้า LOT / PO ที่ขายออกใช้สองธงนี้ประมาณ LOT/PO ให้ของที่ลงไว้เป็น LOT 0 (ดู public/wms-lot0.js)
  * conv = 1 บอกว่าสคริปต์รุ่นนี้ส่งธง 16 แล้ว รุ่นก่อนไม่มีธงนี้ หน้าเว็บจะได้ไม่เข้าใจว่าไม่เคยมีการแปลงเลย
+ * lot0 = 1 บอกว่าส่งธง 32 กับ 64 แล้ว รุ่นก่อนแยกแถวรับคืนกับ M/E ออกจากแถวรับอื่นไม่ได้
+ * before คือยอดจากแท็บ ยอดก่อนนับ (ดู before_) ไม่มีแท็บส่ง null
  * จำนวนที่พิมพ์เป็นข้อความเป็น 0 และแถวที่ SKU คอลัมน์ B ว่างไม่ถูกส่ง เหมือน balances_
  */
 function fifo_() {
@@ -602,7 +612,7 @@ function fifo_() {
   var sheet = ledgerSheet_(ss);
   var rows = readRows_(sheet, tz);
   var out = {
-    app: 'transaction', at: Date.now(), today: today, last: sales_(rows, today).last, conv: 1,
+    app: 'transaction', at: Date.now(), today: today, last: sales_(rows, today).last, conv: 1, lot0: 1,
     sheet: { url: ss.getUrl(), gid: sheet.getSheetId() },
     skus: [], pos: [], locs: [], days: [], rows: [],
   };
@@ -617,7 +627,7 @@ function fifo_() {
     if (!out.skus[s][2] && r.name) out.skus[s][2] = r.name;
     var t = r.type === 'ขาย' ? 2 : r.type === 'เบิก' ? 1 : 0;
     var flag = (r.open ? 1 : 0) + (r.date && /^GR/i.test(r.note) ? 2 : 0) + (/stock\s*count/i.test(r.note) ? 4 : 0) + (r.date ? 8 : 0)
-      + (/แปลง/.test(r.note) ? 16 : 0);
+      + (/แปลง/.test(r.note) ? 16 : 0) + (/return|คืน/i.test(r.note) ? 32 : 0) + (/M\/E/i.test(r.note) ? 64 : 0);
     out.rows.push([
       r.row, s, r.lot, no('po', out.pos, same_(r.po), r.po),
       t && r.from ? no('loc', out.locs, same_(r.from), r.from) : -1,
@@ -625,6 +635,69 @@ function fifo_() {
       r.qty, t, r.near ? no('day', out.days, r.near, r.near) : -1, flag,
     ]);
   });
+  out.before = before_(ss, tz);
+  return out;
+}
+
+/**
+ * ยอดก่อนวันนับสต๊อกจากแท็บ ยอดก่อนนับ ผู้ใช้วางได้สองแบบ
+ *   สมุดรอบก่อนทั้งชีต: หัวตาราง F, G เป็น Location เบิก / Location รับ แบบสมุด คิดยอดคงเหลือราย SKU + LOT + PO
+ *     ด้วยกติกาเดียวกับ balances_ (ไม่แยก Location) วันที่รับเอาจากแถว GR แรกของล็อตนั้น
+ *   ตาราง: แถวแรกเป็นหัวตาราง หาคอลัมน์ SKU, LOT, PO, จำนวน จากหัวตาราง วันที่รับใส่หรือไม่ใส่ก็ได้
+ *     SKU เดียวกัน LOT PO เดียวกันหลายแถวบวกรวมกัน (วางเป็นรายการรับเข้าแต่ละครั้งก็ได้)
+ * layers = [[SKU, LOT, PO, จำนวน, วันที่รับ yyyy-mm-dd หรือว่าง]] เฉพาะยอดที่มากกว่า 0
+ * ไม่มีแท็บส่ง null หาคอลัมน์ไม่เจอ missing บอกว่าขาดอะไร
+ */
+function before_(ss, tz) {
+  var sheet = ss.getSheetByName(BEFORE_SHEET);
+  if (!sheet) return null;
+  var out = { tab: BEFORE_SHEET, mode: '', cols: [], missing: [], rows: 0, skip: 0, layers: [] };
+  var h = sheet.getLastRow(), w = sheet.getLastColumn();
+  if (h < 2 || w < 1) return out;
+  var vals = sheet.getRange(1, 1, h, Math.max(w, COLS)).getValues();
+  var head = vals[0].map(function (v) { return text_(v); });
+  var sum = {}, order = [];
+  function add(sku, lot, po, qty, date) {
+    var k = [same_(sku), same_(lot), same_(po)].join('|');
+    if (!sum[k]) { sum[k] = [text_(sku), lot, text_(po), 0, '']; order.push(k); }
+    sum[k][3] += qty;
+    if (date && (!sum[k][4] || date < sum[k][4])) sum[k][4] = date;
+  }
+  function blank(c) { return c.every(function (v) { return v === '' || v === null; }); }
+
+  if (/^location\s*เบิก/i.test(head[5] || '') && /^location\s*รับ/i.test(head[6] || '')) {
+    out.mode = 'ledger';
+    for (var i = 1; i < vals.length; i++) {
+      var c = vals[i];
+      if (blank(c)) continue;
+      if (!text_(c[1])) { out.skip++; continue; }
+      out.rows++;
+      var qty = typeof c[7] === 'number' ? c[7] : 0, type = text_(c[8]), lot = c[3] === '' ? '' : c[3];
+      if (text_(c[6])) add(c[1], lot, c[4], qty, /^GR/i.test(text_(c[9])) ? ownDate_(c[9], tz) : '');
+      if (text_(c[5]) && (type === 'เบิก' || type === 'ขาย')) add(c[1], lot, c[4], -qty, '');
+    }
+  } else {
+    out.mode = 'table';
+    var find = function (re) { for (var j = 0; j < head.length; j++) if (re.test(head[j])) return j; return -1; };
+    /* หัว SKU สองช่องแบบสมุด (รหัสสั้น รหัสเต็ม) ใช้ช่องหลัง */
+    var skus = [];
+    head.forEach(function (v, j) { if (/sku|รหัส/i.test(v)) skus.push(j); });
+    var col = { sku: skus.length ? skus[skus.length - 1] : -1, lot: find(/^lot|ล็อต/i), po: find(/^po/i),
+      qty: find(/จำนวน|qty|คงเหลือ|ยอด/i), date: find(/วันที่|date/i) };
+    out.cols = ['sku', 'lot', 'po', 'qty', 'date'].map(function (k) { return col[k] >= 0 ? head[col[k]] : ''; });
+    out.missing = ['sku', 'lot', 'po', 'qty'].filter(function (k) { return col[k] < 0; });
+    if (out.missing.length) return out;
+    for (var r = 1; r < vals.length; r++) {
+      var v = vals[r];
+      if (blank(v)) continue;
+      var n = typeof v[col.qty] === 'number' ? v[col.qty] : Number(text_(v[col.qty]).replace(/,/g, ''));
+      if (!text_(v[col.sku]) || !(n > 0)) { out.skip++; continue; }
+      out.rows++;
+      var d = col.date >= 0 ? plainDate_(v[col.date], tz) || ownDate_(v[col.date], tz) : '';
+      add(v[col.sku], v[col.lot] === '' ? '' : v[col.lot], v[col.po], n, d);
+    }
+  }
+  order.forEach(function (k) { if (sum[k][3] > 0) out.layers.push(sum[k]); });
   return out;
 }
 

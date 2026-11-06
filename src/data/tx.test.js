@@ -518,6 +518,75 @@ describe('tx-api.gs — แถวทั้งสมุดให้หน้า F
     expect(r.conv).toBe(1);
     expect(r.rows.map((x) => x[9])).toEqual([1 + 16, 1 + 16, 0]);
   });
+
+  it('แถวรับคืนมีธง 32 แถว M/E มีธง 64 และบอกว่าสคริปต์รุ่นนี้ส่งสองธงนี้แล้ว ให้หน้า LOT / PO ประมาณ LOT 0', () => {
+    const r = fifo([
+      row({ lot: 0, po: 0, to: 'G-01-01', qty: 1, note: 'RETURN' }),
+      row({ lot: 0, po: 0, to: 'G-01-01', qty: 1, note: 'RETURN M/E' }),
+      row({ lot: 0, po: 0, to: 'G-01-01', qty: 1, note: 'คืนสต็อก' }),
+      row({ lot: 0, po: 0, to: 'P-01-01', qty: 2, note: 'M/E-00001' }),
+      row({ lot: 0, po: 0, to: 'P-01-01', qty: 2, note: 'Stock Count Q3/26' }),
+    ]);
+    expect(r.lot0).toBe(1);
+    expect(r.rows.map((x) => x[9])).toEqual([32, 32 + 64, 32, 64, 4]);
+  });
+});
+
+describe('tx-api.gs — แท็บยอดก่อนนับ (tx-fifo ช่อง before)', () => {
+  /** แท็บที่ผู้ใช้วางเอง สคริปต์อ่านค่าจริง (getValues) ขอเกินคอลัมน์ที่มีได้ช่องว่าง */
+  const valueTab = (grid) => ({
+    getLastRow: () => grid.length,
+    getLastColumn: () => Math.max(...grid.map((x) => x.length)),
+    getRange: (r, c, nr, nc) => ({
+      getValues: () => grid.slice(r - 1, r - 1 + nr).map((x) => Array.from({ length: nc }, (_, j) => x[c - 1 + j] ?? '')),
+    }),
+  });
+  const before = (grid) => script([row({ to: 'P-01-01' })], { named: { 'ยอดก่อนนับ': valueTab(grid) } })({ api: 'tx-fifo' }).before;
+
+  it('ไม่มีแท็บส่ง null', () => {
+    expect(script([row({ to: 'P-01-01' })])({ api: 'tx-fifo' }).before).toBeNull();
+  });
+
+  it('วางสมุดรอบก่อนทั้งชีต คิดยอดคงเหลือราย SKU LOT PO เอง วันที่รับเอาจากแถว GR แรก', () => {
+    const b = before([
+      HEAD,
+      row({ sku: 'AAA001', lot: 7, po: 9900000001, to: 'P-01-01', qty: 10, note: 'GR 05-07-26' }),
+      row({ sku: 'AAA001', lot: 7, po: 9900000001, to: 'P-01-02', qty: 5, note: 'GR 01-07-26' }),
+      sale({ sku: 'AAA001', lot: 7, po: 9900000001, from: 'P-01-01', qty: 4, note: day('2026-07-20') }),
+      row({ sku: 'AAA001', lot: 8, po: 9900000002, to: 'P-01-01', qty: 6, note: 'GR 02-08-26' }),
+      row({ sku: 'AAA001', lot: 8, po: 9900000002, from: 'P-01-01', to: 'G-01-01', qty: 3, type: 'เบิก', note: 'โอนย้าย' }),
+      row({ sku: 'AAA001', lot: 9, po: 9900000003, to: 'P-01-01', qty: 2, note: 'GR 01-09-26' }),
+      sale({ sku: 'AAA001', lot: 9, po: 9900000003, from: 'P-01-01', qty: 2, note: day('2026-09-10') }),
+      row({ long: '', to: 'P-01-01', qty: 9 }),
+    ]);
+    expect(b.mode).toBe('ledger');
+    expect(b.rows).toBe(7);
+    expect(b.skip).toBe(1);
+    expect(b.layers).toEqual([
+      ['LONG-AAA001', 7, '9900000001', 11, '2026-07-01'],
+      ['LONG-AAA001', 8, '9900000002', 6, '2026-08-02'],
+    ]);
+  });
+
+  it('วางเป็นตาราง หาคอลัมน์จากหัวตาราง SKU LOT PO เดียวกันบวกรวม แถวที่ไม่มี SKU หรือจำนวนไม่ถึง 1 ข้าม', () => {
+    const b = before([
+      ['รหัสสินค้า', 'LOT', 'PO', 'จำนวน', 'วันที่รับ'],
+      ['AAA001', 7, '9900000001', 5, day('2026-07-05')],
+      ['AAA001', 7, '9900000001', '1,003', ''],
+      ['', 1, 1, 1, ''],
+      ['BBB002', 8, '9900000002', 0, ''],
+    ]);
+    expect(b.mode).toBe('table');
+    expect(b.cols).toEqual(['รหัสสินค้า', 'LOT', 'PO', 'จำนวน', 'วันที่รับ']);
+    expect([b.rows, b.skip]).toEqual([2, 2]);
+    expect(b.layers).toEqual([['AAA001', 7, '9900000001', 1008, '2026-07-05']]);
+  });
+
+  it('หาคอลัมน์ไม่เจอ บอกว่าขาดอะไร', () => {
+    const b = before([['สินค้า', 'จำนวน'], ['AAA001', 5]]);
+    expect(b.missing).toEqual(['sku', 'lot', 'po']);
+    expect(b.layers).toEqual([]);
+  });
 });
 
 describe('tx-api.gs — การตอบกลับ', () => {
