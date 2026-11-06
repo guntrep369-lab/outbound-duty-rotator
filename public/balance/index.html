@@ -170,6 +170,7 @@
 <script src="../wms-gas.js"></script>
 <script src="../wms-shared.js"></script>
 <script src="../wms-fifo.js"></script>
+<script src="../wms-lotpo.js"></script>
 <script src="../wms-balance.js"></script>
 <script>
 const $ = id => document.getElementById(id);
@@ -378,8 +379,10 @@ function listHtml() {
     const sku = same(prev)
       ? `<span class="tx-sub">${esc(l.code)}</span>`
       : `<b>${esc(l.code)}</b><span class="tx-sub">${esc(l.name)}</span>${p.n > 1 ? `<span class="tx-tag">${p.n} กอง · รวม ${f(p.qty)} ชิ้น</span>` : ''}`;
+    const conv = l.conv.length ? `<span class="tx-sub">รวม SKU ที่แปลง ${l.conv.map((c) => `${esc(c.sku)} ${f(c.qty)}`).join(', ')}</span>` : '';
+    const many = l.many ? '<span class="tx-sub tx-mid">MASTER มี SKU ตอนซื้อหลายตัว ยังไม่แปลงคืน</span>' : '';
     return `<tr${cls ? ` class="${cls}"` : ''}>
-      <td class="k-sku">${sku}</td>
+      <td class="k-sku">${sku}${conv}${many}</td>
       <td class="nw k-lot" data-label="LOT">${lotHtml(l)}</td>
       <td class="nw k-po" data-label="PO">${poHtml(l)}</td>
       <td class="num k-qty${l.qty < 0 ? ' tx-neg' : ''}" data-label="คงเหลือ">${f(l.qty)}</td>
@@ -430,11 +433,12 @@ function renderBody() {
   if (t.neg.lines) {
     notes.push(`<div class="tx-note">มี <b>${f(t.neg.lines)}</b> กองที่ยอดสุทธิติดลบ (${f(t.neg.qty)} ชิ้น) คือสมุดลงออกเกินที่รับ ไม่นับรวมในยอดคงเหลือ — ดูที่ปุ่ม ยอดติดลบ หรือหน้าสต๊อกราย Location แท็บข้อมูลผิด</div>`);
   }
+  notes.push(convNote(t));
   notes.push(`<div class="tx-note">ยอดของแต่ละบรรทัดคือของกองนั้นทุก Location รวมกัน · PO ที่ลง -01 -02 ท้ายเลขรวมเป็น PO เดียว · แถวที่ไม่มีวันที่ของตัวเองใช้วันที่ของแถวด้านบน</div>`);
   $('body').innerHTML = `${notes.join('')}
     <div class="tx-bar">
       <input id="q" class="tx-input" type="search" placeholder="ค้นหา SKU ชื่อสินค้า LOT PO หรือ Location" value="${esc(Q)}" autocomplete="off">
-      ${opt('', 'ทั้งหมด', t.lines)}${opt('unknown', 'ไม่รู้ LOT/PO', t.unknown.lines)}${t.neg.lines || ONLY === 'neg' ? opt('neg', 'ยอดติดลบ', t.neg.lines) : ''}
+      ${opt('', 'ทั้งหมด', t.lines)}${opt('unknown', 'ไม่รู้ LOT/PO', t.unknown.lines)}${t.conv.lines || ONLY === 'conv' ? opt('conv', 'รวม SKU ที่แปลง', t.conv.lines) : ''}${t.neg.lines || ONLY === 'neg' ? opt('neg', 'ยอดติดลบ', t.neg.lines) : ''}
     </div>
     <div class="tx-bar bl-out">
       <button class="tx-opt p" id="xlsxBtn">⬇️ โหลด Report (Excel)</button>
@@ -443,6 +447,22 @@ function renderBody() {
     </div>
     <div id="list"></div>`;
   renderList();
+}
+
+/**
+ * SKU ที่แปลงรวมคืนเป็น SKU ตอนซื้อหรือยัง บอกไว้ก่อนโหลด Report ข้อความชุดเดียวกับหน้า LOT / PO
+ * convert ไม่มีเลย = สคริปต์รุ่นที่ยังไม่ส่งแท็บนี้มากับ tx-fifo, null = ไฟล์สมุดไม่มีแท็บ
+ */
+function convNote(t) {
+  const c = RES.convert;
+  const tab = '<b>MASTER แปลงสินค้า</b>';
+  const still = 'SKU ที่แปลงแล้วยังแยกบรรทัดอยู่ ยังไม่ได้รวมยอดคืนเข้า SKU ตอนซื้อ';
+  if (c === undefined) return `<div class="tx-warn">${still} — สคริปต์ tx-api.gs ยังเป็นรุ่นที่ไม่ส่งแท็บ ${tab} มากับข้อมูลชุดนี้ ให้วางโค้ดใหม่ Deploy เป็น New version แล้วกด 🔄 ดึงใหม่</div>`;
+  if (!c) return `<div class="tx-note">${still} — ไฟล์สมุด Transaction ยังไม่มีแท็บ ${tab}</div>`;
+  if (!c.pairs.length) return `<div class="tx-warn">แท็บ ${tab} ยังไม่มีคู่ SKU — แถวแรกเป็นหัวตาราง ใส่ SKU ตอนซื้อกับ SKU หลังแปลงตั้งแต่แถวที่ 2</div>`;
+  const many = t.many.lines ? ` · <span class="tx-mid">${f(t.many.lines)} บรรทัดยังไม่แปลง เพราะ MASTER ให้ SKU ตอนซื้อไว้หลายตัว</span>` : '';
+  return `<div class="tx-note">รวมยอด SKU ที่แปลงคืนเข้า SKU ตอนซื้อตามแท็บ ${tab} (${f(c.pairs.length)} คู่)
+    · ณ วันที่นี้รวมคืน <b>${f(t.conv.qty)}</b> ชิ้น ใน ${f(t.conv.lines)} บรรทัด — SKU เดิมอยู่ในคอลัมน์ SKU ที่แปลงมารวม${many}</div>`;
 }
 
 function render() {
@@ -496,7 +516,7 @@ async function downloadXlsx() {
     const X = await xlsxLib();
     const aoa = WmsBalance.table(chosen());
     const ws = X.utils.aoa_to_sheet(aoa);
-    ws['!cols'] = [18, 40, 7, 11, 14, 13, 10, 40, 40].map((w) => ({ wch: w }));
+    ws['!cols'] = [18, 40, 22, 7, 11, 14, 13, 10, 40, 40].map((w) => ({ wch: w }));
     ws['!autofilter'] = { ref: X.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: aoa.length - 1, c: aoa[0].length - 1 } }) };
     const wb = X.utils.book_new();
     const [y, m, d] = DATE.split('-');

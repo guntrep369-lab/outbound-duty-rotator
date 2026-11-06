@@ -370,5 +370,7 @@
   window.WmsLotPo = {
     HEAD: HEAD, ORDER_HEAD: ORDER_HEAD, GUESS: GUESS, WHY: WHY, basePo: basePo, build: build, allocate: allocate, convert: convert,
     totals: totals, filter: filter, note: note, table: table, tsv: tsv, csv: csv,
+    /* หน้าสินค้าคงเหลือ ณ วันที่ใช้แปลง SKU คืนด้วยกติกาเดียวกัน */
+    buyMap: buyMap,
   };
 })();

@@ -8,12 +8,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const FIFO = fs.readFileSync(path.resolve(__dirname, '../../public/wms-fifo.js'), 'utf8');
+const LOTPO = fs.readFileSync(path.resolve(__dirname, '../../public/wms-lotpo.js'), 'utf8');
 const JS = fs.readFileSync(path.resolve(__dirname, '../../public/wms-balance.js'), 'utf8');
 
 let B;
 beforeAll(() => {
   const win = {};
   new Function('window', FIFO)(win);
+  new Function('window', LOTPO)(win);
   new Function('window', JS)(win);
   B = win.WmsBalance;
 });
@@ -203,12 +205,63 @@ describe('table / tsv — ไฟล์ Report', () => {
       gr({ qty: 2, lot: 9, to: 'P-01-01', open: true, d: '2026-10-01' }),
     ]);
     const t = B.table(B.asOf(res, '2026-10-31').lines);
-    expect(t[0]).toEqual(['SKU', 'ชื่อสินค้า', 'LOT', 'เดือนของ LOT', 'PO', 'รับเข้า', 'คงเหลือ', 'Location', 'หมายเหตุ']);
-    expect(t[1]).toEqual(['AAA0000000001', 'ชื่อ AAA0000000001', '9', 'ก.ย. 69', '9900000001', '2026-10-01', 7, 'G-01-01 (5), P-01-01 (2)', '']);
+    expect(t[0]).toEqual(['SKU', 'ชื่อสินค้า', 'SKU ที่แปลงมารวม', 'LOT', 'เดือนของ LOT', 'PO', 'รับเข้า', 'คงเหลือ', 'Location', 'หมายเหตุ']);
+    expect(t[1]).toEqual(['AAA0000000001', 'ชื่อ AAA0000000001', '', '9', 'ก.ย. 69', '9900000001', '2026-10-01', 7, 'G-01-01 (5), P-01-01 (2)', '']);
   });
 
   it('วางใน Excel: เลขยาวเกิน 15 หลักไม่ถูกปัด ข้อความขึ้นต้นด้วย = ไม่กลายเป็นสูตร', () => {
     const out = B.tsv([['990000000000000001', '=X', 'a\tb', 7]]);
     expect(out).toBe('="990000000000000001"\t\'=X\ta b\t7');
+  });
+});
+
+describe('SKU ที่แปลง — รวมยอดคืนเข้า SKU ตอนซื้อตามแท็บ MASTER แปลงสินค้า', () => {
+  const A = 'AAA0000000001', S = 'AAA0000000001-S';
+  /* แปลงสินค้า: เบิก SKU ตอนซื้อออกจากแร็ค แล้วรับเข้าเป็น SKU ใหม่ LOT PO เดิม แล้วขาย SKU ใหม่ */
+  const rows = [
+    gr({ sku: A, qty: 10, lot: 9, d: '2026-10-01' }),
+    { type: 'เบิก', sku: A, from: 'R1-01-01', qty: 4, lot: 9, d: '2026-10-02' },
+    { type: 'รับ', sku: S, to: 'P-01-01', open: true, qty: 4, lot: 9, d: '2026-10-02' },
+    sale({ sku: S, qty: 1, lot: 9, d: '2026-10-03' }),
+  ];
+  const master = (pairs) => ({ tab: 'MASTER แปลงสินค้า', cols: ['SKU ตอนซื้อ', 'SKU หลังแปลง'], pairs, blank: 0 });
+
+  it('ยอดของ SKU ที่แปลงบวกกลับเข้ากองเดียวกันของ SKU ตอนซื้อ ยอดรวมเท่าเดิม', () => {
+    const a = B.asOf(ledger(rows, { convert: master([[S, A, 'ชื่อตอนซื้อ']]) }), '2026-10-31');
+    expect(a.lines).toHaveLength(1);
+    expect(a.lines[0]).toMatchObject({ code: A, lot: '9', qty: 9, conv: [{ sku: S, qty: 3 }], many: null });
+    expect(a.lines[0].locs.map((x) => [x.loc, x.qty])).toEqual([['R1-01-01', 6], ['P-01-01', 3]]);
+    expect(a.totals).toMatchObject({ qty: 9, skus: 1, lines: 1, conv: { qty: 3, lines: 1 } });
+    expect(B.table(a.lines)[1].slice(0, 3)).toEqual([A, 'ชื่อ AAA0000000001', 'AAA0000000001-S (3)']);
+  });
+
+  it('ไม่มีแท็บ หรือสคริปต์รุ่นที่ยังไม่ส่งแท็บ ไม่แปลง แยกบรรทัดตาม SKU ในสมุด', () => {
+    for (const convert of [null, undefined]) {
+      const a = B.asOf(ledger(rows, { convert }), '2026-10-31');
+      expect(a.lines.map((l) => [l.code, l.qty])).toEqual([[A, 6], [S, 3]]);
+      expect(a.totals.qty).toBe(9);
+    }
+  });
+
+  it('SKU ที่แปลงลง LOT PO คนละชุด เป็นบรรทัดของ SKU ตอนซื้อแยกกอง ชื่อจาก MASTER ถ้าสมุดไม่มี SKU ตอนซื้อ', () => {
+    const res = ledger([{ type: 'รับ', sku: S, to: 'P-01-01', qty: 5, lot: 0, po: '0', d: '2026-10-02' }],
+      { convert: master([[S, A, 'ชื่อจาก MASTER']]) });
+    const a = B.asOf(res, '2026-10-31');
+    expect(a.lines.map((l) => [l.code, l.name, l.lot, l.qty, l.conv])).toEqual([[A, 'ชื่อจาก MASTER', '0', 5, [{ sku: S, qty: 5 }]]]);
+  });
+
+  it('MASTER ให้ SKU ตอนซื้อไว้หลายตัว ไม่แปลง บอกไว้ในบรรทัด', () => {
+    const a = B.asOf(ledger(rows, { convert: master([[S, A, ''], [S, 'BBB0000000002', '']]) }), '2026-10-31');
+    const s = a.lines.find((l) => l.code === S);
+    expect(s.many).toEqual([A, 'BBB0000000002']);
+    expect(B.notes(s)).toContain('ยังไม่แปลงคืน');
+    expect(a.totals.many).toEqual({ qty: 3, lines: 1 });
+  });
+
+  it('ค้นด้วย SKU ที่แปลงเจอบรรทัดที่รวมไว้ ตัวกรองรวม SKU ที่แปลง', () => {
+    const res = ledger(rows.concat([gr({ sku: 'BBB0000000002', qty: 2, d: '2026-10-01' })]), { convert: master([[S, A, '']]) });
+    const a = B.asOf(res, '2026-10-31');
+    expect(B.filter(a, { q: '-s' }).map((l) => l.code)).toEqual([A]);
+    expect(B.filter(a, { only: 'conv' }).map((l) => l.code)).toEqual([A]);
   });
 });

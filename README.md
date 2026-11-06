@@ -919,8 +919,7 @@ page says the script has no FIFO yet.
 ## 📦 Stock as of Date (`/balance`)
 
 The stock left at the end of a day you pick, one line per SKU × LOT × PO, with an Excel download. It
-reads the same shared copy of the whole Transaction ledger as FIFO สต๊อก (`tx-fifo`), so it needs no new
-script. Changing the date recalculates on the page straight away. It never writes to the sheet.
+reads the same shared copy of the whole Transaction ledger as FIFO สต๊อก (`tx-fifo`). Changing the date recalculates on the page straight away. It never writes to the sheet.
 
 - **The date:** pick any day from the first dated row in the ledger up to today. **ล่าสุด** jumps to
   today and **สิ้นเดือนที่แล้ว** to the end of last month, the usual date for a monthly report. A row
@@ -937,12 +936,18 @@ script. Changing the date recalculates on the page straight away. It never write
   there are, and the ยอดติดลบ button lists them.
 - A PO ending `-01`, `-02` and so on is one PO received over several days, so its rounds merge into one
   line (the same rule as the LOT / PO report). `LOT 0`, `PO 0` or blank count as unknown.
+- **Converted SKUs go back into the purchase SKU,** using the `MASTER แปลงสินค้า` tab in the ledger file
+  (the same tab and rule as the LOT / PO report; one converted piece is one bought piece). Their balance
+  adds into the purchase SKU's pile with the same LOT and PO, so a conversion doesn't move pieces
+  anywhere. The line says which converted SKUs it holds and how many. A converted SKU the master gives
+  more than one purchase SKU stays as it is and says so. This needs the `tx-api.gs` version that sends
+  the tab with `tx-fifo`; until it's deployed, the page warns that converted SKUs are still separate.
 - Lines are sorted by SKU, then oldest LOT first. A LOT above the date's month is last year's, and 0.11
   is November last year.
 - If the date is after the last sale the ledger has, the page says that sales after that day aren't
   taken off yet. It turns into a yellow warning when the gap is more than one day.
 - **⬇️ โหลด Report (Excel)** downloads `สินค้าคงเหลือ-YYYY-MM-DD.xlsx`, one sheet named with the date:
-  SKU, ชื่อสินค้า, LOT, เดือนของ LOT, PO, รับเข้า, คงเหลือ, Location, หมายเหตุ. It follows the search and
+  SKU, ชื่อสินค้า, SKU ที่แปลงมารวม, LOT, เดือนของ LOT, PO, รับเข้า, คงเหลือ, Location, หมายเหตุ. It follows the search and
   the filter, and holds every line even when the page draws only the first 500. Copy gives the same
   table for pasting into Excel.
 

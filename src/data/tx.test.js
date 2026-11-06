@@ -227,6 +227,14 @@ describe('tx-api.gs — ยอดขายรายวัน', () => {
     expect(r.convert.cols).toEqual(['รหัส 1', 'รหัส 2']);
     expect(r.convert.pairs).toEqual([['AAA0000000001-S', 'AAA0000000001', '']]);
   });
+
+  it('tx-fifo ส่งคู่ SKU ชุดเดียวกัน ให้หน้าสินค้าคงเหลือ ณ วันที่รวมยอดคืน', () => {
+    const master = masterTab([['SKU ตอนซื้อ', 'SKU หลังแปลง'], ['AAA0000000001', 'AAA0000000001-S']]);
+    const rows = [row({ long: 'AAA0000000001', name: 'สินค้าตอนซื้อ', to: 'A-01-01', qty: 9 })];
+    expect(script(rows, { named: { 'MASTER แปลงสินค้า': master } })({ api: 'tx-fifo' }).convert.pairs)
+      .toEqual([['AAA0000000001-S', 'AAA0000000001', 'สินค้าตอนซื้อ']]);
+    expect(script(rows)({ api: 'tx-fifo' }).convert).toBeNull();
+  });
 });
 
 describe('tx-api.gs — คิดยอดแบบเดียวกับสูตรในชีตยอด', () => {
