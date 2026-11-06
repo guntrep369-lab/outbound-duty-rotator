@@ -19,7 +19,7 @@ The list lives in [`public/wms-modules.js`](public/wms-modules.js) (the one plac
 | — (hidden) | สรุปเช้า · Morning Brief · ย้อนหลัง · History | `summary/` · `history/` |
 | ออเดอร์ | เทียบ Order · ค้นหาออเดอร์ | `order-compare/` · `order-lookup/` |
 | คลังสินค้า | สต๊อกคงเหลือ · สรุปหยิบของ · เบิกตามออเดอร์ · เอกสารคลังสินค้า | `stock/` · `picking/` · `order-sheet/` · `warehouse-forms/` |
-| สินค้าคงคลัง | ภาพรวมสต๊อก · สต๊อกราย Location · เช็ครายการตัดสต๊อก · LOT / PO ที่ขายออก · FIFO สต๊อก | `dashboard/` · `stock-location/` · `cut-check/` · `lot-po/` · `fifo/` |
+| สินค้าคงคลัง | ภาพรวมสต๊อก · สต๊อกราย Location · เช็ครายการตัดสต๊อก · LOT / PO ที่ขายออก · FIFO สต๊อก · สินค้าคงเหลือ ณ วันที่ | `dashboard/` · `stock-location/` · `cut-check/` · `lot-po/` · `fifo/` · `balance/` |
 | ขนส่ง | ทำใบงานขนส่ง · เอกสารขนส่ง | `transport-docs/` · `transport-forms/` |
 | ขนส่ง (hidden) | ประเภทงานรถ · ผังงานรถวันนี้ | `jobs/` · `loadplan/` |
 | ทีมและระบบ | **ตารางกะ · Shift Schedule** · ตั้งค่า | `roster/` · `settings/` |
@@ -916,6 +916,38 @@ page says the script has no FIFO yet.
 
 ---
 
+## 📦 Stock as of Date (`/balance`)
+
+The stock left at the end of a day you pick, one line per SKU × LOT × PO, with an Excel download. It
+reads the same shared copy of the whole Transaction ledger as FIFO สต๊อก (`tx-fifo`), so it needs no new
+script. Changing the date recalculates on the page straight away. It never writes to the sheet.
+
+- **The date:** pick any day from the first dated row in the ledger up to today. **ล่าสุด** jumps to
+  today and **สิ้นเดือนที่แล้ว** to the end of last month, the usual date for a monthly report. A row
+  counts when its date is on or before that day. A row without its own date takes the date of the
+  nearest dated row above it, the same as FIFO's month-end balance. The stock-count rows at the top,
+  which have no date, always count.
+- **The balance rule** is the balance sheet's: in at Location รับ for every type, out at Location เบิก
+  for เบิก and ขาย only.
+- **A line's quantity is the pile's net across every Location.** A move entered with the wrong
+  Location เบิก leaves one Location negative and another too high, but the pile's total is still right.
+  The line lists the Locations that hold it, with selling Locations in green. A negative one is shown in
+  red and in หมายเหตุ.
+- **A pile whose net is below zero** (more out than in) isn't counted as stock. The page says how many
+  there are, and the ยอดติดลบ button lists them.
+- A PO ending `-01`, `-02` and so on is one PO received over several days, so its rounds merge into one
+  line (the same rule as the LOT / PO report). `LOT 0`, `PO 0` or blank count as unknown.
+- Lines are sorted by SKU, then oldest LOT first. A LOT above the date's month is last year's, and 0.11
+  is November last year.
+- If the date is after the last sale the ledger has, the page says that sales after that day aren't
+  taken off yet. It turns into a yellow warning when the gap is more than one day.
+- **⬇️ โหลด Report (Excel)** downloads `สินค้าคงเหลือ-YYYY-MM-DD.xlsx`, one sheet named with the date:
+  SKU, ชื่อสินค้า, LOT, เดือนของ LOT, PO, รับเข้า, คงเหลือ, Location, หมายเหตุ. It follows the search and
+  the filter, and holds every line even when the page draws only the first 500. Copy gives the same
+  table for pasting into Excel.
+
+---
+
 ## 📊 Stock Overview (`/dashboard`)
 
 One page for the stock's health now and a monthly summary for the boss. It doesn't have rules of its own:
@@ -984,6 +1016,7 @@ public/
 ├─ cut-check/              # เช็ครายการตัดสต๊อก, cuts compared with the month-end order reports (+ wms-cut.js: per-day match with the ledger)
 ├─ lot-po/                 # LOT / PO ที่ขายออก, the daily SKU × LOT × PO report for accounting (+ wms-lotpo.js, wms-lot0.js)
 ├─ fifo/                   # FIFO สต๊อก, stock by LOT oldest first + picks that skipped FIFO (+ wms-fifo.js)
+├─ balance/                # สินค้าคงเหลือ ณ วันที่, SKU × LOT × PO balance at the end of a chosen day (+ wms-balance.js)
 ├─ dashboard/              # ภาพรวมสต๊อก, stock health now + monthly summary from the shared copies (+ wms-dash.js)
 ├─ summary/ history/ order-compare/ order-lookup/ stock/ picking/ order-sheet/
 ├─ shiftlog/               # สมุดกะ (+ logis.html: the read-only page for Logis)

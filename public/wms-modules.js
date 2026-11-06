@@ -53,6 +53,7 @@ export const MODULES = [
   { id: 'cutcheck', label: 'เช็ครายการตัดสต๊อก', labelEn: 'Stock Cut Check', path: 'cut-check/', icon: 'scale', group: 'inventory' },
   { id: 'lotpo', label: 'LOT / PO ที่ขายออก', labelEn: 'Lot & PO Out', path: 'lot-po/', icon: 'sheet', group: 'inventory' },
   { id: 'fifo', label: 'FIFO สต๊อก', labelEn: 'FIFO Stock', path: 'fifo/', icon: 'layers', group: 'inventory' },
+  { id: 'balance', label: 'สินค้าคงเหลือ ณ วันที่', labelEn: 'Stock as of Date', path: 'balance/', icon: 'archive', group: 'inventory' },
   /* ประเภทงานรถกับผังงานรถวันนี้ยังไม่ได้ใช้ในงานจริง ซ่อนไว้เหมือนสรุปเช้า */
   { id: 'jobs', label: 'ประเภทงานรถ', labelEn: 'Job Types', path: 'jobs/', icon: 'compass', group: 'transport', hidden: true },
   { id: 'loadplan', label: 'ผังงานรถวันนี้', labelEn: 'Load Plan', path: 'loadplan/', icon: 'map', group: 'transport', hidden: true },
@@ -111,6 +112,8 @@ export const ICON_PATHS = {
     '<path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/>',
   gauge:
     '<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
+  archive:
+    '<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
   layers:
     '<path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/>',
   sheet:

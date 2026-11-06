@@ -590,5 +590,7 @@
     placeWords: placeWords, refillTask: refillTask, pickTask: pickTask, unknownTask: unknownTask,
     stockTable: stockTable, skipTable: skipTable, agingTable: agingTable, summaryTable: summaryTable, tsv: tsv,
     KIND: KIND, STATE: STATE, COUNT_DAY: COUNT_DAY,
+    /* หน้าสินค้าคงเหลือ ณ วันที่ (wms-balance.js) ใช้เดินสมุดด้วยกติกาเดียวกัน ยอดจะได้ไม่ต่างจากหน้านี้ */
+    parse: parse, newState: newState, apply: apply, rounds: rounds, refKey: refKey,
   };
 })();

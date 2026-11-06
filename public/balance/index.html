@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>สินค้าคงเหลือ ณ วันที่ — WMS</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../wms-icon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="../wms-logo.png">
+<link rel="apple-touch-icon" href="../wms-icon-180.png">
+<link rel="stylesheet" href="../wms-theme.css">
+<link rel="stylesheet" href="../wms-gate.css">
+<script src="../wms-gate.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+
+/* ── แถบแหล่งข้อมูล ชุดเดียวกับหน้า LOT / PO และ FIFO ── */
+.tx-src{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 20px;
+  background:var(--wms-surface2);border-bottom:1px solid var(--wms-border);font-size:12px}
+.tx-src .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;
+  background:var(--wms-surface);border:1px solid var(--wms-border);color:var(--wms-muted)}
+.tx-src .pill b{color:var(--wms-text);font-weight:600}
+.tx-src .pill.warn{background:#FEF3C7;border-color:#FDE68A;color:#92400E}
+.tx-src .sp{flex:1}
+.tx-src button{padding:4px 12px;border-radius:999px;border:1px solid var(--wms-border2);
+  background:var(--wms-surface);font-family:var(--wms-font);font-size:13px;color:#334155;cursor:pointer}
+.tx-src button:hover:not(:disabled){background:var(--wms-primary-light);border-color:var(--wms-primary);
+  color:var(--wms-primary-dark)}
+.tx-src button.p{background:var(--wms-primary);border-color:var(--wms-primary);color:#fff}
+.tx-src button.p:hover:not(:disabled){filter:brightness(1.08);color:#fff}
+.tx-src button:disabled{opacity:.6;cursor:default}
+.tx-err{width:100%;font-size:13px;color:#B91C1C;font-weight:600}
+
+/* ── เลือกวันที่ อยู่บนสุดของหน้า เป็นสิ่งแรกที่ต้องตั้ง ── */
+.bl-pick{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:12px 20px;
+  background:var(--wms-surface);border-bottom:1px solid var(--wms-border)}
+.bl-pick:empty{display:none}
+.bl-pick label{font-size:14px;font-weight:700;color:var(--wms-text)}
+.bl-pick input[type=date]{padding:6px 10px;border-radius:10px;border:1.5px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:15px;font-weight:600;color:var(--wms-text)}
+.bl-pick input[type=date]:focus{outline:none;border-color:var(--wms-primary)}
+.bl-quick{padding:5px 13px;border-radius:999px;border:1px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:13px;color:#334155;cursor:pointer;white-space:nowrap}
+.bl-quick:hover{border-color:var(--wms-primary);color:var(--wms-primary-dark)}
+.bl-quick.on{background:var(--wms-primary-light);border-color:var(--wms-primary);color:var(--wms-primary-dark);font-weight:600}
+.bl-qs{display:contents}
+.bl-when{width:100%;font-size:12px;color:var(--wms-muted);line-height:1.5}
+.bl-when b{color:var(--wms-text)}
+
+/* ── ยอดรวม ── */
+.tx-sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;padding:12px 20px;
+  background:var(--wms-surface);border-bottom:1px solid var(--wms-border)}
+.tx-sum:empty{display:none}
+.tx-stat{padding:8px 11px;border-radius:var(--wms-radius-sm);background:var(--wms-surface2)}
+.tx-stat small{display:block;font-size:12px;color:var(--wms-muted)}
+.tx-stat b{font-size:20px;font-weight:700;color:var(--wms-text);font-variant-numeric:tabular-nums}
+.tx-stat b.tx-mid{color:#B45309}
+.tx-stat b.tx-neg{color:#B91C1C}
+.tx-stat i{display:block;font-style:normal;font-size:12px;color:var(--wms-muted)}
+
+/* ── เนื้อหา ── */
+.tx-body{padding:14px 20px 60px}
+.tx-empty{padding:44px 20px;text-align:center;color:var(--wms-muted);font-size:14px;line-height:1.7}
+.tx-empty b{color:var(--wms-text)}
+.tx-note{margin-bottom:12px;font-size:13px;color:var(--wms-muted);line-height:1.6}
+.tx-note b{color:var(--wms-text)}
+.tx-warn{margin-bottom:12px;padding:10px 13px;border-radius:var(--wms-radius-sm);background:#FEF3C7;
+  border:1px solid #FDE68A;color:#92400E;font-size:13px;line-height:1.6}
+.tx-warn b{font-weight:700}
+.tx-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px;font-size:13px;color:var(--wms-muted)}
+.tx-opt{padding:5px 13px;border-radius:999px;border:1px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:13px;color:#334155;cursor:pointer}
+.tx-opt:hover{border-color:var(--wms-primary);color:var(--wms-primary-dark)}
+.tx-opt.on{background:var(--wms-primary-light);border-color:var(--wms-primary);color:var(--wms-primary-dark);font-weight:600}
+.tx-opt.p{background:var(--wms-primary);border-color:var(--wms-primary);color:#fff;font-weight:600}
+.tx-opt.p:hover{filter:brightness(1.08);color:#fff}
+.tx-opt:disabled{opacity:.6;cursor:default}
+.tx-input{flex:1;min-width:180px;max-width:360px;padding:9px 13px;border-radius:10px;border:1.5px solid var(--wms-border2);
+  background:var(--wms-surface);font-family:var(--wms-font);font-size:14px;color:var(--wms-text);outline:none}
+.tx-input:focus{border-color:var(--wms-primary)}
+
+/* ตารางกว้างกว่าจอมือถือ เลื่อนเฉพาะตาราง */
+.tx-wrap{overflow-x:auto;background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:var(--wms-radius)}
+.tx-tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tx-tbl th{text-align:left;padding:9px 11px;background:var(--wms-surface2);font-size:12px;
+  font-weight:600;color:var(--wms-muted);border-bottom:1px solid var(--wms-border);white-space:nowrap}
+.tx-tbl td{padding:8px 11px;border-bottom:1px solid #F1F5F9;vertical-align:top;line-height:1.45}
+.tx-tbl tr:last-child td{border-bottom:0}
+.tx-tbl .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tx-tbl th.num{text-align:right}
+.tx-tbl .nw{white-space:nowrap}
+.tx-tbl .sum td{background:var(--wms-surface2);font-weight:700}
+.tx-sub{display:block;font-size:12px;color:var(--wms-muted);line-height:1.5}
+.tx-mid{color:#B45309;font-weight:600}
+.tx-neg{color:#B91C1C;font-weight:700}
+.tx-tag{display:inline-block;margin-top:2px;padding:1px 7px;border-radius:999px;background:var(--wms-primary-light);
+  color:var(--wms-primary-dark);font-size:12px;font-weight:600;white-space:nowrap}
+.tx-more{padding:12px 14px;font-size:13px;color:var(--wms-muted);text-align:center;background:var(--wms-surface2)}
+
+/* SKU เดียวมีหลายกอง แถวต่อจากแถวแรกไม่เขียนชื่อซ้ำ มีเส้นซ้ายบอกว่าเป็นกลุ่มเดียวกัน */
+.bl-tbl .k-sku{min-width:220px}
+.bl-tbl tr.bl-grp td{border-bottom-color:transparent}
+.bl-tbl tr.bl-in td:first-child{box-shadow:inset 3px 0 0 var(--wms-primary-light)}
+.bl-tbl .k-loc{min-width:160px}
+.bl-locs{display:flex;flex-wrap:wrap;gap:4px}
+.bl-loc{display:inline-flex;align-items:center;gap:4px;padding:1px 7px;border-radius:6px;background:var(--wms-surface2);
+  border:1px solid var(--wms-border);font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.bl-loc.open{background:#ECFDF5;border-color:#A7F3D0;color:#065F46}
+.bl-loc.bad{background:#FEE2E2;border-color:#FECACA;color:#991B1B}
+.bl-out{padding-top:12px;border-top:1px solid var(--wms-border)}
+
+@media (max-width:640px){
+  .mod-title h2 .en,.mod-title p{display:none}
+  .tx-src,.bl-pick,.tx-sum{padding-left:16px;padding-right:16px}
+  .tx-src button{min-height:44px;padding:0 16px}
+  .bl-pick input[type=date]{min-height:44px;font-size:16px;flex:1 1 160px}
+  .bl-quick{display:inline-flex;align-items:center;min-height:44px;padding:0 15px}
+  .tx-sum{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .tx-body{padding-left:16px;padding-right:16px}
+  .tx-opt{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 15px}
+  .tx-input{flex-basis:100%;min-height:44px;font-size:16px;max-width:none}   /* ต่ำกว่า 16px iPhone จะซูมหน้าเองตอนแตะช่องค้น */
+  .bl-out .tx-opt{flex:1}
+  .bl-out span{display:none}
+
+  /* แถวเป็นการ์ด: SKU บนสุด LOT PO คงเหลือเรียงกันบรรทัดเดียว Location อยู่ล่าง ไม่ต้องเลื่อนข้าง */
+  .bl-tbl,.bl-tbl tbody{display:block}
+  .bl-tbl thead{display:none}
+  .bl-tbl tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) auto;column-gap:10px;row-gap:4px;
+    padding:11px 12px;border-bottom:1px solid var(--wms-border)}
+  .bl-tbl tr.bl-grp{border-bottom:1px dashed var(--wms-border)}
+  .bl-tbl tr:last-child{border-bottom:0}
+  .bl-tbl td{display:block;min-width:0;padding:0;border:0;white-space:normal}
+  .bl-tbl .k-sku{grid-column:1/-1;min-width:0}
+  .bl-tbl tr.bl-in .k-sku{display:none}
+  .bl-tbl .k-recv,.bl-tbl .k-loc{grid-column:1/-1;min-width:0}
+  .bl-tbl .k-lot::before,.bl-tbl .k-po::before,.bl-tbl .k-qty::before{content:attr(data-label);display:block;
+    font-size:12px;font-weight:500;color:var(--wms-muted)}
+  .bl-tbl .k-qty{font-size:16px;font-weight:700}
+  .bl-tbl tr.sum{display:flex;justify-content:space-between;background:var(--wms-surface2)}
+  .bl-tbl tr.sum .k-qty::before{display:none}
+  .bl-tbl tr.sum td:empty{display:none}
+}
+</style>
+</head>
+<body data-wms-module="balance">
+
+<div class="wms-shell">
+<div data-wms-shell="balance" data-root="../"></div>
+<div class="wms-main">
+
+  <div class="mod-head">
+    <div class="mod-title">
+      <div class="ic"><img src="../icons/calendar.png" alt="" width="38" height="38"></div>
+      <div>
+        <h2>สินค้าคงเหลือ ณ วันที่<span class="en"> · Stock as of Date</span></h2>
+        <p>ยอดคงเหลือราย SKU × LOT × PO ณ สิ้นวันที่เลือก คิดจากสมุด Transaction ทั้งชีต โหลดเป็นไฟล์ Excel ได้ — อ่านอย่างเดียว ไม่แก้ชีต</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="tx-src" id="src"></div>
+  <div class="bl-pick" id="pick"></div>
+  <div class="tx-sum" id="sum"></div>
+  <div class="tx-body" id="body"></div>
+
+</div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+
+<script type="module" src="../wms-shell.js"></script>
+<script src="../wms-settings.js"></script>
+<script src="../wms-gas.js"></script>
+<script src="../wms-shared.js"></script>
+<script src="../wms-fifo.js"></script>
+<script src="../wms-balance.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const f = n => (Math.round(n * 1000) / 1000).toLocaleString('en-US');
+const dm = d => { const p = String(d || '').split('-'); return p.length === 3 ? `${+p[2]}/${+p[1]}` : ''; };
+const XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+const SHOW_MAX = 500;   // ทั้งคลังมีหลายพันกอง วาดหมดหน้าจะหน่วง คัดลอกกับดาวน์โหลดยังได้ครบ
+
+/* แถวทั้งสมุดราวหนึ่งเมกะไบต์ เก็บแค่ในหน่วยความจำ เหมือนหน้า FIFO สต๊อก */
+let RES = null;     // คำตอบ tx-fifo (ข้อมูลกลาง ชุดเดียวกับหน้า FIFO สต๊อกและภาพรวมสต๊อก)
+let ROWS = null;    // WmsFifo.parse(RES) แปลงครั้งเดียวต่อชุด เปลี่ยนวันที่ไม่ต้องแปลงใหม่
+let BAL = null;     // WmsBalance.asOf(RES, DATE, ROWS)
+let DATE = '';      // yyyy-mm-dd
+let ONLY = '';      // '' | unknown | neg
+let Q = '';
+let BUSY = '';
+let ERR = '';
+let WAIT = null;    // ข้อมูลกลาง: มีคนกำลังดึงชุดใหม่อยู่ { at, by, auto }
+let LOADING = false;
+let XLSX_LOAD = null;
+
+/** วันที่แบบเต็ม ปี พ.ศ. เช่น 31 ต.ค. 2569 */
+function longDate(d) {
+  const [y, m, day] = d.split('-').map(Number);
+  return new Date(y, m - 1, day).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function compute() {
+  BAL = RES && DATE ? WmsBalance.asOf(RES, DATE, ROWS) : null;
+}
+
+/**
+ * ข้อมูลกลาง: เปิดหน้าอ่านชุดที่สคริปต์เก็บไว้ กดดึงใหม่ค่อยให้อ่านสมุดทั้งชีต (เหมือนหน้า FIFO สต๊อก)
+ * quiet = ชุดใหม่ที่มาเองระหว่างเปิดดู วันที่ที่เลือกไว้ยังอยู่
+ */
+async function load(fresh, quiet) {
+  const url = WmsSettings.txUrl();
+  if (LOADING || !url) return;
+  LOADING = true;
+  ERR = '';
+  const say = (sec) => { BUSY = fresh ? `กำลังอ่านสมุด Transaction ทั้งชีต…${sec ? ` ${sec} วินาที` : ''}` : 'กำลังโหลดชุดล่าสุด…'; renderSrc(); };
+  const opts = { retries: 1, timeoutMs: 240000, onProgress: quiet ? undefined : say };
+  if (!quiet) { say(0); render(); }
+  try {
+    let res;
+    if (fresh) {
+      res = await WmsShared.press(url, 'tx-fifo', null, opts);
+      if (res && res.error === WmsShared.OLD) res = await WmsGas.json(url, 'tx-fifo', opts);
+    } else {
+      res = await WmsShared.read(url, 'tx-fifo', opts);
+    }
+    if (res && res.busy && !res.rows) {
+      WAIT = res.busy;
+      WATCH.soon();
+      BUSY = '';
+      LOADING = false;
+      render();
+      return;
+    }
+    WAIT = null;
+    if (res.error) throw new Error(res.error);
+    if (res.app !== 'transaction') throw new Error('URL ของ Transaction ในหน้าตั้งค่าไม่ใช่สคริปต์ tx-api.gs');
+    if (!res.rows) throw new Error('สคริปต์ tx-api.gs ยังเป็นรุ่นที่ไม่ส่งแถวของสมุด ให้วางโค้ดใหม่แล้ว Deploy เป็น New version');
+    RES = res;
+    ROWS = WmsFifo.parse(res);
+    const sp = WmsBalance.span(res);
+    /* เปิดครั้งแรกเป็นยอดล่าสุด วันที่ที่เลือกไว้แล้วยังอยู่ ถ้ายังอยู่ในช่วงที่เลือกได้ */
+    if (!DATE || DATE < sp.min || DATE > sp.max) DATE = sp.max;
+    compute();
+  } catch (e) {
+    ERR = e.message;
+    if (window.WmsMotion) setTimeout(() => window.WmsMotion.shake(document.querySelector('#src .tx-err')), 0);
+  }
+  BUSY = '';
+  LOADING = false;
+  render();
+}
+
+/* ── แถบบน ─────────────────────────────────────────────────────────────── */
+
+function renderSrc() {
+  const url = WmsSettings.txUrl();
+  let html = '';
+  if (RES && !BUSY) {
+    const when = new Date(WmsShared.stamp(RES)).toLocaleString('th-TH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const who = WmsShared.who(RES);
+    html += `<span class="pill" title="ทุกเครื่องเห็นชุดเดียวกัน รอบอัตโนมัติดึงใหม่ทุก 2 ชั่วโมงในเวลางาน">🕐 ดึงเมื่อ <b>${esc(when)}</b>${who ? ` · ${esc(who)}` : ''}</span>`;
+    if (RES.last) html += `<span class="pill">สมุดลงขายถึง <b>${esc(dm(RES.last))}</b></span>`;
+    if (RES.sheet && RES.sheet.url) html += `<span class="pill"><a href="${esc(RES.sheet.url)}" target="_blank" rel="noopener">เปิดชีต ↗</a></span>`;
+  }
+  if (BUSY) html += `<span class="pill">⏳ ${esc(BUSY)}</span>`;
+  if (WAIT && !BUSY) {
+    const at = new Date(WAIT.at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+    html += `<span class="pill warn">⏳ ${esc(WmsShared.runner(WAIT))} กำลังดึงชุดใหม่ (เริ่ม ${esc(at)}) เสร็จแล้วขึ้นให้เอง</span>`;
+  }
+  html += '<span class="sp"></span>';
+  if (url) {
+    html += `<button id="loadBtn" class="${RES ? '' : 'p'}" ${BUSY || WAIT ? 'disabled' : ''}>${BUSY ? 'กำลังดึง…' : WAIT ? 'รอชุดใหม่…' : RES ? '🔄 ดึงใหม่' : '▶️ ดึงข้อมูล'}</button>`;
+  } else {
+    html += `<span class="pill">ยังไม่ได้ตั้ง Apps Script URL ของ Transaction — <a href="../settings/">ตั้งที่หน้าตั้งค่า</a></span>`;
+  }
+  if (ERR) html += `<div class="tx-err">ดึงข้อมูลไม่สำเร็จ: ${esc(ERR)}</div>`;
+  $('src').innerHTML = html;
+  const btn = $('loadBtn');
+  if (btn) btn.onclick = () => load(!!RES);
+}
+
+/**
+ * ช่องวันที่กับปุ่มลัด เปลี่ยนวันที่แล้วคิดใหม่ทันทีในเครื่อง ไม่ต้องดึงจากสคริปต์อีก
+ * ช่องวันที่ไม่ถูกวาดใหม่ตอนเปลี่ยนวันที่ เคอร์เซอร์จะได้ไม่หลุดระหว่างพิมพ์ ส่วนท้ายวาดใหม่แยก
+ */
+function renderPick() {
+  if (!RES || BUSY) { $('pick').innerHTML = ''; return; }
+  const sp = WmsBalance.span(RES);
+  $('pick').innerHTML = `<label for="date">📅 ยอด ณ สิ้นวันที่</label>
+    <input type="date" id="date" value="${esc(DATE)}" min="${esc(sp.min)}" max="${esc(sp.max)}">
+    <span id="quick" class="bl-qs">${quickHtml()}</span>
+    <div class="bl-when" id="when">${whenHtml()}</div>`;
+  $('date').onchange = (e) => {
+    const v = e.target.value;
+    if (!v) return;
+    /* พิมพ์วันที่เกินช่วง ดึงกลับเข้าช่วง บอกไว้ใต้ช่อง */
+    DATE = v < sp.min ? sp.min : v > sp.max ? sp.max : v;
+    if (DATE !== v) e.target.value = DATE;
+    pickDate();
+  };
+}
+
+/** ปุ่มลัด: ล่าสุด (วันนี้) กับสิ้นเดือนที่แล้ว ที่มักใช้ทำรายงานเดือน */
+function quickHtml() {
+  const sp = WmsBalance.span(RES);
+  const end = WmsBalance.lastMonthEnd(sp.max);
+  const btn = (d, label) => `<button class="bl-quick${d === DATE ? ' on' : ''}" data-date="${esc(d)}">${label}</button>`;
+  return btn(sp.max, `ล่าสุด (${esc(dm(sp.max))})`) + (end >= sp.min ? btn(end, `สิ้นเดือนที่แล้ว (${esc(dm(end))})`) : '');
+}
+
+function whenHtml() {
+  if (!BAL) return '';
+  const sp = WmsBalance.span(RES);
+  const parts = [`นับ <b>${f(BAL.counted)}</b> แถวที่ลงวันที่ไม่เกิน ${esc(longDate(DATE))}`];
+  if (BAL.later) parts.push(`ไม่นับ ${f(BAL.later)} แถวหลังจากนั้น`);
+  return parts.join(' · ') + (sp.min ? ` · เลือกได้ตั้งแต่ ${esc(longDate(sp.min))}` : '');
+}
+
+function pickDate() {
+  compute();
+  $('quick').innerHTML = quickHtml();
+  $('when').innerHTML = whenHtml();
+  renderSum();
+  renderBody();
+}
+
+function renderSum() {
+  if (!BAL || BUSY) { $('sum').innerHTML = ''; return; }
+  const t = BAL.totals;
+  const stat = (label, n, sub, cls) => `<div class="tx-stat"><small>${esc(label)}</small><b class="${cls || ''}" data-count="${n}">${f(n)}</b><i>${esc(sub)}</i></div>`;
+  $('sum').innerHTML =
+    stat('ชิ้นคงเหลือ', t.qty, `ณ สิ้นวันที่ ${longDate(DATE)}`) +
+    stat('SKU', t.skus, `${f(t.lines)} บรรทัด SKU × LOT × PO`) +
+    stat('ไม่รู้ LOT หรือ PO', t.unknown.qty, `${f(t.unknown.lines)} บรรทัด · LOT 0 หรือ PO 0`, t.unknown.qty ? 'tx-mid' : '') +
+    (t.neg.lines ? stat('กองที่ยอดติดลบ', t.neg.lines, `${f(t.neg.qty)} ชิ้น · ไม่นับรวม สมุดลงผิด`, 'tx-neg') : '');
+}
+
+/* ── เนื้อหา ───────────────────────────────────────────────────────────── */
+
+const chosen = () => (BAL ? WmsBalance.filter(BAL, { q: Q, only: ONLY }) : []);
+
+function lotHtml(l) {
+  if (l.noLot) return `<span class="tx-mid">${esc(l.lot || 'ว่าง')}</span><span class="tx-sub">ไม่รู้ LOT</span>`;
+  return `${esc(l.lot)}${l.lm ? `<span class="tx-sub">${esc(WmsFifo.monthText(l.lm))}</span>` : ''}`;
+}
+const poHtml = (l) => l.noPo ? `<span class="tx-mid">${esc(l.po || 'ว่าง')}</span><span class="tx-sub">ไม่รู้ PO</span>` : esc(l.po);
+
+/** วันรับเข้า PO ที่ทยอยรับหลายรอบบอกจำนวนรอบ */
+function recvHtml(l) {
+  const r = l.rounds || [];
+  const count = l.recv === WmsFifo.COUNT_DAY;
+  const base = count ? 'ก่อนนับสต๊อก' : l.recv ? `รับ ${dm(l.recv)}` : '<span class="tx-sub">ไม่มีวันรับ</span>';
+  const more = r.length > 1 || (count && r.length) ? `<span class="tx-sub">${count ? '+ ' : ''}รับ ${r.length} รอบ: ${r.map((y) => dm(y.d)).join(' · ')}</span>` : '';
+  return base + more;
+}
+
+function locHtml(l) {
+  const one = (x, cls) => `<span class="bl-loc${cls}" title="${x.open ? 'โลเปิดขาย' : ''}">${esc(x.loc)} <b>${f(x.qty)}</b></span>`;
+  const list = l.qty > 0 ? l.locs : [];
+  return `<div class="bl-locs">${list.map((x) => one(x, x.open ? ' open' : '')).join('')}${l.bad.map((x) => one(x, ' bad')).join('')}</div>`;
+}
+
+function listHtml() {
+  const rows = chosen();
+  if (!rows.length) {
+    return Q || ONLY
+      ? '<div class="tx-empty art-search">ไม่พบรายการที่ตรงกับที่เลือก</div>'
+      : `<div class="tx-empty art-done">ไม่มีของคงเหลือ ณ ${esc(longDate(DATE))}</div>`;
+  }
+  /* นับจำนวนกองและยอดรวมของแต่ละ SKU ในรายการที่กรองแล้ว ขึ้นที่แถวแรกของ SKU */
+  const per = {};
+  rows.forEach((l) => { const p = per[l.sku] || (per[l.sku] = { n: 0, qty: 0 }); p.n++; p.qty += l.qty; });
+  const show = rows.slice(0, SHOW_MAX);
+  const body = show.map((l, i) => {
+    const prev = show[i - 1], next = show[i + 1];
+    const same = (a) => a && a.sku === l.sku;
+    const cls = [same(prev) ? 'bl-in' : '', same(next) ? 'bl-grp' : ''].filter(Boolean).join(' ');
+    const p = per[l.sku];
+    const sku = same(prev)
+      ? `<span class="tx-sub">${esc(l.code)}</span>`
+      : `<b>${esc(l.code)}</b><span class="tx-sub">${esc(l.name)}</span>${p.n > 1 ? `<span class="tx-tag">${p.n} กอง · รวม ${f(p.qty)} ชิ้น</span>` : ''}`;
+    return `<tr${cls ? ` class="${cls}"` : ''}>
+      <td class="k-sku">${sku}</td>
+      <td class="nw k-lot" data-label="LOT">${lotHtml(l)}</td>
+      <td class="nw k-po" data-label="PO">${poHtml(l)}</td>
+      <td class="num k-qty${l.qty < 0 ? ' tx-neg' : ''}" data-label="คงเหลือ">${f(l.qty)}</td>
+      <td class="nw k-recv">${recvHtml(l)}</td>
+      <td class="k-loc">${locHtml(l)}</td>
+    </tr>`;
+  }).join('');
+  const t = WmsBalance.totals(ONLY === 'neg' ? [] : rows, ONLY === 'neg' ? rows : []);
+  const total = ONLY === 'neg' ? t.neg.qty : t.qty;
+  const more = rows.length > SHOW_MAX ? `<div class="tx-more">แสดง ${f(SHOW_MAX)} จาก ${f(rows.length)} บรรทัด — ค้นหาเพื่อดูบรรทัดที่เหลือ ไฟล์ Excel และปุ่มคัดลอกได้ครบทุกบรรทัด</div>` : '';
+  return `<div class="tx-wrap"><table class="tx-tbl bl-tbl">
+    <thead><tr><th>SKU / ชื่อสินค้า</th><th>LOT</th><th>PO</th><th class="num">คงเหลือ</th><th>รับเข้า</th><th>Location (ชิ้น)</th></tr></thead>
+    <tbody>${body}
+      <tr class="sum"><td class="k-sku">รวม ${f(rows.length)} บรรทัด</td><td></td><td></td><td class="num k-qty">${f(total)}</td><td></td><td></td></tr>
+    </tbody></table>${more}</div>`;
+}
+
+function renderList() {
+  const box = $('list');
+  if (box) box.innerHTML = listHtml();
+  const n = chosen().length;
+  const copy = $('copyBtn');
+  if (copy) { copy.textContent = `📋 คัดลอก ${f(n)} บรรทัด`; copy.disabled = !n; }
+  const x = $('xlsxBtn');
+  if (x && !x.dataset.busy) x.disabled = !n;
+}
+
+function renderBody() {
+  if (!WmsSettings.txUrl()) {
+    $('body').innerHTML = `<div class="tx-empty art-link">ยังไม่ได้ตั้ง Apps Script URL ของ Transaction — <a href="../settings/">ตั้งที่หน้าตั้งค่า</a><br>
+      ใช้ URL เดียวกับหน้าสต๊อกราย Location</div>`;
+    return;
+  }
+  if (BUSY) { $('body').innerHTML = ''; return; }
+  if (!BAL) {
+    $('body').innerHTML = `<div class="tx-empty art-data">กด <b>ดึงข้อมูล</b> ด้านบน เพื่ออ่านสมุด Transaction ทั้งชีต</div>`;
+    return;
+  }
+  const t = BAL.totals;
+  const opt = (v, label, n) => `<button class="tx-opt${ONLY === v ? ' on' : ''}" data-only="${v}">${label} ${f(n)} บรรทัด</button>`;
+  const notes = [];
+  /* หลังวันที่ลงขายล่าสุด สมุดอาจยังลงไม่ครบ ยอดที่เห็นยังไม่หักขายของวันนั้น */
+  if (RES.last && DATE > RES.last) {
+    /* เปิดดูยอดวันนี้แทบทุกครั้งจะเลยวันที่ลงขายล่าสุดอยู่หนึ่งวัน เตือนสีเหลืองเฉพาะตอนห่างกันเกินหนึ่งวัน */
+    const gap = (Date.parse(DATE) - Date.parse(RES.last)) / 864e5;
+    notes.push(`<div class="${gap > 1 ? 'tx-warn' : 'tx-note'}">สมุดลงขายถึง <b>${esc(longDate(RES.last))}</b> — ยอด ณ ${esc(longDate(DATE))} ยังไม่หักขายของวันหลังจากนั้นที่ยังไม่ได้ลง</div>`);
+  }
+  if (t.neg.lines) {
+    notes.push(`<div class="tx-note">มี <b>${f(t.neg.lines)}</b> กองที่ยอดสุทธิติดลบ (${f(t.neg.qty)} ชิ้น) คือสมุดลงออกเกินที่รับ ไม่นับรวมในยอดคงเหลือ — ดูที่ปุ่ม ยอดติดลบ หรือหน้าสต๊อกราย Location แท็บข้อมูลผิด</div>`);
+  }
+  notes.push(`<div class="tx-note">ยอดของแต่ละบรรทัดคือของกองนั้นทุก Location รวมกัน · PO ที่ลง -01 -02 ท้ายเลขรวมเป็น PO เดียว · แถวที่ไม่มีวันที่ของตัวเองใช้วันที่ของแถวด้านบน</div>`);
+  $('body').innerHTML = `${notes.join('')}
+    <div class="tx-bar">
+      <input id="q" class="tx-input" type="search" placeholder="ค้นหา SKU ชื่อสินค้า LOT PO หรือ Location" value="${esc(Q)}" autocomplete="off">
+      ${opt('', 'ทั้งหมด', t.lines)}${opt('unknown', 'ไม่รู้ LOT/PO', t.unknown.lines)}${t.neg.lines || ONLY === 'neg' ? opt('neg', 'ยอดติดลบ', t.neg.lines) : ''}
+    </div>
+    <div class="tx-bar bl-out">
+      <button class="tx-opt p" id="xlsxBtn">⬇️ โหลด Report (Excel)</button>
+      <button class="tx-opt" id="copyBtn">📋 คัดลอก</button>
+      <span>ไฟล์มีคอลัมน์ ${esc(WmsBalance.HEAD.join(' · '))} ตามตัวกรองที่เลือก ทุกบรรทัดมี SKU ครบ กรองหรือทำ Pivot ต่อได้</span>
+    </div>
+    <div id="list"></div>`;
+  renderList();
+}
+
+function render() {
+  renderSrc();
+  renderPick();
+  renderSum();
+  renderBody();
+}
+
+/* ── ส่งออก ────────────────────────────────────────────────────────────── */
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (err) {}
+    ta.remove();
+    return ok;
+  }
+}
+
+function xlsxLib() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  if (!XLSX_LOAD) {
+    XLSX_LOAD = new Promise((ok, bad) => {
+      const s = document.createElement('script');
+      s.src = XLSX_URL;
+      s.onload = () => ok(window.XLSX);
+      s.onerror = () => { XLSX_LOAD = null; bad(new Error('โหลดตัวสร้างไฟล์ Excel ไม่ได้ ลองใหม่อีกครั้ง')); };
+      document.head.appendChild(s);
+    });
+  }
+  return XLSX_LOAD;
+}
+
+/** ชีตเดียว ชื่อชีตบอกวันที่ แถวแรกเป็นหัวตาราง มีตัวกรองให้แล้ว */
+async function downloadXlsx() {
+  const btn = $('xlsxBtn');
+  const label = btn.textContent;
+  try {
+    btn.disabled = true;
+    btn.dataset.busy = '1';
+    btn.textContent = 'กำลังสร้างไฟล์…';
+    const X = await xlsxLib();
+    const aoa = WmsBalance.table(chosen());
+    const ws = X.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [18, 40, 7, 11, 14, 13, 10, 40, 40].map((w) => ({ wch: w }));
+    ws['!autofilter'] = { ref: X.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: aoa.length - 1, c: aoa[0].length - 1 } }) };
+    const wb = X.utils.book_new();
+    const [y, m, d] = DATE.split('-');
+    X.utils.book_append_sheet(wb, ws, `คงเหลือ ${+d}-${+m}-${y}`);
+    X.writeFile(wb, `สินค้าคงเหลือ-${DATE}${ONLY ? '-' + ONLY : ''}.xlsx`);
+    btn.textContent = 'โหลดแล้ว';
+    window.WmsMotion?.saved(btn);
+  } catch (e) {
+    btn.textContent = e.message;
+    window.WmsMotion?.shake(btn);
+  }
+  setTimeout(() => {
+    if (!btn.isConnected) return;
+    delete btn.dataset.busy;
+    btn.textContent = label;
+    btn.disabled = !chosen().length;
+  }, 2500);
+}
+
+$('pick').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-date]');
+  if (!b) return;
+  DATE = b.dataset.date;
+  $('date').value = DATE;
+  pickDate();
+});
+
+$('body').addEventListener('click', (e) => {
+  const only = e.target.closest('[data-only]');
+  if (only) {
+    ONLY = only.dataset.only;
+    renderBody();
+    return;
+  }
+  if (e.target.closest('#xlsxBtn')) { downloadXlsx(); return; }
+  if (e.target.closest('#copyBtn')) {
+    const btn = $('copyBtn');
+    copyText(WmsBalance.tsv(WmsBalance.table(chosen()))).then((ok) => {
+      btn.textContent = ok ? 'คัดลอกแล้ว วางใน Excel ได้เลย' : 'คัดลอกไม่ได้ ลองกดอีกครั้ง';
+      if (ok) window.WmsMotion?.saved(btn); else window.WmsMotion?.shake(btn);
+    });
+  }
+});
+
+$('body').addEventListener('input', (e) => {
+  if (e.target.id !== 'q') return;
+  Q = e.target.value.trim();
+  renderList();   // ไม่วาดช่องค้นใหม่ ไม่งั้นเคอร์เซอร์จะหลุดระหว่างพิมพ์
+});
+
+async function checkShared() {
+  const url = WmsSettings.txUrl();
+  if (!url || LOADING) return false;
+  const st = await WmsShared.status(url);
+  if (!WmsShared.knows(st, 'transaction')) return false;
+  const run = WmsShared.running(st, 'tx-fifo');
+  const had = !!WAIT;
+  WAIT = run;
+  if (run) { if (!had) renderSrc(); return true; }
+  if (!RES || !WmsShared.newer(st, 'tx-fifo', RES)) { if (had) renderSrc(); return false; }
+  if (WmsShared.typing()) { if (had) renderSrc(); return true; }
+  await load(false, true);
+  return false;
+}
+
+render();
+const WATCH = WmsShared.watch(checkShared);
+if (WmsSettings.txUrl()) load(false);
+</script>
+</body>
+</html>
