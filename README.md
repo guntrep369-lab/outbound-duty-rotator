@@ -588,6 +588,30 @@ sheet or a chat. The lists are sorted by date, then the largest first.
 - A row whose day + SKU differs somewhere opens the same window as เทียบรายวัน. The ledger list needs the
   sales pulled first (ดึงยอดขาย).
 
+**ดูที่มา (why the ledger didn't cut):** Uploadยิงออก and TRcloud cut whatever is on the order without
+checking the ledger, but the team can only cut what the ledger has at a location. When the ledger cut less
+than the other two systems (which agree), the window for that day + SKU has a **🔍 ดูที่มา** button. In
+the ชีตทีม list those rows say so. The button reads the whole ledger once, from the same `?api=tx-fifo`
+shared copy the FIFO page uses. It then shows:
+
+- The SKU's balance in the ledger before that day and now. Balances follow the same rules as the stock
+  page.
+- If there was enough, the ledger simply missed the sale, and the window suggests one ขาย row.
+- If there wasn't, it looks for the real product the code is made from. Most often this is a gift code
+  (`FRE…`): the same item as a real SKU, picked from the real SKU's shelf without a แปลงสินค้า entry. The
+  pair comes from tab `MASTER แปลงสินค้า` first. Next come past แปลงสินค้า rows in the ledger (a เบิก
+  of one SKU next to a รับ of another with the same LOT, PO and quantity). Last is a product with the same
+  name once the word แถม is removed.
+- It also shows how much of the real product the ledger cut that day compared with Uploadยิงออก, and where
+  the real product sits now. It suggests three rows: เบิก the real SKU, รับ the gift code, ขาย the gift
+  code. They copy as columns A to L to paste into the ledger. The person entering them fills in the name
+  column and checks the real stock first.
+- If no pair turns up, the window says so and asks for the pair to be added to `MASTER แปลงสินค้า`.
+
+Finding pairs from past แปลงสินค้า rows needs a `tx-api.gs` that marks those rows (`conv: 1` in
+`?api=tx-fifo`). With an older script, the window still matches by `MASTER แปลงสินค้า` and by name, and
+says the script is out of date.
+
 **บันทึกการแก้ (fix log):** once an item is fixed in its system, press **✓ แก้แล้ว** on that row. The press
 goes into tab `บันทึกการแก้` of the cut workbook, with the time, who pressed it (the name signed in on
 the device), and the amount that needed fixing. The script makes the tab the first time. Every device

@@ -20,6 +20,7 @@
  * ?api=tx-daily&from=...&to=...  ยอดแถวขายราย SKU ราย วัน และแถวขายทีละแถว ให้หน้าเช็ครายการตัดสต๊อกเอาไปเทียบ
  *                                พร้อมคู่ SKU จากแท็บ "MASTER แปลงสินค้า" (ถ้ามี) ให้หน้า LOT / PO ที่ขายออก
  * ?api=tx-fifo             ทุกแถวของสมุดแบบย่อ ให้หน้า FIFO สต๊อกคิดยอดราย LOT และหาการเบิกข้าม LOT เอง
+ *                          หน้าเช็ครายการตัดสต๊อกใช้ชุดเดียวกันบอกว่าทำไมชีตทีมไม่ได้ตัด (ปุ่มดูที่มา)
  * ?api=shared-at           เวลาของข้อมูลกลางชุดล่าสุด (ดูส่วน "ข้อมูลกลาง" ท้ายไฟล์)
  * POST {op:'count-save'}   บันทึกผลนับ
  * POST {op:'count-add'}    ส่ง SKU ที่ยอดไม่ตรงระบบบริษัทเข้าใบนับ
@@ -589,7 +590,9 @@ function history_(sku) {
  *   Location เบิก ส่งเฉพาะแถวเบิกกับขาย แถวอื่นไม่หักยอดต้นทาง (-1 = ไม่มี)
  *   ประเภท 0 = รับหรืออื่น ๆ, 1 = เบิก, 2 = ขาย
  *   วันที่ = วันที่ของแถวเอง หรือของแถวล่าสุดด้านบนที่มีวันที่ (-1 = ยังไม่มี)
- *   ธง 1 = Status เปิด, 2 = รับเข้าที่มี GR (วันที่คือวันรับ), 4 = แถวนับสต๊อก, 8 = วันที่เป็นของแถวเอง
+ *   ธง 1 = Status เปิด, 2 = รับเข้าที่มี GR (วันที่คือวันรับ), 4 = แถวนับสต๊อก, 8 = วันที่เป็นของแถวเอง,
+ *      16 = แถวแปลงสินค้า (Note มีคำว่า แปลง) หน้าเช็ครายการตัดสต๊อกใช้จับคู่ SKU ที่เบิกออกกับ SKU ที่รับเข้าแทน
+ * conv = 1 บอกว่าสคริปต์รุ่นนี้ส่งธง 16 แล้ว รุ่นก่อนไม่มีธงนี้ หน้าเว็บจะได้ไม่เข้าใจว่าไม่เคยมีการแปลงเลย
  * จำนวนที่พิมพ์เป็นข้อความเป็น 0 และแถวที่ SKU คอลัมน์ B ว่างไม่ถูกส่ง เหมือน balances_
  */
 function fifo_() {
@@ -599,7 +602,7 @@ function fifo_() {
   var sheet = ledgerSheet_(ss);
   var rows = readRows_(sheet, tz);
   var out = {
-    app: 'transaction', at: Date.now(), today: today, last: sales_(rows, today).last,
+    app: 'transaction', at: Date.now(), today: today, last: sales_(rows, today).last, conv: 1,
     sheet: { url: ss.getUrl(), gid: sheet.getSheetId() },
     skus: [], pos: [], locs: [], days: [], rows: [],
   };
@@ -613,7 +616,8 @@ function fifo_() {
     var s = no('sku', out.skus, same_(r.long), [r.sku, r.long, r.name]);
     if (!out.skus[s][2] && r.name) out.skus[s][2] = r.name;
     var t = r.type === 'ขาย' ? 2 : r.type === 'เบิก' ? 1 : 0;
-    var flag = (r.open ? 1 : 0) + (r.date && /^GR/i.test(r.note) ? 2 : 0) + (/stock\s*count/i.test(r.note) ? 4 : 0) + (r.date ? 8 : 0);
+    var flag = (r.open ? 1 : 0) + (r.date && /^GR/i.test(r.note) ? 2 : 0) + (/stock\s*count/i.test(r.note) ? 4 : 0) + (r.date ? 8 : 0)
+      + (/แปลง/.test(r.note) ? 16 : 0);
     out.rows.push([
       r.row, s, r.lot, no('po', out.pos, same_(r.po), r.po),
       t && r.from ? no('loc', out.locs, same_(r.from), r.from) : -1,

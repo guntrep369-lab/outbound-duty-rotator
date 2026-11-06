@@ -191,6 +191,18 @@ button.tx-more{cursor:pointer}
 .tx-ords td:first-child{min-width:150px}
 .tx-hint{font-size:13px;font-weight:600;color:var(--wms-text);line-height:1.5}
 .tx-row{font-weight:600;color:var(--wms-primary-dark)}
+/* ดูที่มา: กล่องคำตอบขึ้นก่อน แล้วค่อยเป็นแถวที่ควรลงและความเคลื่อนไหว */
+.why-box{padding:11px 13px;border-radius:var(--wms-radius-sm);border:1px solid #FDE68A;background:#FFFBEB;font-size:13px;line-height:1.6}
+.why-box.why-stock{border-color:#BFDBFE;background:#EFF6FF}
+.why-box.why-unknown{border-color:#FECACA;background:#FEF2F2}
+.why-say{font-weight:700;color:var(--wms-text)}
+.why-pts{margin:6px 0 0;padding-left:18px;color:#334155}
+.why-pts li{margin-top:3px}
+.why-pts .tx-sub{display:block}
+.why-lines td{white-space:nowrap}
+.why-tap{color:var(--wms-primary-dark);font-weight:600}
+.why-re{margin-left:6px}
+.tx-ok-n{color:#166534;font-weight:600}
 
 /* ── หน้าต่างรายละเอียด ฉากหลังเบลอให้ตาอยู่ที่ข้อมูล ชื่อคลาสเดียวกับหน้าเทียบ Order ── */
 .modal-overlay{display:none;position:fixed;inset:0;z-index:500;align-items:center;justify-content:center;padding:16px;
@@ -351,6 +363,7 @@ html.pop-open{overflow:hidden}
 <script src="../wms-gas.js"></script>
 <script src="../wms-shared.js"></script>
 <script src="../wms-cut.js"></script>
+<script src="../wms-why.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -427,6 +440,12 @@ let SUM_OPEN = false;   // มือถือพับภาพรวมเด�
 let BEFORE = null;      // ตัวเลขก่อนตรวจรอบนี้ ไว้เทียบว่าแก้ไปได้เท่าไร
 let GAIN = 0;           // รายการที่ต้องแก้ลดลงเท่าไรจากรอบก่อน
 let POP_AT = null;      // จุดที่กดเปิดหน้าต่าง หน้าต่างขยายออกจากตรงนั้นและหดกลับไปที่เดิม
+/* ปุ่มดูที่มา: ทุกแถวของสมุดจาก tx-fifo โหลดเมื่อกดครั้งแรก แล้วใช้กับทุกช่องจนกว่าจะกดโหลดใหม่ */
+let WHY = null;
+let WHY_BUSY = '';
+let WHY_ERR = '';
+let WHY_TOT = null;     // ยอดรายวันของสามแหล่ง ใช้บอกว่าวันนั้นตัดสินค้าจริงไปเท่าไร
+let WHY_LAST = null;    // คำตอบของช่องที่เปิดอยู่ ปุ่มคัดลอกใช้ตัวนี้
 /* บันทึกการแก้จากแท็บในไฟล์ตัดสต๊อก (cut-api.gs ?api=cut-fixlog) ทุกเครื่องเห็นชุดเดียวกัน null = ยังไม่ได้อ่าน */
 let FIXLOG = null;
 let FIXLOG_ERR = '';
@@ -1358,9 +1377,180 @@ function cellPanel(c, r) {
   const info = cellInfo(), one = info.get(r.date, r.sku);
   return `<div class="tx-cell">
     <div class="tx-hint">👉 ${esc(WmsCut.fixHint(r, c.hasR))}</div>
+    ${whyBlock(r)}
     ${ordersBlock(c, r, info, one)}
     ${rowsBlock(r, info, one)}
   </div>`;
+}
+
+/* ── ดูที่มา: ชีตทีมตัดน้อยกว่าสองระบบ ชีตมีของให้ตัดไหม และของน่าจะมาจากสินค้าตัวไหน ── */
+
+/** ช่องที่ชีตทีมตัดน้อยกว่า Uploadยิงออก และ TRcloud ที่ตรงกันเอง ช่องที่ลงคนละวันไม่นับ ยอดรวมตรงแล้ว */
+const whyFits = (r) => WmsCut.oddOne(r.s, r.x, r.t) === 's' && r.x > r.s && !r.moved;
+
+function whyTotals() {
+  if (!WHY_TOT || WHY_TOT.d !== RAW.daily || WHY_TOT.l !== LEDGER) {
+    WHY_TOT = { d: RAW.daily, l: LEDGER, get: WmsWhy.dayTotals(RAW.daily, LEDGER) };
+  }
+  return WHY_TOT.get;
+}
+
+/** หน้าต่างวาดใหม่ทั้งกล่อง จำตำแหน่งที่เลื่อนอยู่ไว้ จะได้ไม่เด้งกลับขึ้นบนตอนโหลดเสร็จ */
+function refreshPop() {
+  const body = $('pop').querySelector('.modal-body');
+  const top = body ? body.scrollTop : 0;
+  renderPop();
+  const now = $('pop').querySelector('.modal-body');
+  if (now) now.scrollTop = top;
+}
+
+/**
+ * อ่านชุดกลางของ tx-fifo ชุดเดียวกับหน้า FIFO สต๊อก fresh = ให้สคริปต์อ่านสมุดทั้งชีตใหม่
+ * สคริปต์รุ่นก่อนไม่รู้จัก shared ก็ยังตอบเป็นทั้งสมุดเหมือนกัน
+ */
+async function loadWhy(fresh) {
+  const url = WmsSettings.txUrl();
+  if (WHY_BUSY || !url) return;
+  WHY_ERR = '';
+  const say = (sec) => { WHY_BUSY = `กำลังอ่านสมุด Transaction ทั้งชีต…${sec ? ` ${sec} วินาที` : ''}`; refreshPop(); };
+  const opts = { retries: 1, timeoutMs: 240000, onProgress: say };
+  say(0);
+  try {
+    let res;
+    if (fresh) {
+      res = await WmsShared.press(url, 'tx-fifo', null, opts);
+      if (res && res.error === WmsShared.OLD) res = await WmsGas.json(url, 'tx-fifo', opts);
+    } else {
+      res = await WmsShared.read(url, 'tx-fifo', opts);
+    }
+    if (res && res.busy && !res.rows) throw new Error(`${WmsShared.runner(res.busy)} กำลังดึงสมุดชุดใหม่อยู่ รอสักครู่แล้วกดอีกครั้ง`);
+    if (res.error) throw new Error(res.error);
+    if (res.app !== 'transaction') throw new Error('URL ของ Transaction ในหน้าตั้งค่าไม่ใช่สคริปต์ tx-api.gs');
+    if (!res.rows) throw new Error('สคริปต์ tx-api.gs ยังเป็นรุ่นที่ไม่ส่งแถวของสมุด ให้วางโค้ดใหม่แล้ว Deploy เป็น New version');
+    WHY = WmsWhy.index(res);
+  } catch (e) {
+    WHY_ERR = e.message;
+  }
+  WHY_BUSY = '';
+  refreshPop();
+}
+
+const WHY_SRC = {
+  master: 'ตามแท็บ MASTER แปลงสินค้า',
+  name: 'ชื่อสินค้าเดียวกันเมื่อตัดคำว่าแถมออก',
+};
+
+function whyLink(row) {
+  const u = WmsCut.rowUrl(WHY.sheet || (LEDGER && LEDGER.sheet), row);
+  return u ? `<a class="tx-row" href="${esc(u)}" target="_blank" rel="noopener">${row}</a>` : String(row);
+}
+
+/** สินค้าจริงตัวนี้มาจากไหน บอกเลขแถวที่เคยแปลงให้กดเปิดดูได้ */
+function whySrc(c) {
+  if (c.src !== 'conv') return esc(WHY_SRC[c.src] || '');
+  const last = c.rows[c.rows.length - 1];
+  return `เคยลงแปลงเป็นรหัสนี้ ${f(c.n)} ครั้ง ล่าสุดแถว ${whyLink(last[0])} กับ ${whyLink(last[1])}`;
+}
+
+/** วันนั้นชีตทีมตัดสินค้าจริงเท่าไรเทียบกับ Uploadยิงออก ชิ้นที่หยิบไปเป็นของแถมตัดจากไหนหรือยัง */
+function whyDay(w) {
+  const d = w.real.day, A = esc(w.real.sku);
+  if (!d || (!d.s && !d.x)) return '';
+  if (d.s === d.x) return `วันนั้นชีตทีมตัด ${A} ${f(d.s)} ชิ้น เท่ากับ ${esc(L.x)} ชิ้นที่หยิบไปเป็นของแถมจึงยังไม่ได้ตัดจากรหัสไหนเลย ยอด ${A} ในชีตน่าจะเกินของจริง ${f(w.missing)} ชิ้น`;
+  if (d.s > d.x) return `วันนั้นชีตทีมตัด ${A} ${f(d.s)} ชิ้น เกิน ${esc(L.x)} อยู่ ${f(d.s - d.x)} ชิ้น อาจลงของแถมเป็น ${A} ไปแล้ว ให้ลดแถวขาย ${A} ลงก่อน แล้วค่อยลงแถวด้านล่าง`;
+  return `วันนั้นชีตทีมตัด ${A} ขาด ${esc(L.x)} อยู่ ${f(d.x - d.s)} ชิ้นด้วย ดูช่องของ ${A} ในวันเดียวกันประกอบ`;
+}
+
+const WHY_HEAD = ['SKU', 'LOT', 'PO.', 'Location เบิก', 'Location รับ', 'QTY', 'รับ/เบิก', 'Note'];
+
+function whyLines(w) {
+  if (!w.lines.length) return '';
+  const cell = (v) => (v === '' || v == null ? '<span class="tx-mid">ต้องเติม</span>' : esc(v));
+  return `<div class="tx-h">แถวที่ควรลงในชีตทีม</div>
+    <div class="tx-wrap"><table class="tx-tbl why-lines">
+      <thead><tr>${WHY_HEAD.map((h) => `<th${h === 'QTY' ? ' class="num"' : ''}>${esc(h)}</th>`).join('')}</tr></thead>
+      <tbody>${w.lines.map((l) => `<tr>
+        <td class="nw">${esc(l[1])}<span class="tx-sub">${esc(l[0])}</span></td><td>${cell(l[3])}</td><td class="nw">${cell(l[4])}</td>
+        <td class="nw">${l[5] || l[8] === 'รับ' ? esc(l[5]) : cell('')}</td>
+        <td class="nw">${l[6] || l[8] !== 'รับ' ? esc(l[6]) : cell('')}</td>
+        <td class="num">${f(l[7])}</td><td>${esc(l[8])}</td><td class="nw">${esc(l[9])}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+    <div class="tx-bar"><button class="tx-opt" data-why-copy>📋 คัดลอก ${f(w.lines.length)} แถวไปวางในชีต</button></div>
+    <div class="tx-why">วางที่ช่อง A ของแถวว่างแถวแรก ข้อมูลจะลงคอลัมน์ A ถึง L แล้วใส่ชื่อคนลงในคอลัมน์ L
+      ${w.verdict === 'convert' && w.into && w.into !== w.home ? ` · ${esc(w.into)} คือจุดที่รับของแถมจากการแปลงบ่อยสุด ถ้าเก็บไว้ที่อื่นให้แก้ก่อนวาง` : ''}</div>`;
+}
+
+function whyHist(w) {
+  if (!w.known) return `<div class="tx-why">ชีตทีมไม่เคยมีแถวของ ${esc(w.sku)} เลย</div>`;
+  const ch = (v) => `<span class="${v < 0 ? 'tx-neg' : v > 0 ? 'tx-ok-n' : ''}">${v > 0 ? '+' : ''}${f(v)}</span>`;
+  return `<details class="tx-int"><summary>ความเคลื่อนไหวของ ${esc(w.sku)} ในชีตทีม ${f(w.hist.length)} แถวล่าสุด</summary>
+    <div class="tx-wrap"><table class="tx-tbl">
+      <thead><tr><th>แถวที่</th><th>วันที่</th><th>รายการ</th><th>Location</th><th>LOT</th><th>PO</th><th class="num">จำนวน</th><th class="num">คงเหลือ</th></tr></thead>
+      <tbody>${w.hist.map((h) => `<tr>
+        <td class="nw">${whyLink(h.row)}</td><td class="nw">${esc(dm(h.day))}</td>
+        <td class="nw">${esc(h.what)}${h.tag ? `<span class="tx-sub">${esc(h.tag)}</span>` : ''}</td>
+        <td class="nw">${esc(h.loc)}</td><td>${esc(h.lot)}</td><td class="nw">${esc(h.po)}</td>
+        <td class="num">${ch(h.change)}</td><td class="num">${f(h.left)}</td>
+      </tr>`).join('')}</tbody>
+    </table></div></details>`;
+}
+
+/** ชีตตอนนี้มีสินค้าจริงตัวนั้นอยู่ที่ไหนบ้าง ให้ไปนับของจริงถูกจุด */
+function whyKeys(w) {
+  const k = w.real.keys;
+  if (!k.length) return `ชีตทีมไม่มี ${esc(w.real.sku)} เหลือที่ไหนเลย`;
+  return `${esc(w.real.sku)} ในชีตตอนนี้: ${k.map((x) => `<span class="nw">${esc(x.loc)} LOT ${esc(x.lot)} PO ${esc(x.po)} = ${f(x.bal)}${x.open ? '' : ' (ไม่ได้เปิดขาย)'}</span>`).join(' · ')}`;
+}
+
+function whyBlock(r) {
+  if (!whyFits(r)) return '';
+  const head = '<div class="tx-h">ทำไมชีตทีมไม่ได้ตัด</div>';
+  const why = `${esc(L.x)} กับ ${esc(L.t)} ตัดตามรายการในออเดอร์ ไม่ได้ดูว่าชีตทีมมีของเหลือไหม ชีตทีมตัดจากของที่มีจริงในแต่ละ Location`;
+  if (!WHY) {
+    if (WHY_BUSY) return `${head}<div class="tx-why">${esc(WHY_BUSY)}</div>`;
+    return `${head}<div class="tx-why">${why} กดเพื่อดูยอดของรหัสนี้ในชีตทีม และสินค้าจริงที่คู่กัน</div>
+      ${WHY_ERR ? `<div class="tx-warn">${esc(WHY_ERR)}</div>` : ''}
+      <div class="tx-bar"><button class="tx-opt" data-why>🔍 ดูที่มา</button></div>`;
+  }
+  const need = r.x - r.s;
+  const w = WmsWhy.explain(WHY, {
+    date: r.date, sku: r.sku, name: r.name, need,
+    master: LEDGER && LEDGER.convert, totals: whyTotals(), sales: (d, s) => cellInfo().get(d, s).rows,
+  });
+  WHY_LAST = { cell: `${r.date}|${r.sku}`, w };
+  const S = esc(w.sku), day = esc(dm(r.date));
+  const bal = `ยอด ${S} ในชีตทีมก่อนวันที่ ${day}: <b>${f(w.before)}</b> ชิ้น · ตอนนี้ <b>${f(w.now)}</b> ชิ้น`;
+  const pts = [why, bal];
+  let say;
+  if (w.verdict === 'stock') {
+    say = `ชีตทีมมี ${S} พอให้ตัด แต่ไม่ได้ลงขาย ${f(need)} ชิ้น น่าจะลืมลง`;
+  } else {
+    say = `ชีตทีมไม่มี ${S} พอให้ตัด${w.known ? '' : ' (ไม่เคยมีแถวของรหัสนี้เลย)'}`;
+    if (w.verdict === 'convert') {
+      const A = esc(w.real.sku);
+      say += ` ของที่ส่งไปน่าจะหยิบจาก ${A} แล้วไม่ได้ลงแปลงสินค้า`;
+      pts.push(`สินค้าจริงที่คู่กัน: <b>${A}</b> ${esc(w.real.name)}<span class="tx-sub">${whySrc(w.real)}</span>`);
+      if (w.cands.length > 1) pts.push(`อาจเป็น ${w.cands.slice(1).map((c) => `<b>${esc(c.sku)}</b> ${esc(c.name)} (${whySrc(c)})`).join(' หรือ ')} ก็ได้ ถ้าไม่ใช่ตัวแรกให้แก้แถวเบิกก่อนวาง`);
+      const day2 = whyDay(w);
+      if (day2) pts.push(day2);
+      pts.push(whyKeys(w));
+      if (w.real.from) pts.push(`ก่อนลง ให้นับ ${A} ของจริงที่ ${esc(w.real.from.loc)} ว่าขาดจากชีต ${f(w.missing)} ชิ้นจริง`);
+    } else {
+      say += ' และหาไม่เจอว่าแปลงมาจากสินค้าตัวไหน';
+      pts.push('ให้ถามคนแพ็กว่าหยิบของชิ้นนี้มาจากไหน แล้วเพิ่มคู่ SKU ไว้ในแท็บ MASTER แปลงสินค้า ของไฟล์ Transaction ครั้งหน้าหน้านี้จะบอกเอง');
+    }
+    if (!w.conv) pts.push('สคริปต์ tx-api.gs ยังเป็นรุ่นที่ไม่บอกแถวแปลงสินค้า วางตัวใหม่แล้ว Deploy จะหาคู่จากแถวที่เคยแปลงได้ด้วย');
+  }
+  return `${head}<div class="why-box why-${w.verdict}">
+      <p class="why-say">💡 ${say}</p>
+      <ul class="why-pts">${pts.map((t) => `<li>${t}</li>`).join('')}</ul>
+    </div>
+    ${whyLines(w)}
+    ${whyHist(w)}
+    <div class="tx-why">ข้อมูลชีตทีมชุด ${esc(atText(WHY.at))}
+      <button class="tx-opt why-re" data-why-reload ${WHY_BUSY ? 'disabled' : ''}>${WHY_BUSY ? esc(WHY_BUSY) : '🔄 อ่านสมุดใหม่'}</button></div>
+    ${WHY_ERR ? `<div class="tx-warn">${esc(WHY_ERR)}</div>` : ''}`;
 }
 
 function ordersBlock(c, r, info, one) {
@@ -1734,9 +1924,14 @@ function fixRow(k, e, st) {
     <td class="k-top"><span class="nw">${esc(dm(e.date))}</span>${cut ? `<span class="tx-sub">${esc(cut)}</span>` : ''}</td>
     <td class="tx-name k-main">${fixItem(e)}</td>
     <td class="nw k-side"><b class="tx-need ${e.need > 0 ? 'tx-mid' : 'tx-neg'}">${plus(e.need)}</b><span class="tx-sub">${esc(verb)}</span></td>
-    <td class="tx-res k-res">${esc(fixWhy(e))}${fixNotes(e).map((t) => `<span class="tx-sub">${esc(t)}</span>`).join('')}${refs}</td>
+    <td class="tx-res k-res">${esc(fixWhy(e))}${fixNotes(e).map((t) => `<span class="tx-sub">${esc(t)}</span>`).join('')}${refs}${whyTap(k, e)}</td>
     ${st ? `<td class="k-log">${logCell(k, e, st)}</td>` : ''}
   </tr>`;
+}
+
+/** ชีตทีมตัดน้อยกว่าสองระบบ กดแถวแล้วมีปุ่มดูที่มา บอกไว้ในแถวเลย คนจะได้รู้ว่ากดได้ */
+function whyTap(k, e) {
+  return k === 's' && e.kind === 'sheet' && e.need > 0 && e.cell ? '<span class="tx-sub why-tap">🔍 กดเพื่อดูว่าชีตทีมมีของให้ตัดไหม</span>' : '';
 }
 
 /** วางลงชีตแล้วแตกเป็นคอลัมน์ได้เลย วันที่เขียนเต็มให้ชีตอ่านเป็นวันที่ไม่สลับวันกับเดือน */
@@ -1933,6 +2128,16 @@ $('pop').addEventListener('click', (e) => {
   /* กดที่พื้นหลังนอกกล่องก็ปิด */
   if (e.target === e.currentTarget || e.target.closest('[data-close]')) { closePop(); return; }
   if (e.target.closest('[data-back]')) { openPop({ day: POP.day, cell: '' }); return; }
+  if (e.target.closest('[data-why]')) { loadWhy(false); return; }
+  if (e.target.closest('[data-why-reload]')) { loadWhy(true); return; }
+  const wcopy = e.target.closest('[data-why-copy]');
+  if (wcopy) {
+    if (!WHY_LAST) return;
+    copyText(WmsWhy.tsv(WHY_LAST.w.lines)).then((ok) => {
+      wcopy.textContent = ok ? '✓ คัดลอกแล้ว วางที่ช่อง A ในชีตได้เลย' : 'คัดลอกไม่ได้ ลองกดอีกครั้ง';
+    });
+    return;
+  }
   const cell = e.target.closest('[data-cell]');
   if (cell) openPop({ day: POP.day, cell: cell.dataset.cell });
 });

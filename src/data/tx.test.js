@@ -508,6 +508,16 @@ describe('tx-api.gs — แถวทั้งสมุดให้หน้า F
     expect(r.rows[1][6]).toBe(0);
     expect(r.rows[1][8]).toBe(-1);
   });
+
+  it('แถวแปลงสินค้ามีธง 16 และบอกว่าสคริปต์รุ่นนี้ส่งธงนี้แล้ว ให้หน้าเช็ครายการตัดสต๊อกจับคู่ SKU', () => {
+    const r = fifo([
+      row({ long: 'AAA0000000001', from: 'P-01-01', qty: 1, type: 'เบิก', status: 'เปิด', note: 'แปลงสินค้า' }),
+      row({ long: 'FRE0000000001', to: 'G-01-01', qty: 1, status: 'เปิด', note: 'แปลงสินค้า' }),
+      row({ long: 'AAA0000000001', from: 'R1-01-01', to: 'P-01-01', qty: 5, type: 'เบิก', note: 'โอนย้าย' }),
+    ]);
+    expect(r.conv).toBe(1);
+    expect(r.rows.map((x) => x[9])).toEqual([1 + 16, 1 + 16, 0]);
+  });
 });
 
 describe('tx-api.gs — การตอบกลับ', () => {
