@@ -31,6 +31,11 @@
 .tx-src select{padding:4px 8px;border-radius:8px;border:1px solid var(--wms-border2);background:var(--wms-surface);
   font-family:var(--wms-font);font-size:13px;color:var(--wms-text)}
 .tx-err{width:100%;font-size:13px;color:#B91C1C;font-weight:600}
+/* ช่วงวันที่ที่เลือกเอง ส่วนหลังช่องวันที่วาดใหม่ได้โดยไม่แตะช่องวันที่ จึงห่อไว้แต่ไม่ให้กล่องนี้มีผลกับการจัดแถว */
+.tx-src input[type=date]{padding:3px 6px;border-radius:8px;border:1px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:13px;color:var(--wms-text)}
+.lp-tail{display:contents}
+.lp-pend{width:100%;font-size:13px;color:#92400E}
 
 /* ── แถบเลือกวัน เลื่อนข้างได้ เดือนหนึ่งมีสามสิบกว่าวัน ── */
 .lp-days{display:flex;gap:6px;padding:10px 20px;overflow-x:auto;background:var(--wms-surface);
@@ -134,7 +139,8 @@
   .mod-title h2 .en,.mod-title p{display:none}
   .tx-src,.lp-days,.tx-sum{padding-left:16px;padding-right:16px}
   .tx-src button{min-height:44px;padding:0 16px}
-  .tx-src select{min-height:44px;font-size:16px}
+  .tx-src select,.tx-src input[type=date]{min-height:44px;font-size:16px}
+  .lp-range{flex-wrap:wrap}
   .lp-day{min-height:44px;padding:0 14px}
   .tx-sum{grid-template-columns:repeat(2,minmax(0,1fr))}
   .tx-body{padding-left:16px;padding-right:16px}
@@ -212,11 +218,18 @@ const pad = n => String(n).padStart(2, '0');
 const CACHE = 'wms:lotpo:ledger';
 const SHOW_MAX = 500;   // ทั้งเดือนมีเป็นหมื่นบรรทัด วาดหมดหน้าจะหน่วง คัดลอกกับดาวน์โหลดยังได้ครบ
 
-let LED = null;     // คำตอบ tx-daily ของเดือนที่เลือก
+let LED = null;     // คำตอบ tx-daily ของช่วงที่ดึงไว้ (from, to)
 let RAW = [];       // WmsLotPo.build(LED) ยังเป็น SKU ที่ขาย ใช้ปันล็อตให้ออเดอร์ที่ตัดด้วย SKU เดียวกัน
 let ROWS = [];      // RAW ที่แปลงคืนเป็น SKU ตอนซื้อแล้ว
-let MONTH = '';     // yyyy-mm
-let DAY = '';       // '' = ทั้งเดือน
+let MONTH = '';     // yyyy-mm เดือนในตัวเลือก
+/*
+ * ช่วงวันที่ที่จะดึง yyyy-mm-dd ปกติคือทั้งเดือน เลือกเองได้ เพราะ Report ของเดือนเลยไปถึงต้นเดือนถัดไป
+ * (ผู้ใช้ขอ 2026-11-06) ป้ายบนจอใช้ช่วงของข้อมูลที่ดึงมาแล้ว (LED.from ถึง LED.to) ไม่ใช่ช่องที่กำลังแก้
+ */
+let FROM = '', TO = '';
+let RANGE_ERR = '';
+const RANGE_MAX = 62;   // วัน ทั้งเดือนบวกต้นเดือนถัดไปพอ ช่วงยาวกว่านี้แถวขายกับออเดอร์ใหญ่เกินจะเก็บลงเครื่อง
+let DAY = '';       // '' = ทั้งช่วง
 let ONLY = '';      // '' | split | unknown | gap | conv
 let Q = '';
 let BUSY = '';
@@ -255,6 +268,36 @@ function thisMonth() {
 function monthName(m) {
   const [y, mo] = m.split('-').map(Number);
   return new Date(y, mo - 1, 1).toLocaleDateString('th-TH', { month: 'long', year: 'numeric' });
+}
+
+function setMonth(m) {
+  const r = monthRange(m);
+  MONTH = m;
+  FROM = r.from;
+  TO = r.to;
+  RANGE_ERR = '';
+}
+
+/** ช่วงนี้คือทั้งเดือนพอดีไหม */
+function isMonth(from, to) {
+  const r = monthRange(from.slice(0, 7));
+  return from === r.from && to === r.to;
+}
+
+/** ชื่อช่วงบนจอ ทั้งเดือนใช้ชื่อเดือน ช่วงที่เลือกเองบอกวันแรกถึงวันสุดท้าย */
+function nameOf(from, to) { return isMonth(from, to) ? monthName(from.slice(0, 7)) : `${dm(from)} ถึง ${dm(to)}`; }
+function ofName(from, to) { return isMonth(from, to) ? `ของ${monthName(from.slice(0, 7))}` : `วันที่ ${dm(from)} ถึง ${dm(to)}`; }
+/** ช่วงของข้อมูลที่ดึงมาแล้ว ยังไม่ได้ดึงใช้ช่วงที่เลือกไว้ */
+const shown = () => (LED ? [LED.from, LED.to || monthRange(LED.from.slice(0, 7)).to] : [FROM, TO]);
+const shownName = () => nameOf(...shown());
+const allName = () => (isMonth(...shown()) ? 'ทั้งเดือน' : 'ทั้งช่วง');
+
+/** ช่องวันที่ที่เลือก ผิดคืนข้อความบอกเหตุ */
+function rangeErr(from, to) {
+  if (!from || !to) return 'เลือกวันที่ให้ครบทั้งสองช่อง';
+  if (from > to) return 'วันแรกต้องไม่เลยวันสุดท้าย';
+  if ((Date.parse(to) - Date.parse(from)) / 864e5 + 1 > RANGE_MAX) return `เลือกได้ไม่เกิน ${RANGE_MAX} วัน`;
+  return '';
 }
 
 /**
@@ -297,6 +340,9 @@ function readCache() {
 function take(l) {
   LED = l;
   MONTH = l.from.slice(0, 7);
+  FROM = l.from;
+  TO = l.to || monthRange(MONTH).to;
+  RANGE_ERR = '';
   if (EST && EST.led !== l.at) EST = null;
   /* วันล่าสุดที่มีขายคือวันที่ทำรายงานบ่อยสุด */
   if (!DAY || !l.days.includes(DAY)) DAY = l.days[l.days.length - 1] || '';
@@ -355,7 +401,7 @@ function pair() {
   OLINES = [];
   LATE = [];
   if (!ORD || !LED) return;
-  if (ORD.from !== LED.from) { ORD = null; return; }
+  if (ORD.from !== LED.from || ORD.to !== LED.to) { ORD = null; return; }
   const last = LED.last || '';
   const late = {};
   const lines = ORD.lines.filter((l) => {
@@ -371,7 +417,8 @@ function pair() {
 async function loadOrders() {
   const url = WmsSettings.cutUrl();
   if (BUSY || !url || !LED) return;
-  const r = monthRange(MONTH);
+  /* ช่วงเดียวกับแถวขายที่ดึงไว้ ปันล็อตได้ต้องเป็นช่วงเดียวกันทั้งสองฝั่ง */
+  const r = { from: LED.from, to: LED.to };
   ORD_ERR = '';
   const say = (sec) => { BUSY = `กำลังอ่านออเดอร์จากไฟล์ตัดสต๊อก…${sec ? ` ${sec} วินาที` : ''}`; renderSrc(); };
   say(0);
@@ -393,10 +440,10 @@ async function loadOrders() {
 
 async function load() {
   const url = WmsSettings.txUrl();
-  if (BUSY || !url) return;
-  const r = monthRange(MONTH);
+  if (BUSY || !url || RANGE_ERR) return;
+  const r = { from: FROM, to: TO };
   ERR = '';
-  const say = (sec) => { BUSY = `กำลังอ่านแถวขายของ${monthName(MONTH)}…${sec ? ` ${sec} วินาที` : ''}`; renderSrc(); };
+  const say = (sec) => { BUSY = `กำลังอ่านแถวขาย${ofName(r.from, r.to)}…${sec ? ` ${sec} วินาที` : ''}`; renderSrc(); };
   say(0);
   renderBody();
   try {
@@ -428,18 +475,47 @@ async function load() {
 /* ── แถบบน ─────────────────────────────────────────────────────────────── */
 
 function renderSrc() {
-  const url = WmsSettings.txUrl();
-  const now = thisMonth();
-  const [y, m] = now.split('-').map(Number);
-  /* สิบสองเดือนล่าสุด เดือนที่ดึงไว้อยู่นอกช่วงก็ยังต้องมีในรายการ */
+  const off = BUSY ? 'disabled' : '';
+  /* เดือนกับช่องวันที่ไม่ถูกวาดใหม่ตอนแก้วันที่ (pick) เคอร์เซอร์ในช่องวันที่จะได้ไม่หลุดระหว่างพิมพ์ */
+  $('src').innerHTML = `<span class="pill">📅 <select id="month" aria-label="เดือน" ${off}>${monthOpts()}</select></span>
+    <span class="pill lp-range"><input type="date" id="from" aria-label="ตั้งแต่วันที่" value="${esc(FROM)}" ${off}>
+      ถึง <input type="date" id="to" aria-label="ถึงวันที่" value="${esc(TO)}" ${off}></span>
+    <span id="srcTail" class="lp-tail">${tailHtml()}</span>`;
+  $('month').onchange = (e) => {
+    if (!e.target.value) return;
+    setMonth(e.target.value);
+    DAY = '';
+    load();
+  };
+  $('from').onchange = pick;
+  $('to').onchange = pick;
+  bindTail();
+}
+
+/** สิบสองเดือนล่าสุด เดือนที่ดึงไว้อยู่นอกช่วงก็ยังต้องมีในรายการ ช่วงที่ไม่ใช่ทั้งเดือนขึ้นเป็น เลือกช่วงเอง */
+function monthOpts() {
+  const [y, m] = thisMonth().split('-').map(Number);
   const months = [];
   for (let i = 0; i < 12; i++) {
     const d = new Date(y, m - 1 - i, 1);
     months.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}`);
   }
   if (MONTH && !months.includes(MONTH)) months.push(MONTH);
-  let html = `<span class="pill">📅 <select id="month" aria-label="เดือน" ${BUSY ? 'disabled' : ''}>${months.map((x) =>
-    `<option value="${x}" ${x === MONTH ? 'selected' : ''}>${esc(monthName(x))}</option>`).join('')}</select></span>`;
+  const custom = !FROM || !TO || !isMonth(FROM, TO);
+  return (custom ? '<option value="" selected>เลือกช่วงเอง</option>' : '') + months.map((x) =>
+    `<option value="${x}" ${!custom && x === MONTH ? 'selected' : ''}>${esc(monthName(x))}</option>`).join('');
+}
+
+/** ส่วนหลังช่องวันที่ วาดใหม่ได้ทุกครั้งที่แก้วันที่ */
+function tailHtml() {
+  const url = WmsSettings.txUrl();
+  const off = BUSY ? 'disabled' : '';
+  let html = '';
+  /* ช่วงของ Report ในไฟล์ตัดสต๊อกที่ตรวจล่าสุด (เก็บไว้ในเครื่องตอนกดตรวจที่หน้าเช็ค) กดทีเดียวได้ช่วงเดียวกัน */
+  const rep = repRange();
+  if (rep && (rep.from !== FROM || rep.to !== TO)) {
+    html += `<button id="repBtn" ${off} title="ช่วงวันที่ของ Report ในไฟล์ตัดสต๊อกที่ตรวจล่าสุด">ใช้ช่วงของ Report ${esc(dm(rep.from))} ถึง ${esc(dm(rep.to))}</button>`;
+  }
   if (BUSY) {
     html += `<span class="pill">⏳ ${esc(BUSY)}</span>`;
   } else if (LED) {
@@ -454,20 +530,51 @@ function renderSrc() {
   }
   html += `<span class="sp"></span>`;
   if (url) {
-    const fresh = LED && LED.from.slice(0, 7) === MONTH;
-    html += `<button id="loadBtn" class="${fresh ? '' : 'p'}" ${BUSY ? 'disabled' : ''}>${BUSY ? 'กำลังดึง…' : fresh ? '🔄 ดึงใหม่' : '▶️ ดึงข้อมูล'}</button>`;
+    const fresh = LED && LED.from === FROM && LED.to === TO;
+    html += `<button id="loadBtn" class="${fresh ? '' : 'p'}" ${BUSY || RANGE_ERR ? 'disabled' : ''}>${BUSY ? 'กำลังดึง…' : fresh ? '🔄 ดึงใหม่' : '▶️ ดึงข้อมูล'}</button>`;
   } else {
     html += `<span class="pill">ยังไม่ได้ตั้ง Apps Script URL ของ Transaction — <a href="../settings/">ตั้งที่หน้าตั้งค่า</a></span>`;
   }
+  if (RANGE_ERR) html += `<div class="tx-err">${esc(RANGE_ERR)}</div>`;
+  else if (LED && !BUSY && (LED.from !== FROM || LED.to !== TO)) {
+    html += `<div class="lp-pend">เลือกช่วง <b>${esc(nameOf(FROM, TO))}</b> แล้ว กด ดึงข้อมูล — ตอนนี้ยังแสดง ${esc(shownName())}</div>`;
+  }
   if (ERR) html += `<div class="tx-err">ดึงข้อมูลไม่สำเร็จ: ${esc(ERR)}</div>`;
-  $('src').innerHTML = html;
+  return html;
+}
+
+/** ช่วงวันที่ของ Report จากผลตรวจล่าสุดของหน้าเช็คตัดสต๊อก ไม่มีหรือยาวเกินได้ null */
+function repRange() {
+  const p = CUT && CUT.period;
+  return p && p.from && p.to && !rangeErr(p.from, p.to) ? p : null;
+}
+
+function bindTail() {
   const btn = $('loadBtn');
   if (btn) btn.onclick = load;
-  $('month').onchange = (e) => {
-    MONTH = e.target.value;
-    DAY = '';
-    load();
-  };
+  const rb = $('repBtn');
+  if (rb) {
+    rb.onclick = () => {
+      const p = repRange();
+      FROM = p.from;
+      TO = p.to;
+      MONTH = FROM.slice(0, 7);
+      RANGE_ERR = '';
+      DAY = '';
+      load();
+    };
+  }
+}
+
+/** แก้วันที่ยังไม่ดึงทันที เลือกครบแล้วค่อยกดดึงข้อมูล พิมพ์ทีละช่องจะได้ไม่ดึงซ้ำหลายรอบ */
+function pick() {
+  FROM = $('from').value;
+  TO = $('to').value;
+  RANGE_ERR = rangeErr(FROM, TO);
+  if (FROM) MONTH = FROM.slice(0, 7);
+  $('month').innerHTML = monthOpts();
+  $('srcTail').innerHTML = tailHtml();
+  bindTail();
 }
 
 function renderDays() {
@@ -479,7 +586,7 @@ function renderDays() {
     return `<button class="lp-day${d === DAY ? ' on' : ''}${s ? ` d-${s}` : ''}" data-day="${d}"
       ${s ? `title="${words[s]}"` : ''}>${dm(d)}${s ? `<i aria-label="${words[s]}">${mark[s]}</i>` : ''}</button>`;
   };
-  $('days').innerHTML = `<button class="lp-day all${DAY ? '' : ' on'}" data-day="">ทั้งเดือน</button>` + LED.days.map(chip).join('');
+  $('days').innerHTML = `<button class="lp-day all${DAY ? '' : ' on'}" data-day="">${allName()}</button>` + LED.days.map(chip).join('');
   /* เลื่อนแถบเองแทน scrollIntoView ที่จะพาทั้งหน้าเลื่อนตามไปด้วย รอเฟรมถัดไปให้ความกว้างปุ่มลงตัวก่อน */
   requestAnimationFrame(() => {
     const box = $('days'), on = box.querySelector('.lp-day.on:not(.all)');
@@ -501,7 +608,7 @@ function renderSum() {
   if (byOrder()) {
     const o = WmsLotPo.totals(DAY ? OLINES.filter((r) => r.date === DAY) : OLINES);
     $('sum').innerHTML =
-      stat('ชิ้นที่ออก', o.qty, DAY ? `วันที่ ${dm(DAY)}` : monthName(MONTH)) +
+      stat('ชิ้นที่ออก', o.qty, DAY ? `วันที่ ${dm(DAY)}` : shownName()) +
       stat('ออเดอร์', o.orders, `${f(o.lines)} บรรทัด ออเดอร์ × SKU × LOT/PO`) +
       stat('ไม่รู้ LOT หรือ PO', o.unknown.qty, `${f(o.unknown.lines)} บรรทัด · LOT 0 หรือ PO 0`, o.unknown.qty ? 'tx-mid' : '') +
       guessStat(o) +
@@ -510,7 +617,7 @@ function renderSum() {
   }
   const t = WmsLotPo.totals(picked());
   $('sum').innerHTML =
-    stat('ชิ้นที่ขายออก', t.qty, DAY ? `วันที่ ${dm(DAY)}` : monthName(MONTH)) +
+    stat('ชิ้นที่ขายออก', t.qty, DAY ? `วันที่ ${dm(DAY)}` : shownName()) +
     stat('SKU', t.skus, `${f(t.lines)} บรรทัด SKU × LOT/PO`) +
     stat('SKU ที่ออกหลาย LOT/PO', t.split, `${f(t.splitLines)} บรรทัด${DAY ? '' : ' · นับเป็น SKU ต่อวัน'}`) +
     stat('ไม่รู้ LOT หรือ PO', t.unknown.qty, `${f(t.unknown.lines)} บรรทัด · LOT 0 หรือ PO 0`, t.unknown.qty ? 'tx-mid' : '') +
@@ -536,10 +643,10 @@ function statusHtml() {
   const at = `<small>ผลเทียบรายวันจาก${goCut} ดึงยอดขายเมื่อ ${esc(when)}</small>`;
   if (!DAY) {
     const days = LED.days.filter((d) => d >= CUT.from && d <= CUT.to);
-    if (!days.length) return `<div class="tx-note">ผลเทียบรายวันล่าสุดเป็นของ ${esc(dm(CUT.period.from))} ถึง ${esc(dm(CUT.period.to))} ไม่ครอบคลุมเดือนนี้ — ตรวจเดือนนี้ที่${goCut}</div>`;
+    if (!days.length) return `<div class="tx-note">ผลเทียบรายวันล่าสุดเป็นของ ${esc(dm(CUT.period.from))} ถึง ${esc(dm(CUT.period.to))} ไม่ครอบคลุมช่วงนี้ — ตรวจที่${goCut}</div>`;
     const n = { ok: 0, warn: 0, bad: 0, '': 0 };
     days.forEach((d) => { n[dayState(CUT.by[d])]++; });
-    if (n.ok === days.length) return `<div class="tx-pass">✓ เทียบรายวันตรงครบทั้ง ${f(days.length)} วันที่มีขายแล้ว ส่งรายงานทั้งเดือนให้บัญชีได้${at}</div>`;
+    if (n.ok === days.length) return `<div class="tx-pass">✓ เทียบรายวันตรงครบทั้ง ${f(days.length)} วันที่มีขายแล้ว ส่งรายงาน${allName()}ให้บัญชีได้${at}</div>`;
     return `<div class="tx-warn">เทียบรายวันตรงแล้ว <b>${f(n.ok)}</b> จาก ${f(days.length)} วันที่มีขาย
       ${n.bad ? ` · ยังไม่ตรง <b>${f(n.bad)}</b> วัน` : ''}${n.warn ? ` · ลงตัดคนละวัน <b>${f(n.warn)}</b> วัน` : ''}
       — วันที่มีเครื่องหมาย ✓ บนแถบวันส่งบัญชีได้แล้ว${at}</div>`;
@@ -582,7 +689,7 @@ function convNote(scope) {
   const col = (v) => `"${esc(v || 'ไม่มีหัว')}"`;
   const plain = /ซื้อ/.test(c.cols[0]) && /แปลง|ขาย/.test(c.cols[1]);
   const out = [`<div class="tx-note">คืน SKU ที่แปลงแล้วเป็น SKU ตอนซื้อตามแท็บ ${tab} (${f(c.pairs.length)} คู่)
-    · ${DAY ? `วันที่ ${esc(dm(DAY))}` : esc(monthName(MONTH))} แปลงคืน <b>${f(t.conv.lines)}</b> บรรทัด ${f(t.conv.qty)} ชิ้น
+    · ${DAY ? `วันที่ ${esc(dm(DAY))}` : esc(shownName())} แปลงคืน <b>${f(t.conv.lines)}</b> บรรทัด ${f(t.conv.qty)} ชิ้น
     — SKU เดิมอยู่ในคอลัมน์ SKU ที่ขาย</div>`];
   if (!plain) {
     out.push(`<div class="tx-warn">หัวตารางในแท็บ ${tab} ไม่ได้บอกว่าคอลัมน์ไหนเป็นอะไร จึงใช้ ${col(c.cols[0])} เป็น SKU ตอนซื้อ ${col(c.cols[1])} เป็น SKU หลังแปลง
@@ -657,7 +764,8 @@ function orderListHtml(rows) {
     const cls = [same(prev) ? 'lp-in' : '', same(next) ? 'lp-grp' : ''].filter(Boolean).join(' ');
     const ord = !r.ref
       ? '<span class="tx-neg">ไม่มีออเดอร์</span>'
-      : same(prev) ? `<span class="tx-sub">${esc(r.ref)}</span>` : `<b>${esc(r.ref)}</b><span class="tx-sub">${esc(r.src)}</span>`;
+      : same(prev) ? `<span class="tx-sub">${esc(r.ref)}</span>`
+        : `<b>${esc(r.ref)}</b><span class="tx-sub">${[r.src, r.online, r.sup].filter(Boolean).map(esc).join(' · ')}</span>`;
     const none = r.miss === 'ledger' || r.miss === 'minus';
     /* ไม่รู้ LOT/PO บอกอยู่ในช่องแล้ว ช่องหมายเหตุบนจอเหลือเรื่องยอดไม่ลงกันกับที่มาของ LOT ประมาณ ไฟล์ที่ส่งออกยังมีครบ */
     const note = r.miss ? `<span class="tx-sub tx-neg">${esc(WmsLotPo.note(r))}</span>` : guessHtml(r);
@@ -732,11 +840,11 @@ function renderBody() {
   }
   if (BUSY) { $('body').innerHTML = ''; return; }
   if (!LED) {
-    $('body').innerHTML = `<div class="tx-empty art-data">กด <b>ดึงข้อมูล</b> ด้านบน เพื่ออ่านแถวขายของ${esc(monthName(MONTH))} จากสมุด Transaction</div>`;
+    $('body').innerHTML = `<div class="tx-empty art-data">กด <b>ดึงข้อมูล</b> ด้านบน เพื่ออ่านแถวขาย${esc(ofName(FROM, TO))} จากสมุด Transaction</div>`;
     return;
   }
   if (!LED.days.length) {
-    $('body').innerHTML = `<div class="tx-empty art-done">${esc(monthName(MONTH))} ยังไม่มีแถวขายในสมุด</div>`;
+    $('body').innerHTML = `<div class="tx-empty art-done">${esc(shownName())} ยังไม่มีแถวขายในสมุด</div>`;
     return;
   }
   const views = `<div class="tx-bar lp-view">
@@ -760,10 +868,10 @@ function renderBody() {
   const opts = byOrder()
     ? opt('', 'ทั้งหมด') + opt('split', 'ได้หลาย LOT/PO') + opt('unknown', 'ไม่รู้ LOT/PO') + guess + opt('gap', 'ยอดไม่ลงกัน') + conv
     : opt('', 'ทั้งหมด') + opt('split', 'ออกหลาย LOT/PO') + opt('unknown', 'ไม่รู้ LOT/PO') + guess + conv;
-  const cols = byOrder() ? 'วันที่ · ระบบ · เลขออเดอร์ · SKU · SKU ที่ขาย · ชื่อสินค้า · LOT · PO · จำนวน · หมายเหตุ' : 'วันที่ · SKU · SKU ที่ขาย · ชื่อสินค้า · LOT · PO · จำนวน · หมายเหตุ';
+  const cols = byOrder() ? WmsLotPo.ORDER_HEAD.join(' · ') : WmsLotPo.HEAD.join(' · ');
   $('body').innerHTML = `${views}${statusHtml()}<div id="est">${estHtml(scope)}</div>${convNote(scope)}${poNote(scope)}${byOrder() ? orderNote() : ''}
     <div class="tx-bar">
-      <input id="q" class="tx-input" type="search" placeholder="ค้นหา${byOrder() ? 'เลขออเดอร์' : ''} SKU ชื่อสินค้า LOT หรือ PO" value="${esc(Q)}" autocomplete="off">
+      <input id="q" class="tx-input" type="search" placeholder="ค้นหา${byOrder() ? 'เลขออเดอร์ เลขออนไลน์' : ''} SKU ชื่อสินค้า LOT หรือ PO" value="${esc(Q)}" autocomplete="off">
       ${opts}
     </div>
     <div class="tx-bar lp-out">
@@ -793,7 +901,7 @@ function estHtml(scope) {
   const left = Object.values(t.why).reduce((a, b) => a + b, 0);
   const lot0 = scope.some((r) => r.noLot && r.noPo) || t.guess.qty;
   if (!lot0) return '';
-  const where = DAY ? `วันที่ ${esc(dm(DAY))}` : esc(monthName(MONTH));
+  const where = DAY ? `วันที่ ${esc(dm(DAY))}` : esc(shownName());
   if (!GUESS) {
     return `<div class="tx-note">ปิดการประมาณ LOT ให้ของ LOT 0 อยู่ รายงานแสดง LOT 0 ตามที่สมุดลงไว้
       <button class="tx-opt" data-guess>เปิดการประมาณ</button></div>`;
@@ -883,15 +991,25 @@ function orderNote() {
   const out = [`<div class="tx-note">เลขออเดอร์มาจากแท็บตัดสต๊อกระบบ Transaction ในไฟล์ตัดสต๊อก (ดึงเมื่อ ${esc(when)})
     สมุดลงขายรวมต่อ SKU ต่อวัน ไม่ได้บอกว่าออเดอร์ไหนหยิบล็อตไหน หน้านี้จึงปันให้ <b>ล็อตเก่าก่อน ตามลำดับแถวในแท็บ</b>
     — วันที่เทียบรายวันตรงแล้ว ทุกชิ้นได้ LOT/PO ครบ</div>`];
-  const r = monthRange(MONTH);
+  const r = { from: LED.from, to: LED.to };
   if (!ORD.lines.length) {
-    out.push(`<div class="tx-warn bad">ไฟล์ตัดสต๊อกที่ตั้งไว้ไม่มีออเดอร์ของ${esc(monthName(MONTH))}${ORD.span.from ? ` (มีวันที่ ${esc(dm(ORD.span.from))} ถึง ${esc(dm(ORD.span.to))})` : ''}
-      — เปลี่ยน URL เช็คตัดสต๊อกเป็นไฟล์ของเดือนนี้ที่<a href="../settings/">หน้าตั้งค่า</a></div>`);
+    out.push(`<div class="tx-warn bad">ไฟล์ตัดสต๊อกที่ตั้งไว้ไม่มีออเดอร์${esc(ofName(...shown()))}${ORD.span.from ? ` (มีวันที่ ${esc(dm(ORD.span.from))} ถึง ${esc(dm(ORD.span.to))})` : ''}
+      — เปลี่ยน URL เช็คตัดสต๊อกเป็นไฟล์ของช่วงนี้ที่<a href="../settings/">หน้าตั้งค่า</a></div>`);
   } else if (ORD.span.from > r.from || ORD.span.to < r.to) {
-    out.push(`<div class="tx-note">ไฟล์ตัดสต๊อกมีออเดอร์วันที่ ${esc(dm(ORD.span.from))} ถึง ${esc(dm(ORD.span.to))} วันอื่นของเดือนจะขึ้นว่าไม่มีออเดอร์</div>`);
+    out.push(`<div class="tx-note">ไฟล์ตัดสต๊อกมีออเดอร์วันที่ ${esc(dm(ORD.span.from))} ถึง ${esc(dm(ORD.span.to))} วันอื่นในช่วงนี้จะขึ้นว่าไม่มีออเดอร์</div>`);
   }
   if (LATE.length) {
     out.push(`<div class="tx-note">ออเดอร์วันที่ ${LATE.map((d) => esc(dm(d))).join(', ')} ยังไม่ได้ปันล็อต เพราะสมุดลงขายถึง ${esc(dm(LED.last))}</div>`);
+  }
+  /* เลขคำสั่งซื้อออนไลน์กับบริษัทขนส่งในไฟล์ส่งออก มาจากแท็บเดียวกัน (cut-api.gs รุ่นที่ส่งช่อง refs) */
+  if (!ORD.refs) {
+    out.push(`<div class="tx-warn">สคริปต์ cut-api.gs ยังเป็นรุ่นที่ไม่ส่งเลขคำสั่งซื้อออนไลน์กับบริษัทขนส่ง สองคอลัมน์นี้ในไฟล์ส่งออกจะว่าง
+      — วางโค้ดใหม่ Deploy เป็น New version แล้วกดดึงใหม่</div>`);
+  } else if (ORD.online === false) {
+    out.push(`<div class="tx-warn">แท็บตัดสต๊อกระบบ Transaction ไม่มีคอลัมน์ <b>เลขคำสั่งซื้อออนไลน์</b> คอลัมน์นี้ในไฟล์ส่งออกจะว่าง</div>`);
+  } else if (ORD.rounded) {
+    out.push(`<div class="tx-note">เลขคำสั่งซื้อออนไลน์ ${f(ORD.rounded)} ออเดอร์ในแท็บตัดถูกชีตปัดเป็นเลขยกกำลัง (เช่น 9.90123E+17) หลักท้ายหายไปแล้ว
+      ไฟล์ส่งออกแสดงตามชีตและบอกไว้ในหมายเหตุ — เดือนถัดไปตั้งคอลัมน์นั้นเป็น ข้อความธรรมดา (รูปแบบ → ตัวเลข → ข้อความธรรมดา) ก่อนวางข้อมูล</div>`);
   }
   return out.join('');
 }
@@ -927,7 +1045,7 @@ function download() {
   const blob = new Blob([WmsLotPo.csv(chosen(), byOrder())], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `lot-po-${byOrder() ? 'orders-' : ''}${DAY || MONTH}${ONLY ? '-' + ONLY : ''}.csv`;
+  a.download = `lot-po-${byOrder() ? 'orders-' : ''}${DAY || (isMonth(...shown()) ? shown()[0].slice(0, 7) : shown().join('_'))}${ONLY ? '-' + ONLY : ''}.csv`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -993,8 +1111,11 @@ $('body').addEventListener('input', (e) => {
 
 readCache();
 CUT = readCut();
-/* เดือนเริ่มต้น: เดือนที่ดึงไว้ล่าสุด ถ้ายังไม่มีใช้เดือนที่กำลังเทียบอยู่ที่หน้าเช็ค แล้วค่อยเป็นเดือนนี้ */
-if (!MONTH) MONTH = CUT ? CUT.period.from.slice(0, 7) : thisMonth();
+/* ช่วงเริ่มต้น: ช่วงที่ดึงไว้ล่าสุด ถ้ายังไม่มีใช้ช่วงของ Report ที่หน้าเช็คตรวจล่าสุด แล้วค่อยเป็นทั้งเดือนนี้ */
+if (!LED) {
+  const p = repRange();
+  if (p) { FROM = p.from; TO = p.to; MONTH = FROM.slice(0, 7); } else setMonth(thisMonth());
+}
 render();
 if (!LED && WmsSettings.txUrl()) load();
 else if (LED && !EST && GUESS && WmsSettings.txUrl()) loadEst(false);

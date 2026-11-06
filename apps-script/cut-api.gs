@@ -17,6 +17,7 @@
  *
  * ?api=cut-check   ผลการเทียบ (trc คือ TRcloud เทียบ Report ทีละ ออเดอร์ + SKU + วัน ให้แท็บ TRcloud เทียบ Report)
  * ?api=cut-orders&from=...&to=...  แถวตัดของแท็บ Transaction ทีละออเดอร์ ให้หน้า LOT / PO ที่ขายออกปันล็อตให้แต่ละออเดอร์
+ *                                  พร้อมเลขคำสั่งซื้อออนไลน์กับบริษัทขนส่งของแต่ละออเดอร์ ให้ไฟล์ส่งออกรายออเดอร์
  * ?api=cut-fixlog  บันทึกการแก้ทั้งหมด (รายการที่กดแก้แล้ว ยกเลิก หรือตรวจแล้วหาย)
  * ?api=shared-at   เวลาของผลตรวจชุดกลางล่าสุด (ดูส่วน "ข้อมูลกลาง" ท้ายไฟล์)
  * POST {op:'fix-log'}  เพิ่มแถวในบันทึกการแก้
@@ -743,7 +744,8 @@ function warnings_(w) {
 function txTab_(ss) {
   var tx = tab_(ss, TAB_TX, {
     date: /^Date$/i, sup: /^Sup$/i, ref: /^เลขภายใน/, sku: /^SKU$/i, brand: /^แบรนด์/, size: /^ขนาด/, qty: /^SUM of/i,
-  });
+    online: /^(หมายเลข|เลข)คำสั่งซื้อออนไลน์/,
+  }, { online: 1 });
   tx.at.src = tx.at.qty + 1;   // คอลัมน์ถัดจากจำนวนไม่มีหัวตาราง แต่บอกว่าแถวนี้มาจากระบบไหน
   return tx;
 }
@@ -753,6 +755,9 @@ function txTab_(ss) {
  * อ่านแค่แท็บ Transaction ไม่ต้องรอเทียบทั้งสี่แท็บ ส่งแบบย่อ วัน SKU และที่มาเป็นเลขลำดับ เดือนหนึ่งมีเป็นแสนแถว
  *   line = [ลำดับวัน, เลขออเดอร์, ลำดับ SKU, จำนวน, ลำดับที่มา]  เรียงตามแถวแรกที่เจอในแท็บ
  * แถวของ วัน + ออเดอร์ + SKU เดียวกันรวมกันก่อนส่ง span คือช่วงวันที่ของทั้งแท็บ หน้าเว็บจะได้บอกว่าไฟล์นี้มีถึงวันไหน
+ * ไฟล์ส่งออกรายออเดอร์ต้องมีเลขคำสั่งซื้อออนไลน์กับบริษัทขนส่ง (ผู้ใช้ขอ 2026-11-06) เอาจากแท็บเดียวกัน คอลัมน์ Sup คือขนส่ง
+ *   refs = { เลขออเดอร์: [เลขคำสั่งซื้อออนไลน์, ลำดับขนส่งใน sups (-1 = ว่าง)] } เลขภายในหนึ่งเลขมีเลขออนไลน์เลขเดียว
+ *   online = แท็บมีคอลัมน์เลขคำสั่งซื้อออนไลน์ไหม, rounded = ออเดอร์ที่เลขออนไลน์ถูกชีตปัดเป็นเลขยกกำลัง (ดู online_)
  */
 function orders_(from, to) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -761,8 +766,9 @@ function orders_(from, to) {
   var out = {
     app: 'cut', at: Date.now(), from: from, to: to, span: { from: '', to: '' },
     skipped: { rows: 0, qty: 0 }, days: [], skus: [], srcs: [], lines: [],
+    online: tx.at.online >= 0, refs: {}, sups: [], rounded: 0,
   };
-  var dayIdx = {}, skuIdx = {}, srcIdx = {}, at = {};
+  var dayIdx = {}, skuIdx = {}, srcIdx = {}, supIdx = {}, at = {};
   function no(idx, list, v, item) {
     if (idx[v] === undefined) { idx[v] = list.length; list.push(item === undefined ? v : item); }
     return idx[v];
@@ -778,6 +784,12 @@ function orders_(from, to) {
       return;
     }
     if ((from && d < from) || (to && d > to) || !q) return;
+    var info = out.refs[ref] || (out.refs[ref] = ['', -1]);
+    if (!info[0] && c.online >= 0) {
+      info[0] = online_(row[c.online]);
+      if (/E\+/i.test(info[0])) out.rounded++;
+    }
+    if (info[1] < 0 && text_(row[c.sup])) info[1] = no(supIdx, out.sups, text_(row[c.sup]));
     var k = d + '|' + ref + '|' + sku;
     var l = at[k];
     if (!l) {
@@ -789,6 +801,17 @@ function orders_(from, to) {
   });
   out.lines = out.lines.filter(function (l) { return l[3] !== 0; });
   return out;
+}
+
+/**
+ * เลขคำสั่งซื้อออนไลน์ยาว 16–18 หลัก ช่องที่ชีตเก็บเป็นตัวเลข (ไม่ใช่ข้อความ) เกิน 15 หลักถูกปัดไปแล้ว หลักท้ายกู้คืนไม่ได้
+ * ส่งแบบที่ชีตแสดง (9.90123E+17) ให้เห็นว่าเลขเสีย ไม่ส่งเลขเต็มที่ดูเหมือนถูกแต่หลักท้ายผิด เลขสั้นที่เป็นตัวเลขส่งตามปกติ
+ */
+function online_(v) {
+  if (typeof v === 'number') {
+    return Math.abs(v) >= 1e15 ? v.toExponential(5).toUpperCase().replace(/\.?0+E/, 'E') : String(v);
+  }
+  return text_(v);
 }
 
 function check_() {

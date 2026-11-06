@@ -237,10 +237,29 @@ describe('allocate ปันล็อตให้ออเดอร์', () => {
     const out = L.allocate(rows, orders([{ date: D, ref: 'X-77', sku: A, qty: 2, src: 'โอนย้าย' }]));
     expect(L.filter(out, { q: 'x-7' })).toHaveLength(1);
     expect(L.table(out, true)).toEqual([
-      ['วันที่', 'ระบบ', 'เลขออเดอร์', 'SKU', 'SKU ที่ขาย', 'ชื่อสินค้า', 'LOT', 'PO', 'จำนวน', 'หมายเหตุ'],
-      [D, 'โอนย้าย', 'X-77', A, '', `ชื่อ ${A}`, '1', 'PO-1', 2, ''],
+      ['วันที่', 'ระบบ', 'เลขออเดอร์', 'หมายเลขคำสั่งซื้อออนไลน์', 'บริษัทขนส่ง', 'SKU', 'SKU ที่ขาย', 'ชื่อสินค้า', 'LOT', 'PO', 'จำนวน', 'หมายเหตุ'],
+      [D, 'โอนย้าย', 'X-77', '', '', A, '', `ชื่อ ${A}`, '1', 'PO-1', 2, ''],
     ]);
-    expect(L.tsv(out, true).split('\n')[1].split('\t')).toHaveLength(10);
+    expect(L.tsv(out, true).split('\n')[1].split('\t')).toHaveLength(12);
+  });
+
+  it('ส่งออกมีเลขคำสั่งซื้อออนไลน์กับบริษัทขนส่ง เลขยาว Excel ไม่ปัด เลขที่ชีตปัดไปแล้วบอกในหมายเหตุ', () => {
+    const rows = L.build(ledger([{ date: D, sku: A, lot: 1, po: 'PO-1', qty: 3 }]));
+    const cut = Object.assign(orders([
+      { date: D, ref: 'R1', sku: A, qty: 1 },
+      { date: D, ref: 'R2', sku: A, qty: 1 },
+      { date: D, ref: 'R3', sku: A, qty: 1, src: 'CRM' },
+    ]), { refs: { R1: ['990000000000000001', 1], R2: ['9.9E+17', 0], R3: ['', -1] }, sups: ['ขนส่งเอ', 'ขนส่งบี'] });
+    const out = L.allocate(rows, cut);
+    expect(out.map((r) => [r.ref, r.online, r.sup])).toEqual([['R1', '990000000000000001', 'ขนส่งบี'], ['R2', '9.9E+17', 'ขนส่งเอ'], ['R3', '', '']]);
+    expect(L.filter(out, { q: '990000000000000001' }).map((r) => r.ref)).toEqual(['R1']);
+    expect(L.note(out[1])).toBe('เลขคำสั่งซื้อออนไลน์ในแท็บตัดถูกชีตปัดเป็นเลขยกกำลัง ดูเลขจริงในระบบ JST');
+    expect(L.note(out[0])).toBe('');
+    const tsv = L.tsv(out, true).split('\n').map((l) => l.split('\t'));
+    expect(tsv[1].slice(2, 5)).toEqual(['R1', '="990000000000000001"', 'ขนส่งบี']);
+    expect(L.csv(out, true).split('\r\n')[1]).toContain(',R1,"=""990000000000000001""",ขนส่งบี,');
+    /* แปลงคืน SKU ไม่ทำให้สองช่องนี้หาย */
+    expect(L.convert(out, { pairs: [[A, 'BUY-1', 'ซื้อ']] })[0]).toMatchObject({ sku: 'BUY-1', online: '990000000000000001', sup: 'ขนส่งบี' });
   });
 });
 
@@ -336,6 +355,6 @@ describe('convert คืน SKU ที่แปลงแล้วเป็น SK
       { date: D, ref: 'R1', sku: AS, qty: 2 },
     ])), { pairs: [[AS, A, 'ชื่อตอนซื้อ']] });
     expect(out.map((r) => [r.ref, r.sku, r.sold, r.qty, r.miss])).toEqual([['R2', A, AS, 1, ''], ['R1', A, AS, 2, '']]);
-    expect(L.table(out, true)[1]).toEqual([D, 'JST', 'R2', A, AS, 'ชื่อตอนซื้อ', '1', 'PO-1', 1, '']);
+    expect(L.table(out, true)[1]).toEqual([D, 'JST', 'R2', '', '', A, AS, 'ชื่อตอนซื้อ', '1', 'PO-1', 1, '']);
   });
 });

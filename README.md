@@ -709,6 +709,18 @@ The report for accounting: on each day, which LOT and PO every SKU that was sold
 the ledger's `ขาย` rows through the same `tx-daily` call that เทียบรายวัน uses, with the Transaction URL
 from the settings page. It never writes to the sheet.
 
+**Date range:** pick a whole month from the list, or set your own first and last day. Accounting's
+Report for a month runs a few days into the next month, so the report has to cover the same days.
+
+- After a check on the cut-check page, a button sets the range to that Report's dates
+  (`ใช้ช่วงของ Report 1/3 ถึง 3/4`) and fetches straight away. With no data fetched yet, the page starts
+  on that range, otherwise on this month.
+- Changing a date doesn't fetch on its own. The page says which range is picked and which one is still
+  shown until you press ดึงข้อมูล.
+- A range can be up to 62 days, about one month plus the start of the next. Longer ranges get too big
+  to keep on the device.
+- The by-order view fetches the same range from the cut workbook.
+
 - Rows with the same day, SKU (column B), LOT and PO become one line. The location isn't part of the
   line, but it's shown, with links to the ledger rows behind it.
 - A SKU that went out from several LOT/PO on one day gets one line for each, oldest LOT first.
@@ -729,9 +741,20 @@ the day's orders from the cut workbook's `ตัดสต๊อกระบบ T
 LOT first, to orders in the tab's row order. It's an allocation, not a record of which order took
 which lot. On a day where เทียบรายวัน matches, every piece gets a LOT/PO. Otherwise the rest shows as
 ยอดไม่ลงกัน, either an order the ledger didn't sell or a sale with no order. Days after the ledger's last
-sale date are left out until the ledger reaches them. Copy and the CSV get วันที่, ระบบ, เลขออเดอร์, SKU,
-SKU ที่ขาย, ชื่อสินค้า, LOT, PO, จำนวน, หมายเหตุ. The orders are fetched when the view is opened (about 2 MB a
-month) and aren't kept on the device.
+sale date are left out until the ledger reaches them. Copy and the CSV get วันที่, ระบบ, เลขออเดอร์,
+หมายเลขคำสั่งซื้อออนไลน์, บริษัทขนส่ง, SKU, SKU ที่ขาย, ชื่อสินค้า, LOT, PO, จำนวน, หมายเหตุ. The orders are fetched
+when the view is opened (about 4 MB a month) and aren't kept on the device.
+
+- The online order number and carrier come from the same tab: columns `เลขคำสั่งซื้อออนไลน์` and `Sup`.
+  CRM orders and transfers have no online number, so that cell is blank.
+- An online number is 16–18 digits, and Excel turns any number longer than 15 digits into
+  `9.9E+17`, losing the last digits. So the file writes it as `="…"`, which Excel and Google Sheets
+  keep as text.
+- Some cells in the cut tab were already rounded by the sheet. Those digits can't be recovered, so the
+  file shows them the way the sheet does (`9.90123E+17`) and says so in หมายเหตุ. The page says how many
+  orders this hit. To stop it, set that column to Plain text before pasting the next month's data.
+- The search box finds online numbers too. This needs the `cut-api.gs` version that sends `refs`;
+  until it's deployed, the page says so and the two columns are blank.
 
 **Back to the purchase SKU (แปลงคืน):** some goods are bought under one SKU and converted to another
 before they're sold, but accounting wants the SKU they were bought as. Add a tab named

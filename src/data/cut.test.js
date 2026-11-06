@@ -33,7 +33,7 @@ const jst = (ref, sku, qty, o = {}) => [
   o.date ?? when(DAY), sku, o.name ?? `สินค้า ${sku}`, qty, sku, '',
 ];
 const crm = (ref, sku, qty, o = {}) => [o.date ?? when(DAY), o.sup ?? 'ขนส่งบี', ref, sku, o.name ?? 'แบรนด์', o.size ?? '', qty];
-const tx = (ref, sku, qty, o = {}) => [o.date ?? DAY, o.sup ?? 'ขนส่งเอ', '', ref, '', sku, o.name ?? 'แบรนด์', o.size ?? '', qty, o.src ?? 'JST'];
+const tx = (ref, sku, qty, o = {}) => [o.date ?? DAY, o.sup ?? 'ขนส่งเอ', '', ref, o.online ?? '', sku, o.name ?? 'แบรนด์', o.size ?? '', qty, o.src ?? 'JST'];
 const tf = (slip, sku, qty, o = {}) => [
   slip, `EX${slip}`, 'จัดส่งแล้ว', o.store ?? 'Store_สมมติ', 99, qty, o.date ?? when(DAY), sku, o.name ?? `สินค้า ${sku}`, qty,
 ];
@@ -773,6 +773,31 @@ describe('cut-api.gs — ออเดอร์รายวันให้หน�
     const r = orders({ tx: [tx('5001', A, 1)] });
     expect(r.error).toBeUndefined();
     expect(r.lines).toHaveLength(1);
+  });
+
+  it('ส่งเลขคำสั่งซื้อออนไลน์กับบริษัทขนส่งรายออเดอร์ ช่องที่ชีตปัดเป็นเลขยกกำลังส่งแบบที่ชีตแสดง', () => {
+    const r = orders({
+      tx: [
+        tx('5001', A, 1, { online: '', sup: '' }),
+        tx('5001', B, 1, { online: '990000000000000001', sup: 'ขนส่งบี' }),
+        tx('5002', A, 1, { online: 990000000000000001, sup: 'ขนส่งเอ' }),
+        tx('5003', A, 1, { online: 123456, sup: 'ขนส่งบี' }),
+        tx('5004', A, 1, { online: '990000000000000009', date: '2026-04-01' }),
+      ],
+    }, { from: '2026-03-01', to: '2026-03-31' });
+    expect(r.online).toBe(true);
+    expect(r.sups).toEqual(['ขนส่งบี', 'ขนส่งเอ']);
+    expect(r.refs).toEqual({ 5001: ['990000000000000001', 0], 5002: ['9.9E+17', 1], 5003: ['123456', 0] });
+    expect(r.rounded).toBe(1);
+  });
+
+  it('แท็บไม่มีคอลัมน์เลขคำสั่งซื้อออนไลน์ ยังใช้ได้ บอกว่าไม่มี', () => {
+    const book = bookOf({ tx: [tx('5001', A, 1, { online: '990000000000000001' })] });
+    book[NAMES.tx][0] = book[NAMES.tx][0].map((h) => (h === 'เลขคำสั่งซื้อออนไลน์' ? 'อย่างอื่น' : h));
+    const r = JSON.parse(api(book).doGet({ parameter: { api: 'cut-orders' } }).text);
+    expect(r.error).toBeUndefined();
+    expect(r.online).toBe(false);
+    expect(r.refs).toEqual({ 5001: ['', 0] });
   });
 });
 

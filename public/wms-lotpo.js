@@ -121,17 +121,19 @@
    * rows คือผลของ build cut คือคำตอบ ?api=cut-orders ของช่วงเดียวกัน
    * miss บอกบรรทัดที่หาคู่ไม่ได้ ledger = ออเดอร์ตัดแต่สมุดลงขายไม่ถึง, order = สมุดลงขายแต่ไม่มีออเดอร์ตัด
    * split = ออเดอร์ + SKU นี้ได้ของจากกี่ LOT/PO
+   * online, sup = เลขคำสั่งซื้อออนไลน์กับบริษัทขนส่งของออเดอร์ (ช่อง refs ของ cut-orders สคริปต์รุ่นก่อนไม่มี ได้ค่าว่าง)
    */
   function allocate(rows, cut) {
     var need = {}, have = {}, keys = [], seq = {}, orders = 0;
     function key(k) { if (!need[k] && !have[k]) keys.push(k); }
-    var days = cut.days || [], skus = cut.skus || [], srcs = cut.srcs || [];
+    var days = cut.days || [], skus = cut.skus || [], srcs = cut.srcs || [], refs = cut.refs || {}, sups = cut.sups || [];
     (cut.lines || []).forEach(function (l) {
-      var date = days[l[0]], s = skus[l[2]] || [];
+      var date = days[l[0]], s = skus[l[2]] || [], info = refs[l[1]] || ['', -1];
       var k = date + '|' + s[0];
       if (seq[date + '|' + l[1]] === undefined) seq[date + '|' + l[1]] = orders++;
       key(k);
-      (need[k] = need[k] || []).push({ ref: l[1], src: srcs[l[4]] || '', qty: l[3], name: s[1] || '' });
+      (need[k] = need[k] || []).push({ ref: l[1], src: srcs[l[4]] || '', qty: l[3], name: s[1] || '',
+        online: text(info[0]), sup: info[1] >= 0 ? text(sups[info[1]]) : '' });
     });
     rows.forEach(function (r) {
       var k = r.date + '|' + r.sku;
@@ -143,7 +145,8 @@
     function push(date, sku, o, lot, qty, miss) {
       out.push({
         date: date, sku: sku, name: (lot && lot.name) || (o && o.name) || '',
-        ref: o ? o.ref : '', src: o ? o.src : '', seq: o ? seq[date + '|' + o.ref] : Infinity,
+        ref: o ? o.ref : '', src: o ? o.src : '', online: o ? o.online : '', sup: o ? o.sup : '',
+        seq: o ? seq[date + '|' + o.ref] : Infinity,
         lot: lot ? lot.lot : '', po: lot ? lot.po : '', parts: lot ? lot.parts : [], qty: qty,
         noLot: lot ? lot.noLot : false, noPo: lot ? lot.noPo : false, miss: miss || '', split: 1,
         guess: (lot && lot.guess) || '', why: (lot && lot.why) || '', from: (lot && lot.from) || [],
@@ -266,7 +269,7 @@
   /**
    * only: '' ทั้งหมด | 'split' ออกหลาย LOT/PO | 'unknown' ไม่รู้ LOT หรือ PO | 'gap' รายออเดอร์ที่หาคู่ไม่ได้
    *       | 'conv' แปลงคืนเป็น SKU ตอนซื้อ หรือแปลงไม่ได้เพราะ MASTER มีหลายตัว | 'guess' LOT/PO ประมาณจากแถวรับคืน M/E หรือแปลงสินค้า
-   * q ค้นใน SKU (ทั้งตอนซื้อและที่ขาย) ชื่อ LOT PO และเลขออเดอร์ ไม่สนตัวพิมพ์เล็กใหญ่
+   * q ค้นใน SKU (ทั้งตอนซื้อและที่ขาย) ชื่อ LOT PO เลขออเดอร์ และเลขคำสั่งซื้อออนไลน์ ไม่สนตัวพิมพ์เล็กใหญ่
    */
   function filter(rows, o) {
     var q = text(o && o.q).toUpperCase(), date = o && o.date, only = o && o.only;
@@ -280,7 +283,7 @@
       if (only === 'conv' && !r.sold && !r.many) return false;
       if (!q) return true;
       return r.po.toUpperCase().indexOf(qp) >= 0 ||
-        [r.sku, r.sold || '', r.name, r.lot, r.po, r.ref || ''].some(function (v) { return v.toUpperCase().indexOf(q) >= 0; });
+        [r.sku, r.sold || '', r.name, r.lot, r.po, r.ref || '', r.online || ''].some(function (v) { return v.toUpperCase().indexOf(q) >= 0; });
     });
   }
 
@@ -319,17 +322,18 @@
     else if (r.noLot) out.push('ไม่รู้ LOT');
     else if (r.noPo) out.push('ไม่รู้ PO');
     if (r.many) out.push('MASTER แปลงสินค้ามี SKU ตอนซื้อหลายตัว (' + r.many.join(', ') + ') ยังไม่แปลงคืน');
+    if (/E\+/i.test(r.online || '')) out.push('เลขคำสั่งซื้อออนไลน์ในแท็บตัดถูกชีตปัดเป็นเลขยกกำลัง ดูเลขจริงในระบบ ' + (r.src || 'ต้นทาง'));
     if (r.bad && r.bad.length) out.push('จำนวนพิมพ์ไม่ใช่ตัวเลข ' + r.bad.length + ' แถว ไม่ได้นับ');
     return out.join(' · ');
   }
 
-  var ORDER_HEAD = ['วันที่', 'ระบบ', 'เลขออเดอร์', 'SKU', 'SKU ที่ขาย', 'ชื่อสินค้า', 'LOT', 'PO', 'จำนวน', 'หมายเหตุ'];
+  var ORDER_HEAD = ['วันที่', 'ระบบ', 'เลขออเดอร์', 'หมายเลขคำสั่งซื้อออนไลน์', 'บริษัทขนส่ง', 'SKU', 'SKU ที่ขาย', 'ชื่อสินค้า', 'LOT', 'PO', 'จำนวน', 'หมายเหตุ'];
 
   /** ตารางเรียบ ๆ ทุกบรรทัดมี SKU ครบ วางใน Excel แล้วกรองหรือทำ Pivot ต่อได้ทันที SKU ที่ขายว่างไว้ถ้าไม่ได้แปลง */
   function table(rows, byOrder) {
     if (byOrder) {
       return [ORDER_HEAD].concat(rows.map(function (r) {
-        return [r.date, r.src, r.ref, r.sku, r.sold || '', r.name, r.lot, r.po, r.qty, note(r)];
+        return [r.date, r.src, r.ref, r.online || '', r.sup || '', r.sku, r.sold || '', r.name, r.lot, r.po, r.qty, note(r)];
       }));
     }
     return [HEAD].concat(rows.map(function (r) {
@@ -337,10 +341,15 @@
     }));
   }
 
-  /** ช่องที่ขึ้นต้นด้วย = + @ Excel จะอ่านเป็นสูตร ใส่ ' นำหน้าให้เป็นข้อความ */
+  /**
+   * ช่องที่ขึ้นต้นด้วย = + @ Excel จะอ่านเป็นสูตร ใส่ ' นำหน้าให้เป็นข้อความ
+   * ตัวเลขล้วนเกิน 15 หลัก (เลขคำสั่งซื้อออนไลน์) Excel แปลงเป็นตัวเลขแล้วปัดหลักท้ายทิ้งเป็น 9.9E+17
+   * แบบเดียวกับที่เกิดในแท็บตัด จึงส่งเป็น ="…" ให้ Excel กับ Google Sheets เก็บเป็นข้อความครบทุกหลัก
+   */
   function cell(v) {
     if (typeof v === 'number') return v;
     var s = String(v).replace(/[\t\r\n]+/g, ' ');
+    if (/^\d{16,}$/.test(s)) return '="' + s + '"';
     return /^[=+@]/.test(s) || /^-\D/.test(s) ? "'" + s : s;
   }
 
