@@ -162,7 +162,7 @@
 
   function run(fifo) {
     fifo = fifo || {};
-    var rows = fifo.rows || [], skus = fifo.skus || [], pos = fifo.pos || [];
+    var rows = fifo.rows || [], skus = fifo.skus || [], pos = fifo.pos || [], days = fifo.days || [];
     var pool = {}, sold = {}, done = {}, out = {};
     var conv = pairs(rows);
     var pre = fifo.before ? layers(fifo, fifo.before) : null;
@@ -204,7 +204,7 @@
       }
       var took = t === 2 || (t === 1 && from >= 0) ? takeOut(i) : null;
       if (t === 2) {
-        out[r[0]] = { s: text((skus[s] || [])[1]).toUpperCase(), q: qty,
+        out[r[0]] = { s: text((skus[s] || [])[1]).toUpperCase(), q: qty, d: text(days[r[8]]),
           p: took.map(function (p) { return [p.lot, p.po, p.qty, p.src, p.from, p.via]; }) };
         sales(s).push({ row: r[0], p: took.map(copy) });
         return;
@@ -225,11 +225,37 @@
       before: fifo.before === undefined ? undefined : pre ? pre.info : null };
   }
 
-  /** เก็บลงเครื่องเฉพาะแถวที่หน้ากำลังใช้ ทั้งชีตใหญ่เกินที่เบราว์เซอร์ให้เก็บ */
-  function only(est, list) {
-    var rows = {};
-    (list || []).forEach(function (n) { if (est.rows[n]) rows[n] = est.rows[n]; });
-    return { ok: est.ok, at: est.at, sheet: est.sheet, rows: rows, before: est.before };
+  function num(a, b) { return a - b; }
+
+  /**
+   * เก็บลงเครื่องเฉพาะแถวขาย LOT 0 ของเดือนที่หน้ากำลังใช้ ทั้งชีตใหญ่เกินที่เบราว์เซอร์ให้เก็บ
+   * led คือคำตอบ tx-daily ของเดือน ผลที่ได้ใช้เลขแถวของ led
+   * แถวขายของเดือนกับสมุดทั้งชีตอ่านคนละเวลา ระหว่างนั้นมีคนแทรกหรือลบแถว เลขแถวจะเลื่อนทั้งท้ายชีต
+   * (เจอจริง 2026-11-06 แทรกแถวต้นเดือนแถวเดียว แถวขายเดือนนั้นเกือบทั้งเดือนหาค่าประมาณไม่เจอ)
+   * จึงจับคู่ด้วย SKU + จำนวน + วันที่ แถวที่เหมือนกันทั้งสามอย่างจับกันตามลำดับแถวในชีต (แทรกหรือลบไม่ทำให้ลำดับสลับ)
+   * แถวที่ไม่มีคู่ในสมุดทั้งชีต (ลงหลังเวลาที่อ่าน) ไม่ได้ค่าประมาณ moved = จำนวนแถวที่เลขแถวไม่ตรงแต่จับคู่ได้
+   */
+  function only(est, led) {
+    var rows = {}, want = {}, have = {}, moved = 0;
+    var lines = (led && led.lines) || [], days = (led && led.days) || [], skus = (led && led.skus) || [];
+    function key(s, q, d) { return s + '|' + q + '|' + d; }
+    lines.forEach(function (l) {
+      if (typeof l[6] !== 'number' || !unknown(l[4], l[5])) return;
+      var k = key(text((skus[l[1]] || [])[0]).toUpperCase(), l[6], text(days[l[0]]));
+      (want[k] = want[k] || []).push(l[2]);
+    });
+    Object.keys(est.rows).forEach(function (n) {
+      var e = est.rows[n], k = key(e.s, e.q, text(e.d));
+      if (want[k]) (have[k] = have[k] || []).push(+n);
+    });
+    Object.keys(want).forEach(function (k) {
+      var a = want[k].sort(num), b = (have[k] || []).sort(num);
+      for (var i = 0; i < a.length && i < b.length; i++) {
+        rows[a[i]] = est.rows[b[i]];
+        if (a[i] !== b[i]) moved++;
+      }
+    });
+    return { v: 2, ok: est.ok, at: est.at, sheet: est.sheet, rows: rows, before: est.before, moved: moved };
   }
 
   window.WmsLot0 = { run: run, only: only, unknown: unknown };

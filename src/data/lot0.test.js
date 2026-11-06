@@ -28,14 +28,14 @@ const FLAG = { count: 4, conv: 16, return: 32, me: 64 };
 
 /** แถวอ่านง่ายเป็นรูปที่ tx-fifo ส่งมา ไม่บอก lot/po คือ LOT 0 PO 0 */
 function fifo(list, extra = { lot0: 1 }) {
-  const skus = [], longs = [], pos = [], locs = [];
+  const skus = [], longs = [], pos = [], locs = [], days = [];
   const at = (arr, v) => { let i = arr.indexOf(v); if (i < 0) { i = arr.length; arr.push(v); } return i; };
   const rows = list.map((x) => {
     if (!longs.includes(x.sku || A)) { longs.push(x.sku || A); skus.push([x.short || '', x.sku || A, `ชื่อ ${x.sku || A}`]); }
     return [x.row, longs.indexOf(x.sku || A), x.lot ?? 0, at(pos, String(x.po ?? 0)),
-      x.from ? at(locs, x.from) : -1, x.to ? at(locs, x.to) : -1, x.qty, TYPE[x.type || 'รับ'], -1, FLAG[x.src] || 0];
+      x.from ? at(locs, x.from) : -1, x.to ? at(locs, x.to) : -1, x.qty, TYPE[x.type || 'รับ'], x.date ? at(days, x.date) : -1, FLAG[x.src] || 0];
   });
-  return { app: 'transaction', at: 5, skus, pos, locs, days: [], rows, ...extra };
+  return { app: 'transaction', at: 5, skus, pos, locs, days, rows, ...extra };
 }
 
 const sale = (o) => ({ type: 'ขาย', from: 'P-01-01', ...o });
@@ -50,7 +50,7 @@ describe('WmsLot0.run', () => {
       sale({ row: 14, from: 'G-01-01', qty: 1 }),
     ]);
     expect(e.ok).toBe(true);
-    expect(e.rows[14]).toEqual({ s: A, q: 1, p: [[8, P2, 1, 'return', 13, 12]] });
+    expect(e.rows[14]).toEqual({ s: A, q: 1, d: '', p: [[8, P2, 1, 'return', 13, 12]] });
     expect(e.rows[11]).toBeUndefined();   // แถวที่รู้ล็อตแล้วไม่ต้องประมาณ
   });
 
@@ -114,7 +114,7 @@ describe('WmsLot0.run', () => {
       { row: 11, sku: F, to: 'G-01-01', qty: 1, src: 'conv' },
       sale({ row: 12, sku: F, from: 'G-01-01', qty: 1 }),
     ]);
-    expect(e.rows[12]).toEqual({ s: F, q: 1, p: [[7, P1, 1, 'conv', 11, 10]] });
+    expect(e.rows[12]).toEqual({ s: F, q: 1, d: '', p: [[7, P1, 1, 'conv', 11, 10]] });
   });
 
   it('แปลงสินค้าจากกอง LOT 0 ส่งที่มาเดิมต่อ แม้แถวรับมาก่อนแถวเบิก และไม่หยิบซ้ำ', () => {
@@ -175,19 +175,61 @@ describe('WmsLot0.run', () => {
     expect(e.before).toBeNull();
     expect(e.rows[11].p).toEqual([['', '', 1, 'count', 10, 0]]);
     expect(run(list).before).toBeUndefined();
-    expect(Z.only(e, [11]).before).toBeNull();
+    expect(Z.only(e, ledger([{ date: '', sku: A, lot: 0, po: 0, qty: 1, row: 11 }])).before).toBeNull();
   });
+});
 
-  it('only เก็บเฉพาะแถวที่ขอ', () => {
+describe('WmsLot0.only — เก็บเฉพาะแถวขาย LOT 0 ของเดือน ใช้เลขแถวของแถวขายที่ดึงไว้', () => {
+  const D1 = '2026-10-02', D2 = '2026-10-03';
+
+  it('เลขแถวตรงกัน เก็บเฉพาะแถวที่หน้าใช้', () => {
     const e = run([
       { row: 10, to: 'G-01-01', qty: 2, src: 'count' },
-      sale({ row: 11, from: 'G-01-01', qty: 1 }),
-      sale({ row: 12, from: 'G-01-01', qty: 1 }),
+      sale({ row: 11, from: 'G-01-01', qty: 1, date: D1 }),
+      sale({ row: 12, from: 'G-01-01', qty: 1, date: D2 }),
     ]);
-    const s = Z.only(e, [12, 99]);
+    expect(e.rows[12].d).toBe(D2);
+    const s = Z.only(e, ledger([{ date: D2, sku: A, lot: 0, po: 0, qty: 1, row: 12 }, { date: D2, sku: A, lot: 0, po: 0, qty: 4, row: 99 }]));
     expect(Object.keys(s.rows)).toEqual(['12']);
-    expect(s.ok).toBe(true);
-    expect(s.at).toBe(5);
+    expect([s.v, s.ok, s.at, s.moved]).toEqual([2, true, 5, 0]);
+  });
+
+  it('มีคนแทรกแถวระหว่างอ่านสองครั้ง เลขแถวเลื่อน ยังจับคู่ได้ด้วย SKU จำนวน วันที่ ตามลำดับแถว', () => {
+    /* สมุดทั้งชีตอ่านหลังแทรกแถวที่ 11 แถวขายของเดือนอ่านก่อนแทรก (แถวรับคืน 12 ไม่ใช่แถวขาย ไม่อยู่ในแถวขายของเดือน) */
+    const e = run([
+      sale({ row: 10, lot: 7, po: P1, qty: 9, date: D1 }),
+      { row: 12, to: 'G-01-01', qty: 5, src: 'return' },
+      sale({ row: 13, from: 'G-01-01', qty: 1, date: D1 }),
+      sale({ row: 14, from: 'G-01-01', qty: 1, date: D1 }),
+      sale({ row: 15, from: 'G-01-01', qty: 2, date: D2 }),
+    ]);
+    const led = ledger([
+      { date: D1, sku: A, lot: 7, po: P1, qty: 9, row: 10 },
+      { date: D1, sku: A, lot: 0, po: 0, qty: 1, row: 12 },
+      { date: D1, sku: A, lot: 0, po: 0, qty: 1, row: 13 },
+      { date: D2, sku: A, lot: 0, po: 0, qty: 2, row: 14 },
+    ]);
+    const s = Z.only(e, led);
+    expect(Object.keys(s.rows)).toEqual(['12', '13', '14']);
+    expect(s.rows[12]).toBe(e.rows[13]);
+    expect(s.rows[13]).toBe(e.rows[14]);
+    expect(s.rows[14]).toBe(e.rows[15]);
+    expect(s.moved).toBe(3);
+    const t = L.totals(L.build(led, s));
+    expect(t.why).toEqual({});
+    expect(t.guess.qty).toBe(4);
+  });
+
+  it('แถวที่ไม่มีในสมุดทั้งชีต (ลงหลังเวลาที่อ่าน) ไม่ได้ค่าประมาณของแถวอื่น', () => {
+    const e = run([sale({ row: 11, from: 'G-01-01', qty: 1, date: D1 })]);
+    const led = ledger([
+      { date: D1, sku: A, lot: 0, po: 0, qty: 1, row: 11 },
+      { date: D2, sku: A, lot: 0, po: 0, qty: 1, row: 12 },
+      { date: D1, sku: F, lot: 0, po: 0, qty: 1, row: 13 },
+    ]);
+    const s = Z.only(e, led);
+    expect(Object.keys(s.rows)).toEqual(['11']);
+    expect(L.totals(L.build(led, s)).why).toEqual({ none: 1, stale: 2 });
   });
 });
 
@@ -236,7 +278,7 @@ describe('WmsLotPo.build กับค่าประมาณ', () => {
     for (const e of [est({}), est({ 21: { s: F, q: 3, p: [[8, P2, 3, 'return', 15, 12]] } }), est({ 21: { s: A, q: 2, p: [] } })]) {
       const rows = L.build(led, e);
       expect(rows.map((r) => [r.lot, r.qty, r.guess, r.why])).toEqual([['8', 2, '', ''], ['0', 3, '', 'stale']]);
-      expect(L.note(rows[1])).toBe('ไม่รู้ LOT และ PO · ยังไม่ได้ประมาณ สมุดทั้งชีตที่อ่านไว้เก่ากว่าแถวนี้');
+      expect(L.note(rows[1])).toBe('ไม่รู้ LOT และ PO · ยังไม่ได้ประมาณ แถวนี้ไม่มีในสมุดทั้งชีตที่อ่านไว้ (ลงหลังเวลาที่อ่าน หรือถูกแก้ทีหลัง)');
     }
   });
 

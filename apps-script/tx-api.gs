@@ -117,7 +117,10 @@ function ledgerSheet_(ss) {
   for (var i = 0; i < all.length; i++) {
     if (all[i].getLastRow() < 1 || all[i].getLastColumn() < 7) continue;
     var h = all[i].getRange(1, 6, 1, 2).getValues()[0];
-    if (/^location\s*เบิก/i.test(String(h[0]).trim()) && /^location\s*รับ/i.test(String(h[1]).trim())) return all[i];
+    if (!/^location\s*เบิก/i.test(String(h[0]).trim()) || !/^location\s*รับ/i.test(String(h[1]).trim())) continue;
+    /* แท็บยอดก่อนนับที่วางสมุดรอบก่อนมีหัวตารางแบบเดียวกัน ถ้าถูกลากไปไว้หน้าแท็บสมุด ทุกหน้าจะอ่านสมุดเก่าแทน */
+    if (all[i].getName() === BEFORE_SHEET) continue;
+    return all[i];
   }
   throw new Error('ไม่พบชีต Transaction — คอลัมน์ F, G ต้องเป็น Location เบิก และ Location รับ หรือใส่ชื่อชีตใน TX_SHEET');
 }

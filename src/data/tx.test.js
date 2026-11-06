@@ -55,6 +55,7 @@ function script(rows, { props = {}, extraSheets = [], named = {}, env: more = {}
     getLastRow: () => grid.length,
     getLastColumn: () => HEAD.length,
     getSheetId: () => 77,
+    getName: () => 'Transaction',
     getRange: (r, c, nr, nc) => ({
       getValues: () => grid.slice(r - 1, r - 1 + nr).map((x) => x.slice(c - 1, c - 1 + nc)),
     }),
@@ -580,6 +581,14 @@ describe('tx-api.gs — แท็บยอดก่อนนับ (tx-fifo ช�
     expect(b.cols).toEqual(['รหัสสินค้า', 'LOT', 'PO', 'จำนวน', 'วันที่รับ']);
     expect([b.rows, b.skip]).toEqual([2, 2]);
     expect(b.layers).toEqual([['AAA001', 7, '9900000001', 1008, '2026-07-05']]);
+  });
+
+  it('แท็บยอดก่อนนับที่วางสมุดรอบก่อนถูกลากไปไว้หน้าแท็บสมุด ทุกหน้ายังอ่านแท็บสมุด ไม่อ่านสมุดเก่าแทน', () => {
+    const old = Object.assign(valueTab([HEAD, row({ sku: 'OLD001', lot: 7, po: 9900000001, to: 'P-01-01', qty: 3, note: 'GR 05-07-26' })]),
+      { getName: () => 'ยอดก่อนนับ' });
+    const r = script([row({ sku: 'NEW001', to: 'P-01-01' })], { extraSheets: [old], named: { 'ยอดก่อนนับ': old } })({ api: 'tx-fifo' });
+    expect(r.skus.map((s) => s[0])).toEqual(['NEW001']);
+    expect(r.before.layers).toEqual([['LONG-OLD001', 7, '9900000001', 3, '2026-07-05']]);
   });
 
   it('หาคอลัมน์ไม่เจอ บอกว่าขาดอะไร', () => {

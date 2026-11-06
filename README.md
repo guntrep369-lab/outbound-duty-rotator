@@ -781,8 +781,14 @@ each LOT 0 sale an estimated LOT/PO from where its goods came in.
   recorded. The หมายเหตุ column starts with `ประมาณจาก…` and the row it came from, so accounting can
   filter them in Excel. A box above the table says how much was estimated and what the rest is
   waiting for. The `LOT ประมาณ` filter lists the estimated lines, and the box can turn estimating off.
-- The ledger isn't changed. Only the estimates for the month's sales rows are kept on the device. If
-  the ledger copy that was read is older than a sales row, that row says so and isn't estimated.
+- The ledger isn't changed. Only the estimates for the month's sales rows are kept on the device.
+- The month's sales rows and the whole ledger are read at different times. If someone inserts or deletes
+  a row in between, every row number below it shifts. So sales rows are matched to the whole-ledger
+  copy by SKU + quantity + date, in sheet order, not by row number, and the box says how many rows
+  were matched that way. A sales row that isn't in the copy at all (entered after it was read, or
+  edited since) says so and isn't estimated.
+- A `ยอดก่อนนับ` tab pasted as an old ledger has the same headers as the Transaction sheet. The script
+  never takes it for the ledger, even if it's moved in front of the Transaction tab.
 - This needs the `tx-api.gs` version that flags return (32) and M/E (64) rows and reads the
   `ยอดก่อนนับ` tab (`lot0: 1` and `before` in `tx-fifo`). Until it's deployed, the box says the script
   is out of date and the report shows LOT 0 as recorded.

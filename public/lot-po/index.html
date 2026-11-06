@@ -288,7 +288,8 @@ function readCache() {
     const l = JSON.parse(localStorage.getItem(CACHE) || 'null');
     if (!l || l.app !== 'transaction' || !l.lines || !l.from) return;
     const e = JSON.parse(localStorage.getItem(EST_CACHE) || 'null');
-    if (e && e.rows && e.led === l.at) EST = e;
+    /* v 2 = จับคู่แถวด้วย SKU จำนวน วันที่ ชุดที่เก็บก่อนหน้านั้นจับด้วยเลขแถวอย่างเดียว ประมาณใหม่ */
+    if (e && e.rows && e.led === l.at && e.v === 2) EST = e;
     take(l);
   } catch (e) {}
 }
@@ -335,7 +336,7 @@ async function loadEst(fresh) {
     if (res.error) throw new Error(res.error);
     if (res.app !== 'transaction') throw new Error('URL ของ Transaction ในหน้าตั้งค่าไม่ใช่สคริปต์ tx-api.gs');
     if (!res.rows) throw new Error('สคริปต์ tx-api.gs ยังเป็นรุ่นที่ไม่ส่งแถวของสมุด ให้วางโค้ดใหม่แล้ว Deploy เป็น New version');
-    EST = Object.assign(WmsLot0.only(WmsLot0.run(res), LED.lines.map((l) => l[2])), { led: LED.at });
+    EST = Object.assign(WmsLot0.only(WmsLot0.run(res), LED), { led: LED.at });
     try { localStorage.setItem(EST_CACHE, JSON.stringify(EST)); } catch (e) {}
   } catch (e) {
     EST_ERR = e.message;
@@ -829,7 +830,7 @@ function estHtml(scope) {
     ['none', 'สมุดขายจากกอง LOT 0 เกินที่รับเข้า'],
     ['conv', 'แปลงสินค้าแต่หาแถวเบิกคู่ไม่เจอ'],
     ['other', 'รับเข้าจากแถวที่ไม่บอกว่ามาจากไหน'],
-    ['stale', 'ยังไม่ได้ประมาณ สมุดที่อ่านไว้เก่ากว่าแถวขาย กดอ่านสมุดใหม่'],
+    ['stale', 'ยังไม่ได้ประมาณ แถวขายนี้ไม่มีในสมุดทั้งชีตที่อ่านไว้ (ลงหลังเวลาที่อ่าน หรือถูกแก้ทีหลัง) กดอ่านสมุดใหม่'],
   ].filter(([k]) => w[k]).map(([k, label]) => `<li>${label} ${n(w[k])} ชิ้น</li>`).join('');
   return `<div class="lp-est">
     <div class="say">ของ LOT 0 ที่ขายออก${where} ${n(t.guess.qty + left)} ชิ้น · ประมาณ LOT/PO ได้ ${n(t.guess.qty)} ชิ้น · ยังไม่รู้ ${n(left)} ชิ้น</div>
@@ -842,7 +843,7 @@ function estHtml(scope) {
       ${t.guess.qty ? `<button class="tx-opt${ONLY === 'guess' ? ' on' : ''}" data-only="guess">ดูบรรทัดที่ประมาณ</button>` : ''}
       <button class="tx-opt" data-est-fresh>🔄 อ่านสมุดใหม่</button>
       <button class="tx-opt" data-guess>ปิดการประมาณ</button>
-      <span>อ่านสมุดทั้งชีตเมื่อ ${esc(when)} · สมุดไม่ถูกแก้</span>
+      <span>อ่านสมุดทั้งชีตเมื่อ ${esc(when)} · สมุดไม่ถูกแก้${EST.moved ? ` · มีการแทรกหรือลบแถวในชีตระหว่างอ่าน จับคู่ด้วย SKU จำนวน วันที่ให้ ${f(EST.moved)} แถว` : ''}</span>
     </div>
   </div>`;
 }
@@ -871,7 +872,7 @@ function beforeHtml(w) {
     return `<div class="lp-sub tx-neg">แท็บ ${tab} หาคอลัมน์ ${b.missing.map((k) => NAME[k]).join(', ')} ไม่เจอ — แถวแรกต้องเป็นหัวตาราง${how}</div>`;
   }
   const mode = b.mode === 'ledger' ? `สมุดรอบก่อน ${f(b.rows)} แถว` : `ตาราง ${f(b.rows)} แถว`;
-  const miss = b.missN ? `<br>SKU ในแท็บที่ไม่มีในสมุดนี้ ${f(b.missN)} ตัว: ${esc(b.miss.join(', '))}${b.missN > b.miss.length ? ' …' : ''}` : '';
+  const miss = b.missN ? `<br>SKU ในแท็บที่สมุดตอนนี้ไม่มี ${f(b.missN)} ตัว ไม่ได้ใช้ ไม่กระทบรายงาน: ${esc(b.miss.join(', '))}${b.missN > b.miss.length ? ' …' : ''}` : '';
   return `<div class="lp-sub">ใช้แท็บ ${tab} (${mode}) มียอดของ ${f(b.skus)} SKU · ทั้งชีตแบ่งให้ของนับที่ไม่รู้ LOT ได้ <b>${f(b.used)}</b> ชิ้น
     ยังขาด <b>${f(b.short)}</b> ชิ้น${miss}${how}</div>`;
 }
