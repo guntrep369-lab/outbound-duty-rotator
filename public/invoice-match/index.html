@@ -31,6 +31,28 @@
 .im-priv{grid-column:1/-1;font-size:12px;color:var(--wms-muted);line-height:1.6}
 .tx-err{font-size:13px;color:#B91C1C;font-weight:600;line-height:1.5}
 
+/* ── กระทบรายวัน หนึ่งช่องต่อวัน สีบอกว่าวันนั้นครบหรือยัง กดเพื่อดูเฉพาะวันนั้น ── */
+.im-days{padding:12px 20px;background:var(--wms-surface);border-bottom:1px solid var(--wms-border)}
+.im-days:empty{display:none}
+.im-dh{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-bottom:9px;font-size:13px;color:var(--wms-muted)}
+.im-dh b{font-size:14px;color:var(--wms-text)}
+.im-dh .sp{flex:1}
+.im-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:6px}
+.im-day{display:flex;flex-direction:column;gap:1px;min-width:0;padding:7px 9px;border-radius:var(--wms-radius-sm);
+  border:1px solid var(--wms-border);background:var(--wms-surface2);font-family:var(--wms-font);text-align:left;cursor:pointer}
+.im-day:hover{border-color:var(--wms-primary)}
+.im-day .dd{font-size:12px;color:var(--wms-muted);white-space:nowrap}
+.im-day b{font-size:14px;font-weight:700;color:var(--wms-muted);white-space:nowrap}
+.im-day small{font-size:11.5px;color:var(--wms-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.im-day.d-ok{background:#F0FDF4;border-color:#BBF7D0}
+.im-day.d-ok b{color:#047857}
+.im-day.d-none{background:#FEF2F2;border-color:#FECACA}
+.im-day.d-none b{color:#B91C1C}
+.im-day.d-diff{background:#FFFBEB;border-color:#FDE68A}
+.im-day.d-diff b{color:#B45309}
+.im-day.d-acc b{color:var(--wms-primary-dark)}
+.im-day.on{border-color:var(--wms-primary);box-shadow:0 0 0 2px var(--wms-primary)}
+
 /* ── ยอดรวม ชุดเดียวกับหน้าสินค้าคงเหลือ ณ วันที่ ── */
 .tx-sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;padding:12px 20px;
   background:var(--wms-surface);border-bottom:1px solid var(--wms-border)}
@@ -110,6 +132,10 @@
   .mod-title h2 .en,.mod-title p{display:none}
   .im-files{grid-template-columns:1fr;padding-left:16px;padding-right:16px}
   .im-slot{min-height:88px}
+  .im-days{padding-left:16px;padding-right:16px}
+  .im-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
+  .im-day{padding:6px 7px;min-height:44px}
+  .im-day b{font-size:13px}
   .tx-sum{grid-template-columns:repeat(2,minmax(0,1fr));padding-left:16px;padding-right:16px}
   .tx-body{padding-left:16px;padding-right:16px}
   .tx-opt{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 15px}
@@ -153,6 +179,7 @@
   </div>
 
   <div class="im-files" id="files"></div>
+  <div class="im-days" id="days"></div>
   <div class="tx-sum" id="sum"></div>
   <div class="tx-body" id="body"></div>
 
@@ -186,6 +213,8 @@ let ERR = { stock: '', acc: '' };
 let MOVED = '';     // วางไฟล์ผิดช่อง ย้ายไปช่องที่ถูกให้แล้ว
 let RES = null;     // WmsInvMatch.match
 let ITEMS = [];     // WmsInvMatch.items(RES)
+let DAYS = [];      // WmsInvMatch.days(ITEMS) หนึ่งแถวต่อวัน
+let DAY = null;     // วันที่เลือก yyyy-mm-dd ('' = ไม่มีวันที่) null = ทุกวัน
 let ONLY = '';      // '' | ok | diff | none | later | acconly | nokey
 let Q = '';
 let XLSX_LOAD = null;
@@ -245,6 +274,7 @@ async function readFile(file, slot) {
   }
   BUSY[slot] = '';
   ONLY = '';
+  DAY = null;
   compute();
   render();
   if (ERR[slot] && window.WmsMotion) setTimeout(() => window.WmsMotion.shake(document.querySelector(`.im-slot[data-kind="${slot}"] .tx-err`)), 0);
@@ -253,6 +283,42 @@ async function readFile(file, slot) {
 function compute() {
   RES = FILES.stock && FILES.acc ? M.match(FILES.stock.src, FILES.acc.src) : null;
   ITEMS = RES ? M.items(RES) : [];
+  DAYS = RES ? M.days(ITEMS, RES.accSpan.max) : [];
+}
+
+const dayItems = () => (DAY === null ? ITEMS : M.filter(ITEMS, { day: DAY }));
+
+/** ส. 3 ต.ค. — ย่อวันเอง บางเบราว์เซอร์ให้ชื่อวันเต็มแม้ขอแบบสั้น ช่องบนมือถือจะล้น */
+const WEEKDAY = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
+function dayName(d) {
+  if (!d) return 'ไม่มีวันที่';
+  const [y, m, day] = d.split('-').map(Number);
+  const dt = new Date(y, m - 1, day);
+  return `${WEEKDAY[dt.getDay()]} ${day} ${dt.toLocaleDateString('th-TH', { month: 'short' })}`;
+}
+
+/* ── กระทบรายวัน ───────────────────────────────────────────────────────── */
+
+function dayHtml(d) {
+  const what = { ok: '✓ ครบ', none: `ขาด ${f(d.none)}`, diff: `ไม่ตรง ${f(d.diff)}`, later: 'ยังไม่ถึงรอบ', acc: `บัญชี ${f(d.acconly + d.nokey)}` }[d.state];
+  const sub = d.orders
+    ? `${f(d.orders)} ออเดอร์${d.state === 'none' && d.diff ? ` · ไม่ตรง ${f(d.diff)}` : ''}`
+    : 'ไม่มีออเดอร์ฝั่งคลัง';
+  const tip = [`${dayName(d.date)} — ${M.DAY_STATE[d.state]}`];
+  if (d.orders) tip.push(`ได้เลขเอกสาร ${f(d.matched)} จาก ${f(d.orders)} ออเดอร์ (${d.pct}%)`, `ตรง ${f(d.ok)} · ไม่ตรง ${f(d.diff)} · ยังไม่มี Invoice ${f(d.none)}`);
+  if (d.acconly || d.nokey) tip.push(`ฝั่งบัญชีที่หาคู่ไม่เจอ (ตามวันที่เอกสาร): มีแต่ในไฟล์บัญชี ${f(d.acconly)} · ไม่มีเลขออเดอร์ ${f(d.nokey)} เอกสาร`);
+  return `<button class="im-day d-${d.state}${DAY === d.date ? ' on' : ''}" data-day="${esc(d.date)}" title="${esc(tip.join('\n'))}">
+    <span class="dd">${esc(dayName(d.date))}</span><b>${what}</b><small>${sub}</small></button>`;
+}
+
+function renderDays() {
+  if (!RES || !DAYS.length) { $('days').innerHTML = ''; return; }
+  const n = {};
+  DAYS.forEach((d) => { n[d.state] = (n[d.state] || 0) + 1; });
+  const parts = ['ok', 'none', 'diff', 'later'].filter((k) => n[k]).map((k) => `${M.DAY_STATE[k]} <b>${n[k]}</b> วัน`);
+  $('days').innerHTML = `<div class="im-dh"><b>📅 กระทบรายวัน</b><span>${parts.join(' · ')}</span><span class="sp"></span>
+      ${DAY !== null ? '<button class="tx-opt" data-allday>ดูทุกวัน</button>' : '<span>กดวันที่เพื่อดูเฉพาะวันนั้น</span>'}</div>
+    <div class="im-grid">${DAYS.map(dayHtml).join('')}</div>`;
 }
 
 /* ── ช่องวางไฟล์ ───────────────────────────────────────────────────────── */
@@ -290,14 +356,15 @@ function renderFiles() {
 
 function renderSum() {
   if (!RES) { $('sum').innerHTML = ''; return; }
-  const c = RES.counts;
+  const c = M.tally(dayItems());
   const pct = c.orders ? Math.round((c.matched / c.orders) * 1000) / 10 : 0;
   const last = RES.accSpan.max ? dm(RES.accSpan.max) : '';
   const stat = (only, label, n, sub, cls) => `<button class="tx-stat${ONLY === only ? ' on' : ''}" data-only="${only}">
     <small>${esc(label)}</small><b class="${cls || ''}" data-count="${n}">${f(n)}</b><i>${sub}</i></button>`;
   /* ช่องแรกเป็นยอดรวม ไม่ใช่ตัวกรอง (ได้เลขแล้วมีทั้งตรงและไม่ตรง) */
   $('sum').innerHTML =
-    `<div class="tx-stat im-static"><small>ได้เลขเอกสารแล้ว</small><b data-count="${c.matched}">${f(c.matched)}</b><i>${pct}% ของ ${f(c.orders)} ออเดอร์ฝั่งคลัง</i></div>` +
+    `<div class="tx-stat im-static"><small>ได้เลขเอกสารแล้ว${DAY !== null ? ` · ${esc(dayName(DAY))}` : ''}</small><b data-count="${c.matched}">${f(c.matched)}</b>
+      <i>${pct}% ของ ${f(c.orders)} ออเดอร์ฝั่งคลัง${DAY !== null ? 'วันนี้' : ''}</i></div>` +
     stat('ok', 'ตรงกัน', c.ok, 'ชิ้นต่อ SKU เท่ากับในเอกสาร', 'tx-ok') +
     stat('diff', 'จำนวนไม่ตรง', c.diff, 'ได้เลขเอกสารแล้ว แต่ชิ้นไม่เท่า', c.diff ? 'tx-mid' : '') +
     stat('none', 'ยังไม่มี Invoice', c.none, c.later ? `${f(c.later)} ออเดอร์วันที่หลัง ${esc(last)} ยังไม่ถึงรอบ` : 'ไม่พบในไฟล์บัญชี', c.none - c.later ? 'tx-neg' : '') +
@@ -307,7 +374,7 @@ function renderSum() {
 
 /* ── รายการ ────────────────────────────────────────────────────────────── */
 
-const chosen = () => M.filter(ITEMS, { only: ONLY, q: Q });
+const chosen = () => M.filter(ITEMS, { only: ONLY, q: Q, day: DAY });
 const LABEL = Object.fromEntries(M.STATES.map((s) => [s.state, s.label]));
 
 function stateHtml(i) {
@@ -419,12 +486,14 @@ function renderBody() {
       : 'วาง<b>ไฟล์คลัง</b>กับ<b>ไฟล์บัญชี</b>ในสองช่องด้านบน<br>ระบบจับคู่ด้วยเลขออเดอร์ เลขออเดอร์ก่อนแยกบิล แล้วเลขคำสั่งซื้อออนไลน์ ตามลำดับ'}</div>`;
     return;
   }
-  const c = RES.counts;
+  const c = M.tally(dayItems());
   const how = {};
   RES.orders.forEach((o) => { if (o.how) how[o.how] = (how[o.how] || 0) + 1; });
   const howText = Object.keys(M.HOW).filter((k) => how[k]).map((k) => `${M.HOW[k]} <b>${f(how[k])}</b>`).join(' · ');
   const opt = (v, label, n) => `<button class="tx-opt${ONLY === v ? ' on' : ''}" data-only="${v}">${label} ${f(n)}</button>`;
-  const chips = [opt('', 'ทั้งหมด', ITEMS.length)];
+  const chips = [];
+  if (DAY !== null) chips.push(`<button class="tx-opt on" data-allday>📅 ${esc(dayName(DAY))} ✕</button>`);
+  chips.push(opt('', 'ทั้งหมด', c.all));
   M.STATES.forEach((s) => { const n = s.state === 'nokey' ? c.nokey : c[s.state]; if (n || ONLY === s.state) chips.push(opt(s.state, s.label, n)); });
   if (c.later || ONLY === 'later') chips.push(opt('later', 'ยังไม่ถึงรอบบัญชี', c.later));
   $('body').innerHTML = `${fileNotes()}
@@ -437,7 +506,7 @@ function renderBody() {
     <div class="tx-bar im-out">
       <button class="tx-opt p" id="xlsxBtn">⬇️ โหลดผล (Excel)</button>
       <button class="tx-opt" id="copyBtn">📋 คัดลอก</button>
-      <span>ไฟล์มี 4 ชีตครบทุกรายการ ไม่ขึ้นกับตัวกรอง: LOT-PO + เลขเอกสาร (ทุกบรรทัดฝั่งคลังพร้อมเลขที่เอกสาร) · ยอดไม่ตรง · ยังไม่มี Invoice · มีแต่ในไฟล์บัญชี — ปุ่มคัดลอกได้รายการตามตัวกรอง</span>
+      <span>ไฟล์มี 5 ชีตครบทุกรายการ ไม่ขึ้นกับตัวกรอง: สรุปรายวัน · LOT-PO + เลขเอกสาร (ทุกบรรทัดฝั่งคลังพร้อมเลขที่เอกสาร) · ยอดไม่ตรง · ยังไม่มี Invoice · มีแต่ในไฟล์บัญชี — ปุ่มคัดลอกได้รายการตามวันที่และตัวกรองที่เลือก</span>
     </div>
     <div id="list"></div>`;
   renderList();
@@ -445,6 +514,7 @@ function renderBody() {
 
 function render() {
   renderFiles();
+  renderDays();
   renderSum();
   renderBody();
 }
@@ -468,7 +538,7 @@ async function copyText(text) {
   }
 }
 
-/** สี่ชีต แถวแรกเป็นหัวตาราง มีตัวกรองให้แล้ว ชื่อไฟล์บอกช่วงวันที่ของไฟล์คลัง */
+/** ห้าชีต แถวแรกเป็นหัวตาราง มีตัวกรองให้แล้ว ชื่อไฟล์บอกช่วงวันที่ของไฟล์คลัง */
 async function downloadXlsx() {
   const btn = $('xlsxBtn');
   const label = btn.textContent;
@@ -484,6 +554,7 @@ async function downloadXlsx() {
       ws['!autofilter'] = { ref: X.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: Math.max(aoa.length - 1, 1), c: aoa[0].length - 1 } }) };
       X.utils.book_append_sheet(wb, ws, name);
     };
+    sheet(M.dayTable(DAYS), 'สรุปรายวัน', [12, 16, 14, 16, 9, 10, 12, 14, 30, 30]);
     sheet(M.lineTable(RES), 'LOT-PO + เลขเอกสาร', [11, 10, 18, 18, 22, 14, 18, 18, 36, 8, 12, 7, 18, 11, 20, 14, 44]);
     sheet(M.diffTable(RES), 'ยอดไม่ตรง', [18, 22, 18, 18, 36, 12, 12, 14]);
     sheet(M.noneTable(RES), 'ยังไม่มี Invoice', [11, 18, 22, 18, 10, 14, 9, 50]);
@@ -533,11 +604,25 @@ function pick(only) {
   renderSum();
   renderBody();
 }
+
+/** เลือกวัน กดวันเดิมซ้ำ = ทุกวัน ตัวกรองผลกับคำค้นยังอยู่ */
+function pickDay(day) {
+  DAY = day === null || day === DAY ? null : day;
+  renderDays();
+  renderSum();
+  renderBody();
+}
+$('days').addEventListener('click', (e) => {
+  if (e.target.closest('[data-allday]')) { pickDay(null); return; }
+  const b = e.target.closest('[data-day]');
+  if (b) pickDay(b.dataset.day);
+});
 $('sum').addEventListener('click', (e) => {
   const b = e.target.closest('[data-only]');
   if (b) pick(ONLY === b.dataset.only ? '' : b.dataset.only);
 });
 $('body').addEventListener('click', (e) => {
+  if (e.target.closest('[data-allday]')) { pickDay(null); return; }
   const only = e.target.closest('[data-only]');
   if (only) { pick(only.dataset.only); return; }
   if (e.target.closest('#xlsxBtn')) { downloadXlsx(); return; }

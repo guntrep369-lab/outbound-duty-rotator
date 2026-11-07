@@ -281,6 +281,45 @@ describe('รายการบนหน้าเว็บ', () => {
     ]);
   });
 
+  it('นับยอดจากรายการได้เท่ากับยอดรวมของการจับคู่', () => {
+    const c = M.tally(items);
+    for (const k of ['orders', 'matched', 'ok', 'diff', 'none', 'later', 'acconly', 'nokey', 'nokeyLines']) expect(c[k]).toBe(res.counts[k]);
+    expect(c.all).toBe(items.length);
+  });
+
+  it('กระทบรายวัน: ฝั่งคลังตามวันที่ในไฟล์คลัง ฝั่งบัญชีที่ไม่มีคู่ตามวันที่เอกสาร', () => {
+    const d = M.days(items, res.accSpan.max);
+    expect(d.map((x) => [x.date, x.state, x.orders, x.matched])).toEqual([
+      ['2026-10-01', 'ok', 1, 1],
+      ['2026-10-02', 'diff', 1, 1],
+      ['2026-10-03', 'none', 1, 0],
+      ['2026-10-04', 'acc', 0, 0],
+      ['2026-10-05', 'acc', 0, 0],
+      ['2026-10-20', 'later', 1, 0],
+    ]);
+    expect(d[3].acconly).toBe(1);
+    expect(d[4]).toMatchObject({ nokey: 1, nokeyLines: 1 });
+    expect(M.dayTable(d)[2]).toEqual(['02/10/2026', 'จำนวนไม่ตรง', 1, 1, 100, 0, 1, 0, 0, 0]);
+  });
+
+  it('วันที่ขาดบางออเดอร์และไม่ตรงบางออเดอร์ สถานะเป็นขาด Invoice', () => {
+    const r = run(
+      [{ o: '9900000001', q: 1 }, { o: '9900000002', q: 2 }, { o: '9900000003', q: 1 }, { o: '9900000004', q: 1, d: ' ' }],
+      [{ o: '9900000001', doc: 'DOC-0001', q: 1 }, { o: '9900000002', doc: 'DOC-0002', q: 1 }],
+    );
+    const d = M.days(M.items(r), r.accSpan.max);
+    expect(d.map((x) => [x.date, x.state, x.pct])).toEqual([['2026-10-01', 'none', 66.7], ['', 'none', 0]]);
+    expect(M.dayTable(d)[2][0]).toBe('ไม่มีวันที่');
+  });
+
+  it('เลือกวันได้ ใช้ร่วมกับตัวกรองผลและคำค้น', () => {
+    expect(M.filter(items, { day: '2026-10-03' }).map((i) => i.order)).toEqual(['9900000003']);
+    expect(M.filter(items, { day: '2026-10-04', only: 'acconly' }).map((i) => i.doc)).toEqual(['DOC-0005']);
+    expect(M.filter(items, { day: '2026-10-02', only: 'ok' })).toEqual([]);
+    expect(M.filter(items, { day: null })).toHaveLength(items.length);
+    expect(M.filter(items, { day: '' })).toEqual([]);
+  });
+
   it('ปุ่มคัดลอกได้หนึ่งบรรทัดต่อรายการ คั่นด้วยแท็บ', () => {
     const t = M.itemTable(M.filter(items, { only: 'diff' }));
     expect(t[1].slice(0, 9)).toEqual(['จำนวนไม่ตรง', '9900000002', '', '02/10/2026', 'DOC-0002', '03/10/2026', 'เลขออเดอร์', 3, 2]);

@@ -404,25 +404,26 @@
   /**
    * รายการเดียวที่หน้าเว็บวาด ทั้งออเดอร์ฝั่งคลัง บิลที่มีแต่ในบัญชี และเอกสารที่ไม่มีเลขออเดอร์
    * เรียงตาม STATES แล้วตามวันที่ เรื่องที่ต้องตามต่อขึ้นก่อน
+   * day คือวันที่ที่ใช้กระทบรายวัน: ฝั่งคลังใช้วันที่ในไฟล์คลัง รายการที่มีแต่ฝั่งบัญชีใช้วันที่เอกสาร
    */
   function items(res) {
     var out = [], last = dmy(res.accSpan.max);
     res.orders.forEach(function (o) {
       var b = o.bill;
       out.push({
-        state: o.state, order: o.order, online: o.online, pre: o.pre, date: o.date, how: o.how, later: o.later,
+        state: o.state, day: o.date, order: o.order, online: o.online, pre: o.pre, date: o.date, how: o.how, later: o.later,
         doc: docOf(b), docs: b ? b.docs : [], docDate: b ? b.docDate : '', stockQty: clean(o.qty), accQty: b ? clean(b.qty) : 0,
         diffs: b ? b.diffs : [], extra: b ? b.extra : [], group: b ? b.stock.length : 0, note: noteOf(o, last),
         stock: o.lines, acc: b ? b.lines : [],
       });
     });
     res.acconly.forEach(function (b) {
-      out.push({ state: 'acconly', order: b.order, online: b.online, pre: b.pre, date: '', how: '', later: false,
+      out.push({ state: 'acconly', day: b.docDate, order: b.order, online: b.online, pre: b.pre, date: '', how: '', later: false,
         doc: docOf(b), docs: b.docs, docDate: b.docDate, stockQty: 0, accQty: clean(b.qty), diffs: [], extra: [], group: 0, note: '',
         stock: [], acc: b.lines });
     });
     res.nokey.forEach(function (n) {
-      out.push({ state: 'nokey', order: '', online: '', pre: '', date: '', how: '', later: false,
+      out.push({ state: 'nokey', day: n.docDate, order: '', online: '', pre: '', date: '', how: '', later: false,
         doc: n.doc, docs: n.doc ? [n.doc] : [], docDate: n.docDate, stockQty: 0, accQty: clean(n.qty), diffs: [], extra: [], group: 0, note: '',
         stock: [], acc: n.lines });
     });
@@ -435,16 +436,69 @@
     return out;
   }
 
-  /** ค้นด้วยเลขออเดอร์ เลขออนไลน์ เลขเอกสาร หรือรหัสสินค้า */
+  /**
+   * ค้นด้วยเลขออเดอร์ เลขออนไลน์ เลขเอกสาร หรือรหัสสินค้า
+   * day: yyyy-mm-dd เฉพาะวันนั้น ('' = รายการที่ไม่มีวันที่) ไม่ส่งหรือ null = ทุกวัน
+   */
   function filter(list, opts) {
-    var only = opts.only || '', want = key(opts.q || '');
+    var only = opts.only || '', want = key(opts.q || ''), day = opts.day;
     return list.filter(function (i) {
+      if (day !== undefined && day !== null && (i.day || '') !== day) return false;
       if (only === 'later' ? !i.later : only && i.state !== only) return false;
       if (!want) return true;
       if ([i.order, i.online, i.pre].concat(i.docs).some(function (v) { return key(v).indexOf(want) !== -1; })) return true;
       return i.stock.some(function (l) { return key(l.sku) === want || key(l.sold) === want; }) ||
         i.acc.some(function (l) { return key(l.code) === want; });
     });
+  }
+
+  /* ── กระทบรายวัน ───────────────────────────────────────────────────────── */
+
+  /**
+   * นับรายการตามผล ใช้ทั้งยอดรวมทุกวันและยอดของวันที่เลือก
+   * orders/matched นับเฉพาะออเดอร์ฝั่งคลัง nokey นับเป็นเอกสาร nokeyLines นับบรรทัด
+   */
+  function tally(list) {
+    var c = { all: list.length, orders: 0, matched: 0, ok: 0, diff: 0, none: 0, later: 0, acconly: 0, nokey: 0, nokeyLines: 0 };
+    list.forEach(function (i) {
+      c[i.state]++;
+      if (i.stock.length) { c.orders++; if (i.state !== 'none') c.matched++; }
+      if (i.later) c.later++;
+      if (i.state === 'nokey') c.nokeyLines += i.acc.length;
+    });
+    return c;
+  }
+
+  /** สถานะของวัน: ครบ = ทุกออเดอร์ได้เลขเอกสารและจำนวนตรง วันที่หลังเอกสารใบสุดท้าย = ยังไม่ถึงรอบ */
+  var DAY_STATE = { ok: 'ครบ', none: 'ขาด Invoice', diff: 'จำนวนไม่ตรง', later: 'ยังไม่ถึงรอบบัญชี', acc: 'มีแต่ฝั่งบัญชี' };
+
+  /**
+   * หนึ่งแถวต่อวัน เรียงตามวันที่ รายการที่ไม่มีวันที่อยู่ท้าย
+   * วันที่มีแต่รายการฝั่งบัญชี (เอกสารลงวันที่ก่อนวันแรกของไฟล์คลัง ฯลฯ) สถานะ acc
+   * @param {Object[]} list items()
+   * @param {string} last วันที่เอกสารใบสุดท้ายในไฟล์บัญชี
+   */
+  function days(list, last) {
+    var by = {};
+    list.forEach(function (i) { var d = i.day || ''; (by[d] || (by[d] = [])).push(i); });
+    return Object.keys(by).sort(function (a, b) { return !a ? 1 : !b ? -1 : a < b ? -1 : a > b ? 1 : 0; }).map(function (d) {
+      var c = tally(by[d]);
+      c.date = d;
+      c.pct = c.orders ? Math.round((c.matched / c.orders) * 1000) / 10 : 0;
+      c.state = !c.orders ? 'acc' : !c.none && !c.diff ? 'ok' : last && d > last ? 'later' : c.none ? 'none' : 'diff';
+      return c;
+    });
+  }
+
+  var DAY_HEAD = ['วันที่', 'สถานะ', 'ออเดอร์ฝั่งคลัง', 'ได้เลขเอกสารแล้ว', '% ได้เลข', 'ตรงกัน', 'จำนวนไม่ตรง', 'ยังไม่มี Invoice',
+    'มีแต่ในไฟล์บัญชี (ตามวันที่เอกสาร)', 'บัญชียังไม่ใส่เลขออเดอร์ (เอกสาร)'];
+
+  function dayTable(list) {
+    var rows = [DAY_HEAD];
+    list.forEach(function (d) {
+      rows.push([d.date ? dmy(d.date) : 'ไม่มีวันที่', DAY_STATE[d.state], d.orders, d.matched, d.pct, d.ok, d.diff, d.none, d.acconly, d.nokey]);
+    });
+    return rows;
   }
 
   /* ── ส่งออก ────────────────────────────────────────────────────────────── */
@@ -567,5 +621,9 @@
     accTable: accTable,
     itemTable: itemTable,
     tsv: tsv,
+    tally: tally,
+    days: days,
+    DAY_STATE: DAY_STATE,
+    dayTable: dayTable,
   };
 })();

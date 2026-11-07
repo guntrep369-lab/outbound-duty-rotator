@@ -1001,13 +1001,20 @@ order numbers.
 - The results: ตรงกัน, จำนวนไม่ตรง, ยังไม่มี Invoice, มีแต่ในไฟล์บัญชี (a document quoting an order the
   warehouse file doesn't have) and บัญชียังไม่ใส่เลขออเดอร์ (grouped by document). An order with no Invoice
   dated after the accounting file's last document is marked ยังไม่ถึงรอบบัญชี rather than missing.
+- **กระทบรายวัน** shows one box per day, coloured by whether that day is done: ครบ (every warehouse order
+  has a document and the quantities match), ขาด Invoice with how many orders, จำนวนไม่ตรง with how many, or
+  ยังไม่ถึงรอบบัญชี for days after the accounting file's last document. Warehouse orders count on the date in
+  the warehouse file; accounting lines with no warehouse match count on their document date, so a day
+  holding only those is marked มีแต่ฝั่งบัญชี. Hovering a box gives its numbers. Clicking a day turns the
+  tiles, the filters and the list into that day only; clicking it again, or ✕, goes back to every day.
 - The tiles at the top filter the list; search takes an order, online, document number or SKU.
 - A long number Excel already turned into `1.23E+17` has lost its last digits and can't match. The page
   counts them per column so the source can be fixed (format the column as Text before pasting).
-- **⬇️ โหลดผล (Excel)** downloads four sheets with every row, whatever the filter: LOT-PO + เลขเอกสาร (every
-  warehouse line in file order with เลขที่เอกสาร, วันที่เอกสาร, จับคู่ด้วย, ผลเทียบจำนวน and หมายเหตุ),
-  ยอดไม่ตรง (one row per SKU that differs), ยังไม่มี Invoice and มีแต่ในไฟล์บัญชี. Copy gives the filtered
-  list, one row per order.
+- **⬇️ โหลดผล (Excel)** downloads five sheets with every row, whatever the day or filter: สรุปรายวัน (one row
+  per day with its status and counts), LOT-PO + เลขเอกสาร (every warehouse line in file order with
+  เลขที่เอกสาร, วันที่เอกสาร, จับคู่ด้วย, ผลเทียบจำนวน and หมายเหตุ), ยอดไม่ตรง (one row per SKU that
+  differs), ยังไม่มี Invoice and มีแต่ในไฟล์บัญชี. Copy gives the list for the chosen day and filter, one row
+  per order.
 
 ---
 
