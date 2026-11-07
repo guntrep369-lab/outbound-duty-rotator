@@ -52,6 +52,8 @@ export const MODULES = [
   { id: 'txstock', label: 'สต๊อกราย Location', labelEn: 'Stock by Location', path: 'stock-location/', icon: 'mapPin', group: 'inventory' },
   { id: 'cutcheck', label: 'เช็ครายการตัดสต๊อก', labelEn: 'Stock Cut Check', path: 'cut-check/', icon: 'scale', group: 'inventory' },
   { id: 'lotpo', label: 'LOT / PO ที่ขายออก', labelEn: 'Lot & PO Out', path: 'lot-po/', icon: 'sheet', group: 'inventory' },
+  /* ต่อจาก LOT / PO เพราะใช้ไฟล์ที่โหลดจากหน้านั้นมาจับคู่กับเลขที่เอกสารของบัญชี */
+  { id: 'invmatch', label: 'จับคู่ Invoice', labelEn: 'Invoice Match', path: 'invoice-match/', icon: 'receipt', group: 'inventory' },
   { id: 'fifo', label: 'FIFO สต๊อก', labelEn: 'FIFO Stock', path: 'fifo/', icon: 'layers', group: 'inventory' },
   { id: 'balance', label: 'สินค้าคงเหลือ ณ วันที่', labelEn: 'Stock as of Date', path: 'balance/', icon: 'archive', group: 'inventory' },
   /* ประเภทงานรถกับผังงานรถวันนี้ยังไม่ได้ใช้ในงานจริง ซ่อนไว้เหมือนสรุปเช้า */
@@ -118,6 +120,8 @@ export const ICON_PATHS = {
     '<path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/>',
   sheet:
     '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h2"/><path d="M14 13h2"/><path d="M8 17h2"/><path d="M14 17h2"/>',
+  receipt:
+    '<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 17.5v-11"/>',
   notebook:
     '<path d="M13.4 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7.4"/><path d="M2 6h4"/><path d="M2 10h4"/><path d="M2 14h4"/><path d="M2 18h4"/><path d="M21.378 5.626a1 1 0 1 0-3.004-3.004l-5.01 5.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z"/>',
   settings:

@@ -19,7 +19,7 @@ The list lives in [`public/wms-modules.js`](public/wms-modules.js) (the one plac
 | — (hidden) | สรุปเช้า · Morning Brief · ย้อนหลัง · History | `summary/` · `history/` |
 | ออเดอร์ | เทียบ Order · ค้นหาออเดอร์ | `order-compare/` · `order-lookup/` |
 | คลังสินค้า | สต๊อกคงเหลือ · สรุปหยิบของ · เบิกตามออเดอร์ · เอกสารคลังสินค้า | `stock/` · `picking/` · `order-sheet/` · `warehouse-forms/` |
-| สินค้าคงคลัง | ภาพรวมสต๊อก · สต๊อกราย Location · เช็ครายการตัดสต๊อก · LOT / PO ที่ขายออก · FIFO สต๊อก · สินค้าคงเหลือ ณ วันที่ | `dashboard/` · `stock-location/` · `cut-check/` · `lot-po/` · `fifo/` · `balance/` |
+| สินค้าคงคลัง | ภาพรวมสต๊อก · สต๊อกราย Location · เช็ครายการตัดสต๊อก · LOT / PO ที่ขายออก · จับคู่ Invoice · FIFO สต๊อก · สินค้าคงเหลือ ณ วันที่ | `dashboard/` · `stock-location/` · `cut-check/` · `lot-po/` · `invoice-match/` · `fifo/` · `balance/` |
 | ขนส่ง | ทำใบงานขนส่ง · เอกสารขนส่ง | `transport-docs/` · `transport-forms/` |
 | ขนส่ง (hidden) | ประเภทงานรถ · ผังงานรถวันนี้ | `jobs/` · `loadplan/` |
 | ทีมและระบบ | **ตารางกะ · Shift Schedule** · ตั้งค่า | `roster/` · `settings/` |
@@ -975,6 +975,42 @@ reads the same shared copy of the whole Transaction ledger as FIFO สต๊อ�
 
 ---
 
+## 🧾 Invoice Match (`/invoice-match`)
+
+Accounting has a file that says which document (Invoice) each order went out on. This page puts it next
+to the order × LOT/PO file, so every line the warehouse cut gets its document number, and lists what
+doesn't line up. You drop the two files in. Nothing goes to Apps Script, nothing is stored: the files are
+read in the browser and are gone when the page closes, because they hold accounting numbers and customer
+order numbers.
+
+- **Which file is which comes from the header row,** not the tab name or the slot you dropped it in. One
+  workbook holding both tabs fills both slots. A file dropped in the wrong slot moves to the right one.
+  The header can be a few rows down, and spaces, line breaks and letter case in it don't matter.
+  - The warehouse side needs เลขออเดอร์, SKU and จำนวน. LOT, PO, หมายเลขคำสั่งซื้อออนไลน์ and
+    เลขออเดอร์ก่อนที่จะแยกบิล help. The per-order Excel from LOT / PO ที่ขายออก works as it is.
+  - The accounting side needs เลขที่เอกสาร, รหัสสินค้า, จำนวน and ออเดอร์ภายใน or คำสั่งซื้อออนไลน์.
+- **How an order finds its document,** in this order: the order number, then the order's pre-split number
+  (accounting billed the order once before it was split), then the online order number. Accounting lines
+  with only an online number join the order that has the same online number.
+- **Quantities are compared per SKU over the whole order,** using SKU ที่ขาย when there is one (the
+  document is billed by the sold SKU, not the purchase SKU a conversion turned it back into). Split orders
+  that share one document are compared as a group. Accounting codes that never appear in the warehouse
+  file (shipping, service fees) aren't compared; the page lists them so a real product hiding there shows.
+- **An order with several documents** whose total doesn't match, but where exactly one document matches,
+  uses that one and names the others in หมายเหตุ (a credit note quoting the order, for example).
+- The results: ตรงกัน, จำนวนไม่ตรง, ยังไม่มี Invoice, มีแต่ในไฟล์บัญชี (a document quoting an order the
+  warehouse file doesn't have) and บัญชียังไม่ใส่เลขออเดอร์ (grouped by document). An order with no Invoice
+  dated after the accounting file's last document is marked ยังไม่ถึงรอบบัญชี rather than missing.
+- The tiles at the top filter the list; search takes an order, online, document number or SKU.
+- A long number Excel already turned into `1.23E+17` has lost its last digits and can't match. The page
+  counts them per column so the source can be fixed (format the column as Text before pasting).
+- **⬇️ โหลดผล (Excel)** downloads four sheets with every row, whatever the filter: LOT-PO + เลขเอกสาร (every
+  warehouse line in file order with เลขที่เอกสาร, วันที่เอกสาร, จับคู่ด้วย, ผลเทียบจำนวน and หมายเหตุ),
+  ยอดไม่ตรง (one row per SKU that differs), ยังไม่มี Invoice and มีแต่ในไฟล์บัญชี. Copy gives the filtered
+  list, one row per order.
+
+---
+
 ## 📊 Stock Overview (`/dashboard`)
 
 One page for the stock's health now and a monthly summary for the boss. It doesn't have rules of its own:
@@ -1042,6 +1078,7 @@ public/
 ├─ stock-location/         # สต๊อกราย Location, from the Transaction sheet (+ wms-tx.js: grouping, refill list)
 ├─ cut-check/              # เช็ครายการตัดสต๊อก, cuts compared with the month-end order reports (+ wms-cut.js: per-day match with the ledger)
 ├─ lot-po/                 # LOT / PO ที่ขายออก, the daily SKU × LOT × PO report for accounting (+ wms-lotpo.js, wms-lot0.js)
+├─ invoice-match/          # จับคู่ Invoice, order × LOT/PO file matched with accounting's document numbers (+ wms-invmatch.js)
 ├─ fifo/                   # FIFO สต๊อก, stock by LOT oldest first + picks that skipped FIFO (+ wms-fifo.js)
 ├─ balance/                # สินค้าคงเหลือ ณ วันที่, SKU × LOT × PO balance at the end of a chosen day (+ wms-balance.js)
 ├─ dashboard/              # ภาพรวมสต๊อก, stock health now + monthly summary from the shared copies (+ wms-dash.js)

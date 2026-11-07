@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>จับคู่ Invoice — WMS</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../wms-icon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="../wms-logo.png">
+<link rel="apple-touch-icon" href="../wms-icon-180.png">
+<link rel="stylesheet" href="../wms-theme.css">
+<link rel="stylesheet" href="../wms-gate.css">
+<script src="../wms-gate.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+
+/* ── สองช่องวางไฟล์ อยู่บนสุด เป็นสิ่งแรกที่ต้องทำ ── */
+.im-files{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:14px 20px 8px;
+  background:var(--wms-surface);border-bottom:1px solid var(--wms-border)}
+.im-slot{display:flex;flex-direction:column;gap:5px;min-width:0;padding:13px 15px;border-radius:var(--wms-radius);
+  border:2px dashed var(--wms-border2);background:var(--wms-surface2);cursor:pointer;transition:border-color .15s,background .15s}
+.im-slot:hover,.im-slot.drag{border-color:var(--wms-primary);background:var(--wms-primary-light)}
+.im-slot.done{border-style:solid;border-color:#A7F3D0;background:#F0FDF4}
+.im-slot.done:hover,.im-slot.done.drag{border-color:var(--wms-primary);background:var(--wms-primary-light)}
+.im-h{font-size:15px;font-weight:700;color:var(--wms-text)}
+.im-h small{font-size:12px;font-weight:500;color:var(--wms-muted)}
+.im-fn{font-size:14px;font-weight:600;color:var(--wms-text);overflow-wrap:anywhere}
+.im-st{font-size:13px;color:var(--wms-muted);line-height:1.55}
+.im-st b{color:var(--wms-text)}
+.im-need{font-size:12px;color:var(--wms-muted);line-height:1.55}
+.im-act{font-size:12px;color:var(--wms-primary-dark)}
+.im-priv{grid-column:1/-1;font-size:12px;color:var(--wms-muted);line-height:1.6}
+.tx-err{font-size:13px;color:#B91C1C;font-weight:600;line-height:1.5}
+
+/* ── ยอดรวม ชุดเดียวกับหน้าสินค้าคงเหลือ ณ วันที่ ── */
+.tx-sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;padding:12px 20px;
+  background:var(--wms-surface);border-bottom:1px solid var(--wms-border)}
+.tx-sum:empty{display:none}
+.tx-stat{padding:8px 11px;border-radius:var(--wms-radius-sm);background:var(--wms-surface2);border:0;text-align:left;
+  font-family:var(--wms-font);cursor:pointer}
+.tx-stat:hover{box-shadow:inset 0 0 0 1.5px var(--wms-primary)}
+.tx-stat.on{box-shadow:inset 0 0 0 2px var(--wms-primary);background:var(--wms-primary-light)}
+.im-static{cursor:default}
+.im-static:hover{box-shadow:none}
+.tx-stat small{display:block;font-size:12px;color:var(--wms-muted)}
+.tx-stat b{font-size:20px;font-weight:700;color:var(--wms-text);font-variant-numeric:tabular-nums}
+.tx-stat b.tx-ok{color:#047857}
+.tx-stat b.tx-mid{color:#B45309}
+.tx-stat b.tx-neg{color:#B91C1C}
+.tx-stat i{display:block;font-style:normal;font-size:12px;color:var(--wms-muted)}
+
+/* ── เนื้อหา ── */
+.tx-body{padding:14px 20px 60px}
+.tx-empty{padding:44px 20px;text-align:center;color:var(--wms-muted);font-size:14px;line-height:1.7}
+.tx-empty b{color:var(--wms-text)}
+.tx-note{margin-bottom:12px;font-size:13px;color:var(--wms-muted);line-height:1.6}
+.tx-note b{color:var(--wms-text)}
+.tx-warn{margin-bottom:12px;padding:10px 13px;border-radius:var(--wms-radius-sm);background:#FEF3C7;
+  border:1px solid #FDE68A;color:#92400E;font-size:13px;line-height:1.6}
+.tx-warn b{font-weight:700}
+.tx-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px;font-size:13px;color:var(--wms-muted)}
+.tx-opt{padding:5px 13px;border-radius:999px;border:1px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:13px;color:#334155;cursor:pointer}
+.tx-opt:hover{border-color:var(--wms-primary);color:var(--wms-primary-dark)}
+.tx-opt.on{background:var(--wms-primary-light);border-color:var(--wms-primary);color:var(--wms-primary-dark);font-weight:600}
+.tx-opt.p{background:var(--wms-primary);border-color:var(--wms-primary);color:#fff;font-weight:600}
+.tx-opt.p:hover{filter:brightness(1.08);color:#fff}
+.tx-opt:disabled{opacity:.6;cursor:default}
+.tx-input{flex:1;min-width:180px;max-width:360px;padding:9px 13px;border-radius:10px;border:1.5px solid var(--wms-border2);
+  background:var(--wms-surface);font-family:var(--wms-font);font-size:14px;color:var(--wms-text);outline:none}
+.tx-input:focus{border-color:var(--wms-primary)}
+.im-out{padding-top:12px;border-top:1px solid var(--wms-border)}
+
+/* รหัสที่ไม่นำมาเทียบ พับไว้ เปิดดูเมื่ออยากรู้ว่ามีอะไรถูกข้าม */
+.im-fold summary{cursor:pointer;color:var(--wms-primary-dark);font-weight:600}
+.im-fold ul{margin:6px 0 0 18px}
+
+/* ตารางกว้างกว่าจอมือถือ เลื่อนเฉพาะตาราง */
+.tx-wrap{overflow-x:auto;background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:var(--wms-radius)}
+.tx-tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tx-tbl th{text-align:left;padding:9px 11px;background:var(--wms-surface2);font-size:12px;
+  font-weight:600;color:var(--wms-muted);border-bottom:1px solid var(--wms-border);white-space:nowrap}
+.tx-tbl td{padding:8px 11px;border-bottom:1px solid #F1F5F9;vertical-align:top;line-height:1.45}
+.tx-tbl tr:last-child td{border-bottom:0}
+.tx-tbl .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tx-tbl th.num{text-align:right}
+.tx-tbl .nw{white-space:nowrap}
+.tx-sub{display:block;font-size:12px;color:var(--wms-muted);line-height:1.5}
+.tx-mid{color:#B45309;font-weight:600}
+.tx-more{padding:12px 14px;font-size:13px;color:var(--wms-muted);text-align:center;background:var(--wms-surface2)}
+
+/* ผลของแต่ละรายการ สีบอกว่าต้องทำอะไรต่อ */
+.im-tag{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700;white-space:nowrap;
+  background:var(--wms-surface2);color:var(--wms-muted)}
+.im-tag.s-ok{background:#ECFDF5;color:#065F46}
+.im-tag.s-diff{background:#FEF3C7;color:#92400E}
+.im-tag.s-none{background:#FEE2E2;color:#991B1B}
+.im-tag.s-acconly{background:var(--wms-primary-light);color:var(--wms-primary-dark)}
+.im-tag.s-later{background:var(--wms-surface2);color:var(--wms-muted)}
+.im-doc{font-weight:600;overflow-wrap:anywhere}
+.im-diff{display:block;font-size:12.5px;line-height:1.55}
+.im-diff b{font-weight:600}
+.im-det{margin-top:4px;font-size:12px}
+.im-det summary{cursor:pointer;color:var(--wms-primary-dark);font-weight:600}
+.im-lines{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:6px}
+.im-lines h4{font-size:12px;font-weight:700;color:var(--wms-text);margin-bottom:3px}
+.im-lines div div{font-variant-numeric:tabular-nums;color:var(--wms-muted);line-height:1.55;overflow-wrap:anywhere}
+.im-tbl .k-det{min-width:260px}
+
+@media (max-width:640px){
+  .mod-title h2 .en,.mod-title p{display:none}
+  .im-files{grid-template-columns:1fr;padding-left:16px;padding-right:16px}
+  .im-slot{min-height:88px}
+  .tx-sum{grid-template-columns:repeat(2,minmax(0,1fr));padding-left:16px;padding-right:16px}
+  .tx-body{padding-left:16px;padding-right:16px}
+  .tx-opt{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 15px}
+  .tx-input{flex-basis:100%;min-height:44px;font-size:16px;max-width:none}   /* ต่ำกว่า 16px iPhone จะซูมหน้าเองตอนแตะช่องค้น */
+  .im-out .tx-opt{flex:1}
+  .im-out span{display:none}
+  .im-lines{grid-template-columns:1fr}
+
+  /* แถวเป็นการ์ด: ผลกับออเดอร์บนสุด เอกสารกับชิ้นต่อกัน รายละเอียดอยู่ล่าง ไม่ต้องเลื่อนข้าง */
+  .im-tbl,.im-tbl tbody{display:block}
+  .im-tbl thead{display:none}
+  .im-tbl tr{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:10px;row-gap:5px;
+    padding:11px 12px;border-bottom:1px solid var(--wms-border)}
+  .im-tbl tr:last-child{border-bottom:0}
+  .im-tbl td{display:block;min-width:0;padding:0;border:0;white-space:normal}
+  .im-tbl .k-state{grid-column:2;grid-row:1;text-align:right}
+  .im-tbl .k-order{grid-column:1;grid-row:1}
+  .im-tbl .k-date{display:none}
+  .im-tbl .k-doc{grid-column:1}
+  .im-tbl .k-qty{grid-column:2;text-align:right}
+  .im-tbl .k-det{grid-column:1/-1;min-width:0}
+  .im-tbl .k-doc::before,.im-tbl .k-qty::before{content:attr(data-label);display:block;
+    font-size:12px;font-weight:500;color:var(--wms-muted)}
+}
+</style>
+</head>
+<body data-wms-module="invmatch">
+
+<div class="wms-shell">
+<div data-wms-shell="invmatch" data-root="../"></div>
+<div class="wms-main">
+
+  <div class="mod-head">
+    <div class="mod-title">
+      <div class="ic"><img src="../icons/compare.png" alt="" width="38" height="38"></div>
+      <div>
+        <h2>จับคู่ Invoice<span class="en"> · Invoice Match</span></h2>
+        <p>วางไฟล์ออเดอร์ × LOT / PO กับไฟล์จากบัญชี ได้เลขที่เอกสาร (Invoice) ของทุกบรรทัด และรายการที่ต้องตามต่อ — อ่านในเครื่องนี้เท่านั้น ไม่ส่งไฟล์ไปที่ไหน</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="im-files" id="files"></div>
+  <div class="tx-sum" id="sum"></div>
+  <div class="tx-body" id="body"></div>
+
+</div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+
+<script type="module" src="../wms-shell.js"></script>
+<script src="../wms-invmatch.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const f = n => (Math.round(n * 1000) / 1000).toLocaleString('en-US');
+const dm = d => { const p = String(d || '').split('-'); return p.length === 3 ? `${+p[2]}/${+p[1]}` : ''; };
+const M = WmsInvMatch;
+const XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+const SHOW_MAX = 300;   // ทั้งเดือนมีหลายหมื่นออเดอร์ วาดหมดหน้าจะหน่วง คัดลอกกับไฟล์ Excel ยังได้ครบ
+
+const SLOTS = {
+  stock: { icon: '📦', title: 'ไฟล์คลัง', sub: 'ออเดอร์ × LOT / PO',
+    need: 'ต้องมี เลขออเดอร์ · SKU · จำนวน',
+    nice: 'มี LOT · PO · หมายเลขคำสั่งซื้อออนไลน์ · เลขออเดอร์ก่อนแยกบิลด้วย ยิ่งจับคู่ได้ครบ — ใช้ไฟล์ที่โหลดจากหน้า LOT / PO ที่ขายออก แบบรายออเดอร์ ได้เลย' },
+  acc: { icon: '🧾', title: 'ไฟล์บัญชี', sub: 'เลขที่เอกสาร (Invoice)',
+    need: 'ต้องมี เลขที่เอกสาร · รหัสสินค้า · จำนวน · ออเดอร์ภายใน หรือ คำสั่งซื้อออนไลน์', nice: '' },
+};
+const SIDE = { stock: 'ไฟล์คลัง', acc: 'ไฟล์บัญชี' };
+
+/* ไฟล์เป็นตัวเลขบัญชีกับเลขออเดอร์ลูกค้า เก็บแค่ในหน่วยความจำ ปิดหรือรีเฟรชหน้าแล้วหาย */
+let FILES = { stock: null, acc: null };   // { name, tab, src, info }
+let BUSY = { stock: '', acc: '' };
+let ERR = { stock: '', acc: '' };
+let MOVED = '';     // วางไฟล์ผิดช่อง ย้ายไปช่องที่ถูกให้แล้ว
+let RES = null;     // WmsInvMatch.match
+let ITEMS = [];     // WmsInvMatch.items(RES)
+let ONLY = '';      // '' | ok | diff | none | later | acconly | nokey
+let Q = '';
+let XLSX_LOAD = null;
+
+/** วันที่แบบเต็ม ปี พ.ศ. เช่น 31 ต.ค. 2569 */
+function longDate(d) {
+  const [y, m, day] = String(d).split('-').map(Number);
+  return new Date(y, m - 1, day).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+const spanText = (s) => !s.min ? '' : s.min === s.max ? longDate(s.min) : `${longDate(s.min)} – ${longDate(s.max)}`;
+
+function xlsxLib() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  if (!XLSX_LOAD) {
+    XLSX_LOAD = new Promise((ok, bad) => {
+      const s = document.createElement('script');
+      s.src = XLSX_URL;
+      s.onload = () => ok(window.XLSX);
+      s.onerror = () => { XLSX_LOAD = null; bad(new Error('โหลดตัวอ่านไฟล์ Excel ไม่ได้ ลองใหม่อีกครั้ง')); };
+      document.head.appendChild(s);
+    });
+  }
+  return XLSX_LOAD;
+}
+
+/* ── อ่านไฟล์ ──────────────────────────────────────────────────────────── */
+
+/**
+ * อ่านทุกแท็บ ดูจากหัวตารางว่าเป็นฝั่งไหน ไม่ได้ดูจากชื่อแท็บหรือช่องที่วาง
+ * ไฟล์เดียวมีทั้งสองฝั่งก็ใส่ให้ทั้งสองช่อง วางผิดช่องก็ย้ายไปช่องที่ถูกให้
+ */
+async function readFile(file, slot) {
+  BUSY[slot] = `กำลังอ่าน ${file.name}…`;
+  ERR[slot] = '';
+  MOVED = '';
+  renderFiles();
+  await new Promise((r) => setTimeout(r, 40));   // ให้ข้อความขึ้นก่อน ไฟล์ใหญ่หน้าจะค้างไปครู่หนึ่งตอนอ่าน
+  try {
+    const X = await xlsxLib();
+    const wb = X.read(await file.arrayBuffer(), { type: 'array' });
+    const found = {}, miss = [];
+    wb.SheetNames.forEach((tab) => {
+      const rows = X.utils.sheet_to_json(wb.Sheets[tab], { header: 1, defval: '', raw: true });
+      const det = M.detect(rows);
+      if (!det.kind) { if (det.missing.length) miss.push(`แท็บ ${tab} ยังขาดช่อง ${det.missing.join(' · ')}`); return; }
+      if (found[det.kind]) return;   // แท็บแรกของแต่ละฝั่งเท่านั้น
+      const src = M.read(rows, det);
+      found[det.kind] = { name: file.name, tab, src, info: M.describe(src) };
+    });
+    if (!found.stock && !found.acc) {
+      throw new Error(miss.length ? miss.join(' / ') : `ไม่พบหัวตารางที่รู้จักในไฟล์นี้ — ${SLOTS[slot].need}`);
+    }
+    ['stock', 'acc'].forEach((k) => { if (found[k]) { FILES[k] = found[k]; ERR[k] = ''; } });
+    if (!found[slot]) MOVED = `ไฟล์ ${file.name} เป็น${SIDE[slot === 'stock' ? 'acc' : 'stock']} ย้ายไปช่องนั้นให้แล้ว`;
+  } catch (e) {
+    ERR[slot] = `อ่านไฟล์ไม่ได้: ${e.message}`;
+  }
+  BUSY[slot] = '';
+  ONLY = '';
+  compute();
+  render();
+  if (ERR[slot] && window.WmsMotion) setTimeout(() => window.WmsMotion.shake(document.querySelector(`.im-slot[data-kind="${slot}"] .tx-err`)), 0);
+}
+
+function compute() {
+  RES = FILES.stock && FILES.acc ? M.match(FILES.stock.src, FILES.acc.src) : null;
+  ITEMS = RES ? M.items(RES) : [];
+}
+
+/* ── ช่องวางไฟล์ ───────────────────────────────────────────────────────── */
+
+function slotHtml(k) {
+  const s = SLOTS[k], fl = FILES[k];
+  let body;
+  if (BUSY[k]) body = `<div class="im-st">⏳ ${esc(BUSY[k])}</div>`;
+  else if (fl) {
+    const i = fl.info;
+    const when = spanText(i.span);
+    const parts = [`แท็บ <b>${esc(fl.tab)}</b>`, `${f(i.lines)} บรรทัด`, `${f(i.orders)} ออเดอร์`];
+    if (k === 'acc') parts.push(`${f(i.docs)} เอกสาร`);
+    if (when) parts.push(`${k === 'acc' ? 'วันที่เอกสาร' : 'วันที่'} ${esc(when)}`);
+    body = `<div class="im-fn">✅ ${esc(fl.name)}</div><div class="im-st">${parts.join(' · ')}</div>
+      <div class="im-act">กดหรือวางไฟล์ใหม่เพื่อเปลี่ยน</div>`;
+  } else {
+    body = `<div class="im-st"><b>วางไฟล์ที่นี่</b> หรือกดเพื่อเลือก (.xlsx)</div>
+      <div class="im-need">${esc(s.need)}${s.nice ? `<br>${esc(s.nice)}` : ''}</div>`;
+  }
+  return `<label class="im-slot${fl && !BUSY[k] ? ' done' : ''}" data-kind="${k}">
+    <input type="file" accept=".xlsx,.xls,.csv" data-kind="${k}" hidden>
+    <span class="im-h">${s.icon} ${esc(s.title)} <small>· ${esc(s.sub)}</small></span>
+    ${body}${ERR[k] ? `<div class="tx-err">${esc(ERR[k])}</div>` : ''}
+  </label>`;
+}
+
+function renderFiles() {
+  $('files').innerHTML = slotHtml('stock') + slotHtml('acc') +
+    `<div class="im-priv">🔒 อ่านในเบราว์เซอร์เครื่องนี้เท่านั้น ไม่ส่งขึ้นที่ไหน ไม่เก็บลงเครื่อง ปิดหรือรีเฟรชหน้าแล้วต้องวางไฟล์ใหม่
+      · ไฟล์เดียวที่มีทั้งสองแท็บก็ได้ ดูจากหัวตาราง ไม่ได้ดูจากชื่อแท็บ${MOVED ? ` · <b>${esc(MOVED)}</b>` : ''}</div>`;
+}
+
+/* ── ยอดรวม กดที่ช่องเพื่อกรองรายการด้านล่าง ─────────────────────────────── */
+
+function renderSum() {
+  if (!RES) { $('sum').innerHTML = ''; return; }
+  const c = RES.counts;
+  const pct = c.orders ? Math.round((c.matched / c.orders) * 1000) / 10 : 0;
+  const last = RES.accSpan.max ? dm(RES.accSpan.max) : '';
+  const stat = (only, label, n, sub, cls) => `<button class="tx-stat${ONLY === only ? ' on' : ''}" data-only="${only}">
+    <small>${esc(label)}</small><b class="${cls || ''}" data-count="${n}">${f(n)}</b><i>${sub}</i></button>`;
+  /* ช่องแรกเป็นยอดรวม ไม่ใช่ตัวกรอง (ได้เลขแล้วมีทั้งตรงและไม่ตรง) */
+  $('sum').innerHTML =
+    `<div class="tx-stat im-static"><small>ได้เลขเอกสารแล้ว</small><b data-count="${c.matched}">${f(c.matched)}</b><i>${pct}% ของ ${f(c.orders)} ออเดอร์ฝั่งคลัง</i></div>` +
+    stat('ok', 'ตรงกัน', c.ok, 'ชิ้นต่อ SKU เท่ากับในเอกสาร', 'tx-ok') +
+    stat('diff', 'จำนวนไม่ตรง', c.diff, 'ได้เลขเอกสารแล้ว แต่ชิ้นไม่เท่า', c.diff ? 'tx-mid' : '') +
+    stat('none', 'ยังไม่มี Invoice', c.none, c.later ? `${f(c.later)} ออเดอร์วันที่หลัง ${esc(last)} ยังไม่ถึงรอบ` : 'ไม่พบในไฟล์บัญชี', c.none - c.later ? 'tx-neg' : '') +
+    stat('acconly', 'มีแต่ในไฟล์บัญชี', c.acconly, 'ออเดอร์ที่ไม่มีในไฟล์คลัง') +
+    (c.nokey || ONLY === 'nokey' ? stat('nokey', 'บัญชียังไม่ใส่เลขออเดอร์', c.nokey, `เอกสาร · ${f(c.nokeyLines)} บรรทัด`, 'tx-mid') : '');
+}
+
+/* ── รายการ ────────────────────────────────────────────────────────────── */
+
+const chosen = () => M.filter(ITEMS, { only: ONLY, q: Q });
+const LABEL = Object.fromEntries(M.STATES.map((s) => [s.state, s.label]));
+
+function stateHtml(i) {
+  if (i.state === 'none' && i.later) return `<span class="im-tag s-later">ยังไม่ถึงรอบบัญชี</span>`;
+  return `<span class="im-tag s-${i.state}">${esc(LABEL[i.state])}</span>`;
+}
+
+function orderHtml(i) {
+  if (i.state === 'nokey') return '<span class="tx-mid">ไม่มีเลขออเดอร์</span>';
+  const sub = [];
+  if (i.online) sub.push(`ออนไลน์ ${esc(i.online)}`);
+  if (i.pre && i.pre !== i.order) sub.push(`ก่อนแยกบิล ${esc(i.pre)}`);
+  return `<b>${esc(i.order || '—')}</b>${sub.map((s) => `<span class="tx-sub">${s}</span>`).join('')}`;
+}
+
+function docHtml(i) {
+  if (!i.doc) return '<span class="tx-sub">—</span>';
+  const sub = [];
+  if (i.docDate) sub.push(`วันที่ ${esc(dm(i.docDate))}`);
+  if (i.how && i.how !== 'order') sub.push(`จับคู่ด้วย${esc(M.HOW[i.how])}`);
+  return `<span class="im-doc">${esc(i.doc)}</span>${sub.map((s) => `<span class="tx-sub">${s}</span>`).join('')}`;
+}
+
+function qtyHtml(i) {
+  if (i.state === 'none') return `${f(i.stockQty)}<span class="tx-sub">ฝั่งคลัง</span>`;
+  if (i.state === 'acconly' || i.state === 'nokey') return `${f(i.accQty)}<span class="tx-sub">ฝั่งบัญชี</span>`;
+  return `${f(i.stockQty)} / ${f(i.accQty)}<span class="tx-sub">คลัง / บัญชี</span>`;
+}
+
+/** บรรทัดของทั้งสองฝั่ง เปิดดูได้ทีละรายการ ไม่ต้องไปเปิดไฟล์ */
+function linesHtml(i) {
+  const st = i.stock.map((l) => `<div>${esc(l.sold || l.sku)}${l.lot || l.po ? ` · LOT ${esc(l.lot || '-')} · PO ${esc(l.po || '-')}` : ''} · <b>${f(l.qty)}</b></div>`).join('');
+  const ac = i.acc.map((l) => `<div>${esc(l.code)} · <b>${f(l.qty)}</b>${i.docs.length > 1 ? ` · ${esc(l.doc)}` : ''}</div>`).join('');
+  const n = i.stock.length + i.acc.length;
+  const more = i.group > 1 ? `<span class="tx-sub">ฝั่งบัญชีรวม ${i.group} ออเดอร์ที่แยกบิลไว้ในเอกสารเดียว</span>` : '';
+  return `<details class="im-det"><summary>ดูบรรทัด (${n})</summary>${more}<div class="im-lines">
+    ${i.stock.length ? `<div><h4>ฝั่งคลัง</h4>${st}</div>` : ''}${i.acc.length ? `<div><h4>ฝั่งบัญชี</h4>${ac}</div>` : ''}</div></details>`;
+}
+
+function detHtml(i) {
+  const out = [];
+  const top = i.diffs.slice(0, 4);
+  top.forEach((d) => out.push(`<span class="im-diff"><b>${esc(d.sku)}</b> คลัง ${f(d.stock)} · บัญชี ${f(d.acc)}</span>`));
+  if (i.diffs.length > top.length) out.push(`<span class="tx-sub">อีก ${i.diffs.length - top.length} SKU — ดูในไฟล์ Excel ชีตยอดไม่ตรง</span>`);
+  if (i.state === 'acconly') out.push('<span class="tx-sub">เอกสารอ้างเลขออเดอร์ที่ไม่มีในไฟล์คลัง — เช็คว่าไฟล์คลังครบช่วงวันที่หรือยัง</span>');
+  if (i.state === 'nokey') out.push('<span class="tx-sub">บรรทัดในไฟล์บัญชีไม่มีทั้งเลขออเดอร์และเลขคำสั่งซื้อออนไลน์</span>');
+  if (i.note) out.push(`<span class="tx-sub">${esc(i.note)}</span>`);
+  return out.join('') + linesHtml(i);
+}
+
+function listHtml() {
+  const rows = chosen();
+  if (!rows.length) {
+    return Q || ONLY
+      ? '<div class="tx-empty art-search">ไม่พบรายการที่ตรงกับที่เลือก</div>'
+      : '<div class="tx-empty art-done">ไม่มีรายการ</div>';
+  }
+  const show = rows.slice(0, SHOW_MAX);
+  const body = show.map((i) => `<tr>
+      <td class="nw k-state">${stateHtml(i)}</td>
+      <td class="k-order">${orderHtml(i)}</td>
+      <td class="nw k-date">${esc(dm(i.date))}</td>
+      <td class="k-doc" data-label="เลขที่เอกสาร">${docHtml(i)}</td>
+      <td class="num k-qty" data-label="ชิ้น">${qtyHtml(i)}</td>
+      <td class="k-det">${detHtml(i)}</td>
+    </tr>`).join('');
+  const more = rows.length > SHOW_MAX ? `<div class="tx-more">แสดง ${f(SHOW_MAX)} จาก ${f(rows.length)} รายการ — ค้นหาเพื่อดูรายการที่เหลือ ไฟล์ Excel และปุ่มคัดลอกได้ครบ</div>` : '';
+  return `<div class="tx-wrap"><table class="tx-tbl im-tbl">
+    <thead><tr><th>ผล</th><th>ออเดอร์</th><th>วันที่</th><th>เลขที่เอกสาร</th><th class="num">ชิ้น</th><th>รายละเอียด</th></tr></thead>
+    <tbody>${body}</tbody></table>${more}</div>`;
+}
+
+function renderList() {
+  const box = $('list');
+  if (box) box.innerHTML = listHtml();
+  const n = chosen().length;
+  const copy = $('copyBtn');
+  if (copy) { copy.textContent = `📋 คัดลอก ${f(n)} รายการ`; copy.disabled = !n; }
+}
+
+/** ข้อความเตือนจากตอนอ่านไฟล์ ของทั้งสองฝั่ง */
+function fileNotes() {
+  const out = [];
+  ['stock', 'acc'].forEach((k) => {
+    const i = FILES[k] && FILES[k].info;
+    if (!i) return;
+    Object.entries(i.lossy).forEach(([col, n]) => out.push(`<div class="tx-warn">${esc(SIDE[k])}: ช่อง <b>${esc(col)}</b> ${f(n)} บรรทัดเป็นเลขแบบ 1.23E+17 — Excel ตัดหลักท้ายทิ้งไปแล้ว จับคู่ด้วยเลขนี้ไม่ได้
+      แก้ที่ต้นทาง: ตั้งรูปแบบช่องเป็นข้อความ (Text) ก่อนวางเลข แล้วส่งออกไฟล์ใหม่</div>`));
+    if (i.bad) out.push(`<div class="tx-warn">${esc(SIDE[k])}: ช่องจำนวน ${f(i.bad)} บรรทัดไม่ใช่ตัวเลข นับเป็น 0</div>`);
+    if (i.noId) out.push(`<div class="tx-note">${esc(SIDE[k])}: ${f(i.noId)} แถวไม่มีทั้งเลขออเดอร์และเลขคำสั่งซื้อออนไลน์ ข้ามไป</div>`);
+  });
+  return out.join('');
+}
+
+function extraNote() {
+  const x = RES.extraCodes;
+  if (!x.length) return '';
+  const lines = x.reduce((s, e) => s + e.lines, 0);
+  return `<div class="tx-note"><details class="im-fold"><summary>รหัสในไฟล์บัญชีที่ไม่มีในไฟล์คลังเลย ${f(x.length)} รหัส (${f(lines)} บรรทัด) ไม่นำมาเทียบจำนวน</summary>
+    เช่น ค่าส่ง ค่าบริการ ของที่ไม่ได้ออกจากคลัง — ถ้าเห็นรหัสสินค้าจริงในรายการนี้ แปลว่าไฟล์คลังยังไม่มีออเดอร์ที่ขายรหัสนั้น
+    <ul>${x.map((e) => `<li><b>${esc(e.code)}</b> ${esc(e.name)} · ${f(e.lines)} บรรทัด · ${f(e.qty)} ชิ้น</li>`).join('')}</ul></details></div>`;
+}
+
+function renderBody() {
+  if (!RES) {
+    const has = FILES.stock || FILES.acc;
+    $('body').innerHTML = `${fileNotes()}<div class="tx-empty art-data">${has
+      ? `รออีกไฟล์ — วาง<b>${esc(FILES.stock ? SIDE.acc : SIDE.stock)}</b>ในช่องด้านบน แล้วจะจับคู่ให้ทันที`
+      : 'วาง<b>ไฟล์คลัง</b>กับ<b>ไฟล์บัญชี</b>ในสองช่องด้านบน<br>ระบบจับคู่ด้วยเลขออเดอร์ เลขออเดอร์ก่อนแยกบิล แล้วเลขคำสั่งซื้อออนไลน์ ตามลำดับ'}</div>`;
+    return;
+  }
+  const c = RES.counts;
+  const how = {};
+  RES.orders.forEach((o) => { if (o.how) how[o.how] = (how[o.how] || 0) + 1; });
+  const howText = Object.keys(M.HOW).filter((k) => how[k]).map((k) => `${M.HOW[k]} <b>${f(how[k])}</b>`).join(' · ');
+  const opt = (v, label, n) => `<button class="tx-opt${ONLY === v ? ' on' : ''}" data-only="${v}">${label} ${f(n)}</button>`;
+  const chips = [opt('', 'ทั้งหมด', ITEMS.length)];
+  M.STATES.forEach((s) => { const n = s.state === 'nokey' ? c.nokey : c[s.state]; if (n || ONLY === s.state) chips.push(opt(s.state, s.label, n)); });
+  if (c.later || ONLY === 'later') chips.push(opt('later', 'ยังไม่ถึงรอบบัญชี', c.later));
+  $('body').innerHTML = `${fileNotes()}
+    <div class="tx-note">จับคู่ด้วย ${howText || '—'} · เทียบชิ้นต่อ SKU ด้วย SKU ที่ขาย (ถ้ามี) รวมทุกบรรทัดของออเดอร์ · ออเดอร์ที่แยกบิลแต่บัญชีออกเอกสารใบเดียว เทียบรวมกันทั้งกลุ่ม</div>
+    ${extraNote()}
+    <div class="tx-bar">
+      <input id="q" class="tx-input" type="search" placeholder="ค้นหาเลขออเดอร์ เลขออนไลน์ เลขที่เอกสาร หรือ SKU" value="${esc(Q)}" autocomplete="off">
+      ${chips.join('')}
+    </div>
+    <div class="tx-bar im-out">
+      <button class="tx-opt p" id="xlsxBtn">⬇️ โหลดผล (Excel)</button>
+      <button class="tx-opt" id="copyBtn">📋 คัดลอก</button>
+      <span>ไฟล์มี 4 ชีตครบทุกรายการ ไม่ขึ้นกับตัวกรอง: LOT-PO + เลขเอกสาร (ทุกบรรทัดฝั่งคลังพร้อมเลขที่เอกสาร) · ยอดไม่ตรง · ยังไม่มี Invoice · มีแต่ในไฟล์บัญชี — ปุ่มคัดลอกได้รายการตามตัวกรอง</span>
+    </div>
+    <div id="list"></div>`;
+  renderList();
+}
+
+function render() {
+  renderFiles();
+  renderSum();
+  renderBody();
+}
+
+/* ── ส่งออก ────────────────────────────────────────────────────────────── */
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (err) {}
+    ta.remove();
+    return ok;
+  }
+}
+
+/** สี่ชีต แถวแรกเป็นหัวตาราง มีตัวกรองให้แล้ว ชื่อไฟล์บอกช่วงวันที่ของไฟล์คลัง */
+async function downloadXlsx() {
+  const btn = $('xlsxBtn');
+  const label = btn.textContent;
+  try {
+    btn.disabled = true;
+    btn.textContent = 'กำลังสร้างไฟล์…';
+    await new Promise((r) => setTimeout(r, 40));   // ชีตแรกยาวเท่าไฟล์คลัง ให้ข้อความขึ้นก่อนหน้าค้าง
+    const X = await xlsxLib();
+    const wb = X.utils.book_new();
+    const sheet = (aoa, name, widths) => {
+      const ws = X.utils.aoa_to_sheet(aoa);
+      ws['!cols'] = widths.map((w) => ({ wch: w }));
+      ws['!autofilter'] = { ref: X.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: Math.max(aoa.length - 1, 1), c: aoa[0].length - 1 } }) };
+      X.utils.book_append_sheet(wb, ws, name);
+    };
+    sheet(M.lineTable(RES), 'LOT-PO + เลขเอกสาร', [11, 10, 18, 18, 22, 14, 18, 18, 36, 8, 12, 7, 18, 11, 20, 14, 44]);
+    sheet(M.diffTable(RES), 'ยอดไม่ตรง', [18, 22, 18, 18, 36, 12, 12, 14]);
+    sheet(M.noneTable(RES), 'ยังไม่มี Invoice', [11, 18, 22, 18, 10, 14, 9, 50]);
+    sheet(M.accTable(RES), 'มีแต่ในไฟล์บัญชี', [18, 22, 18, 11, 18, 36, 8, 26, 10]);
+    const s = RES.stockSpan;
+    X.writeFile(wb, `จับคู่Invoice-${s.min || 'ไฟล์คลัง'}${s.max && s.max !== s.min ? '_' + s.max : ''}.xlsx`);
+    btn.textContent = 'โหลดแล้ว';
+    window.WmsMotion?.saved(btn);
+  } catch (e) {
+    btn.textContent = e.message;
+    window.WmsMotion?.shake(btn);
+  }
+  setTimeout(() => {
+    if (!btn.isConnected) return;
+    btn.textContent = label;
+    btn.disabled = false;
+  }, 2500);
+}
+
+/* ── ปุ่มและช่องวางไฟล์ ────────────────────────────────────────────────── */
+
+$('files').addEventListener('change', (e) => {
+  const inp = e.target.closest('input[type=file]');
+  if (inp && inp.files[0]) readFile(inp.files[0], inp.dataset.kind);
+});
+$('files').addEventListener('dragover', (e) => {
+  const slot = e.target.closest('.im-slot');
+  if (!slot) return;
+  e.preventDefault();
+  slot.classList.add('drag');
+});
+$('files').addEventListener('dragleave', (e) => {
+  const slot = e.target.closest('.im-slot');
+  if (slot && !slot.contains(e.relatedTarget)) slot.classList.remove('drag');
+});
+$('files').addEventListener('drop', (e) => {
+  const slot = e.target.closest('.im-slot');
+  if (!slot) return;
+  e.preventDefault();
+  slot.classList.remove('drag');
+  const file = e.dataTransfer.files[0];
+  if (file) readFile(file, slot.dataset.kind);
+});
+
+function pick(only) {
+  ONLY = only;
+  renderSum();
+  renderBody();
+}
+$('sum').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-only]');
+  if (b) pick(ONLY === b.dataset.only ? '' : b.dataset.only);
+});
+$('body').addEventListener('click', (e) => {
+  const only = e.target.closest('[data-only]');
+  if (only) { pick(only.dataset.only); return; }
+  if (e.target.closest('#xlsxBtn')) { downloadXlsx(); return; }
+  if (e.target.closest('#copyBtn')) {
+    const btn = $('copyBtn');
+    copyText(M.tsv(M.itemTable(chosen()))).then((ok) => {
+      btn.textContent = ok ? 'คัดลอกแล้ว วางใน Excel ได้เลย' : 'คัดลอกไม่ได้ ลองกดอีกครั้ง';
+      if (ok) window.WmsMotion?.saved(btn); else window.WmsMotion?.shake(btn);
+    });
+  }
+});
+$('body').addEventListener('input', (e) => {
+  if (e.target.id !== 'q') return;
+  Q = e.target.value.trim();
+  renderList();   // ไม่วาดช่องค้นใหม่ ไม่งั้นเคอร์เซอร์จะหลุดระหว่างพิมพ์
+});
+render();
+</script>
+</body>
+</html>
