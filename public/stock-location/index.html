@@ -79,6 +79,32 @@ a.tx-row{color:var(--wms-primary-dark)}
 .tx-iss td:not(:last-child){white-space:nowrap;max-width:300px;overflow:hidden;text-overflow:ellipsis}
 .tx-iss td:first-child{font-weight:600}
 
+/* ── ข้อมูลผิด: หนึ่งการ์ดต่อหนึ่งเรื่อง บอกว่าผิดอะไร แถวไหนต้องเช็คก่อน และน่าจะแก้เป็นอะไร
+   เป็นประโยคแทนตารางเหมือนรายการต้องเติม บนมือถือก็อ่านครบโดยไม่ต้องเลื่อนข้าง ── */
+.tx-iq{list-style:none;display:flex;flex-direction:column;gap:8px}
+.tx-is{padding:11px 14px;background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:var(--wms-radius)}
+.tx-is.done{background:var(--wms-surface2)}
+.tx-is .top{display:flex;flex-wrap:wrap;align-items:baseline;gap:3px 8px;font-size:12.5px;color:var(--wms-muted)}
+.tx-is .top b{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--wms-text)}
+.tx-is .amt{margin-left:auto;font-size:14px;font-weight:700;color:#B91C1C;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tx-is .what{margin-top:6px;font-size:14px;font-weight:600;color:var(--wms-text);line-height:1.5}
+.tx-is .pt{margin-top:7px;font-size:13px;color:var(--wms-text);line-height:1.6}
+.tx-rl{list-style:none;font-size:13px;line-height:1.75}
+.tx-rl li{display:flex;flex-wrap:wrap;gap:0 8px}
+.tx-rl .hit{font-weight:600}
+.tx-ri{color:var(--wms-muted)}
+.tx-hint{margin-top:8px;padding:8px 11px;border-radius:var(--wms-radius-sm);background:#EFF6FF;border:1px solid #BFDBFE;
+  color:#1E3A8A;font-size:13px;line-height:1.6}
+.tx-hint.weak{background:var(--wms-surface2);border-color:var(--wms-border);color:var(--wms-muted)}
+.tx-acts{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:10px}
+.tx-acts .sp{flex:1}
+a.tx-opt{display:inline-block;text-decoration:none}
+.tx-kind{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;white-space:nowrap;
+  background:#FEF3C7;color:#92400E}
+.tx-kind.bad{background:#FEE2E2;color:#991B1B}
+.tx-done{font-size:12.5px;font-weight:600;color:#166534}
+.tx-card i{display:block;font-style:normal;font-size:11px;color:var(--wms-muted)}
+
 /* ใบนับสต๊อก: ช่องกรอกใหญ่พอให้กดด้วยนิ้วขณะยืนหน้าชั้น และตัวอักษร 16px ขึ้นไปกันมือถือซูมเองตอนแตะ */
 .tx-cline{align-items:center}
 .tx-qty{flex-shrink:0;width:88px;height:46px;padding:0 11px;border-radius:10px;border:1.5px solid var(--wms-border2);
@@ -154,6 +180,8 @@ button.tx-card.on{border-color:var(--wms-primary);background:var(--wms-primary-l
 @media (max-width:640px){
   .tx-body{padding:12px 12px 60px}
   .tx-src,.tx-sum,.tx-tabs{padding-left:12px;padding-right:12px}
+  .tx-is{padding:10px 12px}
+  .tx-acts .tx-opt{padding:8px 13px}   /* ปุ่มเล็กกดด้วยนิ้วพลาดง่าย */
 }
 </style>
 </head>
@@ -367,8 +395,9 @@ function renderSum() {
     stat('QA', t.QA) + stat('IQA', t.IQA) + stat('RIB', t.RIB);
 }
 
+/** ตัวเลขบนแท็บ ไม่นับรายการที่เช็คแล้วในเครื่องนี้ */
 function issueTotal() {
-  return Object.values(RAW.issues.counts).reduce((a, n) => a + n, 0);
+  return Object.values(RAW.issues.counts).reduce((a, n) => a + n, 0) - RAW.issues.list.filter(isDone).length;
 }
 
 function renderTabs() {
@@ -538,22 +567,90 @@ function rowLink(row) {
   return u ? `<a class="tx-row" href="${esc(u)}" target="_blank" rel="noopener">${row}</a>` : String(row);
 }
 
-function rowLinks(i) {
-  if (i.kind === 'date') return `${rowLink(i.first)}–${rowLink(i.last)}`;
-  const more = i.rowCount - i.rows.length;
-  return i.rows.map(rowLink).join(', ') + (more > 0 ? ` <span class="tx-sub">และอีก ${f(more)} แถว</span>` : '');
+let BQ = '';                         // คำค้นในแท็บข้อมูลผิด
+let SHOWDONE = false;                // แสดงรายการที่เช็คแล้วด้วยไหม
+let CHECKED = WmsTx.readChecked();   // รายการที่เช็คแล้ว จำไว้ในเครื่องนี้เท่านั้น
+const CLUES = new WeakMap();         // คำใบ้ต่อรายการ คิดครั้งเดียวต่อข้อมูลหนึ่งชุด พิมพ์ค้นทีละตัวไม่ต้องไล่ยอดทั้งคลังใหม่
+const BAD_MAX = 40;                  // ดูทุกเรื่องพร้อมกัน แสดงเรื่องละเท่านี้ก่อน กดการ์ดเพื่อดูครบ
+/* ยอดติดลบกับมีแต่แถวออกคือยอดที่ขาดจริง สีแดง เรื่องอื่นเป็นการกรอกที่ต้องแก้ สีเหลือง */
+const BAD_KINDS = ['negative', 'outonly'];
+
+const isDone = (i) => WmsTx.isChecked(CHECKED, i);
+
+function clueOf(i) {
+  if (!CLUES.has(i)) CLUES.set(i, WmsTx.clue(RAW, i));
+  return CLUES.get(i);
 }
 
-function issueSection(k) {
-  const items = RAW.issues.list.filter(i => i.kind === k.kind);
+/** แถวที่แนบมา สคริปต์รุ่นใหม่ส่งรายละเอียดของแต่ละแถวมาด้วย รุ่นเก่ามีแค่เลขแถว */
+function issueRows(i) {
+  if (i.kind === 'date') return `<div class="pt">แถวในชีต: ${rowLink(i.first)}${i.last !== i.first ? `–${rowLink(i.last)}` : ''}</div>`;
+  if (!i.rows || !i.rows.length) return '';
+  const more = i.rowCount - i.rows.length;
+  const tail = more > 0 ? ` <span class="tx-ri">และอีก ${f(more)} แถว</span>` : '';
+  if (!i.info) return `<div class="pt">${esc(WmsTx.rowsLabel(i))}: ${i.rows.map(rowLink).join(', ')}${tail}</div>`;
+  const head = i.kind === 'negative'
+    ? `ยอดเริ่มติดลบที่แถว ${i.at} แล้วไม่กลับขึ้นมาอีก (ก่อนแถวนี้เหลือ ${f(i.before)})`
+    : `${WmsTx.rowsLabel(i)}${i.rowCount > 1 ? ` ${f(i.rowCount)} แถว` : ''}`;
+  return `<div class="pt">${esc(head)}</div><ul class="tx-rl">${i.rows.map((n, k) =>
+      `<li class="${i.kind === 'negative' && k === 0 ? 'hit' : ''}"><span>แถว ${rowLink(n)}</span><span class="tx-ri">${esc(WmsTx.rowInfo(i.info[k], i.loc))}</span></li>`
+    ).join('')}</ul>${more > 0 ? `<div class="pt">${tail}</div>` : ''}`;
+}
+
+function issueCard(i, names) {
+  const t = WmsTx.issueText(i);
+  const done = isDone(i);
+  const kind = WmsTx.ISSUES.find(k => k.kind === i.kind);
+  const where = [i.lot !== undefined && i.lot !== '' ? `LOT ${esc(i.lot)}` : '', i.po && i.po !== '0' ? `PO ${esc(i.po)}` : '', esc(i.loc || '')]
+    .filter(Boolean).join(' · ');
+  const amt = BAD_KINDS.includes(i.kind) ? `−${f(-i.bal)} ชิ้น` : i.kind === 'closedsale' ? `${f(i.sold)} ชิ้น` : '';
+  const c = BAD_KINDS.includes(i.kind) ? clueOf(i) : null;
+  const first = i.at || (i.rows && i.rows[0]) || i.first;
+  const url = first ? WmsTx.rowUrl(RAW.sheet, first) : '';
+  const name = i.sku ? names.get(String(i.long || i.sku).toUpperCase()) : '';
+  return `<li class="tx-is ${done ? 'done' : ''}">
+      <div class="top"><span class="tx-kind ${BAD_KINDS.includes(i.kind) ? 'bad' : ''}">${esc(kind.label)}</span>
+        ${i.sku ? `<b>${esc(i.sku)}</b>` : ''}${name ? `<span>${esc(name)}</span>` : ''}${where ? `<span>${where}</span>` : ''}
+        ${amt ? `<span class="amt">${amt}</span>` : ''}</div>
+      <div class="what">${esc(t.what)}</div>
+      ${t.sub ? `<div class="tx-sub">${esc(t.sub)}</div>` : ''}
+      ${issueRows(i)}
+      ${c ? `<div class="tx-hint ${c.kind === 'none' ? 'weak' : ''}">💡 ${esc(WmsTx.clueText(c, i))}</div>` : ''}
+      <div class="tx-acts">
+        ${url ? `<a class="tx-opt on" href="${esc(url)}" target="_blank" rel="noopener">เปิดแถว ${first} ในชีต ↗</a>` : ''}
+        ${i.sku ? `<button class="tx-opt" data-hist="${esc(i.sku)}">ดูประวัติ SKU นี้</button><button class="tx-opt" data-sku="${esc(i.sku)}" data-loc="${esc(i.loc || '')}">ดูยอดทุกกอง</button>` : ''}
+        <span class="sp"></span>
+        ${done ? `<span class="tx-done">✓ เช็คแล้ว</span><button class="tx-link" data-check="${esc(WmsTx.issueId(i))}">ยกเลิก</button>`
+          : `<button class="tx-opt" data-check="${esc(WmsTx.issueId(i))}">✓ เช็คแล้ว</button>`}
+      </div>
+    </li>`;
+}
+
+function issueSection(k, names) {
+  const all = RAW.issues.list.filter(i => i.kind === k.kind);
+  const found = WmsTx.filterIssues(all, BQ);
+  const open = found.filter(i => !isDone(i));
+  const items = SHOWDONE ? open.concat(found.filter(isDone)) : open;
+  if (!items.length) return '';
   const total = RAW.issues.counts[k.kind];
-  const align = (c) => (c.num ? 'num' : '');
-  return `<div class="tx-h">${esc(k.label)} (${f(total)})</div><p class="tx-why">${esc(k.note)}</p>` +
-    `<div class="tx-wrap"><table class="tx-tbl tx-iss"><thead><tr>` +
-    k.cols.map(c => `<th class="${align(c)}">${esc(c.label)}</th>`).join('') + `<th>แถวในชีต</th></tr></thead><tbody>` +
-    items.map(i => `<tr>${k.cols.map(c => `<td class="${align(c)}" title="${esc(c.value(i))}">${esc(c.value(i))}</td>`).join('')}<td>${rowLinks(i)}</td></tr>`).join('') +
-    `</tbody></table></div>` +
-    (items.length < total ? `<p class="tx-note">แสดง ${f(items.length)} จาก ${f(total)} รายการ เรียงจากยอดที่กระทบมากสุด</p>` : '');
+  /* พิมพ์ค้นอยู่หรือเลือกดูเรื่องเดียว แสดงครบ ดูทุกเรื่องพร้อมกันแสดงแค่ส่วนต้น หน้าจะได้ไม่ยาวจนหาเรื่องถัดไปไม่เจอ */
+  const cap = KIND || BQ.trim() ? items.length : BAD_MAX;
+  return `<div class="tx-h">${esc(k.label)} (${f(items.length)})</div><p class="tx-why">${esc(k.note)}</p>` +
+    `<ol class="tx-iq">${items.slice(0, cap).map(i => issueCard(i, names)).join('')}</ol>` +
+    (items.length > cap ? `<p class="tx-note"><button class="tx-link" data-kind="${k.kind}">ดูเรื่องนี้ทั้งหมด ${f(items.length)} รายการ</button></p>` : '') +
+    (all.length < total && !BQ.trim() ? `<p class="tx-note">สคริปต์ส่งมา ${f(all.length)} จาก ${f(total)} รายการ เรียงจากยอดที่กระทบมากสุด</p>` : '');
+}
+
+function renderBadList() {
+  const box = $('badlist');
+  if (!box) return;
+  const names = new Map();
+  RAW.skus.forEach(t => { names.set(String(t[1]).toUpperCase(), t[2]); if (!names.has(String(t[0]).toUpperCase())) names.set(String(t[0]).toUpperCase(), t[2]); });
+  const kinds = WmsTx.ISSUES.filter(k => RAW.issues.counts[k.kind] && (!KIND || k.kind === KIND));
+  const html = kinds.map(k => issueSection(k, names)).join('');
+  box.innerHTML = html || (BQ.trim()
+    ? `<div class="tx-empty art-search">ไม่พบ "<b>${esc(BQ.trim())}</b>" ในรายการข้อมูลผิด</div>`
+    : `<div class="tx-empty art-done">เช็คครบทุกรายการแล้ว — <b>กดดึงใหม่</b> หลังแก้ชีต รายการที่แก้แล้วจะหายไปเอง</div>`);
 }
 
 function renderBad() {
@@ -561,14 +658,40 @@ function renderBad() {
   const kinds = WmsTx.ISSUES.filter(k => counts[k.kind]);
   if (!kinds.length) { $('body').innerHTML = `<div class="tx-empty art-done">ไม่พบจุดผิด — <b>เป็นเรื่องดี</b></div>`; return; }
   if (!counts[KIND]) KIND = '';
+  const list = RAW.issues.list;
+  const doneIn = (kind) => list.filter(i => i.kind === kind && isDone(i)).length;
+  const doneAll = list.filter(isDone).length;
+  /* สคริปต์รุ่นก่อนส่งมาแค่เลขแถว ยังชี้แถวต้นเหตุไม่ได้ ต้องบอกว่าทำไม ไม่งั้นจะดูเหมือนหน้านี้ยังไม่ได้อัปเดต */
+  const old = list.some(i => ['negative', 'outonly', 'mixed', 'closedsale'].includes(i.kind) && !i.info);
 
   $('body').innerHTML =
-    `<div class="tx-cards">${kinds.map(k =>
-      `<button class="tx-card ${k.kind === KIND ? 'on' : ''}" data-kind="${k.kind}"><small>${esc(k.label)}</small><b>${f(counts[k.kind])}</b></button>`
-    ).join('')}</div>` +
-    (KIND ? `<button class="tx-link" data-kind="">ดูทุกเรื่อง</button>` : '') +
-    kinds.filter(k => !KIND || k.kind === KIND).map(issueSection).join('') +
-    `<p class="tx-note">กดเลขแถวเพื่อเปิดชีตตรงแถวนั้น หน้านี้ไม่แก้ชีต แก้ในชีตแล้วกดดึงใหม่ รายการจะหายไปเอง</p>`;
+    (old ? `<div class="tx-warn">สคริปต์ในชีตยังเป็นรุ่นก่อน หน้านี้จึงยังชี้แถวที่ทำให้ติดลบไม่ได้ —
+      วาง <b>tx-api.gs</b> รุ่นล่าสุด แล้ว Deploy เป็น New version จากนั้นกดดึงใหม่</div>` : '') +
+    `<div class="tx-cards">${kinds.map(k => {
+      const done = doneIn(k.kind);
+      return `<button class="tx-card ${k.kind === KIND ? 'on' : ''}" data-kind="${k.kind}"><small>${esc(k.label)}</small>` +
+        `<b>${f(counts[k.kind] - done)}</b>${done ? `<i>เช็คแล้ว ${f(done)}</i>` : ''}</button>`;
+    }).join('')}</div>` +
+    `<div class="tx-bar"><input class="tx-input" id="bq" type="search" autocomplete="off" spellcheck="false"
+       placeholder="ค้น SKU, Location, LOT หรือเลขแถว" value="${esc(BQ)}">` +
+    (KIND ? `<button class="tx-opt" data-kind="">ดูทุกเรื่อง</button>` : '') +
+    (doneAll ? `<button class="tx-opt ${SHOWDONE ? 'on' : ''}" data-showdone="1">แสดงที่เช็คแล้ว (${f(doneAll)})</button>` : '') +
+    `</div><div id="badlist"></div>` +
+    `<p class="tx-note">กดเปิดแถวเพื่อไปที่แถวนั้นในชีต หน้านี้ไม่แก้ชีต แก้ในชีตแล้วกดดึงใหม่ รายการจะหายไปเอง
+      · เช็คแล้วจำไว้ในเครื่องนี้เท่านั้น ถ้าตัวเลขของรายการเปลี่ยน รายการจะกลับมาให้ดูใหม่
+      · 💡 คือคำใบ้จากกองอื่นของ SKU เดียวกัน ยังต้องดูของจริงก่อนแก้</p>`;
+  $('bq').addEventListener('input', (e) => { BQ = e.target.value; renderBadList(); });
+  renderBadList();
+}
+
+function toggleCheck(id) {
+  const i = RAW.issues.list.find(x => WmsTx.issueId(x) === id);
+  if (!i) return;
+  if (isDone(i)) delete CHECKED[id];
+  else CHECKED[id] = { sig: WmsTx.issueSig(i), at: Date.now() };
+  CHECKED = WmsTx.saveChecked(CHECKED);
+  renderTabs();
+  renderBad();
 }
 
 /* ── ประวัติ ────────────────────────────────────────────────────────────── */
@@ -1035,6 +1158,8 @@ $('body').addEventListener('click', (e) => {
   else if (d.diffSend) sendDiff();
   else if (d.diffKind !== undefined) { DKIND = d.diffKind; renderDiff(); }
   else if (d.diffState !== undefined) { DSTATE = d.diffState; renderDiffRows(); }
+  else if (d.check) toggleCheck(d.check);
+  else if (d.showdone) { SHOWDONE = !SHOWDONE; renderBad(); }
   else if (d.kind !== undefined) { KIND = d.kind; renderBad(); }
   else if (d.hist) { goTab('log'); openHistory(d.hist); $('hq').value = d.hist; }
 });

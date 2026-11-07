@@ -326,7 +326,7 @@ number. The one thing it writes is its own `นับสต๊อก` tab, which
 | นับสต๊อก | Today's 20 lines to count, and how accurate the stock is |
 | เทียบสต๊อก | Which SKUs differ between the company system and this sheet, and by how much |
 | หาของ | Where a SKU is, or what is in a Location |
-| ข้อมูลผิด | Rows that look wrong, each linking to that row in the sheet |
+| ข้อมูลผิด | Rows that look wrong, one card each: what's wrong, which row to check first, and a hint at the fix |
 | ประวัติ | Every movement of one SKU, with a running total |
 
 **How balances are worked out.** Same as the balance sheet's SUMIFS, keyed on column B + LOT + PO +
@@ -335,6 +335,28 @@ one deliberate difference: Status isn't part of the key. The sheet's formula spl
 Status but not the out-side, so a spot that was received both blank and เปิด subtracts its out-rows
 twice. These spots show up under ข้อมูลผิด as "Status ปนกัน". Status only decides whether a spot counts
 as open, using its latest in-row. QA, IQA, and RIB never count as open or as reserve.
+
+**How the ข้อมูลผิด tab points at a row.** Each problem is one card with a plain sentence, the rows behind
+it (type, qty, date, who), a button that opens the first row in the sheet, and links to the SKU's
+history and to all its piles.
+
+- **Negative balance.** The script walks the pile's rows in sheet order and points at the row where the
+  balance last went below zero and never came back. Rows before that aren't the cause of today's
+  shortfall.
+- **Out rows only.** Points at the first out row.
+- **Mixed Status.** Points only at the in-rows whose Status differs from the rest. On a tie, it goes by
+  the latest in-row.
+- **💡 hint.** For negative balances and out-only piles, the page looks at the same SKU's other piles:
+  - The same LOT/PO at another Location suggests the out row has the wrong Location.
+  - The same Location with another LOT/PO suggests the wrong LOT/PO.
+  - A pile holding exactly the shortfall comes first.
+  - Piles that the problem rows transferred into themselves are skipped.
+  - If the whole SKU is negative, the hint says an in-row is probably missing instead.
+  - It's a hint, not a fix: check the shelf before editing the sheet.
+- **✓ เช็คแล้ว.** Hides a card on this device only, in `localStorage`. If the card's numbers change after a
+  refresh, it comes back. Ticks older than 90 days are forgotten.
+- **Older script.** The row details need the current `tx-api.gs`. With an older one, the cards show row
+  numbers only, plus a note asking for a redeploy.
 
 **How the stock count works.** The first person to open the นับสต๊อก tab each day gets a list of 20 lines,
 one per SKU + LOT + PO + Location, and everyone else that day sees the same list. To send it straight to

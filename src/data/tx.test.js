@@ -295,7 +295,10 @@ describe('tx-api.gs — คิดยอดแบบเดียวกับส�
       sale({ from: 'B-01-01', qty: 420, note: day('2026-01-10') }),
     ]);
     expect(bal(s, 'AAA001', 'B-01-01')).toBe(0);
-    expect(s.issues.list.find((i) => i.kind === 'mixed')).toMatchObject({ blank: 20, open: 400, out: 420, bal: 0, rows: [2, 3] });
+    /* แถวละแบบเท่ากัน ยึดแถวรับล่าสุด (เปิด) แถวที่ต่างจากพวกจึงเป็นแถวว่าง */
+    expect(s.issues.list.find((i) => i.kind === 'mixed')).toMatchObject({
+      blank: 20, open: 400, out: 420, bal: 0, rows: [2], oddOpen: false, openN: 1, blankN: 1,
+    });
   });
 
   it('Status ปนกัน เรียงตามจำนวนที่ชีตยอดหักซ้ำ ไม่ใช่ยอดคงเหลือ', () => {
@@ -418,7 +421,48 @@ describe('tx-api.gs — จุดที่ข้อมูลผิด', () => {
       row({ type: 'เบิก', from: 'D-01-02', qty: 3, note: 'โอนย้าย' }),
     ]);
     expect(s.issues.list.find((i) => i.kind === 'outonly')).toMatchObject({ loc: 'D-01-01', bal: -9, rows: [2] });
-    expect(s.issues.list.find((i) => i.kind === 'negative')).toMatchObject({ loc: 'D-01-02', bal: -2, rows: [3, 4] });
+    expect(s.issues.list.find((i) => i.kind === 'negative')).toMatchObject({ loc: 'D-01-02', bal: -2, at: 4, before: 1, rows: [4] });
+  });
+
+  it('ยอดติดลบชี้แถวที่ยอดลงต่ำกว่าศูนย์ครั้งสุดท้าย พร้อมรายละเอียดแถว', () => {
+    const s = summary([
+      row({ to: 'A-01-01', qty: 10 }),                                           // 2: เหลือ 10
+      sale({ from: 'A-01-01', qty: 6, note: day('2026-01-10') }),                // 3: เหลือ 4
+      sale({ from: 'A-01-01', qty: 6, note: day('2026-01-11') }),                // 4: −2 ติดลบครั้งแรก
+      row({ to: 'A-01-01', qty: 3 }),                                            // 5: กลับมา 1
+      row({ type: 'เบิก', from: 'A-01-01', to: 'B-01-01', qty: 5, who: 'คนสมมติ' }), // 6: −4 ติดลบจนจบ
+      sale({ from: 'A-01-01', qty: 1, note: day('2026-01-12') }),                // 7: −5
+    ]);
+    const i = s.issues.list.find((x) => x.kind === 'negative');
+    expect(i).toMatchObject({ long: 'LONG-AAA001', bal: -5, at: 6, before: 1, inQty: 13, out: 18, rows: [6, 7], rowCount: 2 });
+    /* แถวโอนไม่มีวันที่ของตัวเอง ยืมวันที่ของแถวขายก่อนหน้าและบอกว่ายืมมา */
+    expect(i.info).toEqual([
+      ['เบิก', 5, '2026-01-11', 1, 'คนสมมติ', 'A-01-01', 'B-01-01'],
+      ['ขาย', 1, '2026-01-12', 0, 'สมมติ', 'A-01-01', ''],
+    ]);
+  });
+
+  it('มีแต่แถวออก ชี้แถวออกแรก และ Status ปนกันชี้แถวส่วนน้อย', () => {
+    const s = summary([
+      sale({ from: 'D-01-01', qty: 4, note: day('2026-01-10') }),
+      sale({ from: 'D-01-01', qty: 2, note: day('2026-01-11') }),
+      row({ to: 'B-01-01', qty: 5, status: 'เปิด' }),
+      row({ to: 'B-01-01', qty: 5 }),
+      row({ to: 'B-01-01', qty: 5, status: 'เปิด' }),
+      row({ to: 'B-01-01', qty: 5, status: 'เปิด' }),
+    ]);
+    expect(s.issues.list.find((x) => x.kind === 'outonly')).toMatchObject({ bal: -6, at: 2, before: 0, rows: [2, 3] });
+    expect(s.issues.list.find((x) => x.kind === 'outonly').info.map((t) => t[1])).toEqual([4, 2]);
+    expect(s.issues.list.find((x) => x.kind === 'mixed')).toMatchObject({ oddOpen: false, openN: 3, blankN: 1, rows: [5], rowCount: 1 });
+    const t = summary([row({ to: 'B-01-01', qty: 5 }), row({ to: 'B-01-01', qty: 5 }), row({ to: 'B-01-01', qty: 5, status: 'เปิด' })]);
+    expect(t.issues.list.find((x) => x.kind === 'mixed')).toMatchObject({ oddOpen: true, rows: [4] });
+  });
+
+  it('ขายจากโลไม่เปิดมีรหัสเต็มและรายละเอียดแถวขาย', () => {
+    const s = summary([row({ to: 'A-01-01', qty: 9 }), sale({ from: 'A-01-01', qty: 2, note: day('2026-01-10') })]);
+    const i = s.issues.list.find((x) => x.kind === 'closedsale');
+    expect(i).toMatchObject({ long: 'LONG-AAA001', sold: 2, rows: [3] });
+    expect(i.info[0].slice(0, 3)).toEqual(['ขาย', 2, '2026-01-10']);
   });
 
   it('ขายไปก่อนแล้วโลค่อยปิดทีหลัง ไม่ถือว่าผิด', () => {
@@ -1513,6 +1557,130 @@ describe('wms-tx.js', () => {
   it('ลิงก์เปิดชีตตรงแถว', () => {
     expect(WmsTx.rowUrl({ url: 'https://x/edit', gid: 7 }, 12)).toBe('https://x/edit#gid=7&range=A12');
     expect(WmsTx.rowUrl(null, 12)).toBe('');
+  });
+
+  describe('ชี้จุดในแท็บข้อมูลผิด', () => {
+    /* กองของ SKU เดียวกัน ใช้หาว่ายอดที่ขาดน่าจะไปลงผิดที่ไหน */
+    const raw = (keys) => ({
+      skus: [['AAA001', 'LONG-1', 'หมอน'], ['BBB002', 'LONG-2', 'ที่นอน']],
+      locs: ['P-01-01', 'G-01-01', 'R1-01-01'],
+      keys,
+    });
+    const neg = { kind: 'negative', sku: 'AAA001', long: 'LONG-1', lot: 3, po: '990000000000000001', loc: 'P-01-01', bal: -12, at: 1245 };
+
+    it('LOT/PO เดียวกันที่ Location อื่นค้างเท่ากับที่ขาดพอดี → ลง Location เบิกผิด', () => {
+      const r = raw([[0, 3, '990000000000000001', 0, -12, 0], [0, 3, '990000000000000001', 1, 12, 0], [0, 3, '990000000000000001', 2, 40, 0]]);
+      const c = WmsTx.clue(r, neg);
+      expect(c).toMatchObject({ kind: 'loc', exact: true, more: 1, pile: { loc: 'G-01-01', qty: 12 } });
+      expect(WmsTx.clueText(c, neg)).toBe('LOT 3 / PO 990000000000000001 เดียวกันที่ G-01-01 ค้างอยู่ 12 ชิ้น เท่ากับที่ขาดพอดี (มีอีก 1 กองที่เข้าเค้า)'
+        + ' → น่าจะลง Location เบิกผิด ลองเช็คแถว 1245 ว่าควรเป็น G-01-01 หรือเปล่า');
+    });
+
+    it('ไม่มีกองที่เท่าพอดี เลือกกองที่ยอดใกล้ที่ขาดที่สุด และ LOT/PO ผิดที่ Location เดียวกันก็เป็นคำใบ้ได้', () => {
+      expect(WmsTx.clue(raw([[0, 3, '990000000000000001', 2, 90, 0], [0, 3, '990000000000000001', 1, 30, 0]]), neg))
+        .toMatchObject({ kind: 'loc', exact: false, pile: { loc: 'G-01-01', qty: 30 } });
+      const c = WmsTx.clue(raw([[0, 4, '990000000000000002', 0, 12, 0], [0, 3, '990000000000000001', 1, 50, 0]]), neg);
+      expect(c).toMatchObject({ kind: 'lot', exact: true, pile: { lot: 4, loc: 'P-01-01' } });
+      expect(WmsTx.clueText(c, neg)).toContain('น่าจะลง LOT/PO ผิด');
+    });
+
+    it('คนละทั้ง Location และ LOT ใช้ได้เฉพาะยอดเท่าพอดีกองเดียว ส่วนทั้ง SKU ติดลบคือรับเข้าไม่ครบ', () => {
+      expect(WmsTx.clue(raw([[0, 5, '990000000000000003', 2, 12, 0]]), neg)).toMatchObject({ kind: 'exact', pile: { loc: 'R1-01-01' } });
+      expect(WmsTx.clue(raw([[0, 5, '990000000000000003', 2, 12, 0], [0, 6, '990000000000000004', 1, 12, 0]]), neg)).toEqual({ kind: 'none' });
+      const short = WmsTx.clue(raw([[0, 3, '990000000000000001', 0, -12, 0], [0, 5, '990000000000000003', 2, 4, 0]]), neg);
+      expect(short).toEqual({ kind: 'short', total: -8 });
+      expect(WmsTx.clueText(short, neg)).toContain('ทั้ง SKU รวมทุกกองยังติดลบ 8 ชิ้น');
+      /* SKU อื่นไม่เกี่ยว และขาดชิ้นเดียวไม่เอายอดเท่ากันมาเดา */
+      expect(WmsTx.clue(raw([[1, 3, '990000000000000001', 1, 12, 0]]), neg)).toEqual({ kind: 'none' });
+      expect(WmsTx.clue(raw([[0, 5, '990000000000000003', 2, 1, 0]]), { ...neg, bal: -1 })).toEqual({ kind: 'none' });
+      expect(WmsTx.clue(raw([]), { ...neg, kind: 'mixed' })).toBe(null);
+    });
+
+    it('กองปลายทางที่แถวเบิกของรายการนี้โอนไปเอง ไม่ใช่คำใบ้', () => {
+      const out = {
+        kind: 'outonly', sku: 'AAA001', long: 'LONG-1', lot: 5, po: '990000000000000001', loc: 'R1-01-01', bal: -30, at: 7,
+        info: [['เบิก', 20, '', 1, '', 'R1-01-01', 'G-01-01'], ['เบิก', 10, '', 1, '', 'R1-01-01', 'G-01-01']],
+      };
+      const r = raw([[0, 5, '990000000000000001', 2, -30, 0], [0, 5, '990000000000000001', 1, 30, 0], [0, 4, '990000000000000002', 2, 30, 0]]);
+      expect(WmsTx.clue(r, out)).toMatchObject({ kind: 'lot', exact: true, pile: { lot: 4, loc: 'R1-01-01' } });
+    });
+
+    it('สคริปต์รุ่นเก่าไม่มีรหัสเต็ม ใช้รหัสสั้นหากองแทน', () => {
+      const { long, at, ...old } = neg;
+      const c = WmsTx.clue(raw([[0, 3, '990000000000000001', 1, 12, 0]]), old);
+      expect(c.kind).toBe('loc');
+      expect(WmsTx.clueText(c, old)).toContain('ลองเช็คแถวเบิก ว่าควรเป็น G-01-01');
+    });
+
+    it('ประโยคของแต่ละเรื่องไม่มีช่องว่างหรือ undefined หลุดมา', () => {
+      const all = [
+        neg, { ...neg, inQty: 40, out: 52 }, { kind: 'outonly', loc: 'R1-01-01', lot: 5, po: '0', bal: -30 },
+        { kind: 'mixed', blank: 5, open: 45, out: 50, openN: 9, blankN: 1, oddOpen: false }, { kind: 'mixed', blank: 5, open: 45, out: 50 },
+        { kind: 'closedsale', loc: 'RIB', sold: 3 }, { kind: 'closedsale', loc: 'G-01-03', sold: 3 },
+        { kind: 'qty', value: 'สิบ' }, { kind: 'incomplete', what: 'QTY, Note' }, { kind: 'baddate', note: '30 ต.ค.', rowCount: 2 },
+        { kind: 'locname', name: 'R-1', like: 'R1' }, { kind: 'locname', name: 'จุดแปลก', rowCount: 3 },
+        { kind: 'date', note: 'GR 05-03-26', near: '2026-08-02', rowCount: 9 },
+      ];
+      for (const i of all) {
+        const t = WmsTx.issueText(i);
+        expect(t.what, i.kind).not.toBe('');
+        expect(t.what + t.sub, i.kind).not.toMatch(/undefined|NaN/);
+      }
+      expect(WmsTx.issueText(neg).what).toBe('ออกจาก P-01-01 มากกว่าที่รับเข้า 12 ชิ้น');
+      expect(WmsTx.issueText({ ...neg, inQty: 40, out: 52 }).sub).toBe('รับเข้ารวม 40 · ออกรวม 52');
+      expect(WmsTx.issueText(all[2]).what).toBe('มีแถวออกจาก R1-01-01 รวม 30 ชิ้น แต่ไม่เคยมีแถวรับ LOT 5 เข้าที่นี่เลย');
+      expect(WmsTx.issueText(all[3]).what).toBe('รับเข้าที่นี่ 10 แถว เป็น "เปิด" 9 แถว และ Status ว่าง 1 แถว');
+      expect(WmsTx.issueText(all[5]).what).toContain('ไม่ใช่ที่สำหรับขาย');
+      expect(WmsTx.rowsLabel(all[3])).toBe('แถวที่ Status ว่าง ต่างจากพวก');
+      expect(WmsTx.rowsLabel(neg)).toBe('แถวในชีต');
+      expect(WmsTx.rowsLabel({ ...neg, info: [] })).toBe('แถวที่ทำให้ติดลบ');
+    });
+
+    it('รายละเอียดแถวบอกประเภท จำนวน วันที่ และโอนไปไหน', () => {
+      expect(WmsTx.rowInfo(['ขาย', 12, '2026-11-03', 0, 'สมมติ', 'P-01-01', ''], 'P-01-01')).toBe('ขาย 12 ชิ้น · 03/11 · สมมติ');
+      expect(WmsTx.rowInfo(['เบิก', 5, '2026-11-03', 1, '', 'P-01-01', 'G-01-01'], 'P-01-01')).toBe('โอนไป G-01-01 5 ชิ้น · ≈03/11');
+      expect(WmsTx.rowInfo(['เบิก', 5, '', 1, '', 'P-01-01', 'G-01-01'], 'G-01-01')).toBe('โอนมาจาก P-01-01 5 ชิ้น');
+      expect(WmsTx.rowInfo(['', 1, '', 0, '', '', ''], 'P-01-01')).toBe('ไม่มีประเภท 1 ชิ้น');
+      expect(WmsTx.rowInfo(undefined, 'P-01-01')).toBe('');
+    });
+
+    it('เช็คแล้วจำได้ข้ามรอบดึง แต่ตัวเลขเปลี่ยนต้องกลับมาให้ดูใหม่ และเก่าเกิน 90 วันถูกลืม', () => {
+      const store = new Map();
+      const win = {};
+      new Function('window', 'localStorage', JS)(win, { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) });
+      const T = win.WmsTx;
+      const now = 200 * 86400000;
+      let map = { [T.issueId(neg)]: { sig: T.issueSig(neg), at: now }, old: { sig: '', at: now - 91 * 86400000 } };
+      map = T.saveChecked(map, now);
+      expect(Object.keys(map)).toEqual([T.issueId(neg)]);
+      const back = T.readChecked();
+      expect(T.isChecked(back, { ...neg })).toBe(true);
+      expect(T.isChecked(back, { ...neg, bal: -15 })).toBe(false);
+      expect(T.isChecked(back, { ...neg, loc: 'G-01-01' })).toBe(false);
+      /* แถวไม่ครบสองแถวของ SKU เดียวกัน คนละรายการ */
+      const a = { kind: 'incomplete', sku: 'AAA001', what: 'Note', rows: [5] };
+      expect(T.issueId(a)).not.toBe(T.issueId({ ...a, rows: [6] }));
+      store.set('wms:tx:checked', '{oops');
+      expect(T.readChecked()).toEqual({});
+      /* ไม่มี localStorage (โหมดส่วนตัว) ไม่พัง */
+      expect(WmsTx.saveChecked({ x: { sig: '', at: now } }, now)).toEqual({ x: { sig: '', at: now } });
+    });
+
+    it('ค้นได้ด้วยรหัส Location LOT และเลขแถว', () => {
+      const list = [
+        { ...neg, rows: [1245, 1250] },
+        { kind: 'locname', name: 'R-1', like: 'R1', rows: [77] },
+        { kind: 'date', note: 'GR 05-03-26', first: 300, last: 320, rows: [300, 320] },
+      ];
+      expect(WmsTx.filterIssues(list, '').length).toBe(3);
+      expect(WmsTx.filterIssues(list, 'aaa001').map((i) => i.kind)).toEqual(['negative']);
+      expect(WmsTx.filterIssues(list, 'long-1').map((i) => i.kind)).toEqual(['negative']);
+      expect(WmsTx.filterIssues(list, 'p-01').map((i) => i.kind)).toEqual(['negative']);
+      expect(WmsTx.filterIssues(list, '1250').map((i) => i.kind)).toEqual(['negative']);
+      expect(WmsTx.filterIssues(list, 'GR 05').map((i) => i.kind)).toEqual(['date']);
+      expect(WmsTx.filterIssues(list, '320').map((i) => i.kind)).toEqual(['date']);
+      expect(WmsTx.filterIssues(list, 'r1').map((i) => i.kind)).toEqual(['locname']);
+    });
   });
 
   it('Backup ที่หายไปเกินสองวัน หรือยังไม่เคยตั้ง ต้องเตือน', () => {

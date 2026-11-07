@@ -220,6 +220,185 @@
       cols: [field('Note', 'note'), amount('จำนวนแถว', 'rowCount'), col('แถวขายรอบข้าง', function (i) { return shortDate(i.near); })] },
   ];
 
+  /* ── ชี้จุดในแท็บข้อมูลผิด ───────────────────────────────────────────────
+     แต่ละรายการต้องบอกได้ในประโยคเดียวว่าผิดอะไร แถวไหนควรเช็คก่อน และน่าจะแก้เป็นอะไร
+     คนเปิดมาจะได้ไม่ต้องแปลตัวเลขหลายช่องแล้วไล่เปิดชีตทีละแถวเอง */
+
+  function sameText(v) { return String(v === null || v === undefined ? '' : v).trim().toUpperCase(); }
+  function poOf(po) { return po && String(po) !== '0' ? String(po) : ''; }
+  function lotPo(lot, po) { return 'LOT ' + lot + (poOf(po) ? ' / PO ' + poOf(po) : ''); }
+
+  /**
+   * คำใบ้ของยอดติดลบ: กองอื่นของ SKU เดียวกันที่ยังมีของพอกับที่ขาด
+   *   loc   — LOT/PO เดียวกันแต่คนละ Location → น่าจะลง Location เบิกผิด
+   *   lot   — Location เดียวกันแต่คนละ LOT/PO → น่าจะลง LOT/PO ผิด
+   *   exact — คนละทั้งสองอย่าง แต่มีกองเดียวที่ยอดเท่ากับที่ขาดพอดี
+   *   short — ทั้ง SKU รวมกันยังติดลบ → ไม่ใช่ลงผิดกอง แต่รับเข้าไม่ครบหรือออกเกินจริง
+   *   none  — ไม่เจออะไรเข้าเค้า
+   * ยอดเท่ากับที่ขาดพอดีมาก่อน ของที่ลงผิดกองจะทิ้งยอดค้างไว้เท่ากันเป๊ะที่กองที่ควรเป็น
+   * ถ้าไม่มีกองที่เท่าพอดี เลือกกองที่ยอดใกล้ที่ขาดที่สุด
+   * @returns {null|{kind:string, pile?:Object, exact?:boolean, more?:number, total?:number}}
+   */
+  function clue(raw, i) {
+    if (i.kind !== 'negative' && i.kind !== 'outonly') return null;
+    var need = -Number(i.bal);
+    if (!(need > 0)) return null;
+    var mine = {};
+    (raw.skus || []).forEach(function (t, n) {
+      if (i.long ? sameText(t[1]) === sameText(i.long) : sameText(t[0]) === sameText(i.sku)) mine[n] = 1;
+    });
+    var lot = sameText(i.lot), po = sameText(i.po), loc = sameText(i.loc);
+    var total = 0, piles = [];
+    (raw.keys || []).forEach(function (k) {
+      if (!mine[k[0]]) return;
+      total += k[4];
+      if (k[4] > 0) piles.push({ lot: k[1], po: k[2], loc: raw.locs[k[3]], qty: k[4] });
+    });
+    if (total < 0) return { kind: 'short', total: total };
+
+    function sameLot(p) { return sameText(p.lot) === lot && sameText(p.po) === po; }
+    function sameLoc(p) { return sameText(p.loc) === loc; }
+    /* ปลายทางที่แถวเบิกของรายการนี้โอนไปเอง ได้ของ LOT/PO เดียวกันมาจากแถวที่ผิดนั่นแหละ
+       เอามาเป็นคำใบ้จะชี้วนกลับมาที่ตัวเอง */
+    var dest = {};
+    (i.info || []).forEach(function (t) { if (t[0] === 'เบิก' && t[6] && sameText(t[5]) === loc) dest[sameText(t[6])] = 1; });
+    function fed(p) { return sameLot(p) && dest[sameText(p.loc)]; }
+    piles = piles.filter(function (p) { return !fed(p); });
+    function best(kind, list) {
+      list.sort(function (a, b) { return (a.qty === need ? 0 : 1) - (b.qty === need ? 0 : 1) || a.qty - b.qty; });
+      return list.length ? { kind: kind, pile: list[0], exact: list[0].qty === need, more: list.length - 1 } : null;
+    }
+    var byLoc = best('loc', piles.filter(function (p) { return sameLot(p) && !sameLoc(p) && p.qty >= need; }));
+    var byLot = best('lot', piles.filter(function (p) { return sameLoc(p) && !sameLot(p) && p.qty >= need; }));
+    if (byLoc && byLoc.exact) return byLoc;
+    if (byLot && byLot.exact) return byLot;
+    /* ขาดชิ้นเดียว มีกองที่เหลือ 1 ชิ้นได้แทบทุก SKU ยอดเท่ากันจึงไม่มีความหมาย */
+    if (need >= MIN_CLUE) {
+      var even = piles.filter(function (p) { return p.qty === need && !sameLot(p) && !sameLoc(p); });
+      if (even.length === 1) return { kind: 'exact', pile: even[0], exact: true, more: 0 };
+    }
+    return byLoc || byLot || { kind: 'none' };
+  }
+
+  /** คำใบ้เป็นประโยค */
+  function clueText(c, i) {
+    if (!c) return '';
+    var p = c.pile;
+    var has = p ? (c.exact ? 'ค้างอยู่ ' + fmt(p.qty) + ' ชิ้น เท่ากับที่ขาดพอดี' : 'ยังมีอยู่ ' + fmt(p.qty) + ' ชิ้น') : '';
+    var more = c.more ? ' (มีอีก ' + fmt(c.more) + ' กองที่เข้าเค้า)' : '';
+    var row = i.at ? 'แถว ' + i.at : 'แถวเบิก';
+    if (c.kind === 'loc') return lotPo(i.lot, i.po) + ' เดียวกันที่ ' + p.loc + ' ' + has + more +
+      ' → น่าจะลง Location เบิกผิด ลองเช็ค' + row + ' ว่าควรเป็น ' + p.loc + ' หรือเปล่า';
+    if (c.kind === 'lot') return 'ที่ ' + i.loc + ' เดียวกันมี ' + lotPo(p.lot, p.po) + ' ' + has + more +
+      ' → น่าจะลง LOT/PO ผิด ไม่ใช่ Location ผิด';
+    if (c.kind === 'exact') return lotPo(p.lot, p.po) + ' ที่ ' + p.loc + ' ' + has +
+      ' → อาจลงผิดทั้ง Location และ LOT/PO';
+    if (c.kind === 'short') return 'ทั้ง SKU รวมทุกกองยังติดลบ ' + fmt(-c.total) +
+      ' ชิ้น → ไม่ใช่ลงผิดกอง น่าจะยังไม่ได้ลงรับเข้า หรือพิมพ์จำนวนออกเกิน';
+    return 'ไม่เจอกองอื่นของ SKU นี้ที่ยอดพอ → เช็คจำนวนใน' + row + ' หรือดูว่าลงรับเข้าครบไหม';
+  }
+
+  /** ประโยคหลักของรายการ: ผิดอะไร กับควรทำอะไรต่อ */
+  function issueText(i) {
+    var need = fmt(-Number(i.bal || 0));
+    switch (i.kind) {
+      case 'negative':
+        return { what: 'ออกจาก ' + i.loc + ' มากกว่าที่รับเข้า ' + need + ' ชิ้น',
+          sub: i.inQty !== undefined ? 'รับเข้ารวม ' + fmt(i.inQty) + ' · ออกรวม ' + fmt(i.out) : '' };
+      case 'outonly':
+        return { what: 'มีแถวออกจาก ' + i.loc + ' รวม ' + need + ' ชิ้น แต่ไม่เคยมีแถวรับ ' + lotPo(i.lot, i.po) + ' เข้าที่นี่เลย', sub: '' };
+      case 'mixed':
+        return { what: i.openN !== undefined
+            ? 'รับเข้าที่นี่ ' + fmt(i.openN + i.blankN) + ' แถว เป็น "เปิด" ' + fmt(i.openN) + ' แถว และ Status ว่าง ' + fmt(i.blankN) + ' แถว'
+            : 'เคยรับเข้าทั้งแบบ Status ว่าง ' + fmt(i.blank) + ' ชิ้น และแบบเปิด ' + fmt(i.open) + ' ชิ้น',
+          sub: 'แก้ Status ของแถวที่ต่างจากพวกให้เหมือนกัน ไม่งั้นสูตรในชีตยอดจะหักแถวออก ' + fmt(i.out) + ' ชิ้นซ้ำ (ยอดในแอปถูกอยู่แล้ว)' };
+      case 'closedsale':
+        return { what: SPECIAL.indexOf(sameText(i.loc)) !== -1
+            ? 'ขายออกจาก ' + i.loc + ' ' + fmt(i.sold) + ' ชิ้น ซึ่งไม่ใช่ที่สำหรับขาย'
+            : 'ขายออกจาก ' + i.loc + ' ' + fmt(i.sold) + ' ชิ้น ตอนที่กองนี้ไม่ได้เปิดขาย',
+          sub: 'เช็คว่าแถวขายพวกนี้ควรตัดจากโลเปิดที่อื่น หรือ Status ของแถวรับลงผิด' };
+      case 'qty':
+        return { what: 'ช่อง QTY กรอกว่า "' + i.value + '" ไม่ใช่ตัวเลข', sub: 'แก้เป็นตัวเลข ยอดของแถวนี้ยังไม่ถูกนับ' };
+      case 'incomplete':
+        return { what: 'ช่องที่ยังว่าง: ' + i.what, sub: 'ถ้าเป็นแถวที่กำลังกรอกอยู่ก็ข้ามได้' };
+      case 'baddate':
+        return { what: 'วันที่ขายกรอกว่า "' + i.note + '" ' + fmt(i.rowCount) + ' แถว อ่านไม่ออก',
+          sub: 'แก้เป็น วัน/เดือน/ปี ยอดขายของแถวพวกนี้ยังไม่ถูกนับในรายการต้องเติม' };
+      case 'locname':
+        return i.like
+          ? { what: 'ชื่อ "' + i.name + '" น่าจะเป็นที่เดียวกับ ' + i.like, sub: 'แก้ให้พิมพ์เหมือนกัน ไม่งั้นยอดจะแยกเป็นสองที่' }
+          : { what: 'ชื่อ "' + i.name + '" ไม่ตรงรูปแบบชั้นวาง และใช้แค่ ' + fmt(i.rowCount) + ' แถว', sub: 'เช็คว่าพิมพ์ผิด หรือเป็นที่จริง' };
+      case 'date':
+        return { what: 'วันที่ "' + i.note + '" ห่างจากแถวขายรอบข้าง (' + shortDate(i.near) + ') มาก ' + fmt(i.rowCount) + ' แถว',
+          sub: 'มักเป็นเดือนหรือปีที่พิมพ์ผิด' };
+    }
+    return { what: '', sub: '' };
+  }
+
+  /** หัวของรายการแถว บอกว่าแถวที่แนบมาคือแถวแบบไหน */
+  function rowsLabel(i) {
+    if (i.kind === 'negative') return i.info ? 'แถวที่ทำให้ติดลบ' : 'แถวในชีต';
+    if (i.kind === 'outonly') return 'แถวออก';
+    if (i.kind === 'mixed') return i.oddOpen === undefined ? 'แถวรับเข้า' : 'แถวที่ Status ' + (i.oddOpen ? '"เปิด"' : 'ว่าง') + ' ต่างจากพวก';
+    if (i.kind === 'closedsale') return 'แถวขาย';
+    return 'แถวในชีต';
+  }
+
+  /**
+   * รายละเอียดหนึ่งแถว [ประเภท, จำนวน, วันที่, ยืมวันที่, คนกรอก, Location เบิก, Location รับ] เป็นข้อความสั้น
+   * โอนย้ายบอกว่าไปไหนหรือมาจากไหน เทียบกับ Location ของรายการ
+   */
+  function rowInfo(t, loc) {
+    if (!t) return '';
+    var type = t[0];
+    var out = sameText(t[5]) === sameText(loc);
+    var what = type === 'เบิก' && t[5] && t[6] ? (out ? 'โอนไป ' + t[6] : 'โอนมาจาก ' + t[5]) : (type || 'ไม่มีประเภท');
+    var date = t[2] ? (t[3] ? '≈' : '') + shortDate(t[2]) : '';
+    return [what + ' ' + fmt(t[1]) + ' ชิ้น', date, t[4]].filter(Boolean).join(' · ');
+  }
+
+  /** ตัวระบุรายการที่คงที่ข้ามรอบดึง กับลายเซ็นตัวเลข ถ้าตัวเลขเปลี่ยน รายการที่เคยเช็คแล้วต้องกลับมาให้ดูใหม่ */
+  function issueId(i) {
+    var parts = [i.kind, i.long || i.sku, i.lot, i.po, i.loc, i.name, i.note, i.value];
+    if (i.kind === 'qty' || i.kind === 'incomplete') parts.push(i.rows && i.rows[0]);
+    return parts.map(function (v) { return v === undefined || v === null ? '' : String(v); }).join('|');
+  }
+  function issueSig(i) { return [i.bal, i.rowCount, i.sold, i.out, i.what].join(','); }
+
+  /* เช็คแล้วจำไว้ในเครื่องนี้เท่านั้น เก็บใน localStorage ปิดเบราว์เซอร์แล้วยังอยู่ */
+  var CHECKED_KEY = 'wms:tx:checked';
+  var CHECKED_DAYS = 90;   // เช็คไว้นานกว่านี้ลืมได้ รายการที่ยังไม่แก้จะกลับมาให้เห็น
+
+  function readChecked() {
+    try {
+      var o = JSON.parse(localStorage.getItem(CHECKED_KEY) || '{}');
+      return o && typeof o === 'object' ? o : {};
+    } catch (e) { return {}; }
+  }
+  function saveChecked(map, now) {
+    var keep = {};
+    var edge = (now || Date.now()) - CHECKED_DAYS * 86400000;
+    Object.keys(map).forEach(function (k) { if (map[k] && map[k].at >= edge) keep[k] = map[k]; });
+    try { localStorage.setItem(CHECKED_KEY, JSON.stringify(keep)); } catch (e) { /* โหมดส่วนตัวเขียนไม่ได้ ก็จำแค่รอบนี้ */ }
+    return keep;
+  }
+  function isChecked(map, i) {
+    var c = map[issueId(i)];
+    return !!c && c.sig === issueSig(i);
+  }
+
+  /** ค้นในแท็บข้อมูลผิด: รหัส SKU, Location, LOT, PO, ชื่อ, ข้อความที่กรอก หรือเลขแถว */
+  function filterIssues(list, q) {
+    var want = sameText(q).replace(/\s+/g, '');
+    if (!want) return list;
+    return list.filter(function (i) {
+      var text = [i.sku, i.long, i.loc, i.lot, i.po, i.name, i.like, i.note, i.value, i.what]
+        .map(function (v) { return sameText(v).replace(/\s+/g, ''); });
+      if (text.some(function (t) { return t && t.indexOf(want) !== -1; })) return true;
+      return /^\d+$/.test(want) && (i.rows || []).concat(i.at || [], i.first || [], i.last || []).some(function (n) { return String(n) === want; });
+    });
+  }
+
   /** ลิงก์เปิดชีตตรงแถวนั้น แปะ #range ต่อท้าย URL ของไฟล์ได้โดยไม่ต้องรู้รหัสอื่น */
   function rowUrl(sheet, row) {
     if (!sheet || !sheet.url) return '';
@@ -607,6 +786,17 @@
     noReserveText: noReserveText,
     search: search,
     rowUrl: rowUrl,
+    clue: clue,
+    clueText: clueText,
+    issueText: issueText,
+    rowsLabel: rowsLabel,
+    rowInfo: rowInfo,
+    issueId: issueId,
+    issueSig: issueSig,
+    readChecked: readChecked,
+    saveChecked: saveChecked,
+    isChecked: isChecked,
+    filterIssues: filterIssues,
     shortDate: shortDate,
     isEvent: isEvent,
     backupState: backupState,

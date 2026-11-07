@@ -294,7 +294,7 @@ function closedSales_(rows) {
     if (r.type === 'ขาย' && r.from && r.long) {
       var k = keyOf_(r.long, r.lot, r.po, r.from);
       if (k in lastIn && (!lastIn[k] || special_(r.from))) {
-        var c = closed[k] || (closed[k] = { sku: r.sku, lot: r.lot, po: r.po, loc: r.from, sold: 0, list: [] });
+        var c = closed[k] || (closed[k] = { sku: r.sku, long: r.long, lot: r.lot, po: r.po, loc: r.from, sold: 0, list: [] });
         c.sold += r.qty;
         c.list.push(r.row);
       }
@@ -303,18 +303,70 @@ function closedSales_(rows) {
   return closed;
 }
 
+/**
+ * ยอดติดลบเริ่มจากแถวไหน เดินตามลำดับแถวในชีตแล้วหาครั้งสุดท้ายที่ยอดลงไปต่ำกว่าศูนย์และไม่กลับขึ้นมาอีก
+ * แถวแรกของช่วงนั้นคือแถวที่ควรเช็คก่อน แถวก่อนหน้านั้นยอดยังไม่ติดลบ ต่อให้กรอกผิดก็ไม่ใช่ต้นเหตุของยอดที่ขาดตอนนี้
+ * @returns {{at:number, before:number, rows:number[]}} rows คือแถวตั้งแต่จุดนั้นถึงท้ายสุด ทั้งแถวเข้าและแถวออก
+ */
+function dip_(x, byRow) {
+  var ev = x.inRows.map(function (n) { return [n, 1]; }).concat(x.outRows.map(function (n) { return [n, -1]; }));
+  /* แถวเดียวกันที่เป็นทั้งเข้าและออก (โอนเข้าที่เดิม) ให้นับเข้าก่อน ยอดจะได้ไม่ติดลบหลอก ๆ ระหว่างทาง */
+  ev.sort(function (a, b) { return a[0] - b[0] || b[1] - a[1]; });
+  var run = 0, at = 0, before = 0;
+  ev.forEach(function (e, i) {
+    var prev = run;
+    run += e[1] * byRow[e[0]].qty;
+    if (run < -1e-9 && prev >= -1e-9) { at = i; before = prev; }
+  });
+  var seen = {}, list = [];
+  ev.slice(at).forEach(function (e) { if (!seen[e[0]]) { seen[e[0]] = 1; list.push(e[0]); } });
+  return { at: list[0], before: before, rows: list };
+}
+
+/**
+ * Status ปนกัน: แถวรับเข้าที่ Status ต่างจากพวก แถวส่วนน้อยคือแถวที่น่าจะกรอกผิด
+ * จำนวนเท่ากันให้ยึดแถวรับล่าสุด เพราะ Status ของกองนี้ตามแถวนั้นอยู่แล้ว
+ */
+function oddStatus_(x, byRow) {
+  var open = [], blank = [];
+  x.inRows.forEach(function (n) { (byRow[n].open ? open : blank).push(n); });
+  var oddOpen = open.length === blank.length ? !x.open : open.length < blank.length;
+  return { oddOpen: oddOpen, openN: open.length, blankN: blank.length, rows: oddOpen ? open : blank };
+}
+
 function issues_(rows, bals, today) {
   var out = [];
+  var byRow = {};
+  rows.forEach(function (r) { byRow[r.row] = r; });
   function add(kind, o) { o.kind = kind; out.push(o); }
-  function head(x) { return { sku: x.sku, lot: x.lot, po: x.po, loc: x.loc }; }
+  /* long คือรหัสคอลัมน์ B ที่ใช้คิดยอด หน้าเว็บใช้หากองอื่นของ SKU เดียวกันมาเป็นคำใบ้ */
+  function head(x) { return { sku: x.sku, long: x.long, lot: x.lot, po: x.po, loc: x.loc }; }
+  /**
+   * แถวที่แนบไปพร้อมรายละเอียดแต่ละแถว [ประเภท, จำนวน, วันที่, 1 = ยืมวันที่จากแถวก่อน, คนกรอก, Location เบิก, Location รับ]
+   * หน้าเว็บบอกได้เลยว่าแถวไหนเป็นขายกี่ชิ้นวันไหน ไม่ต้องเปิดชีตไล่ดูทีละแถว
+   */
+  function detail(list) {
+    var o = someRows_(list);
+    o.info = o.rows.map(function (n) {
+      var r = byRow[n];
+      return [r.type, r.qty, r.date || r.near, r.date ? 0 : 1, r.who, r.from, r.to];
+    });
+    return o;
+  }
 
   bals.forEach(function (x) {
     if (x.inBlank && x.inOpen) {
-      add('mixed', merge_(merge_(head(x), { blank: x.inBlank, open: x.inOpen, out: x.out, bal: x.bal }), someRows_(x.inRows)));
+      var odd = oddStatus_(x, byRow);
+      add('mixed', merge_(merge_(head(x), {
+        blank: x.inBlank, open: x.inOpen, out: x.out, bal: x.bal, oddOpen: odd.oddOpen, openN: odd.openN, blankN: odd.blankN,
+      }), detail(odd.rows)));
     } else if (!x.inRows.length) {
-      if (x.out) add('outonly', merge_(merge_(head(x), { bal: x.bal }), someRows_(x.outRows)));
+      if (x.out) add('outonly', merge_(merge_(head(x), { bal: x.bal, at: x.outRows[0], before: 0 }), detail(x.outRows)));
     } else if (x.bal < 0) {
-      add('negative', merge_(merge_(head(x), { bal: x.bal }), someRows_(x.inRows.concat(x.outRows).sort(function (p, q) { return p - q; }))));
+      var d = dip_(x, byRow);
+      add('negative', merge_(merge_(head(x), {
+        bal: x.bal, at: d.at, before: d.before, inQty: x.inBlank + x.inOpen, out: x.out,
+      }), detail(d.rows)));
     }
   });
 
@@ -345,7 +397,7 @@ function issues_(rows, bals, today) {
   });
   Object.keys(closed).forEach(function (k) {
     var c = closed[k];
-    add('closedsale', merge_({ sku: c.sku, lot: c.lot, po: c.po, loc: c.loc, sold: c.sold }, someRows_(c.list)));
+    add('closedsale', merge_({ sku: c.sku, long: c.long, lot: c.lot, po: c.po, loc: c.loc, sold: c.sold }, detail(c.list)));
   });
   Object.keys(unread).forEach(function (k) {
     add('baddate', merge_({ note: unread[k].note }, someRows_(unread[k].list)));
