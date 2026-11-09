@@ -49,7 +49,11 @@ function writableTab() {
   };
 }
 
-function script(rows, { props = {}, extraSheets = [], named = {}, env: more = {} } = {}) {
+/**
+ * formulas = สูตรในแท็บสมุด ([แถว][คอลัมน์] เริ่มที่ A1) ให้สคริปต์เห็นว่าเป็นสำเนา IMPORTRANGE
+ * realUrl = ค่าของ REAL_SHEET_URL ในสคริปต์
+ */
+function script(rows, { props = {}, extraSheets = [], named = {}, env: more = {}, formulas = null, realUrl = '' } = {}) {
   const grid = [HEAD, ...rows];
   const sheet = {
     getLastRow: () => grid.length,
@@ -58,6 +62,9 @@ function script(rows, { props = {}, extraSheets = [], named = {}, env: more = {}
     getName: () => 'Transaction',
     getRange: (r, c, nr, nc) => ({
       getValues: () => grid.slice(r - 1, r - 1 + nr).map((x) => x.slice(c - 1, c - 1 + nc)),
+      ...(formulas ? {
+        getFormulas: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => (formulas[r - 1 + i] || [])[c - 1 + j] || '')),
+      } : {}),
     }),
   };
   const tabs = { ...named };
@@ -70,7 +77,8 @@ function script(rows, { props = {}, extraSheets = [], named = {}, env: more = {}
     getName: () => 'สมุดสมมติ',
   };
   const env = {
-    SpreadsheetApp: { getActiveSpreadsheet: () => ss },
+    /* สคริปต์ห้ามเปิดชีตจริง (ไฟล์ต้นทางของ IMPORTRANGE) ถ้าเรียกเมื่อไรคำตอบจะเป็น error */
+    SpreadsheetApp: { getActiveSpreadsheet: () => ss, openById: () => { throw new Error('ห้ามเปิดไฟล์อื่น'); }, openByUrl: () => { throw new Error('ห้ามเปิดไฟล์อื่น'); } },
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (t) => ({ setMimeType: () => JSON.parse(t) }) },
     Utilities: { formatDate: (d, tz, f) => (f === 'H' ? String(d.getUTCHours()) : f === 'HH:mm' ? d.toISOString().slice(11, 16) : d.toISOString().slice(0, 10)) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props[k] ?? null }) },
@@ -78,7 +86,9 @@ function script(rows, { props = {}, extraSheets = [], named = {}, env: more = {}
     DriveApp: {}, ScriptApp: {},
     ...more,
   };
-  const api = new Function(...Object.keys(env), GS + '\nreturn { doGet: doGet, doPost: doPost, sharedTick: sharedTick, installShared: installShared, stopShared: stopShared };')(...Object.values(env));
+  const src = realUrl ? GS.replace("var REAL_SHEET_URL = '';", `var REAL_SHEET_URL = ${JSON.stringify(realUrl)};`) : GS;
+  if (realUrl && src === GS) throw new Error('หา REAL_SHEET_URL ในสคริปต์ไม่เจอ');
+  const api = new Function(...Object.keys(env), src + '\nreturn { doGet: doGet, doPost: doPost, sharedTick: sharedTick, installShared: installShared, stopShared: stopShared };')(...Object.values(env));
   const call = (parameter) => api.doGet({ parameter });
   call.post = (body) => api.doPost({ postData: { contents: JSON.stringify(body) } });
   call.api = api;
@@ -680,14 +690,25 @@ describe('tx-api.gs — การตอบกลับ', () => {
     expect(GS).toContain("var TX_SHEET = '';");
   });
 
-  it('คำสั่งเขียนลงชีตมีเฉพาะในส่วนนับสต๊อก ส่วนที่อ่านสมุดรายการไม่มีเลย', () => {
+  it('คำสั่งเขียนลงชีตมีเฉพาะในส่วนนับสต๊อก กับสำเนา Backup ที่เพิ่งทำ ส่วนที่อ่านสมุดรายการไม่มีเลย', () => {
     const start = GS.indexOf('/* ── นับสต๊อก');
     const end = GS.indexOf('/* ── Backup');
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
     const WRITES = /\.(setValue|setValues|appendRow|clearContent|insertRows|deleteRow|setFormula)\w*\(/;
     expect(GS.slice(0, start)).not.toMatch(WRITES);
-    expect(GS.slice(end)).not.toMatch(WRITES);
+    /* ส่วน Backup เขียนได้ที่เดียวคือ freeze_ ลงแท็บของไฟล์สำเนาที่ makeCopy เพิ่งสร้าง */
+    const tail = GS.slice(end);
+    const f0 = tail.indexOf('function freeze_(');
+    const f1 = tail.indexOf('\n}\n', f0);
+    expect(f0).toBeGreaterThan(-1);
+    const freeze = tail.slice(f0, f1);
+    expect(tail.slice(0, f0) + tail.slice(f1)).not.toMatch(WRITES);
+    expect(freeze.match(new RegExp(WRITES.source, 'g'))).toEqual(['.setValues(']);
+    expect(freeze).toMatch(/var dst = copy\.getSheetByName\(/);
+    expect(freeze).toMatch(/dst\.getRange\([^)]*\)\.setValues\(/);
+    expect(tail).toMatch(/var copy = DriveApp\.getFileById\(ss\.getId\(\)\)\.makeCopy\(/);
+    expect(tail).toMatch(/freeze_\(ss, SpreadsheetApp\.openById\(copy\.getId\(\)\)\)/);
   });
 });
 
@@ -1099,6 +1120,48 @@ describe('tx-api.gs — ส่ง SKU จากแท็บเทียบสต
   });
 });
 
+describe('tx-api.gs — ลิงก์เปิดแถวเมื่อแท็บสมุดเป็นสำเนา IMPORTRANGE', () => {
+  /* ข้อมูลสมมติ รหัสไฟล์ไม่ใช่ของจริง */
+  const FILE = 'https://docs.google.com/spreadsheets/d/FAKE00000000000000000000000000/edit';
+  const QUERY = (range) => `=QUERY(\n IMPORTRANGE("${FILE}","${range}"),\n "SELECT Col1,Col2,Col3",\n 0\n)`;
+  const top = (range) => [[], [QUERY(range)]];   // หัวตารางพิมพ์เองแถว 1 สูตรอยู่ A2
+  const rows = [row({ to: 'C-01-01', qty: 5 }), row({ to: 'C-01-02', qty: 2 }), ['', '', '', '', '', '', '', '', '', '', '', '']];
+  const asks = [{ api: 'tx-summary' }, { api: 'tx-history', sku: 'AAA001' }, { api: 'tx-daily', from: '2026-01-01', to: '2026-01-31' }, { api: 'tx-fifo' }];
+
+  it('ยังไม่ใส่ลิงก์ชีตจริง: ลิงก์แท็บเดิม บอกว่าเป็นสำเนา และบอกแถวท้ายที่สูตรดึง', () => {
+    const s = script(rows, { formulas: top('Transaction!A2:O30000') })({ api: 'tx-summary' });
+    expect(s.error).toBeUndefined();
+    expect(s.sheet).toEqual({ url: 'https://docs.example/d/1/edit', gid: 77, copy: 1, end: 30000 });
+    expect(s.lastRow).toBe(3);   // แถวว่างท้ายสมุดไม่นับ
+  });
+
+  it('ใส่ลิงก์แท็บในชีตจริง: ทุกคำตอบพาไปชีตจริง โดยไม่เปิดชีตจริง', () => {
+    const call = script(rows, { formulas: top('Transaction!A2:O30000'), realUrl: `${FILE}?usp=sharing#gid=123456` });
+    for (const ask of asks) {
+      const r = call(ask);
+      expect(r.error).toBeUndefined();
+      expect(r.sheet).toEqual({ url: FILE, gid: 123456, real: 1, end: 30000 });
+    }
+  });
+
+  it('ลิงก์ชีตจริงไม่มี gid: ยังพาไปแท็บเดิมและบอกเหตุผล', () => {
+    const s = script(rows, { formulas: top('Transaction!A2:O30000'), realUrl: FILE })({ api: 'tx-summary' });
+    expect(s.sheet).toMatchObject({ url: 'https://docs.example/d/1/edit', gid: 77, copy: 1 });
+    expect(s.sheet.why).toMatch(/#gid=/);
+  });
+
+  it('ช่วงไม่ระบุแถวท้าย ไม่มีเพดาน หลายก้อนใน VSTACK ใช้แถวท้ายของก้อนสุดท้าย', () => {
+    expect(script(rows, { formulas: top('Transaction!A2:O') })({ api: 'tx-summary' }).sheet).toEqual({ url: 'https://docs.example/d/1/edit', gid: 77, copy: 1 });
+    const stack = `=VSTACK(IMPORTRANGE("${FILE}","'Trans action'!A2:L20000"); IMPORTRANGE("${FILE}","'Trans action'!A20001:L40000"))`;
+    expect(script(rows, { formulas: [[], [stack]] })({ api: 'tx-summary' }).sheet.end).toBe(40000);
+  });
+
+  it('แท็บสมุดไม่ใช่สำเนา ลิงก์เหมือนเดิม', () => {
+    const s = script(rows, { formulas: [[], ['=SUM(H2:H3)']] })({ api: 'tx-summary' });
+    expect(s.sheet).toEqual({ url: 'https://docs.example/d/1/edit', gid: 77 });
+  });
+});
+
 describe('tx-api.gs — ประวัติ', () => {
   const rows = [
     row({ to: 'C-01-01', qty: 100, note: 'GR 01-01-26' }),
@@ -1135,15 +1198,57 @@ describe('tx-api.gs — ประวัติ', () => {
 });
 
 describe('tx-api.gs — Backup', () => {
+  /** แท็บในไฟล์ปลอม grid คือค่าที่เห็น formulas คือสูตร ([แถว][คอลัมน์] เริ่มที่ A1) */
+  function tab(name, grid, formulas = []) {
+    const writes = [];
+    return {
+      name, grid, writes,
+      getName: () => name,
+      getLastRow: () => grid.length,
+      getLastColumn: () => Math.max(0, ...grid.map((r) => r.length)),
+      getRange: (r, c, nr, nc) => ({
+        getValues: () => grid.slice(r - 1, r - 1 + nr).map((x) => Array.from({ length: nc }, (_, j) => x[c - 1 + j] ?? '')),
+        getFormulas: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => (formulas[r - 1 + i] || [])[c - 1 + j] || '')),
+        setValues: (vals) => {
+          expect(vals).toHaveLength(nr);
+          vals.forEach((v) => expect(v).toHaveLength(nc));
+          writes.push({ r, c, nr, nc, vals });
+        },
+      }),
+    };
+  }
+  /* แท็บสมุดที่เป็นสำเนา IMPORTRANGE กับแท็บที่ทีมพิมพ์เอง ข้อมูลสมมติทั้งหมด */
+  const ledgerTab = () => tab('Transaction',
+    [['SKU', 'QTY'], ['AAA001', 5], ['BBB002', 3], ['AAA001', -1], ['CCC003', 7], ['AAA001', 2], ['BBB002', 1]],
+    [[], ['=QUERY(IMPORTRANGE("https://docs.google.com/spreadsheets/d/FAKE00000000000000000000000000/edit","Transaction!A2:O30000"),"SELECT Col1,Col8",0)']]);
+  const masterTab2 = () => tab('MASTER แปลงสินค้า', [['ซื้อ', 'ขาย'], ['AAA001', 'AAA001-X']], [[], ['', '=UPPER(A2)']]);
+
   /** ไฟล์ในโฟลเดอร์ Backup: เรียงจากเก่าไปใหม่ตามลำดับที่ให้มา สำเนาใหม่ต่อท้ายเสมอ */
-  function drive(names, { hasFolder = true } = {}) {
+  function drive(names, { hasFolder = true, fail = () => false } = {}) {
     const trashed = [];
     const props = {};
+    const renamed = [];
     const file = (name, i) => ({
       getName: () => name,
+      getId: () => `copy${i}`,
+      setName: (n) => renamed.push([name, n]),
       getDateCreated: () => new Date(2026, 0, i + 1),
       setTrashed: (v) => { if (v) trashed.push(name); },
     });
+    const source = [ledgerTab(), masterTab2()];
+    /* สำเนาที่เพิ่งทำ แท็บชื่อเดียวกับต้นฉบับ เขียนได้ ถ้า fail บอกว่าล้มก็โยน error แบบ Google */
+    const copyTabs = [ledgerTab(), masterTab2()];
+    copyTabs.forEach((t) => {
+      const real = t.getRange;
+      t.getRange = (...a) => {
+        const rg = real(...a);
+        const set = rg.setValues;
+        rg.setValues = (v) => { if (fail(a[0])) throw new Error('Service Spreadsheets failed while accessing document'); set(v); };
+        return rg;
+      };
+    });
+    const opened = [];
+    const sleeps = [];
     const files = names.map(file);
     const folder = {
       getFiles: () => { let i = 0; return { hasNext: () => i < files.length, next: () => files[i++] }; },
@@ -1153,14 +1258,25 @@ describe('tx-api.gs — Backup', () => {
     const deleted = [];
     const created = [];
     const env = {
-      SpreadsheetApp: { getActiveSpreadsheet: () => ({ getSpreadsheetTimeZone: () => 'UTC', getId: () => 'id1', getName: () => 'Transaction' }) },
-      Utilities: { formatDate: () => '2026-01-01 02:00' },
+      SpreadsheetApp: {
+        getActiveSpreadsheet: () => ({ getSpreadsheetTimeZone: () => 'UTC', getId: () => 'id1', getName: () => 'Transaction', getSheets: () => source }),
+        /* เปิดได้แค่สำเนาที่เพิ่งทำ ไฟล์อื่น (รวมชีตต้นทางของ IMPORTRANGE) ห้ามเปิด */
+        openById: (id) => {
+          opened.push(id);
+          if (id !== files[files.length - 1].getId()) throw new Error('ห้ามเปิดไฟล์อื่น');
+          return { getSheetByName: (n) => copyTabs.find((t) => t.name === n) || null };
+        },
+        flush: () => {},
+      },
+      Utilities: { formatDate: () => '2026-01-01 02:00', sleep: (ms) => sleeps.push(ms) },
       PropertiesService: { getScriptProperties: () => ({ setProperty: (k, v) => { props[k] = JSON.parse(v); } }) },
       ContentService: {},
       DriveApp: {
         getFoldersByName: () => { let left = hasFolder ? 1 : 0; return { hasNext: () => left > 0, next: () => { left--; return folder; } }; },
         createFolder: () => { made++; return folder; },
-        getFileById: () => ({ makeCopy: (name, into) => { expect(into).toBe(folder); files.push(file(name, files.length)); } }),
+        getFileById: () => ({
+          makeCopy: (name, into) => { expect(into).toBe(folder); const f = file(name, files.length); files.push(f); return f; },
+        }),
       },
       ScriptApp: {
         getProjectTriggers: () => triggers.map((t) => ({ getHandlerFunction: () => t.name, name: t.name })),
@@ -1168,8 +1284,10 @@ describe('tx-api.gs — Backup', () => {
         newTrigger: (fn) => ({ timeBased: () => ({ everyDays: (d) => ({ atHour: (h) => ({ create: () => created.push([fn, d, h]) }) }) }) }),
       },
     };
-    const api = new Function(...Object.keys(env), GS + '\nreturn { backupNow: backupNow, installBackup: installBackup };')(...Object.values(env));
-    return { api, trashed, props, deleted, created, made: () => made, files };
+    const src = GS.replace('var BACKUP_CHUNK = 5000;', 'var BACKUP_CHUNK = 4;');   // ไฟล์ปลอมเล็ก แบ่งก้อนให้เห็น
+    expect(src).not.toBe(GS);
+    const api = new Function(...Object.keys(env), src + '\nreturn { backupNow: backupNow, installBackup: installBackup };')(...Object.values(env));
+    return { api, trashed, props, deleted, created, made: () => made, files, copyTabs, opened, renamed, sleeps };
   }
   const old = (n) => Array.from({ length: n }, (_, i) => `Backup ${String(i).padStart(2, '0')}`);
 
@@ -1187,6 +1305,34 @@ describe('tx-api.gs — Backup', () => {
     expect(d.made()).toBe(1);
     expect(d.trashed).toEqual([]);
     expect(d.props.backup.kept).toBe(1);
+  });
+
+  it('แท็บที่ดึงด้วย IMPORTRANGE ในสำเนาเป็นตัวเลขของตอนนั้น ทีละก้อน แท็บที่ไม่มีสูตรดึงข้อมูลไม่ถูกแตะ', () => {
+    const d = drive([]);
+    d.api.backupNow();
+    expect(d.opened).toEqual(['copy0']);
+    const [ledger, master] = d.copyTabs;
+    expect(ledger.writes.map((w) => [w.r, w.nr, w.nc])).toEqual([[1, 4, 2], [5, 3, 2]]);
+    expect(ledger.writes.flatMap((w) => w.vals)).toEqual(ledgerTab().grid);   // ทับสูตรใน A2 ด้วยค่า
+    expect(master.writes).toEqual([]);                                        // สูตรในไฟล์เองคิดจากของในสำเนาได้
+    expect(d.props.backup.frozen).toEqual(['Transaction']);
+  });
+
+  it('Google ล้มชั่วคราวตอนวางตัวเลข ลองใหม่เองแล้วผ่าน', () => {
+    let left = 2;
+    const d = drive([], { fail: (row) => row === 5 && left-- > 0 });
+    d.api.backupNow();
+    expect(d.sleeps).toEqual([2000, 4000]);
+    expect(d.copyTabs[0].writes.map((w) => w.r)).toEqual([1, 5]);
+    expect(d.props.backup.frozen).toEqual(['Transaction']);
+  });
+
+  it('วางตัวเลขไม่สำเร็จ สำเนาได้ชื่อว่าไม่ครบ ไม่นับเป็น Backup ล่าสุด และไม่ลบสำเนาเก่า', () => {
+    const d = drive(old(32), { fail: (row) => row === 5 });
+    expect(() => d.api.backupNow()).toThrow(/วางตัวเลขแทนสูตรในสำเนาไม่สำเร็จ — ตอนวางแถว 5–7 ของแท็บ Transaction/);
+    expect(d.renamed).toEqual([[d.files[32].getName(), `${d.files[32].getName()} (ไม่ครบ)`]]);
+    expect(d.props.backup).toBeUndefined();
+    expect(d.trashed).toEqual([]);
   });
 
   it('ตั้งเวลาทับตัวเดิมของตัวเอง ไม่ซ้อนกัน และทำสำเนาแรกทันที', () => {
@@ -1556,7 +1702,18 @@ describe('wms-tx.js', () => {
 
   it('ลิงก์เปิดชีตตรงแถว', () => {
     expect(WmsTx.rowUrl({ url: 'https://x/edit', gid: 7 }, 12)).toBe('https://x/edit#gid=7&range=A12');
+    expect(WmsTx.rowUrl({ url: 'https://x/edit', gid: 9, real: 1, end: 30000 }, 12)).toBe('https://x/edit#gid=9&range=A12');
     expect(WmsTx.rowUrl(null, 12)).toBe('');
+  });
+
+  it('สูตร IMPORTRANGE ใกล้เต็ม เตือนก่อนแถวใหม่หายเงียบ ๆ', () => {
+    const near = { sheet: { end: 30000 }, lastRow: 28987 };
+    expect(WmsTx.importRoom(near)).toEqual({ end: 30000, last: 28987, left: 1013 });
+    expect(WmsTx.importRoom({ sheet: { end: 30000 }, lastRow: 30000 }).left).toBe(0);
+    expect(WmsTx.importRoom({ sheet: { end: 30000 }, lastRow: 30000 - WmsTx.ROOM_WARN })).toBeNull();
+    expect(WmsTx.importRoom({ sheet: { url: 'x', gid: 1 }, lastRow: 28987 })).toBeNull();   // ไม่ใช่สำเนา
+    expect(WmsTx.importRoom({ sheet: { end: 30000 } })).toBeNull();                          // สคริปต์รุ่นเก่า
+    expect(WmsTx.importRoom(null)).toBeNull();
   });
 
   describe('ชี้จุดในแท็บข้อมูลผิด', () => {
@@ -1594,6 +1751,29 @@ describe('wms-tx.js', () => {
       expect(WmsTx.clue(raw([[1, 3, '990000000000000001', 1, 12, 0]]), neg)).toEqual({ kind: 'none' });
       expect(WmsTx.clue(raw([[0, 5, '990000000000000003', 2, 1, 0]]), { ...neg, bal: -1 })).toEqual({ kind: 'none' });
       expect(WmsTx.clue(raw([]), { ...neg, kind: 'mixed' })).toBe(null);
+    });
+
+    it('บรรทัดย่อ: คำใบ้สั้น บอกว่าแก้แถวไหนเป็นอะไร และหัวบรรทัดของเรื่องที่ไม่มี SKU', () => {
+      const loc = WmsTx.clue(raw([[0, 3, '990000000000000001', 1, 12, 0]]), neg);
+      expect(WmsTx.clueShort(loc, neg)).toBe('น่าจะลง Location ผิด — LOT 3 / PO 990000000000000001 อยู่ที่ G-01-01 12 ชิ้น เท่าที่ขาดพอดี');
+      const lot = WmsTx.clue(raw([[0, 4, '990000000000000002', 0, 30, 0]]), neg);
+      expect(WmsTx.clueShort(lot, neg)).toBe('น่าจะลง LOT/PO ผิด — ที่นี่มี LOT 4 / PO 990000000000000002 30 ชิ้น');
+      expect(WmsTx.clueShort({ kind: 'short', total: -8 }, neg)).toBe('ทั้ง SKU ติดลบ 8 ชิ้น — น่าจะยังไม่ได้ลงรับเข้า');
+      expect(WmsTx.clueShort({ kind: 'none' }, neg)).toBe('');   // ไม่เข้าเค้าไม่ต้องรกบรรทัดย่อ
+      expect(WmsTx.clueShort(null, neg)).toBe('');
+
+      expect(WmsTx.fixLead({ kind: 'mixed', oddOpen: true })).toEqual({ lead: 'แก้ Status แถว', tail: 'ให้เป็น Status ว่าง เหมือนแถวอื่น' });
+      expect(WmsTx.fixLead({ kind: 'mixed', oddOpen: false }).tail).toBe('ให้เป็น "เปิด" เหมือนแถวอื่น');
+      expect(WmsTx.fixLead({ kind: 'mixed' })).toEqual({ lead: 'แถวรับเข้า', tail: '' });            // สคริปต์รุ่นก่อน
+      expect(WmsTx.fixLead({ ...neg, info: [] }).lead).toBe('เริ่มติดลบที่แถว');
+      expect(WmsTx.fixLead({ kind: 'qty', value: '5 ชิ้น' })).toEqual({ lead: 'แก้ QTY แถว', tail: 'กรอกว่า "5 ชิ้น"' });
+      for (const k of WmsTx.ISSUES) expect(WmsTx.fixLead({ kind: k.kind, what: 'x', value: 'x' }).lead).toBeTruthy();
+
+      expect(WmsTx.issueKey({ kind: 'locname', name: 'A-1-01', like: 'A-01-01' })).toBe('"A-1-01" น่าจะเป็น A-01-01');
+      expect(WmsTx.issueKey({ kind: 'date', note: 'GR 02-09-26', near: '2026-10-02' })).toBe('"GR 02-09-26" แต่แถวขายรอบข้างเป็น 02/10');
+      expect(WmsTx.issueKey({ kind: 'incomplete', sku: '' })).toBe('แถวที่ไม่มีรหัส SKU');
+      expect(WmsTx.issueKey({ kind: 'incomplete', sku: 'AAA001' })).toBe('');
+      expect(WmsTx.issueKey(neg)).toBe('');
     });
 
     it('กองปลายทางที่แถวเบิกของรายการนี้โอนไปเอง ไม่ใช่คำใบ้', () => {

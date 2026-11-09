@@ -36,9 +36,18 @@
 // ชื่อชีตสมุดรายการ — ว่างไว้ = หาเองจากหัวตาราง (คอลัมน์ F, G ขึ้นต้นด้วย Location เบิก / รับ)
 var TX_SHEET = '';
 
+// ชีตจริงที่ทีมกรอก ใช้เมื่อแท็บที่สคริปต์อ่านเป็นสำเนาที่ดึงมาด้วย IMPORTRANGE (สำเนาพิมพ์แก้ไม่ได้)
+// เปิดแท็บ Transaction ในชีตจริง คัดลอกลิงก์จากช่องที่อยู่ (ต้องมี #gid=) มาวางในเครื่องหมายคำพูด
+// ปุ่ม "เปิดแถวในชีต" บนหน้าเว็บจะพาไปแถวเดียวกันในชีตจริง สคริปต์ไม่เปิดและไม่อ่านชีตจริง ใช้แค่ลิงก์นี้
+// ว่างไว้ = ลิงก์ไปแท็บที่สคริปต์อ่านเหมือนเดิม
+var REAL_SHEET_URL = '';
+
 var BACKUP_FOLDER = 'WMS Transaction Backup';
 var BACKUP_KEEP = 30;       // เก็บสำเนาล่าสุดกี่ไฟล์ เก่ากว่านั้นย้ายลงถังขยะ (กู้คืนจากถังได้อีก 30 วัน)
 var BACKUP_PREFIX = 'Backup ';
+var BACKUP_CHUNK = 5000;    // แถวต่อครั้งตอนวางตัวเลขทับสูตรในสำเนา ก้อนใหญ่กว่านี้ Google มักตอบว่า Service Spreadsheets failed
+// สูตรที่ดึงข้อมูลจากนอกไฟล์ สำเนาที่ยังมีสูตรพวกนี้จะไปดึงของใหม่ทุกครั้งที่เปิด ไม่ได้เก็บของคืนนั้นไว้
+var LIVE_FORMULA = /\b(IMPORTRANGE|IMPORTDATA|IMPORTXML|IMPORTHTML|IMPORTFEED|GOOGLEFINANCE)\s*\(/i;
 
 var COLS = 12;              // A..L อ่านตามตำแหน่ง เพราะหัวตารางมีคำว่า SKU ซ้ำสองช่อง
 var SALE_DAYS = 14;         // ยอดขายเฉลี่ยคิดจากกี่วันล่าสุด
@@ -123,6 +132,68 @@ function ledgerSheet_(ss) {
     return all[i];
   }
   throw new Error('ไม่พบชีต Transaction — คอลัมน์ F, G ต้องเป็น Location เบิก และ Location รับ หรือใส่ชื่อชีตใน TX_SHEET');
+}
+
+/**
+ * ลิงก์ที่หน้าเว็บใช้เปิดแถวในชีต (WmsTx.rowUrl ต่อ #gid กับ range ให้เอง)
+ * แท็บที่สคริปต์อ่านอาจเป็นสำเนาที่ดึงด้วย IMPORTRANGE ซึ่งพิมพ์แก้ไม่ได้ ใส่ REAL_SHEET_URL ไว้ ลิงก์จะพาไปชีตจริงแทน
+ * เลขแถวใช้ตัวเดิม สำเนาวางสูตรไว้แถวเดียวกับแถวแรกที่ดึงมา แถวจึงตรงกับชีตจริงทุกแถว
+ * ไม่เปิดชีตจริงเลย ดูแค่สูตรในแท็บนี้ว่าเป็นสำเนาไหมกับดึงถึงแถวไหน
+ *   { url, gid }                 แท็บนี้คือชีตจริง
+ *   { url, gid, real: 1 }        ลิงก์ไปชีตจริงตาม REAL_SHEET_URL
+ *   { url, gid, copy: 1 }        แท็บนี้เป็นสำเนา แต่ยังไม่ได้ใส่ลิงก์ชีตจริง url ยังเป็นของสำเนา
+ *   why                          ใส่ REAL_SHEET_URL แล้วแต่ใช้ไม่ได้ บอกเหตุผล
+ *   end                          แถวสุดท้ายที่สูตร IMPORTRANGE ดึงมา (ช่วงแบบ A2:O30000) แถวที่เกินจะไม่เข้ามา
+ */
+function link_(ss, sheet) {
+  var out = { url: ss.getUrl(), gid: sheet.getSheetId() };
+  var imp = importOf_(sheet);
+  if (imp && imp.end) out.end = imp.end;
+  if (REAL_SHEET_URL) {
+    var real = sheetUrl_(REAL_SHEET_URL);
+    if (real) {
+      out.url = real.url;
+      out.gid = real.gid;
+      out.real = 1;
+      return out;
+    }
+    out.why = 'REAL_SHEET_URL ต้องเป็นลิงก์แท็บในชีตจริงที่มี #gid=';
+  }
+  if (imp) out.copy = 1;
+  return out;
+}
+
+/** ลิงก์แท็บของ Google Sheet → { url ของไฟล์, gid } ลิงก์ที่ไม่มีรหัสไฟล์หรือ gid ได้ null */
+function sheetUrl_(s) {
+  s = String(s || '').trim();
+  var id = /\/d\/([\w-]{20,})/.exec(s);
+  var gid = /[#&?]gid=(\d+)/.exec(s);
+  if (!id || !gid) return null;
+  return { url: 'https://docs.google.com/spreadsheets/d/' + id[1] + '/edit', gid: +gid[1] };
+}
+
+/**
+ * แท็บนี้เป็นสำเนาที่ดึงด้วย IMPORTRANGE ไหม ดูสูตรในห้าแถวแรก ไม่ใช่ได้ null
+ * end = แถวสุดท้ายที่ดึง จากช่วงในเครื่องหมายคำพูด "Transaction!A2:O30000" ได้ 30000
+ * ช่วงที่ไม่ระบุแถวท้าย (A2:O) หรืออ่านช่วงไม่ออก end เป็น null
+ */
+function importOf_(sheet) {
+  var top = sheet.getRange(1, 1, Math.min(5, Math.max(sheet.getLastRow(), 1)), COLS);
+  if (typeof top.getFormulas !== 'function') return null;
+  var text = '';
+  top.getFormulas().forEach(function (r) {
+    r.forEach(function (f) { if (!text && /IMPORTRANGE\s*\(/i.test(f)) text = String(f); });
+  });
+  if (!text) return null;
+  var re = /IMPORTRANGE\s*\([^,;]*[,;]\s*"([^"]*)"/gi;
+  var m, end = 0, open = false, any = false;
+  while ((m = re.exec(text))) {
+    any = true;
+    var tail = /:\$?[A-Z]+\$?(\d*)\s*$/i.exec(m[1]);
+    if (tail && tail[1]) end = Math.max(end, +tail[1]);
+    else open = true;
+  }
+  return { end: any && !open ? end : null };
 }
 
 /** แปลงแถวดิบเป็นรูปที่ใช้ต่อ เลขแถวนับแบบชีต (แถวข้อมูลแรก = 2) แถวว่างทั้งแถวถูกข้าม */
@@ -507,11 +578,12 @@ function summary_() {
     app: 'transaction',
     at: Date.now(),
     rows: rows.length,
+    lastRow: rows.length ? rows[rows.length - 1].row : 0,   // เลขแถวสุดท้ายที่มีข้อมูล หน้าเว็บเทียบกับ sheet.end
     lastDate: sold.last,
     saleDays: sold.days,
     /* SKU ที่ขายอยู่แต่ของหมดเกลี้ยงไม่มีแถวใน keys ต้องส่งแยก ไม่งั้นจะหลุดจากรายการต้องเติม */
     sold: Object.keys(sold.bySku).map(function (k) { return [skuNo(k), sold.bySku[k]]; }),
-    sheet: { url: ss.getUrl(), gid: sheet.getSheetId() },
+    sheet: link_(ss, sheet),
     backup: last ? JSON.parse(last) : null,
     skus: skus,
     locs: locs,
@@ -538,7 +610,7 @@ function daily_(from, to) {
   var out = {
     app: 'transaction', at: Date.now(), from: from, to: to, last: '',
     noDate: { rows: 0, qty: 0 }, noSku: { rows: 0, qty: 0 }, future: { rows: 0, qty: 0 }, badQty: { rows: 0 },
-    sheet: { url: ss.getUrl(), gid: sheet.getSheetId() },
+    sheet: link_(ss, sheet),
     skus: [], days: [], cells: [], locs: [], whos: [], lines: [],
   };
   function skip(part, r) { part.rows++; part.qty += r.qty; }
@@ -640,7 +712,7 @@ function history_(sku) {
     count: list.length,
     left: total,
     items: list.slice(-HISTORY_MAX).reverse(),
-    sheet: { url: ss.getUrl(), gid: sheet.getSheetId() },
+    sheet: link_(ss, sheet),
   };
 }
 
@@ -669,7 +741,7 @@ function fifo_() {
   var rows = readRows_(sheet, tz);
   var out = {
     app: 'transaction', at: Date.now(), today: today, last: sales_(rows, today).last, conv: 1, lot0: 1,
-    sheet: { url: ss.getUrl(), gid: sheet.getSheetId() },
+    sheet: link_(ss, sheet),
     skus: [], pos: [], locs: [], days: [], rows: [],
   };
   var idx = { sku: {}, po: {}, loc: {}, day: {} };
@@ -1085,7 +1157,9 @@ function countAdd_(req) {
 
 /**
  * ทำสำเนาทั้งไฟล์ลงโฟลเดอร์ใน Drive ของเจ้าของสคริปต์ ไฟล์ต้นฉบับไม่ถูกแตะ
+ * แท็บที่ดึงข้อมูลมาด้วย IMPORTRANGE ในสำเนาจะเป็นตัวเลขของตอนนั้น ไม่ใช่สูตร (ดู freeze_)
  * ลบเฉพาะไฟล์ในโฟลเดอร์นี้ที่ขึ้นต้นด้วย BACKUP_PREFIX และลบแบบย้ายลงถังขยะ
+ * วางตัวเลขไม่สำเร็จ สำเนานั้นได้ชื่อลงท้าย (ไม่ครบ) และไม่นับเป็น Backup ล่าสุด หน้าเว็บจะเตือนเมื่อ Backup เก่าเกินไป
  */
 function backupNow() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -1093,7 +1167,14 @@ function backupNow() {
   var folders = DriveApp.getFoldersByName(BACKUP_FOLDER);
   var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(BACKUP_FOLDER);
   var name = BACKUP_PREFIX + Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm') + ' ' + ss.getName();
-  DriveApp.getFileById(ss.getId()).makeCopy(name, folder);
+  var copy = DriveApp.getFileById(ss.getId()).makeCopy(name, folder);
+  var frozen;
+  try {
+    frozen = freeze_(ss, SpreadsheetApp.openById(copy.getId()));
+  } catch (e) {
+    copy.setName(name + ' (ไม่ครบ)');
+    throw new Error('ทำสำเนาแล้ว แต่วางตัวเลขแทนสูตรในสำเนาไม่สำเร็จ — ' + (e && e.message || e));
+  }
 
   var files = [];
   var it = folder.getFiles();
@@ -1104,8 +1185,52 @@ function backupNow() {
   files.sort(function (a, b) { return b.getDateCreated() - a.getDateCreated(); });
   files.slice(BACKUP_KEEP).forEach(function (f) { f.setTrashed(true); });
 
-  PropertiesService.getScriptProperties().setProperty('backup', JSON.stringify({ at: Date.now(), name: name, kept: Math.min(files.length, BACKUP_KEEP) }));
+  PropertiesService.getScriptProperties().setProperty('backup', JSON.stringify({ at: Date.now(), name: name, kept: Math.min(files.length, BACKUP_KEEP), frozen: frozen }));
   return name;
+}
+
+/**
+ * แท็บที่มีสูตรดึงข้อมูลจากนอกไฟล์ (LIVE_FORMULA) สำเนาจะเก็บแค่สูตร เปิดทีหลังได้ข้อมูลของวันที่เปิด
+ * หรือขึ้นให้กดอนุญาตการเชื่อมต่อ ไม่ใช่ข้อมูลของคืนที่ทำ Backup
+ * จึงเอาค่าที่เห็นในไฟล์นี้ตอนนี้ไปวางทับทั้งแท็บในสำเนา ทีละ BACKUP_CHUNK แถว
+ * เขียนลงไฟล์สำเนาเท่านั้น ไฟล์นี้กับชีตต้นทางของ IMPORTRANGE ไม่ถูกแตะ ได้รายชื่อแท็บที่วางตัวเลขทับ
+ */
+function freeze_(ss, copy) {
+  var done = [];
+  ss.getSheets().forEach(function (src) {
+    var rows = src.getLastRow(), cols = src.getLastColumn();
+    if (!rows || !cols) return;
+    var range = src.getRange(1, 1, rows, cols);
+    var live = range.getFormulas().some(function (r) {
+      return r.some(function (f) { return !!f && LIVE_FORMULA.test(f); });
+    });
+    if (!live) return;
+    var dst = copy.getSheetByName(src.getName());
+    if (!dst) throw new Error('ไม่พบแท็บ ' + src.getName() + ' ในสำเนา');
+    var values = range.getValues();
+    /* ก้อนแรกทับช่องที่มีสูตรไปด้วย สูตรหายแล้วช่องที่สูตรเคยกระจายลงไปจะว่าง ก้อนถัดไปเติมต่อ */
+    for (var at = 0; at < rows; at += BACKUP_CHUNK) {
+      var part = values.slice(at, at + BACKUP_CHUNK);
+      again_('วางแถว ' + (at + 1) + '–' + (at + part.length) + ' ของแท็บ ' + src.getName(), function () {
+        dst.getRange(at + 1, 1, part.length, cols).setValues(part);
+        SpreadsheetApp.flush();
+      });
+    }
+    done.push(src.getName());
+  });
+  return done;
+}
+
+/** Google ตอบผิดพลาดชั่วคราวได้กับงานก้อนใหญ่ ลองใหม่อีกสามรอบ รอนานขึ้นทีละรอบ */
+function again_(what, fn) {
+  for (var i = 0; ; i++) {
+    try {
+      return fn();
+    } catch (e) {
+      if (i >= 3) throw new Error('ตอน' + what + ' — ' + (e && e.message || e));
+      Utilities.sleep(2000 * Math.pow(2, i));
+    }
+  }
 }
 
 /** กดรันครั้งเดียวจากหน้าแก้สคริปต์: ตั้งให้ Backup ทุกคืน แล้วทำสำเนาแรกให้ทันที เพื่อให้เห็นว่าใช้ได้ */

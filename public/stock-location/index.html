@@ -79,16 +79,33 @@ a.tx-row{color:var(--wms-primary-dark)}
 .tx-iss td:not(:last-child){white-space:nowrap;max-width:300px;overflow:hidden;text-overflow:ellipsis}
 .tx-iss td:first-child{font-weight:600}
 
-/* ── ข้อมูลผิด: หนึ่งการ์ดต่อหนึ่งเรื่อง บอกว่าผิดอะไร แถวไหนต้องเช็คก่อน และน่าจะแก้เป็นอะไร
-   เป็นประโยคแทนตารางเหมือนรายการต้องเติม บนมือถือก็อ่านครบโดยไม่ต้องเลื่อนข้าง ── */
-.tx-iq{list-style:none;display:flex;flex-direction:column;gap:8px}
-.tx-is{padding:11px 14px;background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:var(--wms-radius)}
-.tx-is.done{background:var(--wms-surface2)}
-.tx-is .top{display:flex;flex-wrap:wrap;align-items:baseline;gap:3px 8px;font-size:12.5px;color:var(--wms-muted)}
-.tx-is .top b{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--wms-text)}
-.tx-is .amt{margin-left:auto;font-size:14px;font-weight:700;color:#B91C1C;font-variant-numeric:tabular-nums;white-space:nowrap}
-.tx-is .what{margin-top:6px;font-size:14px;font-weight:600;color:var(--wms-text);line-height:1.5}
-.tx-is .pt{margin-top:7px;font-size:13px;color:var(--wms-text);line-height:1.6}
+/* ── ข้อมูลผิด: สองบรรทัดต่อหนึ่งเรื่อง เรียงต่อกันในกรอบเดียวเหมือนตาราง
+   บรรทัดแรกคือของอะไรอยู่ที่ไหน บรรทัดสองคือแถวที่ต้องแก้พร้อมปุ่มเปิดแถว กับคำใบ้สั้น ๆ
+   คำอธิบายเต็มกับแถวอื่นซ่อนไว้ กดดูเพิ่มถึงจะกาง หน้าจะสั้นพอไล่ดูได้ทั้งเรื่อง ── */
+.tx-cl{list-style:none;background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:var(--wms-radius);overflow:hidden}
+.tx-ci{padding:8px 14px;border-bottom:1px solid #EEF2F6}
+.tx-ci:last-child{border-bottom:0}
+.tx-ci.done{background:var(--wms-surface2)}
+.tx-ci .l1{display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px;min-height:26px;font-size:13px}
+.tx-ci .l1 b{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--wms-text)}
+.tx-ci .l1 b.key{font-family:var(--wms-font)}
+.tx-ci .nm{max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--wms-muted)}
+.tx-ci .wh{white-space:nowrap;color:var(--wms-muted)}
+.tx-ci .sp{flex:1}
+.tx-ci .chk{display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.tx-ci .amt{font-size:13.5px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--wms-text)}
+.tx-ci .amt.bad{color:#B91C1C}
+.tx-ci .l2{display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px;margin-top:3px;font-size:12.5px;color:var(--wms-text);line-height:1.7}
+.tx-ci .hint{color:#1D4ED8}
+.tx-ci .tx-more{margin-left:auto;font-size:12px;white-space:nowrap}
+.tx-go{display:inline-block;padding:0 9px;border:1px solid #C7D2FE;border-radius:999px;background:var(--wms-primary-light);
+  color:var(--wms-primary-dark);font-weight:600;font-variant-numeric:tabular-nums;text-decoration:none;white-space:nowrap}
+.tx-go:hover{border-color:var(--wms-primary)}
+.tx-box{margin-top:8px;padding:10px 12px;border-radius:var(--wms-radius-sm);background:var(--wms-surface2)}
+.tx-ci.done .tx-box{background:var(--wms-surface)}
+.tx-box .what{font-size:13.5px;font-weight:600;color:var(--wms-text);line-height:1.5}
+.tx-box .pt{margin-top:6px;font-size:13px;color:var(--wms-text);line-height:1.6}
+.tx-opt.sm{padding:2px 10px;font-size:12px}
 .tx-rl{list-style:none;font-size:13px;line-height:1.75}
 .tx-rl li{display:flex;flex-wrap:wrap;gap:0 8px}
 .tx-rl .hit{font-weight:600}
@@ -99,9 +116,6 @@ a.tx-row{color:var(--wms-primary-dark)}
 .tx-acts{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:10px}
 .tx-acts .sp{flex:1}
 a.tx-opt{display:inline-block;text-decoration:none}
-.tx-kind{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;white-space:nowrap;
-  background:#FEF3C7;color:#92400E}
-.tx-kind.bad{background:#FEE2E2;color:#991B1B}
 .tx-done{font-size:12.5px;font-weight:600;color:#166534}
 .tx-card i{display:block;font-style:normal;font-size:11px;color:var(--wms-muted)}
 
@@ -180,8 +194,12 @@ button.tx-card.on{border-color:var(--wms-primary);background:var(--wms-primary-l
 @media (max-width:640px){
   .tx-body{padding:12px 12px 60px}
   .tx-src,.tx-sum,.tx-tabs{padding-left:12px;padding-right:12px}
-  .tx-is{padding:10px 12px}
-  .tx-acts .tx-opt{padding:8px 13px}   /* ปุ่มเล็กกดด้วยนิ้วพลาดง่าย */
+  .tx-ci{position:relative;padding:9px 12px}
+  .tx-ci .l1{padding-right:112px}   /* ปุ่มเช็คแล้วลอยมุมขวาบน ไม่ต้องเสียบรรทัดของตัวเอง */
+  .tx-ci .chk{position:absolute;top:7px;right:10px}
+  .tx-ci .nm{max-width:100%}
+  .tx-acts .tx-opt,.tx-opt.sm{padding:7px 13px}   /* ปุ่มเล็กกดด้วยนิ้วพลาดง่าย */
+  .tx-go{padding:3px 11px}
 }
 </style>
 </head>
@@ -268,7 +286,30 @@ function backupPill() {
   if (b.days === null) return `<span class="pill warn">⚠️ ยังไม่ได้ตั้ง Backup — รัน installBackup ในสคริปต์</span>`;
   if (!b.ok) return `<span class="pill warn">⚠️ Backup ล่าสุด ${b.days} วันก่อน</span>`;
   const when = new Date(RAW.backup.at).toLocaleString('th-TH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-  return `<span class="pill">💾 Backup ล่าสุด <b>${esc(when)}</b></span>`;
+  /* สคริปต์รุ่นใหม่บอกว่าแท็บไหนในสำเนาเก็บเป็นตัวเลขแทนสูตร IMPORTRANGE */
+  const frozen = RAW.backup.frozen;
+  const tip = frozen && frozen.length ? ` title="${esc(`แท็บที่เก็บเป็นตัวเลขแทนสูตร import: ${frozen.join(', ')}`)}"` : '';
+  return `<span class="pill"${tip}>💾 Backup ล่าสุด <b>${esc(when)}</b></span>`;
+}
+
+/** สูตร IMPORTRANGE ในแท็บที่สคริปต์อ่านดึงถึงแถวตายตัว ใกล้เต็มต้องบอก ไม่งั้นแถวใหม่หายเงียบ ๆ */
+function roomPill() {
+  const r = WmsTx.importRoom(RAW);
+  if (!r) return '';
+  const tip = `สูตร IMPORTRANGE ในแท็บที่สคริปต์อ่านดึงถึงแถว ${f(r.end)} ตอนนี้ข้อมูลถึงแถว ${f(r.last)}`
+    + ` แถวในชีตจริงที่เกินจากนี้จะไม่เข้ามา ยอดทุกหน้าจะค้างโดยไม่มีอะไรฟ้อง ขยายเลขท้ายช่วงในสูตรให้มากขึ้น`;
+  return `<span class="pill warn" title="${esc(tip)}">⚠️ ${r.left
+    ? `สูตร import ดึงถึงแถว ${f(r.end)} เหลืออีก <b>${f(r.left)}</b> แถว — ขยายช่วงในสูตร`
+    : `ข้อมูลถึงแถว ${f(r.end)} ที่สูตร import ดึงแล้ว แถวใหม่ไม่เข้ามา — ขยายช่วงในสูตร`}</span>`;
+}
+
+/** ปุ่มเปิดแถวพาไปชีตไหน แท็บที่สคริปต์อ่านเป็นสำเนา IMPORTRANGE ต้องใส่ลิงก์ชีตจริงก่อน */
+function linkNote(s) {
+  if (!s) return '';
+  if (s.real) return ' · ปุ่มเปิดแถวพาไปแถวเดียวกันในชีตจริง';
+  if (!s.copy && !s.why) return '';
+  return ` · ปุ่มเปิดแถวยังพาไปชีตที่ import มา${s.why ? ` (${esc(s.why)})` : ''}`
+    + ' ให้ใส่ลิงก์แท็บ Transaction ของชีตจริงใน REAL_SHEET_URL ใน tx-api.gs แล้ว Deploy ใหม่';
 }
 
 function renderSrc() {
@@ -278,7 +319,7 @@ function renderSrc() {
     html += `<span class="pill">⏳ ${esc(PULLING)}</span>`;
   } else if (RAW) {
     const when = new Date(RAW.at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
-    html += `<span class="pill">📋 <b>${f(RAW.rows)}</b> แถว</span>`;
+    html += `<span class="pill">📋 <b>${f(RAW.rows)}</b> แถว</span>` + roomPill();
     html += RAW.lastDate
       ? `<span class="pill">📅 ขายถึง <b>${esc(WmsTx.shortDate(RAW.lastDate))}</b></span>`
       : `<span class="pill warn">⚠️ อ่านวันที่ขายไม่ออก</span>`;
@@ -571,6 +612,7 @@ let BQ = '';                         // คำค้นในแท็บข้�
 let SHOWDONE = false;                // แสดงรายการที่เช็คแล้วด้วยไหม
 let CHECKED = WmsTx.readChecked();   // รายการที่เช็คแล้ว จำไว้ในเครื่องนี้เท่านั้น
 const CLUES = new WeakMap();         // คำใบ้ต่อรายการ คิดครั้งเดียวต่อข้อมูลหนึ่งชุด พิมพ์ค้นทีละตัวไม่ต้องไล่ยอดทั้งคลังใหม่
+const OPENED = new Set();            // รายการที่กางดูเพิ่มอยู่ (ตาม issueId) ดึงชุดใหม่แล้วยังกางค้างไว้
 const BAD_MAX = 40;                  // ดูทุกเรื่องพร้อมกัน แสดงเรื่องละเท่านี้ก่อน กดการ์ดเพื่อดูครบ
 /* ยอดติดลบกับมีแต่แถวออกคือยอดที่ขาดจริง สีแดง เรื่องอื่นเป็นการกรอกที่ต้องแก้ สีเหลือง */
 const BAD_KINDS = ['negative', 'outonly'];
@@ -597,32 +639,63 @@ function issueRows(i) {
     ).join('')}</ul>${more > 0 ? `<div class="pt">${tail}</div>` : ''}`;
 }
 
-function issueCard(i, names) {
+/** ปุ่มเปิดแถวในชีต เห็นชัดว่ากดได้ ไม่มีลิงก์ชีตก็เป็นเลขเฉย ๆ */
+function goLink(row) {
+  const u = WmsTx.rowUrl(RAW.sheet, row);
+  return u ? `<a class="tx-go" href="${esc(u)}" target="_blank" rel="noopener" title="เปิดแถวนี้ในชีต">${row} ↗</a>` : `<b>${row}</b>`;
+}
+
+/** บรรทัดสอง: แถวที่ต้องแก้ก่อน รายละเอียดของแถวนั้น และจำนวนแถวที่เหลือ */
+function fixLine(i) {
+  const t = WmsTx.fixLead(i);
+  if (i.kind === 'date') return `<span>${esc(t.lead)} ${goLink(i.first)}${i.last !== i.first ? ` ถึง ${goLink(i.last)}` : ''}</span>`;
+  const rows = i.rows || [];
+  const first = i.at || rows[0];
+  if (!first) return '';
+  const k = rows.indexOf(first);
+  const info = i.info && k >= 0 ? WmsTx.rowInfo(i.info[k], i.loc) : '';
+  const more = Math.max(i.rowCount || 0, rows.length) - 1;
+  return `<span>${esc(t.lead)} ${goLink(first)}</span>` +
+    (t.tail ? `<span>${esc(t.tail)}</span>` : '') +
+    (info ? `<span class="tx-ri">${esc(info)}</span>` : '') +
+    (more > 0 ? `<span class="tx-ri">และอีก ${f(more)} แถว</span>` : '');
+}
+
+/** กางดูเพิ่ม: ประโยคเต็ม ทุกแถวที่แนบมา คำใบ้เต็ม และทางไปดูประวัติกับยอดทุกกอง */
+function issueMore(i, c) {
   const t = WmsTx.issueText(i);
-  const done = isDone(i);
-  const kind = WmsTx.ISSUES.find(k => k.kind === i.kind);
-  const where = [i.lot !== undefined && i.lot !== '' ? `LOT ${esc(i.lot)}` : '', i.po && i.po !== '0' ? `PO ${esc(i.po)}` : '', esc(i.loc || '')]
-    .filter(Boolean).join(' · ');
-  const amt = BAD_KINDS.includes(i.kind) ? `−${f(-i.bal)} ชิ้น` : i.kind === 'closedsale' ? `${f(i.sold)} ชิ้น` : '';
-  const c = BAD_KINDS.includes(i.kind) ? clueOf(i) : null;
-  const first = i.at || (i.rows && i.rows[0]) || i.first;
-  const url = first ? WmsTx.rowUrl(RAW.sheet, first) : '';
-  const name = i.sku ? names.get(String(i.long || i.sku).toUpperCase()) : '';
-  return `<li class="tx-is ${done ? 'done' : ''}">
-      <div class="top"><span class="tx-kind ${BAD_KINDS.includes(i.kind) ? 'bad' : ''}">${esc(kind.label)}</span>
-        ${i.sku ? `<b>${esc(i.sku)}</b>` : ''}${name ? `<span>${esc(name)}</span>` : ''}${where ? `<span>${where}</span>` : ''}
-        ${amt ? `<span class="amt">${amt}</span>` : ''}</div>
-      <div class="what">${esc(t.what)}</div>
-      ${t.sub ? `<div class="tx-sub">${esc(t.sub)}</div>` : ''}
+  return `<div class="tx-box">
+      <div class="what">${esc(t.what)}</div>${t.sub ? `<div class="tx-sub">${esc(t.sub)}</div>` : ''}
       ${issueRows(i)}
       ${c ? `<div class="tx-hint ${c.kind === 'none' ? 'weak' : ''}">💡 ${esc(WmsTx.clueText(c, i))}</div>` : ''}
-      <div class="tx-acts">
-        ${url ? `<a class="tx-opt on" href="${esc(url)}" target="_blank" rel="noopener">เปิดแถว ${first} ในชีต ↗</a>` : ''}
-        ${i.sku ? `<button class="tx-opt" data-hist="${esc(i.sku)}">ดูประวัติ SKU นี้</button><button class="tx-opt" data-sku="${esc(i.sku)}" data-loc="${esc(i.loc || '')}">ดูยอดทุกกอง</button>` : ''}
-        <span class="sp"></span>
-        ${done ? `<span class="tx-done">✓ เช็คแล้ว</span><button class="tx-link" data-check="${esc(WmsTx.issueId(i))}">ยกเลิก</button>`
-          : `<button class="tx-opt" data-check="${esc(WmsTx.issueId(i))}">✓ เช็คแล้ว</button>`}
-      </div>
+      ${i.sku ? `<div class="tx-acts"><button class="tx-opt" data-hist="${esc(i.sku)}">ดูประวัติ SKU นี้</button>
+        <button class="tx-opt" data-sku="${esc(i.sku)}" data-loc="${esc(i.loc || '')}">ดูยอดทุกกอง</button></div>` : ''}
+    </div>`;
+}
+
+/** หนึ่งเรื่องแบบย่อ: บรรทัดแรกของอะไรอยู่ที่ไหน บรรทัดสองแถวที่ต้องแก้ */
+function issueItem(i, names) {
+  const id = WmsTx.issueId(i);
+  const done = isDone(i);
+  const open = OPENED.has(id);
+  const bad = BAD_KINDS.includes(i.kind);
+  const key = WmsTx.issueKey(i);
+  const name = i.sku ? names.get(String(i.long || i.sku).toUpperCase()) : '';
+  const where = [i.lot !== undefined && i.lot !== '' ? `LOT ${esc(i.lot)}` : '', i.po && i.po !== '0' ? `PO ${esc(i.po)}` : '', esc(i.loc || '')]
+    .filter(Boolean).join(' · ');
+  const amt = bad ? `−${f(-i.bal)} ชิ้น` : i.kind === 'closedsale' ? `ขาย ${f(i.sold)} ชิ้น`
+    : ['baddate', 'date', 'locname'].includes(i.kind) && i.rowCount ? `${f(i.rowCount)} แถว` : '';
+  const c = bad ? clueOf(i) : null;
+  const hint = c ? WmsTx.clueShort(c, i) : '';
+  return `<li class="tx-ci ${done ? 'done' : ''}">
+      <div class="l1">${i.sku ? `<b>${esc(i.sku)}</b>` : ''}${key ? `<b class="key">${esc(key)}</b>` : ''}
+        ${name ? `<span class="nm" title="${esc(name)}">${esc(name)}</span>` : ''}${where ? `<span class="wh">${where}</span>` : ''}
+        <span class="sp"></span>${amt ? `<span class="amt ${bad ? 'bad' : ''}">${amt}</span>` : ''}
+        <span class="chk">${done ? `<span class="tx-done">✓ เช็คแล้ว</span><button class="tx-link" data-check="${esc(id)}">ยกเลิก</button>`
+          : `<button class="tx-opt sm" data-check="${esc(id)}">✓ เช็คแล้ว</button>`}</span></div>
+      <div class="l2">${fixLine(i)}${hint ? `<span class="hint">💡 ${esc(hint)}</span>` : ''}
+        <button class="tx-link tx-more" data-more="${esc(id)}">${open ? 'ย่อ ▴' : 'ดูเพิ่ม ▾'}</button></div>
+      ${open ? issueMore(i, c) : ''}
     </li>`;
 }
 
@@ -636,7 +709,7 @@ function issueSection(k, names) {
   /* พิมพ์ค้นอยู่หรือเลือกดูเรื่องเดียว แสดงครบ ดูทุกเรื่องพร้อมกันแสดงแค่ส่วนต้น หน้าจะได้ไม่ยาวจนหาเรื่องถัดไปไม่เจอ */
   const cap = KIND || BQ.trim() ? items.length : BAD_MAX;
   return `<div class="tx-h">${esc(k.label)} (${f(items.length)})</div><p class="tx-why">${esc(k.note)}</p>` +
-    `<ol class="tx-iq">${items.slice(0, cap).map(i => issueCard(i, names)).join('')}</ol>` +
+    `<ol class="tx-cl">${items.slice(0, cap).map(i => issueItem(i, names)).join('')}</ol>` +
     (items.length > cap ? `<p class="tx-note"><button class="tx-link" data-kind="${k.kind}">ดูเรื่องนี้ทั้งหมด ${f(items.length)} รายการ</button></p>` : '') +
     (all.length < total && !BQ.trim() ? `<p class="tx-note">สคริปต์ส่งมา ${f(all.length)} จาก ${f(total)} รายการ เรียงจากยอดที่กระทบมากสุด</p>` : '');
 }
@@ -677,7 +750,8 @@ function renderBad() {
     (KIND ? `<button class="tx-opt" data-kind="">ดูทุกเรื่อง</button>` : '') +
     (doneAll ? `<button class="tx-opt ${SHOWDONE ? 'on' : ''}" data-showdone="1">แสดงที่เช็คแล้ว (${f(doneAll)})</button>` : '') +
     `</div><div id="badlist"></div>` +
-    `<p class="tx-note">กดเปิดแถวเพื่อไปที่แถวนั้นในชีต หน้านี้ไม่แก้ชีต แก้ในชีตแล้วกดดึงใหม่ รายการจะหายไปเอง
+    `<p class="tx-note">กดเลขแถว ↗ เพื่อเปิดแถวนั้นในชีต · ดูเพิ่ม ▾ บอกเหตุผลเต็มกับแถวอื่นที่เกี่ยว
+      · หน้านี้ไม่แก้ชีต แก้ในชีตแล้วกดดึงใหม่ รายการจะหายไปเอง${linkNote(RAW.sheet)}
       · เช็คแล้วจำไว้ในเครื่องนี้เท่านั้น ถ้าตัวเลขของรายการเปลี่ยน รายการจะกลับมาให้ดูใหม่
       · 💡 คือคำใบ้จากกองอื่นของ SKU เดียวกัน ยังต้องดูของจริงก่อนแก้</p>`;
   $('bq').addEventListener('input', (e) => { BQ = e.target.value; renderBadList(); });
@@ -1158,6 +1232,7 @@ $('body').addEventListener('click', (e) => {
   else if (d.diffSend) sendDiff();
   else if (d.diffKind !== undefined) { DKIND = d.diffKind; renderDiff(); }
   else if (d.diffState !== undefined) { DSTATE = d.diffState; renderDiffRows(); }
+  else if (d.more) { if (!OPENED.delete(d.more)) OPENED.add(d.more); renderBadList(); }
   else if (d.check) toggleCheck(d.check);
   else if (d.showdone) { SHOWDONE = !SHOWDONE; renderBad(); }
   else if (d.kind !== undefined) { KIND = d.kind; renderBad(); }

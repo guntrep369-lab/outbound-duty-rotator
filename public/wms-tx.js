@@ -335,6 +335,47 @@
     return { what: '', sub: '' };
   }
 
+  /**
+   * บรรทัดย่อของรายการ: คำสั้น ๆ ว่าแก้อะไร วางหน้าเลขแถวที่ต้องเปิดก่อน (lead) กับส่วนต่อท้าย (tail ว่างได้)
+   * เรื่อง Status ปนกันบอกด้วยว่าควรแก้เป็นอะไร คือให้เหมือนแถวรับเข้าอื่นของจุดเดียวกัน
+   */
+  function fixLead(i) {
+    switch (i.kind) {
+      case 'negative': return { lead: i.info ? 'เริ่มติดลบที่แถว' : 'แถว', tail: '' };
+      case 'outonly': return { lead: 'แถวออก', tail: '' };
+      case 'mixed': return i.oddOpen === undefined ? { lead: 'แถวรับเข้า', tail: '' }
+        : { lead: 'แก้ Status แถว', tail: 'ให้เป็น ' + (i.oddOpen ? 'Status ว่าง' : '"เปิด"') + ' เหมือนแถวอื่น' };
+      case 'closedsale': return { lead: 'แถวขาย', tail: '' };
+      case 'qty': return { lead: 'แก้ QTY แถว', tail: 'กรอกว่า "' + i.value + '"' };
+      case 'incomplete': return { lead: 'เติมแถว', tail: 'ช่องที่ว่าง: ' + i.what };
+      case 'baddate': return { lead: 'แก้วันที่แถว', tail: '' };
+      case 'locname': return { lead: 'แก้ชื่อแถว', tail: '' };
+      case 'date': return { lead: 'เช็ควันที่แถว', tail: '' };
+    }
+    return { lead: 'แถว', tail: '' };
+  }
+
+  /** หัวบรรทัดของรายการที่ไม่ได้ผูกกับ SKU: สิ่งที่กรอกผิดเป็นข้อความสั้น */
+  function issueKey(i) {
+    if (i.kind === 'baddate') return 'วันที่ขายกรอกว่า "' + i.note + '"';
+    if (i.kind === 'locname') return '"' + i.name + '"' + (i.like ? ' น่าจะเป็น ' + i.like : ' ไม่ตรงรูปแบบชั้นวาง');
+    if (i.kind === 'date') return '"' + i.note + '" แต่แถวขายรอบข้างเป็น ' + shortDate(i.near);
+    if (i.kind === 'incomplete' && !i.sku) return 'แถวที่ไม่มีรหัส SKU';
+    return '';
+  }
+
+  /** คำใบ้แบบสั้นให้บรรทัดย่อ ไม่เจออะไรเข้าเค้าได้ค่าว่าง ประโยคเต็มอยู่ที่ clueText */
+  function clueShort(c, i) {
+    if (!c || c.kind === 'none') return '';
+    var p = c.pile;
+    var pile = p ? fmt(p.qty) + ' ชิ้น' + (c.exact ? ' เท่าที่ขาดพอดี' : '') : '';
+    if (c.kind === 'loc') return 'น่าจะลง Location ผิด — ' + lotPo(i.lot, i.po) + ' อยู่ที่ ' + p.loc + ' ' + pile;
+    if (c.kind === 'lot') return 'น่าจะลง LOT/PO ผิด — ที่นี่มี ' + lotPo(p.lot, p.po) + ' ' + pile;
+    if (c.kind === 'exact') return 'อาจผิดทั้ง Location และ LOT — ' + lotPo(p.lot, p.po) + ' ที่ ' + p.loc + ' ' + pile;
+    if (c.kind === 'short') return 'ทั้ง SKU ติดลบ ' + fmt(-c.total) + ' ชิ้น — น่าจะยังไม่ได้ลงรับเข้า';
+    return '';
+  }
+
   /** หัวของรายการแถว บอกว่าแถวที่แนบมาคือแถวแบบไหน */
   function rowsLabel(i) {
     if (i.kind === 'negative') return i.info ? 'แถวที่ทำให้ติดลบ' : 'แถวในชีต';
@@ -399,10 +440,28 @@
     });
   }
 
-  /** ลิงก์เปิดชีตตรงแถวนั้น แปะ #range ต่อท้าย URL ของไฟล์ได้โดยไม่ต้องรู้รหัสอื่น */
+  /**
+   * ลิงก์เปิดชีตตรงแถวนั้น แปะ #range ต่อท้าย URL ของไฟล์ได้โดยไม่ต้องรู้รหัสอื่น
+   * แท็บที่สคริปต์อ่านเป็นสำเนา IMPORTRANGE และใส่ REAL_SHEET_URL ไว้ สคริปต์ส่ง url กับ gid ของชีตจริงมาแทน (sheet.real)
+   */
   function rowUrl(sheet, row) {
     if (!sheet || !sheet.url) return '';
     return String(sheet.url).split('#')[0] + '#gid=' + sheet.gid + '&range=A' + row;
+  }
+
+  /** เหลือที่ไม่ถึงเท่านี้แถว เตือนให้ขยายช่วงในสูตร IMPORTRANGE */
+  var ROOM_WARN = 3000;
+
+  /**
+   * แท็บที่สคริปต์อ่านเป็นสำเนา IMPORTRANGE ที่ดึงถึงแถวตายตัว (เช่น A2:O30000) แถวที่เกินจะไม่เข้ามาโดยไม่มีอะไรฟ้อง
+   * ยอดทุกหน้าจะค้างอยู่ที่แถวนั้น ใกล้ถึงแล้วได้ { end, last, left } (left 0 = เต็มแล้ว) ยังไกลหรือสคริปต์รุ่นเก่าได้ null
+   */
+  function importRoom(raw) {
+    var end = raw && raw.sheet && raw.sheet.end;
+    var last = raw && raw.lastRow;
+    if (!end || !last) return null;
+    var left = Math.max(end - last, 0);
+    return left < ROOM_WARN ? { end: end, last: last, left: left } : null;
   }
 
   /** 2026-10-30 → 30/10 ปีซ้ำกันเกือบทุกแถว จึงไม่ต้องกินที่บนจอ */
@@ -786,10 +845,15 @@
     noReserveText: noReserveText,
     search: search,
     rowUrl: rowUrl,
+    ROOM_WARN: ROOM_WARN,
+    importRoom: importRoom,
     clue: clue,
     clueText: clueText,
     issueText: issueText,
     rowsLabel: rowsLabel,
+    fixLead: fixLead,
+    issueKey: issueKey,
+    clueShort: clueShort,
     rowInfo: rowInfo,
     issueId: issueId,
     issueSig: issueSig,

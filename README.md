@@ -326,7 +326,7 @@ number. The one thing it writes is its own `นับสต๊อก` tab, which
 | นับสต๊อก | Today's 20 lines to count, and how accurate the stock is |
 | เทียบสต๊อก | Which SKUs differ between the company system and this sheet, and by how much |
 | หาของ | Where a SKU is, or what is in a Location |
-| ข้อมูลผิด | Rows that look wrong, one card each: what's wrong, which row to check first, and a hint at the fix |
+| ข้อมูลผิด | Rows that look wrong, two short lines each: what and where, then which row to fix, with a hint |
 | ประวัติ | Every movement of one SKU, with a running total |
 
 **How balances are worked out.** Same as the balance sheet's SUMIFS, keyed on column B + LOT + PO +
@@ -336,9 +336,15 @@ Status but not the out-side, so a spot that was received both blank and เป�
 twice. These spots show up under ข้อมูลผิด as "Status ปนกัน". Status only decides whether a spot counts
 as open, using its latest in-row. QA, IQA, and RIB never count as open or as reserve.
 
-**How the ข้อมูลผิด tab points at a row.** Each problem is one card with a plain sentence, the rows behind
-it (type, qty, date, who), a button that opens the first row in the sheet, and links to the SKU's
-history and to all its piles.
+**How the ข้อมูลผิด tab points at a row.** Each problem takes two lines in one list per kind, like a table:
+
+- Line one is the SKU, its name, LOT · PO · Location, the amount, and ✓ เช็คแล้ว. A problem with no SKU
+  shows what was typed instead.
+- Line two says what to fix and which row: a row button (`8438 ↗`) that opens the row in the sheet, that
+  row's details (type, qty, date, who), how many other rows there are, and a short 💡 hint. For Status
+  ปนกัน it also says what the Status should become, to match the other in-rows.
+- ดูเพิ่ม ▾ opens the full sentence, every row behind it, the full hint, and links to the SKU's history
+  and to all its piles.
 
 - **Negative balance.** The script walks the pile's rows in sheet order and points at the row where the
   balance last went below zero and never came back. Rows before that aren't the cause of today's
@@ -357,6 +363,17 @@ history and to all its piles.
   refresh, it comes back. Ticks older than 90 days are forgotten.
 - **Older script.** The row details need the current `tx-api.gs`. With an older one, the cards show row
   numbers only, plus a note asking for a redeploy.
+- **Ledger tab copied in with IMPORTRANGE.** You can't type in a copy, so a row link should open the
+  team's real sheet. Put the link of the real sheet's Transaction tab (copied from the address bar, with
+  `#gid=`) in `REAL_SHEET_URL` at the top of `tx-api.gs`. Every row link on every page then opens the
+  same row number in the real sheet. The script only uses that link: it never opens or reads the real
+  sheet. Until it's set, the note under the ข้อมูลผิด tab says the links still open the copy. Row numbers
+  stay the same because the copy's formula sits on the same row it imports from (header typed in row 1,
+  formula in A2 importing from A2).
+- **IMPORTRANGE range nearly full.** A range like `Transaction!A2:O30000` stops at row 30,000, and
+  rows after it never reach the copy, with no error anywhere. Within 3,000 rows of that end, the top
+  bar shows a yellow pill with how many rows are left. Raise the number at the end of the range in
+  the formula.
 
 **How the stock count works.** The first person to open the นับสต๊อก tab each day gets a list of 20 lines,
 one per SKU + LOT + PO + Location, and everyone else that day sees the same list. To send it straight to
@@ -421,6 +438,12 @@ every line is counted, the tab shows the result:
 2. Choose `installBackup` in the toolbar and press Run. Allow the Drive and Sheets permissions. This
    sets a nightly copy of the whole file into the Drive folder `WMS Transaction Backup` and makes the
    first copy right away. The newest 30 are kept; older ones go to the Drive trash.
+   In the copy, a tab that pulls data from outside the file (`IMPORTRANGE` and the other import
+   formulas) is overwritten with the values it showed at that moment. Otherwise the backup would hold
+   only the formula and show whatever the source has on the day you open it. Only the copy is written;
+   this file and the import's source sheet are not touched. The values go in 5,000 rows at a time,
+   with retries if Google fails. If it still fails, the copy is renamed with `(ไม่ครบ)` at the end and
+   doesn't count as the latest backup. The 💾 pill's tooltip lists the tabs stored as values.
 3. Choose `installShared` and press Run. This refreshes the shared copy on a timer (see "Everyone sees
    the same numbers" below). It's optional: without it, the copy changes only when someone presses ดึงใหม่.
 4. Deploy → New deployment → Web app. Execute as **Me**, Who has access **Anyone**. Copy the URL that
