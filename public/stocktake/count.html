@@ -9,6 +9,10 @@
 <link rel="icon" type="image/png" sizes="192x192" href="../wms-logo.png">
 <link rel="apple-touch-icon" href="../wms-icon-180.png">
 <link rel="stylesheet" href="../wms-theme.css">
+<script>
+/* ฉากเปิดแอป: ครั้งแรกที่เปิดหน้านี้ในแท็บนี้ (รีเฟรชไม่ขึ้นซ้ำ) · เครื่องที่ตั้งลดการเคลื่อนไหวไว้ไม่ขึ้น */
+try { if (!sessionStorage.getItem('wms:st:intro') && !matchMedia('(prefers-reduced-motion: reduce)').matches) document.documentElement.classList.add('intro'); } catch (e) {}
+</script>
 <!--
   หน้ากรอกผลนับบนมือถือ เปิดจากลิงก์ที่หัวหน้าส่งใน LINE (#u=URL สคริปต์&k=รหัสนับ&r=รอบ)
   ไม่มีหน้าเข้าระบบและเมนูของ WMS เพราะคนนับหลายคนไม่มีบัญชี — สิทธิ์อยู่ที่รหัสในลิงก์
@@ -195,6 +199,21 @@ button,input{font-family:inherit}
   animation:ct-fall var(--d) cubic-bezier(.35,.55,.6,1) var(--t) both}
 .ct-lochead .nm{position:relative;overflow:hidden}
 
+/* ── เปิดแอป: น้องกล่องกระโดดทักทาย (คลิปจาก Higgsfield) แล้วจางหาย แตะข้ามได้ ข้อมูลรอบโหลดอยู่ข้างหลัง ── */
+.ct-intro{position:fixed;inset:0;z-index:20;display:none;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+  background:#F4F0FA;cursor:pointer;-webkit-tap-highlight-color:transparent}
+html.intro .ct-intro{display:flex}
+html.intro body{overflow:hidden}
+.ct-intro video{width:min(80vw,340px);height:min(80vw,340px);object-fit:cover;background:#F4F0FA;
+  -webkit-mask-image:radial-gradient(closest-side,#000 80%,transparent 100%);mask-image:radial-gradient(closest-side,#000 80%,transparent 100%)}
+.ct-intro b{font-size:25px;font-weight:800;letter-spacing:.2px;color:#3730A3;animation:ct-rise .55s cubic-bezier(.2,.8,.2,1) .3s both}
+.ct-intro span{font-size:14px;color:#6366F1;animation:ct-rise .55s cubic-bezier(.2,.8,.2,1) .45s both}
+.ct-intro small{position:absolute;bottom:calc(26px + env(safe-area-inset-bottom));font-size:12.5px;color:#A5B4FC}
+.ct-intro.out{animation:ct-intro-out .45s cubic-bezier(.4,0,.2,1) forwards;pointer-events:none}
+.ct-intro.out video{animation:ct-intro-zoom .45s cubic-bezier(.4,0,.2,1) forwards}
+@keyframes ct-intro-out{to{opacity:0;visibility:hidden}}
+@keyframes ct-intro-zoom{to{transform:scale(1.2)}}
+
 /* ── แป้นตัวเลขของเราเอง: เด้งขึ้นแทนคีย์บอร์ดมือถือตอนแตะช่อง LOT / PO / จำนวน แตะที่อื่นหุบลง ── */
 .ct-pad{position:fixed;left:0;right:0;bottom:0;z-index:6;padding:6px 8px calc(8px + env(safe-area-inset-bottom));
   background:#E2E8F0;border-top:1px solid var(--wms-border2);box-shadow:0 -10px 28px rgba(15,23,42,.14);
@@ -267,6 +286,10 @@ body.pad-on .ct-main{padding-bottom:380px}
 </style>
 </head>
 <body>
+<div class="ct-intro" id="intro" role="presentation">
+  <video src="../icons/mascot-intro.mp4" poster="../icons/mascot-intro.jpg" muted playsinline autoplay preload="auto" aria-hidden="true"></video>
+  <b>นับสต๊อกใหญ่</b><span>กรอกผลนับ</span><small>แตะเพื่อข้าม</small>
+</div>
 
 <header class="ct-head"><div class="ct-top" id="top"></div><div class="ct-prog" aria-hidden="true"><i id="progBar"></i></div></header>
 <main class="ct-main" id="main"></main>
@@ -1301,6 +1324,34 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) { fl
 setInterval(() => { if (!document.hidden && VIEW !== 'loc') pull(); }, 60000);
 setInterval(() => { if (BOX.out.length && !NET.sending) flush(); }, 30000);
 window.addEventListener('beforeunload', (e) => { if (BOX.out.length) { e.preventDefault(); e.returnValue = ''; } });
+
+/**
+ * ฉากเปิดแอป: คลิปจบ / แตะ / เกิน 6 วิ = จางหาย แล้วเนื้อหาไล่ขึ้นมา
+ * เครื่องที่ไม่ให้วิดีโอเล่นเอง (โหมดประหยัดแบต) เห็นภาพนิ่งแป๊บเดียวแล้วเข้าเลย
+ */
+(() => {
+  const box = $('intro');
+  if (!box || !document.documentElement.classList.contains('intro')) { if (box) box.remove(); return; }
+  try { sessionStorage.setItem('wms:st:intro', '1'); } catch (e) {}
+  const v = box.querySelector('video');
+  let gone = false;
+  const close = () => {
+    if (gone) return;
+    gone = true;
+    box.classList.add('out');
+    setTimeout(() => {
+      document.documentElement.classList.remove('intro');
+      box.remove();
+      if (VIEW !== 'loc') { GO = 'up'; paintMain(); }
+    }, 450);
+  };
+  box.addEventListener('click', close);
+  v.addEventListener('ended', close);
+  v.addEventListener('error', () => setTimeout(close, 1200));
+  const p = v.play();
+  if (p && p.catch) p.catch(() => setTimeout(close, 1500));
+  setTimeout(close, 6000);
+})();
 
 paint();
 if (CFG) loadRound();

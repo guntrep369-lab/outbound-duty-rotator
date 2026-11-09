@@ -1104,3 +1104,21 @@ describe('แป้นตัวเลข — คูณจำนวน และ�
     expect(S.lotChoices(pos, skus, 'AAA001', '99'), 'PO ยังพิมพ์ไม่ครบ ใช้ตาม SKU').toEqual(['10', '9', '8']);
   });
 });
+
+/* ฉากเปิดแอปของหน้ามือถือ: คลิปกับภาพนิ่งต้องมีจริง และไฟล์เล็กพอโหลดผ่านเน็ตมือถือ */
+describe('count.html — ฉากเปิดแอป', () => {
+  const HTML = fs.readFileSync(path.resolve(__dirname, '../../public/stocktake/count.html'), 'utf8');
+  it('คลิปและภาพนิ่งที่ชี้ไปมีไฟล์ ขนาดไม่เกิน 600 KB', () => {
+    const v = HTML.match(/<video src="([^"]+)" poster="([^"]+)"/);
+    expect(v, 'ไม่มีวิดีโอเปิดแอป').not.toBe(null);
+    for (const rel of [v[1], v[2]]) {
+      const file = path.resolve(__dirname, '../../public/stocktake', rel);
+      expect(fs.existsSync(file), `ไม่มีไฟล์ ${rel}`).toBe(true);
+      expect(fs.statSync(file).size, `${rel} ใหญ่เกิน`).toBeLessThan(600 * 1024);
+    }
+  });
+  it('ขึ้นครั้งเดียวต่อแท็บ และไม่ขึ้นเมื่อเครื่องตั้งลดการเคลื่อนไหว', () => {
+    expect(HTML).toMatch(/sessionStorage\.getItem\('wms:st:intro'\)/);
+    expect(HTML).toMatch(/prefers-reduced-motion: reduce\)'\)\.matches\) document\.documentElement\.classList\.add\('intro'\)/);
+  });
+});
