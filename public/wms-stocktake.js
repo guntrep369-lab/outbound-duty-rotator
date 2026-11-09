@@ -444,8 +444,416 @@
     return u ? { url: u, key: p.get('k') || '', round: p.get('r') || '' } : null;
   }
 
+  /* ── วิเคราะห์ผลนับ (ขั้นที่ 2) ───────────────────────────────────────── */
+
+  var G = {
+    SHORT: 'ขาด', OVER: 'เกิน', MOVED: 'วางผิดโล', LOTPO: 'LOT/PO ผิด', TYPO: 'น่าจะพิมพ์ผิด',
+    LEFT: 'ยังไม่นับ', AUDIT: 'Inv≠Audit', OK: 'ตรง',
+  };
+  /* ลำดับชิปบนหน้า เรื่องที่ต้องลงมือก่อนอยู่หน้า */
+  var GROUPS = [G.SHORT, G.OVER, G.MOVED, G.LOTPO, G.TYPO, G.LEFT, G.AUDIT];
+
+  /** ระยะแก้ไขระหว่างสองรหัส (เพิ่ม ลบ เปลี่ยนตัวอักษร) หยุดนับเมื่อเกิน max */
+  function editDist(a, b, max) {
+    if (Math.abs(a.length - b.length) > max) return max + 1;
+    var prev = [], cur, i, j;
+    for (j = 0; j <= b.length; j++) prev[j] = j;
+    for (i = 1; i <= a.length; i++) {
+      cur = [i];
+      var low = i;
+      for (j = 1; j <= b.length; j++) {
+        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a.charAt(i - 1) === b.charAt(j - 1) ? 0 : 1));
+        if (cur[j] < low) low = cur[j];
+      }
+      if (low > max) return max + 1;
+      prev = cur;
+    }
+    return prev[b.length];
+  }
+
+  /** รหัสสองตัวที่ต่างกันแค่พิมพ์พลาดนิดเดียว (ตกหล่น สลับ กดผิดหนึ่งสองตัว) */
+  function similarCode(a, b) {
+    if (!a || !b || a === b) return false;
+    var max = Math.min(a.length, b.length) >= 8 ? 2 : 1;
+    return editDist(a, b, max) <= max;
+  }
+
+  /**
+   * จำนวนที่น่าจะพิมพ์ผิดจากจำนวนจริง: สลับเลขติดกัน (12 ↔ 21), ศูนย์เกิน/ขาด (5 ↔ 50),
+   * กดผิดหลักหน้าหนึ่งหลัก (25 ↔ 85) — หลักสุดท้ายต่างกันไม่นับ (15 ↔ 12 มักขาดจริง ไม่ใช่พิมพ์ผิด)
+   * เลขหลักเดียวไม่นับ เพราะต่างกันจริงบ่อยกว่า
+   */
+  function qtyTypo(a, b) {
+    if (!(a > 0) || !(b > 0) || a === b) return false;
+    if (a === b * 10 || b === a * 10) return true;
+    var x = String(a), y = String(b);
+    if (x.length !== y.length || x.length < 2) return false;
+    var diff = [];
+    for (var i = 0; i < x.length; i++) if (x.charAt(i) !== y.charAt(i)) diff.push(i);
+    if (diff.length === 1) return diff[0] < x.length - 1;
+    return diff.length === 2 && diff[1] === diff[0] + 1 && x.charAt(diff[0]) === y.charAt(diff[1]) && x.charAt(diff[1]) === y.charAt(diff[0]);
+  }
+
+  /**
+   * เทียบยอดนับกับยอดในสมุด แล้วแยกเป็นกลุ่มปัญหาให้หัวหน้าลงมือได้ทีละกลุ่ม
+   *
+   * in = {
+   *   piles   ยอดตั้งต้น [[Location, SKU, SKU เต็ม, ชื่อ, LOT, PO, ยอด, เปิดขาย]]
+   *   entries แถวบันทึกนับทั้งหมด (fromRow) ยังไม่ตัดแถวที่ถูกแทน
+   *   teams   ทีมของรอบ  locs = Location ที่ต้องนับ [{loc, group, zone}] (ไม่รวมแถวที่ตั้งไม่นับ)
+   *   skus    [[SKU, SKU เต็ม, ชื่อ]]  skip = แถวที่ไม่นับ (โลในแถวพวกนี้ไม่เอามาคิด)  pass = รอบนับ
+   * }
+   *
+   * ยอด Inventory ของโลหนึ่ง = แถวของทีมที่ได้แถวนั้น ถ้าทีมนั้นไม่ได้นับ ใช้ทีม Inventory อื่นที่นับ
+   * (ไม่รวมสองทีม ไม่งั้นโลที่ถูกนับซ้ำจะกลายเป็นเกินสองเท่า)
+   *
+   * จับคู่ตามลำดับ ส่วนที่อธิบายได้แล้วไม่ถูกนับซ้ำในขั้นถัดไป
+   *   1. LOT/PO ผิด   — โลเดียวกัน SKU เดียวกัน ขาดใน LOT/PO หนึ่ง เกินในอีก LOT/PO
+   *   2. พิมพ์ผิด     — จำนวนหน้าตาเหมือนพิมพ์พลาด (12 ↔ 21) หรือ SKU เกือบเหมือน SKU ที่ขาดในโลเดียวกัน
+   *                     หรือ SKU ที่ไม่มีในคลังเลย
+   *   3. วางผิดโล     — SKU เดียวกันขาดที่โลหนึ่ง เกินอีกโล (แถวเดียวกันก่อน แล้วโซนเดียวกัน แล้วที่ไหนก็ได้)
+   *   4. ที่เหลือ      — ขาด / เกิน
+   * Inv≠Audit แยกอีกรายการ: โลที่ Audit สุ่ม แล้วตัวเลขไม่ตรงกับ Inventory (ไม่สนยอดในสมุด)
+   *
+   * @returns {{lines, audit, counts, totals, hot, people}}
+   */
+  function analyze(input) {
+    var o = input || {};
+    var pass = o.pass || 1;
+    var skip = {};
+    (o.skip || []).forEach(function (g) { skip[up(g)] = 1; });
+    var info = {}, canon = {};
+    (o.skus || []).forEach(function (s) {
+      var long = norm(s[1] || s[0]);
+      if (!long) return;
+      info[long] = { sku: s[0] || s[1], long: s[1] || s[0], name: s[2] || '' };
+      canon[long] = long;
+      if (s[0]) canon[norm(s[0])] = long;
+    });
+    function keyOf(sku, long) {
+      var a = norm(long), b = norm(sku);
+      return canon[a] || canon[b] || a || b;
+    }
+    function infoOf(k, sku, long) { return info[k] || { sku: sku || long || k, long: long || sku || k, name: '' }; }
+
+    /* ทีม Inventory ที่ได้แต่ละแถว ใช้เลือกว่ายอดของโลมาจากทีมไหน */
+    var owner = {}, teamName = {};
+    teamsOf(o.teams, pass).forEach(function (t) {
+      teamName[t.id] = t.name || t.id;
+      if (t.kind !== 'Audit') (t.zones || []).forEach(function (z) { owner[up(z)] = t.id; });
+    });
+
+    var listed = {}, universe = {}, meta = {};
+    function touch(loc) {
+      var u = up(loc);
+      if (!u) return null;
+      var p = parseLoc(u);
+      if (skip[up(p.group)]) return null;
+      if (!universe[u]) { universe[u] = 1; meta[u] = p; }
+      return u;
+    }
+    (o.locs || []).forEach(function (l) { var u = touch(l.loc); if (u) listed[u] = 1; });
+
+    /* ยอดในสมุด */
+    var book = {};
+    (o.piles || []).forEach(function (p) {
+      var u = touch(p[0]);
+      if (!u) return;
+      var k = keyOf(p[1], p[2]), lot = norm(p[4]), po = norm(p[5]);
+      var id = k + '|' + lot + '|' + po;
+      var b = (book[u] = book[u] || {});
+      if (!b[id]) b[id] = { k: k, sku: p[1], long: p[2], name: p[3], lot: String(p[4] || ''), po: String(p[5] || ''), qty: 0 };
+      b[id].qty = round3(b[id].qty + (+p[6] || 0));
+      if (p[3] && !info[k]) info[k] = { sku: p[1] || p[2], long: p[2] || p[1], name: p[3] };
+    });
+
+    /* ยอดนับ แยก Inventory กับ Audit */
+    var eff = effective(o.entries).filter(function (e) { return (e.pass || 1) === pass; });
+    var byLoc = {};
+    eff.forEach(function (e) {
+      var u = touch(e.loc);
+      if (!u) return;
+      (byLoc[u] = byLoc[u] || []).push(e);
+    });
+    var inv = {}, aud = {}, invDone = {}, audDone = {}, invTeam = {}, invWho = {}, audWho = {};
+    function add(map, u, e) {
+      if (e.type !== 'นับ') return;
+      var k = keyOf(e.sku, e.long), lot = norm(e.lot), po = norm(e.po);
+      var id = k + '|' + lot + '|' + po;
+      var m = (map[u] = map[u] || {});
+      if (!m[id]) m[id] = { k: k, sku: e.sku, long: e.long, lot: String(e.lot || ''), po: String(e.po || ''), qty: 0, who: {} };
+      m[id].qty = round3(m[id].qty + (+e.qty || 0));
+      m[id].who[e.who || '?'] = 1;
+    }
+    Object.keys(byLoc).forEach(function (u) {
+      var list = byLoc[u];
+      var invRows = list.filter(function (e) { return e.kind !== 'Audit'; });
+      var mine = owner[up(meta[u].group)];
+      var pick = invRows.filter(function (e) { return e.team === mine; });
+      if (!pick.length && invRows.length) {
+        var first = invRows[0].team;
+        pick = invRows.filter(function (e) { return e.team === first; });
+      }
+      if (pick.length) {
+        invDone[u] = 1;
+        invTeam[u] = pick[0].team;
+        invWho[u] = {};
+        pick.forEach(function (e) { invWho[u][e.who || '?'] = 1; add(inv, u, e); });
+      }
+      var a = list.filter(function (e) { return e.kind === 'Audit'; });
+      if (a.length) {
+        audDone[u] = 1;
+        audWho[u] = {};
+        a.forEach(function (e) { audWho[u][e.who || '?'] = 1; add(aud, u, e); });
+      }
+    });
+
+    var lines = [];
+    function line(u, id, b, c, a) {
+      var src = b || c || a;
+      var k = src.k;
+      var nfo = infoOf(k, src.sku, src.long);
+      var p = meta[u];
+      var L = {
+        id: u + '|' + id, loc: u, zone: p.zone, row: p.group, level: p.level,
+        k: k, sku: nfo.sku, long: nfo.long, name: nfo.name, lot: src.lot, po: src.po,
+        book: b ? b.qty : 0, inv: c ? c.qty : (invDone[u] ? 0 : null), aud: audDone[u] ? (a ? a.qty : 0) : null,
+        team: invTeam[u] || owner[up(p.group)] || '', who: c ? Object.keys(c.who) : Object.keys(invWho[u] || {}),
+        known: !!info[k], pairs: [], left: 0, group: '', note: '',
+      };
+      L.diff = L.inv === null ? null : round3(L.inv - L.book);
+      L.left = L.diff === null ? 0 : Math.abs(L.diff);
+      lines.push(L);
+      return L;
+    }
+
+    Object.keys(universe).sort(locCmp).forEach(function (u) {
+      var b = book[u] || {}, c = inv[u] || {}, a = aud[u] || {};
+      var ids = Object.keys(b).concat(Object.keys(c).filter(function (id) { return !b[id]; }));
+      if (!invDone[u]) {
+        if (!listed[u] && !ids.length) return;
+        if (!ids.length) { var e = line(u, '', { k: '', sku: '', long: '', lot: '', po: '', qty: 0 }); e.group = G.LEFT; e.sku = ''; e.long = ''; return; }
+        ids.forEach(function (id) { line(u, id, b[id], null, a[id]).group = G.LEFT; });
+        return;
+      }
+      ids.forEach(function (id) { line(u, id, b[id], c[id], a[id]); });
+    });
+
+    var open = lines.filter(function (L) { return L.diff !== null && L.diff !== 0; });
+    function shorts() { return open.filter(function (L) { return L.diff < 0 && L.left > 0; }); }
+    function overs() { return open.filter(function (L) { return L.diff > 0 && L.left > 0; }); }
+    function pair(s, x, group, qty) {
+      var m = round3(Math.min(qty === undefined ? Math.min(s.left, x.left) : qty, s.left, x.left));
+      if (!(m > 0)) return;
+      s.left = round3(s.left - m); x.left = round3(x.left - m);
+      s.pairs.push({ group: group, qty: m, loc: x.loc, sku: x.sku, lot: x.lot, po: x.po, id: x.id });
+      x.pairs.push({ group: group, qty: m, loc: s.loc, sku: s.sku, lot: s.lot, po: s.po, id: s.id });
+    }
+
+    /* 1. LOT/PO ผิด: โลเดียวกัน SKU เดียวกัน */
+    shorts().forEach(function (s) {
+      overs().forEach(function (x) { if (s.left > 0 && x.loc === s.loc && x.k === s.k) pair(s, x, G.LOTPO); });
+    });
+
+    /* 2. พิมพ์ผิด: จำนวนที่หน้าตาเหมือนพิมพ์พลาดของกองเดียวกัน */
+    open.forEach(function (L) {
+      if (L.left > 0 && L.book > 0 && L.inv > 0 && L.left === Math.abs(L.diff) && qtyTypo(L.book, L.inv)) {
+        L.typo = 'จำนวน'; L.typoHint = f3(L.book); L.left = 0;
+      }
+    });
+    /* SKU เกือบเหมือน SKU ที่ขาดในโลเดียวกัน จำนวนเท่ากัน */
+    overs().forEach(function (x) {
+      shorts().forEach(function (s) {
+        if (x.left > 0 && s.loc === x.loc && s.left === x.left &&
+          (similarCode(norm(x.long), norm(s.long)) || similarCode(norm(x.sku), norm(s.sku)))) {
+          pair(s, x, G.TYPO);
+          x.typoHint = s.sku;
+        }
+      });
+    });
+
+    /* 3. วางผิดโล: แถวเดียวกันก่อน แล้วโซนเดียวกัน แล้วที่ไหนก็ได้ LOT/PO ตรงกันมาก่อน */
+    [function (s, x) { return x.row === s.row && x.lot === s.lot && x.po === s.po; },
+      function (s, x) { return x.row === s.row; },
+      function (s, x) { return x.zone === s.zone && x.lot === s.lot && x.po === s.po; },
+      function (s, x) { return x.zone === s.zone; },
+      function (s, x) { return x.lot === s.lot && x.po === s.po; },
+      function () { return true; }].forEach(function (near) {
+      shorts().forEach(function (s) {
+        overs().forEach(function (x) { if (s.left > 0 && x.loc !== s.loc && x.k === s.k && near(s, x)) pair(s, x, G.MOVED); });
+      });
+    });
+
+    /* SKU ที่ไม่มีในคลังเลย ไม่มีทางมาจากโลอื่น = พิมพ์ผิดแน่ ๆ */
+    overs().forEach(function (x) { if (!x.known && x.left > 0) { x.typo = 'SKU'; } });
+
+    /* 4. ตั้งกลุ่ม: ส่วนที่อธิบายได้มากที่สุดชนะ ส่วนที่เหลือบอกไว้ในหมายเหตุ */
+    open.forEach(function (L) {
+      var by = {};
+      L.pairs.forEach(function (p) { by[p.group] = round3((by[p.group] || 0) + p.qty); });
+      if (L.typo === 'จำนวน') by[G.TYPO] = Math.abs(L.diff);
+      if (L.typo === 'SKU') by[G.TYPO] = round3((by[G.TYPO] || 0) + L.left);
+      var rest = L.typo === 'SKU' ? 0 : L.left;
+      var best = '', bestQ = 0;
+      Object.keys(by).forEach(function (g) { if (by[g] > bestQ) { best = g; bestQ = by[g]; } });
+      L.group = best && bestQ >= rest ? best : (L.diff < 0 ? G.SHORT : G.OVER);
+      L.note = noteOf(L, by, rest);
+    });
+    lines.forEach(function (L) {
+      if (!L.group) L.group = G.OK;
+      if (L.group === G.LEFT) L.note = L.sku ? 'ยังไม่มีใครนับโลนี้' : 'โลนี้ยังไม่ถูกนับ (ในสมุดว่าง)';
+      L.fix = fixOf(L, teamName);
+    });
+
+    /* Inv≠Audit: เทียบตัวเลขสองฝั่งในโลที่ Audit สุ่ม ไม่ดูยอดในสมุด */
+    var audit = [];
+    var stat = {};
+    Object.keys(audDone).sort(locCmp).forEach(function (u) {
+      if (!invDone[u]) return;
+      var c = inv[u] || {}, a = aud[u] || {}, b = book[u] || {};
+      var ids = Object.keys(c).concat(Object.keys(a).filter(function (id) { return !c[id]; }));
+      var bad = false;
+      ids.forEach(function (id) {
+        var ci = c[id] ? c[id].qty : 0, ai = a[id] ? a[id].qty : 0;
+        if (ci === ai) return;
+        bad = true;
+        var src = c[id] || a[id], nfo = infoOf(src.k, src.sku, src.long), p = meta[u];
+        audit.push({
+          id: 'A|' + u + '|' + id, group: G.AUDIT, loc: u, zone: p.zone, row: p.group, level: p.level,
+          k: src.k, sku: nfo.sku, long: nfo.long, name: nfo.name, lot: src.lot, po: src.po,
+          book: b[id] ? b[id].qty : 0, inv: ci, aud: ai, diff: round3(ci - ai),
+          team: invTeam[u], who: Object.keys(invWho[u] || {}), auditor: Object.keys(audWho[u] || {}),
+          note: 'Inventory ' + f3(ci) + ' · Audit ' + f3(ai), fix: 'นับรอบ 2 โดยทีมอื่น', pairs: [],
+        });
+      });
+      /* นับต่อคน: คนที่นับโลนี้ (Inventory) ถูก Audit ตรวจกี่โล ไม่ตรงกี่โล */
+      Object.keys(invWho[u] || {}).forEach(function (w) {
+        var key = invTeam[u] + '|' + w;
+        var s = stat[key] = stat[key] || { team: invTeam[u], teamName: teamName[invTeam[u]] || invTeam[u], who: w, checked: 0, bad: 0 };
+        s.checked++;
+        if (bad) s.bad++;
+      });
+    });
+    var people = Object.keys(stat).map(function (k) {
+      var s = stat[k]; s.pct = Math.round(s.bad * 100 / s.checked); return s;
+    }).sort(function (a, b) { return b.pct - a.pct || b.bad - a.bad || natCmp(a.who, b.who); });
+
+    /* จุดที่ผิดบ่อย: แถวและชั้น */
+    var hotMap = {};
+    lines.concat(audit).forEach(function (L) {
+      if (L.group === G.OK || L.group === G.LEFT) return;
+      var key = L.row + '|' + (L.zone === 'R' ? L.level : 0);
+      var h = hotMap[key] = hotMap[key] || { row: L.row, level: L.zone === 'R' ? L.level : 0, n: 0, locs: {} };
+      h.n++; h.locs[L.loc] = 1;
+    });
+    var hot = Object.keys(hotMap).map(function (k) { var h = hotMap[k]; h.locs = Object.keys(h.locs).length; return h; })
+      .sort(function (a, b) { return b.n - a.n || groupCmp(a.row, b.row) || a.level - b.level; });
+
+    var counts = {};
+    GROUPS.concat([G.OK]).forEach(function (g) { counts[g] = { n: 0, qty: 0, locs: 0 }; });
+    var locSeen = {};
+    lines.concat(audit).forEach(function (L) {
+      var c = counts[L.group];
+      c.n++;
+      c.qty = round3(c.qty + Math.abs(L.diff || (L.group === G.LEFT ? L.book : 0)));
+      if (!locSeen[L.group + L.loc]) { locSeen[L.group + L.loc] = 1; c.locs++; }
+    });
+    var totals = { book: 0, inv: 0, diff: 0, locs: Object.keys(listed).length, counted: 0 };
+    lines.forEach(function (L) {
+      if (L.inv === null) return;
+      totals.book = round3(totals.book + L.book);
+      totals.inv = round3(totals.inv + L.inv);
+    });
+    totals.diff = round3(totals.inv - totals.book);
+    totals.counted = Object.keys(invDone).filter(function (u) { return listed[u]; }).length;
+
+    return { lines: lines, audit: audit, counts: counts, totals: totals, hot: hot, people: people, teamName: teamName };
+  }
+
+  function f3(n) { return String(round3(+n || 0)); }
+
+  function noteOf(L, by, rest) {
+    var parts = [];
+    var dir = L.diff < 0 ? 'ขาด' : 'เกิน';
+    parts.push(dir + ' ' + f3(Math.abs(L.diff)));
+    L.pairs.forEach(function (p) {
+      if (p.group === G.LOTPO) parts.push('LOT/PO ' + (p.lot || '-') + ' / ' + (p.po || '-') + (L.diff < 0 ? ' เกิน ' : ' ขาด ') + f3(p.qty));
+      else if (p.group === G.MOVED) parts.push((L.diff < 0 ? 'เจอที่ ' : 'น่าจะมาจาก ') + p.loc + ' ' + f3(p.qty));
+      else if (p.group === G.TYPO) parts.push(L.diff < 0 ? 'อาจกรอกเป็น ' + p.sku : 'น่าจะเป็น ' + p.sku);
+    });
+    if (L.typo === 'จำนวน') parts.push('นับได้ ' + f3(L.inv) + ' หน้าตาเหมือนพิมพ์ ' + f3(L.book) + ' ผิด');
+    if (L.typo === 'SKU') parts.push('SKU นี้ไม่มีในคลัง');
+    if (rest > 0 && L.pairs.length) parts.push(dir + 'อีก ' + f3(rest));
+    return parts.join(' · ');
+  }
+
+  function fixOf(L, teamName) {
+    var moved = L.pairs.filter(function (p) { return p.group === G.MOVED; })[0];
+    switch (L.group) {
+      case G.SHORT: return 'นับซ้ำรอบ 2 · ถ้ายังขาด เช็คขาย/เบิกที่ยังไม่ลงสมุด';
+      case G.OVER: return 'นับซ้ำรอบ 2 · ถ้ายังเกิน เช็ครับเข้า/ย้ายที่ยังไม่ลงสมุด';
+      case G.MOVED: return L.diff < 0
+        ? 'ย้ายของจาก ' + moved.loc + ' กลับมา ' + L.loc + ' หรือลงสมุดย้าย ' + L.loc + ' → ' + moved.loc + ' × ' + f3(moved.qty)
+        : 'ย้ายของกลับ ' + moved.loc + ' หรือลงสมุดย้าย ' + moved.loc + ' → ' + L.loc + ' × ' + f3(moved.qty);
+      case G.LOTPO: return 'ดูป้าย LOT/PO ที่กองอีกครั้ง ถ้าป้ายถูก แก้ LOT/PO ในสมุดให้ตรง';
+      case G.TYPO: {
+        var t = L.pairs.filter(function (p) { return p.group === G.TYPO; })[0];
+        if (L.typo === 'จำนวน' || (L.typoHint && L.diff > 0)) return 'ให้คนนับดูอีกครั้ง น่าจะเป็น ' + L.typoHint;
+        if (t && L.diff < 0) return 'ให้คนนับดูอีกครั้ง อาจกรอกเป็น ' + t.sku;
+        return 'ให้คนนับดูรหัสที่ป้ายอีกครั้ง';
+      }
+      case G.LEFT: return L.team ? 'ส่ง ' + (teamName[L.team] || L.team) + ' ไปนับ' : 'ยังไม่มีทีม แบ่งทีมให้แถว ' + L.row;
+      default: return '';
+    }
+  }
+
+  /**
+   * แถวในสมุดที่น่าจะเป็นต้นเหตุ: แถวล่าสุดของ SKU นี้ที่เข้า-ออกโลนี้ (และโลคู่ถ้ามี)
+   * fifo = คำตอบ tx-fifo  ไม่เกิน limit แถว ใหม่สุดก่อน
+   */
+  function suspects(fifo, L, limit) {
+    var f = fifo || {};
+    var want = norm(L.long), short = norm(L.sku);
+    var si = {};
+    (f.skus || []).forEach(function (s, i) { if (norm(s[1]) === want || (short && norm(s[0]) === short)) si[i] = 1; });
+    var locs = {};
+    [L.loc].concat((L.pairs || []).map(function (p) { return p.loc; })).forEach(function (l) { locs[up(l)] = 1; });
+    var out = [];
+    (f.rows || []).forEach(function (r) {
+      if (!si[r[1]]) return;
+      var from = r[4] >= 0 ? up((f.locs || [])[r[4]]) : '', to = r[5] >= 0 ? up((f.locs || [])[r[5]]) : '';
+      if (!locs[from] && !locs[to]) return;
+      out.push({
+        row: r[0], date: r[8] >= 0 && (r[9] & 8) ? (f.days || [])[r[8]] : '',
+        type: r[7] === 2 ? 'ขาย' : r[7] === 1 ? 'เบิก' : from ? 'ย้าย' : 'รับ',
+        qty: r[6], from: from, to: to, lot: r[2] === null || r[2] === undefined ? '' : String(r[2]), po: (f.pos || [])[r[3]] || '',
+      });
+    });
+    return out.sort(function (a, b) { return b.row - a.row; }).slice(0, limit || 5);
+  }
+
+  /**
+   * แถวสำหรับแท็บผลสรุปในชีต (หัวตาราง TABS[T_SUM] ใน stocktake-api.gs ไม่รวมรหัสรอบ)
+   * [Location, SKU, SKU เต็ม, ชื่อ, LOT, PO, สมุด, Inventory, Audit, รอบ 2, ยอดสุดท้าย, ต่าง, กลุ่ม, เหตุผล, ทีม, คนนับ]
+   * ยอดสุดท้ายตอนนี้ = ที่ Inventory นับ (รอบ 2 จะมาแทนในขั้นถัดไป) โลที่ยังไม่นับใช้ยอดในสมุดไปก่อน
+   */
+  function summaryRows(res) {
+    var r = res || {};
+    var audit = {};
+    (r.audit || []).forEach(function (a) { audit[a.loc + '|' + a.k + '|' + norm(a.lot) + '|' + norm(a.po)] = a; });
+    return (r.lines || []).filter(function (L) { return L.sku || L.long; }).map(function (L) {
+      var a = audit[L.loc + '|' + L.k + '|' + norm(L.lot) + '|' + norm(L.po)];
+      var final = L.inv === null ? L.book : L.inv;
+      var group = L.group === G.OK && a ? G.AUDIT : L.group;
+      var note = a ? (L.note ? L.note + ' · ' : '') + a.note : L.note;
+      return [L.loc, L.sku, L.long, L.name, L.lot, L.po, L.book, L.inv === null ? '' : L.inv, L.aud === null ? '' : L.aud,
+        '', final, round3(final - L.book), group, note, (r.teamName && r.teamName[L.team]) || L.team, (L.who || []).join(', ')];
+    });
+  }
+
   window.WmsStocktake = {
-    ZONES: ZONES, OTHER: OTHER, SKIP: SKIP, AUDIT_MIN: AUDIT_MIN,
+    ZONES: ZONES, OTHER: OTHER, SKIP: SKIP, AUDIT_MIN: AUDIT_MIN, G: G, GROUPS: GROUPS,
+    analyze: analyze, suspects: suspects, summaryRows: summaryRows, qtyTypo: qtyTypo, similarCode: similarCode,
     up: up, norm: norm,
     parseLoc: parseLoc, isRealLoc: isRealLoc, natCmp: natCmp, locCmp: locCmp, groupCmp: groupCmp, zoneOfGroup: zoneOfGroup,
     baseline: baseline, locations: locations, parseLocList: parseLocList, groups: groups, autoSplit: autoSplit,

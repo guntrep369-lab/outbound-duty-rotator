@@ -29,7 +29,8 @@
  * POST {op:'st-round-save'}  สร้าง / แก้รอบ (หัวหน้า)
  * POST {op:'st-baseline'}    เก็บยอดตั้งต้นชุดใหม่ (หัวหน้า)
  * POST {op:'st-teams'}       บันทึกทีม / โซน / Location ของรอบ (หัวหน้า)
- * POST {op:'st-status'}      เปลี่ยนสถานะรอบ เช่น เริ่มนับรอบ 1 (หัวหน้า)
+ * POST {op:'st-status'}      เปลี่ยนสถานะรอบ: ตั้งค่า ↔ นับรอบ 1 ↔ วิเคราะห์ (หัวหน้า)
+ * POST {op:'st-summary'}     เขียนผลวิเคราะห์ลงแท็บผลสรุป แทนชุดเดิมของรอบ (หัวหน้า)
  * POST {op:'st-count'}       ส่งผลนับเป็นชุด ส่งซ้ำได้ แถวที่เคยรับแล้วไม่ถูกเขียนซ้ำ (คนนับ)
  * ไม่ใส่ api                 บอกแค่ว่าเป็นสคริปต์นี้ ให้หน้าเว็บเช็คว่าใส่ URL ถูกตัว
  */
@@ -88,8 +89,9 @@ TABS[T_PLAN] = {
 
 var STATUS_SETUP = 'ตั้งค่า';
 var STATUS_COUNT1 = 'นับรอบ 1';
+var STATUS_ANALYZE = 'วิเคราะห์';
 var STATUS_CLOSED = 'ปิดแล้ว';
-var STATUSES = [STATUS_SETUP, STATUS_COUNT1, 'วิเคราะห์', 'นับรอบ 2', STATUS_CLOSED];
+var STATUSES = [STATUS_SETUP, STATUS_COUNT1, STATUS_ANALYZE, 'นับรอบ 2', STATUS_CLOSED];
 var KINDS = ['Inventory', 'Audit'];
 var TYPES = ['นับ', 'ว่าง', 'ยกเลิก'];   // แก้กอง = แถวนับใหม่ที่ชี้แถวเดิมในช่องแทนแถว ลบกอง = ยกเลิก
 var BATCH_MAX = 200;                     // แถวต่อหนึ่งครั้งที่ส่ง หน้ากรอกส่งทีละไม่เกิน 40 อยู่แล้ว
@@ -124,6 +126,7 @@ function doPost(e) {
     if (req.op === 'st-baseline') { head_(req.t); return out_(baseline_(req)); }
     if (req.op === 'st-teams') { head_(req.t); return out_(teams_(req)); }
     if (req.op === 'st-status') { head_(req.t); return out_(status_(req)); }
+    if (req.op === 'st-summary') { head_(req.t); return out_(summary_(req)); }
     return out_({ error: 'ไม่รู้จักคำสั่งนี้' });
   } catch (err) {
     return out_({ error: String(err && err.message || err) });
@@ -474,16 +477,26 @@ function teams_(req) {
 }
 
 /**
- * เปลี่ยนสถานะรอบ ขั้นนี้มีแค่ ตั้งค่า ↔ นับรอบ 1 (วิเคราะห์ / รอบ 2 / ปิดรอบ มาทีหลัง)
- * เริ่มนับได้เมื่อมียอดตั้งต้นแล้ว และมีทีม Inventory อย่างน้อยหนึ่งทีม
+ * เปลี่ยนสถานะรอบ
+ *   ตั้งค่า → นับรอบ 1   ต้องมียอดตั้งต้น ทีม Inventory ของรอบ 1 และรายการ Location
+ *   นับรอบ 1 → ตั้งค่า   พักไว้ก่อน (แก้ทีม / ดึงยอดใหม่) ผลนับที่ส่งแล้วอยู่ครบ
+ *   นับรอบ 1 ↔ วิเคราะห์ ปิดรับนับรอบ 1 แล้วดูผล ย้อนกลับไปนับต่อได้
+ * ระหว่างวิเคราะห์ เครื่องที่ยังค้างส่ง (เน็ตหลุด) ส่งผลรอบ 1 เข้ามาได้อยู่ ไม่ให้ของหาย
+ * นับรอบ 2 กับปิดรอบมาในขั้นถัดไป
  */
+var NEXT_ = {};
+NEXT_[STATUS_SETUP] = [STATUS_COUNT1];
+NEXT_[STATUS_COUNT1] = [STATUS_SETUP, STATUS_ANALYZE];
+NEXT_[STATUS_ANALYZE] = [STATUS_COUNT1];
+
 function status_(req) {
   var to = text_(req.status);
-  if ([STATUS_SETUP, STATUS_COUNT1].indexOf(to) < 0) return { error: 'ยังเปลี่ยนเป็น ' + to + ' ไม่ได้' };
+  if (!NEXT_[to]) return { error: 'ยังเปลี่ยนเป็น ' + to + ' ไม่ได้' };
   var who = plain_(req.by, 60);
   return withLock_(function () {
     var r = round_(text_(req.round));
     if (r.status === STATUS_CLOSED) return { error: 'รอบนี้ปิดแล้ว' };
+    if (r.status !== to && (NEXT_[r.status] || []).indexOf(to) < 0) return { error: 'จาก ' + r.status + ' เปลี่ยนเป็น ' + to + ' ไม่ได้' };
     if (to === STATUS_COUNT1) {
       if (!r.set) return { error: 'ยังไม่ได้ดึงยอดตั้งต้น' };
       var inv = teamsOf_(r.id).filter(function (t) { return t.pass === 1 && t.kind === 'Inventory'; });
@@ -495,6 +508,45 @@ function status_(req) {
     r.editBy = who; r.editAt = stamp_();
     writeRound_(r);
     return { app: 'stocktake', round: public_(r) };
+  });
+}
+
+/**
+ * ผลวิเคราะห์ (หน้าหัวหน้าคิดจากยอดตั้งต้น + บันทึกนับ) เขียนลงแท็บผลสรุป แทนชุดเดิมของรอบนี้
+ * lines = [[Location, SKU, SKU เต็ม, ชื่อ, LOT, PO, สมุด, Inventory, Audit, รอบ 2, ยอดสุดท้าย, ต่าง, กลุ่ม, เหตุผล, ทีม, คนนับ]]
+ * ช่องตัวเลขเป็นตัวเลขหรือว่าง ข้อความทุกช่องตัดเครื่องหมายสูตรนำหน้า
+ * แท็บนี้เป็นภาพตอนกดบันทึก ตัวเลขจริงยังคิดจากบันทึกนับเสมอ ไม่มีใครต้องแก้แท็บนี้มือ
+ */
+var SUM_NUM = [6, 7, 8, 9, 10, 11];
+
+function summary_(req) {
+  var lines = Array.isArray(req.lines) ? req.lines : [];
+  if (lines.length > PILES_MAX * 2) return { error: 'แถวผลสรุปเยอะเกินไป' };
+  var id = text_(req.round);
+  var who = plain_(req.by, 60);
+  var clean = [];
+  for (var i = 0; i < lines.length; i++) {
+    var l = lines[i];
+    if (!Array.isArray(l) || l.length !== 16) return { error: 'แถวผลสรุปที่ ' + (i + 1) + ' ไม่ครบ 16 ช่อง' };
+    for (var j = 0; j < SUM_NUM.length; j++) {
+      var v = l[SUM_NUM[j]];
+      if (v !== '' && v !== null && num_(v) === null) return { error: 'แถวผลสรุปที่ ' + (i + 1) + ' ช่องตัวเลขไม่ใช่ตัวเลข' };
+    }
+    var n = function (v) { return v === null ? '' : v; };
+    clean.push([id, code_(l[0], 40), plain_(l[1], 60), plain_(l[2], 60), plain_(l[3], 120), plain_(l[4], 30), plain_(l[5], 40),
+      n(l[6]), n(l[7]), n(l[8]), n(l[9]), n(l[10]), n(l[11]), plain_(l[12], 30), plain_(l[13], 300), plain_(l[14], 60), plain_(l[15], 200)]);
+  }
+  return withLock_(function () {
+    var r = round_(id);
+    if (r.status === STATUS_CLOSED) return { error: 'รอบนี้ปิดแล้ว' };
+    if (!r.pass) return { error: 'ยังไม่เริ่มนับ ยังไม่มีอะไรให้สรุป' };
+    replace_(T_SUM, r.id, clean);
+    r.settings = r.settings || {};
+    r.settings.summaryAt = stamp_();
+    r.settings.summaryBy = who;
+    r.settings.summaryRows = clean.length;
+    writeRound_(r);
+    return { app: 'stocktake', saved: clean.length, round: public_(r) };
   });
 }
 

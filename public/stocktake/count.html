@@ -338,6 +338,7 @@ function bands() {
   let h = '';
   if (!RD.round.pass) h += `<div class="ct-band warn"><b>หัวหน้ายังไม่กดเริ่มนับ</b> กรอกไว้ได้ ผลนับเก็บในเครื่องและส่งให้เองเมื่อเปิดนับ<br><button class="ct-btn sm" data-act="reload">เช็คอีกครั้ง</button></div>`;
   else if (RD.round.status === 'ตั้งค่า') h += '<div class="ct-band warn">หัวหน้าพักการนับไว้ชั่วคราว ผลที่กรอกยังเก็บและส่งได้ตามปกติ</div>';
+  else if (RD.round.status === 'วิเคราะห์') h += '<div class="ct-band info">หัวหน้าปิดรับนับรอบ 1 แล้ว ผลที่ค้างในเครื่องยังส่งได้ ถ้าจะนับเพิ่มถามหัวหน้าก่อน</div>';
   if (NET.err && BOX.out.length && navigator.onLine) h += `<div class="ct-band bad">ส่งไม่ได้: ${esc(NET.err)} — ผลนับยังอยู่ในเครื่อง จะลองส่งใหม่เอง</div>`;
   if (BOX.rej.length) {
     h += `<details class="ct-rej"><summary>ชีตไม่รับ ${BOX.rej.length} แถว — แตะดู</summary><ul>` +

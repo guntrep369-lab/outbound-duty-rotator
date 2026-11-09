@@ -128,6 +128,28 @@ select.st-in{cursor:pointer;padding-right:2px}
 .st-more summary{cursor:pointer;font-weight:600}
 .st-more .st-cfg{margin-top:8px}
 
+/* ── แท็บวิเคราะห์: ป้ายกลุ่มปัญหา ── */
+.st-g{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:600;background:var(--wms-surface2);color:var(--wms-muted);white-space:nowrap}
+.st-g.short{background:#FEF2F2;color:#B91C1C}
+.st-g.over{background:#EFF6FF;color:#1D4ED8}
+.st-g.moved{background:#F5F3FF;color:#6D28D9}
+.st-g.lotpo{background:#FFF7ED;color:#C2410C}
+.st-g.typo{background:#FEF3C7;color:#92400E}
+.st-g.left{background:#F1F5F9;color:#475569}
+.st-g.audit{background:#ECFEFF;color:#0E7490}
+.st-g.ok{background:#ECFDF5;color:#047857}
+.st-xl td.neg{color:#B91C1C;font-weight:700}
+.st-xl td.pos{color:#1D4ED8;font-weight:700}
+.st-lbl{font-size:12px;font-weight:600;color:var(--wms-muted)}
+.st-tot{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-bottom:8px;font-size:13px;color:var(--wms-muted)}
+.st-tot b{color:var(--wms-text);font-variant-numeric:tabular-nums}
+.st-tot .sp{flex:1}
+.st-q{width:190px;height:28px;padding:0 9px;border:1px solid var(--wms-border2);border-radius:6px;background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:12.5px}
+.st-q:focus{outline:none;border-color:var(--wms-primary)}
+.st-led{margin-top:4px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.7;color:var(--wms-text)}
+.st-led a{color:var(--wms-primary-dark)}
+
 @media (max-width:640px){
   .st-src{padding:8px 12px}
   .st-body{padding:12px 12px 90px}
@@ -176,12 +198,17 @@ function load(k) { try { return localStorage.getItem(k) || ''; } catch (e) { ret
 function save(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 
 /* ?tab= ไว้ส่งลิงก์ตรงไปหน้าความคืบหน้า */
-const TABS = [['setup', 'ตั้งรอบ', '../icons/settings.png'], ['teams', 'ทีม/โซน', '../icons/list-checks.png'], ['progress', 'ความคืบหน้า', '../icons/tab-count.png']];
+const TABS = [['setup', 'ตั้งรอบ', '../icons/settings.png'], ['teams', 'ทีม/โซน', '../icons/list-checks.png'], ['progress', 'ความคืบหน้า', '../icons/tab-count.png'],
+  ['analyze', 'วิเคราะห์', '../icons/tab-compare.png']];
 let TAB = TABS.some(t => t[0] === new URLSearchParams(location.search).get('tab')) ? new URLSearchParams(location.search).get('tab') : 'setup';
 
 const S = { rounds: null, rid: load(KEY_ROUND), head: null, log: [], since: 0, at: 0, busy: '', err: '', ok: '', fresh: false };
 let DRAFT = null;      // ทีม/โซนที่กำลังแก้ ยังไม่บันทึก
 let MOVES = null;      // แถวสมุดหลังดึงยอดตั้งต้น {list, at, err}
+let FIFO = null;       // สมุดที่อ่านไว้ {data, at} ใช้ทั้งเช็คแถวใหม่และหาแถวที่น่าสงสัย
+let FIFO_BUSY = false;
+let AN = null;         // ผลวิเคราะห์ที่คิดไว้ คิดใหม่เมื่อบันทึกนับหรือข้อมูลรอบเปลี่ยน
+let AQ = '';           // ช่องค้นหาในแท็บวิเคราะห์
 let FILTER = '';       // ชิปที่กดกรองอยู่
 const OPEN = new Set();   // แถวที่กาง ⓘ
 let TOAST = '';
@@ -289,6 +316,7 @@ function paintTabs() {
     const p = prog();
     n.progress = `${p.pct}%`;
     n.teams = ST.teamsOf(S.head.teams, 1).length || '';
+    if (R().pass) { const a = analysis(); n.analyze = a.lines.filter(l => l.group !== ST.G.OK).length + a.audit.length || ''; }
   }
   $('tabs').innerHTML = TABS.map(([id, label, icon]) =>
     `<button class="tx-tab ${id === TAB ? 'on' : ''}" role="tab" aria-selected="${id === TAB}" data-tab="${id}"><img src="${icon}" alt="" width="18" height="18">` +
@@ -302,6 +330,7 @@ function paintBody() {
   if (S.rid === 'new' || !S.head) { box.innerHTML = TAB === 'setup' || S.rid === 'new' ? setupNew() : '<div class="st-empty">⏳ กำลังโหลด…</div>'; return; }
   if (TAB === 'teams') box.innerHTML = teamsView();
   else if (TAB === 'progress') box.innerHTML = progressView();
+  else if (TAB === 'analyze') box.innerHTML = analyzeView();
   else box.innerHTML = setupView();
 }
 
@@ -365,13 +394,15 @@ function setupView() {
     : counting() ? `<button class="st-btn" data-act="pause">กลับไปตั้งค่า</button>` : '';
   const goDetail = r.status === 'ตั้งค่า'
     ? (r.set && teamOk ? 'พร้อมแล้ว กดเริ่มเมื่อหยุดรับ-จ่ายของ คนนับจะส่งผลได้หลังจากนี้' : 'ต้องมียอดตั้งต้น และทุกโลมีทีม Inventory ก่อน')
-    : counting() ? `กำลังนับ · นับแล้ว <b>${f(p.done)}/${f(p.total)}</b> โล (${p.pct}%) · <button class="st-btn" data-go="progress">ดูความคืบหน้า</button>` : esc(r.status);
+    : counting() ? `กำลังนับ · นับแล้ว <b>${f(p.done)}/${f(p.total)}</b> โล (${p.pct}%) · <button class="st-btn" data-go="progress">ดูความคืบหน้า</button>`
+    : `ปิดรับแล้ว · นับได้ <b>${f(p.done)}/${f(p.total)}</b> โล`;
   return `<div class="st-h">ขั้นตอน</div>
     <div class="st-wrap"><table class="st-xl st-steps"><tbody>
       ${step(1, 'ยอดตั้งต้น', r.set > 0, baseDetail, `<button class="st-btn ${r.set ? '' : 'p'}" data-act="base" ${S.busy ? 'disabled' : ''}>${r.set ? 'ดึงใหม่' : 'ดึงยอดตั้งต้น'}</button>`)}
       ${step(2, 'ทีม/โซน', teamOk, teamDetail, `<button class="st-btn" data-go="teams">แบ่งทีม</button>`)}
       ${step(3, 'ลิงก์คนนับ', true, linkRow, `<button class="st-btn" data-act="copy">คัดลอก</button>${navigator.share ? '<button class="st-btn" data-act="share">แชร์</button>' : ''}`)}
       ${step(4, 'นับรอบ 1', counting() || r.status !== 'ตั้งค่า', goDetail, go)}
+      ${step(5, 'วิเคราะห์', r.status === 'วิเคราะห์', r.settings.summaryAt ? `บันทึกผลสรุปลงชีตล่าสุด ${esc(r.settings.summaryAt)} · ${f(r.settings.summaryRows)} แถว` : 'ดูขาด/เกิน/วางผิดโล ระหว่างนับได้เลย ปิดรับนับรอบ 1 เมื่อทุกทีมเสร็จ', r.pass ? '<button class="st-btn" data-go="analyze">ดูผล</button>' : '')}
     </tbody></table></div>
     ${WmsSettings.txUrl() ? '' : '<div class="st-warn" style="margin-top:10px">ยังไม่มี URL Transaction ในหน้าตั้งค่า — ต้องมีก่อนดึงยอดตั้งต้น</div>'}
     <div class="st-h">รอบนี้</div>` + roundForm(r) + cfgMore();
@@ -593,17 +624,124 @@ function progressView() {
  * เช็คว่าสมุดมีแถวใหม่หลังดึงยอดตั้งต้นไหม หยุดรับ-จ่ายแล้วไม่ควรมี
  * ตอนเปิดแท็บใช้ข้อมูลกลาง (เร็ว อาจช้ากว่าสมุดไม่กี่ชั่วโมง) กดปุ่ม = อ่านสมุดสด
  */
+async function loadFifo(fresh) {
+  const tx = WmsSettings.txUrl();
+  if (!tx) throw new Error('ยังไม่มี URL Transaction ในหน้าตั้งค่า');
+  let fifo = fresh ? null : await WmsGas.json(tx, 'tx-fifo&shared=1', { retries: 0 }).catch(() => null);
+  if (!fifo || fifo.error || !fifo.rows) fifo = await WmsGas.json(tx, 'tx-fifo', { retries: 0 });
+  if (fifo.error) throw new Error(fifo.error);
+  FIFO = { data: fifo, at: Date.now() };
+  return fifo;
+}
+
 async function checkMoves(fresh) {
   const tx = WmsSettings.txUrl();
   if (!tx || !R() || !R().lastRow) return;
   const run = async () => {
-    let fifo = fresh ? null : await WmsGas.json(tx, 'tx-fifo&shared=1', { retries: 0 }).catch(() => null);
-    if (!fifo || fifo.error || !fifo.rows) fifo = await WmsGas.json(tx, 'tx-fifo', { retries: 0 });
-    if (fifo.error) throw new Error(fifo.error);
+    const fifo = await loadFifo(fresh);
     MOVES = { list: ST.movesAfter(fifo, R().lastRow, R().cutoff), at: Date.now() };
   };
   if (!fresh) { try { await run(); } catch (e) { MOVES = { list: [], err: e.message, at: Date.now() }; } paintBody(); return; }
   await job('กำลังอ่านสมุด Transaction…', async () => { try { await run(); } catch (e) { MOVES = { list: [], err: e.message, at: Date.now() }; } });
+}
+
+/* ── แท็บวิเคราะห์ ───────────────────────────────────────────────────── */
+
+const GCLS = { 'ขาด': 'short', 'เกิน': 'over', 'วางผิดโล': 'moved', 'LOT/PO ผิด': 'lotpo', 'น่าจะพิมพ์ผิด': 'typo', 'ยังไม่นับ': 'left', 'Inv≠Audit': 'audit', 'ตรง': 'ok' };
+const AN_LIMIT = 300;   // แถวที่วาดต่อครั้ง เกินนี้ให้กรองเพิ่ม หน้าไม่หน่วง
+
+/** คิดจากยอดตั้งต้นกับบันทึกนับที่มีในหน้าอยู่แล้ว ไม่ต้องถามสคริปต์ คิดใหม่เมื่อมีแถวใหม่หรือข้อมูลรอบเปลี่ยน */
+function analysis() {
+  if (AN && AN.head === S.head && AN.n === S.log.length && AN.since === S.since) return AN.res;
+  const res = ST.analyze({ piles: S.head.piles, entries: S.log, teams: S.head.teams, locs: countLocs(), skus: S.head.skus, skip: R().settings.skip || [], pass: 1 });
+  AN = { head: S.head, n: S.log.length, since: S.since, res };
+  return res;
+}
+
+const signed = (n) => (n > 0 ? '+' : '') + f(n);
+
+/** แถวในสมุดที่น่าจะเป็นต้นเหตุ อ่านสมุด (ข้อมูลกลาง) ครั้งแรกที่กาง ⓘ */
+function ledgerHtml(l) {
+  if (!FIFO) {
+    if (!FIFO_BUSY && WmsSettings.txUrl()) {
+      FIFO_BUSY = true;
+      loadFifo(false).catch(() => { FIFO = { data: null, at: Date.now() }; }).finally(() => { FIFO_BUSY = false; if (TAB === 'analyze') paintBody(); });
+    }
+    return WmsSettings.txUrl() ? '<div class="st-led">⏳ กำลังอ่านสมุด…</div>' : '';
+  }
+  if (!FIFO.data) return '<div class="st-led">อ่านสมุดไม่ได้</div>';
+  const rows = ST.suspects(FIFO.data, l, 5);
+  if (!rows.length) return '<div class="st-led">ไม่มีแถวในสมุดที่ SKU นี้เข้า-ออกโลนี้</div>';
+  const sh = FIFO.data.sheet;
+  const link = (row) => sh && sh.url
+    ? `<a href="${esc(String(sh.url).split('#')[0] + '#gid=' + sh.gid + '&range=A' + row)}" target="_blank" rel="noopener">แถว ${row}</a>` : `แถว ${row}`;
+  return '<div class="st-led">' + rows.map(x => `${link(x.row)} · ${esc(x.date || 'ไม่มีวันที่')} · ${esc(x.type)} ${esc(x.from || '')}${x.from && x.to ? ' → ' : ''}${esc(x.to || '')} × ${f(x.qty)} · LOT ${esc(x.lot || '-')} PO ${esc(x.po || '-')}`).join('<br>') + '</div>';
+}
+
+function analyzeView() {
+  const r = R();
+  if (!r.pass) return `<div class="st-empty">ยังไม่เริ่มนับ<br><button class="st-btn" data-go="setup">ไปหน้าตั้งรอบ</button></div>`;
+  const a = analysis();
+  const T = a.teamName;
+  const G = ST.G;
+  const problems = a.lines.filter(l => l.group !== G.OK).concat(a.audit);
+  const order = (g) => { const i = ST.GROUPS.indexOf(g); return i < 0 ? 99 : i; };
+  const q = ST.up(AQ);
+  const base = FILTER === 'ok' ? a.lines.filter(l => l.group === G.OK) : problems;
+  const list = base.filter(l => {
+    if (FILTER.startsWith('g:') && l.group !== FILTER.slice(2)) return false;
+    if (FILTER.startsWith('h:')) { const [row, lv] = FILTER.slice(2).split('|'); if (l.row !== row || (+lv && l.level !== +lv)) return false; }
+    if (FILTER.startsWith('p:')) { const [tm, w] = FILTER.slice(2).split('|'); if (l.team !== tm || !(l.who || []).includes(w)) return false; }
+    return !q || l.loc.includes(q) || ST.up(l.sku).includes(q) || ST.up(l.long).includes(q) || ST.up(l.name).includes(q);
+  }).sort((x, y) => order(x.group) - order(y.group) || ST.locCmp(x.loc, y.loc) || ST.natCmp(x.sku, y.sku));
+  const chip = (key, label, val, cls) => `<button class="st-chip ${cls || ''} ${FILTER === key ? 'on' : ''}" data-filter="${esc(key)}">${esc(label)} <b>${val}</b></button>`;
+  const gcls = { 'ขาด': 'red', 'เกิน': 'amber', 'วางผิดโล': 'amber', 'LOT/PO ผิด': 'amber', 'น่าจะพิมพ์ผิด': 'amber', 'ยังไม่นับ': 'red', 'Inv≠Audit': 'amber' };
+  const t = a.totals;
+  const band = r.status === 'วิเคราะห์'
+    ? `<div class="st-note" style="margin:0 0 8px">ปิดรับนับรอบ 1 แล้ว (เครื่องที่ค้างส่งยังส่งเข้ามาได้) · <button class="st-btn" data-act="reopen">กลับไปนับต่อ</button></div>`
+    : counting() ? `<div class="st-warn">ยังรับผลนับอยู่ ตัวเลขเปลี่ยนได้ · <button class="st-btn p" data-act="close1">ปิดรับนับรอบ 1 → วิเคราะห์</button></div>` : '';
+  const hot = a.hot.slice(0, 5).map(h => chip(`h:${h.row}|${h.level}`, h.row + (h.level ? ' ชั้น ' + h.level : ''), h.n)).join('');
+  const ppl = a.people.filter(p => p.bad).slice(0, 5).map(p => chip(`p:${p.team}|${p.who}`, `${p.who} · ${p.teamName}`, `${p.bad}/${p.checked}`, 'amber')).join('');
+  const rows = list.slice(0, AN_LIMIT).map(l => {
+    const open = OPEN.has('a:' + l.id);
+    const pair = (l.pairs || []).map(p => `${esc(p.group)} คู่กับ ${esc(p.loc)} ${esc(p.sku)} LOT ${esc(p.lot || '-')} PO ${esc(p.po || '-')} × ${f(p.qty)}`).join('<br>');
+    return `<tr><td><span class="st-g ${GCLS[l.group] || ''}">${esc(l.group)}</span></td><td class="k">${esc(l.loc)}</td><td>${esc(l.sku || '—')}</td>
+      <td class="mu">${esc(l.name)}</td><td>${esc(l.lot)}</td><td>${esc(l.po)}</td><td class="num">${f(l.book)}</td>
+      <td class="num">${l.inv === null ? '—' : f(l.inv)}</td><td class="num ${l.diff < 0 ? 'neg' : l.diff > 0 ? 'pos' : ''}">${l.diff === null || l.diff === undefined ? '' : signed(l.diff)}</td>
+      <td class="num">${l.aud === null || l.aud === undefined ? '' : f(l.aud)}</td>
+      <td><button class="st-i ${open ? 'on' : ''}" data-open="a:${esc(l.id)}" aria-label="รายละเอียด ${esc(l.loc)} ${esc(l.sku)}">i</button></td></tr>` +
+      (open ? `<tr class="info"><td colspan="11"><b>${esc(l.note || l.group)}</b><br>
+        ทีม ${esc(T[l.team] || l.team || '—')} · คนนับ ${esc((l.who || []).join(', ') || '—')}${l.auditor ? ' · Audit ' + esc(l.auditor.join(', ')) : ''} · แถว ${esc(l.row)}${l.level ? ' ชั้น ' + l.level : ''}
+        ${pair ? '<br>' + pair : ''}${l.fix ? `<br>แก้: <b>${esc(l.fix)}</b>` : ''}${l.sku ? ledgerHtml(l) : ''}</td></tr>` : '');
+  }).join('');
+  return `${band}<div class="st-tot">
+      <span>สมุด <b>${f(t.book)}</b></span><span>นับได้ <b>${f(t.inv)}</b></span><span>ต่าง <b>${signed(t.diff)}</b></span>
+      <span>นับแล้ว <b>${f(t.counted)}/${f(t.locs)}</b> โล</span><span class="sp"></span>
+      ${r.settings.summaryAt ? `<span>บันทึกล่าสุด ${esc(r.settings.summaryAt)}</span>` : ''}
+      <button class="st-btn" data-act="summary" ${S.busy ? 'disabled' : ''}>บันทึกผลลงชีต</button>
+    </div>
+    <div class="st-bar">
+      ${chip('', 'ปัญหาทั้งหมด', f(problems.length))}
+      ${ST.GROUPS.filter(g => a.counts[g].n).map(g => chip('g:' + g, g, f(a.counts[g].n), gcls[g])).join('')}
+      ${chip('ok', 'ตรง', f(a.counts[G.OK].n), 'green')}
+      <span class="sp"></span><input class="st-q" id="anQ" placeholder="ค้นหา โล / SKU / ชื่อ" value="${esc(AQ)}" aria-label="ค้นหาในผลวิเคราะห์">
+    </div>
+    ${hot ? `<div class="st-bar"><span class="st-lbl">ผิดบ่อย</span>${hot}</div>` : ''}
+    ${ppl ? `<div class="st-bar"><span class="st-lbl">ต่างกับ Audit บ่อย</span>${ppl}</div>` : ''}
+    <div class="st-wrap"><table class="st-xl"><thead><tr><th>กลุ่ม</th><th>Location</th><th>SKU</th><th>ชื่อ</th><th>LOT</th><th>PO</th>
+      <th class="num">สมุด</th><th class="num">นับ</th><th class="num">ต่าง</th><th class="num">Audit</th><th></th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="11" class="mu">${problems.length ? 'ไม่มีรายการตามที่กรอง' : 'ยังไม่เจอปัญหา นับตรงกับสมุดทุกกอง'}</td></tr>`}</tbody></table></div>
+    ${list.length > AN_LIMIT ? `<div class="st-note">แสดง ${AN_LIMIT} จาก ${f(list.length)} รายการ — กดชิปหรือค้นหาเพื่อกรอง</div>` : ''}
+    <div class="st-note">กดชิปเพื่อกรอง · ⓘ = คนนับ โลคู่ วิธีแก้ และแถวในสมุดที่น่าสงสัย · ตัวเลขคิดสดจากบันทึกนับ ชีตผลสรุปเก็บภาพตอนกดบันทึก</div>`;
+}
+
+async function saveSummary() {
+  const lines = ST.summaryRows(analysis());
+  await job('กำลังบันทึกผลสรุปลงชีต…', async () => {
+    const res = await post({ op: 'st-summary', round: S.rid, lines });
+    Object.assign(R(), res.round);
+    S.ok = `✓ บันทึกผลสรุปลงชีตแล้ว ${f(res.saved)} แถว`;
+  });
 }
 
 /* ── ปุ่มและช่อง ─────────────────────────────────────────────────────── */
@@ -631,11 +769,14 @@ async function saveRound() {
 }
 
 async function setStatus(status) {
+  const was = R() && R().status;
   await job('กำลังเปลี่ยนสถานะ…', async () => {
     await post({ op: 'st-status', round: S.rid, status });
     S.head = await get('st-head', { round: S.rid });
     S.rounds = (await get('st-rounds')).rounds;
-    S.ok = status === 'ตั้งค่า' ? 'กลับไปตั้งค่าแล้ว ผลนับที่ส่งมาแล้วยังอยู่ครบ' : '✓ เริ่มนับรอบ 1 แล้ว ส่งลิงก์ให้คนนับได้เลย';
+    S.ok = status === 'ตั้งค่า' ? 'กลับไปตั้งค่าแล้ว ผลนับที่ส่งมาแล้วยังอยู่ครบ'
+      : status === 'วิเคราะห์' ? '✓ ปิดรับนับรอบ 1 แล้ว ดูผลในแท็บวิเคราะห์'
+      : was === 'วิเคราะห์' ? '✓ เปิดนับรอบ 1 ต่อแล้ว' : '✓ เริ่มนับรอบ 1 แล้ว ส่งลิงก์ให้คนนับได้เลย';
   });
 }
 
@@ -703,6 +844,9 @@ document.addEventListener('click', (e) => {
   else if (act === 'undo') { DRAFT = null; TOAST = ''; paint(); }
   else if (act === 'cfg') saveCfg();
   else if (act === 'moves') checkMoves(true);
+  else if (act === 'summary') saveSummary();
+  else if (act === 'close1') { if (confirm('ปิดรับนับรอบ 1?\nเครื่องที่ยังค้างส่งจะยังส่งเข้ามาได้ ย้อนกลับไปนับต่อได้')) setStatus('วิเคราะห์'); }
+  else if (act === 'reopen') setStatus('นับรอบ 1');
 });
 
 document.addEventListener('change', (e) => {
@@ -726,6 +870,13 @@ document.addEventListener('change', (e) => {
 });
 
 document.addEventListener('input', (e) => {
+  if (e.target.id === 'anQ') {
+    AQ = e.target.value;
+    const pos = e.target.selectionStart;
+    paintBody();
+    const el = $('anQ'); if (el) { el.focus(); el.setSelectionRange(pos, pos); }
+    return;
+  }
   const d = e.target.dataset;
   if (d.team === undefined) return;
   const team = D().teams[+d.team];
@@ -756,11 +907,11 @@ document.addEventListener('paste', (e) => {
 
 /* ความคืบหน้าสด: ขอเฉพาะแถวใหม่ทุกนาทีตอนเปิดแท็บนี้อยู่ */
 setInterval(async () => {
-  if (TAB !== 'progress' || document.hidden || S.busy || !S.head || S.rid === 'new') return;
+  if ((TAB !== 'progress' && TAB !== 'analyze') || document.hidden || S.busy || !S.head || S.rid === 'new') return;
   try { await loadLog(true); paintBody(); paintTabs(); } catch (e) { /* รอบหน้าค่อยลองใหม่ */ }
 }, POLL_MS);
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && TAB === 'progress' && S.head && Date.now() - S.at > POLL_MS) loadLog(true).then(() => { paintBody(); paintTabs(); }).catch(() => {});
+  if (!document.hidden && (TAB === 'progress' || TAB === 'analyze') && S.head && Date.now() - S.at > POLL_MS) loadLog(true).then(() => { paintBody(); paintTabs(); }).catch(() => {});
 });
 window.addEventListener('beforeunload', (e) => { if (DRAFT && DRAFT.dirty) { e.preventDefault(); e.returnValue = ''; } });
 

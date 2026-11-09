@@ -12,6 +12,11 @@ import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const GS = path.resolve(HERE, '../../apps-script/stocktake-api.gs');
 
+/** เวลาแก้ไฟล์ stocktake-api.gs ล่าสุด dev server ใช้รู้ว่าต้องโหลดสคริปต์ใหม่ (ชีตเดิมอยู่ครบ) */
+export function stocktakeMtime() {
+  try { return fs.statSync(GS).mtimeMs; } catch (e) { return 0; }
+}
+
 /** แท็บในหน่วยความจำ ทำเท่าที่สคริปต์ใช้ ช่องที่ยังไม่เคยเขียนอ่านได้ '' แบบชีตจริง */
 export function fakeTab(name) {
   const grid = [];

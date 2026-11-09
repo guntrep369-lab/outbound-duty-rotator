@@ -175,6 +175,35 @@ describe('stocktake-api.gs — ยอดตั้งต้น ทีม แล�
     const id = ready(api);
     expect(api.post({ op: 'st-status', t: HEAD, round: id, status: 'ปิดแล้ว' }).error).toMatch(/ไม่ได้/);
   });
+
+  it('นับรอบ 1 ↔ วิเคราะห์ ได้ แต่ข้ามจากตั้งค่าไปวิเคราะห์ไม่ได้ ระหว่างวิเคราะห์ยังรับผลที่ค้างส่ง', () => {
+    const api = loadStocktake();
+    const id = ready(api, { start: false });
+    expect(api.post({ op: 'st-status', t: HEAD, round: id, status: 'วิเคราะห์' }).error).toMatch(/ไม่ได้/);
+    api.post({ op: 'st-status', t: HEAD, round: id, status: 'นับรอบ 1' });
+    expect(api.post({ op: 'st-status', t: HEAD, round: id, status: 'วิเคราะห์' }).round.status).toBe('วิเคราะห์');
+    expect(api.post({ op: 'st-status', t: HEAD, round: id, status: 'ตั้งค่า' }).error).toMatch(/ไม่ได้/);
+    expect(api.post({ op: 'st-count', k: HEAD, round: id, items: [item({ uid: 'late-1' })] }).saved).toBe(1);
+    expect(api.post({ op: 'st-status', t: HEAD, round: id, status: 'นับรอบ 1' }).round.status).toBe('นับรอบ 1');
+  });
+
+  it('ผลสรุป: แทนชุดเดิมของรอบ ตัดสูตร ช่องตัวเลขต้องเป็นตัวเลข บันทึกเวลาไว้ในรอบ', () => {
+    const api = loadStocktake();
+    const id = ready(api);
+    const row = ['R1-01-01', 'AAA001', 'AAA0000000001', '=HYPERLINK("x")', '8', '9900000001', 10, 9, '', '', 9, -1, 'ขาด', 'ขาด 1', 'ทีม 1', 'สมชาย'];
+    expect(api.post({ op: 'st-summary', round: id, lines: [row] }).error).toMatch(/รหัสหัวหน้า/);
+    expect(api.post({ op: 'st-summary', t: HEAD, round: id, lines: [row.slice(0, 15)] }).error).toMatch(/16 ช่อง/);
+    expect(api.post({ op: 'st-summary', t: HEAD, round: id, lines: [[...row.slice(0, 6), '10', ...row.slice(7)]] }).error).toMatch(/ตัวเลข/);
+    expect(api.post({ op: 'st-summary', t: HEAD, round: id, lines: [row, row] }).saved).toBe(2);
+    const res = api.post({ op: 'st-summary', t: HEAD, round: id, lines: [row], by: 'หัวหน้า' });
+    expect(res.saved).toBe(1);
+    expect(res.round.settings).toMatchObject({ summaryBy: 'หัวหน้า', summaryRows: 1 });
+    const tab = api.ss.tab('ผลสรุป');
+    expect(tab.getLastRow()).toBe(2);
+    expect(tab.grid[1].slice(0, 5)).toEqual([id, 'R1-01-01', 'AAA001', 'AAA0000000001', 'HYPERLINK("x")']);
+    expect(tab.grid[1].slice(7, 10)).toEqual([10, 9, '']);
+    expect(tab.grid[1][11]).toBe(9);
+  });
 });
 
 describe('stocktake-api.gs — หน้ากรอกของคนนับ', () => {
@@ -470,5 +499,154 @@ describe('WmsStocktake — ช่องพิมพ์และลิงก์',
     const m = S.movesAfter(f, lastRow, '2026-11-14 18:00');
     expect(m.map((x) => x.when)).toEqual(['ก่อนตัดยอด', 'ระหว่างนับ', 'ไม่มีวันที่']);
     expect(m[0]).toMatchObject({ type: 'ขาย', qty: 1, sku: 'AAA001' });
+  });
+});
+
+/* ── ขั้นที่ 2: วิเคราะห์ผลนับ ─────────────────────────────────────────────── */
+
+describe('WmsStocktake.analyze — แยกกลุ่มปัญหา', () => {
+  const SKUS = [
+    ['AAA001', 'AAA0000000001', 'ที่นอนสมมติ 1'], ['AAA002', 'AAA0000000002', 'ที่นอนสมมติ 2'],
+    ['AAA008', 'AAA0000000008', 'ที่นอนสมมติ 8'], ['BBB001', 'BBB0000000001', 'ท็อปเปอร์สมมติ'], ['CCC001', 'CCC0000000001', 'หมอนสมมติ'],
+  ];
+  const long = (s) => (SKUS.find((x) => x[0] === s) || [])[1] || s;
+  const P = (loc, sku, lot, po, qty) => [loc, sku, long(sku), '', String(lot), po, qty, 0];
+  const PILES2 = [
+    P('R1-01-01', 'AAA001', 8, '9900000001', 10),
+    P('R1-01-02', 'AAA002', 8, '9900000001', 6),
+    P('R1-02-01', 'BBB001', 8, '9900000002', 5),
+    P('R1-02-02', 'CCC001', 8, '9900000001', 12),
+    P('R1-03-01', 'AAA001', 8, '9900000001', 4),
+    P('A-01-02', 'AAA002', 8, '9900000001', 3),
+    P('A-01-03', 'CCC001', 8, '9900000001', 2),
+    P('RIB', 'AAA001', 8, '9900000001', 7),
+  ];
+  const LOCS2 = ['R1-01-01', 'R1-01-02', 'R1-02-01', 'R1-02-02', 'R1-03-01', 'A-01-01', 'A-01-02', 'A-01-03']
+    .map((loc) => (loc[0] === 'R' ? { loc, zone: 'R', group: 'R1' } : { loc, zone: 'A', group: 'A-01' }));
+  const T2 = [
+    { pass: 1, id: 'INV1', kind: 'Inventory', name: 'ทีม 1', zones: ['R1'] },
+    { pass: 1, id: 'INV2', kind: 'Inventory', name: 'ทีม 2', zones: ['A-01'] },
+    { pass: 1, id: 'AUD1', kind: 'Audit', name: 'วิไล', zones: ['R1', 'A-01'] },
+  ];
+  let n = 0;
+  const E = (o) => ({
+    uid: o.uid || 'e' + (++n), ref: '', pass: 1, team: 'INV1', kind: 'Inventory', who: 'สมชาย', type: 'นับ', lot: '8', po: '9900000001',
+    ...o, long: o.long !== undefined ? o.long : long(o.sku || ''),
+  });
+  const INV2 = { team: 'INV2', who: 'มานะ' };
+  const AUD = { team: 'AUD1', kind: 'Audit', who: 'วิไล' };
+  const ENTRIES = [
+    E({ uid: 'u1', loc: 'R1-01-01', sku: 'AAA001', qty: 11 }),
+    E({ loc: 'R1-01-01', sku: 'AAA001', qty: 10, ref: 'u1' }),                 // แก้ 11 → 10
+    E({ loc: 'R1-01-01', sku: 'AAA001', qty: 10, ...INV2 }),                   // ทีมอื่นนับซ้ำ ไม่เอามารวม
+    E({ loc: 'R1-01-02', sku: 'AAA002', lot: '9', qty: 6 }),
+    E({ loc: 'R1-02-01', type: 'ว่าง', qty: 0, sku: '' }),
+    E({ loc: 'R1-02-02', sku: 'CCC001', qty: 21 }),
+    E({ loc: 'R1-03-01', sku: 'AAA008', qty: 4 }),
+    E({ loc: 'A-01-01', sku: 'BBB001', po: '9900000002', qty: 5, ...INV2 }),
+    E({ loc: 'A-01-01', sku: 'CCC001', lot: '9', qty: 3, ...INV2 }),
+    E({ loc: 'A-01-02', sku: 'AAA002', qty: 1, ...INV2 }),
+    E({ loc: 'A-01-02', sku: 'ZZZ999', long: '', qty: 1, ...INV2 }),
+    E({ loc: 'R1-01-01', sku: 'AAA001', qty: 9, ...AUD }),
+    E({ loc: 'A-01-02', sku: 'AAA002', qty: 1, ...AUD }),
+    E({ loc: 'A-01-02', sku: 'ZZZ999', long: '', qty: 1, ...AUD }),
+  ];
+  let R;
+  beforeAll(() => { R = S.analyze({ piles: PILES2, entries: ENTRIES, teams: T2, locs: LOCS2, skus: SKUS, skip: ['RIB'], pass: 1 }); });
+  const at = (loc, sku, lot) => R.lines.find((l) => l.loc === loc && l.sku === sku && (lot === undefined || l.lot === String(lot)));
+
+  it('นับตรงกับสมุด = ตรง ใช้ยอดที่แก้แล้ว และไม่บวกทีมอื่นที่นับซ้ำ', () => {
+    expect(at('R1-01-01', 'AAA001')).toMatchObject({ group: 'ตรง', book: 10, inv: 10, diff: 0, team: 'INV1', who: ['สมชาย'] });
+  });
+
+  it('LOT/PO ผิด: SKU เดียวกันในโลเดียวกัน ย้าย LOT', () => {
+    expect(at('R1-01-02', 'AAA002', 8)).toMatchObject({ group: 'LOT/PO ผิด', diff: -6 });
+    expect(at('R1-01-02', 'AAA002', 9)).toMatchObject({ group: 'LOT/PO ผิด', diff: 6 });
+    expect(at('R1-01-02', 'AAA002', 8).fix).toMatch(/ป้าย LOT\/PO/);
+  });
+
+  it('วางผิดโล: ขาดที่หนึ่ง เกินอีกที่ บอกโลคู่และวิธีแก้', () => {
+    const s = at('R1-02-01', 'BBB001'), x = at('A-01-01', 'BBB001');
+    expect(s).toMatchObject({ group: 'วางผิดโล', diff: -5 });
+    expect(x).toMatchObject({ group: 'วางผิดโล', diff: 5 });
+    expect(s.note).toContain('เจอที่ A-01-01 5');
+    expect(s.fix).toContain('ลงสมุดย้าย R1-02-01 → A-01-01 × 5');
+    expect(x.note).toContain('น่าจะมาจาก R1-02-01');
+  });
+
+  it('พิมพ์ผิด: จำนวนสลับหลัก SKU เกือบเหมือน และ SKU ที่ไม่มีในคลัง', () => {
+    expect(at('R1-02-02', 'CCC001')).toMatchObject({ group: 'น่าจะพิมพ์ผิด', typo: 'จำนวน' });
+    expect(at('R1-02-02', 'CCC001').fix).toContain('น่าจะเป็น 12');
+    expect(at('R1-03-01', 'AAA008')).toMatchObject({ group: 'น่าจะพิมพ์ผิด' });
+    expect(at('R1-03-01', 'AAA008').fix).toContain('น่าจะเป็น AAA001');
+    expect(at('R1-03-01', 'AAA001')).toMatchObject({ group: 'น่าจะพิมพ์ผิด' });
+    expect(at('R1-03-01', 'AAA001').fix).toContain('อาจกรอกเป็น AAA008');
+    expect(at('A-01-02', 'ZZZ999')).toMatchObject({ group: 'น่าจะพิมพ์ผิด', typo: 'SKU' });
+  });
+
+  it('ที่อธิบายไม่ได้ = ขาด / เกิน', () => {
+    expect(at('A-01-02', 'AAA002')).toMatchObject({ group: 'ขาด', diff: -2 });
+    expect(at('A-01-01', 'CCC001')).toMatchObject({ group: 'เกิน', diff: 3 });
+  });
+
+  it('ยังไม่นับ: บอกทีมที่ต้องไป แถวที่ตั้งไม่นับไม่เอามาคิด', () => {
+    expect(at('A-01-03', 'CCC001')).toMatchObject({ group: 'ยังไม่นับ', inv: null, book: 2 });
+    expect(at('A-01-03', 'CCC001').fix).toBe('ส่ง ทีม 2 ไปนับ');
+    expect(R.lines.some((l) => l.loc === 'RIB')).toBe(false);
+  });
+
+  it('Inv≠Audit แยกรายการ และนับว่าใครต่างกับ Audit บ่อย', () => {
+    expect(R.audit).toHaveLength(1);
+    expect(R.audit[0]).toMatchObject({ loc: 'R1-01-01', sku: 'AAA001', inv: 10, aud: 9, book: 10, auditor: ['วิไล'] });
+    expect(R.people[0]).toMatchObject({ who: 'สมชาย', teamName: 'ทีม 1', checked: 1, bad: 1, pct: 100 });
+    expect(R.people.find((p) => p.who === 'มานะ')).toMatchObject({ checked: 1, bad: 0, pct: 0 });
+  });
+
+  it('สรุปจำนวนต่อกลุ่ม จุดที่ผิดบ่อย และยอดรวม', () => {
+    expect(R.counts['น่าจะพิมพ์ผิด'].n).toBe(4);
+    expect(R.counts['วางผิดโล'].n).toBe(2);
+    expect(R.counts['ยังไม่นับ'].locs).toBe(1);
+    expect(R.hot[0]).toMatchObject({ row: 'R1', level: 1, n: 4 });
+    expect(R.totals).toMatchObject({ locs: 8, counted: 7, book: 40, inv: 51, diff: 11 });
+  });
+
+  it('แถวผลสรุปลงชีต: ยอดสุดท้ายใช้ที่นับ โลที่ยังไม่นับใช้ยอดในสมุด Inv≠Audit ติดกลุ่มไว้', () => {
+    const rows = S.summaryRows(R);
+    const r1 = rows.find((r) => r[0] === 'R1-01-01' && r[1] === 'AAA001');
+    expect(r1).toEqual(['R1-01-01', 'AAA001', 'AAA0000000001', 'ที่นอนสมมติ 1', '8', '9900000001', 10, 10, 9, '', 10, 0, 'Inv≠Audit', 'Inventory 10 · Audit 9', 'ทีม 1', 'สมชาย']);
+    const left = rows.find((r) => r[0] === 'A-01-03');
+    expect(left.slice(6, 13)).toEqual([2, '', '', '', 2, 0, 'ยังไม่นับ']);
+    expect(rows.every((r) => r.length === 16)).toBe(true);
+  });
+
+  it('แถวสมุดที่น่าสงสัย: แถวล่าสุดของ SKU นี้ที่เข้าออกโลนี้หรือโลคู่', () => {
+    const fifo = {
+      skus: [['BBB001', 'BBB0000000001', ''], ['AAA001', 'AAA0000000001', '']], pos: ['9900000002'],
+      locs: ['R1-02-01', 'A-01-01', 'B-01-01'], days: ['2026-11-01'],
+      rows: [[2, 0, 8, 0, -1, 0, 5, 0, 0, 10], [3, 1, 8, 0, -1, 0, 1, 0, 0, 8], [4, 0, 8, 0, 0, 1, 5, 1, 0, 8], [5, 0, 8, 0, -1, 2, 1, 0, 0, 8]],
+    };
+    const s = S.suspects(fifo, at('R1-02-01', 'BBB001'));
+    expect(s.map((x) => x.row)).toEqual([4, 2]);
+    expect(s[0]).toMatchObject({ type: 'เบิก', from: 'R1-02-01', to: 'A-01-01', qty: 5, date: '2026-11-01', po: '9900000002' });
+  });
+});
+
+describe('WmsStocktake — หน้าตาพิมพ์ผิด', () => {
+  it('จำนวน: สลับหลัก ศูนย์เกิน กดผิดหลักหน้า แต่หลักสุดท้ายหรือเลขหลักเดียวไม่นับ', () => {
+    expect(S.qtyTypo(12, 21)).toBe(true);
+    expect(S.qtyTypo(5, 50)).toBe(true);
+    expect(S.qtyTypo(25, 85)).toBe(true);
+    expect(S.qtyTypo(15, 12)).toBe(false);   // หลักสุดท้ายต่าง = ขาดจริงมากกว่า
+    expect(S.qtyTypo(123, 132)).toBe(true);
+    expect(S.qtyTypo(3, 8)).toBe(false);
+    expect(S.qtyTypo(12, 30)).toBe(false);
+    expect(S.qtyTypo(10, 10)).toBe(false);
+  });
+
+  it('SKU: ต่างกันหนึ่งตัว (สองตัวถ้ารหัสยาว)', () => {
+    expect(S.similarCode('AAA001', 'AAA008')).toBe(true);
+    expect(S.similarCode('AAA0000000001', 'AAA0000000010')).toBe(true);
+    expect(S.similarCode('AAA001', 'BBB001')).toBe(false);
+    expect(S.similarCode('AAA001', 'AAA001')).toBe(false);
   });
 });

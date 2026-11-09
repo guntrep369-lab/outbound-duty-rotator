@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { defineConfig } from 'vite';
-import { loadStocktake, fakeFifo } from './src/dev/fake-gas.js';
+import { loadStocktake, fakeFifo, stocktakeMtime } from './src/dev/fake-gas.js';
 
 /**
  * GitHub Pages serves public/summary/index.html at /summary/, but Vite's dev
@@ -36,6 +36,7 @@ function folderIndex() {
  */
 function fakeGas() {
   let st = null;
+  let stAt = 0;
   const moves = [];
   return {
     name: 'fake-gas',
@@ -55,7 +56,9 @@ function fakeGas() {
           return send({ app: 'transaction' });
         }
         if (pathname === '/__fake/stocktake') {
-          st = st || loadStocktake({ head: 'demo-head', count: 'demo-count' });
+          /* แก้ .gs ระหว่างเปิด dev server = โหลดสคริปต์ใหม่กับชีตเดิม ไม่ต้องตั้งรอบใหม่ทุกครั้ง */
+          const mt = stocktakeMtime();
+          if (!st || mt !== stAt) { st = loadStocktake({ head: 'demo-head', count: 'demo-count', ss: st ? st.ss : undefined }); stAt = mt; }
           if (req.method !== 'POST') return send(st.get(params));
           let body = '';
           req.on('data', (c) => { body += c; });
