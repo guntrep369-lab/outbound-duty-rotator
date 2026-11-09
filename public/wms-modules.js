@@ -24,13 +24,20 @@
  *
  * `hidden: true` เอาออกจากเมนูแต่หน้ายังอยู่ เปิดตามลิงก์ได้ และพอเปิดอยู่เมนูก็ยังโชว์
  * ว่าอยู่หน้าไหน — ลบ hidden ออกเมื่ออยากให้กลับมาในเมนู
+ *
+ * เมนูเรียบ (พ.ย. 2026) — เมนูเดิมลายตาเพราะทุกบรรทัดมีทั้งไทย อังกฤษ และไอคอน
+ * ชื่อยาวขึ้นสองบรรทัด ตอนนี้จึง:
+ *   - `label` ขึ้นเมนูบรรทัดเดียว ตั้งให้สั้นพอไม่ตัดบรรทัดในเมนูกว้าง 240px
+ *   - `labelEn` ไม่ขึ้นบนจอแล้ว เหลือเป็นคำอธิบายตอนเอาเมาส์ชี้
+ *   - ไอคอนอยู่ที่หัวหมวด (GROUPS.icon) หน้าที่อยู่ในหมวดเป็นตัวหนังสือล้วน
+ *     `icon` ของโมดูลใช้เฉพาะหน้าที่ไม่มีหมวด (สมุดกะ)
  */
 export const GROUPS = [
-  { id: 'order',     label: 'ออเดอร์',     labelEn: 'Orders' },
-  { id: 'warehouse', label: 'คลังสินค้า',  labelEn: 'Warehouse' },
-  { id: 'inventory', label: 'สินค้าคงคลัง', labelEn: 'Inventory' },
-  { id: 'transport', label: 'ขนส่ง',       labelEn: 'Transport' },
-  { id: 'system',    label: 'ทีมและระบบ',  labelEn: 'Team & System' },
+  { id: 'order',     label: 'ออเดอร์',     labelEn: 'Orders',        icon: 'clipboardList' },
+  { id: 'warehouse', label: 'คลังสินค้า',  labelEn: 'Warehouse',     icon: 'warehouse' },
+  { id: 'inventory', label: 'สินค้าคงคลัง', labelEn: 'Inventory',     icon: 'layers' },
+  { id: 'transport', label: 'ขนส่ง',       labelEn: 'Transport',     icon: 'truck' },
+  { id: 'system',    label: 'ทีมและระบบ',  labelEn: 'Team & System', icon: 'settings' },
 ];
 
 export const MODULES = [
@@ -46,18 +53,18 @@ export const MODULES = [
   { id: 'stock', label: 'สต๊อกคงเหลือ', labelEn: 'Stock on Hand', path: 'stock/', icon: 'package', group: 'warehouse' },
   { id: 'picking', label: 'สรุปหยิบของ', labelEn: 'Picking Sheet', path: 'picking/', icon: 'clipboardList', group: 'warehouse' },
   { id: 'reqpick', label: 'เบิกตามออเดอร์', labelEn: 'Order Requisition', path: 'order-sheet/', icon: 'listChecks', group: 'warehouse' },
-  { id: 'warehouse', label: 'เอกสารคลังสินค้า', labelEn: 'Warehouse Forms', path: 'warehouse-forms/', icon: 'boxes', group: 'warehouse' },
+  { id: 'warehouse', label: 'เอกสารคลัง', labelEn: 'Warehouse Forms', path: 'warehouse-forms/', icon: 'boxes', group: 'warehouse' },
   /* แพลนรับเข้าของวันนั้น → ควรเก็บโลเคชั่นไหน ใช้สต๊อกชุดเดียวกับหน้า FIFO สต๊อก */
   { id: 'putaway', label: 'จัดที่เก็บ', labelEn: 'Putaway', path: 'putaway/', icon: 'arrowDown', group: 'warehouse' },
   /* ภาพรวมอยู่หัวหมวด หัวหน้าเปิดหน้านี้ก่อนแล้วกดต่อไปหน้าที่มีเรื่องต้องดู */
   { id: 'dashboard', label: 'ภาพรวมสต๊อก', labelEn: 'Stock Overview', path: 'dashboard/', icon: 'gauge', group: 'inventory' },
   { id: 'txstock', label: 'สต๊อกราย Location', labelEn: 'Stock by Location', path: 'stock-location/', icon: 'mapPin', group: 'inventory' },
-  { id: 'cutcheck', label: 'เช็ครายการตัดสต๊อก', labelEn: 'Stock Cut Check', path: 'cut-check/', icon: 'scale', group: 'inventory' },
-  { id: 'lotpo', label: 'LOT / PO ที่ขายออก', labelEn: 'Lot & PO Out', path: 'lot-po/', icon: 'sheet', group: 'inventory' },
+  { id: 'cutcheck', label: 'เช็คตัดสต๊อก', labelEn: 'Stock Cut Check', path: 'cut-check/', icon: 'scale', group: 'inventory' },
+  { id: 'lotpo', label: 'LOT/PO ขายออก', labelEn: 'Lot & PO Out', path: 'lot-po/', icon: 'sheet', group: 'inventory' },
   /* ต่อจาก LOT / PO เพราะใช้ไฟล์ที่โหลดจากหน้านั้นมาจับคู่กับเลขที่เอกสารของบัญชี */
   { id: 'invmatch', label: 'จับคู่ Invoice', labelEn: 'Invoice Match', path: 'invoice-match/', icon: 'receipt', group: 'inventory' },
   { id: 'fifo', label: 'FIFO สต๊อก', labelEn: 'FIFO Stock', path: 'fifo/', icon: 'layers', group: 'inventory' },
-  { id: 'balance', label: 'สินค้าคงเหลือ ณ วันที่', labelEn: 'Stock as of Date', path: 'balance/', icon: 'archive', group: 'inventory' },
+  { id: 'balance', label: 'คงเหลือ ณ วันที่', labelEn: 'Stock as of Date', path: 'balance/', icon: 'archive', group: 'inventory' },
   /* ประเภทงานรถกับผังงานรถวันนี้ยังไม่ได้ใช้ในงานจริง ซ่อนไว้เหมือนสรุปเช้า */
   { id: 'jobs', label: 'ประเภทงานรถ', labelEn: 'Job Types', path: 'jobs/', icon: 'compass', group: 'transport', hidden: true },
   { id: 'loadplan', label: 'ผังงานรถวันนี้', labelEn: 'Load Plan', path: 'loadplan/', icon: 'map', group: 'transport', hidden: true },
@@ -69,7 +76,9 @@ export const MODULES = [
 
 /** Brand text — kept here so the six pages can never drift apart again. */
 export const BRAND = {
-  name: 'WMS Management',
+  // หัวเมนูเหลือบรรทัดเดียว ชื่อเต็มกับคำอธิบายขึ้นตอนเอาเมาส์ชี้
+  name: 'WMS',
+  full: 'WMS Management',
   by: 'by Gun',
   sub: 'ระบบบริหารคลังสินค้า',
   // Relative to the site root. The same picture is the tab icon (wms-icon-32.png) and the
@@ -84,6 +93,8 @@ export const BRAND = {
  */
 export const ICON_PATHS = {
   chevronRight: '<path d="m9 18 6-6-6-6"/>',
+  warehouse:
+    '<path d="M22 8.35V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8.35A2 2 0 0 1 3.26 6.5l8-3.2a2 2 0 0 1 1.48 0l8 3.2A2 2 0 0 1 22 8.35Z"/><path d="M6 18h12"/><path d="M6 14h12"/><rect width="12" height="12" x="6" y="10"/>',
   calendar:
     '<rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M3 10h18"/><path d="M8 2v4"/><path d="M17 14h-6"/><path d="M13 18H7"/><path d="M7 14h.01"/><path d="M17 18h.01"/>',
   clipboard:

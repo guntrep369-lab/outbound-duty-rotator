@@ -45,7 +45,7 @@ function groups(html) {
       here: cls.includes('here'),
       expanded: /aria-expanded="true"/.test(body),
       hidden: /class="sysgrp-items"[^>]* hidden>/.test(body),
-      n: Number(body.match(/class="sysgrp-n"[^>]*>(\d+)</)[1]),
+      n: mods(body).length,
       items: mods(body),
     };
   }
@@ -66,11 +66,13 @@ describe('หมวดในเมนูพับเก็บได้', () => {
     expect(mods(html).sort()).toEqual(all.sort());
   });
 
-  it('หัวหมวดบอกว่ามีกี่หน้า ไม่นับหน้าที่ซ่อน', () => {
-    const g = groups(sidebarHTML('stock', '../'));
+  it('หมวดมีเฉพาะหน้าที่ไม่ได้ซ่อน และหัวหมวดไม่มีเลขนับแล้ว', () => {
+    const html = sidebarHTML('stock', '../');
+    const g = groups(html);
     expect(g.transport.n).toBe(2);
     expect(g.transport.items).toEqual(['transport', 'forms']);
     expect(g.warehouse.n).toBe(5);
+    expect(html).not.toContain('sysgrp-n');
   });
 
   it('เปิดหน้าที่ซ่อนในหมวด — หมวดนั้นเปิดและมีหน้านั้นเพิ่มมา', () => {
@@ -96,8 +98,36 @@ describe('หมวดในเมนูพับเก็บได้', () => {
   it('หัวหมวดเป็นปุ่มที่ชี้ไปกล่องของหมวดตัวเอง', () => {
     const html = sidebarHTML('fifo', '../');
     for (const id of ['order', 'inventory']) {
-      expect(html).toMatch(new RegExp(`<button type="button" class="sysgrp-head" aria-expanded="(true|false)" aria-controls="sysgrp-${id}">`));
+      expect(html).toMatch(new RegExp(`<button type="button" class="sysgrp-head" aria-expanded="(true|false)" aria-controls="sysgrp-${id}"[^>]*>`));
       expect(html).toContain(`<div class="sysgrp-items" id="sysgrp-${id}"`);
     }
+  });
+});
+
+describe('เมนูเรียบ', () => {
+  it('ชื่อไทยบรรทัดเดียว ชื่ออังกฤษเหลือเป็นคำอธิบายตอนชี้', () => {
+    const html = sidebarHTML('fifo', '../');
+    expect(html).not.toMatch(/<em>/);
+    expect(html).toMatch(/data-mod="fifo" title="FIFO Stock"><span>FIFO สต๊อก<\/span><\/a>/);
+    expect(html).toMatch(/aria-controls="sysgrp-inventory" title="Inventory">/);
+  });
+
+  it('ไอคอนอยู่ที่หัวหมวดกับหน้าที่ไม่มีหมวด หน้าในหมวดเป็นตัวหนังสือล้วน', () => {
+    const html = sidebarHTML('fifo', '../');
+    expect(html.match(/class="sysgrp-gi"/g)).toHaveLength(5);
+    expect(html).toMatch(/data-mod="shiftlog"[^>]*><svg class="sysmod-ic"/);
+    const inGroups = [...html.matchAll(/<div class="sysgrp-items"[^>]*>(.*?)<\/div>/g)].map((m) => m[1]).join('');
+    expect(inGroups).toContain('data-mod="fifo"');
+    expect(inGroups).not.toContain('sysmod-ic');
+  });
+
+  it('ชื่อในเมนูสั้นพอขึ้นบรรทัดเดียว', () => {
+    for (const m of MODULES) expect(m.label.length, m.id).toBeLessThanOrEqual(17);
+  });
+
+  it('หัวเมนูบรรทัดเดียว ชื่อเต็มอยู่ในคำอธิบายตอนชี้', () => {
+    const html = sidebarHTML('stock', '../');
+    expect(html).not.toContain('sysbar-sub');
+    expect(html).toMatch(/class="sysbar-brand" title="WMS Management — ระบบบริหารคลังสินค้า"/);
   });
 });

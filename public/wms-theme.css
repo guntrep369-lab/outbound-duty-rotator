@@ -46,44 +46,48 @@ body {
 .wms-shell { display:flex; flex-direction:column; min-height:100vh; }
 .wms-main  { flex:1; min-width:0; display:flex; flex-direction:column; }
 
+/* Calm menu (Nov 2026). The old one read as busy: Thai + English on every row,
+   long names wrapping, an icon per row, count badges, and a boxed open group.
+   Now each row is one line of Thai (English is the hover title), icons sit on
+   the group heads only, and the pages of the open group hang off a thin guide
+   line. The page you're on gets a dark fill plus an indigo tick on that line.
+   Colours: slate on navy — text #CBD5E1, icons #64748B, chevrons/guide #334155. */
 .sysbar { background:#0F172A; color:#fff; position:sticky; top:0; z-index:40; flex-shrink:0;
-          font-family:var(--wms-font); }
+          font-family:var(--wms-font);
+          /* Phone: brand and who's signed in share the top row, the menu strip runs under it. */
+          display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; }
 .sysbar * { color:inherit; }
-.sysbar-brand { display:flex; align-items:center; gap:10px; padding:12px 16px; }
-.sysbar-logo { width:32px; height:32px; border-radius:8px; flex-shrink:0; display:block; }
-.sysbar-titles { min-width:0; line-height:1.25; }
-.sysbar-title { font-size:15px; font-weight:700; letter-spacing:-.01em; }
-.sysbar-by { font-size:11px; font-weight:500; color:#A5B4FC; margin-left:4px; }
-.sysbar-sub { display:none; font-size:11px; color:#94A3B8; }
-.sysbar-mods { display:flex; gap:4px; overflow-x:auto; padding:0 12px 8px; }
+.sysbar-brand { display:flex; align-items:center; gap:8px; padding:10px 16px 8px; min-width:0; }
+.sysbar-logo { width:26px; height:26px; border-radius:7px; flex-shrink:0; display:block; }
+.sysbar-title { font-size:14px; font-weight:600; color:#E2E8F0; letter-spacing:-.01em; white-space:nowrap; }
+.sysbar-by { font-size:11px; font-weight:400; color:#64748B; margin-left:2px; }
+.sysbar-mods { grid-column:1 / -1; display:flex; align-items:center; gap:2px; overflow-x:auto;
+               padding:0 10px 8px; scroll-padding-inline:10px;
+               scrollbar-width:thin; scrollbar-color:#334155 transparent; }
 /* Folding groups (wms-shell.js), one open at a time. On a phone the menu is a
-   sideways strip: each group is a chip, and its pages line up after it when open. */
-.sysgrp, .sysgrp-items { display:contents; }
+   sideways strip: each group head is a chip, and when open its pages follow it,
+   set off by the same thin guide line the laptop menu uses. */
+.sysgrp { display:contents; }
+.sysgrp-items { display:flex; gap:2px; flex-shrink:0; margin-left:2px; padding-left:2px;
+                border-left:1px solid #263247; }
 .sysgrp-items[hidden] { display:none; }
-.sysgrp-head { display:flex; align-items:center; gap:8px; flex-shrink:0; padding:7px 12px;
-               border:1px solid #334155; border-radius:8px; background:transparent; cursor:pointer;
-               font-family:var(--wms-font); font-size:14px; font-weight:600; color:#94A3B8;
-               text-align:left; transition:background .15s, color .15s, border-color .15s; }
-.sysgrp-head:hover { background:#1E293B; color:#fff; }
-.sysgrp-head:focus-visible { outline:2px solid #A5B4FC; outline-offset:2px; }
-.sysgrp-head span { white-space:nowrap; }
-.sysgrp-head em { font-style:normal; font-size:11px; font-weight:500; opacity:.7; display:none; }
-.sysgrp-ic { width:16px; height:16px; flex-shrink:0; transition:transform .15s; }
+.sysmod, .sysgrp-head {
+  display:flex; align-items:center; gap:8px; flex-shrink:0; padding:6px 10px;
+  border:0; border-radius:7px; background:transparent; cursor:pointer;
+  font-family:var(--wms-font); font-size:14px; font-weight:500; line-height:1.35; color:#CBD5E1;
+  text-decoration:none; text-align:left; white-space:nowrap;
+  transition:background .15s, color .15s;
+}
+.sysmod:hover:not(.active), .sysgrp-head:hover { background:#172135; color:#fff; }
+.sysmod:focus-visible, .sysgrp-head:focus-visible { outline:2px solid #A5B4FC; outline-offset:-2px; }
+.sysmod-ic, .sysgrp-gi { width:16px; height:16px; flex-shrink:0; color:#64748B; transition:color .15s; }
+.sysmod:hover .sysmod-ic, .sysgrp-head:hover .sysgrp-gi { color:#94A3B8; }
+.sysgrp-ic { width:14px; height:14px; flex-shrink:0; color:#475569; transition:transform .15s; }
 .sysgrp.open .sysgrp-ic { transform:rotate(90deg); }
-.sysgrp.open .sysgrp-head { color:#fff; border-color:#475569; }
-/* The group this page is in, folded shut: tint it so you still see where you are. */
-.sysgrp.here:not(.open) .sysgrp-head { color:#C7D2FE; border-color:#4F46E5; }
-.sysgrp-n { min-width:18px; height:18px; padding:0 5px; border-radius:9px; background:#1E293B;
-            color:#94A3B8; font-size:11px; font-weight:600; line-height:18px; text-align:center;
-            font-variant-numeric:tabular-nums; }
-.sysgrp.open .sysgrp-n { display:none; }
-.sysmod { display:flex; align-items:center; gap:10px; flex-shrink:0; padding:8px 12px;
-          border-radius:8px; text-decoration:none; font-size:14px; font-weight:500;
-          color:#CBD5E1; cursor:pointer; transition:background .15s, color .15s; }
-.sysmod-ic { width:16px; height:16px; flex-shrink:0; }
-.sysmod em { font-style:normal; font-size:11px; opacity:.7; display:none; }
-.sysmod:hover:not(.active) { background:#1E293B; color:#fff; }
-.sysmod.active { background:#4F46E5; color:#fff; cursor:default; box-shadow:0 1px 2px rgba(0,0,0,.15); }
+.sysgrp.open .sysgrp-head { color:#fff; }
+/* Where you are: the group's icon turns indigo, open or folded, so a shut group still shows it. */
+.sysgrp.here .sysgrp-gi, .sysmod.active .sysmod-ic { color:#A5B4FC; }
+.sysmod.active { background:#1E293B; color:#fff; cursor:default; box-shadow:inset 0 -2px 0 #818CF8; }
 /* Open-item count (wms-badges.js) — amber, red once the oldest has waited 2 days. */
 .sysmod-badge { margin-left:auto; min-width:20px; height:20px; padding:0 6px; border-radius:10px;
                 background:#F59E0B; color:#1C1917; font-size:11px; font-weight:700; line-height:20px;
@@ -101,18 +105,18 @@ body {
 }
 
 /* Who is signed in (from wms-gate.js), with the way back out. */
-.sysbar-user { display: flex; align-items: center; gap: 8px; padding: 8px 12px; }
+.sysbar-user { grid-column:2; grid-row:1; display:flex; align-items:center; gap:6px; padding:8px 12px 6px; min-width:0; }
 .sysbar-user-name {
-  flex: 1; min-width: 0; font-size: 12px; color: #CBD5E1;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex:1; min-width:0; max-width:40vw; font-size:12px; color:#94A3B8;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
-.sysbar-user-name::before { content: '👤 '; }
 .sysbar-signout {
-  flex-shrink: 0; padding: 4px 10px; border-radius: 7px; cursor: pointer;
-  border: 1px solid #334155; background: transparent; color: #94A3B8;
-  font-family: var(--wms-font); font-size: 11px; font-weight: 500;
+  flex-shrink:0; padding:3px 8px; border-radius:6px; cursor:pointer;
+  border:0; background:transparent; color:#94A3B8;
+  font-family:var(--wms-font); font-size:12px; font-weight:500;
 }
-.sysbar-signout:hover { background: #1E293B; color: #fff; border-color: #475569; }
+.sysbar-signout:hover { background:#1E293B; color:#fff; }
+.sysbar-signout:focus-visible { outline:2px solid #A5B4FC; outline-offset:-2px; }
 
 /* Placeholder reserves the sidebar's space until wms-shell.js swaps it in,
    so the content column never jumps on load. */
@@ -122,22 +126,28 @@ body {
   .wms-shell { flex-direction:row; }
   .sysbar, [data-wms-shell] { width:240px; flex-shrink:0; height:100vh; }
   /* The menu is taller than a laptop screen; without this the bottom items
-     (ตั้งค่า) sit below the fold and can't be reached. */
-  .sysbar { overflow-y:auto; overflow-x:hidden; scrollbar-width:thin; scrollbar-color:#334155 transparent; }
-  .sysbar-brand { display:block; }
-  .sysbar-brand .sysbar-logo { margin-bottom:8px; }
-  .sysbar-sub { display:block; }
-  .sysmod em { display:inline; }
-  .sysbar-mods { flex-direction:column; overflow:visible; }
-  .sysmod { width:100%; }
-  /* A group is a row with a fold arrow; open, its pages sit inside one tinted block. */
-  .sysgrp { display:block; border-radius:10px; }
-  .sysgrp.open { background:#131C2E; }
-  .sysgrp-items { display:flex; flex-direction:column; gap:2px; padding-bottom:4px; }
-  .sysgrp-head { width:100%; gap:10px; padding:9px 12px; border:0; font-size:14px; }
-  .sysgrp-head em { display:inline; }
-  .sysgrp-n { margin-left:auto; }
-  .sysgrp.here:not(.open) .sysgrp-head { box-shadow:inset 3px 0 0 #6366F1; }
+     (ตั้งค่า) sit below the fold and can't be reached. The menu column grows so
+     the signed-in row rests at the bottom when there is room. */
+  .sysbar { display:flex; flex-direction:column; align-items:stretch;
+            overflow-y:auto; overflow-x:hidden; scrollbar-width:thin; scrollbar-color:#334155 transparent; }
+  .sysbar-brand { padding:16px 20px 14px; }
+  .sysbar-mods { flex:1 0 auto; flex-direction:column; align-items:stretch; gap:1px;
+                 overflow:visible; padding:0 10px 12px; }
+  .sysmod, .sysgrp-head { width:100%; gap:10px; padding:7px 10px; }
+  .sysmod.active { box-shadow:none; }
+  .sysgrp { display:block; }
+  .sysgrp-ic { margin-left:auto; }
+  /* The guide line runs under the middle of the group's icon (10px menu
+     padding + 10px row padding + half of 16px = 28px from the edge). */
+  .sysgrp-items { flex-direction:column; gap:1px; margin:1px 0 6px 18px; padding:0; }
+  .sysgrp-items .sysmod {
+    width:auto; margin-left:-1px; padding:6px 10px 6px 16px;
+    border-left:2px solid transparent; border-radius:0 7px 7px 0; background-clip:padding-box;
+    font-size:13.5px; font-weight:400;
+  }
+  .sysgrp-items .sysmod.active { border-left-color:#818CF8; font-weight:500; }
+  .sysbar-user { padding:10px 14px 12px 20px; border-top:1px solid #1E293B; }
+  .sysbar-user-name { max-width:none; }
 }
 
 @media print {

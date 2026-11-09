@@ -38,12 +38,15 @@ export function groupOf(id) {
  * @param {string} lastGroup the group left open on the page before (wms:menu-group)
  */
 export function sidebarHTML(activeId, root, lastGroup = '') {
+  /* เมนูเรียบ: ชื่อไทยบรรทัดเดียว ชื่ออังกฤษเป็นคำอธิบายตอนชี้ (title)
+     หน้าในหมวดเป็นตัวหนังสือล้วน ไอคอนมีแค่ที่หัวหมวดกับหน้าที่ไม่มีหมวด
+     ไอคอนทุกบรรทัดบวกชื่อสองภาษาคือสิ่งที่ทำให้เมนูเดิมลายตา */
   const link = (m) => {
     const on = m.id === activeId;
     // The active module is not a link — you are already on it.
     const attrs = (on ? 'class="sysmod active" aria-current="page"' : `class="sysmod" href="${root}${m.path}"`) +
-      ` data-mod="${esc(m.id)}"`;
-    return `<a ${attrs}>${icon(m.icon, 'sysmod-ic')}<span>${esc(m.label)}</span><em>${esc(m.labelEn)}</em></a>`;
+      ` data-mod="${esc(m.id)}" title="${esc(m.labelEn)}"`;
+    return `<a ${attrs}>${m.group ? '' : icon(m.icon, 'sysmod-ic')}<span>${esc(m.label)}</span></a>`;
   };
 
   /* โมดูลที่ไม่มีหมวดขึ้นก่อนโดยไม่มีหัวข้อ แล้วค่อยไล่ทีละหมวดตามลำดับใน GROUPS
@@ -65,9 +68,8 @@ export function sidebarHTML(activeId, root, lastGroup = '') {
     const id = `sysgrp-${esc(g.id)}`;
     parts.push(
       `<div class="sysgrp${on ? ' open' : ''}${here ? ' here' : ''}" data-grp="${esc(g.id)}">` +
-        `<button type="button" class="sysgrp-head" aria-expanded="${on}" aria-controls="${id}">` +
-        `${icon('chevronRight', 'sysgrp-ic')}<span>${esc(g.label)}</span><em>${esc(g.labelEn)}</em>` +
-        `<b class="sysgrp-n" aria-label="${inGroup.length} หน้า">${inGroup.length}</b></button>` +
+        `<button type="button" class="sysgrp-head" aria-expanded="${on}" aria-controls="${id}" title="${esc(g.labelEn)}">` +
+        `${icon(g.icon, 'sysgrp-gi')}<span>${esc(g.label)}</span>${icon('chevronRight', 'sysgrp-ic')}</button>` +
         `<div class="sysgrp-items" id="${id}"${on ? '' : ' hidden'}>${inGroup.map(link).join('')}</div>` +
       '</div>',
     );
@@ -84,12 +86,9 @@ export function sidebarHTML(activeId, root, lastGroup = '') {
     : '';
 
   return `<aside class="sysbar">
-  <div class="sysbar-brand">
-    <img class="sysbar-logo" src="${root}${BRAND.logo}" alt="" width="32" height="32">
-    <div class="sysbar-titles">
-      <div class="sysbar-title">${esc(BRAND.name)} <span class="sysbar-by">${esc(BRAND.by)}</span></div>
-      <div class="sysbar-sub">${esc(BRAND.sub)}</div>
-    </div>
+  <div class="sysbar-brand" title="${esc(`${BRAND.full} — ${BRAND.sub}`)}">
+    <img class="sysbar-logo" src="${root}${BRAND.logo}" alt="" width="26" height="26">
+    <div class="sysbar-title">${esc(BRAND.name)} <span class="sysbar-by">${esc(BRAND.by)}</span></div>
   </div>
   <nav class="sysbar-mods">
     ${mods}
