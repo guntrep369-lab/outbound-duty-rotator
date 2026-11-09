@@ -415,18 +415,22 @@
   }
 
   /**
-   * จำนวนที่พิมพ์ คูณได้ เช่น "4×6×3" = 72 (กองที่เรียงเป็นแถว × ชั้น) · รับ x X * แทน × ได้ ตัดจุลภาค
-   * ผิดรูป (ว่าง, ตัวคูณว่าง, ตัวอักษรอื่น) คืน NaN
+   * จำนวนที่พิมพ์ คูณและบวกได้ เช่น "4×6×3" = 72 (แถว × ชั้น), "4×6×3+5" = 77 (บวกเศษ) คูณก่อนบวก
+   * รับ x X * แทน × ได้ ตัดจุลภาค · ผิดรูป (ว่าง, เครื่องหมายไม่มีตัวเลขข้าง ๆ, ตัวอักษรอื่น) คืน NaN
    */
   function qtyOf(v) {
     var t = String(v == null ? '' : v).replace(/[,\s]/g, '');
     if (!t) return NaN;
-    var parts = t.split(/[×xX*]/), out = 1;
-    for (var i = 0; i < parts.length; i++) {
-      if (!/^(\d+\.?\d*|\.\d+)$/.test(parts[i])) return NaN;
-      out *= Number(parts[i]);
+    var terms = t.split('+'), sum = 0;
+    for (var i = 0; i < terms.length; i++) {
+      var parts = terms[i].split(/[×xX*]/), prod = 1;
+      for (var j = 0; j < parts.length; j++) {
+        if (!/^(\d+\.?\d*|\.\d+)$/.test(parts[j])) return NaN;
+        prod *= Number(parts[j]);
+      }
+      sum += prod;
     }
-    return round3(out);
+    return round3(sum);
   }
 
   /** PO ที่เคยรับ SKU นี้ตามยอดตั้งต้น (pos แบบเก่าที่ไม่มีรายการ SKU = ไม่มี) */

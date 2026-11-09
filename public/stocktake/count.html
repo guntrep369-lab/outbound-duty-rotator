@@ -216,6 +216,10 @@ button,input{font-family:inherit}
   color:var(--wms-text);touch-action:manipulation}
 .ct-key.fn{background:#CBD5E1;font-size:17px}
 .ct-key.go{grid-row:span 2;background:var(--wms-primary);box-shadow:0 1px 0 #3730A3;font-size:17px;font-weight:700;color:#fff}
+.ct-key.go.one{grid-row:auto}
+.ct-btn.ct-nudge{animation:ct-nudge .8s ease-in-out 2}
+@keyframes ct-nudge{50%{box-shadow:0 0 0 7px rgba(99,102,241,.28);transform:scale(1.02)}}
+.ct-key.op{font-size:26px;font-weight:700}
 .ct-key:disabled{opacity:.35}
 .ct-key.down{background:#C7D2FE;transform:scale(.94)}
 .ct-key.go.down{background:var(--wms-primary-dark)}
@@ -1054,28 +1058,35 @@ let PAD_TAP = 0;               // เวลาที่แตะแป้นล�
 
 const padMode = (id) => (PAD ? 'none' : id === 'fQty' ? 'decimal' : 'numeric');
 const padSwText = () => (PAD ? '⌨ ใช้คีย์บอร์ดมือถือ' : '🔢 ใช้แป้นตัวเลข');
-/** ใต้ช่องจำนวน: พิมพ์แบบคูณอยู่ บอกผลคูณ */
+/** ใต้ช่องจำนวน: พิมพ์แบบคูณ / บวกอยู่ บอกผลรวม */
 function qtyHint() {
-  if (!/[×xX*]/.test(FORM.qty)) return '';
+  if (!/[×xX*+]/.test(FORM.qty)) return '';
   const q = ST.qtyOf(FORM.qty);
   return q > 0 ? `= ${f(q)}` : '';
 }
 
 function padHTML(id) {
   const qty = id === 'fQty';
-  const go = qty ? (EDIT ? 'บันทึก ✓' : 'เพิ่มกอง ✓') : 'ถัดไป ›';
+  const go = qty ? 'เสร็จ ✓' : 'ถัดไป ›';
   const k = (v, cls, label, aria, off) => `<button type="button" tabindex="-1" class="ct-key ${cls}" data-key="${esc(v)}" aria-label="${esc(aria || label || v)}"${off ? ' disabled' : ''}>${label || esc(v)}</button>`;
+  /* ช่องจำนวนมี × กับ + (แถว × ชั้น + เศษ) ปุ่มถัดไปเหลือช่องเดียวมุมขวาล่าง · LOT / PO มีปุ่มล้างแทน */
+  const keys = qty
+    ? `${k('1', '')}${k('2', '')}${k('3', '')}${k('bs', 'fn', '⌫', 'ลบ')}` +
+      `${k('4', '')}${k('5', '')}${k('6', '')}${k('×', 'fn op', '×', 'คูณ')}` +
+      `${k('7', '')}${k('8', '')}${k('9', '')}${k('+', 'fn op', '+', 'บวก')}` +
+      `${k('kb', 'fn', '⌨', 'ใช้คีย์บอร์ดมือถือ')}${k('0', '')}${k('.', 'fn', '.', 'จุด')}${k('go', 'go one', go)}`
+    : `${k('1', '')}${k('2', '')}${k('3', '')}${k('bs', 'fn', '⌫', 'ลบ')}` +
+      `${k('4', '')}${k('5', '')}${k('6', '')}${k('clr', 'fn', 'ล้าง', 'ล้างช่องนี้')}` +
+      `${k('7', '')}${k('8', '')}${k('9', '')}${k('go', 'go', go)}` +
+      `${k('kb', 'fn', '⌨', 'ใช้คีย์บอร์ดมือถือ')}${k('0', '')}${k('.', 'fn', '.', 'จุด', true)}`;
   return `<div class="bar"><span class="lb">${PAD_F[id]}</span><div class="chips" id="padChips">${padChips(id)}</div>` +
     `<button type="button" tabindex="-1" class="hide" data-key="hide" aria-label="ซ่อนแป้น">▾</button></div>` +
-    `<div class="ct-keys">${k('1', '')}${k('2', '')}${k('3', '')}${k('bs', 'fn', '⌫', 'ลบ')}` +
-    `${k('4', '')}${k('5', '')}${k('6', '')}${qty ? k('×', 'fn', '×', 'คูณ') : k('clr', 'fn', 'ล้าง', 'ล้างช่องนี้')}` +
-    `${k('7', '')}${k('8', '')}${k('9', '')}${k('go', 'go', go)}` +
-    `${k('kb', 'fn', '⌨', 'ใช้คีย์บอร์ดมือถือ')}${k('0', '')}${k('.', 'fn', '.', 'จุด', !qty)}</div>`;
+    `<div class="ct-keys">${keys}</div>`;
 }
 
 /** ปุ่มเลือกบนแป้น: PO ที่เคยรับ SKU นี้ / LOT ของ PO นี้ ตัดตามที่พิมพ์ไปแล้ว + 0 ไม่มีป้าย */
 function padChips(id) {
-  if (id === 'fQty') return '<span class="tip">นับเป็นแถว × ชั้นได้ เช่น 4 × 6 × 3</span>';
+  if (id === 'fQty') return '<span class="tip">แถว × ชั้น + เศษ เช่น 4×6×3+5</span>';
   const typed = String(id === 'fPo' ? FORM.po : FORM.lot).trim();
   const list = (id === 'fPo' ? ST.poChoices(RD.pos, RD.skus, FORM.sku, FORM.lot) : ST.lotChoices(RD.pos, RD.skus, FORM.sku, FORM.po).map(l => [l, '']))
     .filter(c => !typed || c[0].startsWith(typed)).slice(0, 8);
@@ -1126,7 +1137,7 @@ function padKey(k) {
   if (k === 'bs') { if (s === e && s > 0) s--; v = v.slice(0, s) + v.slice(e); }
   else if (k === 'clr') { v = ''; s = 0; }
   else {
-    if (k === '×' && (!v.slice(0, s) || /[×.]$/.test(v.slice(0, s)))) return;   // คูณต้องมีตัวเลขข้างหน้า
+    if ((k === '×' || k === '+') && (!v.slice(0, s) || /[×+.]$/.test(v.slice(0, s)))) return;   // คูณ / บวกต้องมีตัวเลขข้างหน้า
     v = v.slice(0, s) + k + v.slice(e); s += k.length;
   }
   el.value = v;
@@ -1134,11 +1145,22 @@ function padKey(k) {
   el.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-/** ถัดไป: LOT → PO → จำนวน → เพิ่มกอง (แก้กองอยู่ = บันทึก) */
+/**
+ * ถัดไป: LOT → PO → จำนวน · ช่องจำนวนกด "เสร็จ" = เก็บแป้นลง ยังไม่บันทึก
+ * ให้คนนับดูตัวเลขครบแล้วกด "+ เพิ่มกอง" / "บันทึกที่แก้" เอง ปุ่มนั้นกะพริบบอกตำแหน่ง
+ */
 function padGo() {
   const i = PAD_NEXT.indexOf(PADF);
   if (i >= 0 && i < PAD_NEXT.length - 1) { const n = $(PAD_NEXT[i + 1]); if (n) n.focus(); return; }
-  EDIT ? saveEdit() : addPile();
+  const el = $(PADF);
+  padHide();
+  if (el) el.blur();
+  const b = document.querySelector('[data-act="add"], [data-act="save-edit"]');
+  if (!b) return;
+  const bar = document.querySelector('.ct-bottom');
+  const r = b.getBoundingClientRect(), low = innerHeight - (bar ? bar.offsetHeight : 0) - 12;
+  if (r.bottom > low) window.scrollBy(0, r.bottom - low);
+  if (!STILL) { b.classList.remove('ct-nudge'); void b.offsetWidth; b.classList.add('ct-nudge'); }
 }
 
 (() => {
