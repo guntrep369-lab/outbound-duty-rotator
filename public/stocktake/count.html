@@ -195,6 +195,34 @@ button,input{font-family:inherit}
   animation:ct-fall var(--d) cubic-bezier(.35,.55,.6,1) var(--t) both}
 .ct-lochead .nm{position:relative;overflow:hidden}
 
+/* ── แป้นตัวเลขของเราเอง: เด้งขึ้นแทนคีย์บอร์ดมือถือตอนแตะช่อง LOT / PO / จำนวน แตะที่อื่นหุบลง ── */
+.ct-pad{position:fixed;left:0;right:0;bottom:0;z-index:6;padding:6px 8px calc(8px + env(safe-area-inset-bottom));
+  background:#E2E8F0;border-top:1px solid var(--wms-border2);box-shadow:0 -10px 28px rgba(15,23,42,.14);
+  transform:translateY(105%);visibility:hidden;transition:transform .22s cubic-bezier(.2,.8,.2,1),visibility 0s .22s;
+  user-select:none;-webkit-user-select:none}
+.ct-pad.on{transform:none;visibility:visible;transition:transform .22s cubic-bezier(.2,.8,.2,1)}
+.ct-pad .bar{display:flex;align-items:center;gap:6px;min-height:40px;margin-bottom:6px}
+.ct-pad .lb{flex:none;padding:0 4px;font-size:12.5px;font-weight:700;color:var(--wms-muted)}
+.ct-pad .chips{flex:1;min-width:0;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;touch-action:pan-x}
+.ct-pad .chips::-webkit-scrollbar{display:none}
+.ct-pad .chip{flex:none;min-height:36px;padding:0 12px;border-radius:999px;border:1px solid #C7D2FE;background:#fff;
+  font-family:inherit;font-size:15px;font-weight:700;color:var(--wms-primary-dark);white-space:nowrap}
+.ct-pad .chip small{margin-left:5px;font-size:11.5px;font-weight:400;color:var(--wms-muted)}
+.ct-pad .chip.z{border-color:#FDE68A;color:#92400E}
+.ct-pad .tip{font-size:12.5px;color:var(--wms-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ct-pad .hide{flex:none;min-width:48px;min-height:36px;border:0;border-radius:9px;background:#CBD5E1;font-size:16px;color:var(--wms-text)}
+.ct-keys{display:grid;grid-template-columns:repeat(4,1fr);grid-auto-rows:54px;gap:6px}
+.ct-key{border:0;border-radius:10px;background:#fff;box-shadow:0 1px 0 #94A3B8;font-family:inherit;font-size:24px;font-weight:600;
+  color:var(--wms-text);touch-action:manipulation}
+.ct-key.fn{background:#CBD5E1;font-size:17px}
+.ct-key.go{grid-row:span 2;background:var(--wms-primary);box-shadow:0 1px 0 #3730A3;font-size:17px;font-weight:700;color:#fff}
+.ct-key:disabled{opacity:.35}
+.ct-key.down{background:#C7D2FE;transform:scale(.94)}
+.ct-key.go.down{background:var(--wms-primary-dark)}
+body.pad-on .ct-main{padding-bottom:380px}
+.ct-form .tt{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ct-padsw{border:0;background:none;padding:2px 0;font-family:inherit;font-size:12.5px;font-weight:600;color:var(--wms-primary);cursor:pointer}
+
 /* เข้าหน้าใหม่เท่านั้นที่ขยับ วาดซ้ำในหน้าเดิม (ดึงข้อมูลทุกนาที แตะเลือกชื่อ) ไม่ขยับ
    up = เปิดลิงก์ / เริ่มนับ · fwd = เข้าโล (สไลด์จากขวา + แสงสแกนผ่านชื่อโล) · back = กลับรายการ */
 @media (prefers-reduced-motion:no-preference){
@@ -239,6 +267,7 @@ button,input{font-family:inherit}
 <header class="ct-head"><div class="ct-top" id="top"></div><div class="ct-prog" aria-hidden="true"><i id="progBar"></i></div></header>
 <main class="ct-main" id="main"></main>
 <div id="bottom"></div>
+<div class="ct-pad" id="pad" aria-hidden="true"></div>
 
 <script src="../wms-gas.js"></script>
 <script src="../wms-stocktake.js"></script>
@@ -273,7 +302,7 @@ const BELT = `<span class="wms-busy-belt" aria-hidden="true"><i></i><i></i><i></
 const RING_C = 169.65;    // เส้นรอบวงของวงแหวน r = 27
 
 /* ทุกอย่างของหน้านี้อยู่ในเครื่อง ไม่ไปปนกับค่าของหน้าอื่น และไม่ถูกสำรองไปเครื่องอื่น (WmsSettings.SKIP) */
-const K = { cfg: 'wms:st:cfg', me: 'wms:st:me', dev: 'wms:st:dev', mine: 'wms:st:mine', rd: 'wms:st:rd' };
+const K = { cfg: 'wms:st:cfg', me: 'wms:st:me', dev: 'wms:st:dev', mine: 'wms:st:mine', rd: 'wms:st:rd', pad: 'wms:st:pad' };
 const outKey = () => 'wms:st:out:' + CFG.round;
 function load(k, def) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch (e) { return def; } }
 function save(k, v) {
@@ -524,6 +553,8 @@ function paintMain() {
   ['ct-go-up', 'ct-go-fwd', 'ct-go-back'].forEach(c => box.classList.remove(c));
   box.innerHTML = m; box._html = m;
   bot.innerHTML = b; bot._html = b;
+  /* ช่องที่แป้นพิมพ์ให้ถูกวาดใหม่ไปแล้ว (เพิ่มกอง / เปลี่ยนโล) หุบแป้น */
+  if (PADF && !PAD_F[(document.activeElement || {}).id]) padHide();
   if (go) {
     void box.offsetWidth;
     box.classList.add('ct-go-' + go);
@@ -707,17 +738,18 @@ function locView() {
     <div id="locWarn">${locWarn()}</div>
     <div class="ct-piles" id="piles">${pilesHTML()}</div>
     <div class="ct-form ${editing ? 'edit' : ''}">
-      <div class="tt">${editing ? 'แก้กองนี้' : piles.length ? 'เพิ่มกองถัดไป' : 'กองแรก'}</div>
+      <div class="tt"><span>${editing ? 'แก้กองนี้' : piles.length ? 'เพิ่มกองถัดไป' : 'กองแรก'}</span><button type="button" class="ct-padsw" id="padSw" data-act="pad">${padSwText()}</button></div>
       <label class="ct-lb" for="fSku">SKU</label>
       <input class="ct-in" id="fSku" value="${esc(FORM.sku)}" autocapitalize="characters" autocomplete="off" spellcheck="false" enterkeyhint="next" placeholder="พิมพ์รหัสหรือชื่อสินค้า">
       <div id="skuHint" class="ct-hint"></div><div id="skuSug"></div>
       <div class="ct-grid">
-        <div><label class="ct-lb" for="fLot">LOT</label><input class="ct-in" id="fLot" value="${esc(FORM.lot)}" inputmode="numeric" autocomplete="off" enterkeyhint="next"></div>
-        <div><label class="ct-lb" for="fPo">PO</label><input class="ct-in" id="fPo" value="${esc(FORM.po)}" inputmode="numeric" autocomplete="off" enterkeyhint="next"></div>
+        <div><label class="ct-lb" for="fLot">LOT</label><input class="ct-in" id="fLot" value="${esc(FORM.lot)}" inputmode="${padMode('fLot')}" autocomplete="off" enterkeyhint="next"></div>
+        <div><label class="ct-lb" for="fPo">PO</label><input class="ct-in" id="fPo" value="${esc(FORM.po)}" inputmode="${padMode('fPo')}" autocomplete="off" enterkeyhint="next"></div>
       </div>
       <div id="poHint" class="ct-hint"></div><div id="poSug"></div>
       <label class="ct-lb" for="fQty">จำนวน</label>
-      <input class="ct-in qty" id="fQty" value="${esc(FORM.qty)}" inputmode="decimal" autocomplete="off" enterkeyhint="done" placeholder="0">
+      <input class="ct-in qty" id="fQty" value="${esc(FORM.qty)}" inputmode="${padMode('fQty')}" autocomplete="off" enterkeyhint="done" placeholder="0">
+      <div id="qtyHint" class="ct-hint ok">${qtyHint()}</div>
       ${editing
         ? `<div class="ct-row2"><button class="ct-btn p" data-act="save-edit">บันทึกที่แก้</button><button class="ct-btn" data-act="cancel-edit">ยกเลิก</button></div>
            <button class="ct-btn r w" style="margin-top:8px" data-act="del">ลบกองนี้</button>`
@@ -818,7 +850,7 @@ function oops(id) {
 /** ค่าที่กรอก ผ่านแล้วคืนฟิลด์ของแถว ไม่ผ่านคืน null (บอกเหตุผลแล้ว) */
 function readForm() {
   const sku = ST.up(FORM.sku), lot = String(FORM.lot).trim(), po = String(FORM.po).trim();
-  const qty = Number(String(FORM.qty).replace(/,/g, ''));
+  const qty = ST.qtyOf(FORM.qty);     // 4×6×3 = 72
   if (!sku) { alert('ใส่ SKU ก่อน'); oops('fSku'); return null; }
   if (!(qty > 0) || !isFinite(qty)) { alert('ใส่จำนวนที่นับได้ (มากกว่า 0)\nถ้าโลว่าง กด "โลนี้ว่าง"'); oops('fQty'); return null; }
   const ex = ST.skuExact(RD.skus, sku);
@@ -842,7 +874,7 @@ function addPile(stay) {
   if (same && !confirm(`มีกอง ${v.sku} LOT ${v.lot || '-'} PO ${v.po || '-'} ในโลนี้แล้ว (${f(same.qty)})\nเพิ่มเป็นอีกกองแยก? ยอดจะรวมกัน`)) return false;
   const empty = rows.find(r => r.type === 'ว่าง');
   if (empty) push('ยกเลิก', { ref: empty.uid });
-  const from = rectOf('[data-act="add"]');
+  const from = rectOf(PADF ? '#pad [data-key="go"]' : '[data-act="add"]');
   const it = push('นับ', v);
   FORM = { sku: '', long: '', lot: '', po: '', qty: '' };
   if (stay === false) return true;
@@ -902,7 +934,7 @@ function editPile(uid) {
 function saveEdit(stay) {
   const v = readForm();
   if (!v) return false;
-  const from = rectOf('[data-act="save-edit"]');
+  const from = rectOf(PADF ? '#pad [data-key="go"]' : '[data-act="save-edit"]');
   const it = push('นับ', { ...v, ref: EDIT });
   EDIT = ''; FORM = { sku: '', long: '', lot: '', po: '', qty: '' };
   if (stay !== false) { FRESH = it.uid; paint(); hints(); landFx(from, it); }
@@ -1009,6 +1041,155 @@ document.addEventListener('pointerdown', (e) => {
   setTimeout(() => w.remove(), 600);
 }, { passive: true });
 
+/* ── แป้นตัวเลขของเราเอง ───────────────────────────────────────────────
+   ช่อง LOT / PO / จำนวน ตั้ง inputmode="none" คีย์บอร์ดมือถือไม่ขึ้น แป้นนี้เด้งขึ้นแทนตรงที่เดิม
+   แตะที่อื่น / ▾ = หุบ · ⌨ หรือปุ่มบนฟอร์ม = กลับไปใช้คีย์บอร์ดมือถือ (จำไว้ในเครื่อง)
+   ปุ่มบนแป้นทำงานตอนนิ้วแตะ (pointerdown) และกันไม่ให้ช่องที่พิมพ์อยู่หลุดโฟกัส ── */
+
+const PAD_F = { fLot: 'LOT', fPo: 'PO', fQty: 'จำนวน' };
+const PAD_NEXT = ['fLot', 'fPo', 'fQty'];
+let PAD = load(K.pad, true);   // ใช้แป้นของเราไหม
+let PADF = '';                 // ช่องที่แป้นกำลังพิมพ์ให้
+let PAD_TAP = 0;               // เวลาที่แตะแป้นล่าสุด (ช่องหลุดโฟกัสเพราะแตะแป้น = ดึงกลับ ไม่หุบ)
+
+const padMode = (id) => (PAD ? 'none' : id === 'fQty' ? 'decimal' : 'numeric');
+const padSwText = () => (PAD ? '⌨ ใช้คีย์บอร์ดมือถือ' : '🔢 ใช้แป้นตัวเลข');
+/** ใต้ช่องจำนวน: พิมพ์แบบคูณอยู่ บอกผลคูณ */
+function qtyHint() {
+  if (!/[×xX*]/.test(FORM.qty)) return '';
+  const q = ST.qtyOf(FORM.qty);
+  return q > 0 ? `= ${f(q)}` : '';
+}
+
+function padHTML(id) {
+  const qty = id === 'fQty';
+  const go = qty ? (EDIT ? 'บันทึก ✓' : 'เพิ่มกอง ✓') : 'ถัดไป ›';
+  const k = (v, cls, label, aria, off) => `<button type="button" tabindex="-1" class="ct-key ${cls}" data-key="${esc(v)}" aria-label="${esc(aria || label || v)}"${off ? ' disabled' : ''}>${label || esc(v)}</button>`;
+  return `<div class="bar"><span class="lb">${PAD_F[id]}</span><div class="chips" id="padChips">${padChips(id)}</div>` +
+    `<button type="button" tabindex="-1" class="hide" data-key="hide" aria-label="ซ่อนแป้น">▾</button></div>` +
+    `<div class="ct-keys">${k('1', '')}${k('2', '')}${k('3', '')}${k('bs', 'fn', '⌫', 'ลบ')}` +
+    `${k('4', '')}${k('5', '')}${k('6', '')}${qty ? k('×', 'fn', '×', 'คูณ') : k('clr', 'fn', 'ล้าง', 'ล้างช่องนี้')}` +
+    `${k('7', '')}${k('8', '')}${k('9', '')}${k('go', 'go', go)}` +
+    `${k('kb', 'fn', '⌨', 'ใช้คีย์บอร์ดมือถือ')}${k('0', '')}${k('.', 'fn', '.', 'จุด', !qty)}</div>`;
+}
+
+/** ปุ่มเลือกบนแป้น: PO ที่เคยรับ SKU นี้ / LOT ของ PO นี้ ตัดตามที่พิมพ์ไปแล้ว + 0 ไม่มีป้าย */
+function padChips(id) {
+  if (id === 'fQty') return '<span class="tip">นับเป็นแถว × ชั้นได้ เช่น 4 × 6 × 3</span>';
+  const typed = String(id === 'fPo' ? FORM.po : FORM.lot).trim();
+  const list = (id === 'fPo' ? ST.poChoices(RD.pos, RD.skus, FORM.sku, FORM.lot) : ST.lotChoices(RD.pos, RD.skus, FORM.sku, FORM.po).map(l => [l, '']))
+    .filter(c => !typed || c[0].startsWith(typed)).slice(0, 8);
+  return list.map(c => `<button type="button" tabindex="-1" class="chip" data-chip="${esc(c[0])}">${esc(id === 'fLot' ? 'LOT ' + c[0] : c[0])}${c[1] ? `<small>${esc(c[1])}</small>` : ''}</button>`).join('') +
+    '<button type="button" tabindex="-1" class="chip z" data-chip="0">0 ไม่มีป้าย</button>';
+}
+function padChipsNow() { const c = $('padChips'); if (c && PADF) c.innerHTML = padChips(PADF); }
+
+function padOpen(id) {
+  const pad = $('pad');
+  if (PADF !== id || !pad.classList.contains('on')) pad.innerHTML = padHTML(id);
+  PADF = id;
+  pad.classList.add('on');
+  pad.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('pad-on');
+  /* ให้ช่องที่พิมพ์ (และคำเตือนใต้ช่อง) อยู่เหนือแป้น */
+  const el = $(id === 'fQty' ? 'qtyHint' : 'poHint') || $(id);
+  if (!el) return;
+  const r = el.getBoundingClientRect(), top = innerHeight - pad.offsetHeight - 12;
+  if (r.bottom > top) window.scrollBy(0, r.bottom - top);   // เลื่อนทันทีแบบคีย์บอร์ดมือถือ (แบบนุ่มบางเครื่องไม่เลื่อนเลย)
+}
+function padHide() {
+  const pad = $('pad');
+  PADF = '';
+  pad.classList.remove('on');
+  pad.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('pad-on');
+}
+
+/** เปิด/ปิดแป้นของเรา ช่องที่พิมพ์อยู่สลับไปใช้คีย์บอร์ดมือถือทันที */
+function setPad(on) {
+  PAD = on;
+  save(K.pad, on);
+  const cur = PADF;
+  Object.keys(PAD_F).forEach(id => { const el = $(id); if (el) el.setAttribute('inputmode', padMode(id)); });
+  const sw = $('padSw');
+  if (sw) sw.textContent = padSwText();
+  if (!on && cur) { padHide(); const el = $(cur); if (el) { el.blur(); el.focus(); } }
+}
+
+function padKey(k) {
+  const el = $(PADF);
+  if (!el) { padHide(); return; }
+  if (k === 'hide') { padHide(); el.blur(); return; }
+  if (k === 'go') { padGo(); return; }
+  if (k === 'kb') { setPad(false); return; }
+  let v = el.value, s = el.selectionStart ?? v.length, e = el.selectionEnd ?? v.length;
+  if (k === 'bs') { if (s === e && s > 0) s--; v = v.slice(0, s) + v.slice(e); }
+  else if (k === 'clr') { v = ''; s = 0; }
+  else {
+    if (k === '×' && (!v.slice(0, s) || /[×.]$/.test(v.slice(0, s)))) return;   // คูณต้องมีตัวเลขข้างหน้า
+    v = v.slice(0, s) + k + v.slice(e); s += k.length;
+  }
+  el.value = v;
+  try { el.setSelectionRange(s, s); } catch (x) { /* บางเบราว์เซอร์ไม่ให้ตั้งเคอร์เซอร์ ไม่เป็นไร */ }
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/** ถัดไป: LOT → PO → จำนวน → เพิ่มกอง (แก้กองอยู่ = บันทึก) */
+function padGo() {
+  const i = PAD_NEXT.indexOf(PADF);
+  if (i >= 0 && i < PAD_NEXT.length - 1) { const n = $(PAD_NEXT[i + 1]); if (n) n.focus(); return; }
+  EDIT ? saveEdit() : addPile();
+}
+
+(() => {
+  const pad = $('pad');
+  let rep = 0, wait = 0;
+  const stop = () => { clearTimeout(wait); clearInterval(rep); };
+  pad.addEventListener('pointerdown', (e) => {
+    e.preventDefault();             // ช่องที่พิมพ์อยู่ไม่หลุดโฟกัส
+    PAD_TAP = Date.now();
+    const b = e.target.closest('.ct-key, .hide');
+    if (!b || b.disabled) return;
+    b.classList.add('down');
+    setTimeout(() => b.classList.remove('down'), 110);
+    buzz(6);
+    padKey(b.dataset.key);
+    /* กด ⌫ ค้าง = ลบต่อเนื่อง */
+    if (b.dataset.key === 'bs') { stop(); wait = setTimeout(() => { rep = setInterval(() => padKey('bs'), 70); }, 420); }
+  });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => pad.addEventListener(t, stop));
+  pad.addEventListener('mousedown', (e) => e.preventDefault());
+  /* ปุ่มเลือก PO / LOT ทำงานตอนปล่อยนิ้ว (click) เลื่อนแถวปุ่มไปข้าง ๆ จะได้ไม่เลือกพลาด */
+  pad.addEventListener('click', (e) => {
+    const c = e.target.closest('.chip');
+    if (!c || !PADF) return;
+    const el = $(PADF);
+    if (!el) return;
+    el.value = c.dataset.chip;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    buzz(8);
+    padGo();
+  });
+})();
+
+document.addEventListener('focusin', (e) => {
+  if (PAD && PAD_F[e.target.id]) padOpen(e.target.id);
+  else if (PADF && !e.target.closest('#pad')) padHide();
+});
+/* แตะช่องที่โฟกัสอยู่แล้ว (เช่นหลังกด ▾) ไม่มี focusin ให้เปิดแป้นตรงนี้ */
+document.addEventListener('click', (e) => {
+  if (PAD && !PADF && PAD_F[e.target.id]) padOpen(e.target.id);
+});
+document.addEventListener('focusout', (e) => {
+  if (!PADF || !PAD_F[e.target.id]) return;
+  setTimeout(() => {
+    const a = document.activeElement;
+    if (a && PAD_F[a.id]) return;                                   // ไปช่องถัดไปบนแป้น
+    if (Date.now() - PAD_TAP < 400 && $(PADF)) { $(PADF).focus({ preventScroll: true }); return; }   // แตะโดนแป้น
+    padHide();
+  }, 0);
+});
+
 /* ── ปุ่มและช่อง ─────────────────────────────────────────────────────── */
 
 document.addEventListener('click', (e) => {
@@ -1062,15 +1243,16 @@ document.addEventListener('click', (e) => {
     case 'unempty': { const em = atLoc(LOC).find(r => r.type === 'ว่าง'); if (em && confirm('ยกเลิก "ว่าง" ของโลนี้?')) { push('ยกเลิก', { ref: em.uid }); paint(); hints(); } break; }
     case 'next': doneLoc(); break;
     case 'rej-clear': BOX.rej = []; save(outKey(), BOX); paint(); break;
+    case 'pad': setPad(!PAD); break;
   }
 });
 
 document.addEventListener('input', (e) => {
   const id = e.target.id;
   if (id === 'fSku') { FORM.sku = e.target.value; hints(); }
-  else if (id === 'fLot') { FORM.lot = e.target.value; hints(); }
-  else if (id === 'fPo') { FORM.po = e.target.value; hints(); }
-  else if (id === 'fQty') FORM.qty = e.target.value;
+  else if (id === 'fLot') { FORM.lot = e.target.value; hints(); padChipsNow(); }
+  else if (id === 'fPo') { FORM.po = e.target.value; hints(); padChipsNow(); }
+  else if (id === 'fQty') { FORM.qty = e.target.value; const h = $('qtyHint'); if (h) h.textContent = qtyHint(); }
   else if (id === 'locQ') {
     Q = e.target.value;
     const pos = e.target.selectionStart;

@@ -1063,3 +1063,41 @@ describe('count.html — งานเบื้องหลังไม่วา�
     expect(src).not.toMatch(/\$\('main'\)/);
   });
 });
+
+/* แป้นตัวเลขของหน้ามือถือ: ช่องจำนวนคูณได้ และปุ่มเลือก PO / LOT จากยอดตั้งต้น */
+describe('แป้นตัวเลข — คูณจำนวน และปุ่มเลือก PO / LOT', () => {
+  it('qtyOf: ตัวเลขธรรมดา คูณ จุลภาค และค่าที่ผิดรูป', () => {
+    expect(S.qtyOf('12')).toBe(12);
+    expect(S.qtyOf('1,250')).toBe(1250);
+    expect(S.qtyOf('4×6×3')).toBe(72);
+    expect(S.qtyOf('4x6')).toBe(24);
+    expect(S.qtyOf('2.5*4')).toBe(10);
+    expect(S.qtyOf(' 3 × 0.5 ')).toBe(1.5);
+    for (const bad of ['', '×', '4×', '×4', '4××6', 'abc', '4×a', '1.2.3']) expect(S.qtyOf(bad), bad).toBeNaN();
+  });
+  it('formDirty: แก้กองแล้วพิมพ์จำนวนเป็นตัวคูณที่ได้ค่าเดิม ไม่นับว่าแก้', () => {
+    const pile = { sku: 'AAA001', long: 'AAA0000000001', lot: '9', po: '9900000001', qty: 24 };
+    expect(S.formDirty({ sku: 'AAA001', lot: '9', po: '9900000001', qty: '4×6' }, pile)).toBe(false);
+    expect(S.formDirty({ sku: 'AAA001', lot: '9', po: '9900000001', qty: '4×7' }, pile)).toBe(true);
+  });
+  const skus = [['AAA001', 'AAA0000000001', 'ที่นอนสมมติ'], ['BBB002', 'BBB0000000002', 'ท็อปเปอร์สมมติ']];
+  const pos = [
+    ['9900000001', 'ผู้ผลิต ก สมมติ', ['AAA0000000001'], ['8', '9']],
+    ['9900000002', 'ผู้ผลิต ข สมมติ', ['AAA0000000001', 'BBB0000000002'], ['10']],
+    ['9900000003', 'ผู้ผลิต ค สมมติ', ['BBB0000000002'], ['9']],
+  ];
+  it('poChoices: PO ที่เคยรับ SKU นี้ (พิมพ์ SKU สั้นหรือเต็มก็ได้) ใหม่สุดก่อน ใส่ LOT แล้วเหลือ PO ที่มี LOT นั้น', () => {
+    expect(S.poChoices(pos, skus, 'AAA001', '')).toEqual([['9900000002', 'ผู้ผลิต ข สมมติ'], ['9900000001', 'ผู้ผลิต ก สมมติ']]);
+    expect(S.poChoices(pos, skus, 'aaa0000000001', '').map((p) => p[0])).toEqual(['9900000002', '9900000001']);
+    expect(S.poChoices(pos, skus, 'AAA001', '9').map((p) => p[0])).toEqual(['9900000001']);
+    expect(S.poChoices(pos, skus, 'AAA001', '7').map((p) => p[0]), 'LOT ไม่ตรงสักใบ = ขึ้นทั้งหมด').toEqual(['9900000002', '9900000001']);
+    expect(S.poChoices(pos, skus, '', '')).toEqual([]);
+    expect(S.poChoices([['9900000001', 'ผู้ผลิต ก สมมติ']], skus, 'AAA001', ''), 'ยอดตั้งต้นแบบเก่า').toEqual([]);
+  });
+  it('lotChoices: ใส่ PO แล้ว = LOT ของ PO นั้น · ยังไม่ใส่ = LOT ทุกใบที่เคยรับ SKU นี้ เรียงตัวเลขใหม่สุดก่อน', () => {
+    expect(S.lotChoices(pos, skus, 'AAA001', '9900000001')).toEqual(['9', '8']);
+    expect(S.lotChoices(pos, skus, 'AAA001', '')).toEqual(['10', '9', '8']);
+    expect(S.lotChoices(pos, skus, 'BBB002', '0')).toEqual(['10', '9']);
+    expect(S.lotChoices(pos, skus, 'AAA001', '99'), 'PO ยังพิมพ์ไม่ครบ ใช้ตาม SKU').toEqual(['10', '9', '8']);
+  });
+});

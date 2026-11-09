@@ -411,7 +411,59 @@
     if (!pile) return !!(s(f.sku) || s(f.lot) || s(f.po) || q);
     var k = norm(f.sku);
     return (k !== norm(pile.sku) && k !== norm(pile.long)) || norm(f.lot) !== norm(pile.lot) ||
-      norm(f.po) !== norm(pile.po) || Number(q) !== Number(pile.qty);
+      norm(f.po) !== norm(pile.po) || qtyOf(q) !== Number(pile.qty);
+  }
+
+  /**
+   * จำนวนที่พิมพ์ คูณได้ เช่น "4×6×3" = 72 (กองที่เรียงเป็นแถว × ชั้น) · รับ x X * แทน × ได้ ตัดจุลภาค
+   * ผิดรูป (ว่าง, ตัวคูณว่าง, ตัวอักษรอื่น) คืน NaN
+   */
+  function qtyOf(v) {
+    var t = String(v == null ? '' : v).replace(/[,\s]/g, '');
+    if (!t) return NaN;
+    var parts = t.split(/[×xX*]/), out = 1;
+    for (var i = 0; i < parts.length; i++) {
+      if (!/^(\d+\.?\d*|\.\d+)$/.test(parts[i])) return NaN;
+      out *= Number(parts[i]);
+    }
+    return round3(out);
+  }
+
+  /** PO ที่เคยรับ SKU นี้ตามยอดตั้งต้น (pos แบบเก่าที่ไม่มีรายการ SKU = ไม่มี) */
+  function posOfSku(pos, skus, sku) {
+    var ex = skuExact(skus, sku);
+    var key = (ex ? [norm(ex[0]), norm(ex[1])] : [norm(sku)]).filter(function (k) { return k; });
+    if (!key.length) return [];
+    return (pos || []).filter(function (p) {
+      return Array.isArray(p[2]) && p[2].some(function (h) { return key.indexOf(norm(h)) !== -1; });
+    });
+  }
+
+  var newest = function (a, b) { return String(b).localeCompare(String(a), 'en', { numeric: true }); };
+
+  /**
+   * ปุ่มเลือก PO บนแป้นตัวเลข: PO ที่เคยรับ SKU นี้ ใหม่สุดก่อน → [[PO, Supplier]]
+   * ใส่ LOT แล้วเหลือเฉพาะ PO ที่มี LOT นั้น (ถ้าไม่มีสักใบ ขึ้นทั้งหมด ให้คำเตือนเป็นตัวบอก)
+   */
+  function poChoices(pos, skus, sku, lot) {
+    var list = posOfSku(pos, skus, sku), l = norm(lot);
+    if (l && l !== '0') {
+      var hit = list.filter(function (p) { return (p[3] || []).some(function (x) { return norm(x) === l; }); });
+      if (hit.length) list = hit;
+    }
+    return list.map(function (p) { return [String(p[0]), p[1] || '']; }).sort(function (a, b) { return newest(a[0], b[0]); });
+  }
+
+  /** ปุ่มเลือก LOT: ใส่ PO ที่มีในสมุดแล้ว = LOT ของ PO นั้น · ยังไม่ใส่ = LOT ทุกใบที่เคยรับ SKU นี้ ใหม่สุดก่อน */
+  function lotChoices(pos, skus, sku, po) {
+    var n = norm(po), rows = [];
+    if (n && n !== '0') rows = (pos || []).filter(function (p) { return norm(p[0]) === n && Array.isArray(p[3]); });
+    if (!rows.length) rows = posOfSku(pos, skus, sku);
+    var seen = {}, out = [];
+    rows.forEach(function (p) {
+      (p[3] || []).forEach(function (l) { var k = norm(l); if (k && k !== '0' && !seen[k]) { seen[k] = 1; out.push(String(l)); } });
+    });
+    return out.sort(newest);
   }
 
   /**
@@ -1351,6 +1403,7 @@
     batch: batch, ack: ack, merge: merge,
     teamsOf: teamsOf, teamLocs: teamLocs, progress: progress,
     skuSearch: skuSearch, skuExact: skuExact, poSearch: poSearch, formDirty: formDirty,
+    qtyOf: qtyOf, poChoices: poChoices, lotChoices: lotChoices,
     movesAfter: movesAfter, countLink: countLink, parseLink: parseLink,
   };
 })();
