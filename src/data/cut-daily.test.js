@@ -546,3 +546,39 @@ describe('wms-cut.js — บันทึกการแก้', () => {
     expect(WmsCut.fixState(fx, [mark(KX, 100), { ...mark(KX, 200), act: 'ตรวจแล้วหาย' }], { x: 500 }).by[KX]).toEqual({ state: 'open', back: true });
   });
 });
+
+describe('wms-cut.js — แตกยอดต่างจาก Report เป็นเรื่องปกติกับที่ต้องแก้', () => {
+  const FIX = ['over', 'wrong', 'ghost', 'transferDiff', 'under', 'gap'];
+  const recon = {
+    report: 1000, tx: 940, tr: 1020,
+    parts: [
+      { id: 'nonstock', lines: 3, dx: -30, dt: -30 },
+      { id: 'blankOk', lines: 2, dx: -8, dt: -8 },
+      { id: 'transfer', lines: 1, dx: 0, dt: 40 },
+      { id: 'over', lines: 1, dx: 5, dt: 0 },
+      { id: 'under', lines: 2, dx: -7, dt: 0 },
+      { id: 'wrong', lines: 1, dx: -20, dt: 18 },
+    ],
+  };
+
+  it('ส่วนปกติรวมแบบมีเครื่องหมาย ส่วนต้องแก้นับเป็นชิ้นทั้งขาดและเกิน', () => {
+    const s = WmsCut.diffSplit(recon, FIX);
+    expect(s.tx).toEqual({ all: -60, normal: -38, fix: 32, rest: 0 });
+    expect(s.tr).toEqual({ all: 20, normal: 2, fix: 18, rest: 0 });
+  });
+
+  it('ตัดเกินกับยังไม่ตัดเท่ากันไม่หักล้างกันจนดูเหมือนไม่มีอะไรต้องแก้', () => {
+    const s = WmsCut.diffSplit({ report: 10, tx: 10, tr: 10, parts: [{ id: 'over', dx: 5, dt: 0 }, { id: 'under', dx: -5, dt: 0 }] }, FIX);
+    expect(s.tx).toEqual({ all: 0, normal: 0, fix: 10, rest: 0 });
+  });
+
+  it('ยอดรวมกับที่มาไม่ลงตัว บอกส่วนที่เหลือไว้ ไม่โยนไปรวมกับเรื่องปกติ', () => {
+    const s = WmsCut.diffSplit({ report: 100, tx: 90, tr: 100, parts: [{ id: 'nonstock', dx: -6, dt: 0 }] }, FIX);
+    expect(s.tx).toEqual({ all: -10, normal: -6, fix: 0, rest: -4 });
+  });
+
+  it('ยังไม่มีผลเทียบก็ได้ศูนย์ทั้งหมด ไม่พัง', () => {
+    expect(WmsCut.diffSplit(null, FIX).tx).toEqual({ all: 0, normal: 0, fix: 0, rest: 0 });
+    expect(WmsCut.diffSplit({ report: 5, tx: 5, tr: 4 }, FIX).tr).toEqual({ all: -1, normal: 0, fix: 0, rest: -1 });
+  });
+});

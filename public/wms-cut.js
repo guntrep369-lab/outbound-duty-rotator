@@ -429,6 +429,33 @@
     return { by: by, gone: gone, done: done };
   }
 
+  /**
+   * ยอดที่ระบบตัดต่างจาก Report แยกเป็นสองส่วน คนเห็น "ต่างจาก Report −494" แล้วนึกว่าขาด 494 ชิ้น
+   * ทั้งที่ส่วนใหญ่คือเรื่องปกติ: Report ที่ไม่ต้องตัด (รหัส STR, ยังไม่ส่ง, ยกเลิกก่อนออก) งานโอนย้ายที่ไม่มีใน Report
+   * ตัดนอกช่วง และ TRcloud ปรับยอดคลัง
+   *   all    = ยอดระบบ − Report
+   *   normal = ผลรวมของส่วนปกติ (มีเครื่องหมาย)
+   *   fix    = ชิ้นที่ต้องแก้ นับทั้งขาดและเกินเป็นบวก ตัดเกิน 5 กับยังไม่ตัด 5 ไม่ได้แปลว่าไม่มีอะไรต้องแก้
+   *   rest   = ส่วนที่ยังหาที่มาไม่ได้ (ปกติเป็น 0 ไม่ใช่ 0 เมื่อที่มาของยอดไม่ลงตัว)
+   * fixIds คือรหัสถังที่ต้องแก้ (PARTS ที่ fix: true ในหน้าเช็ครายการตัดสต๊อก)
+   */
+  function diffSplit(recon, fixIds) {
+    var out = { tx: { all: 0, normal: 0, fix: 0, rest: 0 }, tr: { all: 0, normal: 0, fix: 0, rest: 0 } };
+    if (!recon) return out;
+    out.tx.all = out.tx.rest = recon.tx - recon.report;
+    out.tr.all = out.tr.rest = recon.tr - recon.report;
+    (recon.parts || []).forEach(function (p) {
+      var bad = fixIds.indexOf(p.id) !== -1;
+      [['tx', +p.dx || 0], ['tr', +p.dt || 0]].forEach(function (s) {
+        var o = out[s[0]];
+        if (bad) o.fix += Math.abs(s[1]);
+        else o.normal += s[1];
+        o.rest -= s[1];
+      });
+    });
+    return out;
+  }
+
   /** ลิงก์เปิดชีตตรงแถวนั้น แบบเดียวกับ WmsTx.rowUrl หน้านี้ไม่ได้โหลด wms-tx.js */
   function rowUrl(sheet, row) {
     if (!sheet || !sheet.url) return '';
@@ -553,7 +580,7 @@
 
   window.WmsCut = {
     LABEL: LABEL, oddOne: oddOne, diffWords: diffWords, reportWords: reportWords, compareDaily: compareDaily,
-    cellIndex: cellIndex, dateWords: dateWords, fixHint: fixHint, rowUrl: rowUrl, fixLists: fixLists,
+    cellIndex: cellIndex, dateWords: dateWords, fixHint: fixHint, rowUrl: rowUrl, fixLists: fixLists, diffSplit: diffSplit,
     fixKey: fixKey, fixState: fixState, rowDiff: rowDiff, exportSheets: exportSheets, trcLines: trcLines, trcSheet: trcSheet,
   };
 })();

@@ -39,6 +39,12 @@
 .tx-stat small{display:block;font-size:12px;color:var(--wms-muted)}
 .tx-stat b{font-size:20px;font-weight:700;color:var(--wms-text);font-variant-numeric:tabular-nums}
 .tx-stat i{display:block;font-style:normal;font-size:12px;color:var(--wms-muted)}
+/* ยอดของแต่ละระบบ: ต่างจาก Report เท่าไร แล้วแตกเป็นเรื่องปกติกับที่ต้องแก้ อ่านแล้วไม่ต้องตีความเลขติดลบเอง */
+.tx-stat .tx-split{display:flex;flex-wrap:wrap;gap:0 10px;margin-top:1px;font-size:12px}
+.tx-stat .tx-split .tx-link{background:none;border:0;padding:0;margin:0;font:inherit;font-size:12px;font-weight:500;color:var(--wms-muted);text-decoration:underline dotted;text-underline-offset:2px;cursor:pointer}
+.tx-stat .tx-split .tx-link:hover{color:var(--wms-text)}
+.tx-stat .tx-split .tx-link.tx-neg{color:#B91C1C}
+.tx-stat .tx-split .tx-neg,.tx-stat .tx-split .tx-ok{font-weight:600}
 /* ปุ่มพับภาพรวมเดือน มีแค่บนมือถือ จอคอมเห็นการ์ดครบอยู่แล้ว */
 .tx-sum-t{display:none;align-items:center;gap:10px;width:100%;min-height:44px;padding:4px 2px;border:0;background:none;
   font-family:var(--wms-font);text-align:left;color:var(--wms-text);cursor:pointer}
@@ -802,13 +808,23 @@ function renderSum() {
   /* ไม่มีชื่อ data-count-key ตั้งใจ ยอดรวมน้อยลงไม่ได้แปลว่าแก้แล้ว จึงไม่กะพริบเขียว */
   const stat = (label, n, sub) => `<div class="tx-stat"><small>${esc(label)}</small><b data-count="${n}">${f(n)}</b><i>${esc(sub)}</i></div>`;
   $('sum').classList.toggle('open', SUM_OPEN);
+  /* ต่างจาก Report แตกเป็นเรื่องปกติกับที่ต้องแก้ ตัวเลขติดลบส่วนใหญ่คือของที่ไม่ต้องตัดอยู่แล้ว */
+  const split = WmsCut.diffSplit(RAW.recon, Object.keys(PARTS).filter(k => PARTS[k].fix));
+  const NORMAL_TIP = 'Report ที่ไม่ต้องตัด (รหัส STR, ยังไม่ส่ง, ขนส่งยกเลิกก่อนของออก) งานโอนย้ายที่ไม่มีใน Report'
+    + ' ตัดนอกช่วงของ Report และ TRcloud ปรับยอดคลัง — กดดูรายละเอียดในแท็บที่มาของยอด';
+  const need = (n) => (n ? `<span class="tx-neg">ต้องแก้ ${f(n)} ชิ้น</span>` : `<span class="tx-ok">ไม่มีที่ต้องแก้</span>`);
+  const sys = (label, n, s) => `<div class="tx-stat"><small>${esc(label)}</small><b data-count="${n}">${f(n)}</b>
+      <i>ต่างจาก Report ${plus(s.all) || '0'}</i>
+      <span class="tx-split">${s.normal ? `<button class="tx-link" data-recon title="${esc(NORMAL_TIP)}">เรื่องปกติ ${plus(s.normal)}</button>` : ''}${need(s.fix)}${s.rest ? `<button class="tx-link tx-neg" data-recon title="ยอดรวมกับที่มาที่แยกได้ไม่ลงตัว ดูในแท็บที่มาของยอด">หาที่มาไม่ได้ ${plus(s.rest)}</button>` : ''}</span></div>`;
+  const m = RAW.info.matched;
+  const pct = t.report ? Math.floor((m.qty / t.report) * 1000) / 10 : 0;
   $('sum').innerHTML =
     `<button class="tx-sum-t" data-sum aria-expanded="${SUM_OPEN}"><span><b>ภาพรวมเดือน · Report ${f(t.report)}</b>
-      <small>ต่างจาก Report: Transaction ${plus(t.tx - t.report)} · TRcloud ${plus(t.tr - t.report)}</small></span><i>${SUM_OPEN ? '▴' : '▾'}</i></button>` +
+      <small>ต้องแก้: Transaction ${f(split.tx.fix)} ชิ้น · TRcloud ${f(split.tr.fix)} ชิ้น</small></span><i>${SUM_OPEN ? '▴' : '▾'}</i></button>` +
     stat('Report ของเดือน', t.report, `JST ${f(t.jst)} · CRM ${f(t.crm)}${t.tf ? ` · โอนย้าย ${f(t.tf)}` : ''}`) +
-    stat('ตัดใน Transaction', t.tx, `ต่างจาก Report ${plus(t.tx - t.report)}`) +
-    stat('ตัดใน TRcloud', t.tr, `ต่างจาก Report ${plus(t.tr - t.report)}`) +
-    stat('รายการที่ตรงกันทุกฝั่ง', RAW.info.matched.lines, `${f(RAW.info.matched.qty)} ชิ้น`);
+    sys('ตัดใน Transaction', t.tx, split.tx) +
+    sys('ตัดใน TRcloud', t.tr, split.tr) +
+    stat('รายการที่ตรงกันทุกฝั่ง', m.lines, `${f(m.qty)} ชิ้น · ${pct}% ของ Report`);
 }
 
 function fixCount() { return FIX_KINDS.reduce((s, k) => s + RAW.kinds[k].total, 0); }
@@ -2119,6 +2135,7 @@ function barHeight() {
 }
 
 $('sum').addEventListener('click', (e) => {
+  if (e.target.closest('[data-recon]')) { $('tabs').querySelector('[data-tab="recon"]')?.click(); return; }
   if (!e.target.closest('[data-sum]')) return;
   SUM_OPEN = !SUM_OPEN;
   renderSum();
