@@ -29,6 +29,14 @@ describe('เมนูข้าง', () => {
     expect(ids).toContain('settings');
   });
 
+  it('นับสต๊อกใหญ่เป็นเมนูเดี่ยวนอกหมวด ต่อจากสมุดกะ มีไอคอนของตัวเอง', () => {
+    const html = sidebarHTML('stock', '../');
+    expect(mods(html).slice(0, 2)).toEqual(['shiftlog', 'stocktake']);
+    expect(html).toMatch(/data-mod="stocktake"[^>]*><svg class="sysmod-ic"/);
+    const inGroups = [...html.matchAll(/<div class="sysgrp-items"[^>]*>(.*?)<\/div>/g)].map((m) => m[1]).join('');
+    expect(inGroups).not.toContain('data-mod="stocktake"');
+  });
+
   it('เปิดหน้าที่ซ่อนอยู่ — เมนูยังโชว์หน้านั้นเป็นหน้าปัจจุบัน', () => {
     const html = sidebarHTML('summary', '../');
     expect(mods(html)).toContain('summary');
@@ -60,7 +68,7 @@ describe('หมวดในเมนูพับเก็บได้', () => {
     const g = groups(html);
     expect(Object.keys(g)).toEqual(['order', 'warehouse', 'inventory', 'transport', 'system']);
     expect(g.inventory).toMatchObject({ open: true, here: true, expanded: true, hidden: false });
-    expect(g.inventory.items).toEqual(['dashboard', 'txstock', 'stocktake', 'cutcheck', 'lotpo', 'invmatch', 'fifo', 'balance']);
+    expect(g.inventory.items).toEqual(['dashboard', 'txstock', 'cutcheck', 'lotpo', 'invmatch', 'fifo', 'balance']);
     for (const id of ['order', 'warehouse', 'transport', 'system']) {
       expect(g[id], id).toMatchObject({ open: false, here: false, expanded: false, hidden: true });
     }

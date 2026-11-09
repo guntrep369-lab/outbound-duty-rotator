@@ -30,7 +30,7 @@
  *   - `label` ขึ้นเมนูบรรทัดเดียว ตั้งให้สั้นพอไม่ตัดบรรทัดในเมนูกว้าง 240px
  *   - `labelEn` ไม่ขึ้นบนจอแล้ว เหลือเป็นคำอธิบายตอนเอาเมาส์ชี้
  *   - ไอคอนอยู่ที่หัวหมวด (GROUPS.icon) หน้าที่อยู่ในหมวดเป็นตัวหนังสือล้วน
- *     `icon` ของโมดูลใช้เฉพาะหน้าที่ไม่มีหมวด (สมุดกะ)
+ *     `icon` ของโมดูลใช้เฉพาะหน้าที่ไม่มีหมวด (สมุดกะ, นับสต๊อกใหญ่)
  */
 export const GROUPS = [
   { id: 'order',     label: 'ออเดอร์',     labelEn: 'Orders',        icon: 'clipboardList' },
@@ -47,6 +47,9 @@ export const MODULES = [
   /* สรุปเช้ากับย้อนหลังยังไม่ได้ใช้ในงานจริง ซ่อนไว้ก่อนให้เมนูสั้นลง */
   { id: 'summary', label: 'สรุปเช้า', labelEn: 'Morning Brief', path: 'summary/', icon: 'sunrise', hidden: true },
   { id: 'shiftlog', label: 'สมุดกะ', labelEn: 'Shift Log', path: 'shiftlog/', icon: 'notebook' },
+  /* นับสต๊อกใหญ่อยู่นอกหมวด (ผู้ใช้ขอ พ.ย. 2026) — เป็นงานใหญ่ทั้งคลังที่ทุกทีมเข้ามาช่วงนับ
+     ไม่ใช่หน้าที่เปิดดูประจำแบบหน้าอื่นในสินค้าคงคลัง ให้กดเข้าได้ทันทีไม่ต้องกางหมวดก่อน */
+  { id: 'stocktake', label: 'นับสต๊อกใหญ่', labelEn: 'Stocktake', path: 'stocktake/', icon: 'listChecks' },
   { id: 'history', label: 'ย้อนหลัง', labelEn: 'History', path: 'history/', icon: 'history', hidden: true },
   { id: 'order', label: 'เทียบ Order', labelEn: 'Order Compare', path: 'order-compare/', icon: 'clipboard', group: 'order' },
   { id: 'lookup', label: 'ค้นหาออเดอร์', labelEn: 'Order Lookup', path: 'order-lookup/', icon: 'search', group: 'order' },
@@ -59,8 +62,6 @@ export const MODULES = [
   /* ภาพรวมอยู่หัวหมวด หัวหน้าเปิดหน้านี้ก่อนแล้วกดต่อไปหน้าที่มีเรื่องต้องดู */
   { id: 'dashboard', label: 'ภาพรวมสต๊อก', labelEn: 'Stock Overview', path: 'dashboard/', icon: 'gauge', group: 'inventory' },
   { id: 'txstock', label: 'สต๊อกราย Location', labelEn: 'Stock by Location', path: 'stock-location/', icon: 'mapPin', group: 'inventory' },
-  /* นับทั้งคลังเป็นรอบ ต่อจากสต๊อกราย Location เพราะใช้ยอดในสมุดชุดเดียวกันเป็นตัวเทียบ */
-  { id: 'stocktake', label: 'นับสต๊อกใหญ่', labelEn: 'Stocktake', path: 'stocktake/', icon: 'clipboardList', group: 'inventory' },
   { id: 'cutcheck', label: 'เช็คตัดสต๊อก', labelEn: 'Stock Cut Check', path: 'cut-check/', icon: 'scale', group: 'inventory' },
   { id: 'lotpo', label: 'LOT/PO ขายออก', labelEn: 'Lot & PO Out', path: 'lot-po/', icon: 'sheet', group: 'inventory' },
   /* ต่อจาก LOT / PO เพราะใช้ไฟล์ที่โหลดจากหน้านั้นมาจับคู่กับเลขที่เอกสารของบัญชี */
