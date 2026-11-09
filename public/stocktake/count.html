@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
+<meta name="theme-color" content="#4F46E5">
+<title>กรอกผลนับ — นับสต๊อกใหญ่</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../wms-icon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="../wms-logo.png">
+<link rel="apple-touch-icon" href="../wms-icon-180.png">
+<link rel="stylesheet" href="../wms-theme.css">
+<!--
+  หน้ากรอกผลนับบนมือถือ เปิดจากลิงก์ที่หัวหน้าส่งใน LINE (#u=URL สคริปต์&k=รหัสนับ&r=รอบ)
+  ไม่มีหน้าเข้าระบบและเมนูของ WMS เพราะคนนับหลายคนไม่มีบัญชี — สิทธิ์อยู่ที่รหัสในลิงก์
+  นับแบบไม่รู้ยอด: สคริปต์ไม่ส่งยอดในสมุดมาที่หน้านี้เลย และส่งให้เฉพาะแถวที่ทีมตัวเองนับ
+  เน็ตหลุด: ทุกแถวเก็บในเครื่องก่อน แล้วค่อยทยอยส่ง ส่งซ้ำได้ สคริปต์ตัดซ้ำด้วยรหัสแถว
+-->
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--wms-bg)}
+body{font-family:var(--wms-font);color:var(--wms-text);-webkit-tap-highlight-color:transparent;padding-bottom:env(safe-area-inset-bottom)}
+button,input{font-family:inherit}
+
+/* ── แถบบน: รอบ ทีม ชื่อ และสถานะการส่ง ── */
+.ct-top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:8px;padding:10px 14px;
+  background:var(--wms-surface);border-bottom:1px solid var(--wms-border)}
+.ct-top .who{flex:1;min-width:0;font-size:13px;color:var(--wms-muted);line-height:1.35}
+.ct-top .who b{display:block;font-size:15px;color:var(--wms-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ct-net{flex:none;padding:5px 11px;border-radius:999px;border:1px solid var(--wms-border);background:var(--wms-surface);
+  font-size:12.5px;font-weight:600;color:var(--wms-muted);white-space:nowrap}
+.ct-net.ok{background:#ECFDF5;border-color:#A7F3D0;color:#047857}
+.ct-net.wait{background:#EEF2FF;border-color:#C7D2FE;color:#4338CA}
+.ct-net.off{background:#FEF3C7;border-color:#FDE68A;color:#92400E}
+.ct-net.bad{background:#FEF2F2;border-color:#FECACA;color:#B91C1C}
+
+.ct-main{max-width:560px;margin:0 auto;padding:12px 14px 120px}
+.ct-h{margin:16px 0 8px;font-size:14px;font-weight:700}
+.ct-h:first-child{margin-top:0}
+.ct-msg{padding:28px 10px;text-align:center;font-size:15px;line-height:1.7;color:var(--wms-muted)}
+.ct-msg b{color:var(--wms-text)}
+.ct-band{margin-bottom:10px;padding:9px 12px;border-radius:10px;font-size:13.5px;line-height:1.55}
+.ct-band.warn{background:#FEF3C7;border:1px solid #FDE68A;color:#92400E}
+.ct-band.bad{background:#FEF2F2;border:1px solid #FECACA;color:#991B1B}
+.ct-band.info{background:#EEF2FF;border:1px solid #C7D2FE;color:#3730A3}
+.ct-band button{margin-top:6px}
+
+/* ── ปุ่มใหญ่ กดง่ายด้วยนิ้วโป้ง ── */
+.ct-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:48px;padding:0 18px;border-radius:12px;
+  border:1px solid var(--wms-border2);background:var(--wms-surface);font-size:16px;font-weight:600;color:var(--wms-text);cursor:pointer}
+.ct-btn:active{transform:scale(.98)}
+.ct-btn.p{background:var(--wms-primary);border-color:var(--wms-primary);color:#fff}
+.ct-btn.g{background:#ECFDF5;border-color:#A7F3D0;color:#047857}
+.ct-btn.r{color:#B91C1C;border-color:#FECACA}
+.ct-btn.sm{min-height:34px;padding:0 12px;font-size:13.5px;border-radius:9px}
+.ct-btn:disabled{opacity:.45}
+.ct-btn.w{width:100%}
+.ct-row2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+
+/* ── เลือกทีม / ชื่อ ── */
+.ct-pick{display:flex;flex-direction:column;gap:8px}
+.ct-team{display:flex;align-items:center;gap:10px;width:100%;min-height:58px;padding:10px 14px;border-radius:12px;border:1px solid var(--wms-border2);
+  background:var(--wms-surface);text-align:left;cursor:pointer;font-size:16px;font-weight:700;color:var(--wms-text)}
+.ct-team small{display:block;font-size:12.5px;font-weight:400;color:var(--wms-muted);margin-top:2px}
+.ct-team .k{margin-left:auto;font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;background:var(--wms-surface2);color:var(--wms-muted)}
+.ct-team.on{border-color:var(--wms-primary);background:var(--wms-primary-light)}
+.ct-names{display:flex;flex-wrap:wrap;gap:8px}
+.ct-name{min-height:42px;padding:0 16px;border-radius:999px;border:1px solid var(--wms-border2);background:var(--wms-surface);font-size:15px;cursor:pointer}
+.ct-name.on{border-color:var(--wms-primary);background:var(--wms-primary);color:#fff;font-weight:600}
+
+/* ── ช่องพิมพ์ ตัวใหญ่ 16px+ มือถือจะไม่ซูมเอง ── */
+.ct-in{width:100%;height:48px;padding:0 12px;border-radius:10px;border:1px solid var(--wms-border2);background:var(--wms-surface);
+  font-size:17px;color:var(--wms-text)}
+.ct-in:focus{outline:none;border-color:var(--wms-primary);box-shadow:0 0 0 3px rgba(79,70,229,.15)}
+.ct-in.qty{font-size:22px;font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+.ct-lb{display:block;margin:10px 0 4px;font-size:12.5px;font-weight:600;color:var(--wms-muted)}
+.ct-hint{min-height:18px;margin-top:4px;font-size:13px;line-height:1.4;color:var(--wms-muted)}
+.ct-hint.ok{color:#047857;font-weight:600}
+.ct-hint.bad{color:#B45309;font-weight:600}
+.ct-sug{display:flex;flex-direction:column;margin-top:4px;border:1px solid var(--wms-border);border-radius:10px;overflow:hidden;background:var(--wms-surface)}
+.ct-sug button{display:block;width:100%;min-height:44px;padding:7px 12px;border:0;border-bottom:1px solid #EEF2F6;background:none;text-align:left;
+  font-size:15px;color:var(--wms-text);cursor:pointer}
+.ct-sug button:last-child{border-bottom:0}
+.ct-sug button small{display:block;font-size:12.5px;color:var(--wms-muted)}
+.ct-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+
+/* ── รายการ Location ── */
+.ct-chips{display:flex;gap:6px;overflow-x:auto;margin-bottom:10px;padding-bottom:2px}
+.ct-chip{flex:none;min-height:36px;padding:0 14px;border-radius:999px;border:1px solid var(--wms-border);background:var(--wms-surface);
+  font-size:14px;color:var(--wms-muted);cursor:pointer;white-space:nowrap}
+.ct-chip b{color:var(--wms-text);margin-left:3px}
+.ct-chip.on{border-color:var(--wms-primary);background:var(--wms-primary-light);color:var(--wms-primary-dark)}
+.ct-list{border:1px solid var(--wms-border);border-radius:12px;overflow:hidden;background:var(--wms-surface)}
+.ct-grp{display:flex;justify-content:space-between;padding:7px 14px;background:#F1F5F9;font-size:13px;font-weight:700;color:var(--wms-muted)}
+.ct-grp .low{color:#B45309}
+.ct-grp .full{color:#047857}
+.ct-loc{display:flex;align-items:center;gap:10px;width:100%;min-height:52px;padding:0 14px;border:0;border-bottom:1px solid #EEF2F6;background:none;
+  text-align:left;font-size:17px;font-weight:700;color:var(--wms-text);cursor:pointer}
+.ct-loc:last-child{border-bottom:0}
+.ct-loc .st{margin-left:auto;font-size:13.5px;font-weight:600;color:var(--wms-faint)}
+.ct-loc .st.done{color:#047857}
+.ct-loc .st.wait{color:#4338CA}
+.ct-loc .go{color:var(--wms-faint);font-size:20px;font-weight:400}
+
+/* ── หน้า Location: กองที่นับแล้ว + ฟอร์ม ── */
+.ct-lochead{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.ct-lochead .nm{flex:1;font-size:26px;font-weight:800;letter-spacing:.3px}
+.ct-lochead .nm small{display:block;font-size:12.5px;font-weight:500;color:var(--wms-muted);letter-spacing:0}
+.ct-piles{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.ct-pile{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border-radius:12px;border:1px solid var(--wms-border);
+  background:var(--wms-surface);text-align:left;cursor:pointer;color:var(--wms-text)}
+.ct-pile.on{border-color:var(--wms-primary);box-shadow:0 0 0 2px rgba(79,70,229,.18)}
+.ct-pile .d{flex:1;min-width:0;font-size:15px;font-weight:700}
+.ct-pile .d small{display:block;font-size:12.5px;font-weight:400;color:var(--wms-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ct-pile .q{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+.ct-pile .pend{font-size:11px;font-weight:600;color:#4338CA}
+.ct-pile.empty{justify-content:center;font-size:16px;font-weight:700;color:#047857;background:#ECFDF5;border-color:#A7F3D0}
+.ct-form{padding:12px;border:1px solid var(--wms-border);border-radius:14px;background:var(--wms-surface)}
+.ct-form.edit{border-color:var(--wms-primary);background:#FAFAFF}
+.ct-form .tt{font-size:13.5px;font-weight:700;color:var(--wms-muted)}
+.ct-bottom{position:fixed;left:0;right:0;bottom:0;z-index:4;display:flex;gap:8px;padding:10px 14px calc(10px + env(safe-area-inset-bottom));
+  background:var(--wms-surface);border-top:1px solid var(--wms-border)}
+.ct-bottom .ct-btn{flex:1}
+.ct-rej{margin-bottom:10px;padding:10px 12px;border-radius:10px;background:#FEF2F2;border:1px solid #FECACA;font-size:13.5px;color:#991B1B;line-height:1.6}
+.ct-rej summary{font-weight:700;cursor:pointer}
+.ct-rej li{margin:4px 0 0 16px}
+.ct-foot{margin-top:18px;font-size:12px;color:var(--wms-faint);text-align:center;line-height:1.6}
+</style>
+</head>
+<body>
+
+<div class="ct-top" id="top"></div>
+<main class="ct-main" id="main"></main>
+<div id="bottom"></div>
+
+<script src="../wms-gas.js"></script>
+<script src="../wms-stocktake.js"></script>
+<script>
+const ST = window.WmsStocktake;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const f = n => Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 3 });
+
+/* ทุกอย่างของหน้านี้อยู่ในเครื่อง ไม่ไปปนกับค่าของหน้าอื่น และไม่ถูกสำรองไปเครื่องอื่น (WmsSettings.SKIP) */
+const K = { cfg: 'wms:st:cfg', me: 'wms:st:me', dev: 'wms:st:dev', mine: 'wms:st:mine', rd: 'wms:st:rd' };
+const outKey = () => 'wms:st:out:' + CFG.round;
+function load(k, def) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch (e) { return def; } }
+function save(k, v) {
+  try { localStorage.setItem(k, JSON.stringify(v)); return true; }
+  catch (e) { NET.err = 'เครื่องเต็ม เก็บผลนับไม่ได้ — ส่งให้ถึงชีตก่อนแล้วค่อยนับต่อ'; return false; }
+}
+
+/* ลิงก์จากหัวหน้า: เก็บไว้ในเครื่องแล้วลบออกจากช่องที่อยู่ คนอื่นมองจอจะไม่เห็นรหัส */
+let CFG = (() => {
+  const fromLink = ST.parseLink(location.hash);
+  if (fromLink) {
+    try { localStorage.setItem(K.cfg, JSON.stringify(fromLink)); } catch (e) {}
+    history.replaceState(null, '', location.pathname + location.search);
+    return fromLink;
+  }
+  return load(K.cfg, null);
+})();
+
+let DEV = (() => {
+  let d = ''; try { d = localStorage.getItem(K.dev) || ''; } catch (e) {}
+  if (!d) { d = ST.deviceId(); try { localStorage.setItem(K.dev, d); } catch (e) {} }
+  return d;
+})();
+
+let RD = null;                       // ข้อมูลรอบ: ทีม โซน Location SKU PO (ไม่มียอดในสมุด)
+let ME = load(K.me, null);           // {round, pass, team, who}
+let MINE = load(K.mine, null);       // แถวของทีมตัวเองจากชีต {round, team, since, rows}
+let BOX = { out: [], rej: [] };      // out = รอส่ง  rej = ชีตไม่รับ
+let VIEW = 'list', LOC = '', FILTER = 'left', EDIT = '', PICK = null, Q = '';
+const NET = { sending: false, err: '', at: 0, fail: 0, timer: 0, loading: false };
+
+if (CFG) BOX = load(outKey(), BOX);
+if (ME && (!CFG || ME.round !== CFG.round)) ME = null;
+if (MINE && (!CFG || !ME || MINE.round !== CFG.round || MINE.team !== ME.team)) MINE = null;
+
+function team() { return RD && ME ? RD.teams.find(t => t.id === ME.team && t.pass === ME.pass) : null; }
+function isAudit() { const t = team(); return !!t && t.kind === 'Audit'; }
+function myLocs() { return team() ? ST.teamLocs(team(), RD.locs) : []; }
+function pending() { const s = new Set(BOX.out.map(i => i.uid)); return s; }
+/** แถวทั้งหมดของทีมนี้: ที่ชีตรับแล้ว + ที่ยังรอส่งในเครื่อง */
+function entries() {
+  const local = BOX.out.map(i => ({ ...i, clientAt: i.at }));
+  return ST.merge((MINE && MINE.rows) || [], local);
+}
+function atLoc(loc) { return ME ? ST.atLoc(entries(), loc, ME.team, ME.pass) : []; }
+function locState(loc, pend) {
+  const rows = atLoc(loc);
+  if (!rows.length) return null;
+  const empty = rows.length === 1 && rows[0].type === 'ว่าง';
+  return { n: rows.filter(r => r.type === 'นับ').length, empty, wait: rows.some(r => pend.has(r.uid)) };
+}
+
+/* ── คุยกับสคริปต์ ───────────────────────────────────────────────────── */
+
+function urlOf(api, params) {
+  const q = new URLSearchParams({ api, k: CFG.key, round: CFG.round, ...(params || {}) });
+  return CFG.url + (CFG.url.includes('?') ? '&' : '?') + q.toString();
+}
+
+async function loadRound() {
+  NET.loading = true; paintTop();
+  try {
+    const res = await WmsGas.json(urlOf('st-round'), 'st-round', { retries: 1, timeoutMs: 60000 });
+    if (res.error) throw new Error(res.error);
+    RD = { ...res, at: Date.now() };
+    save(K.rd, { id: CFG.round, ...RD });
+    NET.err = '';
+  } catch (e) {
+    const old = load(K.rd, null);
+    if (old && old.id === CFG.round) { RD = old; NET.err = 'ออฟไลน์ ใช้ข้อมูลรอบที่โหลดไว้'; }
+    else NET.err = e.message;
+  }
+  NET.loading = false;
+  if (ME && !team()) ME = null;       // หัวหน้าลบทีมนี้ไปแล้ว ให้เลือกใหม่
+  if (!ME) VIEW = 'who';
+  paint();
+  if (ME) { pull(); flush(); }
+}
+
+/** แถวของทีมที่ชีตรับแล้ว ขอเฉพาะแถวใหม่หลังแถวล่าสุดที่เคยได้ */
+async function pull() {
+  if (!ME || NET.sending || !navigator.onLine) return;
+  const t = ME.team;
+  const since = MINE && MINE.team === t ? MINE.since : 0;
+  try {
+    const res = await WmsGas.json(urlOf('st-mine', { team: t, since }), 'st-mine', { retries: 0, timeoutMs: 45000 });
+    if (res.error) throw new Error(res.error);
+    got(res, t, since);
+    paint();
+  } catch (e) { /* ไม่เป็นไร รอบหน้าค่อยดึง แถวในเครื่องยังอยู่ครบ */ }
+}
+
+function got(res, t, since) {
+  if (res.round && RD) Object.assign(RD.round, res.round);
+  if (!ME || ME.team !== t) return;
+  if (!MINE || MINE.team !== t) MINE = { round: CFG.round, team: t, since: 0, rows: [] };
+  /* คำตอบนี้มีแถวตั้งแต่ since ถ้าในเครื่องยังไม่ถึง since แปลว่ามีช่องโหว่ ไม่เลื่อนจุดอ่านต่อ */
+  if (since > MINE.since) return;
+  MINE.rows = ST.merge(MINE.rows, (res.rows || []).map(ST.fromRow));
+  MINE.since = Math.max(MINE.since, res.last || 0);
+  save(K.mine, MINE);
+}
+
+/** ฟิลด์ที่สคริปต์ใช้ ไม่ส่งของที่ใช้แค่ในเครื่อง */
+function wire(i) {
+  return { uid: i.uid, pass: i.pass, team: i.team, who: i.who, loc: i.loc, type: i.type, sku: i.sku, long: i.long, lot: i.lot, po: i.po, qty: i.qty, ref: i.ref, at: i.at };
+}
+
+/**
+ * ส่งที่ค้างทีละชุด (40 แถว) ทีละคำขอ ส่งไม่ถึงก็ลองใหม่ห่างขึ้นเรื่อย ๆ
+ * ส่งซ้ำได้ปลอดภัย สคริปต์ตัดแถวที่เคยรับแล้วด้วยรหัสแถว ปิดหน้าไประหว่างส่งก็ไม่หาย
+ */
+async function flush() {
+  clearTimeout(NET.timer);
+  if (NET.sending || !BOX.out.length || !ME || !RD) { paintTop(); return; }
+  if (!navigator.onLine) { paintTop(); return; }
+  NET.sending = true; paintTop();
+  try {
+    while (BOX.out.length) {
+      const sent = ST.batch(BOX.out, 40);
+      const t = ME.team;
+      const since = MINE && MINE.team === t ? MINE.since : 0;
+      const res = await WmsGas.post(CFG.url, { op: 'st-count', k: CFG.key, round: CFG.round, device: DEV, team: t, since, items: sent.map(wire) }, { timeoutMs: 60000 });
+      if (res.error) throw new Error(res.error);
+      const a = ST.ack(BOX.out, sent, res);
+      BOX.out = a.outbox;
+      BOX.rej = BOX.rej.concat(a.rejected);
+      save(outKey(), BOX);
+      got(res, t, since);
+      NET.fail = 0; NET.err = ''; NET.at = Date.now();
+      paint();
+    }
+  } catch (e) {
+    NET.fail++;
+    NET.err = e.message;
+    const wait = [5, 15, 30, 60][Math.min(NET.fail - 1, 3)] * 1000;
+    NET.timer = setTimeout(flush, wait);
+  }
+  NET.sending = false;
+  paint();
+}
+
+function later() { clearTimeout(NET.timer); NET.timer = setTimeout(flush, 1500); }
+
+function push(type, fields) {
+  const t = team();
+  const it = {
+    uid: ST.uid(DEV, Date.now()), pass: ME.pass, team: ME.team, kind: t.kind, who: ME.who, loc: LOC, type,
+    sku: '', long: '', lot: '', po: '', qty: type === 'ว่าง' ? 0 : '', ref: '', at: new Date().toISOString(), ...fields,
+  };
+  BOX.out.push(it);
+  save(outKey(), BOX);
+  later();
+  return it;
+}
+
+/* ── วาดหน้า ─────────────────────────────────────────────────────────── */
+
+function paint() { paintTop(); paintMain(); }
+
+function paintTop() {
+  const box = $('top');
+  if (!CFG) { box.innerHTML = '<div class="who"><b>กรอกผลนับ</b></div>'; return; }
+  const n = BOX.out.length;
+  const net = !navigator.onLine ? ['off', `ออฟไลน์ · เก็บไว้ ${n}`]
+    : NET.sending ? ['wait', `กำลังส่ง ${n}…`]
+    : n && NET.err ? ['bad', `ส่งไม่ได้ · ค้าง ${n}`]
+    : n ? ['wait', `รอส่ง ${n}`]
+    : NET.loading ? ['wait', 'กำลังโหลด…'] : ['ok', '✓ ส่งครบ'];
+  const t = team();
+  box.innerHTML = `<div class="who"><b>${esc(RD ? RD.round.name : 'นับสต๊อก')}</b>${t ? `${esc(t.name)} · ${esc(ME.who)}` : esc(CFG.round)}</div>` +
+    `<button class="ct-net ${net[0]}" data-act="net" aria-label="สถานะการส่ง">${esc(net[1])}</button>`;
+}
+
+function paintMain() {
+  const box = $('main'), bot = $('bottom');
+  bot.innerHTML = '';
+  if (!CFG) {
+    box.innerHTML = '<div class="ct-msg"><b>เปิดจากลิงก์ที่หัวหน้าส่งให้</b><br>ลิงก์นับสต๊อกมีรหัสรอบอยู่ข้างใน ขอลิงก์ใหม่ใน LINE กลุ่มได้</div>';
+    return;
+  }
+  if (!RD) {
+    box.innerHTML = NET.loading ? '<div class="ct-msg">⏳ กำลังโหลดรอบนับ…</div>'
+      : `<div class="ct-msg">โหลดรอบนับไม่ได้<br><b>${esc(NET.err)}</b><br><br><button class="ct-btn" data-act="reload">ลองใหม่</button></div>`;
+    return;
+  }
+  if (RD.round.status === 'ปิดแล้ว') { box.innerHTML = '<div class="ct-msg"><b>รอบนี้ปิดแล้ว</b><br>ขอบคุณที่ช่วยนับ</div>'; return; }
+  if (VIEW === 'who' || !team()) { box.innerHTML = whoView(); return; }
+  if (VIEW === 'loc' && LOC) { box.innerHTML = bands() + locView(); bot.innerHTML = locBottom(); return; }
+  box.innerHTML = bands() + listView();
+}
+
+function bands() {
+  let h = '';
+  if (!RD.round.pass) h += `<div class="ct-band warn"><b>หัวหน้ายังไม่กดเริ่มนับ</b> กรอกไว้ได้ ผลนับเก็บในเครื่องและส่งให้เองเมื่อเปิดนับ<br><button class="ct-btn sm" data-act="reload">เช็คอีกครั้ง</button></div>`;
+  else if (RD.round.status === 'ตั้งค่า') h += '<div class="ct-band warn">หัวหน้าพักการนับไว้ชั่วคราว ผลที่กรอกยังเก็บและส่งได้ตามปกติ</div>';
+  if (NET.err && BOX.out.length && navigator.onLine) h += `<div class="ct-band bad">ส่งไม่ได้: ${esc(NET.err)} — ผลนับยังอยู่ในเครื่อง จะลองส่งใหม่เอง</div>`;
+  if (BOX.rej.length) {
+    h += `<details class="ct-rej"><summary>ชีตไม่รับ ${BOX.rej.length} แถว — แตะดู</summary><ul>` +
+      BOX.rej.slice(-30).map(r => `<li>${esc(r.loc)} ${esc(r.type === 'นับ' ? `${r.sku} × ${r.qty}` : r.type)} — ${esc(r.why)}</li>`).join('') +
+      `</ul><button class="ct-btn sm" data-act="rej-clear">รับทราบ ล้างรายการ</button></details>`;
+  }
+  return h;
+}
+
+/* ── เลือกทีมและชื่อ ─────────────────────────────────────────────────── */
+
+function whoView() {
+  const pass = RD.round.pass || 1;
+  const list = RD.teams.filter(t => t.pass === pass && t.zones.length);
+  if (!list.length) return '<div class="ct-msg"><b>ยังไม่มีทีมในรอบนี้</b><br>รอหัวหน้าแบ่งทีมก่อน แล้วกดลองใหม่<br><br><button class="ct-btn" data-act="reload">ลองใหม่</button></div>';
+  const sel = PICK || (ME ? { team: ME.team, who: ME.who } : { team: '', who: '' });
+  PICK = sel;
+  const card = (t) => {
+    const n = ST.teamLocs(t, RD.locs).length;
+    const z = t.zones.length > 3 ? `${t.zones[0]} … ${t.zones[t.zones.length - 1]} (${t.zones.length} แถว)` : t.zones.join(', ');
+    return `<button class="ct-team ${sel.team === t.id ? 'on' : ''}" data-team="${esc(t.id)}"><span>${esc(t.name)}<small>${esc(z)} · ${f(n)} โล</small></span><span class="k">${t.kind}</span></button>`;
+  };
+  const inv = list.filter(t => t.kind !== 'Audit'), aud = list.filter(t => t.kind === 'Audit');
+  const t = list.find(x => x.id === sel.team);
+  return `<div class="ct-h">เลือกทีมของคุณ</div><div class="ct-pick">${inv.map(card).join('')}</div>` +
+    (aud.length ? `<div class="ct-h">Audit</div><div class="ct-pick">${aud.map(card).join('')}</div>` : '') +
+    (t ? `<div class="ct-h">ชื่อคุณ</div>
+      ${t.members.length ? `<div class="ct-names">${t.members.map(m => `<button class="ct-name ${sel.who === m ? 'on' : ''}" data-name="${esc(m)}">${esc(m)}</button>`).join('')}</div>` : ''}
+      <input class="ct-in" id="whoIn" style="margin-top:8px" maxlength="40" placeholder="หรือพิมพ์ชื่อ" value="${esc(t.members.includes(sel.who) ? '' : sel.who)}" autocomplete="name">
+      <button class="ct-btn p w" style="margin-top:12px" data-act="who-ok">เริ่มนับ</button>` : '') +
+    `<div class="ct-foot">เครื่องนี้: ${esc(DEV)} · ผลนับทุกแถวบันทึกชื่อ ทีม และเวลา</div>`;
+}
+
+/* ── รายการ Location ของทีม ──────────────────────────────────────────── */
+
+function listView() {
+  const locs = myLocs();
+  const pend = pending();
+  const st = {};
+  locs.forEach(l => { st[l.loc] = locState(l.loc, pend); });
+  const done = locs.filter(l => st[l.loc]).length;
+  const audit = isAudit();
+  const min = RD.round.auditMin || ST.AUDIT_MIN;
+  const q = ST.up(Q);
+  const show = locs.filter(l => (!q || l.loc.includes(q)) && (FILTER === 'all' || (FILTER === 'done' ? st[l.loc] : !st[l.loc])));
+  /* โลนอกรายการที่ทีมนี้นับไว้ หัวหน้าเห็นในหน้าความคืบหน้า */
+  const known = new Set(locs.map(l => l.loc));
+  const extra = [...new Set(ST.effective(entries()).filter(e => e.team === ME.team && e.pass === ME.pass && !known.has(ST.up(e.loc))).map(e => ST.up(e.loc)))];
+  let rows = '', grp = '';
+  show.forEach(l => {
+    if (l.group !== grp) {
+      grp = l.group;
+      const gl = locs.filter(x => x.group === grp);
+      const gd = gl.filter(x => st[x.loc]).length;
+      const pct = Math.round(gd * 100 / gl.length);
+      rows += `<div class="ct-grp"><span>แถว ${esc(grp)}</span>` + (audit
+        ? `<span class="${pct >= min ? 'full' : 'low'}">สุ่มแล้ว ${gd}/${gl.length} · ${pct}% (ต้อง ${min}%)</span>`
+        : `<span class="${gd === gl.length ? 'full' : ''}">${gd}/${gl.length}</span>`) + '</div>';
+    }
+    const s = st[l.loc];
+    const label = !s ? '' : s.empty ? 'ว่าง ✓' : `✓ ${s.n} กอง`;
+    rows += `<button class="ct-loc" data-loc="${esc(l.loc)}">${esc(l.loc)}<span class="st ${s ? (s.wait ? 'wait' : 'done') : ''}">${label}${s && s.wait ? ' · รอส่ง' : ''}</span><span class="go">›</span></button>`;
+  });
+  const typed = q && !known.has(q) && q.length >= 2;
+  const left = locs.length - done;
+  return `<div class="ct-chips">
+      <button class="ct-chip ${FILTER === 'left' ? 'on' : ''}" data-filter="left">${audit ? 'ยังไม่สุ่ม' : 'เหลือ'}<b>${f(left)}</b></button>
+      <button class="ct-chip ${FILTER === 'done' ? 'on' : ''}" data-filter="done">${audit ? 'สุ่มแล้ว' : 'นับแล้ว'}<b>${f(done)}</b></button>
+      <button class="ct-chip ${FILTER === 'all' ? 'on' : ''}" data-filter="all">ทั้งหมด<b>${f(locs.length)}</b></button>
+    </div>
+    ${audit ? `<div class="ct-band info">Audit เลือกโลสุ่มตรวจเอง อย่างน้อย ${min}% ของแต่ละแถว · ไม่เห็นตัวเลขของทีม Inventory</div>` : ''}
+    <input class="ct-in" id="locQ" placeholder="ค้นหาโล หรือพิมพ์โลที่ไม่มีในรายการ" value="${esc(Q)}" autocapitalize="characters" autocomplete="off" spellcheck="false">
+    ${typed ? `<button class="ct-btn w" style="margin-top:8px" data-loc="${esc(q)}">นับโล ${esc(q)} (นอกรายการ)</button>` : ''}
+    <div class="ct-list" style="margin-top:10px">${rows || `<div class="ct-msg">${FILTER === 'left' && !q ? (audit ? 'สุ่มครบทุกแถวแล้ว' : '🎉 นับครบทุกโลแล้ว') : 'ไม่มีโลตามที่ค้น'}</div>`}</div>
+    ${extra.length ? `<div class="ct-h">โลนอกรายการที่นับไว้</div><div class="ct-list">${extra.map(l => `<button class="ct-loc" data-loc="${esc(l)}">${esc(l)}<span class="st done">✓</span><span class="go">›</span></button>`).join('')}</div>` : ''}
+    <div class="ct-foot"><button class="ct-btn sm" data-act="who">เปลี่ยนทีม/ชื่อ</button> <button class="ct-btn sm" data-act="reload">โหลดรายการใหม่</button></div>`;
+}
+
+/* ── หน้า Location: กองที่นับ + ฟอร์มเพิ่มกอง ───────────────────────── */
+
+let FORM = { sku: '', long: '', lot: '', po: '', qty: '' };
+
+function skuName(long, sku) {
+  const s = ST.skuExact(RD.skus, long || sku);
+  return s ? s[2] : '';
+}
+
+function locView() {
+  const rows = atLoc(LOC);
+  const pend = pending();
+  const piles = rows.filter(r => r.type === 'นับ');
+  const empty = rows.find(r => r.type === 'ว่าง');
+  const p = ST.parseLoc(LOC);
+  const editing = EDIT && piles.find(r => r.uid === EDIT);
+  const list = piles.map(r => `<button class="ct-pile ${EDIT === r.uid ? 'on' : ''}" data-pile="${esc(r.uid)}">
+      <span class="d">${esc(r.sku || r.long)}<small>${esc(skuName(r.long, r.sku) || '—')} · LOT ${esc(r.lot || '-')} · PO ${esc(r.po || '-')}${r.who && r.who !== ME.who ? ' · ' + esc(r.who) : ''}</small>${pend.has(r.uid) ? '<span class="pend">รอส่ง</span>' : ''}</span>
+      <span class="q">${f(r.qty)}</span></button>`).join('');
+  return `<div class="ct-lochead"><button class="ct-btn sm" data-act="back" aria-label="กลับไปรายการโล">‹ โล</button>
+      <div class="nm">${esc(LOC)}<small>แถว ${esc(p.group)}${piles.length ? ` · ${piles.length} กอง` : ''}</small></div></div>
+    <div class="ct-piles">${list}${empty ? `<button class="ct-pile empty" data-act="unempty">ว่าง ✓ <span style="font-weight:400;font-size:13px">(แตะเพื่อยกเลิก)</span></button>` : ''}</div>
+    <div class="ct-form ${editing ? 'edit' : ''}">
+      <div class="tt">${editing ? 'แก้กองนี้' : piles.length ? 'เพิ่มกองถัดไป' : 'กองแรก'}</div>
+      <label class="ct-lb" for="fSku">SKU</label>
+      <input class="ct-in" id="fSku" value="${esc(FORM.sku)}" autocapitalize="characters" autocomplete="off" spellcheck="false" enterkeyhint="next" placeholder="พิมพ์รหัสหรือชื่อสินค้า">
+      <div id="skuHint" class="ct-hint"></div><div id="skuSug"></div>
+      <div class="ct-grid">
+        <div><label class="ct-lb" for="fLot">LOT</label><input class="ct-in" id="fLot" value="${esc(FORM.lot)}" inputmode="numeric" autocomplete="off" enterkeyhint="next"></div>
+        <div><label class="ct-lb" for="fPo">PO</label><input class="ct-in" id="fPo" value="${esc(FORM.po)}" inputmode="numeric" autocomplete="off" enterkeyhint="next"></div>
+      </div>
+      <div id="poHint" class="ct-hint"></div><div id="poSug"></div>
+      <label class="ct-lb" for="fQty">จำนวน</label>
+      <input class="ct-in qty" id="fQty" value="${esc(FORM.qty)}" inputmode="decimal" autocomplete="off" enterkeyhint="done" placeholder="0">
+      ${editing
+        ? `<div class="ct-row2"><button class="ct-btn p" data-act="save-edit">บันทึกที่แก้</button><button class="ct-btn" data-act="cancel-edit">ยกเลิก</button></div>
+           <button class="ct-btn r w" style="margin-top:8px" data-act="del">ลบกองนี้</button>`
+        : `<button class="ct-btn p w" style="margin-top:12px" data-act="add">+ เพิ่มกอง</button>`}
+    </div>`;
+}
+
+function locBottom() {
+  const rows = atLoc(LOC);
+  const none = !rows.length;
+  return `<div class="ct-bottom">${none ? '<button class="ct-btn g" data-act="empty">โลนี้ว่าง</button>' : ''}<button class="ct-btn ${none ? '' : 'p'}" data-act="next">เสร็จ → โลถัดไป</button></div>`;
+}
+
+/** คำใบ้ใต้ช่อง SKU / PO อัปเดตตอนพิมพ์โดยไม่วาดทั้งหน้า (คีย์บอร์ดไม่หุบ) */
+function hints() {
+  const sh = $('skuHint'), ss = $('skuSug'), ph = $('poHint'), ps = $('poSug');
+  if (!sh) return;
+  const ex = ST.skuExact(RD.skus, FORM.sku);
+  if (ex) { FORM.long = ex[1]; sh.className = 'ct-hint ok'; sh.textContent = '✓ ' + ex[2]; ss.innerHTML = ''; }
+  else {
+    FORM.long = '';
+    const hits = ST.skuSearch(RD.skus, FORM.sku, 6);
+    sh.className = 'ct-hint' + (FORM.sku && !hits.length ? ' bad' : '');
+    sh.textContent = FORM.sku && !hits.length ? 'ไม่พบ SKU นี้ในคลัง — ตรวจตัวสะกดอีกครั้ง' : '';
+    ss.innerHTML = FORM.sku && hits.length ? `<div class="ct-sug">${hits.map(s => `<button data-sku="${esc(s[0] || s[1])}">${esc(s[0] || s[1])}<small>${esc(s[2])}${s[0] ? ' · ' + esc(s[1]) : ''}</small></button>`).join('')}</div>` : '';
+  }
+  const poHit = RD.pos.find(p => ST.norm(p[0]) === ST.norm(FORM.po));
+  if (poHit) { ph.className = 'ct-hint ok'; ph.textContent = poHit[1] ? `✓ PO ${poHit[0]} · ${poHit[1]}` : `✓ PO ${poHit[0]}`; ps.innerHTML = ''; }
+  else {
+    const hits = ST.poSearch(RD.pos, FORM.po, 5);
+    ph.className = 'ct-hint' + (FORM.po.length >= 4 && !hits.length ? ' bad' : '');
+    ph.textContent = FORM.po.length >= 4 && !hits.length ? 'ไม่พบ PO นี้ — ตรวจเลขอีกครั้ง' : '';
+    ps.innerHTML = hits.length ? `<div class="ct-sug">${hits.map(p => `<button data-po="${esc(p[0])}">${esc(p[0])}<small>${esc(p[1] || '')}</small></button>`).join('')}</div>` : '';
+  }
+}
+
+function openLoc(loc) {
+  LOC = ST.up(loc); VIEW = 'loc'; EDIT = ''; FORM = { sku: '', long: '', lot: '', po: '', qty: '' };
+  paint(); hints(); window.scrollTo(0, 0);
+  setTimeout(() => { const el = $('fSku'); if (el && !atLoc(LOC).length) el.focus(); }, 50);
+}
+
+/** ค่าที่กรอก ผ่านแล้วคืนฟิลด์ของแถว ไม่ผ่านคืน null (บอกเหตุผลแล้ว) */
+function readForm() {
+  const sku = ST.up(FORM.sku), lot = String(FORM.lot).trim(), po = String(FORM.po).trim();
+  const qty = Number(String(FORM.qty).replace(/,/g, ''));
+  if (!sku) { alert('ใส่ SKU ก่อน'); $('fSku').focus(); return null; }
+  if (!(qty > 0) || !isFinite(qty)) { alert('ใส่จำนวนที่นับได้ (มากกว่า 0)\nถ้าโลว่าง กด "โลนี้ว่าง"'); $('fQty').focus(); return null; }
+  const ex = ST.skuExact(RD.skus, sku);
+  if (!ex && !confirm(`ไม่พบ SKU "${sku}" ในคลัง\nแน่ใจว่าพิมพ์ถูก? (ถ้าใช่ กดตกลง)`)) { $('fSku').focus(); return null; }
+  return { sku: ex ? (ex[0] || ex[1]) : sku, long: ex ? ex[1] : '', lot, po, qty };
+}
+
+function addPile() {
+  const v = readForm();
+  if (!v) return;
+  const rows = atLoc(LOC);
+  const same = rows.find(r => r.type === 'นับ' && ST.norm(r.long || r.sku) === ST.norm(v.long || v.sku) && ST.norm(r.lot) === ST.norm(v.lot) && ST.norm(r.po) === ST.norm(v.po));
+  if (same && !confirm(`มีกอง ${v.sku} LOT ${v.lot || '-'} PO ${v.po || '-'} ในโลนี้แล้ว (${f(same.qty)})\nเพิ่มเป็นอีกกองแยก? ยอดจะรวมกัน`)) return;
+  const empty = rows.find(r => r.type === 'ว่าง');
+  if (empty) push('ยกเลิก', { ref: empty.uid });
+  push('นับ', v);
+  FORM = { sku: '', long: '', lot: '', po: '', qty: '' };
+  paint(); hints();
+  setTimeout(() => { const el = $('fSku'); if (el) el.focus(); }, 30);
+}
+
+function editPile(uid) {
+  const r = atLoc(LOC).find(x => x.uid === uid);
+  if (!r) return;
+  EDIT = uid;
+  FORM = { sku: r.sku || r.long, long: r.long, lot: r.lot, po: r.po, qty: String(r.qty) };
+  paint(); hints();
+  const el = $('fQty'); if (el) { el.scrollIntoView({ block: 'center' }); }
+}
+
+/** แก้ = แถวใหม่ที่ชี้แถวเดิม แถวเดิมยังอยู่ในชีต ใครแก้อะไรเมื่อไหร่ย้อนดูได้ */
+function saveEdit() {
+  const v = readForm();
+  if (!v) return;
+  push('นับ', { ...v, ref: EDIT });
+  EDIT = ''; FORM = { sku: '', long: '', lot: '', po: '', qty: '' };
+  paint(); hints();
+}
+
+/** Inventory เดินต่อโลถัดไปที่ยังไม่นับตามทางเดิน · Audit กลับไปเลือกโลเอง */
+function nextLoc() {
+  const locs = myLocs();
+  const pend = pending();
+  const i = locs.findIndex(l => l.loc === LOC);
+  const after = locs.slice(i + 1).concat(locs.slice(0, Math.max(i, 0)));
+  const nx = isAudit() ? null : after.find(l => !locState(l.loc, pend));
+  if (nx) { openLoc(nx.loc); return; }
+  VIEW = 'list'; LOC = ''; EDIT = ''; paint(); window.scrollTo(0, 0);
+}
+
+/* ── ปุ่มและช่อง ─────────────────────────────────────────────────────── */
+
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  const d = b.dataset;
+  if (d.team) {
+    PICK = { team: d.team, who: '' };
+    const tm = RD.teams.find(x => x.id === d.team);
+    if (tm && tm.members.length === 1) PICK.who = tm.members[0];
+    paintMain();
+    return;
+  }
+  if (d.name) { PICK.who = d.name; paintMain(); return; }
+  if (d.filter) { FILTER = d.filter; paintMain(); return; }
+  if (d.loc) { openLoc(d.loc); return; }
+  if (d.pile) { EDIT === d.pile ? (EDIT = '', FORM = { sku: '', long: '', lot: '', po: '', qty: '' }, paint(), hints()) : editPile(d.pile); return; }
+  if (d.sku) { FORM.sku = d.sku; $('fSku').value = d.sku; hints(); $('fLot').focus(); return; }
+  if (d.po) { FORM.po = d.po; $('fPo').value = d.po; hints(); $('fQty').focus(); return; }
+  switch (d.act) {
+    case 'reload': loadRound(); break;
+    case 'net': flush(); pull(); break;
+    case 'who': PICK = null; VIEW = 'who'; paint(); break;
+    case 'who-ok': {
+      const typed = ($('whoIn') && $('whoIn').value.trim()) || '';
+      const who = typed || PICK.who;
+      if (!who) { alert('เลือกหรือพิมพ์ชื่อคุณก่อน'); return; }
+      const tm = RD.teams.find(x => x.id === PICK.team && x.pass === (RD.round.pass || 1));
+      if (BOX.out.length && ME && ME.team !== tm.id) { alert('ยังมีผลนับของทีมเดิมรอส่ง ' + BOX.out.length + ' แถว — รอให้ส่งครบก่อนเปลี่ยนทีม'); return; }
+      ME = { round: CFG.round, pass: tm.pass, team: tm.id, who };
+      save(K.me, ME);
+      if (!MINE || MINE.team !== ME.team) MINE = null;
+      VIEW = 'list'; FILTER = 'left'; PICK = null;
+      paint(); pull();
+      break;
+    }
+    case 'back': VIEW = 'list'; LOC = ''; EDIT = ''; paint(); break;
+    case 'add': addPile(); break;
+    case 'save-edit': saveEdit(); break;
+    case 'cancel-edit': EDIT = ''; FORM = { sku: '', long: '', lot: '', po: '', qty: '' }; paint(); hints(); break;
+    case 'del':
+      if (confirm('ลบกองนี้? (ในชีตจะมีแถวยกเลิกต่อท้าย แถวเดิมไม่หาย)')) { push('ยกเลิก', { ref: EDIT }); EDIT = ''; FORM = { sku: '', long: '', lot: '', po: '', qty: '' }; paint(); hints(); }
+      break;
+    case 'empty': push('ว่าง', {}); nextLoc(); break;
+    case 'unempty': { const em = atLoc(LOC).find(r => r.type === 'ว่าง'); if (em && confirm('ยกเลิก "ว่าง" ของโลนี้?')) { push('ยกเลิก', { ref: em.uid }); paint(); hints(); } break; }
+    case 'next': nextLoc(); break;
+    case 'rej-clear': BOX.rej = []; save(outKey(), BOX); paint(); break;
+  }
+});
+
+document.addEventListener('input', (e) => {
+  const id = e.target.id;
+  if (id === 'fSku') { FORM.sku = e.target.value; hints(); }
+  else if (id === 'fLot') FORM.lot = e.target.value;
+  else if (id === 'fPo') { FORM.po = e.target.value; hints(); }
+  else if (id === 'fQty') FORM.qty = e.target.value;
+  else if (id === 'locQ') {
+    Q = e.target.value;
+    const pos = e.target.selectionStart;
+    paintMain();
+    const el = $('locQ'); el.focus(); el.setSelectionRange(pos, pos);
+  }
+});
+
+/* Enter = ไปช่องถัดไป ช่องจำนวนกด Enter = เพิ่มกอง เหมือนกรอกลงชีต */
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  const order = ['fSku', 'fLot', 'fPo', 'fQty'];
+  const i = order.indexOf(e.target.id);
+  if (i === -1) return;
+  e.preventDefault();
+  if (i < 3) { $(order[i + 1]).focus(); return; }
+  EDIT ? saveEdit() : addPile();
+});
+
+window.addEventListener('online', () => { NET.fail = 0; paintTop(); flush(); pull(); });
+window.addEventListener('offline', () => paintTop());
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { flush(); pull(); } });
+/* ดึงแถวของเพื่อนร่วมทีมทุกนาที คนละเครื่องนับแถวเดียวกันจะได้เห็นว่าโลไหนนับแล้ว */
+setInterval(() => { if (!document.hidden && VIEW !== 'loc') pull(); }, 60000);
+setInterval(() => { if (BOX.out.length && !NET.sending) flush(); }, 30000);
+window.addEventListener('beforeunload', (e) => { if (BOX.out.length) { e.preventDefault(); e.returnValue = ''; } });
+
+paint();
+if (CFG) loadRound();
+</script>
+</body>
+</html>

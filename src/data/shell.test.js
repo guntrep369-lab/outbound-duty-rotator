@@ -60,7 +60,7 @@ describe('หมวดในเมนูพับเก็บได้', () => {
     const g = groups(html);
     expect(Object.keys(g)).toEqual(['order', 'warehouse', 'inventory', 'transport', 'system']);
     expect(g.inventory).toMatchObject({ open: true, here: true, expanded: true, hidden: false });
-    expect(g.inventory.items).toEqual(['dashboard', 'txstock', 'cutcheck', 'lotpo', 'invmatch', 'fifo', 'balance']);
+    expect(g.inventory.items).toEqual(['dashboard', 'txstock', 'stocktake', 'cutcheck', 'lotpo', 'invmatch', 'fifo', 'balance']);
     for (const id of ['order', 'warehouse', 'transport', 'system']) {
       expect(g[id], id).toMatchObject({ open: false, here: false, expanded: false, hidden: true });
     }

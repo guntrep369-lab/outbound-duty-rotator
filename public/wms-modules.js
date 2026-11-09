@@ -59,6 +59,8 @@ export const MODULES = [
   /* ภาพรวมอยู่หัวหมวด หัวหน้าเปิดหน้านี้ก่อนแล้วกดต่อไปหน้าที่มีเรื่องต้องดู */
   { id: 'dashboard', label: 'ภาพรวมสต๊อก', labelEn: 'Stock Overview', path: 'dashboard/', icon: 'gauge', group: 'inventory' },
   { id: 'txstock', label: 'สต๊อกราย Location', labelEn: 'Stock by Location', path: 'stock-location/', icon: 'mapPin', group: 'inventory' },
+  /* นับทั้งคลังเป็นรอบ ต่อจากสต๊อกราย Location เพราะใช้ยอดในสมุดชุดเดียวกันเป็นตัวเทียบ */
+  { id: 'stocktake', label: 'นับสต๊อกใหญ่', labelEn: 'Stocktake', path: 'stocktake/', icon: 'clipboardList', group: 'inventory' },
   { id: 'cutcheck', label: 'เช็คตัดสต๊อก', labelEn: 'Stock Cut Check', path: 'cut-check/', icon: 'scale', group: 'inventory' },
   { id: 'lotpo', label: 'LOT/PO ขายออก', labelEn: 'Lot & PO Out', path: 'lot-po/', icon: 'sheet', group: 'inventory' },
   /* ต่อจาก LOT / PO เพราะใช้ไฟล์ที่โหลดจากหน้านั้นมาจับคู่กับเลขที่เอกสารของบัญชี */
