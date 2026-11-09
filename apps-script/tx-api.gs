@@ -23,6 +23,7 @@
  *                          หน้าเช็ครายการตัดสต๊อกใช้ชุดเดียวกันบอกว่าทำไมชีตทีมไม่ได้ตัด (ปุ่มดูที่มา)
  *                          หน้า LOT / PO ที่ขายออกใช้ประมาณ LOT/PO ให้ของที่ลงไว้เป็น LOT 0 จากแถวรับคืนกับ M/E
  *                          และจากแท็บ "ยอดก่อนนับ" (ถ้ามี) ให้ของที่นับได้แต่ไม่รู้ LOT
+ *                          หน้าจัดที่เก็บใช้หาช่องว่าง โลเปิดประจำ และความจุต่อพาเลทจากแท็บ "ความจุต่อพาเลท" (ถ้ามี)
  * ?api=shared-at           เวลาของข้อมูลกลางชุดล่าสุด (ดูส่วน "ข้อมูลกลาง" ท้ายไฟล์)
  * POST {op:'count-save'}   บันทึกผลนับ
  * POST {op:'count-add'}    ส่ง SKU ที่ยอดไม่ตรงระบบบริษัทเข้าใบนับ
@@ -64,6 +65,10 @@ var CONVERT_SHEET = 'MASTER แปลงสินค้า';
 // แท็บยอดก่อนวันนับสต๊อก ผู้ใช้วางเอง (สมุดรอบก่อนทั้งชีต หรือตาราง SKU LOT PO จำนวน) สคริปต์อ่านอย่างเดียว
 // หน้า LOT / PO ใช้แบ่งของที่นับได้แต่ไม่รู้ LOT (LOT 0) ออกเป็น LOT/PO ประมาณ
 var BEFORE_SHEET = 'ยอดก่อนนับ';
+
+// แท็บความจุต่อพาเลทราย SKU ผู้ใช้วางเอง (หัวตาราง SKU, Product ID, STD / pallet) สคริปต์อ่านอย่างเดียว
+// หน้าจัดที่เก็บใช้แบ่งของเข้าแร็ค R ช่องละ 1 พาเลท
+var CAP_SHEET = 'ความจุต่อพาเลท';
 
 var COUNT_SHEET = 'นับสต๊อก';
 var COUNT_PER_DAY = 20;     // รายการนับต่อวัน
@@ -765,6 +770,38 @@ function fifo_() {
   });
   out.before = before_(ss, tz);
   out.convert = convert_(ss, rows);
+  out.cap = cap_(ss);
+  return out;
+}
+
+/**
+ * ความจุต่อพาเลทจากแท็บ ความจุต่อพาเลท หาคอลัมน์จากหัวตาราง (SKU, Product ID, STD / pallet)
+ * rows = [[SKU, Product ID, จำนวนต่อพาเลท]] ช่องความจุว่างหรือไม่ใช่ตัวเลขนับไว้ใน blank ความจุ 0 ส่งไปตามจริง
+ * ไม่มีแท็บส่ง null หาหัวตารางไม่เจอ missing บอกว่าขาดอะไร
+ */
+function cap_(ss) {
+  var sheet = ss.getSheetByName(CAP_SHEET);
+  if (!sheet) return null;
+  var out = { tab: CAP_SHEET, rows: [], blank: 0, missing: '' };
+  var h = sheet.getLastRow();
+  if (h < 2) { out.missing = 'แท็บยังไม่มีข้อมูล'; return out; }
+  var vals = sheet.getRange(1, 1, h, Math.max(sheet.getLastColumn(), 2)).getDisplayValues();
+  var head = vals[0].map(function (v) { return String(v).trim(); });
+  var c = { sku: -1, pid: -1, cap: -1 };
+  head.forEach(function (t, j) {
+    if (c.cap < 0 && /std|pallet|พาเลท|ความจุ/i.test(t)) c.cap = j;
+    else if (c.pid < 0 && /product\s*id|รหัสยาว/i.test(t)) c.pid = j;
+    else if (c.sku < 0 && /^sku$|^รหัสสินค้า$/i.test(t)) c.sku = j;
+  });
+  if (c.cap < 0 || (c.sku < 0 && c.pid < 0)) { out.missing = 'หาหัวตาราง SKU กับ STD / pallet ไม่เจอ'; return out; }
+  for (var i = 1; i < vals.length; i++) {
+    var sku = c.sku >= 0 ? same_(vals[i][c.sku]) : '', pid = c.pid >= 0 ? same_(vals[i][c.pid]) : '';
+    if (!sku && !pid) continue;
+    var t = String(vals[i][c.cap]).replace(/,/g, '').trim();
+    var n = Number(t);
+    if (!t || isNaN(n) || n < 0) { out.blank++; continue; }
+    out.rows.push([sku, pid, n]);
+  }
   return out;
 }
 

@@ -47,6 +47,8 @@ export const MODULES = [
   { id: 'picking', label: 'สรุปหยิบของ', labelEn: 'Picking Sheet', path: 'picking/', icon: 'clipboardList', group: 'warehouse' },
   { id: 'reqpick', label: 'เบิกตามออเดอร์', labelEn: 'Order Requisition', path: 'order-sheet/', icon: 'listChecks', group: 'warehouse' },
   { id: 'warehouse', label: 'เอกสารคลังสินค้า', labelEn: 'Warehouse Forms', path: 'warehouse-forms/', icon: 'boxes', group: 'warehouse' },
+  /* แพลนรับเข้าของวันนั้น → ควรเก็บโลเคชั่นไหน ใช้สต๊อกชุดเดียวกับหน้า FIFO สต๊อก */
+  { id: 'putaway', label: 'จัดที่เก็บ', labelEn: 'Putaway', path: 'putaway/', icon: 'arrowDown', group: 'warehouse' },
   /* ภาพรวมอยู่หัวหมวด หัวหน้าเปิดหน้านี้ก่อนแล้วกดต่อไปหน้าที่มีเรื่องต้องดู */
   { id: 'dashboard', label: 'ภาพรวมสต๊อก', labelEn: 'Stock Overview', path: 'dashboard/', icon: 'gauge', group: 'inventory' },
   { id: 'txstock', label: 'สต๊อกราย Location', labelEn: 'Stock by Location', path: 'stock-location/', icon: 'mapPin', group: 'inventory' },
@@ -106,6 +108,8 @@ export const ICON_PATHS = {
     '<path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z"/><circle cx="12" cy="12" r="10"/>',
   sunrise:
     '<path d="M12 2v8"/><path d="m4.93 10.93 1.41 1.41"/><path d="M2 18h2"/><path d="M20 18h2"/><path d="m19.07 10.93-1.41 1.41"/><path d="M22 22H2"/><path d="m8 6 4-4 4 4"/><path d="M16 18a4 4 0 0 0-8 0"/>',
+  arrowDown:
+    '<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>',
   package:
     '<path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
   boxes:

@@ -70,7 +70,7 @@ describe('หมวดในเมนูพับเก็บได้', () => {
     const g = groups(sidebarHTML('stock', '../'));
     expect(g.transport.n).toBe(2);
     expect(g.transport.items).toEqual(['transport', 'forms']);
-    expect(g.warehouse.n).toBe(4);
+    expect(g.warehouse.n).toBe(5);
   });
 
   it('เปิดหน้าที่ซ่อนในหมวด — หมวดนั้นเปิดและมีหน้านั้นเพิ่มมา', () => {

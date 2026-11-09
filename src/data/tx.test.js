@@ -247,6 +247,34 @@ describe('tx-api.gs — ยอดขายรายวัน', () => {
   });
 });
 
+describe('tx-api.gs — แท็บความจุต่อพาเลท (หน้าจัดที่เก็บ)', () => {
+  const rows = [row({ to: 'R01-01-02', qty: 9 })];
+
+  it('ไม่มีแท็บส่ง cap เป็น null', () => {
+    expect(script(rows)({ api: 'tx-fifo' }).cap).toBeNull();
+  });
+
+  it('หาคอลัมน์จากหัวตาราง เก็บความจุ 0 ไว้ ช่องว่างนับไว้ รหัสเป็นตัวพิมพ์ใหญ่', () => {
+    const tab = masterTab([
+      ['SKU', 'Product ID', 'Description', 'STD / pallet'],
+      ['aaa001', 'AAA0000000001', 'ที่นอนสมมติ', '16'],
+      ['AAA002', 'AAA0000000002', 'ที่นอนสมมติ', ''],
+      ['AAA003', 'AAA0000000003', 'ที่นอนสมมติ', '0'],
+      ['AAA004', 'AAA0000000004', 'ที่นอนสมมติ', '1,200'],
+      ['', '', '', ''],
+    ]);
+    expect(script(rows, { named: { 'ความจุต่อพาเลท': tab } })({ api: 'tx-fifo' }).cap).toEqual({
+      tab: 'ความจุต่อพาเลท', blank: 1, missing: '',
+      rows: [['AAA001', 'AAA0000000001', 16], ['AAA003', 'AAA0000000003', 0], ['AAA004', 'AAA0000000004', 1200]],
+    });
+  });
+
+  it('หัวตารางไม่มีช่องความจุ บอกว่าขาดอะไร', () => {
+    const tab = masterTab([['รหัส', 'ชื่อ'], ['AAA001', 'ที่นอน']]);
+    expect(script(rows, { named: { 'ความจุต่อพาเลท': tab } })({ api: 'tx-fifo' }).cap.missing).toMatch(/หาหัวตาราง/);
+  });
+});
+
 describe('tx-api.gs — คิดยอดแบบเดียวกับสูตรในชีตยอด', () => {
   it('รับบวกที่ Location รับ / ขายลบที่ Location เบิก / เบิกลบต้นทางบวกปลายทาง', () => {
     const s = summary([

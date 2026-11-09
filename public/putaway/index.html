@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>จัดที่เก็บ — WMS</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../wms-icon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="../wms-logo.png">
+<link rel="apple-touch-icon" href="../wms-icon-180.png">
+<link rel="stylesheet" href="../wms-theme.css">
+<link rel="stylesheet" href="../wms-gate.css">
+<script src="../wms-gate.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+
+/* ── แถบแหล่งข้อมูล ชุดเดียวกับหน้า FIFO สต๊อกและสินค้าคงเหลือ ณ วันที่ ── */
+.tx-src{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 20px;
+  background:var(--wms-surface2);border-bottom:1px solid var(--wms-border);font-size:12px}
+.tx-src .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;
+  background:var(--wms-surface);border:1px solid var(--wms-border);color:var(--wms-muted)}
+.tx-src .pill b{color:var(--wms-text);font-weight:600}
+.tx-src .pill.warn{background:#FEF3C7;border-color:#FDE68A;color:#92400E}
+.tx-src .sp{flex:1}
+.tx-src button{padding:4px 12px;border-radius:999px;border:1px solid var(--wms-border2);
+  background:var(--wms-surface);font-family:var(--wms-font);font-size:13px;color:#334155;cursor:pointer}
+.tx-src button:hover:not(:disabled){background:var(--wms-primary-light);border-color:var(--wms-primary);color:var(--wms-primary-dark)}
+.tx-src button.p{background:var(--wms-primary);border-color:var(--wms-primary);color:#fff}
+.tx-src button.p:hover:not(:disabled){filter:brightness(1.08);color:#fff}
+.tx-src button:disabled{opacity:.6;cursor:default}
+.tx-err{width:100%;font-size:13px;color:#B91C1C;font-weight:600}
+
+/* ── วางแพลนรับเข้า เป็นสิ่งแรกที่ต้องทำ ── */
+.pw-in{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:12px;padding:14px 20px;
+  background:var(--wms-surface);border-bottom:1px solid var(--wms-border)}
+.pw-h{font-size:15px;font-weight:700;color:var(--wms-text);margin-bottom:6px}
+.pw-h small{font-size:12px;font-weight:500;color:var(--wms-muted)}
+.pw-ta{width:100%;min-height:118px;padding:10px 12px;border-radius:10px;border:1.5px dashed var(--wms-border2);
+  background:var(--wms-surface2);font-family:ui-monospace,Consolas,monospace;font-size:12.5px;color:var(--wms-text);
+  resize:vertical;outline:none;white-space:pre;overflow:auto}
+.pw-ta:focus{border-style:solid;border-color:var(--wms-primary);background:var(--wms-surface)}
+.pw-go{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px;font-size:13px;color:var(--wms-muted)}
+.pw-side{display:flex;flex-direction:column;gap:10px}
+.pw-box{padding:11px 13px;border-radius:var(--wms-radius-sm);background:var(--wms-surface2);border:1px solid var(--wms-border);
+  font-size:13px;color:var(--wms-muted);line-height:1.6}
+.pw-box b{color:var(--wms-text)}
+.pw-box.warn{background:#FEF3C7;border-color:#FDE68A;color:#92400E}
+.pw-box.warn b{color:#92400E}
+.pw-box label{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-weight:600;color:var(--wms-text)}
+.pw-num{width:64px;padding:4px 8px;border-radius:8px;border:1.5px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:14px;font-weight:700;color:var(--wms-text);text-align:center}
+.pw-num:focus{outline:none;border-color:var(--wms-primary)}
+.pw-link{background:none;border:0;padding:0;font:inherit;font-size:13px;color:var(--wms-primary-dark);
+  text-decoration:underline;cursor:pointer}
+.pw-file{display:none}
+.pw-drag{outline:2px dashed var(--wms-primary);outline-offset:-6px}
+
+/* ── ยอดรวม ── */
+.tx-sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;padding:12px 20px;
+  background:var(--wms-surface);border-bottom:1px solid var(--wms-border)}
+.tx-sum:empty{display:none}
+.tx-stat{padding:8px 11px;border-radius:var(--wms-radius-sm);background:var(--wms-surface2)}
+.tx-stat small{display:block;font-size:12px;color:var(--wms-muted)}
+.tx-stat b{font-size:20px;font-weight:700;color:var(--wms-text);font-variant-numeric:tabular-nums}
+.tx-stat b.s-rib{color:#C2410C}
+.tx-stat b.s-open{color:var(--wms-primary-dark)}
+.tx-stat b.s-red{color:#B91C1C}
+.tx-stat b.s-warn{color:#B45309}
+.tx-stat i{display:block;font-style:normal;font-size:12px;color:var(--wms-muted)}
+
+/* ── เนื้อหา ── */
+.tx-body{padding:14px 20px 60px}
+.tx-empty{padding:40px 20px;text-align:center;color:var(--wms-muted);font-size:14px;line-height:1.75}
+.tx-empty b{color:var(--wms-text)}
+.tx-opt{padding:5px 13px;border-radius:999px;border:1px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:13px;color:#334155;cursor:pointer}
+.tx-opt:hover{border-color:var(--wms-primary);color:var(--wms-primary-dark)}
+.tx-opt.p{background:var(--wms-primary);border-color:var(--wms-primary);color:#fff;font-weight:600}
+.tx-opt.p:hover{filter:brightness(1.08);color:#fff}
+.tx-opt:disabled{opacity:.6;cursor:default}
+.pw-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px;font-size:13px;color:var(--wms-muted)}
+.pw-bar .sp{flex:1}
+.pw-skip{margin-bottom:12px;font-size:13px;color:var(--wms-muted)}
+.pw-skip summary{cursor:pointer;color:var(--wms-primary-dark);font-weight:600}
+.pw-skip ul{margin:6px 0 0 18px}
+
+/* หนึ่งการ์ดต่อหนึ่งบรรทัดของแพลน หัวบอกสินค้า ข้างล่างคือโลที่จะเก็บ แก้ได้ทุกช่อง */
+.pw-line{margin-bottom:10px;background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:var(--wms-radius);overflow:hidden}
+.pw-line.bad{border-color:#FCA5A5}
+.pw-lh{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;padding:10px 13px;background:var(--wms-surface2);
+  border-bottom:1px solid var(--wms-border)}
+.pw-no{font-size:12px;font-weight:700;color:var(--wms-muted)}
+.pw-sku{font-size:14px;font-weight:700;color:var(--wms-text)}
+.pw-nm{flex:1;min-width:180px;font-size:13px;color:var(--wms-text)}
+.pw-q{font-size:15px;font-weight:700;color:var(--wms-text);font-variant-numeric:tabular-nums}
+.pw-meta{width:100%;display:flex;flex-wrap:wrap;gap:2px 14px;font-size:12px;color:var(--wms-muted)}
+.pw-meta b{color:var(--wms-text);font-weight:600}
+.pw-meta .low{color:#B45309;font-weight:600}
+.pw-iss{width:100%;font-size:12.5px;font-weight:600;color:#B45309}
+.pw-tbl{width:100%;border-collapse:collapse;font-size:13px}
+.pw-tbl th{text-align:left;padding:6px 10px;font-size:11.5px;font-weight:600;color:var(--wms-muted);border-bottom:1px solid var(--wms-border);white-space:nowrap}
+.pw-tbl td{padding:6px 10px;border-bottom:1px solid #F1F5F9;vertical-align:top}
+.pw-tbl tr:last-child td{border-bottom:0}
+.pw-tbl tr.r-rib td{background:#FFF7ED}
+.pw-tbl tr.r-red td{background:#FEF2F2}
+.pw-tbl tr.r-move td{background:#F8FAFC}
+.pw-loc,.pw-qty,.pw-rm{width:100%;padding:5px 8px;border-radius:8px;border:1.5px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:13.5px;color:var(--wms-text)}
+.pw-loc{min-width:110px;font-weight:700;text-transform:uppercase}
+.pw-qty{width:76px;text-align:right;font-variant-numeric:tabular-nums}
+.pw-rm{min-width:120px}
+.pw-loc:focus,.pw-qty:focus,.pw-rm:focus{outline:none;border-color:var(--wms-primary)}
+.pw-loc.empty{border-color:#F59E0B;background:#FFFBEB}
+.pw-ck{width:18px;height:18px;accent-color:var(--wms-primary);cursor:pointer}
+.pw-tag{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700;white-space:nowrap}
+.t-rack{background:#ECFDF5;color:#065F46}
+.t-open{background:var(--wms-primary-light);color:var(--wms-primary-dark)}
+.t-rib{background:#FFEDD5;color:#9A3412}
+.t-floor{background:#F0FDF4;color:#166534}
+.t-manual{background:#FEF3C7;color:#92400E}
+.t-move{background:var(--wms-surface2);color:var(--wms-muted)}
+.pw-why{display:block;margin-top:3px;font-size:12px;color:var(--wms-muted);line-height:1.45}
+.pw-msg{display:block;margin-top:3px;font-size:12px;line-height:1.45}
+.l-red{color:#B91C1C;font-weight:700}
+.l-warn{color:#B45309;font-weight:600}
+.l-info{color:var(--wms-muted)}
+.pw-x{width:28px;height:28px;border-radius:8px;border:1px solid transparent;background:none;color:var(--wms-muted);font-size:16px;cursor:pointer}
+.pw-x:hover{border-color:#FCA5A5;color:#B91C1C;background:#FEF2F2}
+.pw-lf{display:flex;flex-wrap:wrap;gap:8px;padding:7px 10px;border-top:1px solid #F1F5F9}
+.pw-small{padding:3px 11px;border-radius:999px;border:1px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:12px;color:#334155;cursor:pointer}
+.pw-small:hover{border-color:var(--wms-primary);color:var(--wms-primary-dark)}
+.pw-edit{font-size:12px;font-weight:600;color:var(--wms-primary-dark)}
+
+@media (max-width:860px){
+  .pw-in{grid-template-columns:1fr}
+}
+@media (max-width:640px){
+  .mod-title h2 .en,.mod-title p{display:none}
+  .tx-src,.pw-in,.tx-sum,.tx-body{padding-left:16px;padding-right:16px}
+  .tx-sum{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .tx-opt{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 15px}
+  .pw-ta{font-size:16px}
+  .pw-loc,.pw-qty,.pw-rm,.pw-num{font-size:16px;min-height:40px}   /* ต่ำกว่า 16px iPhone จะซูมหน้าเองตอนแตะช่อง */
+
+  /* แถวเป็นการ์ด: โลกับจำนวนบนสุด สถานะกับเหตุผลตามมา หมายเหตุอยู่ล่าง */
+  .pw-tbl,.pw-tbl tbody{display:block}
+  .pw-tbl thead{display:none}
+  .pw-tbl tr{display:grid;grid-template-columns:minmax(0,1fr) 84px 40px 32px;gap:6px 8px;padding:9px 10px;border-bottom:1px solid #F1F5F9}
+  .pw-tbl td{display:block;padding:0;border:0}
+  .pw-tbl .c-tag{grid-column:1/-1;order:5}
+  .pw-tbl .c-rm{grid-column:1/-1;order:6}
+  .pw-tbl .c-open{display:flex;align-items:center;justify-content:center}
+  .pw-qty{width:100%}
+}
+</style>
+</head>
+<body data-wms-module="putaway">
+
+<div class="wms-shell">
+<div data-wms-shell="putaway" data-root="../"></div>
+<div class="wms-main">
+
+  <div class="mod-head">
+    <div class="mod-title">
+      <div class="ic"><img src="../icons/boxes.png" alt="" width="38" height="38"></div>
+      <div>
+        <h2>จัดที่เก็บ<span class="en"> · Putaway</span></h2>
+        <p>วางแพลนรับเข้าของวันนี้ ระบบเสนอโลเคชั่นตามช่องว่างจริงในสมุด Transaction ความจุต่อพาเลท และกติกาของคลัง แก้ได้ทุกแถว แล้วคัดลอกไปวางในชีตหรือโหลด Excel</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="tx-src" id="src"></div>
+  <div class="pw-in" id="inp"></div>
+  <div class="tx-sum" id="sum"></div>
+  <div class="tx-body" id="body"></div>
+  <datalist id="pwLocs"></datalist>
+
+</div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+
+<script type="module" src="../wms-shell.js"></script>
+<script src="../wms-settings.js"></script>
+<script src="../wms-gas.js"></script>
+<script src="../wms-shared.js"></script>
+<script src="../wms-putaway.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const f = n => (Math.round(n * 1000) / 1000).toLocaleString('en-US');
+const dm = d => { const p = String(d || '').split('-'); return p.length === 3 ? `${+p[2]}/${+p[1]}` : ''; };
+const P = WmsPutaway;
+const XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+const DRAFT = 'wms:putaway:draft';     // แพลนที่วางกับแถวที่แก้เอง ปิดหน้าแล้วเปิดใหม่ยังอยู่ (เครื่องนี้เท่านั้น)
+const SET = 'wms:putaway:set';         // เกณฑ์ที่ตั้งไว้
+const CAPFILE = 'wms:putaway:cap';     // ไฟล์ความจุที่ลากใส่หน้าเว็บ ใช้แทนแท็บในชีต
+
+/* tx-fifo ราวหนึ่งเมกะไบต์ เก็บแค่ในหน่วยความจำ เหมือนหน้า FIFO สต๊อก */
+let RES = null;     // คำตอบ tx-fifo (ข้อมูลกลาง)
+let SNAP = null;    // WmsPutaway.stock(RES)
+let FILECAP = null; // { name, at, rows, blank }
+let TEXT = '';
+let PLAN = { lines: [], skipped: [] };
+let MANUAL = {};    // { ลำดับบรรทัด: แถวที่คนแก้เอง }
+let OUT = [];
+let CHK = null;
+let OPT = { ...P.DEFAULTS };
+let BUSY = '';
+let ERR = '';
+let WAIT = null;
+let LOADING = false;
+let XLSX_LOAD = null;
+
+function readJson(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } }
+function writeJson(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+
+(function restore() {
+  const s = readJson(SET);
+  if (s && s.coverDays >= 0) OPT.coverDays = +s.coverDays;
+  FILECAP = readJson(CAPFILE);
+  const d = readJson(DRAFT);
+  if (d && typeof d.text === 'string') { TEXT = d.text; MANUAL = d.manual || {}; }
+})();
+
+function saveDraft() { writeJson(DRAFT, { text: TEXT, manual: MANUAL, at: Date.now() }); }
+
+/** ความจุที่ใช้อยู่: ไฟล์ที่ลากใส่มาก่อน (ตั้งใจแทนแท็บ) ไม่มีก็แท็บในชีต */
+function capSrc() {
+  if (FILECAP && FILECAP.rows) return { from: 'file', ...FILECAP };
+  if (RES && RES.cap && !RES.cap.missing) return { from: 'tab', ...RES.cap };
+  return null;
+}
+function capNow() { const c = capSrc(); return c ? P.capMap(c.rows) : {}; }
+
+function compute() {
+  PLAN = P.parsePlan(TEXT);
+  if (!SNAP) { OUT = []; CHK = null; return; }
+  const cap = capNow();
+  OUT = P.plan(PLAN.lines, SNAP, cap, OPT, MANUAL);
+  CHK = P.check(PLAN.lines, OUT, SNAP, cap);
+}
+
+/* ── โหลดสต๊อก ─────────────────────────────────────────────────────────── */
+
+async function load(fresh, quiet) {
+  const url = WmsSettings.txUrl();
+  if (LOADING || !url) return;
+  LOADING = true;
+  ERR = '';
+  const say = (sec) => { BUSY = fresh ? `กำลังอ่านสมุด Transaction ทั้งชีต…${sec ? ` ${sec} วินาที` : ''}` : 'กำลังโหลดชุดล่าสุด…'; renderSrc(); };
+  const opts = { retries: 1, timeoutMs: 240000, onProgress: quiet ? undefined : say };
+  if (!quiet) say(0);
+  try {
+    let res;
+    if (fresh) {
+      res = await WmsShared.press(url, 'tx-fifo', null, opts);
+      if (res && res.error === WmsShared.OLD) res = await WmsGas.json(url, 'tx-fifo', opts);
+    } else {
+      res = await WmsShared.read(url, 'tx-fifo', opts);
+    }
+    if (res && res.busy && !res.rows) {
+      WAIT = res.busy;
+      WATCH.soon();
+      BUSY = '';
+      LOADING = false;
+      render();
+      return;
+    }
+    WAIT = null;
+    if (res.error) throw new Error(res.error);
+    if (res.app !== 'transaction') throw new Error('URL ของ Transaction ในหน้าตั้งค่าไม่ใช่สคริปต์ tx-api.gs');
+    if (!res.rows) throw new Error('สคริปต์ tx-api.gs ยังเป็นรุ่นที่ไม่ส่งแถวของสมุด ให้วางโค้ดใหม่แล้ว Deploy เป็น New version');
+    RES = res;
+    SNAP = P.stock(res);
+    fillLocs();
+    compute();
+  } catch (e) {
+    ERR = e.message;
+  }
+  BUSY = '';
+  LOADING = false;
+  render();
+}
+
+/** รายชื่อโลให้ช่อง Location เลือก: ช่องว่างก่อน แล้วโลอื่นที่เคยมีในสมุด */
+function fillLocs() {
+  const empty = SNAP.emptyR.concat(...Object.values(SNAP.emptyFloor));
+  const seen = new Set(empty.map((l) => l.toUpperCase()));
+  const rest = (RES.locs || []).filter((l) => !seen.has(String(l).toUpperCase())).sort((a, b) => String(a).localeCompare(String(b), 'en', { numeric: true }));
+  $('pwLocs').innerHTML = empty.map((l) => `<option value="${esc(l)}">ว่าง</option>`).join('') +
+    ['RIB', 'DOCKLOAD'].concat(rest).map((l) => `<option value="${esc(l)}"></option>`).join('');
+}
+
+/* ── แถบบน ─────────────────────────────────────────────────────────────── */
+
+function renderSrc() {
+  const url = WmsSettings.txUrl();
+  let html = '';
+  if (RES && !BUSY) {
+    const when = new Date(WmsShared.stamp(RES)).toLocaleString('th-TH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const who = WmsShared.who(RES);
+    html += `<span class="pill" title="ทุกเครื่องเห็นชุดเดียวกัน กดดึงใหม่เมื่อเพิ่งลงสมุด">🕐 สต๊อกเมื่อ <b>${esc(when)}</b>${who ? ` · ${esc(who)}` : ''}</span>`;
+    if (RES.last) html += `<span class="pill">สมุดลงขายถึง <b>${esc(dm(RES.last))}</b></span>`;
+    if (SNAP) html += `<span class="pill" title="ช่องที่เคยมีในสมุดแต่ตอนนี้ไม่มีของ ช่องที่ไม่เคยลงสมุดเลยระบบไม่รู้จัก">ช่อง R ว่าง <b>${f(SNAP.emptyR.length)}</b></span>`;
+  }
+  if (BUSY) html += `<span class="pill">⏳ ${esc(BUSY)}</span>`;
+  if (WAIT && !BUSY) {
+    const at = new Date(WAIT.at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+    html += `<span class="pill warn">⏳ ${esc(WmsShared.runner(WAIT))} กำลังดึงชุดใหม่ (เริ่ม ${esc(at)}) เสร็จแล้วขึ้นให้เอง</span>`;
+  }
+  html += '<span class="sp"></span>';
+  if (url) {
+    html += `<button id="loadBtn" class="${RES ? '' : 'p'}" ${BUSY || WAIT ? 'disabled' : ''}>${BUSY ? 'กำลังดึง…' : WAIT ? 'รอชุดใหม่…' : RES ? '🔄 ดึงสต๊อกใหม่' : '▶️ ดึงสต๊อก'}</button>`;
+  } else {
+    html += `<span class="pill">ยังไม่ได้ตั้ง Apps Script URL ของ Transaction — <a href="../settings/">ตั้งที่หน้าตั้งค่า</a></span>`;
+  }
+  if (ERR) html += `<div class="tx-err">ดึงข้อมูลไม่สำเร็จ: ${esc(ERR)}</div>`;
+  $('src').innerHTML = html;
+  const btn = $('loadBtn');
+  if (btn) btn.onclick = () => load(!!RES);
+}
+
+/* ── ช่องวางแพลน วาดครั้งเดียว ข้อความที่พิมพ์ค้างไว้จะได้ไม่หาย ── */
+
+function renderInput() {
+  $('inp').innerHTML = `
+    <div>
+      <div class="pw-h">วางแพลนรับเข้า <small>คัดลอกจากแท็บ INPUT ทั้งตาราง (ติดหัวตารางมาด้วยหรือไม่ก็ได้) แล้ววางในช่องนี้</small></div>
+      <textarea class="pw-ta" id="plan" spellcheck="false" placeholder="NO.&#9;Product ID&#9;LOT&#9;PO&#9;SKU&#9;Product Name&#9;QTY&#9;Truck&#9;REMARK"></textarea>
+      <div class="pw-go">
+        <button class="tx-opt p" id="goBtn">จัดที่เก็บ</button>
+        <button class="tx-opt" id="clearBtn">ล้าง</button>
+        <span id="planSt"></span>
+      </div>
+    </div>
+    <div class="pw-side">
+      <div class="pw-box">
+        <label for="cover">เติมโลเปิดเมื่อเหลือขายไม่ถึง <input class="pw-num" id="cover" type="number" min="0" step="0.5"> วัน</label>
+        <div>ถึงเกณฑ์นี้ระบบส่ง 1 พาเลทเข้าโลเปิดประจำและติ๊ก OPEN ให้ ของหมดทั้งคลังส่งเข้าโลเปิดเสมอ</div>
+      </div>
+      <div class="pw-box" id="capSt"></div>
+      <input type="file" class="pw-file" id="capFile" accept=".xlsx,.xls,.csv">
+    </div>`;
+  $('plan').value = TEXT;
+  $('cover').value = OPT.coverDays;
+}
+
+function renderCap() {
+  const c = capSrc();
+  const box = $('capSt');
+  if (!box) return;
+  const tabNote = RES && RES.cap === undefined ? 'สคริปต์ tx-api.gs รุ่นนี้ยังไม่อ่านแท็บความจุ ให้วางโค้ดใหม่แล้ว Deploy เป็น New version'
+    : RES && RES.cap && RES.cap.missing ? `แท็บ ${esc(RES.cap.tab)}: ${esc(RES.cap.missing)}` : '';
+  box.classList.toggle('warn', !c);
+  if (!c) {
+    box.innerHTML = `<b>ยังไม่มีความจุต่อพาเลท</b> ระบบจึงแบ่งพาเลทไม่ได้<br>
+      เพิ่มแท็บชื่อ <b>ความจุต่อพาเลท</b> ในไฟล์ชีตที่สคริปต์ Transaction ผูกอยู่ (หัวตาราง SKU, Product ID, STD / pallet) แล้วกดดึงสต๊อกใหม่
+      หรือ <button class="pw-link" data-capfile>เลือกไฟล์ความจุ</button> (ลากไฟล์มาวางที่กล่องนี้ก็ได้)${tabNote ? `<br>${tabNote}` : ''}`;
+    return;
+  }
+  const n = new Set(c.rows.map((r) => r[0] || r[1])).size;
+  const zero = c.rows.filter((r) => !(r[2] > 0)).length;
+  box.innerHTML = c.from === 'file'
+    ? `ความจุจากไฟล์ <b>${esc(c.name)}</b> ${f(n)} SKU${zero ? ` (เป็น 0 อยู่ ${f(zero)})` : ''} · ${esc(new Date(c.at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }))}<br>
+       <button class="pw-link" data-capfile>เปลี่ยนไฟล์</button>${RES && RES.cap && !RES.cap.missing ? ` · <button class="pw-link" data-captab>ใช้แท็บในชีตแทน</button>` : ''}`
+    : `ความจุจากแท็บ <b>${esc(c.tab)}</b> ${f(n)} SKU${zero ? ` (เป็น 0 อยู่ ${f(zero)})` : ''}${c.blank ? ` · ช่องว่าง ${f(c.blank)} แถว` : ''}<br>
+       แก้ความจุในแท็บแล้วกดดึงสต๊อกใหม่ · <button class="pw-link" data-capfile>ใช้ไฟล์แทน</button>`;
+}
+
+function xlsxLib() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  if (!XLSX_LOAD) {
+    XLSX_LOAD = new Promise((ok, bad) => {
+      const s = document.createElement('script');
+      s.src = XLSX_URL;
+      s.onload = () => ok(window.XLSX);
+      s.onerror = () => { XLSX_LOAD = null; bad(new Error('โหลดตัวอ่านไฟล์ Excel ไม่ได้ ลองใหม่อีกครั้ง')); };
+      document.head.appendChild(s);
+    });
+  }
+  return XLSX_LOAD;
+}
+
+async function readCapFile(file) {
+  try {
+    const X = await xlsxLib();
+    const wb = X.read(await file.arrayBuffer(), { type: 'array' });
+    let best = null;
+    for (const tab of wb.SheetNames) {
+      const grid = X.utils.sheet_to_json(wb.Sheets[tab], { header: 1, defval: '', raw: true });
+      const r = P.capFromRows(grid);
+      if (!r.missing && (!best || r.rows.length > best.rows.length)) best = r;
+    }
+    if (!best) throw new Error('ไม่เจอหัวตาราง SKU กับ STD / pallet ในไฟล์นี้');
+    FILECAP = { name: file.name, at: Date.now(), rows: best.rows, blank: best.blank };
+    writeJson(CAPFILE, FILECAP);
+    compute();
+    render();
+  } catch (e) {
+    alert('อ่านไฟล์ความจุไม่ได้: ' + e.message);
+  }
+}
+
+/* ── ยอดรวม ────────────────────────────────────────────────────────────── */
+
+function renderSum() {
+  if (!SNAP || !PLAN.lines.length) { $('sum').innerHTML = ''; return; }
+  let qty = 0, pallets = 0, open = 0, rib = 0, floor = 0, manual = 0;
+  PLAN.lines.forEach((ln) => { qty += ln.qty; });
+  OUT.forEach((o) => o.rows.forEach((r) => {
+    if (r.move) return;
+    if (!r.loc) manual++;
+    else if (r.tag === 'rack' || P.zoneOf(r.loc) === 'R') pallets++;
+    if (r.open) open += +r.qty || 0;
+    else if (String(r.loc).toUpperCase() === 'RIB') rib += +r.qty || 0;
+    else if (P.isFloor(r.loc)) floor += +r.qty || 0;
+  }));
+  const stat = (label, n, sub, cls = '') => `<div class="tx-stat"><small>${esc(label)}</small><b class="${cls}">${f(n)}</b>${sub ? `<i>${esc(sub)}</i>` : ''}</div>`;
+  $('sum').innerHTML =
+    stat('บรรทัดในแพลน', PLAN.lines.length, `${f(qty)} ชิ้น`) +
+    stat('ขึ้นแร็ค R', pallets, 'ช่อง') +
+    stat('เข้าโลเปิด', open, 'ชิ้น · ติ๊ก OPEN', open ? 's-open' : '') +
+    stat('เศษเข้า RIB', rib, 'ชิ้น', rib ? 's-rib' : '') +
+    stat('ลงพื้น A–D', floor, 'ชิ้น') +
+    stat('ต้องเลือกโลเอง', manual, 'แถว', manual ? 's-warn' : '') +
+    stat('ปน SKU', CHK.red, CHK.red ? 'แก้ก่อนส่งงาน' : 'ไม่มี', CHK.red ? 's-red' : '');
+}
+
+/* ── รายการ ────────────────────────────────────────────────────────────── */
+
+function lineMeta(o, ln) {
+  const bits = [];
+  bits.push(`<span>${esc(o.kind.label)}</span>`);
+  bits.push(o.cap > 0 ? `<span>พาเลทละ <b>${f(o.cap)}</b></span>` : `<span class="low">${o.cap === 0 ? 'ความจุเป็น 0' : 'ไม่มีความจุ'}</span>`);
+  if (ln.po) bits.push(`<span>PO <b>${esc(ln.po)}</b></span>`);
+  const x = o.info;
+  if (o.s < 0) bits.push('<span class="low">ไม่มี SKU นี้ในสมุด</span>');
+  if (x) {
+    if (x.regular) {
+      const cover = x.perDay > 0 ? x.openQty / x.perDay : Infinity;
+      const low = cover < OPT.coverDays;
+      bits.push(`<span>โลเปิดประจำ <b>${esc(x.regular)}</b>${x.fills ? ` (เติม ${f(x.fills)} ครั้ง)` : ''}</span>`);
+      bits.push(`<span class="${low ? 'low' : ''}">โลเปิดมี ${f(x.openQty)} ชิ้น${x.perDay > 0 ? ` · ขายวันละ ${f(Math.round(x.perDay * 10) / 10)} · พอขาย ${cover === Infinity ? '-' : cover.toFixed(1)} วัน` : ' · ช่วงนี้ไม่มีขาย'}</span>`);
+    }
+    if (x.rib > 0) bits.push(`<span>ใน RIB <b>${f(x.rib)}</b></span>`);
+    bits.push(`<span>ทั้งคลัง ${f(x.total)}</span>`);
+  }
+  return bits.join('');
+}
+
+function rowHtml(i, j, r, msgs) {
+  const level = msgs.some((m) => m.level === 'red') ? 'r-red' : r.tag === 'rib' ? 'r-rib' : r.move ? 'r-move' : '';
+  const k = (field) => `data-i="${i}" data-j="${j}" data-f="${field}" data-k="${i}.${j}.${field}"`;
+  return `<tr class="${level}">
+    <td class="c-loc"><input class="pw-loc${r.loc ? '' : ' empty'}" list="pwLocs" value="${esc(r.loc)}" placeholder="เลือกโล" ${k('loc')} aria-label="Location"></td>
+    <td class="c-qty"><input class="pw-qty" type="number" min="0" step="any" value="${esc(r.qty)}" ${k('qty')} aria-label="จำนวน"></td>
+    <td class="c-open"><input class="pw-ck" type="checkbox" ${r.open ? 'checked' : ''} ${k('open')} aria-label="OPEN" title="เข้าโลเปิด"></td>
+    <td class="c-x"><button class="pw-x" data-del="${i}.${j}" title="ลบแถวนี้" aria-label="ลบแถว">×</button></td>
+    <td class="c-tag"><span class="pw-tag t-${esc(r.tag || 'manual')}">${esc(r.move ? 'ย้ายจาก ' + (r.from || 'RIB') : P.TAG_TEXT[r.tag] || 'แก้เอง')}</span>
+      ${r.why ? `<span class="pw-why">${esc(r.why)}</span>` : ''}
+      ${msgs.map((m) => `<span class="pw-msg l-${m.level}">${m.level === 'red' ? '⛔ ' : m.level === 'warn' ? '⚠️ ' : ''}${esc(m.text)}</span>`).join('')}</td>
+    <td class="c-rm"><input class="pw-rm" value="${esc(r.remark || '')}" placeholder="REMARK" ${k('remark')} aria-label="REMARK"></td>
+  </tr>`;
+}
+
+function renderBody() {
+  const body = $('body');
+  if (!WmsSettings.txUrl()) {
+    body.innerHTML = `<div class="tx-empty">หน้านี้ใช้สต๊อกจากสมุด Transaction<br><b>ตั้ง Apps Script URL ของ Transaction</b> ที่<a href="../settings/">หน้าตั้งค่า</a>ก่อน</div>`;
+    return;
+  }
+  if (!SNAP) {
+    body.innerHTML = `<div class="tx-empty">${BUSY ? 'กำลังโหลดสต๊อก…' : 'กด <b>ดึงสต๊อก</b> ด้านบนก่อน ระบบต้องรู้ว่าช่องไหนว่าง'}</div>`;
+    return;
+  }
+  if (!PLAN.lines.length) {
+    body.innerHTML = `<div class="tx-empty">คัดลอกแพลนรับเข้าจากแท็บ INPUT มาวางในช่องด้านบน แล้วกด <b>จัดที่เก็บ</b><br>
+      ระบบเสนอโลให้ทุกบรรทัด แก้ได้ทุกช่อง แล้วคัดลอกกลับไปวางในแท็บ OUTPUT</div>`;
+    return;
+  }
+  const edited = Object.keys(MANUAL).length;
+  let html = `<div class="pw-bar">
+      <button class="tx-opt p" id="copyBtn">📋 คัดลอกไปวางในชีต</button>
+      <button class="tx-opt" id="xlsxBtn">⬇️ โหลด Excel</button>
+      <span class="sp"></span>
+      ${edited ? `<span class="pw-edit">แก้เอง ${f(edited)} บรรทัด</span> <button class="tx-opt" id="resetAll">คืนค่าที่ระบบเสนอทั้งหมด</button>` : ''}
+    </div>`;
+  if (PLAN.skipped.length) {
+    html += `<details class="pw-skip"><summary>ข้ามไป ${f(PLAN.skipped.length)} แถว</summary><ul>${PLAN.skipped.map((s) => `<li>${esc(s.label || 'แถว ' + s.n)}${s.code ? ` (${esc(s.code)})` : ''}: ${esc(s.why)}</li>`).join('')}</ul></details>`;
+  }
+  OUT.forEach((o, i) => {
+    const ln = PLAN.lines[i], ck = CHK.lines[i];
+    const bad = ck.rows.some((m) => m.some((x) => x.level === 'red'));
+    html += `<div class="pw-line${bad ? ' bad' : ''}">
+      <div class="pw-lh">
+        <span class="pw-no" title="แถวที่ ${ln.n} ของข้อความที่วาง">${esc(ln.label || 'แถว ' + ln.n)}</span>
+        <span class="pw-sku">${esc(ln.sku || ln.pid)}</span>
+        <span class="pw-nm">${esc(o.name || ln.name)}</span>
+        <span class="pw-q">${f(ln.qty)} ชิ้น</span>
+        <div class="pw-meta">${lineMeta(o, ln)}</div>
+        ${ck.issues.map((t) => `<div class="pw-iss">⚠️ ${esc(t)}</div>`).join('')}
+      </div>
+      <table class="pw-tbl">
+        <thead><tr><th>Location</th><th>QTY</th><th>OPEN</th><th></th><th>สถานะ</th><th>REMARK</th></tr></thead>
+        <tbody>${o.rows.map((r, j) => rowHtml(i, j, r, ck.rows[j])).join('')}</tbody>
+      </table>
+      <div class="pw-lf">
+        <button class="pw-small" data-add="${i}">+ เพิ่มแถว</button>
+        ${o.manual ? `<button class="pw-small" data-reset="${i}">คืนค่าที่ระบบเสนอ</button><span class="pw-edit">แก้เอง</span>` : ''}
+      </div>
+    </div>`;
+  });
+  body.innerHTML = html;
+}
+
+function renderPlanSt() {
+  const el = $('planSt');
+  if (!el) return;
+  el.textContent = PLAN.lines.length ? `อ่านได้ ${f(PLAN.lines.length)} บรรทัด${PLAN.skipped.length ? ` ข้าม ${f(PLAN.skipped.length)}` : ''}` : '';
+}
+
+function render() {
+  renderSrc();
+  renderCap();
+  renderPlanSt();
+  renderSum();
+  renderBody();
+}
+
+/* ── แก้แถว ────────────────────────────────────────────────────────────── */
+
+/** แก้บรรทัดไหนครั้งแรก คัดลอกแถวที่ระบบเสนอไว้เป็นของคนแก้ ต่อจากนั้นระบบไม่คิดบรรทัดนั้นใหม่ */
+function own(i) {
+  if (!MANUAL[i]) MANUAL[i] = OUT[i].rows.map((r) => ({ ...r }));
+  return MANUAL[i];
+}
+
+/** วาดใหม่แล้วคืนเคอร์เซอร์ไปช่องที่คนกดไปต่อ (Tab ไปช่องถัดไปจะได้ไม่หลุด) */
+function redraw() {
+  setTimeout(() => {
+    const a = document.activeElement;
+    const key = a && a.dataset ? a.dataset.k : '';
+    compute();
+    saveDraft();
+    renderSum();
+    renderBody();
+    if (key) {
+      const el = document.querySelector(`[data-k="${key}"]`);
+      if (el) { el.focus(); if (el.select && el.type !== 'checkbox') el.select(); }
+    }
+  }, 0);
+}
+
+$('body').addEventListener('change', (e) => {
+  const t = e.target;
+  if (t.dataset.i === undefined) return;
+  const rows = own(+t.dataset.i);
+  const r = rows[+t.dataset.j];
+  const fld = t.dataset.f;
+  if (fld === 'loc') {
+    r.loc = t.value.trim().toUpperCase();
+    r.tag = r.move ? 'move' : r.loc === 'RIB' ? 'rib' : P.zoneOf(r.loc) === 'R' ? 'rack' : P.isFloor(r.loc) ? 'floor' : r.loc ? (r.open ? 'open' : 'floor') : 'manual';
+    r.why = '';
+  } else if (fld === 'qty') r.qty = Math.max(0, Number(t.value) || 0);
+  else if (fld === 'open') { r.open = t.checked; if (!r.move && r.loc) r.tag = r.open ? 'open' : (P.zoneOf(r.loc) === 'R' ? 'rack' : r.loc === 'RIB' ? 'rib' : 'floor'); }
+  else if (fld === 'remark') r.remark = t.value;
+  redraw();
+});
+
+$('body').addEventListener('click', (e) => {
+  const del = e.target.closest('[data-del]');
+  if (del) {
+    const [i, j] = del.dataset.del.split('.').map(Number);
+    own(i).splice(j, 1);
+    redraw();
+    return;
+  }
+  const add = e.target.closest('[data-add]');
+  if (add) {
+    const i = +add.dataset.add;
+    const rows = own(i);
+    const left = Math.max(0, PLAN.lines[i].qty - rows.reduce((a, r) => a + (r.move ? 0 : +r.qty || 0), 0));
+    rows.push({ loc: '', qty: left, open: false, tag: 'manual', why: '' });
+    redraw();
+    setTimeout(() => document.querySelector(`[data-k="${i}.${rows.length - 1}.loc"]`)?.focus(), 30);
+    return;
+  }
+  const reset = e.target.closest('[data-reset]');
+  if (reset) { delete MANUAL[+reset.dataset.reset]; redraw(); return; }
+  if (e.target.closest('#resetAll')) {
+    if (!confirm('คืนค่าที่ระบบเสนอทุกบรรทัด ที่แก้เองไว้จะหาย')) return;
+    MANUAL = {};
+    redraw();
+    return;
+  }
+  if (e.target.closest('#copyBtn')) {
+    const btn = $('copyBtn');
+    const rows = P.exportRows(PLAN.lines, OUT, true).slice(1).map((r) => r.slice(0, 8));
+    copyText(rows.map((r) => r.map((v) => String(v).replace(/[\t\n]/g, ' ')).join('\t')).join('\n')).then((ok) => {
+      btn.textContent = ok ? 'คัดลอกแล้ว วางในแท็บ OUTPUT ได้เลย' : 'คัดลอกไม่ได้ ลองกดอีกครั้ง';
+      if (ok) window.WmsMotion?.saved(btn); else window.WmsMotion?.shake(btn);
+    });
+    return;
+  }
+  if (e.target.closest('#xlsxBtn')) downloadXlsx();
+});
+
+function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text).then(() => true, () => false);
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  document.body.appendChild(ta);
+  ta.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch (e) {}
+  ta.remove();
+  return Promise.resolve(ok);
+}
+
+async function downloadXlsx() {
+  const btn = $('xlsxBtn');
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'กำลังสร้างไฟล์…';
+  try {
+    const X = await xlsxLib();
+    const ws = X.utils.aoa_to_sheet(P.exportRows(PLAN.lines, OUT, false));
+    ws['!cols'] = [{ wch: 18 }, { wch: 12 }, { wch: 6 }, { wch: 5 }, { wch: 16 }, { wch: 10 }, { wch: 48 }, { wch: 7 }, { wch: 12 }];
+    const wb = X.utils.book_new();
+    X.utils.book_append_sheet(wb, ws, 'OUTPUT');
+    const d = new Date();
+    X.writeFile(wb, `จัดที่เก็บ-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}.xlsx`);
+  } catch (e) {
+    alert(e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = label;
+}
+
+/* ── ช่องวางแพลนกับเกณฑ์ ───────────────────────────────────────────────── */
+
+$('inp').addEventListener('click', (e) => {
+  if (e.target.closest('#goBtn')) {
+    const text = $('plan').value;
+    if (text !== TEXT && Object.keys(MANUAL).length && !confirm('แพลนเปลี่ยน ที่แก้เองไว้จะถูกล้าง แล้วจัดใหม่ทั้งหมด')) return;
+    if (text !== TEXT) MANUAL = {};
+    TEXT = text;
+    compute();
+    saveDraft();
+    render();
+    if (!SNAP && WmsSettings.txUrl() && !LOADING) load(false);
+    return;
+  }
+  if (e.target.closest('#clearBtn')) {
+    if (TEXT && !confirm('ล้างแพลนและที่แก้เองทั้งหมด')) return;
+    TEXT = '';
+    MANUAL = {};
+    $('plan').value = '';
+    compute();
+    saveDraft();
+    render();
+    return;
+  }
+  if (e.target.closest('[data-capfile]')) { $('capFile').click(); return; }
+  if (e.target.closest('[data-captab]')) {
+    FILECAP = null;
+    try { localStorage.removeItem(CAPFILE); } catch (err) {}
+    compute();
+    render();
+  }
+});
+
+$('inp').addEventListener('change', (e) => {
+  if (e.target.id === 'cover') {
+    const v = Number(e.target.value);
+    OPT.coverDays = v >= 0 ? v : P.DEFAULTS.coverDays;
+    e.target.value = OPT.coverDays;
+    writeJson(SET, { coverDays: OPT.coverDays });
+    compute();
+    render();
+    return;
+  }
+  if (e.target.id === 'capFile' && e.target.files[0]) {
+    readCapFile(e.target.files[0]);
+    e.target.value = '';
+  }
+});
+
+/* ลากไฟล์ความจุมาวางที่กล่องความจุ */
+$('inp').addEventListener('dragover', (e) => {
+  const box = e.target.closest('#capSt');
+  if (!box) return;
+  e.preventDefault();
+  box.classList.add('pw-drag');
+});
+$('inp').addEventListener('dragleave', (e) => { e.target.closest('#capSt')?.classList.remove('pw-drag'); });
+$('inp').addEventListener('drop', (e) => {
+  const box = e.target.closest('#capSt');
+  if (!box) return;
+  e.preventDefault();
+  box.classList.remove('pw-drag');
+  const file = e.dataTransfer.files[0];
+  if (file) readCapFile(file);
+});
+
+/* ── ข้อมูลกลาง: มีคนดึงสต๊อกชุดใหม่ ขึ้นให้เอง ── */
+
+async function checkShared() {
+  const url = WmsSettings.txUrl();
+  if (!url || LOADING) return false;
+  const st = await WmsShared.status(url);
+  if (!WmsShared.knows(st, 'transaction')) return false;
+  const run = WmsShared.running(st, 'tx-fifo');
+  const had = !!WAIT;
+  WAIT = run;
+  if (run) { if (!had) renderSrc(); return true; }
+  if (!RES || !WmsShared.newer(st, 'tx-fifo', RES)) { if (had) renderSrc(); return false; }
+  if (WmsShared.typing()) { if (had) renderSrc(); return true; }
+  await load(false, true);
+  return false;
+}
+
+renderInput();
+compute();
+render();
+const WATCH = WmsShared.watch(checkShared);
+if (WmsSettings.txUrl()) load(false);
+</script>
+</body>
+</html>

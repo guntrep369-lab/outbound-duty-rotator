@@ -18,7 +18,7 @@ The list lives in [`public/wms-modules.js`](public/wms-modules.js) (the one plac
 | — | สมุดกะ · Shift Log | `shiftlog/` |
 | — (hidden) | สรุปเช้า · Morning Brief · ย้อนหลัง · History | `summary/` · `history/` |
 | ออเดอร์ | เทียบ Order · ค้นหาออเดอร์ | `order-compare/` · `order-lookup/` |
-| คลังสินค้า | สต๊อกคงเหลือ · สรุปหยิบของ · เบิกตามออเดอร์ · เอกสารคลังสินค้า | `stock/` · `picking/` · `order-sheet/` · `warehouse-forms/` |
+| คลังสินค้า | สต๊อกคงเหลือ · สรุปหยิบของ · เบิกตามออเดอร์ · เอกสารคลังสินค้า · จัดที่เก็บ | `stock/` · `picking/` · `order-sheet/` · `warehouse-forms/` · `putaway/` |
 | สินค้าคงคลัง | ภาพรวมสต๊อก · สต๊อกราย Location · เช็ครายการตัดสต๊อก · LOT / PO ที่ขายออก · จับคู่ Invoice · FIFO สต๊อก · สินค้าคงเหลือ ณ วันที่ | `dashboard/` · `stock-location/` · `cut-check/` · `lot-po/` · `invoice-match/` · `fifo/` · `balance/` |
 | ขนส่ง | ทำใบงานขนส่ง · เอกสารขนส่ง | `transport-docs/` · `transport-forms/` |
 | ขนส่ง (hidden) | ประเภทงานรถ · ผังงานรถวันนี้ | `jobs/` · `loadplan/` |
@@ -1084,6 +1084,54 @@ here.
 
 ---
 
+## 📥 Putaway (`/putaway`)
+
+Plans where today's incoming goods go. Paste the day's plan (the INPUT tab), and the page proposes a
+Location for every pallet from the real free space in the Transaction ledger, each SKU's pallet capacity,
+and the warehouse's rules. Every row can be changed. Then copy the rows into the OUTPUT tab or download
+Excel. It reads the same shared copy of the ledger as FIFO สต๊อก (`tx-fifo`) and never writes to the sheet.
+
+- **The plan:** copy the rows from Google Sheets, header or not. With a header, columns are found by name
+  (NO., Product ID, LOT, PO, SKU, Product Name, QTY, Truck, REMARK). Without one, the INPUT tab's order is
+  used, with or without the NO. column. Blank rows, rows with no code, and rows whose QTY isn't above 0
+  are skipped and listed. Each line is named by its NO., so it matches the sheet.
+- **Pallet capacity** comes from a tab named `ความจุต่อพาเลท` in the file the Transaction script is
+  bound to (header SKU, Product ID, STD / pallet; either code matches). An Excel file dropped on the
+  capacity box works too and takes over from the tab until you switch back. A SKU with no capacity, or 0,
+  is left for you to place.
+- **The rules, in order, per line:**
+  1. ของแถม (a name starting แถม, or a FRE code) goes to zone D: on top of the same PO if it's there,
+     otherwise the first empty D location.
+  2. **OPEN:** one pallet goes straight into the SKU's regular open location when it's out of stock, or
+     when what's in the open location lasts less than the set number of days of sales (default **3**,
+     changeable on the page and kept on this device). The regular open location is the one the ledger
+     shows it refilled most often; failing that, its biggest open pile now, then its last one.
+  3. Full pallets go to empty R locations, near where the SKU already sits. R level 1 (`-01`) is for 5FT and
+     6FT mattresses only; everything else goes on level 2 and up. One SKU per location; no topping up.
+  4. The remainder that doesn't fill a pallet:
+     - the same PO already in the open location → into the open location;
+     - 3.5FT mattresses and toppers → RIB. When what's in RIB plus today's makes a full pallet, the page
+       moves them together to the rack and adds a ย้ายจาก RIB row;
+     - 5FT / 6FT → the SKU's own empty level-1 location, else an empty floor location (A–D) near it;
+     - anything else → an empty level-2+ location.
+  5. What still has nowhere to go is marked เลือกเอง.
+- **Each line's card** shows the kind, capacity, PO, regular open location, what's in it, sales per day,
+  days it lasts (red when under the setting), RIB, and stock in the warehouse.
+- **Changing a row** (Location, QTY, OPEN, REMARK), adding or deleting one keeps that line as you set it;
+  other lines are worked out again around it, so they don't take the same location.
+  คืนค่าที่ระบบเสนอ undoes one line, and the button at the top undoes all. The plan and your changes stay on
+  this device until you clear them.
+- **Checks on every row:** another SKU already in the location or in another line's row (red), R level 1
+  used by something other than 5FT / 6FT, over capacity, a Location the ledger has never had, a floor
+  location holding another PO of the same SKU, and a line whose rows don't add up to its QTY.
+- **📋 คัดลอกไปวางในชีต** copies the rows in the OUTPUT tab's order with OPEN as TRUE/FALSE.
+  **⬇️ โหลด Excel** downloads `จัดที่เก็บ-YYYY-MM-DD.xlsx` with one sheet named OUTPUT.
+
+**Needs:** the new `tx-api.gs` (it sends the capacity tab with `tx-fifo`). With an older script the page
+still plans if you drop the capacity file, and says the script needs deploying.
+
+---
+
 ## 🗂️ Project structure
 
 ```
@@ -1111,6 +1159,7 @@ public/
 ├─ invoice-match/          # จับคู่ Invoice, order × LOT/PO file matched with accounting's document numbers (+ wms-invmatch.js)
 ├─ fifo/                   # FIFO สต๊อก, stock by LOT oldest first + picks that skipped FIFO (+ wms-fifo.js)
 ├─ balance/                # สินค้าคงเหลือ ณ วันที่, SKU × LOT × PO balance at the end of a chosen day (+ wms-balance.js)
+├─ putaway/                # จัดที่เก็บ, proposes a Location for each incoming pallet from free space + capacity (+ wms-putaway.js)
 ├─ dashboard/              # ภาพรวมสต๊อก, stock health now + monthly summary from the shared copies (+ wms-dash.js)
 ├─ summary/ history/ order-compare/ order-lookup/ stock/ picking/ order-sheet/
 ├─ shiftlog/               # สมุดกะ (+ logis.html: the read-only page for Logis)
