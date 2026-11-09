@@ -151,7 +151,6 @@ a.db-tile:focus-visible{outline:2px solid var(--wms-primary-dark);outline-offset
 
 @media (max-width:1100px){ .db-grid{grid-template-columns:repeat(2,minmax(0,1fr))} }
 @media (max-width:640px){
-  .mod-title h2 .en,.mod-title p{display:none}
   .tx-src{padding:9px 16px}
   .tx-body{padding:12px 16px 60px}
   .db-grid{grid-template-columns:minmax(0,1fr)}
@@ -176,7 +175,8 @@ a.db-tile:focus-visible{outline:2px solid var(--wms-primary-dark);outline-offset
     <div class="mod-title">
       <div class="ic"><img src="../icons/boxes.png" alt="" width="38" height="38"></div>
       <div>
-        <h2>ภาพรวมสต๊อก<span class="en"> · Stock Overview</span></h2>
+        <h2>ภาพรวมสต๊อก</h2>
+        <button type="button" class="mod-info" aria-expanded="false" aria-label="คำอธิบายหน้านี้">i</button>
         <p>สุขภาพสต๊อกตอนนี้ และสรุปรายเดือนให้หัวหน้า — ตัวเลขชุดเดียวกับหน้าสต๊อกราย Location, FIFO และเช็ครายการตัดสต๊อก อ่านอย่างเดียว ไม่แก้ชีต</p>
       </div>
     </div>

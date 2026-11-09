@@ -100,7 +100,8 @@ export function navHTML(activeCarrier, depth, activeForm = null) {
       <div class="mod-title">
         <div class="ic"><img src="${ICON}" alt="" width="38" height="38"></div>
         <div>
-          <h2>เอกสารขนส่ง · Transport Forms</h2>
+          <h2>เอกสารขนส่ง</h2>
+          <button type="button" class="mod-info" aria-expanded="false" aria-label="คำอธิบายหน้านี้">i</button>
           <p>ฟอร์มเปล่าที่ใช้ประจำ เปิดดูแล้วสั่งพิมพ์ได้จากเว็บ ไม่ต้องเปิด Word/Excel</p>
         </div>
       </div>

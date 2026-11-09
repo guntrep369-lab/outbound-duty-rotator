@@ -137,7 +137,6 @@
 .lp-how small{display:block;font-size:12px}
 
 @media (max-width:640px){
-  .mod-title h2 .en,.mod-title p{display:none}
   .tx-src,.lp-days,.tx-sum{padding-left:16px;padding-right:16px}
   .tx-src button{min-height:44px;padding:0 16px}
   .tx-src select,.tx-src input[type=date]{min-height:44px;font-size:16px}
@@ -187,7 +186,8 @@
     <div class="mod-title">
       <div class="ic"><img src="../icons/clipboard-list.png" alt="" width="38" height="38"></div>
       <div>
-        <h2>LOT / PO ที่ขายออก<span class="en"> · Lot &amp; PO Out</span></h2>
+        <h2>LOT / PO ที่ขายออก</h2>
+        <button type="button" class="mod-info" aria-expanded="false" aria-label="คำอธิบายหน้านี้">i</button>
         <p>SKU ที่ขายออกแต่ละวันมาจาก LOT และ PO ไหน อ่านจากแถวขายในสต๊อกราย Location ไว้ทำรายงานส่งบัญชี — อ่านอย่างเดียว ไม่แก้ชีต</p>
       </div>
     </div>

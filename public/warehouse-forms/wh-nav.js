@@ -88,7 +88,8 @@ export function navHTML(activeForm = null) {
       <div class="mod-title">
         <div class="ic"><img src="${ICON}" alt="" width="38" height="38"></div>
         <div>
-          <h2>เอกสารคลังสินค้า · Warehouse Forms</h2>
+          <h2>เอกสารคลังสินค้า</h2>
+          <button type="button" class="mod-info" aria-expanded="false" aria-label="คำอธิบายหน้านี้">i</button>
           <p>กรอกในเว็บแล้วสั่งพิมพ์ — ใส่รหัส SKU แล้วชื่อสินค้าขึ้นเอง</p>
         </div>
       </div>${tabs}

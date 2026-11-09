@@ -335,19 +335,46 @@ span.wms-shake { display:inline-block; }
   .wms-check, .wms-check * { animation:none !important; }
 }
 
-/* ── Module header (icon tile + title + sub-nav) ─────────────────────────── */
+/* ── Module header (icon tile + title + sub-nav) ─────────────────────────────
+   Calm header (Nov 2026): one line — small icon, the Thai name, and an ⓘ
+   button. The page's description (<p>, or .sub on เทียบ Order) stays hidden
+   until ⓘ is pressed (wms-shell.js toggles .info-open), then drops onto its own
+   line under the name. It used to be a bilingual title plus two lines of text
+   on every page, which pushed the tables down on every visit.              */
 .mod-head { background:var(--wms-surface); border-bottom:1px solid var(--wms-border);
-            padding:14px 20px 0; flex-shrink:0; font-family:var(--wms-font); }
+            padding:10px 20px 0; flex-shrink:0; font-family:var(--wms-font); }
 .mod-title { display:flex; align-items:center; gap:10px; }
-.mod-title .ic { width:38px; height:38px; border-radius:12px; flex-shrink:0;
+/* Most pages have nothing under the name (their tabs live outside the header),
+   so the name needs the same 10px below it as above. Pages with tab rows keep
+   0: the tabs' underline must sit on the header's bottom border. */
+.mod-head > .mod-title:last-child { padding-bottom:10px; }
+.mod-title .ic { width:28px; height:28px; border-radius:8px; flex-shrink:0;
                  display:flex; align-items:center; justify-content:center;
-                 background:var(--wms-primary-light); color:var(--wms-primary); font-size:19px; }
+                 background:var(--wms-primary-light); color:var(--wms-primary); font-size:15px; }
 /* Module icon image (public/icons/). It is its own gradient tile, so the light
    tile behind it would show at the rounded corners. Emoji tiles keep it. */
 .mod-title .ic:has(> img) { background:none; }
 .mod-title .ic > img { width:100%; height:100%; display:block; }
-.mod-title h2 { font-size:16px; font-weight:700; color:var(--wms-text); margin:0; }
-.mod-title p  { font-size:12px; color:var(--wms-muted); margin:2px 0 0; }
+/* Name and ⓘ on one line; the description wraps to a full-width line below. */
+.mod-title > div:not(.ic) { display:flex; flex-wrap:wrap; align-items:center; gap:2px 8px; min-width:0; }
+.mod-title h2 { font-size:15px; font-weight:700; color:var(--wms-text); margin:0; }
+.mod-title p, .mod-title .sub { display:none; flex-basis:100%; margin:0;
+                                font-size:12px; line-height:1.5; color:var(--wms-muted); }
+.mod-title.info-open p, .mod-title.info-open .sub { display:block; }
+/* Open, the icon stays level with the name rather than drifting to the middle
+   of a two- or three-line block. 3px = (28px icon − 22px name line) / 2. */
+.mod-title.info-open { align-items:flex-start; }
+.mod-title.info-open > div:not(.ic) { padding-top:3px; }
+.mod-info {
+  width:18px; height:18px; padding:0; flex-shrink:0; border-radius:50%; cursor:pointer;
+  display:inline-flex; align-items:center; justify-content:center;
+  border:1px solid var(--wms-border2); background:transparent; color:var(--wms-muted);
+  font:italic 600 11px/1 Georgia, 'Times New Roman', serif;
+  transition:background .15s, color .15s, border-color .15s;
+}
+.mod-info:hover { border-color:var(--wms-primary); color:var(--wms-primary); }
+.mod-info:focus-visible { outline:2px solid var(--wms-primary); outline-offset:2px; }
+.mod-title.info-open .mod-info { background:var(--wms-primary-light); border-color:#A5B4FC; color:var(--wms-primary-dark); }
 /* Document tabs. LAYOUT LIVES HERE, not in the pages: the header markup comes
    from transport-nav.js, so a page that has no CSS of its own must still get a
    correct row. (It didn't — .mod-subnav had no display:flex, and the two older
@@ -523,9 +550,9 @@ span.wms-shake { display:inline-block; }
 }
 /* … then refine the pieces that had baked-in geometry. */
 
-body[data-wms-module="order"] header { background:var(--wms-surface); border-bottom:1px solid var(--wms-border); padding:14px 20px 12px; }
-body[data-wms-module="order"] header h1 { font-size:16px; font-weight:700; color:var(--wms-text); }
-body[data-wms-module="order"] header .sub { font-size:12px; color:var(--wms-muted); margin-top:2px; }
+body[data-wms-module="order"] header { background:var(--wms-surface); border-bottom:1px solid var(--wms-border); padding:10px 20px; }
+body[data-wms-module="order"] header h1 { font-size:15px; font-weight:700; color:var(--wms-text); letter-spacing:0; }
+body[data-wms-module="order"] header .sub { font-size:12px; color:var(--wms-muted); margin-top:0; }
 body[data-wms-module="order"] .tabs { padding:0 20px; border-bottom:1px solid var(--wms-border); }
 body[data-wms-module="order"] .tab-btn { padding:10px 14px; font-weight:500; border-radius:0; }
 body[data-wms-module="order"] .tab-btn.active { color:var(--wms-primary-dark); border-bottom-color:var(--wms-primary); }

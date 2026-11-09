@@ -215,7 +215,6 @@ button.fi-kpi .go{margin-top:auto;padding-top:6px;font-size:12px;font-weight:600
   .fi-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media (max-width:640px){
-  .mod-title h2 .en,.mod-title p{display:none}
   .tx-src,.fi-kpis{padding-left:16px;padding-right:16px}
   .tx-tabs{padding-left:12px;padding-right:12px}
   .tx-src button{min-height:44px;padding:0 16px}
@@ -296,7 +295,8 @@ button.fi-kpi .go{margin-top:auto;padding-top:6px;font-size:12px;font-weight:600
     <div class="mod-title">
       <div class="ic"><img src="../icons/package.png" alt="" width="38" height="38"></div>
       <div>
-        <h2>FIFO สต๊อก<span class="en"> · FIFO Stock</span></h2>
+        <h2>FIFO สต๊อก</h2>
+        <button type="button" class="mod-info" aria-expanded="false" aria-label="คำอธิบายหน้านี้">i</button>
         <p>สต๊อกคงเหลือเรียงจาก LOT และ PO เก่าไปใหม่ กับการหยิบขายและเติมของที่ข้ามของเก่า ทำรายงานส่ง Supply chain รายเดือน — อ่านอย่างเดียว ไม่แก้ชีต</p>
       </div>
     </div>

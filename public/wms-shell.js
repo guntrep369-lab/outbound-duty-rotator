@@ -164,6 +164,31 @@ function foldGroups(doc) {
   });
 }
 
+/**
+ * ⓘ next to the page name (wms-theme.css, "Calm header"): the description is
+ * hidden until pressed, then shows under the name; press again to hide it.
+ * Hovering the ⓘ or the name shows the same text as a tooltip, set on first
+ * hover so the words live only in the page's <p>.
+ * Listens on the document, not the buttons: the ทำใบงานขนส่ง / เอกสารขนส่ง /
+ * เอกสารคลัง headers are drawn by their own scripts, possibly after this one.
+ */
+function infoToggles(doc) {
+  if (!doc.addEventListener) return;
+  doc.addEventListener('click', (e) => {
+    const btn = e.target.closest?.('.mod-info');
+    const head = btn?.closest('.mod-title');
+    if (!head) return;
+    const open = head.classList.toggle('info-open');
+    btn.setAttribute('aria-expanded', String(open));
+  });
+  doc.addEventListener('pointerover', (e) => {
+    const el = e.target.closest?.('.mod-info, .mod-title h2, .mod-title h1');
+    if (!el || el.title) return;
+    const text = el.closest('.mod-title')?.querySelector('p, .sub')?.textContent.trim();
+    if (text) el.title = text;
+  });
+}
+
 /** Turn every <div data-wms-shell> marker on the page into the sidebar. */
 export function mountShell(doc = document) {
   let active = '';
@@ -190,6 +215,7 @@ export function mountShell(doc = document) {
   }
   foldGroups(doc);
   keepMenuScroll(doc);
+  infoToggles(doc);
   // Open-item count on สมุดกะ, see wms-badges.js.
   mountBadges(active);
   // Loading belt, tab sweep, count-up, see wms-motion.js.

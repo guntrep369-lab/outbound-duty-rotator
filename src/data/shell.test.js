@@ -2,6 +2,8 @@
  * public/wms-shell.js — เมนูข้าง: โมดูลที่ซ่อนไว้ และหมวดที่พับเก็บได้
  */
 import { describe, it, expect, beforeAll, vi } from 'vitest';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 
 let sidebarHTML;
 let MODULES;
@@ -129,5 +131,47 @@ describe('เมนูเรียบ', () => {
     const html = sidebarHTML('stock', '../');
     expect(html).not.toContain('sysbar-sub');
     expect(html).toMatch(/class="sysbar-brand" title="WMS Management — ระบบบริหารคลังสินค้า"/);
+  });
+});
+
+/** ทุกไฟล์ใน public/ ที่มีหัวหน้า (.mod-title) — หน้า html กับสคริปต์ที่วาดหัวเอง */
+function headFiles() {
+  const out = [];
+  const walk = (dir) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (/\.(html|js)$/.test(e.name)) {
+        const text = readFileSync(p, 'utf8');
+        if (text.includes('class="mod-title"')) out.push([p, text]);
+      }
+    }
+  };
+  walk('public');
+  return out;
+}
+
+describe('หัวหน้าเรียบ', () => {
+  const files = headFiles();
+
+  it('เจอหัวหน้าครบทุกหน้า', () => {
+    expect(files.length).toBeGreaterThanOrEqual(23);
+  });
+
+  it('ชื่อหน้าเป็นภาษาไทยบรรทัดเดียว ไม่มีชื่ออังกฤษต่อท้าย', () => {
+    for (const [p, text] of files) {
+      const h = text.match(/class="mod-title"[\s\S]*?<h([12])>([\s\S]*?)<\/h\1>/);
+      expect(h, p).toBeTruthy();
+      expect(h[2], p).not.toMatch(/ · [A-Za-z]/);
+      expect(h[2], p).not.toContain('class="en"');
+    }
+  });
+
+  it('มีคำอธิบายต้องมีปุ่ม i อยู่ระหว่างชื่อกับคำอธิบาย', () => {
+    for (const [p, text] of files) {
+      expect(text, p).toMatch(
+        /<\/h[12]>\s*<button type="button" class="mod-info" aria-expanded="false" aria-label="[^"]+">i<\/button>\s*(<p>|<div class="sub">)/,
+      );
+    }
   });
 });

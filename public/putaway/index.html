@@ -151,7 +151,6 @@
 .pw-more .tip{color:var(--wms-text)}
 
 @media (max-width:640px){
-  .mod-title h2 .en,.mod-title p{display:none}
   .tx-src,.pw-in,.tx-sum,.tx-body{padding-left:16px;padding-right:16px}
   .tx-opt{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:0 15px}
   .pw-loc,.pw-qty,.pw-rm,.pw-num{font-size:16px}   /* ต่ำกว่า 16px iPhone จะซูมหน้าเองตอนแตะช่อง */
@@ -169,7 +168,8 @@
     <div class="mod-title">
       <div class="ic"><img src="../icons/boxes.png" alt="" width="38" height="38"></div>
       <div>
-        <h2>จัดที่เก็บ<span class="en"> · Putaway</span></h2>
+        <h2>จัดที่เก็บ</h2>
+        <button type="button" class="mod-info" aria-expanded="false" aria-label="คำอธิบายหน้านี้">i</button>
         <p>วางแพลนรับเข้า (Ctrl+V) ได้โลเคชั่นทันที แก้ได้ทุกช่อง แล้วคัดลอกไปวางแท็บ OUTPUT</p>
       </div>
     </div>

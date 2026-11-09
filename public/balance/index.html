@@ -110,7 +110,6 @@
 .bl-out{padding-top:12px;border-top:1px solid var(--wms-border)}
 
 @media (max-width:640px){
-  .mod-title h2 .en,.mod-title p{display:none}
   .tx-src,.bl-pick,.tx-sum{padding-left:16px;padding-right:16px}
   .tx-src button{min-height:44px;padding:0 16px}
   .bl-pick input[type=date]{min-height:44px;font-size:16px;flex:1 1 160px}
@@ -152,7 +151,8 @@
     <div class="mod-title">
       <div class="ic"><img src="../icons/calendar.png" alt="" width="38" height="38"></div>
       <div>
-        <h2>สินค้าคงเหลือ ณ วันที่<span class="en"> · Stock as of Date</span></h2>
+        <h2>สินค้าคงเหลือ ณ วันที่</h2>
+        <button type="button" class="mod-info" aria-expanded="false" aria-label="คำอธิบายหน้านี้">i</button>
         <p>ยอดคงเหลือราย SKU × LOT × PO ณ สิ้นวันที่เลือก คิดจากสมุด Transaction ทั้งชีต โหลดเป็นไฟล์ Excel ได้ — อ่านอย่างเดียว ไม่แก้ชีต</p>
       </div>
     </div>

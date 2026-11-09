@@ -65,7 +65,8 @@ export function navHTML(activeCarrier, depth, activeDoc = null) {
     <div class="mod-title">
       <div class="ic"><img src="${ICON}" alt="" width="38" height="38"></div>
       <div>
-        <h2>ทำใบงานขนส่ง · Transport Documents</h2>
+        <h2>ทำใบงานขนส่ง</h2>
+        <button type="button" class="mod-info" aria-expanded="false" aria-label="คำอธิบายหน้านี้">i</button>
         <p>เลือกขนส่ง แล้วสร้างเอกสารจากไฟล์ Excel</p>
       </div>
     </div>
