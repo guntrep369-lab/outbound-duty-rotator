@@ -71,6 +71,10 @@
 .tx-body{padding:14px 20px 60px}
 .tx-empty{padding:40px 20px;text-align:center;color:var(--wms-muted);font-size:14px;line-height:1.75}
 .tx-empty b{color:var(--wms-text)}
+.tx-empty.bad{color:var(--wms-text)}
+.tx-empty.bad > b:first-child{color:var(--wms-danger)}
+.pw-why-list{display:inline-block;text-align:left;margin:6px auto 8px;padding-left:20px}
+#planSt.bad{color:var(--wms-danger);font-weight:600}
 .tx-opt{padding:5px 13px;border-radius:999px;border:1px solid var(--wms-border2);background:var(--wms-surface);
   font-family:var(--wms-font);font-size:13px;color:#334155;cursor:pointer}
 .tx-opt:hover{border-color:var(--wms-primary);color:var(--wms-primary-dark)}
@@ -232,12 +236,28 @@ function capSrc() {
 }
 function capNow() { const c = capSrc(); return c ? P.capMap(c.rows) : {}; }
 
+let CERR = '';      // คิดแผนไม่สำเร็จ บอกบนหน้า ไม่เงียบ
+
 function compute() {
-  PLAN = P.parsePlan(TEXT);
-  if (!SNAP) { OUT = []; CHK = null; return; }
-  const cap = capNow();
-  OUT = P.plan(PLAN.lines, SNAP, cap, OPT, MANUAL);
-  CHK = P.check(PLAN.lines, OUT, SNAP, cap);
+  CERR = '';
+  try {
+    PLAN = P.parsePlan(TEXT);
+    if (!SNAP) { OUT = []; CHK = null; return; }
+    const cap = capNow();
+    OUT = P.plan(PLAN.lines, SNAP, cap, OPT, MANUAL);
+    CHK = P.check(PLAN.lines, OUT, SNAP, cap);
+  } catch (e) {
+    CERR = e.message || String(e);
+    OUT = []; CHK = null;
+    if (!PLAN || !PLAN.lines) PLAN = { lines: [], skipped: [] };
+  }
+}
+
+/** คอลัมน์ที่ระบบเดาจากหน้าตาข้อมูล (A, B, C…) ให้คนดูว่าเดาถูก */
+function colText() {
+  const c = PLAN.cols || {};
+  const L = (j) => (j >= 0 ? String.fromCharCode(65 + j) : '');
+  return [['SKU', c.sku], ['Product ID', c.pid], ['PO', c.po], ['QTY', c.qty]].filter((x) => x[1] >= 0).map((x) => `${x[0]} = ${L(x[1])}`).join(' · ');
 }
 
 /* ── โหลดสต๊อก ─────────────────────────────────────────────────────────── */
@@ -473,6 +493,19 @@ function renderBody() {
     body.innerHTML = `<div class="tx-empty">${BUSY ? 'กำลังโหลดสต๊อก…' : 'กด <b>ดึงสต๊อก</b> ด้านบนก่อน ระบบต้องรู้ว่าช่องไหนว่าง'}</div>`;
     return;
   }
+  if (CERR) {
+    body.innerHTML = `<div class="tx-empty bad">คิดที่เก็บไม่สำเร็จ: ${esc(CERR)}<br>ลองกด <b>จัดที่เก็บ</b> อีกครั้ง ถ้ายังไม่ได้ ส่งภาพหน้านี้ให้คนดูแลระบบ</div>`;
+    return;
+  }
+  if (!PLAN.lines.length && TEXT.trim()) {
+    const why = {};
+    PLAN.skipped.forEach((s) => { why[s.why] = (why[s.why] || 0) + 1; });
+    const list = Object.entries(why).map(([w, n]) => `<li>${esc(w)} ${f(n)} แถว</li>`).join('');
+    body.innerHTML = `<div class="tx-empty bad"><b>อ่านแพลนไม่ได้สักบรรทัด</b>${list ? `<ul class="pw-why-list">${list}</ul>` : '<br>'}
+      ลองคัดลอกจากแท็บ INPUT ให้ติดแถวหัวตาราง (NO., Product ID, PO, SKU, Product Name, QTY) มาด้วย แล้วกด <b>จัดที่เก็บ</b> อีกครั้ง
+      ${PLAN.how === 'look' && colText() ? `<br><small>ระบบเดาคอลัมน์ไว้: ${esc(colText())}</small>` : ''}</div>`;
+    return;
+  }
   if (!PLAN.lines.length) {
     body.innerHTML = `<div class="tx-empty">คัดลอกแพลนรับเข้าจากแท็บ INPUT มาวางในช่องด้านบน แล้วกด <b>จัดที่เก็บ</b><br>
       ระบบเสนอโลให้ทุกบรรทัด แก้ได้ทุกช่อง แล้วคัดลอกกลับไปวางในแท็บ OUTPUT</div>`;
@@ -516,7 +549,11 @@ function renderBody() {
 function renderPlanSt() {
   const el = $('planSt');
   if (!el) return;
-  el.textContent = PLAN.lines.length ? `อ่านได้ ${f(PLAN.lines.length)} บรรทัด${PLAN.skipped.length ? ` ข้าม ${f(PLAN.skipped.length)}` : ''}` : '';
+  el.classList.toggle('bad', !!(TEXT.trim() && !PLAN.lines.length));
+  if (PLAN.lines.length) {
+    el.textContent = `อ่านได้ ${f(PLAN.lines.length)} บรรทัด${PLAN.skipped.length ? ` ข้าม ${f(PLAN.skipped.length)}` : ''}` +
+      (PLAN.how === 'look' ? ` · ไม่มีหัวตาราง ดูจากข้อมูล: ${colText()}` : '');
+  } else el.textContent = TEXT.trim() ? 'อ่านแพลนไม่ได้สักบรรทัด ดูด้านล่าง' : '';
 }
 
 function render() {

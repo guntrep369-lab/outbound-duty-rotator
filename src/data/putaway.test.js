@@ -86,6 +86,34 @@ describe('wms-putaway.js — อ่านแพลนที่คัดลอก
   });
 });
 
+describe('wms-putaway.js — แท็บ INPUT ที่มีคอลัมน์ช่วยแทรก', () => {
+  // หน้าตาแท็บจริง 10 คอลัมน์: NO. | PO ต่อชื่อ (บางแถวว่าง) | Product ID | LOT | PO | SKU | ชื่อ | QTY | Truck | REMARK
+  const rows = [
+    ['1', '9900000075-09ที่นอน 5FT สมมติ', 'AAA0000000001', '', '9900000075-09', 'AAA001', 'ที่นอน 5FT สมมติ', '15', 'Saffron', ''],
+    ['2', '9900000075-09ที่นอน 3.5FT สมมติ', 'BBB0000000003', '', '9900000075-09', 'BBB003', 'ที่นอน 3.5FT สมมติ', '20', 'Saffron', ''],
+    ['3', '', 'AAA0000000002', '', '9900000076-09', 'AAA002', 'ที่นอน 6FT สมมติ', '1,100', 'Saffron', 'ด่วน'],
+    ['4', '', 'FRE0000000005', '', '9900000013', 'FRE005', 'แถม-หมอนสมมติ', '360', 'Hometrend', ''],
+  ];
+  it('ไม่ติดหัวตาราง ดูจากหน้าตาข้อมูลว่าคอลัมน์ไหนเป็นอะไร', () => {
+    const r = P.parsePlan(rows.map((x) => x.join('\t')).join('\n'));
+    expect(r.how).toBe('look');
+    expect(r.skipped).toEqual([]);
+    expect(r.lines.map((l) => [l.label, l.pid, l.sku, l.po, l.name, l.qty, l.truck, l.remark])).toEqual([
+      ['NO. 1', 'AAA0000000001', 'AAA001', '9900000075-09', 'ที่นอน 5FT สมมติ', 15, 'Saffron', ''],
+      ['NO. 2', 'BBB0000000003', 'BBB003', '9900000075-09', 'ที่นอน 3.5FT สมมติ', 20, 'Saffron', ''],
+      ['NO. 3', 'AAA0000000002', 'AAA002', '9900000076-09', 'ที่นอน 6FT สมมติ', 1100, 'Saffron', 'ด่วน'],
+      ['NO. 4', 'FRE0000000005', 'FRE005', '9900000013', 'แถม-หมอนสมมติ', 360, 'Hometrend', ''],
+    ]);
+  });
+  it('ติดหัวตารางที่มีช่องว่างแทรก ใช้หัวตาราง', () => {
+    const head = ['NO.', '', 'Product ID', 'LOT', 'PO.', 'SKU', 'Product Name', 'QTY', 'Truck', 'REMARK'];
+    const r = P.parsePlan([head, ...rows].map((x) => x.join('\t')).join('\n'));
+    expect(r.how).toBe('head');
+    expect(r.lines).toHaveLength(4);
+    expect(r.lines[2]).toMatchObject({ sku: 'AAA002', qty: 1100, label: 'NO. 3' });
+  });
+});
+
 describe('wms-putaway.js — ประเภทสินค้าและความจุ', () => {
   it('แยกที่นอนตามขนาด ท็อปเปอร์ ของแถม และของที่ใช้กับที่นอน', () => {
     expect(P.kindOf('ที่นอน 5FT สมมติ')).toMatchObject({ kind: 'mattress', level1: true, rib: false });
@@ -260,6 +288,32 @@ describe('wms-putaway.js — ตรวจแผนที่แก้แล้ว
     expect(dup2.lines[0].rows[0].map((x) => x.text)).toContain('ซ้ำกับ NO. 2 คนละ SKU (ปน SKU)');
     const auto = P.plan([...lines, line('AAA001', 35, { n: 3 }), line('FRE004', 9, { n: 4 })], snap, cap);
     expect(P.check([...lines, line('AAA001', 35, { n: 3 }), line('FRE004', 9, { n: 4 })], auto, snap, cap).red).toBe(0);
+  });
+});
+
+describe('wms-putaway.js — โลพื้นที่มีหลาย SKU อยู่แล้ว', () => {
+  // สมุดจริง: โลเปิดบนพื้นหลายช่องมีหลาย SKU อยู่ด้วยกัน แร็ค R เท่านั้นที่ห้ามปน
+  const occupied = [recv(1, 'B-05-01', 30, { open: true }), recv(2, 'B-05-01', 12, { open: true }), recv(0, 'R03-01-02', 5), recv(4, 'D-03-01', 50)];
+  const levels = (r) => r.lines.flatMap((l) => l.rows.flat().map((x) => x.level));
+  it('เข้าโลเปิดที่มี SKU อื่นอยู่ไม่เป็นสีแดง และสองบรรทัดเข้าโลเปิดเดียวกันได้', () => {
+    const { snap, cap } = setup(occupied);
+    const lines = [line('AAA001', 16, { n: 1 }), line('BBB003', 10, { n: 2 })];
+    const r = P.check(lines, [{ rows: [{ loc: 'B-05-01', qty: 16, open: true, tag: 'open' }] }, { rows: [{ loc: 'B-05-01', qty: 10, open: true, tag: 'open' }] }], snap, cap);
+    expect(r.red).toBe(0);
+    expect(levels(r)).not.toContain('warn');
+  });
+  it('ลงโลพื้นที่มี SKU อื่นโดยไม่ติ๊ก OPEN แค่เตือน แร็ค R ยังเป็นสีแดง', () => {
+    const { snap, cap } = setup(occupied);
+    const floor = P.check([line('AAA001', 16)], [{ rows: [{ loc: 'B-05-01', qty: 16, tag: 'floor' }] }], snap, cap);
+    expect(floor.red).toBe(0);
+    expect(floor.lines[0].rows[0].map((x) => [x.level, x.text])).toContainEqual(['warn', 'ในโลนี้มี SKU อื่นอยู่แล้ว 2 ตัว']);
+    const rack = P.check([line('AAA002', 19)], [{ rows: [{ loc: 'R03-01-02', qty: 19, tag: 'rack' }] }], snap, cap);
+    expect(rack.red).toBe(1);
+  });
+  it('ของแถมเข้าโซน D ที่มีของอื่นอยู่ ไม่เตือนปน SKU', () => {
+    const { snap, cap } = setup(occupied);
+    const r = P.check([line('FRE004', 20, { name: 'แถม-หมอนสมมติ' })], [{ rows: [{ loc: 'D-03-01', qty: 20, tag: 'floor' }] }], snap, cap);
+    expect(r.lines[0].rows.flat().map((x) => x.text)).toEqual([]);
   });
 });
 

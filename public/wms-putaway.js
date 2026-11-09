@@ -261,17 +261,78 @@
     no: /^no\.?$|^ลำดับ$/i, pid: /product\s*id|รหัสยาว/i, lot: /^lot$/i, po: /^po\.?$/i, sku: /^sku$/i,
     name: /product\s*name|ชื่อสินค้า|description/i, qty: /^qty$|^จำนวน/i, truck: /truck|^รถ/i, remark: /remark|หมายเหตุ/i,
   };
-  /* หน้าตาแท็บ INPUT ของทีม ใช้เมื่อคัดลอกมาไม่ติดหัวตาราง */
+  /* หน้าตาแท็บ INPUT ของทีม ใช้เมื่อคัดลอกมาไม่ติดหัวตารางและดูจากข้อมูลไม่ออก */
   var LAYOUT = ['no', 'pid', 'lot', 'po', 'sku', 'name', 'qty', 'truck', 'remark'];
+
+  var LOOK = {
+    pid: function (v) { return v.length >= 10 && /^[A-Z]{2,6}\d{6,}$/i.test(v); },
+    sku: function (v) { return v.length <= 9 && /^[A-Z]{2,6}\d{1,6}[A-Z]?$/i.test(v); },
+    po: function (v) { return /^\d{6,}(-\d{1,3})?$/.test(v); },
+    num: function (v) { return /^-?[\d,]+(\.\d+)?$/.test(v); },
+    text: function (v) { return /[ก-๙]|[A-Za-z]{2,}\s+\S/.test(v) && !/^\d{6,}/.test(v); },
+    word: function (v) { return /[A-Za-zก-๙]/.test(v) && !/^\d{6,}/.test(v); },
+  };
+
+  /**
+   * คัดลอกมาไม่ติดหัวตาราง: ดูหน้าตาข้อมูลว่าคอลัมน์ไหนเป็นอะไร
+   * แท็บจริงอาจมีคอลัมน์ช่วยแทรกอยู่ (เช่น PO ต่อชื่อสินค้า) ลำดับตายตัวจึงเลื่อนได้
+   * @returns {Object|null} { no, pid, lot, po, sku, name, qty, truck, remark } เป็นเลขคอลัมน์ หาไม่เจอคืน null
+   */
+  function sniff(grid) {
+    var rows = grid.filter(function (r) { return r.some(function (v) { return String(v).trim(); }); }).slice(0, 40);
+    if (!rows.length) return null;
+    var width = Math.max.apply(null, rows.map(function (r) { return r.length; }));
+    var share = [];
+    for (var j = 0; j < width; j++) {
+      var cell = rows.map(function (r) { return String(r[j] == null ? '' : r[j]).trim(); });
+      var sh = {};
+      Object.keys(LOOK).forEach(function (k) { sh[k] = cell.filter(function (v) { return v && LOOK[k](v); }).length / rows.length; });
+      share.push(sh);
+    }
+    function best(kind, min, skip, from) {
+      var at = -1, top = min;
+      share.forEach(function (sh, j) {
+        if (skip.indexOf(j) >= 0 || j < (from || 0)) return;
+        if (sh[kind] > top + 1e-9) { top = sh[kind]; at = j; }
+      });
+      return at;
+    }
+    var col = {};
+    col.pid = best('pid', 0.5, []);
+    col.sku = best('sku', 0.5, [col.pid]);
+    if (col.sku < 0 && col.pid < 0) return null;
+    col.po = best('po', 0.3, [col.pid, col.sku]);
+    var taken = [col.pid, col.sku, col.po];
+    col.no = share[0] && share[0].num >= 0.6 && taken.indexOf(0) < 0 ? 0 : -1;
+    // ชื่อสินค้าอยู่หลังรหัส คอลัมน์ข้อความที่อยู่ก่อนรหัส (เช่นคอลัมน์ช่วย) ไม่ใช่ชื่อ
+    var codeAt = Math.min.apply(null, [col.sku, col.pid].filter(function (v) { return v >= 0; }));
+    col.name = best('text', 0.5, taken.concat(col.no), codeAt);
+    if (col.name < 0) col.name = best('text', 0.5, taken.concat(col.no));
+    taken = taken.concat(col.no, col.name);
+    var right = Math.max(col.sku, col.pid, col.name);
+    col.qty = best('num', 0.6, taken, right + 1);
+    if (col.qty < 0) col.qty = best('num', 0.6, taken);
+    if (col.qty < 0) return null;
+    col.truck = share[col.qty + 1] && share[col.qty + 1].word >= 0.3 ? col.qty + 1 : -1;
+    var after = (col.truck >= 0 ? col.truck : col.qty) + 1;
+    col.remark = after < width && taken.indexOf(after) < 0 ? after : -1;
+    if (col.pid >= 0 && col.po > col.pid + 1) {
+      var lot = col.pid + 1;
+      if (taken.indexOf(lot) < 0 && share[lot].text < 0.3) col.lot = lot;
+    }
+    Object.keys(col).forEach(function (k) { if (!(col[k] >= 0)) delete col[k]; });
+    return col;
+  }
 
   /**
    * ข้อความที่คัดลอกจาก Google Sheets (คั่นด้วย Tab) → บรรทัดแพลน
-   * มีหัวตารางก็หาคอลัมน์จากหัว ไม่มีก็ใช้ลำดับแบบแท็บ INPUT (มีหรือไม่มีช่อง NO. ก็ได้)
+   * มีหัวตารางก็หาคอลัมน์จากหัว ไม่มีก็ดูจากหน้าตาข้อมูล (sniff) สุดท้ายใช้ลำดับแบบแท็บ INPUT
    * แถวว่าง หรือไม่มีรหัส หรือจำนวนไม่ใช่ตัวเลขที่มากกว่า 0 ข้ามแล้วบอกไว้ใน skipped
+   * how: head = อ่านจากหัวตาราง | look = ดูจากหน้าตาข้อมูล | layout = ลำดับแบบแท็บ INPUT, cols = เลขคอลัมน์ที่ใช้
    */
   function parsePlan(text) {
     var grid = String(text || '').replace(/\r/g, '').split('\n').map(function (l) { return l.split('\t'); });
-    var col = null, start = 0;
+    var col = null, start = 0, how = 'head';
     for (var i = 0; i < Math.min(grid.length, 8) && !col; i++) {
       var c = {};
       grid[i].forEach(function (h, j) {
@@ -280,7 +341,9 @@
       });
       if ((c.sku !== undefined || c.pid !== undefined) && c.qty !== undefined) { col = c; start = i + 1; }
     }
+    if (!col) { col = sniff(grid); how = 'look'; }
     if (!col) {
+      how = 'layout';
       var firstRow = grid.find(function (r) { return r.some(function (v) { return String(v).trim(); }); }) || [];
       var withNo = /^\d+$/.test(String(firstRow[0] || '').trim()) && /[A-Z]/i.test(String(firstRow[1] || ''));
       col = {};
@@ -301,7 +364,7 @@
       if (!(ln.qty > 0)) { skipped.push({ n: ln.n, label: ln.label, why: 'จำนวนไม่ใช่ตัวเลขที่มากกว่า 0', code: ln.sku || ln.pid }); continue; }
       lines.push(ln);
     }
-    return { lines: lines, skipped: skipped };
+    return { lines: lines, skipped: skipped, how: how, cols: col };
   }
 
   /* ── จัดที่เก็บ ───────────────────────────────────────────────────────── */
@@ -541,10 +604,15 @@
         if (!snap.known[L] && z !== 'RIB' && z !== 'special') say('info', 'ไม่เคยมีโลนี้ในสมุด ตรวจว่าพิมพ์ถูก');
         var o2 = snap.occ[L];
         var others = (at[L] || []).filter(function (e) { return e.key !== key; });
-        if (z === 'R' || /^[A-D]$/.test(z)) {
+        // แร็ค R ห้ามปน SKU (สีแดง) โลพื้นในสมุดจริงหลายช่องมีหลาย SKU อยู่แล้ว จึงแค่เตือน
+        // เข้าโลเปิด (OPEN) ไม่เตือน เพราะเป็นโลที่ SKU นี้ขายอยู่แล้ว ของในนั้นเป็นสภาพเดิม
+        // ของแถมในโซน D เก็บรวมกันตาม PO อยู่แล้ว ไม่เตือน
+        if (z === 'R' || (/^[A-D]$/.test(z) && !r.open && !(z === 'D' && k.kind === 'free'))) {
+          var lv = z === 'R' ? 'red' : 'warn';
           var otherSku = o2 ? Object.keys(o2.skus).filter(function (x) { return +x !== s; }) : [];
-          if (otherSku.length) say('red', 'ในโลนี้มี SKU อื่นอยู่แล้ว ' + otherSku.length + ' ตัว (ปน SKU)');
-          if (others.length) say('red', 'ซ้ำกับ ' + others.map(function (e) { return lines[e.i].label || ('แถว ' + lines[e.i].n); }).filter(function (v, j, a) { return a.indexOf(v) === j; }).join(', ') + ' คนละ SKU (ปน SKU)');
+          if (otherSku.length) say(lv, 'ในโลนี้มี SKU อื่นอยู่แล้ว ' + otherSku.length + ' ตัว' + (lv === 'red' ? ' (ปน SKU)' : ''));
+          var dup = others.filter(function (e) { return z === 'R' || !out[e.i].rows.some(function (x) { return x.open && up(x.loc) === L; }); });
+          if (dup.length) say(lv, 'ซ้ำกับ ' + dup.map(function (e) { return lines[e.i].label || ('แถว ' + lines[e.i].n); }).filter(function (v, j, a) { return a.indexOf(v) === j; }).join(', ') + ' คนละ SKU' + (lv === 'red' ? ' (ปน SKU)' : ''));
         }
         if (z === 'R') {
           var rk = rackOf(r.loc);

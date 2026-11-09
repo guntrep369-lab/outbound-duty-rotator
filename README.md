@@ -1092,9 +1092,12 @@ and the warehouse's rules. Every row can be changed. Then copy the rows into the
 Excel. It reads the same shared copy of the ledger as FIFO สต๊อก (`tx-fifo`) and never writes to the sheet.
 
 - **The plan:** copy the rows from Google Sheets, header or not. With a header, columns are found by name
-  (NO., Product ID, LOT, PO, SKU, Product Name, QTY, Truck, REMARK). Without one, the INPUT tab's order is
-  used, with or without the NO. column. Blank rows, rows with no code, and rows whose QTY isn't above 0
-  are skipped and listed. Each line is named by its NO., so it matches the sheet.
+  (NO., Product ID, LOT, PO, SKU, Product Name, QTY, Truck, REMARK). Without one, the columns are worked
+  out from what the data looks like (a 13-character Product ID, a short SKU, a 10-digit PO, a number after
+  the name), so a helper column inserted in the tab doesn't shift everything; the page says which columns
+  it used. Blank rows, rows with no code (a total row), and rows whose QTY isn't above 0 are skipped and
+  listed. If nothing at all can be read, the page says why instead of staying blank. Each line is named by
+  its NO., so it matches the sheet.
 - **Pallet capacity** comes from a tab named `ความจุต่อพาเลท` in the file the Transaction script is
   bound to (header SKU, Product ID, STD / pallet; either code matches). An Excel file dropped on the
   capacity box works too and takes over from the tab until you switch back. A SKU with no capacity, or 0,
@@ -1121,8 +1124,9 @@ Excel. It reads the same shared copy of the ledger as FIFO สต๊อก (`tx-
   other lines are worked out again around it, so they don't take the same location.
   คืนค่าที่ระบบเสนอ undoes one line, and the button at the top undoes all. The plan and your changes stay on
   this device until you clear them.
-- **Checks on every row:** another SKU already in the location or in another line's row (red), R level 1
-  used by something other than 5FT / 6FT, over capacity, a Location the ledger has never had, a floor
+- **Checks on every row:** another SKU already in an R location or in another line's row there (red; on
+  the floor it's only a warning, since many floor locations already hold several SKUs, and rows ticked
+  OPEN or freebies in zone D aren't warned), R level 1 used by something other than 5FT / 6FT, over capacity, a Location the ledger has never had, a floor
   location holding another PO of the same SKU, and a line whose rows don't add up to its QTY.
 - **📋 คัดลอกไปวางในชีต** copies the rows in the OUTPUT tab's order with OPEN as TRUE/FALSE.
   **⬇️ โหลด Excel** downloads `จัดที่เก็บ-YYYY-MM-DD.xlsx` with one sheet named OUTPUT.
