@@ -58,7 +58,6 @@
 @media (min-width:1024px){
   .tx-tabs{position:sticky;top:0;z-index:30}
 }
-.tx-tab .sh{display:none}
 
 /* ── เนื้อหา ── */
 .tx-body{padding:14px 20px 60px}
@@ -265,15 +264,6 @@ html.pop-open{overflow:hidden}
   .pop-back{display:flex;align-items:center;min-height:44px;margin:-10px 0 0}
   .tx-row{display:inline-block;padding:10px 6px;margin:-10px -6px}
 
-  /* ห้าแท็บแบ่งจอเท่ากัน ไอคอนบน ชื่อสั้นล่าง ตัวเลขเกาะมุมไอคอน ไม่มีแท็บซ่อนอยู่นอกจอ */
-  .tx-tabs{gap:4px;padding:6px 6px 0;overflow:visible}
-  .tx-tab{position:relative;flex:1 1 0;min-width:0;flex-direction:column;gap:3px;padding:7px 2px 6px;
-    border-radius:10px 10px 0 0;font-size:12px;line-height:1.25;white-space:normal;text-align:center}
-  .tx-tab img{width:24px;height:24px}
-  .tx-tab .lb{display:none}
-  .tx-tab .sh{display:block}
-  .tx-tab .n{position:absolute;top:2px;left:calc(50% + 6px);padding:0 5px;font-size:12px;line-height:1.4}
-  .tx-tab:not(.on) .n{background:var(--wms-primary);color:#fff}
 
   /* การ์ดสามระบบอยู่แถวเดียวกัน ไอคอนขึ้นบน ไม่มีใบไหนตกไปอยู่แถวล่างคนเดียว */
   .tx-cards.tx-who{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}

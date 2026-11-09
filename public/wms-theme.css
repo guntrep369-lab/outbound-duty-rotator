@@ -225,16 +225,14 @@ body {
 }
 @keyframes wms-step { from { transform:rotate(-3deg); } to { transform:translateY(-3px) rotate(3deg); } }
 
-/* Tabs: the purple sweeps in from the side the previous tab was on. */
-.tx-tab.on.from-l, .tx-tab.on.from-r {
-  background:linear-gradient(var(--wms-primary), var(--wms-primary)) no-repeat var(--wms-surface);
-  animation:wms-wipe .32s cubic-bezier(.2,.8,.2,1) both;
-}
-.tx-tab.on.from-l { background-position:left; }
-.tx-tab.on.from-r { background-position:right; }
+/* Tabs: the open tab's underline slides in from the side the previous tab was
+   on (the line is the tab's background image, see Section tabs). */
+.tx-tab.on.from-l, .tx-tab.on.from-r { animation:wms-wipe .32s cubic-bezier(.2,.8,.2,1) both; }
+.tx-tab.on.from-l { background-position:left bottom; }
+.tx-tab.on.from-r { background-position:right bottom; }
 @keyframes wms-wipe {
-  from { background-size:0 100%; color:var(--wms-text); }
-  to   { background-size:100% 100%; }
+  from { background-size:0 2px; }
+  to   { background-size:100% 2px; }
 }
 /* …and the new tab's content rises in, block by block. */
 .wms-enter > *, .wms-enter .tx-cards > * { animation:wms-rise .36s cubic-bezier(.2,.8,.2,1) both; }
@@ -415,33 +413,60 @@ span.wms-shake { display:inline-block; }
 }
 .carrier-tab.active .soon-badge { background:rgba(255,255,255,.2); color:#fff; border-color:transparent; }
 
-/* ── Section tabs (สต๊อกราย Location, เช็ครายการตัดสต๊อก) — these are the page's
-      headings, so they sit on their own band and must not look like the small
-      filter pills inside the content. The active tab joins the line under the band. ── */
+/* ── Section tabs (สต๊อกราย Location, FIFO สต๊อก, เช็ครายการตัดสต๊อก) ──────────
+   Calm tabs (Nov 2026). They used to be white cards on a grey band with a full
+   colour icon each and a solid purple open tab — heavy next to the calm menu
+   and header. Now: flat on a white strip, a small grey icon + name + a plain
+   count; the open tab gets indigo text, its icon back in colour and a 2px
+   indigo underline. The underline is a background image (not a border) so the
+   tab-change motion can slide it, and the strip's hairline is an inset shadow
+   so tabs paint over it without escaping the strip's sideways scroll box. */
 .tx-tabs {
-  display:flex; align-items:flex-end; gap:6px; overflow-x:auto; scrollbar-width:none;
-  padding:14px 20px 0; background:var(--wms-border); border-bottom:3px solid var(--wms-primary);
+  display:flex; align-items:stretch; gap:2px; overflow-x:auto; scrollbar-width:none;
+  padding:0 16px; background:var(--wms-surface); box-shadow:inset 0 -1px 0 var(--wms-border);
 }
 .tx-tabs::-webkit-scrollbar { display:none; }
 .tx-tabs:empty { display:none; }
 .tx-tab {
-  display:inline-flex; align-items:center; gap:8px; flex-shrink:0;
-  padding:11px 20px; border:0; border-radius:12px 12px 0 0;
-  background:var(--wms-surface); color:var(--wms-text);
-  font-family:var(--wms-font); font-size:15px; font-weight:600; white-space:nowrap;
-  cursor:pointer; transition:background .13s, color .13s;
+  display:inline-flex; align-items:center; gap:7px; flex-shrink:0;
+  padding:9px 10px; border:0; border-radius:0; color:var(--wms-muted);
+  background:linear-gradient(var(--wms-primary), var(--wms-primary)) no-repeat left bottom / 0 2px;
+  font-family:var(--wms-font); font-size:14px; font-weight:500; white-space:nowrap;
+  cursor:pointer; transition:color .13s;
 }
-.tx-tab:hover:not(.on) { background:var(--wms-primary-light); color:var(--wms-primary-dark); }
-.tx-tab:focus-visible { outline:2px solid var(--wms-primary-dark); outline-offset:-3px; }
-.tx-tab.on { background:var(--wms-primary); color:#fff; font-weight:700; cursor:default; }
-.tx-tab img { display:block; flex-shrink:0; border-radius:24%; }
-/* ไอคอนสีม่วงเดียวกับแท็บที่เลือกอยู่ ต้องมีขอบถึงจะยังเห็นเป็นไอคอน */
-.tx-tab.on img { box-shadow:0 0 0 1.5px rgba(255,255,255,.8); }
-.tx-tab .n {
-  padding:1px 8px; border-radius:999px; background:var(--wms-primary-light); color:var(--wms-primary-dark);
-  font-size:12px; font-weight:700; font-variant-numeric:tabular-nums;
+.tx-tab:hover:not(.on) { color:var(--wms-text); }
+.tx-tab:focus-visible { outline:2px solid var(--wms-primary); outline-offset:-2px; border-radius:6px; }
+.tx-tab.on { color:var(--wms-primary-dark); background-size:100% 2px; cursor:default; }
+/* The page's own colour icons, small and greyed; the open tab's comes back in colour. */
+.tx-tab img { display:block; flex-shrink:0; width:18px; height:18px; border-radius:24%;
+              filter:grayscale(1) opacity(.5); transition:filter .13s; }
+.tx-tab:hover:not(.on) img { filter:grayscale(1) opacity(.75); }
+.tx-tab.on img { filter:none; }
+.tx-tab .n { font-size:12px; font-weight:500; color:var(--wms-faint); font-variant-numeric:tabular-nums; }
+.tx-tab.on .n { color:var(--wms-primary); }
+.tx-tab .sh { display:none; }
+/* Phone, for pages that give each tab a short name (.sh — FIFO, เช็คตัดสต๊อก):
+   the tabs share the width equally, icon on top and the short name under it,
+   the count pinned to the icon's corner — no tab hides off the edge.
+   Pages without short names keep the sideways-scrolling strip. */
+@media (max-width:640px) {
+  .tx-tabs:has(.sh) { gap:0; padding:0 4px; overflow:visible; }
+  .tx-tabs:has(.sh) .tx-tab {
+    position:relative; flex:1 1 0; min-width:0; flex-direction:column; gap:3px; padding:8px 2px 7px;
+    /* 11.5px keeps the longest short name (แก้ตามระบบ, six tabs on a 375px
+       phone) on one line; at 12px it wrapped and the strip grew 16px taller. */
+    font-size:11.5px; line-height:1.25; white-space:normal; text-align:center;
+  }
+  .tx-tabs:has(.sh) .tx-tab img { width:20px; height:20px; }
+  .tx-tabs:has(.sh) .tx-tab .lb { display:none; }
+  .tx-tabs:has(.sh) .tx-tab .sh { display:block; }
+  .tx-tabs:has(.sh) .tx-tab .n {
+    position:absolute; top:3px; left:calc(50% + 7px); padding:0 4px; border-radius:999px;
+    background:var(--wms-surface2); box-shadow:0 0 0 1px var(--wms-border);
+    font-size:11px; line-height:1.4; color:var(--wms-muted);
+  }
+  .tx-tabs:has(.sh) .tx-tab.on .n { background:var(--wms-primary-light); box-shadow:0 0 0 1px #C7D2FE; color:var(--wms-primary-dark); }
 }
-.tx-tab.on .n { background:#fff; }
 
 /* ภาพตอนหน้าว่าง ใส่คลาสที่กล่องข้อความ ภาพจะขึ้นเหนือข้อความเอง
    done = ไม่มีปัญหา (น้องกล่องดีใจ), search = ค้นหา/ไม่พบ (น้องกล่องส่องแว่น),
