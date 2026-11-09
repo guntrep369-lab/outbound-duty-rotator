@@ -289,12 +289,15 @@
     return (teams || []).filter(function (t) { return (t.pass || 1) === (pass || 1); });
   }
 
-  /** Location ของทีม เรียงตามทางเดิน locList = [[loc, group]] หรือ [{loc, group}] */
+  /**
+   * Location ของทีม เรียงตามทางเดิน locList = [[loc, group]] หรือ [{loc, group}]
+   * รอบ 1 ทีมได้เป็นแถว (R1, A-01) รอบ 2 ได้เป็นรายโล (R1-03-02) เทียบได้ทั้งสองแบบ
+   */
   function teamLocs(team, locList) {
     var zones = {};
     ((team && team.zones) || []).forEach(function (z) { zones[up(z)] = 1; });
     return (locList || []).map(function (l) { return Array.isArray(l) ? { loc: l[0], group: l[1] } : l; })
-      .filter(function (l) { return zones[up(l.group)]; })
+      .filter(function (l) { return zones[up(l.group)] || zones[up(l.loc)]; })
       .sort(function (a, b) { return locCmp(a.loc, b.loc); });
   }
 
@@ -502,6 +505,7 @@
    *   entries แถวบันทึกนับทั้งหมด (fromRow) ยังไม่ตัดแถวที่ถูกแทน
    *   teams   ทีมของรอบ  locs = Location ที่ต้องนับ [{loc, group, zone}] (ไม่รวมแถวที่ตั้งไม่นับ)
    *   skus    [[SKU, SKU เต็ม, ชื่อ]]  skip = แถวที่ไม่นับ (โลในแถวพวกนี้ไม่เอามาคิด)  pass = รอบนับ
+   *   only    (รอบ 2) คิดเฉพาะโลในรายการนี้ โลอื่นไม่ได้นับซ้ำ ไม่ต้องขึ้นว่ายังไม่นับ
    * }
    *
    * ยอด Inventory ของโลหนึ่ง = แถวของทีมที่ได้แถวนั้น ถ้าทีมนั้นไม่ได้นับ ใช้ทีม Inventory อื่นที่นับ
@@ -515,13 +519,16 @@
    *   4. ที่เหลือ      — ขาด / เกิน
    * Inv≠Audit แยกอีกรายการ: โลที่ Audit สุ่ม แล้วตัวเลขไม่ตรงกับ Inventory (ไม่สนยอดในสมุด)
    *
-   * @returns {{lines, audit, counts, totals, hot, people}}
+   * @returns {{lines, audit, counts, totals, hot, people, done, auditRows}}
+   *   done = โลที่ Inventory นับแล้ว  auditRows = {แถว: {checked, bad}} Audit ตรวจกี่โล ไม่ตรงกี่โล
    */
   function analyze(input) {
     var o = input || {};
     var pass = o.pass || 1;
     var skip = {};
     (o.skip || []).forEach(function (g) { skip[up(g)] = 1; });
+    var only = null;
+    if (o.only) { only = {}; o.only.forEach(function (l) { only[up(l)] = 1; }); }
     var info = {}, canon = {};
     (o.skus || []).forEach(function (s) {
       var long = norm(s[1] || s[0]);
@@ -548,7 +555,7 @@
       var u = up(loc);
       if (!u) return null;
       var p = parseLoc(u);
-      if (skip[up(p.group)]) return null;
+      if (skip[up(p.group)] || (only && !only[u])) return null;
       if (!universe[u]) { universe[u] = 1; meta[u] = p; }
       return u;
     }
@@ -588,7 +595,7 @@
     Object.keys(byLoc).forEach(function (u) {
       var list = byLoc[u];
       var invRows = list.filter(function (e) { return e.kind !== 'Audit'; });
-      var mine = owner[up(meta[u].group)];
+      var mine = owner[u] || owner[up(meta[u].group)];
       var pick = invRows.filter(function (e) { return e.team === mine; });
       if (!pick.length && invRows.length) {
         var first = invRows[0].team;
@@ -618,7 +625,7 @@
         id: u + '|' + id, loc: u, zone: p.zone, row: p.group, level: p.level,
         k: k, sku: nfo.sku, long: nfo.long, name: nfo.name, lot: src.lot, po: src.po,
         book: b ? b.qty : 0, inv: c ? c.qty : (invDone[u] ? 0 : null), aud: audDone[u] ? (a ? a.qty : 0) : null,
-        team: invTeam[u] || owner[up(p.group)] || '', who: c ? Object.keys(c.who) : Object.keys(invWho[u] || {}),
+        team: invTeam[u] || owner[u] || owner[up(p.group)] || '', who: c ? Object.keys(c.who) : Object.keys(invWho[u] || {}),
         known: !!info[k], pairs: [], left: 0, group: '', note: '',
       };
       L.diff = L.inv === null ? null : round3(L.inv - L.book);
@@ -707,7 +714,7 @@
 
     /* Inv≠Audit: เทียบตัวเลขสองฝั่งในโลที่ Audit สุ่ม ไม่ดูยอดในสมุด */
     var audit = [];
-    var stat = {};
+    var stat = {}, auditRows = {};
     Object.keys(audDone).sort(locCmp).forEach(function (u) {
       if (!invDone[u]) return;
       var c = inv[u] || {}, a = aud[u] || {}, b = book[u] || {};
@@ -726,6 +733,9 @@
           note: 'Inventory ' + f3(ci) + ' · Audit ' + f3(ai), fix: 'นับรอบ 2 โดยทีมอื่น', pairs: [],
         });
       });
+      var ar = auditRows[meta[u].group] = auditRows[meta[u].group] || { checked: 0, bad: 0 };
+      ar.checked++;
+      if (bad) ar.bad++;
       /* นับต่อคน: คนที่นับโลนี้ (Inventory) ถูก Audit ตรวจกี่โล ไม่ตรงกี่โล */
       Object.keys(invWho[u] || {}).forEach(function (w) {
         var key = invTeam[u] + '|' + w;
@@ -767,7 +777,10 @@
     totals.diff = round3(totals.inv - totals.book);
     totals.counted = Object.keys(invDone).filter(function (u) { return listed[u]; }).length;
 
-    return { lines: lines, audit: audit, counts: counts, totals: totals, hot: hot, people: people, teamName: teamName };
+    return {
+      lines: lines, audit: audit, counts: counts, totals: totals, hot: hot, people: people, teamName: teamName,
+      done: Object.keys(invDone).sort(locCmp), auditRows: auditRows,
+    };
   }
 
   function f3(n) { return String(round3(+n || 0)); }
@@ -851,9 +864,394 @@
     });
   }
 
+  /* ── นับรอบ 2 และปิดรอบ (ขั้นที่ 3) ───────────────────────────────────── */
+
+  /*
+   * ค่าตั้งของแผนรอบ 2 (หัวหน้าปรับได้ เก็บในค่าตั้งของรอบ)
+   *   groups = กลุ่มปัญหาที่ต้องนับซ้ำ  minQty = ต่างกันกี่ชิ้นขึ้นไปถึงนับซ้ำ (ยังไม่นับ / Audit ไม่สนข้อนี้)
+   *   hotPct / hotMin = แถวที่ Audit ตรวจอย่างน้อย hotMin โล แล้วไม่ตรง hotPct% ขึ้นไป → นับซ้ำทั้งแถว
+   *   add = โลที่หัวหน้าเพิ่มเอง  drop = โลที่หัวหน้าตัดออก  set = {โล: ทีม} หัวหน้าเลือกทีมเอง
+   */
+  var R2 = { groups: GROUPS.slice(), minQty: 1, hotPct: 30, hotMin: 2 };
+  var R2_ADD = 'หัวหน้าเพิ่ม', R2_PAIR = 'คู่วางผิดโล', R2_ROW = 'ทั้งแถว';
+
+  function numOr(v, d, lo, hi) {
+    var n = typeof v === 'number' ? v : (v === '' || v === null || v === undefined ? NaN : Number(v));
+    if (!isFinite(n)) return d;
+    return Math.max(lo, Math.min(hi, n));
+  }
+
+  function r2Opts(x) {
+    var o = x || {};
+    var set = {};
+    if (o.set && typeof o.set === 'object') Object.keys(o.set).forEach(function (l) { if (o.set[l]) set[up(l)] = up(o.set[l]); });
+    return {
+      groups: Array.isArray(o.groups) ? o.groups.filter(function (g) { return GROUPS.indexOf(g) !== -1; }) : R2.groups.slice(),
+      minQty: numOr(o.minQty, R2.minQty, 0, 1e9),
+      hotPct: numOr(o.hotPct, R2.hotPct, 0, 100),
+      hotMin: numOr(o.hotMin, R2.hotMin, 1, 1e6),
+      add: (o.add || []).map(up).filter(function (l) { return l; }),
+      drop: (o.drop || []).map(up).filter(function (l) { return l; }),
+      set: set,
+    };
+  }
+
+  /**
+   * แผนนับรอบ 2 จากผลวิเคราะห์รอบ 1
+   * res = analyze() ของรอบ 1  in = { teams (ทุกรอบ), locs = โลที่นับรอบนี้ [{loc, group}], opts }
+   *
+   * เลือกโล: กองที่อยู่ในกลุ่มที่เลือกและต่าง ≥ minQty · โลคู่ของวางผิดโล · Inv≠Audit
+   *          · แถวที่ Audit เจอผิดบ่อย (นับทั้งแถว) · โลที่หัวหน้าเพิ่ม
+   * แบ่งทีม: ทีละแถวตามทางเดิน ให้ทีม Inventory ที่ไม่ใช่ทีมที่นับรอบ 1 และงานน้อยสุดตอนนั้น
+   *          มีทีมเดียว = ทีมเดิม แต่คนที่นับโลนั้นในรอบ 1 ห้ามนับซ้ำ (forbid ใช้ทุกกรณีอยู่แล้ว)
+   * @returns {{opts, locs, teams, hot, warn, counts}}
+   *   locs = [{loc, row, zone, why, tags, r1team, forbid, team, auto, drop}] ทุกโลที่เข้าเกณฑ์ (รวมที่ตัดออก)
+   *   teams = ทีมของรอบ 2 (pass 2) zones = รายการโล
+   */
+  function plan2(res, input) {
+    var o = input || {};
+    var opt = r2Opts(o.opts);
+    var r = res || {};
+    var want = {}, drop = {};
+    opt.groups.forEach(function (g) { want[g] = 1; });
+    opt.drop.forEach(function (l) { drop[l] = 1; });
+
+    var inv = teamsOf(o.teams, 1).filter(function (t) { return t.kind !== 'Audit'; });
+    var owner = {}, invById = {};
+    inv.forEach(function (t) { invById[t.id] = t; (t.zones || []).forEach(function (z) { owner[up(z)] = t.id; }); });
+
+    /* ทีมกับคนที่นับแต่ละโลในรอบ 1 */
+    var r1 = {};
+    (r.lines || []).concat(r.audit || []).forEach(function (L) {
+      var x = r1[L.loc] = r1[L.loc] || { team: '', who: {} };
+      if (L.team && (!x.team || L.inv !== null)) x.team = L.team;
+      if (L.inv !== null && L.inv !== undefined) (L.who || []).forEach(function (w) { if (w && w !== '?') x.who[w] = 1; });
+    });
+
+    var meta = {}, order = [];
+    function at(loc) {
+      var u = up(loc);
+      if (!meta[u]) {
+        var p = parseLoc(u);
+        meta[u] = { loc: u, row: p.group, zone: p.zone, by: {}, tags: [] };
+        order.push(u);
+      }
+      return meta[u];
+    }
+    /* กลุ่มปัญหาเก็บขาดกับเกินแยกกัน แล้วแสดงข้างที่มากกว่า: LOT/PO ผิด 6 ชิ้น ไม่ใช่ 12 (ขาด 6 + เกิน 6) */
+    function add(loc, tag, val) {
+      var m = at(loc);
+      if (!(tag in m.by)) { m.tags.push(tag); m.by[tag] = tag === R2_PAIR ? [] : typeof val === 'number' ? { neg: 0, pos: 0 } : ''; }
+      if (tag === R2_PAIR) { if (m.by[tag].indexOf(val) === -1) m.by[tag].push(val); }
+      else if (typeof val === 'number') { var b = m.by[tag]; if (val < 0) b.neg = round3(b.neg - val); else b.pos = round3(b.pos + val); }
+      else if (val) m.by[tag] = val;
+    }
+
+    (r.lines || []).forEach(function (L) {
+      if (!want[L.group]) return;
+      if (L.group === G.LEFT) { add(L.loc, G.LEFT, ''); return; }
+      if (!L.diff || !(Math.abs(L.diff) >= opt.minQty)) return;
+      add(L.loc, L.group, L.diff);
+      if (L.group === G.MOVED) {
+        L.pairs.forEach(function (p) { if (p.group === G.MOVED) add(p.loc, R2_PAIR, L.loc); });
+      }
+    });
+    if (want[G.AUDIT]) {
+      (r.audit || []).forEach(function (A) { if (A.diff && Math.abs(A.diff) >= opt.minQty) add(A.loc, G.AUDIT, Math.abs(A.diff)); });
+    }
+    var hot = [];
+    var ar = r.auditRows || {};
+    Object.keys(ar).forEach(function (row) {
+      var s = ar[row];
+      var pct = s.checked ? Math.round(s.bad * 100 / s.checked) : 0;
+      var on = opt.hotPct > 0 && s.checked >= opt.hotMin && s.bad > 0 && pct >= opt.hotPct;
+      hot.push({ row: row, checked: s.checked, bad: s.bad, pct: pct, on: on });
+      if (!on) return;
+      (o.locs || []).forEach(function (l) {
+        if (up(l.group || parseLoc(l.loc).group) === up(row)) add(l.loc, R2_ROW, 'Audit ไม่ตรง ' + s.bad + '/' + s.checked + ' โล');
+      });
+    });
+    hot.sort(function (a, b) { return b.pct - a.pct || b.bad - a.bad || groupCmp(a.row, b.row); });
+    opt.add.forEach(function (l) { add(l, R2_ADD, ''); });
+
+    /* แบ่งทีม ทีละแถวตามทางเดิน */
+    var load = {};
+    inv.forEach(function (t) { load[t.id] = 0; });
+    function lightest(not) {
+      var best = null;
+      inv.forEach(function (t) { if (t.id !== not && (!best || load[t.id] < load[best.id])) best = t; });
+      return best;
+    }
+    order.sort(locCmp);
+    order.forEach(function (u) {
+      var m = meta[u];
+      m.r1team = (r1[u] && r1[u].team) || owner[up(m.row)] || owner[u] || '';
+      m.forbid = Object.keys((r1[u] && r1[u].who) || {}).sort(natCmp);
+      m.drop = !!drop[u];
+    });
+    var rows = [], byRow = {};
+    order.forEach(function (u) {
+      var m = meta[u];
+      if (m.drop) return;
+      if (!byRow[m.row]) { byRow[m.row] = []; rows.push(m.row); }
+      byRow[m.row].push(m);
+    });
+    rows.forEach(function (row) {
+      var list = byRow[row];
+      var cnt = {}, top = '', topN = 0;
+      list.forEach(function (m) {
+        cnt[m.r1team] = (cnt[m.r1team] || 0) + 1;
+        if (cnt[m.r1team] > topN) { top = m.r1team; topN = cnt[m.r1team]; }
+      });
+      var pick = lightest(top) || lightest('');
+      list.forEach(function (m) {
+        var t = pick && pick.id !== m.r1team ? pick : (lightest(m.r1team) || pick);
+        m.auto = t ? t.id : '';
+        m.team = opt.set[m.loc] && invById[opt.set[m.loc]] ? opt.set[m.loc] : m.auto;
+        if (m.team) load[m.team]++;
+      });
+    });
+
+    var warn = [];
+    if (!inv.length) warn.push('ยังไม่มีทีม Inventory ของรอบ 1');
+    else if (inv.length === 1) warn.push('มีทีม Inventory ทีมเดียว ใช้ทีมเดิมนับซ้ำ แต่คนที่นับโลนั้นในรอบ 1 นับซ้ำไม่ได้');
+    var locs = order.map(function (u) {
+      var m = meta[u];
+      var t = invById[m.team];
+      if (!m.drop && t && t.members && t.members.length && t.members.every(function (w) { return m.forbid.indexOf(w) !== -1; })) {
+        warn.push(u + ': ทุกคนใน ' + (t.name || t.id) + ' นับโลนี้ในรอบ 1 แล้ว เลือกทีมอื่น');
+      }
+      return {
+        loc: u, row: m.row, zone: m.zone, why: whyText(m), tags: m.tags.slice(), r1team: m.r1team, forbid: m.forbid,
+        team: m.drop ? '' : m.team || '', auto: m.drop ? '' : m.auto || '', drop: m.drop,
+      };
+    });
+    var teams = inv.map(function (t) {
+      var z = locs.filter(function (l) { return !l.drop && l.team === t.id; }).map(function (l) { return l.loc; });
+      return { pass: 2, id: t.id, kind: 'Inventory', name: t.name, members: (t.members || []).slice(), zones: z, locs: z.length };
+    });
+    var counts = { all: locs.length, picked: 0, dropped: 0, tags: {} };
+    locs.forEach(function (l) {
+      if (l.drop) { counts.dropped++; return; }
+      counts.picked++;
+      l.tags.forEach(function (g) { counts.tags[g] = (counts.tags[g] || 0) + 1; });
+    });
+    return { opts: opt, locs: locs, teams: teams, hot: hot, warn: warn, counts: counts };
+  }
+
+  /* วางผิดโลที่มีโลคู่ด้วยรวมเป็นข้อความเดียว: "วางผิดโล 5 คู่ A-01-01" */
+  function whyText(m) {
+    var pair = m.by[R2_PAIR], moved = G.MOVED in m.by;
+    return m.tags.filter(function (g) { return !(g === R2_PAIR && moved); }).map(function (g) {
+      var v = m.by[g];
+      if (g === G.MOVED && pair) return G.MOVED + ' ' + f3(Math.max(v.neg, v.pos)) + ' คู่ ' + pair.join(', ');
+      if (g === R2_PAIR) return R2_PAIR + ' ' + v.join(', ');
+      if (g === R2_ROW) return R2_ROW + ' ' + m.row + ' (' + v + ')';
+      if (g === R2_ADD || g === G.LEFT || !v || typeof v !== 'object') return g;
+      return g + ' ' + f3(Math.max(v.neg, v.pos));
+    }).join(' · ');
+  }
+
+  /** แถวสำหรับ st-plan: [Location, แถว, เหตุผล, ทีม, [ห้ามคนนับ], ทีมรอบ 1, โซน] เฉพาะโลที่ไม่ได้ตัดออก */
+  function planRows(plan) {
+    return ((plan && plan.locs) || []).filter(function (l) { return !l.drop && l.team; })
+      .map(function (l) { return [l.loc, l.row, l.why, l.team, l.forbid, l.r1team, l.zone]; });
+  }
+
+  /**
+   * ความคืบหน้ารอบ 2 จากแผนที่บันทึกแล้ว planLocs = [{loc, team}]
+   * นับแล้ว = มีแถวนับ/ว่างของ Inventory ในรอบนับ 2 ที่โลนั้น
+   */
+  function progress2(planLocs, entries) {
+    var eff = effective(entries).filter(function (e) { return e.pass === 2 && e.kind !== 'Audit'; });
+    var done = {}, who = {};
+    eff.forEach(function (e) { var u = up(e.loc); done[u] = 1; (who[u] = who[u] || {})[e.who || '?'] = 1; });
+    var teams = {}, tlist = [], left = [], known = {}, n = 0;
+    (planLocs || []).forEach(function (p) {
+      var u = up(p.loc);
+      known[u] = 1;
+      var t = teams[p.team];
+      if (!t) { t = teams[p.team] = { id: p.team, n: 0, done: 0 }; tlist.push(t); }
+      t.n++;
+      if (done[u]) { t.done++; n++; } else left.push(u);
+    });
+    tlist.forEach(function (t) { t.pct = t.n ? Math.round(t.done * 100 / t.n) : 0; });
+    var total = (planLocs || []).length;
+    return {
+      total: total, done: n, pct: total ? Math.round(n * 100 / total) : 0, teams: tlist, left: left, isDone: done,
+      who: who, extra: Object.keys(done).filter(function (u) { return !known[u]; }).sort(locCmp),
+    };
+  }
+
+  var SRC = { R2: 'รอบ 2', R1: 'รอบ 1', BOOK: 'สมุด', EDIT: 'หัวหน้าแก้' };
+  var FLAG = { NONE: 'ไม่ได้นับ', WAIT: 'ค้างรอบ 2', ODD: 'สามค่าไม่ตรง' };
+
+  /**
+   * ยอดสุดท้ายราย Location × SKU × LOT × PO
+   *   โลที่นับรอบ 2 แล้ว → ใช้รอบ 2 ทั้งโล (กองที่รอบ 2 ไม่เจอ = 0)
+   *   ไม่ได้นับรอบ 2 → ใช้รอบ 1 (ถ้าอยู่ในแผนรอบ 2 ขึ้นว่าค้างรอบ 2)
+   *   ไม่มีใครนับเลย → ใช้ยอดในสมุด ขึ้นว่าไม่ได้นับ
+   *   หัวหน้าแก้ตัวเลข (edits = {id: จำนวน}) ทับทุกอย่าง
+   * res1 = analyze รอบ 1  res2 = analyze รอบ 2 (only = โลในแผน)  planLocs = [{loc}] หรือ ['loc']
+   */
+  function finalLines(res1, res2, planLocs, edits) {
+    var plan = {};
+    (planLocs || []).forEach(function (l) { plan[up(typeof l === 'string' ? l : l.loc)] = 1; });
+    var ed = edits || {};
+    var done1 = {}, done2 = {};
+    ((res1 && res1.done) || []).forEach(function (u) { done1[u] = 1; });
+    ((res2 && res2.done) || []).forEach(function (u) { if (plan[u]) done2[u] = 1; });
+    var by = {}, order = [];
+    function slot(L) {
+      if (!by[L.id]) { by[L.id] = { L1: null, L2: null }; order.push(L.id); }
+      return by[L.id];
+    }
+    ((res1 && res1.lines) || []).forEach(function (L) { if (L.sku || L.long) slot(L).L1 = L; });
+    ((res2 && res2.lines) || []).forEach(function (L) { if ((L.sku || L.long) && done2[L.loc]) slot(L).L2 = L; });
+
+    var out = order.map(function (id) {
+      var s = by[id], L = s.L2 || s.L1, loc = L.loc;
+      var book = (s.L1 || s.L2).book;
+      var r1 = s.L1 && s.L1.inv !== null ? s.L1.inv : (done1[loc] ? 0 : null);
+      var r2 = done2[loc] ? (s.L2 ? s.L2.inv : 0) : null;
+      var src, auto, flag = '';
+      if (r2 !== null) { auto = r2; src = SRC.R2; if (r1 !== null && r2 !== r1 && r2 !== book) flag = FLAG.ODD; }
+      else if (r1 !== null) { auto = r1; src = SRC.R1; if (plan[loc]) flag = FLAG.WAIT; }
+      else { auto = book; src = SRC.BOOK; flag = FLAG.NONE; }
+      var final = auto;
+      var e = ed[id];
+      if (typeof e === 'number' && isFinite(e) && e >= 0 && e !== auto) { final = e; src = SRC.EDIT; }
+      final = round3(final);
+      var adj = round3(final - book);
+      var g1 = s.L1 ? s.L1.group : '', g2 = s.L2 ? s.L2.group : '';
+      var group = !adj ? (src === SRC.BOOK ? G.LEFT : G.OK)
+        : src === SRC.EDIT ? SRC.EDIT
+        : src === SRC.R2 && g2 && g2 !== G.OK && g2 !== G.LEFT ? g2
+        : src === SRC.R1 && g1 && g1 !== G.OK && g1 !== G.LEFT ? g1
+        : adj < 0 ? G.SHORT : G.OVER;
+      return {
+        id: id, loc: loc, row: L.row, zone: L.zone, k: L.k, sku: L.sku, long: L.long,
+        name: L.name || (s.L1 && s.L1.name) || '', lot: L.lot, po: L.po,
+        book: book, r1: r1, aud: s.L1 ? s.L1.aud : null, r2: r2, auto: round3(auto), final: final, adj: adj,
+        src: src, flag: flag, plan: !!plan[loc], group: group, g1: g1, g2: g2,
+        note: (s.L2 && s.L2.note) || (s.L1 && s.L1.note) || '',
+        team: s.L1 ? s.L1.team : '', who: s.L1 ? s.L1.who : [], team2: s.L2 ? s.L2.team : '', who2: s.L2 ? s.L2.who : [],
+      };
+    });
+    return out.sort(function (a, b) { return locCmp(a.loc, b.loc) || natCmp(a.sku, b.sku) || natCmp(a.lot, b.lot) || natCmp(a.po, b.po); });
+  }
+
+  /** ยอดรวมของยอดสุดท้าย ให้แถบบนหน้าปิดรอบและช่องสรุปในไฟล์ Excel */
+  function finalTotals(fin) {
+    var t = { lines: 0, adjLines: 0, book: 0, final: 0, plus: 0, minus: 0, net: 0, src: {}, flag: {} };
+    (fin || []).forEach(function (l) {
+      t.lines++;
+      t.book = round3(t.book + l.book);
+      t.final = round3(t.final + l.final);
+      if (l.adj > 0) t.plus = round3(t.plus + l.adj);
+      if (l.adj < 0) t.minus = round3(t.minus - l.adj);
+      if (l.adj) t.adjLines++;
+      t.src[l.src] = (t.src[l.src] || 0) + 1;
+      if (l.flag) t.flag[l.flag] = (t.flag[l.flag] || 0) + 1;
+    });
+    t.net = round3(t.final - t.book);
+    return t;
+  }
+
+  /**
+   * แถวผลสรุปตอนปิดรอบ (16 ช่อง แบบเดียวกับ summaryRows ส่ง st-close)
+   * [Location, SKU, SKU เต็ม, ชื่อ, LOT, PO, สมุด, Inventory, Audit, รอบ 2, ยอดสุดท้าย, ต่าง, กลุ่ม, เหตุผล, ทีม, คนนับ]
+   */
+  function closeRows(fin, teamName) {
+    var T = teamName || {};
+    return (fin || []).map(function (l) {
+      var note = 'ยอดจาก' + l.src + (l.flag ? ' · ' + l.flag : '') + (l.src === SRC.EDIT ? ' · ระบบคิดได้ ' + f3(l.auto) : '') + (l.note ? ' · ' + l.note : '');
+      var who = (l.who2 && l.who2.length ? 'รอบ 2: ' + l.who2.join(', ') + ' · ' : '') + (l.who && l.who.length ? 'รอบ 1: ' + l.who.join(', ') : '');
+      var team = l.team2 ? T[l.team2] || l.team2 : T[l.team] || l.team || '';
+      return [l.loc, l.sku, l.long, l.name, l.lot, l.po, l.book, l.r1 === null ? '' : l.r1, l.aud === null || l.aud === undefined ? '' : l.aud,
+        l.r2 === null ? '' : l.r2, l.final, l.adj, l.group, note, team, who];
+    });
+  }
+
+  function numCell(v) { return typeof v === 'number' && isFinite(v) ? v : (v === '' || v === null || v === undefined ? 0 : Number(v) || 0); }
+
+  /**
+   * จับคู่ปรับเพิ่ม-ปรับลดที่ลงสมุดเป็นรายการเดียวได้ แทนการปรับยอดสองบรรทัด
+   *   แก้ LOT/PO = โลเดียวกัน SKU เดียวกัน ลดใน LOT/PO หนึ่ง เพิ่มในอีก LOT/PO
+   *   ย้ายโล    = SKU LOT PO เดียวกัน ลดที่โลหนึ่ง เพิ่มอีกโล (แถวเดียวกันก่อน แล้วโซนเดียวกัน แล้วที่ไหนก็ได้)
+   * rows = แถว 16 ช่องที่ปรับ (ช่องที่ 12 ≠ 0)
+   */
+  function pairAdjust(rows) {
+    var items = (rows || []).map(function (r) {
+      var p = parseLoc(r[0]);
+      return { loc: up(r[0]), sku: r[1], long: r[2], name: r[3], k: norm(r[2] || r[1]), lot: String(r[4] == null ? '' : r[4]), po: String(r[5] == null ? '' : r[5]),
+        left: Math.abs(numCell(r[11])), neg: numCell(r[11]) < 0, row: p.group, zone: p.zone };
+    }).filter(function (i) { return i.left > 0; });
+    var negs = items.filter(function (i) { return i.neg; }), poss = items.filter(function (i) { return !i.neg; });
+    var out = [];
+    function take(n, x, type) {
+      var q = round3(Math.min(n.left, x.left));
+      if (!(q > 0)) return;
+      n.left = round3(n.left - q); x.left = round3(x.left - q);
+      out.push([type, n.loc, x.loc, n.sku, n.long, n.name, n.lot, n.po, x.lot, x.po, q]);
+    }
+    negs.forEach(function (n) {
+      poss.forEach(function (x) {
+        if (n.left > 0 && x.loc === n.loc && x.k === n.k && (norm(x.lot) !== norm(n.lot) || norm(x.po) !== norm(n.po))) take(n, x, 'แก้ LOT/PO');
+      });
+    });
+    [function (n, x) { return x.row === n.row; }, function (n, x) { return x.zone === n.zone; }, function () { return true; }].forEach(function (near) {
+      negs.forEach(function (n) {
+        poss.forEach(function (x) {
+          if (n.left > 0 && x.loc !== n.loc && x.k === n.k && norm(x.lot) === norm(n.lot) && norm(x.po) === norm(n.po) && near(n, x)) take(n, x, 'ย้ายโล');
+        });
+      });
+    });
+    return out;
+  }
+
+  /**
+   * ไฟล์ Excel ปรับยอด สามชีต: ปรับยอด · จับคู่ย้ายโล/แก้ LOT · สรุป
+   * rows = แถว 16 ช่อง (closeRows ก่อนปิด หรือแท็บผลสรุปที่เก็บตอนปิด) meta = ข้อมูลรอบ
+   * @returns {Array<{name, aoa, cols}>} หน้าเว็บแปลงเป็นไฟล์ด้วยตัวสร้าง Excel อีกที
+   * แอปไม่แก้สมุด คนลงสมุดใช้ไฟล์นี้ลงปรับยอดเอง
+   */
+  function adjustBook(rows, meta) {
+    var m = meta || {};
+    var all = rows || [];
+    var adj = all.filter(function (r) { return numCell(r[11]) !== 0; });
+    var cell = function (v) { return v === null || v === undefined ? '' : v; };
+    var a1 = [['Location', 'SKU', 'SKU เต็ม', 'ชื่อสินค้า', 'LOT', 'PO', 'ยอดในสมุด', 'ยอดนับสุดท้าย', 'ปรับ', 'ปรับเพิ่ม/ลด', 'รอบ 1', 'Audit', 'รอบ 2', 'กลุ่ม', 'หมายเหตุ']];
+    adj.forEach(function (r) {
+      var d = numCell(r[11]);
+      a1.push([r[0], r[1], r[2], r[3], cell(r[4]), cell(r[5]), numCell(r[6]), numCell(r[10]), d, d > 0 ? 'ปรับเพิ่ม' : 'ปรับลด', cell(r[7]), cell(r[8]), cell(r[9]), cell(r[12]), cell(r[13])]);
+    });
+    var pairs = pairAdjust(adj);
+    var a2 = [['ลงสมุดเป็น', 'จาก Location', 'ไป Location', 'SKU', 'SKU เต็ม', 'ชื่อสินค้า', 'LOT เดิม', 'PO เดิม', 'LOT ใหม่', 'PO ใหม่', 'จำนวน']].concat(pairs);
+    var sum = function (f) { return round3(all.reduce(function (s, r) { return s + f(r); }, 0)); };
+    var plus = sum(function (r) { return Math.max(0, numCell(r[11])); });
+    var minus = sum(function (r) { return Math.max(0, -numCell(r[11])); });
+    var a3 = [['หัวข้อ', 'ค่า'],
+      ['รหัสรอบ', cell(m.id)], ['ชื่อรอบ', cell(m.name)], ['วันที่นับ', cell(m.date)], ['เวลาตัดยอด', cell(m.cutoff)],
+      ['อนุมัติโดย', m.approvedBy || 'ยังไม่อนุมัติ (ร่าง)'], ['อนุมัติเมื่อ', cell(m.approvedAt)],
+      ['รายการทั้งหมด', all.length], ['รายการที่ต้องปรับ', adj.length],
+      ['ยอดในสมุดรวม', sum(function (r) { return numCell(r[6]); })], ['ยอดนับสุดท้ายรวม', sum(function (r) { return numCell(r[10]); })],
+      ['ปรับเพิ่มรวม', plus], ['ปรับลดรวม', minus], ['สุทธิ', round3(plus - minus)],
+      ['จับคู่ย้ายโล', pairs.filter(function (p) { return p[0] === 'ย้ายโล'; }).length],
+      ['จับคู่แก้ LOT/PO', pairs.filter(function (p) { return p[0] === 'แก้ LOT/PO'; }).length],
+      ['หมายเหตุ', 'แอปไม่ได้แก้สมุด Transaction — ลงปรับยอดในสมุดตามชีตปรับยอด (คู่ที่ลงเป็นย้ายโล/แก้ LOT ได้อยู่ในชีตจับคู่)']];
+    return [
+      { name: 'ปรับยอด', aoa: a1, cols: [12, 14, 20, 32, 8, 13, 10, 12, 8, 11, 8, 8, 8, 12, 50] },
+      { name: 'จับคู่ย้ายโล-แก้ LOT', aoa: a2, cols: [11, 12, 12, 14, 20, 32, 8, 13, 8, 13, 8] },
+      { name: 'สรุป', aoa: a3, cols: [20, 60] },
+    ];
+  }
+
   window.WmsStocktake = {
     ZONES: ZONES, OTHER: OTHER, SKIP: SKIP, AUDIT_MIN: AUDIT_MIN, G: G, GROUPS: GROUPS,
     analyze: analyze, suspects: suspects, summaryRows: summaryRows, qtyTypo: qtyTypo, similarCode: similarCode,
+    R2: R2, SRC: SRC, FLAG: FLAG, r2Opts: r2Opts, plan2: plan2, planRows: planRows, progress2: progress2,
+    finalLines: finalLines, finalTotals: finalTotals, closeRows: closeRows, pairAdjust: pairAdjust, adjustBook: adjustBook,
     up: up, norm: norm,
     parseLoc: parseLoc, isRealLoc: isRealLoc, natCmp: natCmp, locCmp: locCmp, groupCmp: groupCmp, zoneOfGroup: zoneOfGroup,
     baseline: baseline, locations: locations, parseLocList: parseLocList, groups: groups, autoSplit: autoSplit,

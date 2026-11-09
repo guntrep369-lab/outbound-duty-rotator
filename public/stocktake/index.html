@@ -150,6 +150,23 @@ select.st-in{cursor:pointer;padding-right:2px}
 .st-led{margin-top:4px;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;line-height:1.7;color:var(--wms-text)}
 .st-led a{color:var(--wms-primary-dark)}
 
+/* ── รอบ 2 และปิดรอบ ── */
+.st-g.edit{background:#FDF4FF;color:#A21CAF}
+.st-xl td.ok{color:#047857;font-weight:700}
+.st-xl tr.off td{color:var(--wms-faint)}
+.st-in.num{text-align:right;font-variant-numeric:tabular-nums;border-color:var(--wms-border)}
+.st-in.ed{background:#FEF3C7;border-color:#FDE68A;font-weight:700}
+.st-num{width:58px;height:26px;padding:0 6px;border:1px solid var(--wms-border2);border-radius:6px;background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:12.5px;text-align:right}
+.st-num:focus{outline:none;border-color:var(--wms-primary)}
+.st-flag{display:inline-block;margin-left:4px;padding:0 6px;border-radius:999px;background:#FEF3C7;color:#92400E;font-size:11px;font-weight:600;white-space:nowrap}
+.st-done{margin-bottom:10px;padding:8px 12px;border-radius:var(--wms-radius-sm);background:#ECFDF5;border:1px solid #A7F3D0;color:#047857;font-size:13px;line-height:1.6}
+.st-done b{font-weight:700}
+.st-chk{width:16px;height:16px;cursor:pointer;accent-color:var(--wms-primary);vertical-align:middle}
+.st-ap{width:150px;height:30px;padding:0 9px;border:1px solid var(--wms-border2);border-radius:6px;background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:13px}
+.st-ap:focus{outline:none;border-color:var(--wms-primary)}
+
 @media (max-width:640px){
   .st-src{padding:8px 12px}
   .st-body{padding:12px 12px 90px}
@@ -199,7 +216,8 @@ function save(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 
 /* ?tab= ไว้ส่งลิงก์ตรงไปหน้าความคืบหน้า */
 const TABS = [['setup', 'ตั้งรอบ', '../icons/settings.png'], ['teams', 'ทีม/โซน', '../icons/list-checks.png'], ['progress', 'ความคืบหน้า', '../icons/tab-count.png'],
-  ['analyze', 'วิเคราะห์', '../icons/tab-compare.png']];
+  ['analyze', 'วิเคราะห์', '../icons/tab-compare.png'], ['round2', 'รอบ 2', '../icons/tab-refill.png'], ['close', 'ปิดรอบ', '../icons/tab-fix.png']];
+const LIVE_TABS = ['progress', 'analyze', 'round2', 'close'];   // แท็บที่ดึงบันทึกนับใหม่ทุกนาที
 let TAB = TABS.some(t => t[0] === new URLSearchParams(location.search).get('tab')) ? new URLSearchParams(location.search).get('tab') : 'setup';
 
 const S = { rounds: null, rid: load(KEY_ROUND), head: null, log: [], since: 0, at: 0, busy: '', err: '', ok: '', fresh: false };
@@ -212,6 +230,12 @@ let AQ = '';           // ช่องค้นหาในแท็บวิเ
 let FILTER = '';       // ชิปที่กดกรองอยู่
 const OPEN = new Set();   // แถวที่กาง ⓘ
 let TOAST = '';
+let R2D = null;        // ค่าตั้งแผนรอบ 2 ที่กำลังแก้ {rid, opts} เริ่มจากที่บันทึกไว้ในรอบ
+let PN = null;         // แผนรอบ 2 ที่คิดไว้
+let AN2 = null;        // ผลวิเคราะห์รอบ 2 (เฉพาะโลในแผนที่บันทึก)
+let EDITS = null;      // ตัวเลขที่หัวหน้าแก้ในแท็บปิดรอบ {rid, map} เก็บในเครื่องจนกว่าจะอนุมัติ
+let XLSX_LOAD = null;
+const XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
 
 function cfg() { return { url: WmsSettings.stUrl(), t: WmsSettings.stToken() }; }
 function who() {
@@ -317,6 +341,8 @@ function paintTabs() {
     n.progress = `${p.pct}%`;
     n.teams = ST.teamsOf(S.head.teams, 1).length || '';
     if (R().pass) { const a = analysis(); n.analyze = a.lines.filter(l => l.group !== ST.G.OK).length + a.audit.length || ''; }
+    n.round2 = (S.head.plan || []).length || '';
+    n.close = R().status === 'ปิดแล้ว' ? '✓' : '';
   }
   $('tabs').innerHTML = TABS.map(([id, label, icon]) =>
     `<button class="tx-tab ${id === TAB ? 'on' : ''}" role="tab" aria-selected="${id === TAB}" data-tab="${id}"><img src="${icon}" alt="" width="18" height="18">` +
@@ -331,6 +357,8 @@ function paintBody() {
   if (TAB === 'teams') box.innerHTML = teamsView();
   else if (TAB === 'progress') box.innerHTML = progressView();
   else if (TAB === 'analyze') box.innerHTML = analyzeView();
+  else if (TAB === 'round2') box.innerHTML = round2View();
+  else if (TAB === 'close') box.innerHTML = closeView();
   else box.innerHTML = setupView();
 }
 
@@ -359,6 +387,13 @@ function roundForm(r) {
   const today = new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10);
   const x = r || { name: '', date: today, cutoff: `${today} 18:00`, settings: { auditMin: ST.AUDIT_MIN } };
   const lock = r && r.status !== 'ตั้งค่า';
+  const done = r && r.status === 'ปิดแล้ว';
+  if (done) {
+    return `<div class="st-wrap st-form"><table class="st-xl"><tbody>
+      <tr><td>ชื่อรอบ</td><td>${esc(x.name)}</td></tr><tr><td>วันที่นับ</td><td>${esc(x.date)}</td></tr>
+      <tr><td>เวลาตัดยอด</td><td>${esc(x.cutoff)}</td></tr><tr><td>อนุมัติ</td><td>${esc(r.approvedBy)} · ${esc(r.approvedAt)}</td></tr>
+    </tbody></table></div><div class="st-note">ปิดรอบแล้ว แก้ไม่ได้ · นับใหม่ให้สร้างรอบใหม่</div>`;
+  }
   return `<div class="st-wrap st-form"><table class="st-xl"><tbody>
     <tr><td>ชื่อรอบ</td><td><input class="st-in" id="fName" maxlength="80" placeholder="เช่น นับสต๊อกสิ้นปี 2569" value="${esc(x.name)}"></td></tr>
     <tr><td>วันที่นับ</td><td><input class="st-in" id="fDate" type="date" value="${esc(x.date)}" ${lock ? 'disabled' : ''}></td></tr>
@@ -389,20 +424,30 @@ function setupView() {
     ? `Inventory <b>${inv.length}</b> ทีม · มีทีมแล้ว <b>${f(p.total - p.unassigned)}/${f(p.total)}</b> โล${p.unassigned ? ` · <span class="no">ยังไม่มีทีม ${f(p.unassigned)} โล</span>` : ''} · Audit <b>${aud.length}</b> คน ดู ${f(p.audit.n)} โล`
     : 'ยังไม่มีรายการ Location — ดึงยอดตั้งต้นก่อน';
   const linkRow = `<span class="st-sub">ส่งใน LINE ให้คนนับ เปิดแล้วเลือกทีมกับชื่อตัวเอง ไม่ต้องล็อกอิน</span><span class="st-link">${esc(link())}</span>`;
+  const c1 = r.status === 'นับรอบ 1';
+  const after1 = r.pass > 0 && r.status !== 'ตั้งค่า' && !c1;
   const go = r.status === 'ตั้งค่า'
     ? `<button class="st-btn p" data-act="start" ${r.set && teamOk ? '' : 'disabled'}>เริ่มนับรอบ 1</button>`
-    : counting() ? `<button class="st-btn" data-act="pause">กลับไปตั้งค่า</button>` : '';
+    : c1 ? `<button class="st-btn" data-act="pause">กลับไปตั้งค่า</button>` : '';
   const goDetail = r.status === 'ตั้งค่า'
     ? (r.set && teamOk ? 'พร้อมแล้ว กดเริ่มเมื่อหยุดรับ-จ่ายของ คนนับจะส่งผลได้หลังจากนี้' : 'ต้องมียอดตั้งต้น และทุกโลมีทีม Inventory ก่อน')
-    : counting() ? `กำลังนับ · นับแล้ว <b>${f(p.done)}/${f(p.total)}</b> โล (${p.pct}%) · <button class="st-btn" data-go="progress">ดูความคืบหน้า</button>`
+    : c1 ? `กำลังนับ · นับแล้ว <b>${f(p.done)}/${f(p.total)}</b> โล (${p.pct}%) · <button class="st-btn" data-go="progress">ดูความคืบหน้า</button>`
     : `ปิดรับแล้ว · นับได้ <b>${f(p.done)}/${f(p.total)}</b> โล`;
+  const plan = planSaved();
+  const p2 = plan.length ? ST.progress2(plan, S.log) : null;
+  const r2Detail = !after1 ? 'ปิดรับนับรอบ 1 แล้วระบบเลือกโลที่ต้องนับซ้ำให้ ทีมอื่นเป็นคนนับ'
+    : !plan.length ? 'ยังไม่ได้บันทึกแผน — ไม่ต้องนับซ้ำก็ข้ามไปปิดรอบได้'
+    : `แผน <b>${f(plan.length)}</b> โล · ${r.pass >= 2 ? `นับแล้ว <b>${f(p2.done)}/${f(p2.total)}</b> (${p2.pct}%)` : 'ยังไม่เปิดนับ'}${r.status === 'นับรอบ 2' ? ' · <b>กำลังนับ</b>' : ''}`;
+  const closed = r.status === 'ปิดแล้ว';
   return `<div class="st-h">ขั้นตอน</div>
     <div class="st-wrap"><table class="st-xl st-steps"><tbody>
       ${step(1, 'ยอดตั้งต้น', r.set > 0, baseDetail, `<button class="st-btn ${r.set ? '' : 'p'}" data-act="base" ${S.busy ? 'disabled' : ''}>${r.set ? 'ดึงใหม่' : 'ดึงยอดตั้งต้น'}</button>`)}
       ${step(2, 'ทีม/โซน', teamOk, teamDetail, `<button class="st-btn" data-go="teams">แบ่งทีม</button>`)}
       ${step(3, 'ลิงก์คนนับ', true, linkRow, `<button class="st-btn" data-act="copy">คัดลอก</button>${navigator.share ? '<button class="st-btn" data-act="share">แชร์</button>' : ''}`)}
-      ${step(4, 'นับรอบ 1', counting() || r.status !== 'ตั้งค่า', goDetail, go)}
-      ${step(5, 'วิเคราะห์', r.status === 'วิเคราะห์', r.settings.summaryAt ? `บันทึกผลสรุปลงชีตล่าสุด ${esc(r.settings.summaryAt)} · ${f(r.settings.summaryRows)} แถว` : 'ดูขาด/เกิน/วางผิดโล ระหว่างนับได้เลย ปิดรับนับรอบ 1 เมื่อทุกทีมเสร็จ', r.pass ? '<button class="st-btn" data-go="analyze">ดูผล</button>' : '')}
+      ${step(4, 'นับรอบ 1', r.status !== 'ตั้งค่า', goDetail, go)}
+      ${step(5, 'วิเคราะห์', after1, r.settings.summaryAt ? `บันทึกผลสรุปลงชีตล่าสุด ${esc(r.settings.summaryAt)} · ${f(r.settings.summaryRows)} แถว` : 'ดูขาด/เกิน/วางผิดโล ระหว่างนับได้เลย ปิดรับนับรอบ 1 เมื่อทุกทีมเสร็จ', r.pass ? '<button class="st-btn" data-go="analyze">ดูผล</button>' : '')}
+      ${step(6, 'นับรอบ 2', r.pass >= 2, r2Detail, after1 ? '<button class="st-btn" data-go="round2">แผนรอบ 2</button>' : '')}
+      ${step(7, 'ปิดรอบ', closed, closed ? `อนุมัติโดย <b>${esc(r.approvedBy)}</b> เมื่อ ${esc(r.approvedAt)}` : 'ตรวจยอดสุดท้าย หัวหน้าอนุมัติ แล้วได้ไฟล์ Excel ปรับยอด (แอปไม่แก้สมุด)', after1 ? '<button class="st-btn" data-go="close">ยอดสุดท้าย</button>' : '')}
     </tbody></table></div>
     ${WmsSettings.txUrl() ? '' : '<div class="st-warn" style="margin-top:10px">ยังไม่มี URL Transaction ในหน้าตั้งค่า — ต้องมีก่อนดึงยอดตั้งต้น</div>'}
     <div class="st-h">รอบนี้</div>` + roundForm(r) + cfgMore();
@@ -647,7 +692,7 @@ async function checkMoves(fresh) {
 
 /* ── แท็บวิเคราะห์ ───────────────────────────────────────────────────── */
 
-const GCLS = { 'ขาด': 'short', 'เกิน': 'over', 'วางผิดโล': 'moved', 'LOT/PO ผิด': 'lotpo', 'น่าจะพิมพ์ผิด': 'typo', 'ยังไม่นับ': 'left', 'Inv≠Audit': 'audit', 'ตรง': 'ok' };
+const GCLS = { 'ขาด': 'short', 'เกิน': 'over', 'วางผิดโล': 'moved', 'LOT/PO ผิด': 'lotpo', 'น่าจะพิมพ์ผิด': 'typo', 'ยังไม่นับ': 'left', 'Inv≠Audit': 'audit', 'ตรง': 'ok', 'หัวหน้าแก้': 'edit' };
 const AN_LIMIT = 300;   // แถวที่วาดต่อครั้ง เกินนี้ให้กรองเพิ่ม หน้าไม่หน่วง
 
 /** คิดจากยอดตั้งต้นกับบันทึกนับที่มีในหน้าอยู่แล้ว ไม่ต้องถามสคริปต์ คิดใหม่เมื่อมีแถวใหม่หรือข้อมูลรอบเปลี่ยน */
@@ -665,7 +710,7 @@ function ledgerHtml(l) {
   if (!FIFO) {
     if (!FIFO_BUSY && WmsSettings.txUrl()) {
       FIFO_BUSY = true;
-      loadFifo(false).catch(() => { FIFO = { data: null, at: Date.now() }; }).finally(() => { FIFO_BUSY = false; if (TAB === 'analyze') paintBody(); });
+      loadFifo(false).catch(() => { FIFO = { data: null, at: Date.now() }; }).finally(() => { FIFO_BUSY = false; if (TAB === 'analyze' || TAB === 'close') paintBody(); });
     }
     return WmsSettings.txUrl() ? '<div class="st-led">⏳ กำลังอ่านสมุด…</div>' : '';
   }
@@ -697,9 +742,12 @@ function analyzeView() {
   const chip = (key, label, val, cls) => `<button class="st-chip ${cls || ''} ${FILTER === key ? 'on' : ''}" data-filter="${esc(key)}">${esc(label)} <b>${val}</b></button>`;
   const gcls = { 'ขาด': 'red', 'เกิน': 'amber', 'วางผิดโล': 'amber', 'LOT/PO ผิด': 'amber', 'น่าจะพิมพ์ผิด': 'amber', 'ยังไม่นับ': 'red', 'Inv≠Audit': 'amber' };
   const t = a.totals;
-  const band = r.status === 'วิเคราะห์'
-    ? `<div class="st-note" style="margin:0 0 8px">ปิดรับนับรอบ 1 แล้ว (เครื่องที่ค้างส่งยังส่งเข้ามาได้) · <button class="st-btn" data-act="reopen">กลับไปนับต่อ</button></div>`
-    : counting() ? `<div class="st-warn">ยังรับผลนับอยู่ ตัวเลขเปลี่ยนได้ · <button class="st-btn p" data-act="close1">ปิดรับนับรอบ 1 → วิเคราะห์</button></div>` : '';
+  const closed = r.status === 'ปิดแล้ว';
+  const band = r.status === 'นับรอบ 1'
+    ? `<div class="st-warn">ยังรับผลนับอยู่ ตัวเลขเปลี่ยนได้ · <button class="st-btn p" data-act="close1">ปิดรับนับรอบ 1 → วิเคราะห์</button></div>`
+    : r.status === 'ตั้งค่า' ? ''
+    : `<div class="st-note" style="margin:0 0 8px">ผลรอบ 1${r.status === 'วิเคราะห์' && r.pass < 2 ? ' · ปิดรับแล้ว (เครื่องที่ค้างส่งยังส่งเข้ามาได้) <button class="st-btn" data-act="reopen">กลับไปนับต่อ</button>' : ''}
+        ${closed ? '' : ' · <button class="st-btn p" data-go="round2">ทำแผนรอบ 2 →</button>'}</div>`;
   const hot = a.hot.slice(0, 5).map(h => chip(`h:${h.row}|${h.level}`, h.row + (h.level ? ' ชั้น ' + h.level : ''), h.n)).join('');
   const ppl = a.people.filter(p => p.bad).slice(0, 5).map(p => chip(`p:${p.team}|${p.who}`, `${p.who} · ${p.teamName}`, `${p.bad}/${p.checked}`, 'amber')).join('');
   const rows = list.slice(0, AN_LIMIT).map(l => {
@@ -717,8 +765,8 @@ function analyzeView() {
   return `${band}<div class="st-tot">
       <span>สมุด <b>${f(t.book)}</b></span><span>นับได้ <b>${f(t.inv)}</b></span><span>ต่าง <b>${signed(t.diff)}</b></span>
       <span>นับแล้ว <b>${f(t.counted)}/${f(t.locs)}</b> โล</span><span class="sp"></span>
-      ${r.settings.summaryAt ? `<span>บันทึกล่าสุด ${esc(r.settings.summaryAt)}</span>` : ''}
-      <button class="st-btn" data-act="summary" ${S.busy ? 'disabled' : ''}>บันทึกผลลงชีต</button>
+      ${r.settings.summaryAt && !closed ? `<span>บันทึกล่าสุด ${esc(r.settings.summaryAt)}</span>` : ''}
+      ${closed ? '' : `<button class="st-btn" data-act="summary" ${S.busy ? 'disabled' : ''}>บันทึกผลลงชีต</button>`}
     </div>
     <div class="st-bar">
       ${chip('', 'ปัญหาทั้งหมด', f(problems.length))}
@@ -741,6 +789,294 @@ async function saveSummary() {
     const res = await post({ op: 'st-summary', round: S.rid, lines });
     Object.assign(R(), res.round);
     S.ok = `✓ บันทึกผลสรุปลงชีตแล้ว ${f(res.saved)} แถว`;
+  });
+}
+
+/* ── แท็บรอบ 2: ระบบเลือกโลที่ต้องนับซ้ำ หัวหน้าปรับเกณฑ์ / ตัด / เพิ่ม / เปลี่ยนทีม ── */
+
+/** แผนที่บันทึกในชีตแล้ว (ที่คนนับเห็น) */
+function planSaved() {
+  return ((S.head && S.head.plan) || []).map(p => ({ loc: p[0], row: p[1], why: p[2], team: p[3], forbid: p[4] || [], r1team: p[5] }));
+}
+function r2Draft() {
+  if (!R2D || R2D.rid !== S.rid) R2D = { rid: S.rid, opts: ST.r2Opts(R().settings.r2) };
+  return R2D;
+}
+function planNow() {
+  const a = analysis(), key = JSON.stringify(r2Draft().opts);
+  if (PN && PN.a === a && PN.key === key && PN.head === S.head) return PN.p;
+  const p = ST.plan2(a, { teams: S.head.teams, locs: countLocs(), opts: r2Draft().opts });
+  PN = { a, key, head: S.head, p };
+  return p;
+}
+/** แผนที่คิดตอนนี้ต่างจากที่บันทึกไหม (โลหรือทีมเปลี่ยน) */
+function planDiff(p) {
+  const now = new Map(ST.planRows(p).map(r => [r[0], r[3]]));
+  const saved = planSaved();
+  return now.size !== saved.length || saved.some(s => now.get(s.loc) !== s.team);
+}
+function tName(id) { const t = S.head.teams.find(x => x.id === id && x.pass === 1); return t ? t.name : id || '—'; }
+function after1() { const r = R(); return r.pass > 0 && r.status !== 'ตั้งค่า' && r.status !== 'นับรอบ 1'; }
+
+function round2View() {
+  const r = R();
+  if (!after1()) return `<div class="st-empty">ปิดรับนับรอบ 1 ก่อน แล้วระบบจะเลือกโลที่ต้องนับซ้ำให้<br><button class="st-btn" data-go="analyze">ไปแท็บวิเคราะห์</button></div>`;
+  const closed = r.status === 'ปิดแล้ว';
+  const d = r2Draft(), o = d.opts;
+  const p = planNow();
+  const saved = planSaved();
+  const savedMap = new Map(saved.map(x => [x.loc, x.team]));
+  const pr = ST.progress2(saved, S.log);
+  const changed = planDiff(p) || JSON.stringify(o) !== JSON.stringify(ST.r2Opts(r.settings.r2));
+  const inv = ST.teamsOf(S.head.teams, 1).filter(t => t.kind === 'Inventory');
+  const chip = (key, label, val, cls) => `<button class="st-chip ${cls || ''} ${FILTER === key ? 'on' : ''}" data-filter="${esc(key)}">${esc(label)} <b>${val}</b></button>`;
+  const picked = p.locs.filter(l => !l.drop);
+
+  let band = '';
+  if (closed) band = `<div class="st-done">ปิดรอบแล้ว · อนุมัติโดย <b>${esc(r.approvedBy)}</b> เมื่อ ${esc(r.approvedAt)}</div>`;
+  else if (r.status === 'นับรอบ 2') band = `<div class="st-warn"><b>กำลังนับรอบ 2</b> · นับแล้ว ${f(pr.done)}/${f(pr.total)} โล (${pr.pct}%) · คนนับเปิดลิงก์เดิม เลือกทีมใหม่
+      <button class="st-btn p" data-act="stop2">ปิดรับนับรอบ 2</button></div>`;
+  else if (r.pass >= 2) band = `<div class="st-note" style="margin:0 0 8px">ปิดรับนับรอบ 2 แล้ว · นับได้ ${f(pr.done)}/${f(pr.total)} โล
+      <button class="st-btn" data-act="start2">เปิดนับรอบ 2 ต่อ</button> <button class="st-btn p" data-go="close">ไปปิดรอบ →</button></div>`;
+  else if (saved.length && !changed) band = `<div class="st-warn">บันทึกแผนแล้ว ${f(saved.length)} โล · ส่งลิงก์คนนับเดิมได้เลย
+      <button class="st-btn p" data-act="start2">เปิดนับรอบ 2</button></div>`;
+  else band = `<div class="st-note" style="margin:0 0 8px">ระบบเลือกโลจากผลรอบ 1 ตามเกณฑ์ข้างล่าง · ทีมที่นับรอบ 2 ไม่ใช่ทีมเดิม และคนที่นับโลนั้นในรอบ 1 นับซ้ำไม่ได้
+      · ไม่ต้องนับซ้ำ <button class="st-btn" data-go="close">ข้ามไปปิดรอบ</button></div>`;
+
+  const gchips = ST.GROUPS.map(g => `<button class="st-chip ${o.groups.includes(g) ? 'on' : ''}" data-r2g="${esc(g)}" ${closed ? 'disabled' : ''}>${esc(g)} <b>${f(p.counts.tags[g] || 0)}</b></button>`).join('');
+  const hot = p.hot.filter(h => h.bad).slice(0, 6).map(h =>
+    `<span class="st-chip plain ${h.on ? 'amber' : ''}">${esc(h.row)} <b>${h.bad}/${h.checked}</b> ${h.pct}%${h.on ? ' · ทั้งแถว' : ''}</span>`).join('');
+  const teamChips = inv.map(t => {
+    const n = picked.filter(l => l.team === t.id).length;
+    const tp = pr.teams.find(x => x.id === t.id);
+    return n || tp ? chip('t:' + t.id, t.name, r.pass >= 2 && tp ? `${tp.done}/${tp.n}` : f(n)) : '';
+  }).join('');
+  const dropN = p.counts.dropped;
+  const leftN = r.pass >= 2 ? pr.left.length : 0;
+
+  const show = p.locs.filter(l => {
+    if (FILTER === 'drop') return l.drop;
+    if (l.drop) return false;
+    if (FILTER.startsWith('t:')) return l.team === FILTER.slice(2);
+    if (FILTER === 'left') return savedMap.has(l.loc) && !pr.isDone[l.loc];
+    return true;
+  });
+  /* โลในแผนที่บันทึกแต่ไม่อยู่ในแผนที่คิดตอนนี้ (เกณฑ์เปลี่ยน) ยังแสดงให้เห็นว่าคนนับยังเห็นอยู่ */
+  const gone = saved.filter(s => !p.locs.some(l => l.loc === s.loc));
+  const opt = (v) => inv.map(t => `<option value="${esc(t.id)}" ${v === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('');
+  const rows = show.slice(0, AN_LIMIT).map(l => {
+    const st = !savedMap.has(l.loc) ? '<td class="mu">ยังไม่บันทึก</td>'
+      : savedMap.get(l.loc) !== l.team ? '<td class="mu">ทีมเปลี่ยน</td>'
+      : r.pass < 2 ? '<td class="mu">รอเปิด</td>'
+      : pr.isDone[l.loc] ? '<td class="ok">✓ นับแล้ว</td>' : '<td>รอนับ</td>';
+    return `<tr class="${l.drop ? 'off' : ''}"><td><input type="checkbox" class="st-chk" data-r2drop="${esc(l.loc)}" ${l.drop ? '' : 'checked'} ${closed ? 'disabled' : ''} aria-label="นับซ้ำ ${esc(l.loc)}"></td>
+      <td class="k">${esc(l.loc)}</td><td style="white-space:normal">${esc(l.why)}</td><td class="mu">${esc(tName(l.r1team))}</td>
+      <td>${l.drop ? '' : `<select class="st-in ${l.team ? '' : 'none'}" data-r2team="${esc(l.loc)}" ${closed ? 'disabled' : ''} aria-label="ทีมรอบ 2 ${esc(l.loc)}">${l.team ? '' : '<option value="">ไม่มีทีม</option>'}${opt(l.team)}</select>`}</td>
+      <td class="mu">${esc(l.forbid.join(', ') || '—')}</td>${l.drop ? '<td></td>' : st}</tr>`;
+  }).join('') + (FILTER ? '' : gone.map(s => `<tr class="off"><td></td><td class="k">${esc(s.loc)}</td><td>${esc(s.why)}</td><td class="mu">${esc(tName(s.r1team))}</td>
+      <td class="mu">${esc(tName(s.team))}</td><td class="mu">${esc(s.forbid.join(', ') || '—')}</td><td class="mu">หลุดเกณฑ์ (บันทึกใหม่จะเอาออก)</td></tr>`).join(''));
+
+  return `${band}
+    <div class="st-bar"><span class="st-lbl">นับซ้ำ</span>${gchips}
+      <span class="st-lbl">ต่าง ≥</span><input class="st-num" id="r2Min" type="number" min="0" step="1" value="${esc(o.minQty)}" ${closed ? 'disabled' : ''} aria-label="ต่างกันกี่ชิ้นขึ้นไปถึงนับซ้ำ">
+      <span class="st-lbl">นับทั้งแถวเมื่อ Audit ไม่ตรง ≥</span><input class="st-num" id="r2Hot" type="number" min="0" max="100" step="5" value="${esc(o.hotPct)}" ${closed ? 'disabled' : ''} aria-label="เปอร์เซ็นต์ที่ Audit ไม่ตรงในแถว"><span class="st-lbl">%</span>
+      <span class="st-lbl">สุ่ม ≥</span><input class="st-num" id="r2HotMin" type="number" min="1" step="1" value="${esc(o.hotMin)}" ${closed ? 'disabled' : ''} aria-label="Audit ต้องสุ่มอย่างน้อยกี่โล"><span class="st-lbl">โล</span>
+    </div>
+    ${hot ? `<div class="st-bar"><span class="st-lbl">Audit ไม่ตรงในแถว</span>${hot}</div>` : ''}
+    ${p.warn.length ? `<div class="st-warn">${p.warn.slice(0, 5).map(esc).join('<br>')}${p.warn.length > 5 ? `<br>และอีก ${p.warn.length - 5} ข้อ` : ''}</div>` : ''}
+    <div class="st-bar">
+      ${chip('', 'นับซ้ำ', f(picked.length))}${teamChips}
+      ${leftN ? chip('left', 'ยังไม่นับ', f(leftN), 'red') : ''}
+      ${dropN ? chip('drop', 'ตัดออก', f(dropN)) : ''}
+      <span class="sp"></span>
+      ${closed ? '' : '<input class="st-add" id="r2Add" placeholder="+ โล เช่น R1-07-01" aria-label="เพิ่มโลที่ต้องนับซ้ำ">'}
+    </div>
+    <div class="st-wrap"><table class="st-xl"><thead><tr><th></th><th>Location</th><th>เหตุผล</th><th>ทีมรอบ 1</th><th>ไปนับรอบ 2</th><th>ห้ามนับ</th><th>รอบ 2</th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="7" class="mu">${p.locs.length ? 'ไม่มีโลตามที่กรอง' : 'ไม่มีโลที่ต้องนับซ้ำตามเกณฑ์นี้'}</td></tr>`}</tbody></table></div>
+    ${show.length > AN_LIMIT ? `<div class="st-note">แสดง ${AN_LIMIT} จาก ${f(show.length)} โล — กดชิปเพื่อกรอง</div>` : ''}
+    ${pr.extra.length ? `<div class="st-note">นับรอบ 2 นอกแผน (ไม่เอามาคิด): ${pr.extra.map(esc).join(', ')}</div>` : ''}
+    ${closed ? '' : `<div class="st-save"><span>${changed ? '<b>แผนเปลี่ยน ยังไม่บันทึก</b>' : saved.length ? `บันทึกแล้ว ${esc(r.settings.planAt || '')}` : 'ยังไม่ได้บันทึกแผน'}</span><span class="sp"></span>
+      ${changed && saved.length ? '<button class="st-btn" data-act="r2-undo">กลับไปแผนที่บันทึก</button>' : ''}
+      <button class="st-btn p" data-act="plan-save" ${S.busy || !picked.length ? 'disabled' : ''}>บันทึกแผน ${f(picked.filter(l => l.team).length)} โล</button></div>`}`;
+}
+
+function r2Set(fn) {
+  const d = r2Draft();
+  fn(d.opts);
+  d.opts = ST.r2Opts(d.opts);
+  paintBody();
+}
+
+function addR2(list) {
+  if (!list.length) return;
+  r2Set(o => {
+    list.forEach(l => {
+      if (!o.add.includes(l)) o.add.push(l);
+      o.drop = o.drop.filter(x => x !== l);
+    });
+  });
+  TOAST = '';
+}
+
+async function savePlan() {
+  const p = planNow();
+  const rows = ST.planRows(p);
+  if (!rows.length) { S.err = 'ไม่มีโลในแผน'; paintSrc(); return; }
+  const noTeam = p.locs.filter(l => !l.drop && !l.team).length;
+  if (noTeam && !confirm(`มี ${noTeam} โลที่ยังไม่มีทีม จะไม่อยู่ในแผน บันทึกต่อไหม?`)) return;
+  await job('กำลังบันทึกแผนรอบ 2…', async () => {
+    const res = await post({ op: 'st-plan', round: S.rid, plan: rows, opts: r2Draft().opts });
+    S.head = await get('st-head', { round: S.rid });
+    R2D = null;
+    S.ok = `✓ บันทึกแผนรอบ 2 แล้ว ${f(res.plan.length)} โล${res.added ? ` · เพิ่มโลใหม่ในรายการ ${res.added}` : ''}`;
+  });
+}
+
+/* ── แท็บปิดรอบ: ยอดสุดท้าย หัวหน้าแก้ได้ อนุมัติแล้วได้ไฟล์ปรับยอด ── */
+
+function analysis2() {
+  const plan = planSaved();
+  if (!plan.length) return null;
+  if (AN2 && AN2.head === S.head && AN2.n === S.log.length && AN2.since === S.since) return AN2.res;
+  const locs = plan.map(x => x.loc);
+  const res = ST.analyze({ piles: S.head.piles, entries: S.log, teams: S.head.teams, locs: locs.map(loc => ({ loc })), skus: S.head.skus, pass: 2, only: locs });
+  AN2 = { head: S.head, n: S.log.length, since: S.since, res };
+  return res;
+}
+function editKey() { return 'wms:st:edit:' + S.rid; }
+function edits() {
+  if (!EDITS || EDITS.rid !== S.rid) {
+    let map = {};
+    try { map = JSON.parse(load(editKey()) || '{}') || {}; } catch (e) { map = {}; }
+    EDITS = { rid: S.rid, map };
+  }
+  return EDITS.map;
+}
+function setEdit(id, v) {
+  const m = edits();
+  if (v === null) delete m[id]; else m[id] = v;
+  save(editKey(), JSON.stringify(m));
+}
+function finals() { return ST.finalLines(analysis(), analysis2(), planSaved(), edits()); }
+
+/** แถวผลสรุปที่เก็บตอนปิดรอบ → หน้าตาเดียวกับ finalLines ไว้วาดตาราง (อ่านอย่างเดียว) */
+function fromSum(r, i) {
+  const n = (v) => (v === '' || v === null || v === undefined ? null : +v);
+  const src = (String(r[13]).match(/^ยอดจาก(\S+ ?\d?)/) || [])[1] || '';
+  return { id: 's' + i, loc: r[0], sku: r[1], long: r[2], name: r[3], lot: r[4], po: r[5], book: +r[6] || 0, r1: n(r[7]), aud: n(r[8]), r2: n(r[9]),
+    final: +r[10] || 0, adj: +r[11] || 0, group: r[12], note: r[13], src: src.trim(),
+    flag: Object.values(ST.FLAG).find(x => String(r[13]).includes(' · ' + x)) || '', teamText: r[14], whoText: r[15] };
+}
+
+function closeView() {
+  const r = R();
+  if (!after1()) return `<div class="st-empty">ปิดรับนับรอบ 1 ก่อน แล้วค่อยตรวจยอดสุดท้าย<br><button class="st-btn" data-go="analyze">ไปแท็บวิเคราะห์</button></div>`;
+  const closed = r.status === 'ปิดแล้ว';
+  const fin = closed ? (S.head.sum || []).map(fromSum) : finals();
+  const t = ST.finalTotals(fin);
+  const ed = closed ? {} : edits();
+  const T = analysis().teamName;
+  const chip = (key, label, val, cls) => `<button class="st-chip ${cls || ''} ${FILTER === key ? 'on' : ''}" data-filter="${esc(key)}">${esc(label)} <b>${val}</b></button>`;
+  const q = ST.up(AQ);
+  const list = fin.filter(l => {
+    if (FILTER === 'all') { /* ทุกรายการ */ }
+    else if (FILTER === 'ok') { if (l.adj) return false; }
+    else if (FILTER.startsWith('s:')) { if (l.src !== FILTER.slice(2)) return false; }
+    else if (FILTER.startsWith('f:')) { if (l.flag !== FILTER.slice(2)) return false; }
+    else if (!l.adj && !l.flag && l.src !== ST.SRC.EDIT) return false;
+    return !q || ST.up(l.loc).includes(q) || ST.up(l.sku).includes(q) || ST.up(l.long).includes(q) || ST.up(l.name).includes(q);
+  });
+  const cell = (v) => (v === null || v === undefined ? '' : f(v));
+  const rows = list.slice(0, AN_LIMIT).map(l => {
+    const open = OPEN.has('c:' + l.id);
+    const edited = !closed && l.src === ST.SRC.EDIT;
+    const fcell = closed ? `<td class="num k">${f(l.final)}</td>`
+      : `<td><input class="st-in num ${edited ? 'ed' : ''}" data-edit="${esc(l.id)}" value="${esc(l.final)}" inputmode="decimal" aria-label="ยอดสุดท้าย ${esc(l.loc)} ${esc(l.sku)}"></td>`;
+    const who = closed ? `${esc(l.teamText || '—')} · ${esc(l.whoText || '—')}`
+      : `${l.who2 && l.who2.length ? `รอบ 2: ${esc(T[l.team2] || l.team2)} · ${esc(l.who2.join(', '))} · ` : ''}รอบ 1: ${esc(T[l.team] || l.team || '—')} · ${esc((l.who || []).join(', ') || '—')}`;
+    return `<tr><td><span class="st-g ${GCLS[l.group] || ''}">${esc(l.group)}</span>${l.flag ? `<span class="st-flag">${esc(l.flag)}</span>` : ''}</td>
+      <td class="k">${esc(l.loc)}</td><td>${esc(l.sku)}</td><td class="mu">${esc(l.name)}</td><td>${esc(l.lot)}</td><td>${esc(l.po)}</td>
+      <td class="num">${f(l.book)}</td><td class="num">${cell(l.r1)}</td><td class="num">${cell(l.aud)}</td><td class="num">${cell(l.r2)}</td>
+      ${fcell}<td class="num ${l.adj < 0 ? 'neg' : l.adj > 0 ? 'pos' : ''}">${l.adj ? signed(l.adj) : ''}</td><td class="mu">${esc(l.src)}</td>
+      <td><button class="st-i ${open ? 'on' : ''}" data-open="c:${esc(l.id)}" aria-label="รายละเอียด ${esc(l.loc)} ${esc(l.sku)}">i</button></td></tr>` +
+      (open ? `<tr class="info"><td colspan="14">${closed ? esc(l.note) : `<b>ยอดจาก${esc(l.src)}</b>${l.flag ? ' · ' + esc(l.flag) : ''}${edited ? ` · ระบบคิดได้ ${f(l.auto)} <button class="st-btn" data-unedit="${esc(l.id)}">ใช้ค่าระบบ</button>` : ''}${l.note ? '<br>' + esc(l.note) : ''}`}
+        <br>${who}${l.sku && !closed ? ledgerHtml(l) : ''}</td></tr>` : '');
+  }).join('');
+  const sc = (s) => (t.src[s] ? chip('s:' + s, s, f(t.src[s]), s === ST.SRC.EDIT ? 'amber' : '') : '');
+  const fc = (x, cls) => (t.flag[x] ? chip('f:' + x, x, f(t.flag[x]), cls) : '');
+  const band = closed
+    ? `<div class="st-done">ปิดรอบแล้ว · อนุมัติโดย <b>${esc(r.approvedBy)}</b> เมื่อ ${esc(r.approvedAt)} · ${f(t.lines)} รายการ ต้องปรับ ${f(t.adjLines)} · แอปไม่ได้แก้สมุด ลงปรับยอดตามไฟล์ Excel</div>`
+    : r.status === 'นับรอบ 2' ? `<div class="st-warn">ยังเปิดนับรอบ 2 อยู่ ตัวเลขยังเปลี่ยนได้ · <button class="st-btn" data-go="round2">ดูรอบ 2</button></div>`
+    : !planSaved().length ? '<div class="st-note" style="margin:0 0 8px">ไม่มีแผนรอบ 2 — ยอดสุดท้ายใช้ผลรอบ 1 · ⓘ ดูคนนับ แก้ตัวเลขในช่องยอดสุดท้ายได้</div>' : '';
+  return `${band}<div class="st-tot">
+      <span>สมุด <b>${f(t.book)}</b></span><span>ยอดสุดท้าย <b>${f(t.final)}</b></span>
+      <span>ปรับเพิ่ม <b>+${f(t.plus)}</b></span><span>ปรับลด <b>−${f(t.minus)}</b></span><span>สุทธิ <b>${signed(t.net)}</b></span><span class="sp"></span>
+      <button class="st-btn" data-act="xlsx" ${S.busy ? 'disabled' : ''}>Excel ปรับยอด${closed ? '' : ' (ร่าง)'}</button>
+    </div>
+    <div class="st-bar">
+      ${chip('', 'ต้องดู', f(fin.filter(l => l.adj || l.flag || l.src === ST.SRC.EDIT).length), 'red')}
+      ${chip('all', 'ทั้งหมด', f(t.lines))}${chip('ok', 'ตรง', f(t.lines - t.adjLines), 'green')}
+      ${closed ? '' : sc(ST.SRC.R2) + sc(ST.SRC.R1) + sc(ST.SRC.EDIT) + fc(ST.FLAG.WAIT, 'amber') + fc(ST.FLAG.ODD, 'amber') + fc(ST.FLAG.NONE, 'red')}
+      <span class="sp"></span><input class="st-q" id="anQ" placeholder="ค้นหา โล / SKU / ชื่อ" value="${esc(AQ)}" aria-label="ค้นหาในยอดสุดท้าย">
+    </div>
+    <div class="st-wrap"><table class="st-xl"><thead><tr><th>กลุ่ม</th><th>Location</th><th>SKU</th><th>ชื่อ</th><th>LOT</th><th>PO</th>
+      <th class="num">สมุด</th><th class="num">รอบ 1</th><th class="num">Audit</th><th class="num">รอบ 2</th><th class="num">ยอดสุดท้าย</th><th class="num">ปรับ</th><th>จาก</th><th></th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="14" class="mu">${fin.length ? 'ไม่มีรายการตามที่กรอง' : 'ยังไม่มีผลนับ'}</td></tr>`}</tbody></table></div>
+    ${list.length > AN_LIMIT ? `<div class="st-note">แสดง ${AN_LIMIT} จาก ${f(list.length)} รายการ — กดชิปหรือค้นหาเพื่อกรอง</div>` : ''}
+    ${closed ? '' : `<div class="st-save"><span>${Object.keys(ed).length ? `<b>แก้ตัวเลขเอง ${Object.keys(ed).length} รายการ</b> (เก็บในเครื่องนี้จนกว่าจะอนุมัติ)` : 'ยอดจากรอบ 2 ถ้านับซ้ำ ไม่งั้นรอบ 1 · แก้ได้ในช่องยอดสุดท้าย'}</span><span class="sp"></span>
+      <input class="st-ap" id="apName" maxlength="60" placeholder="ชื่อคนอนุมัติ" value="${esc(who())}" aria-label="ชื่อคนอนุมัติ">
+      <button class="st-btn p" data-act="close" ${S.busy || !fin.length ? 'disabled' : ''}>อนุมัติและปิดรอบ</button></div>`}`;
+}
+
+async function closeRound() {
+  const name = ($('apName') && $('apName').value.trim()) || '';
+  if (!name) { S.err = 'ใส่ชื่อคนอนุมัติก่อน'; paintSrc(); if ($('apName')) $('apName').focus(); return; }
+  const fin = finals();
+  const t = ST.finalTotals(fin);
+  const warn = [];
+  if (R().status === 'นับรอบ 2') warn.push('ยังเปิดนับรอบ 2 อยู่ ปิดแล้วเครื่องที่ค้างส่งจะส่งไม่ได้');
+  if (t.flag[ST.FLAG.WAIT]) warn.push(`ค้างรอบ 2 ${f(t.flag[ST.FLAG.WAIT])} รายการ (ใช้ยอดรอบ 1)`);
+  if (t.flag[ST.FLAG.NONE]) warn.push(`ไม่ได้นับ ${f(t.flag[ST.FLAG.NONE])} รายการ (ใช้ยอดสมุด)`);
+  if (!confirm(`อนุมัติยอดสุดท้ายและปิดรอบ?\n\nผู้อนุมัติ: ${name}\n${f(t.lines)} รายการ · ต้องปรับ ${f(t.adjLines)}\nปรับเพิ่ม +${f(t.plus)} · ปรับลด −${f(t.minus)} · สุทธิ ${signed(t.net)}\n` +
+    (warn.length ? '\n⚠ ' + warn.join('\n⚠ ') + '\n' : '') + '\nปิดแล้วแก้ไม่ได้ คนนับส่งผลไม่ได้อีก')) return;
+  await job('กำลังปิดรอบ…', async () => {
+    const res = await post({ op: 'st-close', round: S.rid, approver: name, lines: ST.closeRows(fin, analysis().teamName), totals: t });
+    S.head = await get('st-head', { round: S.rid });
+    S.rounds = (await get('st-rounds')).rounds;
+    S.ok = `✓ ปิดรอบแล้ว อนุมัติโดย ${res.round.approvedBy} · ${f(res.saved)} รายการ — โหลด Excel ปรับยอดได้เลย`;
+  });
+}
+
+function xlsxLib() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  if (!XLSX_LOAD) {
+    XLSX_LOAD = new Promise((ok, bad) => {
+      const s = document.createElement('script');
+      s.src = XLSX_URL;
+      s.onload = () => ok(window.XLSX);
+      s.onerror = () => { XLSX_LOAD = null; bad(new Error('โหลดตัวสร้างไฟล์ Excel ไม่ได้ ลองใหม่อีกครั้ง')); };
+      document.head.appendChild(s);
+    });
+  }
+  return XLSX_LOAD;
+}
+
+/** สามชีต: ปรับยอด · จับคู่ย้ายโล/แก้ LOT · สรุป (ปิดแล้วใช้ผลสรุปที่อนุมัติ ยังไม่ปิด = ร่างจากตัวเลขตอนนี้) */
+async function downloadXlsx() {
+  const r = R();
+  const closed = r.status === 'ปิดแล้ว';
+  const rows = closed ? (S.head.sum || []) : ST.closeRows(finals(), analysis().teamName);
+  await job('กำลังสร้างไฟล์ Excel…', async () => {
+    const X = await xlsxLib();
+    const wb = X.utils.book_new();
+    ST.adjustBook(rows, { id: r.id, name: r.name, date: r.date, cutoff: r.cutoff, approvedBy: closed ? r.approvedBy : '', approvedAt: closed ? r.approvedAt : '' }).forEach(sh => {
+      const ws = X.utils.aoa_to_sheet(sh.aoa);
+      ws['!cols'] = sh.cols.map(w => ({ wch: w }));
+      if (sh.aoa.length > 1 && sh.aoa[0].length > 2) ws['!autofilter'] = { ref: X.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: sh.aoa.length - 1, c: sh.aoa[0].length - 1 } }) };
+      X.utils.book_append_sheet(wb, ws, sh.name);
+    });
+    X.writeFile(wb, `ปรับยอด-${r.id}${closed ? '' : '-ร่าง'}.xlsx`);
+    S.ok = closed ? '✓ โหลด Excel ปรับยอดแล้ว' : '✓ โหลด Excel ร่างแล้ว (ยังไม่อนุมัติ)';
   });
 }
 
@@ -775,7 +1111,8 @@ async function setStatus(status) {
     S.head = await get('st-head', { round: S.rid });
     S.rounds = (await get('st-rounds')).rounds;
     S.ok = status === 'ตั้งค่า' ? 'กลับไปตั้งค่าแล้ว ผลนับที่ส่งมาแล้วยังอยู่ครบ'
-      : status === 'วิเคราะห์' ? '✓ ปิดรับนับรอบ 1 แล้ว ดูผลในแท็บวิเคราะห์'
+      : status === 'วิเคราะห์' ? (was === 'นับรอบ 2' ? '✓ ปิดรับนับรอบ 2 แล้ว ตรวจยอดสุดท้ายในแท็บปิดรอบ' : '✓ ปิดรับนับรอบ 1 แล้ว ดูผลในแท็บวิเคราะห์')
+      : status === 'นับรอบ 2' ? '✓ เปิดนับรอบ 2 แล้ว คนนับเปิดลิงก์เดิมแล้วเลือกทีมใหม่'
       : was === 'วิเคราะห์' ? '✓ เปิดนับรอบ 1 ต่อแล้ว' : '✓ เริ่มนับรอบ 1 แล้ว ส่งลิงก์ให้คนนับได้เลย';
   });
 }
@@ -800,15 +1137,17 @@ document.addEventListener('click', (e) => {
   const d = b.dataset;
   if (d.tab) {
     if (d.tab === TAB) return;
-    TAB = d.tab; FILTER = ''; TOAST = '';
+    TAB = d.tab; FILTER = ''; TOAST = ''; AQ = '';
     history.replaceState(null, '', '?tab=' + TAB);
     paint();
     if (TAB === 'progress' && S.head && !MOVES) checkMoves(false);
     return;
   }
-  if (d.go) { TAB = d.go; FILTER = ''; history.replaceState(null, '', '?tab=' + TAB); paint(); return; }
+  if (d.go) { TAB = d.go; FILTER = ''; AQ = ''; history.replaceState(null, '', '?tab=' + TAB); paint(); return; }
   if (d.filter !== undefined) { FILTER = FILTER === d.filter ? '' : d.filter; paintBody(); return; }
   if (d.open) { OPEN.has(d.open) ? OPEN.delete(d.open) : OPEN.add(d.open); paintBody(); return; }
+  if (d.r2g) { r2Set(o => { o.groups = o.groups.includes(d.r2g) ? o.groups.filter(g => g !== d.r2g) : o.groups.concat([d.r2g]); }); return; }
+  if (d.unedit) { setEdit(d.unedit, null); paintBody(); return; }
   if (d.addTeam) {
     const id = nextId(d.addTeam);
     D().teams.push({ id, kind: d.addTeam, name: d.addTeam === 'Audit' ? '' : 'ทีม ' + id.replace('INV', ''), members: '' });
@@ -847,6 +1186,16 @@ document.addEventListener('click', (e) => {
   else if (act === 'summary') saveSummary();
   else if (act === 'close1') { if (confirm('ปิดรับนับรอบ 1?\nเครื่องที่ยังค้างส่งจะยังส่งเข้ามาได้ ย้อนกลับไปนับต่อได้')) setStatus('วิเคราะห์'); }
   else if (act === 'reopen') setStatus('นับรอบ 1');
+  else if (act === 'plan-save') savePlan();
+  else if (act === 'r2-undo') { R2D = null; paintBody(); }
+  else if (act === 'start2') {
+    const n = planSaved().length;
+    if (planDiff(planNow()) && !confirm('แผนที่แสดงอยู่ยังไม่ได้บันทึก คนนับจะเห็นแผนที่บันทึกล่าสุด เปิดนับต่อไหม?')) return;
+    if (confirm(`เปิดนับรอบ 2 (${n} โล)?\nคนนับเปิดลิงก์เดิม เลือกทีมใหม่ ระบบห้ามคนที่นับโลนั้นในรอบ 1 นับซ้ำ\nเปิดแล้วกลับไปนับรอบ 1 ไม่ได้`)) setStatus('นับรอบ 2');
+  }
+  else if (act === 'stop2') { if (confirm('ปิดรับนับรอบ 2?\nเครื่องที่ค้างส่งยังส่งเข้ามาได้ เปิดนับต่อได้')) setStatus('วิเคราะห์'); }
+  else if (act === 'xlsx') downloadXlsx();
+  else if (act === 'close') closeRound();
 });
 
 document.addEventListener('change', (e) => {
@@ -855,6 +1204,27 @@ document.addEventListener('change', (e) => {
     S.rid = t.value; S.err = ''; S.ok = '';
     if (S.rid === 'new') { S.head = null; TAB = 'setup'; paint(); return; }
     job('กำลังโหลดรอบ…', loadHead);
+    return;
+  }
+  if (d.r2drop !== undefined) { r2Set(o => { o.drop = t.checked ? o.drop.filter(l => l !== d.r2drop) : o.drop.concat([d.r2drop]); }); return; }
+  if (d.r2team !== undefined) {
+    const l = planNow().locs.find(x => x.loc === d.r2team);
+    r2Set(o => { if (!t.value || (l && t.value === l.auto)) delete o.set[d.r2team]; else o.set[d.r2team] = t.value; });
+    return;
+  }
+  if (t.id === 'r2Min' || t.id === 'r2Hot' || t.id === 'r2HotMin') {
+    const k = { r2Min: 'minQty', r2Hot: 'hotPct', r2HotMin: 'hotMin' }[t.id];
+    r2Set(o => { o[k] = t.value === '' ? undefined : +t.value; });
+    return;
+  }
+  if (d.edit !== undefined) {
+    const raw = t.value.replace(/,/g, '').trim();
+    const v = Number(raw);
+    if (raw === '') setEdit(d.edit, null);
+    else if (!isFinite(v) || v < 0) { S.err = 'ยอดสุดท้ายต้องเป็นตัวเลขไม่ติดลบ'; paintSrc(); t.focus(); return; }
+    else setEdit(d.edit, v);
+    S.err = '';
+    paintBody(); paintSrc();
     return;
   }
   if (d.inv !== undefined) { D().inv[d.inv] = t.value; if (!t.value) delete D().inv[d.inv]; touch(); return; }
@@ -891,27 +1261,44 @@ document.addEventListener('keydown', (e) => {
     addLocs(ST.parseLocList(e.target.value));
     setTimeout(() => { const el = $('addLoc'); if (el) el.focus(); }, 0);
   }
+  if (e.key === 'Enter' && e.target.id === 'r2Add') {
+    addR2(ST.parseLocList(e.target.value));
+    setTimeout(() => { const el = $('r2Add'); if (el) el.focus(); }, 0);
+  }
+  /* Enter ในช่องยอดสุดท้าย = ไปช่องถัดลงไป เหมือนกรอกในชีต */
+  if (e.key === 'Enter' && e.target.dataset && e.target.dataset.edit !== undefined) {
+    e.preventDefault();
+    const all = [...document.querySelectorAll('[data-edit]')];
+    const next = all[all.indexOf(e.target) + 1];
+    const id = next && next.dataset.edit;
+    e.target.blur();
+    if (id) setTimeout(() => { const el = document.querySelector(`[data-edit="${CSS.escape(id)}"]`); if (el) { el.focus(); el.select(); } }, 0);
+  }
 });
 
-/* วางรายการ Location ที่ไหนก็ได้บนแท็บทีม/โซน (นอกช่องพิมพ์) เหมือนวางลงชีต */
+/* วางรายการ Location ที่ไหนก็ได้บนแท็บทีม/โซน หรือแท็บรอบ 2 (นอกช่องพิมพ์) เหมือนวางลงชีต */
 document.addEventListener('paste', (e) => {
-  if (TAB !== 'teams' || !S.head) return;
+  if ((TAB !== 'teams' && TAB !== 'round2') || !S.head) return;
+  const box = TAB === 'teams' ? 'addLoc' : 'r2Add';
   const tag = (e.target.tagName || '').toLowerCase();
-  if ((tag === 'input' && e.target.id !== 'addLoc') || tag === 'textarea') return;
+  if ((tag === 'input' && e.target.id !== box) || tag === 'textarea' || tag === 'select') return;
+  if (TAB === 'round2' && (!after1() || R().status === 'ปิดแล้ว')) return;
   const list = ST.parseLocList((e.clipboardData || window.clipboardData).getData('text'));
   if (!list.length) return;
   e.preventDefault();
-  addLocs(list);
-  if (e.target.id === 'addLoc') e.target.value = '';
+  if (TAB === 'teams') addLocs(list); else addR2(list);
+  if (e.target.id === box) e.target.value = '';
 });
 
 /* ความคืบหน้าสด: ขอเฉพาะแถวใหม่ทุกนาทีตอนเปิดแท็บนี้อยู่ */
+/* ไม่วาดใหม่ตอนกำลังพิมพ์ในช่องของตาราง (ยอดสุดท้าย / ค่าตั้งรอบ 2) ตัวที่พิมพ์จะได้ไม่หาย */
+function typing() { const a = document.activeElement; return !!a && a.tagName === 'INPUT' && a.closest('#body') && a.id !== 'anQ'; }
 setInterval(async () => {
-  if ((TAB !== 'progress' && TAB !== 'analyze') || document.hidden || S.busy || !S.head || S.rid === 'new') return;
-  try { await loadLog(true); paintBody(); paintTabs(); } catch (e) { /* รอบหน้าค่อยลองใหม่ */ }
+  if (!LIVE_TABS.includes(TAB) || document.hidden || S.busy || !S.head || S.rid === 'new' || R().status === 'ปิดแล้ว') return;
+  try { await loadLog(true); if (!typing()) paintBody(); paintTabs(); } catch (e) { /* รอบหน้าค่อยลองใหม่ */ }
 }, POLL_MS);
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && (TAB === 'progress' || TAB === 'analyze') && S.head && Date.now() - S.at > POLL_MS) loadLog(true).then(() => { paintBody(); paintTabs(); }).catch(() => {});
+  if (!document.hidden && LIVE_TABS.includes(TAB) && S.head && R().status !== 'ปิดแล้ว' && Date.now() - S.at > POLL_MS) loadLog(true).then(() => { paintBody(); paintTabs(); }).catch(() => {});
 });
 window.addEventListener('beforeunload', (e) => { if (DRAFT && DRAFT.dirty) { e.preventDefault(); e.returnValue = ''; } });
 

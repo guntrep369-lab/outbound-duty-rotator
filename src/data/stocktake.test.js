@@ -170,7 +170,7 @@ describe('stocktake-api.gs — ยอดตั้งต้น ทีม แล�
     expect(api.post({ op: 'st-status', t: HEAD, round: id, status: 'นับรอบ 1' }).round).toMatchObject({ status: 'นับรอบ 1', pass: 1 });
   });
 
-  it('ขั้นนี้ยังเปลี่ยนเป็นปิดรอบไม่ได้', () => {
+  it('ปิดรอบผ่านการเปลี่ยนสถานะไม่ได้ ต้องอนุมัติด้วย st-close', () => {
     const api = loadStocktake();
     const id = ready(api);
     expect(api.post({ op: 'st-status', t: HEAD, round: id, status: 'ปิดแล้ว' }).error).toMatch(/ไม่ได้/);
@@ -203,6 +203,105 @@ describe('stocktake-api.gs — ยอดตั้งต้น ทีม แล�
     expect(tab.grid[1].slice(0, 5)).toEqual([id, 'R1-01-01', 'AAA001', 'AAA0000000001', 'HYPERLINK("x")']);
     expect(tab.grid[1].slice(7, 10)).toEqual([10, 9, '']);
     expect(tab.grid[1][11]).toBe(9);
+  });
+});
+
+describe('stocktake-api.gs — แผนรอบ 2 นับรอบ 2 และปิดรอบ', () => {
+  const PLAN = [
+    ['R1-01-01', 'R1', 'Inv≠Audit 1', 'INV2', ['สมชาย'], 'INV1', 'R'],
+    ['B-09-09', 'B-09', 'หัวหน้าเพิ่ม', 'INV1', [], '', 'B'],
+  ];
+  const ROW = ['R1-01-01', 'AAA001', 'AAA0000000001', 'ที่นอนสมมติ', '8', '9900000001', 10, 10, 9, 9, 9, -1, 'ขาด', 'ยอดจากรอบ 2', 'ทีม 2', 'มานะ'];
+  const analyzing = (api) => { const id = ready(api); api.post({ op: 'st-status', t: HEAD, round: id, status: 'วิเคราะห์' }); return id; };
+
+  it('แผนรอบ 2: ทำได้หลังปิดรับรอบ 1 ทีมต้องเป็นทีม Inventory รอบ 1 โลซ้ำไม่ได้', () => {
+    const api = loadStocktake();
+    const id = ready(api);
+    expect(api.post({ op: 'st-plan', t: HEAD, round: id, plan: PLAN }).error).toMatch(/หลังปิดรับ/);
+    api.post({ op: 'st-status', t: HEAD, round: id, status: 'วิเคราะห์' });
+    expect(api.post({ op: 'st-plan', round: id, plan: PLAN }).error).toMatch(/รหัสหัวหน้า/);
+    expect(api.post({ op: 'st-plan', t: HEAD, round: id, plan: [[...PLAN[0].slice(0, 3), 'AUD1', [], '', 'R']] }).error).toMatch(/ไม่มีทีม Inventory AUD1/);
+    expect(api.post({ op: 'st-plan', t: HEAD, round: id, plan: [PLAN[0], PLAN[0]] }).error).toMatch(/ซ้ำ/);
+  });
+
+  it('บันทึกแผน: ทีมรอบนับ 2 ได้รายการโล คนเดิม ทีมรอบ 1 อยู่ครบ โลใหม่เพิ่มในแท็บ Location บันทึกซ้ำแทนชุดเดิม', () => {
+    const api = loadStocktake();
+    const id = analyzing(api);
+    const res = api.post({ op: 'st-plan', t: HEAD, round: id, plan: PLAN, opts: { minQty: 2 }, by: 'หัวหน้าสมมติ' });
+    expect(res.error).toBeUndefined();
+    expect(res.plan).toEqual([['R1-01-01', 'R1', 'Inv≠Audit 1', 'INV2', ['สมชาย'], 'INV1'], ['B-09-09', 'B-09', 'หัวหน้าเพิ่ม', 'INV1', [], '']]);
+    const t2 = res.teams.filter((t) => t.pass === 2);
+    expect(t2).toEqual([
+      expect.objectContaining({ id: 'INV2', kind: 'Inventory', name: 'ทีม 2', members: ['มานะ'], zones: ['R1-01-01'], locs: 1 }),
+      expect.objectContaining({ id: 'INV1', kind: 'Inventory', name: 'ทีม 1', members: ['สมชาย', 'สมหญิง'], zones: ['B-09-09'], locs: 1 }),
+    ]);
+    expect(res.teams.filter((t) => t.pass === 1)).toHaveLength(3);
+    expect(res.added).toBe(1);
+    expect(api.ss.tab('Location').grid.find((r) => r[1] === 'B-09-09')).toEqual([id, 'B-09-09', 'B', 'B-09', 'รอบ 2']);
+    expect(res.round.settings).toMatchObject({ r2: { minQty: 2 }, planRows: 2, planBy: 'หัวหน้าสมมติ', auditMin: 20 });
+    const again = api.post({ op: 'st-plan', t: HEAD, round: id, plan: [PLAN[0]] });
+    expect(again.plan).toHaveLength(1);
+    expect(again.added).toBe(0);
+    expect(again.teams.filter((t) => t.pass === 2).map((t) => t.id)).toEqual(['INV2']);
+    expect(api.get({ api: 'st-head', t: HEAD, round: id }).plan).toHaveLength(1);
+  });
+
+  it('นับรอบ 2: ต้องมีแผนก่อน เปิดแล้วรอบนับเป็น 2 กลับไปนับรอบ 1 ไม่ได้ ปิดรับแล้วกลับมาวิเคราะห์ได้', () => {
+    const api = loadStocktake();
+    const id = analyzing(api);
+    expect(api.post({ op: 'st-status', t: HEAD, round: id, status: 'นับรอบ 2' }).error).toMatch(/แผน/);
+    api.post({ op: 'st-plan', t: HEAD, round: id, plan: PLAN });
+    expect(api.post({ op: 'st-status', t: HEAD, round: id, status: 'นับรอบ 2' }).round).toMatchObject({ status: 'นับรอบ 2', pass: 2 });
+    expect(api.post({ op: 'st-status', t: HEAD, round: id, status: 'วิเคราะห์' }).round).toMatchObject({ status: 'วิเคราะห์', pass: 2 });
+    expect(api.post({ op: 'st-status', t: HEAD, round: id, status: 'นับรอบ 1' }).error).toMatch(/รอบ 2/);
+  });
+
+  it('รอบ 2: คนที่นับโลนั้นในรอบ 1 ส่งไม่ได้ คนอื่นส่งได้ หน้ากรอกได้แค่โลกับชื่อที่ห้าม ไม่มีเหตุผล', () => {
+    const api = loadStocktake();
+    const id = analyzing(api);
+    api.post({ op: 'st-plan', t: HEAD, round: id, plan: [['R1-01-01', 'R1', 'ขาด 3', 'INV1', ['สมชาย'], 'INV1', 'R']] });
+    const it2 = (o) => item({ pass: 2, ...o });
+    expect(api.post({ op: 'st-count', round: id, items: [it2({ uid: 'p2-0', who: 'สมหญิง' })] }).rejected[0].why).toMatch(/รอบนับ 2 ยังไม่เปิด/);
+    api.post({ op: 'st-status', t: HEAD, round: id, status: 'นับรอบ 2' });
+    const res = api.post({ op: 'st-count', round: id, items: [it2({ uid: 'p2-1', who: 'สมชาย' }), it2({ uid: 'p2-2', who: 'สมหญิง' }), item({ uid: 'p1-late', who: 'สมชาย' })] });
+    expect(res.saved).toBe(2);
+    expect(res.rejected).toEqual([{ uid: 'p2-1', why: 'สมชาย นับโล R1-01-01 ในรอบ 1 แล้ว ให้คนอื่นนับ' }]);
+    const view = api.get({ api: 'st-round', round: id });
+    expect(view.plan).toEqual([['R1-01-01', ['สมชาย']]]);
+    expect(JSON.stringify(view)).not.toContain('ขาด 3');
+    expect(view.teams.find((t) => t.pass === 2)).toMatchObject({ id: 'INV1', zones: ['R1-01-01'] });
+  });
+
+  it('ปิดรอบ: ต้องมีชื่อคนอนุมัติ ทำได้หลังปิดรับรอบ 1 เก็บยอดสุดท้ายในผลสรุป หน้าหัวหน้าได้ผลสรุปกลับไป', () => {
+    const api = loadStocktake();
+    const id = ready(api);
+    expect(api.post({ op: 'st-close', t: HEAD, round: id, approver: 'หัวหน้าสมมติ', lines: [ROW] }).error).toMatch(/หลังปิดรับ/);
+    api.post({ op: 'st-status', t: HEAD, round: id, status: 'วิเคราะห์' });
+    expect(api.post({ op: 'st-close', t: HEAD, round: id, lines: [ROW] }).error).toMatch(/ชื่อคนอนุมัติ/);
+    expect(api.post({ op: 'st-close', t: HEAD, round: id, approver: 'หัวหน้าสมมติ', lines: [ROW.slice(0, 15)] }).error).toMatch(/16 ช่อง/);
+    expect(api.post({ op: 'st-close', t: HEAD, round: id, approver: 'หัวหน้าสมมติ', lines: [] }).error).toMatch(/ไม่มียอดสุดท้าย/);
+    const res = api.post({ op: 'st-close', t: HEAD, round: id, approver: 'หัวหน้าสมมติ', by: 'เครื่องหัวหน้า', lines: [ROW], totals: { lines: 1, adjLines: 1, book: 10, final: 9, plus: 0, minus: 1, net: -1, junk: 'x' } });
+    expect(res.round).toMatchObject({ status: 'ปิดแล้ว', approvedBy: 'หัวหน้าสมมติ' });
+    expect(res.round.approvedAt).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+    expect(res.round.settings.closeTotals).toEqual({ lines: 1, adjLines: 1, book: 10, final: 9, plus: 0, minus: 1, net: -1 });
+    const head = api.get({ api: 'st-head', t: HEAD, round: id });
+    expect(head.sum).toEqual([ROW]);
+    expect(api.ss.tab('รอบนับ').grid[1].slice(15, 17)).toEqual(['หัวหน้าสมมติ', res.round.approvedAt]);
+  });
+
+  it('ปิดแล้ว: ส่งผลนับ แผน ทีม สถานะ ยอดตั้งต้น และอนุมัติซ้ำ ไม่ได้ทั้งหมด หน้ากรอกขึ้นว่าปิดแล้ว', () => {
+    const api = loadStocktake();
+    const id = analyzing(api);
+    api.post({ op: 'st-close', t: HEAD, round: id, approver: 'หัวหน้าสมมติ', lines: [ROW] });
+    expect(api.post({ op: 'st-count', round: id, items: [item({ uid: 'after' })] }).error).toMatch(/ปิดแล้ว/);
+    expect(api.post({ op: 'st-plan', t: HEAD, round: id, plan: PLAN }).error).toMatch(/ปิดแล้ว/);
+    expect(api.post({ op: 'st-teams', t: HEAD, round: id, pass: 1, teams: TEAMS }).error).toMatch(/ปิดแล้ว/);
+    expect(api.post({ op: 'st-status', t: HEAD, round: id, status: 'วิเคราะห์' }).error).toMatch(/ปิดแล้ว/);
+    expect(api.post({ op: 'st-baseline', t: HEAD, round: id, piles: PILES }).error).toMatch(/ปิดแล้ว/);
+    expect(api.post({ op: 'st-summary', t: HEAD, round: id, lines: [ROW] }).error).toMatch(/ปิดแล้ว/);
+    expect(api.post({ op: 'st-close', t: HEAD, round: id, approver: 'คนอื่น', lines: [ROW] }).error).toMatch(/อนุมัติโดย หัวหน้าสมมติ/);
+    expect(api.post({ op: 'st-round-save', t: HEAD, round: { ...ROUND, id } }).error).toMatch(/ปิดแล้ว/);
+    expect(api.get({ api: 'st-round', round: id }).round.status).toBe('ปิดแล้ว');
   });
 });
 
@@ -628,6 +727,156 @@ describe('WmsStocktake.analyze — แยกกลุ่มปัญหา', () 
     const s = S.suspects(fifo, at('R1-02-01', 'BBB001'));
     expect(s.map((x) => x.row)).toEqual([4, 2]);
     expect(s[0]).toMatchObject({ type: 'เบิก', from: 'R1-02-01', to: 'A-01-01', qty: 5, date: '2026-11-01', po: '9900000002' });
+  });
+
+  /* ── ขั้นที่ 3: แผนรอบ 2 ยอดสุดท้าย และไฟล์ปรับยอด ── */
+
+  describe('ขั้นที่ 3 — แผนรอบ 2', () => {
+    const one = (p, loc) => p.locs.find((l) => l.loc === loc);
+
+    it('ค่าเริ่มต้น: ทุกกลุ่มปัญหา ต่าง ≥ 1 ได้ทุกโลที่มีปัญหา พร้อมเหตุผลสั้น ๆ', () => {
+      const p = S.plan2(R, { teams: T2, locs: LOCS2 });
+      expect(p.opts).toMatchObject({ groups: S.GROUPS, minQty: 1, hotPct: 30, hotMin: 2 });
+      expect(p.locs.map((l) => [l.loc, l.why])).toEqual([
+        ['R1-01-01', 'Inv≠Audit 1'],
+        ['R1-01-02', 'LOT/PO ผิด 6'],
+        ['R1-02-01', 'วางผิดโล 5 คู่ A-01-01'],
+        ['R1-02-02', 'น่าจะพิมพ์ผิด 9'],
+        ['R1-03-01', 'น่าจะพิมพ์ผิด 4'],
+        ['A-01-01', 'วางผิดโล 5 คู่ R1-02-01 · เกิน 3'],
+        ['A-01-02', 'ขาด 2 · น่าจะพิมพ์ผิด 1'],
+        ['A-01-03', 'ยังไม่นับ'],
+      ]);
+      expect(p.counts).toMatchObject({ all: 8, picked: 8, dropped: 0 });
+      expect(p.warn).toEqual([]);
+    });
+
+    it('ทีมรอบ 2 ไม่ใช่ทีมที่นับรอบ 1 และห้ามคนที่นับโลนั้นในรอบ 1', () => {
+      const p = S.plan2(R, { teams: T2, locs: LOCS2 });
+      expect(one(p, 'R1-01-01')).toMatchObject({ r1team: 'INV1', team: 'INV2', forbid: ['สมชาย'] });
+      expect(one(p, 'R1-02-01')).toMatchObject({ r1team: 'INV1', team: 'INV2', forbid: ['สมชาย'] });
+      expect(one(p, 'A-01-01')).toMatchObject({ r1team: 'INV2', team: 'INV1', forbid: ['มานะ'] });
+      expect(one(p, 'A-01-03')).toMatchObject({ r1team: 'INV2', team: 'INV1', forbid: [] });
+      expect(p.locs.every((l) => l.team !== l.r1team)).toBe(true);
+      expect(p.teams.map((t) => [t.id, t.pass, t.zones.length])).toEqual([['INV1', 2, 3], ['INV2', 2, 5]]);
+    });
+
+    it('ปรับค่าได้: ต่างน้อยไม่นับซ้ำ แถวที่ Audit ผิดบ่อยนับทั้งแถว ตัดออก เพิ่มเอง เลือกทีมเอง', () => {
+      const p = S.plan2(R, { teams: T2, locs: LOCS2, opts: { minQty: 3, hotMin: 1, drop: ['r1-02-02'], add: ['B-01-01'], set: { 'A-01-03': 'INV2' } } });
+      expect(one(p, 'A-01-02')).toBeUndefined();
+      expect(one(p, 'R1-01-01').why).toBe('ทั้งแถว R1 (Audit ไม่ตรง 1/1 โล)');
+      expect(one(p, 'R1-01-02').why).toBe('LOT/PO ผิด 6 · ทั้งแถว R1 (Audit ไม่ตรง 1/1 โล)');
+      expect(one(p, 'R1-02-02')).toMatchObject({ drop: true, team: '' });
+      expect(one(p, 'B-01-01')).toMatchObject({ why: 'หัวหน้าเพิ่ม', r1team: '', team: 'INV1' });
+      expect(one(p, 'A-01-03')).toMatchObject({ team: 'INV2', auto: 'INV1' });
+      expect(p.hot[0]).toMatchObject({ row: 'R1', checked: 1, bad: 1, pct: 100, on: true });
+      expect(p.counts).toMatchObject({ all: 8, picked: 7, dropped: 1 });
+      const rows = S.planRows(p);
+      expect(rows).toHaveLength(7);
+      expect(rows.find((r) => r[0] === 'A-01-03')).toEqual(['A-01-03', 'A-01', 'ยังไม่นับ', 'INV2', [], 'INV2', 'A']);
+      expect(rows.some((r) => r[0] === 'R1-02-02')).toBe(false);
+    });
+
+    it('ค่าที่ส่งมาผิดใช้ค่าเริ่มต้น กลุ่มที่ไม่รู้จักตัดทิ้ง', () => {
+      expect(S.r2Opts({ minQty: '', hotPct: 'x', hotMin: 0, groups: ['ขาด', 'อะไร'] })).toMatchObject({ minQty: 1, hotPct: 30, hotMin: 1, groups: ['ขาด'] });
+      expect(S.plan2(R, { teams: T2, locs: LOCS2, opts: { groups: ['ยังไม่นับ'] } }).locs.map((l) => l.loc)).toEqual(['A-01-03']);
+    });
+
+    it('มีทีม Inventory ทีมเดียว: ใช้ทีมเดิม เตือน และบอกโลที่ทุกคนในทีมนับไปแล้ว', () => {
+      const solo = [{ pass: 1, id: 'INV1', kind: 'Inventory', name: 'ทีม 1', members: ['สมชาย'], zones: ['R1', 'A-01'] }];
+      const p = S.plan2(R, { teams: solo, locs: LOCS2 });
+      expect(p.locs.every((l) => l.team === 'INV1')).toBe(true);
+      expect(p.warn[0]).toMatch(/ทีมเดียว/);
+      expect(p.warn).toContain('R1-01-01: ทุกคนใน ทีม 1 นับโลนี้ในรอบ 1 แล้ว เลือกทีมอื่น');
+      expect(p.warn.some((w) => w.startsWith('A-01-01'))).toBe(false);
+    });
+  });
+
+  describe('ขั้นที่ 3 — รอบ 2 ยอดสุดท้าย และไฟล์ปรับยอด', () => {
+    let plan, planLocs, res2, fin;
+    const R2E = { pass: 2, team: 'INV2', who: 'มานะ' }, R2F = { pass: 2, team: 'INV1', who: 'สมหญิง' };
+    const E2 = () => [
+      E({ loc: 'R1-01-01', sku: 'AAA001', qty: 9, ...R2E }),
+      E({ loc: 'R1-02-01', type: 'ว่าง', qty: 0, sku: '', ...R2E }),
+      E({ loc: 'R1-03-01', sku: 'AAA001', qty: 4, ...R2E }),
+      E({ loc: 'A-01-01', sku: 'BBB001', po: '9900000002', qty: 5, ...R2F }),
+      E({ loc: 'A-01-01', sku: 'CCC001', lot: '9', qty: 3, ...R2F }),
+      E({ loc: 'A-01-03', sku: 'CCC001', qty: 2, ...R2F }),
+    ];
+    beforeAll(() => {
+      plan = S.plan2(R, { teams: T2, locs: LOCS2 });
+      planLocs = S.planRows(plan).map((r) => ({ loc: r[0], team: r[3] }));
+      const entries = ENTRIES.concat(E2());
+      res2 = S.analyze({ piles: PILES2, entries, teams: T2.concat(plan.teams), locs: planLocs, skus: SKUS, pass: 2, only: planLocs.map((l) => l.loc) });
+      fin = S.finalLines(R, res2, planLocs, {});
+    });
+    const line = (loc, sku, lot) => fin.find((l) => l.loc === loc && l.sku === sku && (lot === undefined || l.lot === String(lot)));
+
+    it('ความคืบหน้ารอบ 2 ตามแผนที่บันทึก แยกทีม บอกโลที่เหลือ', () => {
+      const p = S.progress2(planLocs, ENTRIES.concat(E2()));
+      expect(p).toMatchObject({ total: 8, done: 5, pct: 63, left: ['R1-01-02', 'R1-02-02', 'A-01-02'], extra: [] });
+      expect(p.teams).toEqual([{ id: 'INV2', n: 5, done: 3, pct: 60 }, { id: 'INV1', n: 3, done: 2, pct: 67 }]);
+    });
+
+    it('รอบ 2 คิดเฉพาะโลในแผน ทีมรอบ 2 เป็นเจ้าของโลตามรายการโล', () => {
+      expect(res2.lines.every((l) => planLocs.some((p) => p.loc === l.loc))).toBe(true);
+      expect(res2.done).toEqual(['R1-01-01', 'R1-02-01', 'R1-03-01', 'A-01-01', 'A-01-03']);
+      expect(res2.lines.find((l) => l.loc === 'R1-02-01')).toMatchObject({ group: 'วางผิดโล', team: 'INV2', who: ['มานะ'] });
+    });
+
+    it('ยอดสุดท้าย: นับรอบ 2 แล้วใช้รอบ 2 ทั้งโล ยังไม่นับรอบ 2 ใช้รอบ 1 และขึ้นว่าค้าง', () => {
+      expect(fin).toHaveLength(12);
+      expect(line('R1-01-01', 'AAA001')).toMatchObject({ book: 10, r1: 10, aud: 9, r2: 9, final: 9, adj: -1, src: 'รอบ 2', flag: 'สามค่าไม่ตรง', group: 'ขาด' });
+      expect(line('R1-02-01', 'BBB001')).toMatchObject({ book: 5, r1: 0, r2: 0, final: 0, adj: -5, src: 'รอบ 2', flag: '', group: 'วางผิดโล' });
+      expect(line('R1-03-01', 'AAA008')).toMatchObject({ book: 0, r1: 4, r2: 0, final: 0, adj: 0, group: 'ตรง' });
+      expect(line('R1-01-02', 'AAA002', 9)).toMatchObject({ book: 0, r1: 6, r2: null, final: 6, adj: 6, src: 'รอบ 1', flag: 'ค้างรอบ 2', group: 'LOT/PO ผิด' });
+      expect(line('A-01-03', 'CCC001')).toMatchObject({ book: 2, r1: null, r2: 2, final: 2, adj: 0, group: 'ตรง', flag: '' });
+    });
+
+    it('ไม่มีใครนับเลยใช้ยอดในสมุด ขึ้นว่าไม่ได้นับ', () => {
+      const f2 = S.finalLines(R, res2, [], {});
+      expect(f2.find((l) => l.loc === 'A-01-03')).toMatchObject({ r1: null, r2: null, final: 2, adj: 0, src: 'สมุด', flag: 'ไม่ได้นับ', group: 'ยังไม่นับ' });
+      expect(f2.find((l) => l.loc === 'R1-01-01')).toMatchObject({ r2: null, src: 'รอบ 1', flag: '' });
+    });
+
+    it('หัวหน้าแก้ตัวเลขทับได้ ใส่ค่าเท่าที่ระบบคิดไม่นับว่าแก้', () => {
+      const a = line('A-01-02', 'AAA002'), c = line('R1-02-02', 'CCC001'), x = line('R1-01-01', 'AAA001');
+      const f2 = S.finalLines(R, res2, planLocs, { [a.id]: 2, [c.id]: 12, [x.id]: 9 });
+      expect(f2.find((l) => l.id === a.id)).toMatchObject({ auto: 1, final: 2, adj: -1, src: 'หัวหน้าแก้', group: 'หัวหน้าแก้' });
+      expect(f2.find((l) => l.id === c.id)).toMatchObject({ auto: 21, final: 12, adj: 0, src: 'หัวหน้าแก้', group: 'ตรง' });
+      expect(f2.find((l) => l.id === x.id)).toMatchObject({ final: 9, src: 'รอบ 2' });
+    });
+
+    it('ยอดรวม: สมุด ยอดสุดท้าย ปรับเพิ่ม ปรับลด สุทธิ และนับธงแต่ละแบบ', () => {
+      expect(S.finalTotals(fin)).toMatchObject({
+        lines: 12, adjLines: 9, book: 42, final: 52, plus: 24, minus: 14, net: 10,
+        src: { 'รอบ 2': 7, 'รอบ 1': 5 }, flag: { 'สามค่าไม่ตรง': 1, 'ค้างรอบ 2': 5 },
+      });
+    });
+
+    it('แถวปิดรอบ 16 ช่อง: ยอดจากไหน ธง ทีมรอบ 2 และคนนับทั้งสองรอบ', () => {
+      const rows = S.closeRows(fin, R.teamName);
+      expect(rows.every((r) => r.length === 16)).toBe(true);
+      expect(rows[0]).toEqual(['R1-01-01', 'AAA001', 'AAA0000000001', 'ที่นอนสมมติ 1', '8', '9900000001', 10, 10, 9, 9, 9, -1, 'ขาด',
+        'ยอดจากรอบ 2 · สามค่าไม่ตรง · ขาด 1', 'ทีม 2', 'รอบ 2: มานะ · รอบ 1: สมชาย']);
+      expect(rows.find((r) => r[0] === 'A-01-03').slice(6, 12)).toEqual([2, '', '', 2, 2, 0]);
+    });
+
+    it('ไฟล์ปรับยอด: เฉพาะรายการที่ต้องปรับ จับคู่แก้ LOT/PO กับย้ายโล และสรุปพร้อมคนอนุมัติ', () => {
+      const rows = S.closeRows(fin, R.teamName);
+      const [adj, pairs, sum] = S.adjustBook(rows, { id: 'ST261115-1', name: 'นับใหญ่สมมติ', approvedBy: 'หัวหน้าสมมติ', approvedAt: '2026-11-16 09:00:00' });
+      expect([adj.name, pairs.name, sum.name]).toEqual(['ปรับยอด', 'จับคู่ย้ายโล-แก้ LOT', 'สรุป']);
+      expect(adj.aoa).toHaveLength(10);
+      expect(adj.aoa[1].slice(0, 10)).toEqual(['R1-01-01', 'AAA001', 'AAA0000000001', 'ที่นอนสมมติ 1', '8', '9900000001', 10, 9, -1, 'ปรับลด']);
+      expect(pairs.aoa.slice(1)).toEqual([
+        ['แก้ LOT/PO', 'R1-01-02', 'R1-01-02', 'AAA002', 'AAA0000000002', 'ที่นอนสมมติ 2', '8', '9900000001', '9', '9900000001', 6],
+        ['ย้ายโล', 'R1-02-01', 'A-01-01', 'BBB001', 'BBB0000000001', 'ท็อปเปอร์สมมติ', '8', '9900000002', '8', '9900000002', 5],
+      ]);
+      const kv = Object.fromEntries(sum.aoa.slice(1));
+      expect(kv).toMatchObject({ 'อนุมัติโดย': 'หัวหน้าสมมติ', 'รายการทั้งหมด': 12, 'รายการที่ต้องปรับ': 9, 'ปรับเพิ่มรวม': 24, 'ปรับลดรวม': 14, 'สุทธิ': 10, 'จับคู่ย้ายโล': 1 });
+      expect(S.adjustBook(rows, {})[2].aoa.find((r) => r[0] === 'อนุมัติโดย')[1]).toMatch(/ร่าง/);
+      expect(sum.aoa.every((r) => r.length === 2) && adj.aoa.every((r) => r.length === 15)).toBe(true);
+    });
   });
 });
 

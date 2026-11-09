@@ -187,6 +187,13 @@ function entries() {
   return ST.merge((MINE && MINE.rows) || [], local);
 }
 function atLoc(loc) { return ME ? ST.atLoc(entries(), loc, ME.team, ME.pass) : []; }
+/** รอบ 2: คนที่นับโลนี้ในรอบ 1 ห้ามนับซ้ำ (สคริปต์ก็ตีกลับ แต่บอกก่อนจะได้ไม่เสียเวลานับ) */
+function banned(loc) {
+  if (!ME || ME.pass < 2 || !RD || !RD.plan) return false;
+  const hit = RD.plan.find(p => p[0] === ST.up(loc));
+  const me = String(ME.who).trim().toUpperCase();
+  return !!hit && (hit[1] || []).some(w => String(w).trim().toUpperCase() === me);
+}
 function locState(loc, pend) {
   const rows = atLoc(loc);
   if (!rows.length) return null;
@@ -216,6 +223,8 @@ async function loadRound() {
   }
   NET.loading = false;
   if (ME && !team()) ME = null;       // หัวหน้าลบทีมนี้ไปแล้ว ให้เลือกใหม่
+  /* หัวหน้าเปิดรอบ 2: ทีมกับรายการโลเปลี่ยน ให้เลือกทีมของรอบ 2 ใหม่ (ผลที่ค้างส่งยังอยู่ครบ) */
+  if (ME && RD && RD.round.pass > ME.pass && RD.round.status === 'นับรอบ 2') { ME = null; PICK = null; }
   if (!ME) VIEW = 'who';
   paint();
   if (ME) { pull(); flush(); }
@@ -235,7 +244,10 @@ async function pull() {
 }
 
 function got(res, t, since) {
+  const was = RD && RD.round.pass;
   if (res.round && RD) Object.assign(RD.round, res.round);
+  /* เปิดรอบ 2 ระหว่างที่หน้านี้เปิดอยู่: โหลดทีม/แผนของรอบ 2 ใหม่ */
+  if (RD && was && RD.round.pass > was) setTimeout(loadRound, 0);
   if (!ME || ME.team !== t) return;
   if (!MINE || MINE.team !== t) MINE = { round: CFG.round, team: t, since: 0, rows: [] };
   /* คำตอบนี้มีแถวตั้งแต่ since ถ้าในเครื่องยังไม่ถึง since แปลว่ามีช่องโหว่ ไม่เลื่อนจุดอ่านต่อ */
@@ -338,7 +350,8 @@ function bands() {
   let h = '';
   if (!RD.round.pass) h += `<div class="ct-band warn"><b>หัวหน้ายังไม่กดเริ่มนับ</b> กรอกไว้ได้ ผลนับเก็บในเครื่องและส่งให้เองเมื่อเปิดนับ<br><button class="ct-btn sm" data-act="reload">เช็คอีกครั้ง</button></div>`;
   else if (RD.round.status === 'ตั้งค่า') h += '<div class="ct-band warn">หัวหน้าพักการนับไว้ชั่วคราว ผลที่กรอกยังเก็บและส่งได้ตามปกติ</div>';
-  else if (RD.round.status === 'วิเคราะห์') h += '<div class="ct-band info">หัวหน้าปิดรับนับรอบ 1 แล้ว ผลที่ค้างในเครื่องยังส่งได้ ถ้าจะนับเพิ่มถามหัวหน้าก่อน</div>';
+  else if (RD.round.status === 'วิเคราะห์') h += `<div class="ct-band info">หัวหน้าปิดรับนับรอบ ${RD.round.pass >= 2 ? 2 : 1} แล้ว ผลที่ค้างในเครื่องยังส่งได้ ถ้าจะนับเพิ่มถามหัวหน้าก่อน</div>`;
+  else if (ME && ME.pass >= 2) h += '<div class="ct-band info"><b>รอบ 2 นับซ้ำ</b> นับทุกกองในโลเหมือนรอบ 1 · โลที่คุณนับในรอบ 1 ให้คนอื่นในทีมนับ</div>';
   if (NET.err && BOX.out.length && navigator.onLine) h += `<div class="ct-band bad">ส่งไม่ได้: ${esc(NET.err)} — ผลนับยังอยู่ในเครื่อง จะลองส่งใหม่เอง</div>`;
   if (BOX.rej.length) {
     h += `<details class="ct-rej"><summary>ชีตไม่รับ ${BOX.rej.length} แถว — แตะดู</summary><ul>` +
@@ -358,7 +371,7 @@ function whoView() {
   PICK = sel;
   const card = (t) => {
     const n = ST.teamLocs(t, RD.locs).length;
-    const z = t.zones.length > 3 ? `${t.zones[0]} … ${t.zones[t.zones.length - 1]} (${t.zones.length} แถว)` : t.zones.join(', ');
+    const z = pass >= 2 ? 'รอบ 2 นับซ้ำ' : t.zones.length > 3 ? `${t.zones[0]} … ${t.zones[t.zones.length - 1]} (${t.zones.length} แถว)` : t.zones.join(', ');
     return `<button class="ct-team ${sel.team === t.id ? 'on' : ''}" data-team="${esc(t.id)}"><span>${esc(t.name)}<small>${esc(z)} · ${f(n)} โล</small></span><span class="k">${t.kind}</span></button>`;
   };
   const inv = list.filter(t => t.kind !== 'Audit'), aud = list.filter(t => t.kind === 'Audit');
@@ -399,10 +412,11 @@ function listView() {
         : `<span class="${gd === gl.length ? 'full' : ''}">${gd}/${gl.length}</span>`) + '</div>';
     }
     const s = st[l.loc];
-    const label = !s ? '' : s.empty ? 'ว่าง ✓' : `✓ ${s.n} กอง`;
-    rows += `<button class="ct-loc" data-loc="${esc(l.loc)}">${esc(l.loc)}<span class="st ${s ? (s.wait ? 'wait' : 'done') : ''}">${label}${s && s.wait ? ' · รอส่ง' : ''}</span><span class="go">›</span></button>`;
+    const no = banned(l.loc);
+    const label = no && !s ? 'ให้คนอื่นนับ' : !s ? '' : s.empty ? 'ว่าง ✓' : `✓ ${s.n} กอง`;
+    rows += `<button class="ct-loc" data-loc="${esc(l.loc)}">${esc(l.loc)}<span class="st ${s ? (s.wait ? 'wait' : 'done') : no ? 'wait' : ''}">${label}${s && s.wait ? ' · รอส่ง' : ''}</span><span class="go">›</span></button>`;
   });
-  const typed = q && !known.has(q) && q.length >= 2;
+  const typed = q && !known.has(q) && q.length >= 2 && ME.pass < 2;
   const left = locs.length - done;
   return `<div class="ct-chips">
       <button class="ct-chip ${FILTER === 'left' ? 'on' : ''}" data-filter="left">${audit ? 'ยังไม่สุ่ม' : 'เหลือ'}<b>${f(left)}</b></button>
@@ -432,6 +446,11 @@ function locView() {
   const piles = rows.filter(r => r.type === 'นับ');
   const empty = rows.find(r => r.type === 'ว่าง');
   const p = ST.parseLoc(LOC);
+  if (banned(LOC)) {
+    return `<div class="ct-lochead"><button class="ct-btn sm" data-act="back" aria-label="กลับไปรายการโล">‹ โล</button>
+      <div class="nm">${esc(LOC)}<small>แถว ${esc(p.group)}</small></div></div>
+      <div class="ct-msg"><b>คุณนับโลนี้ในรอบ 1 แล้ว</b><br>รอบ 2 ให้คนอื่นในทีมนับ ผลจะได้เทียบกันได้จริง</div>`;
+  }
   const editing = EDIT && piles.find(r => r.uid === EDIT);
   const list = piles.map(r => `<button class="ct-pile ${EDIT === r.uid ? 'on' : ''}" data-pile="${esc(r.uid)}">
       <span class="d">${esc(r.sku || r.long)}<small>${esc(skuName(r.long, r.sku) || '—')} · LOT ${esc(r.lot || '-')} · PO ${esc(r.po || '-')}${r.who && r.who !== ME.who ? ' · ' + esc(r.who) : ''}</small>${pend.has(r.uid) ? '<span class="pend">รอส่ง</span>' : ''}</span>
@@ -459,6 +478,7 @@ function locView() {
 }
 
 function locBottom() {
+  if (banned(LOC)) return `<div class="ct-bottom"><button class="ct-btn p" data-act="next">โลถัดไป</button></div>`;
   const rows = atLoc(LOC);
   const none = !rows.length;
   return `<div class="ct-bottom">${none ? '<button class="ct-btn g" data-act="empty">โลนี้ว่าง</button>' : ''}<button class="ct-btn ${none ? '' : 'p'}" data-act="next">เสร็จ → โลถัดไป</button></div>`;
@@ -542,7 +562,7 @@ function nextLoc() {
   const pend = pending();
   const i = locs.findIndex(l => l.loc === LOC);
   const after = locs.slice(i + 1).concat(locs.slice(0, Math.max(i, 0)));
-  const nx = isAudit() ? null : after.find(l => !locState(l.loc, pend));
+  const nx = isAudit() ? null : after.find(l => !locState(l.loc, pend) && !banned(l.loc));
   if (nx) { openLoc(nx.loc); return; }
   VIEW = 'list'; LOC = ''; EDIT = ''; paint(); window.scrollTo(0, 0);
 }
