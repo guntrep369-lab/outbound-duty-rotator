@@ -34,8 +34,14 @@
  * POST {op:'st-plan'}        บันทึกแผนนับรอบ 2 และทีมของรอบนับ 2 (หัวหน้า)
  * POST {op:'st-close'}       อนุมัติยอดสุดท้ายและปิดรอบ เก็บชื่อคนอนุมัติกับเวลา ปิดแล้วแก้อะไรไม่ได้อีก (หัวหน้า)
  * POST {op:'st-count'}       ส่งผลนับเป็นชุด ส่งซ้ำได้ แถวที่เคยรับแล้วไม่ถูกเขียนซ้ำ (คนนับ)
+ * POST {op:'st-open'}        เครื่องนี้เปิดโลไหนอยู่ ตอบว่ามีใครในงานเดียวกันเปิดโลนั้นอยู่ (คนนับ ไม่ลงชีต)
  * ไม่ใส่ api                 บอกแค่ว่าเป็นสคริปต์นี้ ให้หน้าเว็บเช็คว่าใส่ URL ถูกตัว
+ *
+ * ทุกคำตอบมี v = รุ่นของสคริปต์ หน้าเว็บเทียบกับรุ่นที่ต้องใช้ ลืม Deploy เวอร์ชันใหม่จะขึ้นแถบแดงบอก
  */
+
+/* เพิ่มทีละ 1 ทุกครั้งที่หน้าเว็บต้องใช้ของใหม่จากสคริปต์ (ต้องตรงกับ API_V ใน public/wms-stocktake.js) */
+var VERSION = 4;
 
 // รหัสหัวหน้า ตั้งเป็นคำที่เดายาก เช่น 'stock-หัวหน้า-2569' แล้วใส่คำเดียวกันในหน้านับสต๊อกใหญ่
 var HEAD_TOKEN = '';
@@ -70,9 +76,10 @@ TABS[T_BASE] = {
   head: ['รหัสรอบ', 'ชุดที่', 'Location', 'SKU', 'SKU เต็ม', 'ชื่อสินค้า', 'LOT', 'PO', 'ยอดในสมุด', 'เปิดขาย'],
   text: [1, 3, 4, 5, 6, 7, 8, 10],
 };
+/* แถว PO มี SKU กับ LOT ที่ PO นั้นเคยรับในสมุด (ไม่มียอด) หน้ากรอกใช้เตือนตอน PO / LOT ไม่เข้ากับ SKU */
 TABS[T_MASTER] = {
-  head: ['รหัสรอบ', 'ชนิด', 'รหัส', 'รหัสเต็ม / Supplier', 'ชื่อสินค้า'],
-  text: [1, 2, 3, 4, 5],
+  head: ['รหัสรอบ', 'ชนิด', 'รหัส', 'รหัสเต็ม / Supplier', 'ชื่อสินค้า', 'SKU ที่เคยรับ', 'LOT ที่เคยรับ'],
+  text: [1, 2, 3, 4, 5, 6, 7],
 };
 TABS[T_LOG] = {
   head: ['บันทึกเมื่อ', 'รหัสรอบ', 'รอบนับ', 'รหัสทีม', 'ประเภท', 'คนนับ', 'Location', 'SKU', 'SKU เต็ม', 'LOT', 'PO',
@@ -126,6 +133,7 @@ function doPost(e) {
   try {
     var req = JSON.parse(e.postData.contents);
     if (req.op === 'st-count') { counter_(req.k); return out_(count_(req)); }
+    if (req.op === 'st-open') { counter_(req.k); return out_(open_(req)); }
     if (req.op === 'st-round-save') { head_(req.t); return out_(roundSave_(req)); }
     if (req.op === 'st-baseline') { head_(req.t); return out_(baseline_(req)); }
     if (req.op === 'st-teams') { head_(req.t); return out_(teams_(req)); }
@@ -140,8 +148,11 @@ function doPost(e) {
 }
 
 function out_(o) {
+  if (o && typeof o === 'object' && !Array.isArray(o)) o.v = VERSION;
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
 }
+
+function now_() { return Date.now(); }
 
 /** หัวหน้าต้องมีรหัสเสมอ ไม่มีรหัสแปลว่าใครมี URL ก็เห็นยอดในสมุดก่อนนับ */
 function head_(t) {
@@ -351,7 +362,7 @@ function roundSave_(req) {
 /**
  * เก็บยอดตั้งต้นชุดใหม่ ชุดเก่าอยู่ในแท็บต่อไป (ใช้ย้อนดูว่าเคยดึงไปกี่รอบ ได้ตัวเลขอะไร)
  * piles = [[Location, SKU, SKU เต็ม, ชื่อสินค้า, LOT, PO, ยอด, เปิดขาย 0/1]] คิดจากสมุดโดยหน้าเว็บ (WmsStocktake.baseline)
- * skus = [[SKU, SKU เต็ม, ชื่อ]] pos = [[PO, Supplier]] แทนรายการเดิมของรอบนี้ทั้งชุด
+ * skus = [[SKU, SKU เต็ม, ชื่อ]] pos = [[PO, Supplier, [SKU เต็มที่เคยรับ], [LOT ที่เคยรับ]]] แทนรายการเดิมของรอบนี้ทั้งชุด
  * ปิดรอบแล้วดึงใหม่ไม่ได้ ยอดที่อนุมัติไปแล้วต้องเทียบกับชุดเดิม
  */
 function baseline_(req) {
@@ -374,11 +385,16 @@ function baseline_(req) {
     }));
     var master = [];
     skus.forEach(function (s) {
-      if (Array.isArray(s) && text_(s[1])) master.push([r.id, 'SKU', plain_(s[0], 60), plain_(s[1], 60), plain_(s[2], 200)]);
+      if (Array.isArray(s) && text_(s[1])) master.push([r.id, 'SKU', plain_(s[0], 60), plain_(s[1], 60), plain_(s[2], 200), '', '']);
     });
+    var list = function (v) {
+      return (Array.isArray(v) ? v : []).map(function (x) { return plain_(x, 60).replace(/,/g, ' '); }).filter(function (x) { return x; }).join(',').slice(0, 20000);
+    };
     pos.forEach(function (p) {
-      if (Array.isArray(p) && text_(p[0])) master.push([r.id, 'PO', plain_(p[0], 40), plain_(p[1], 80), '']);
+      if (Array.isArray(p) && text_(p[0])) master.push([r.id, 'PO', plain_(p[0], 40), plain_(p[1], 80), '', list(p[2]), list(p[3])]);
     });
+    /* ไฟล์ที่สร้างก่อนมีสองช่องหลัง หัวตารางยังไม่มี เขียนหัวใหม่ให้ครบ */
+    tab_(T_MASTER).getRange(1, 1, 1, TABS[T_MASTER].head.length).setValues([TABS[T_MASTER].head]);
     replace_(T_MASTER, r.id, master);
     r.set = set;
     r.pulledAt = stamp_();
@@ -401,7 +417,7 @@ function master_(id) {
   rows_(T_MASTER).forEach(function (m) {
     if (text_(m[0]) !== id) return;
     if (text_(m[1]) === 'SKU') out.skus.push([text_(m[2]), text_(m[3]), text_(m[4])]);
-    else if (text_(m[1]) === 'PO') out.pos.push([text_(m[2]), text_(m[3])]);
+    else if (text_(m[1]) === 'PO') out.pos.push([text_(m[2]), text_(m[3]), split_(m[5]), split_(m[6])]);
   });
   return out;
 }
@@ -825,4 +841,44 @@ function count_(req) {
       last: sheet.getLastRow(),
     };
   });
+}
+
+/* ── ใครเปิดโลไหนอยู่ ─────────────────────────────────────────────────── */
+
+var OPEN_MIN = 15;   // เปิดโลค้างไว้นานกว่านี้ถือว่าออกไปแล้ว
+
+/**
+ * เครื่องคนนับบอกว่าเปิดโลไหนอยู่ (loc ว่าง = ออกจากโลแล้ว) ตอบว่ามีใครในงานเดียวกัน
+ * (รอบนับเดียวกัน ประเภทเดียวกัน Inventory / Audit) เปิดโลนี้อยู่บ้าง
+ * กันสองคนในทีมนับโลเดียวกันโดยไม่รู้ตัว ยอดจะซ้ำเป็นสองเท่า
+ * เก็บใน CacheService ไม่ลงชีต ไม่อ่านชีต ไม่ล็อก ตอบเร็ว · ชนกันพอดีแค่ทำให้เตือนพลาดหนึ่งครั้ง ไม่กระทบผลนับ
+ * req = {round, pass, kind, who, device, loc}
+ */
+function open_(req) {
+  var round = code_(req.round, 40), dev = plain_(req.device, 40);
+  if (!round || !dev) return { error: 'ไม่ได้บอกรอบหรือเครื่อง' };
+  var kind = KINDS.indexOf(req.kind) >= 0 ? req.kind : KINDS[0];
+  var who = plain_(req.who, 40);
+  var loc = code_(req.loc, 40);
+  var cache = CacheService.getScriptCache();
+  var now = now_(), ttl = OPEN_MIN * 60;
+  var key = loc ? ['op', round, +req.pass || 1, kind, loc].join('|') : '';
+  var mine = 'od|' + round + '|' + dev;
+
+  function list(k) { try { return JSON.parse(cache.get(k) || '[]') || []; } catch (e) { return []; } }
+  /* คนอื่นที่ยังเปิดอยู่ ตัดเครื่องนี้ออก ตัดที่เกินเวลาออก */
+  function fresh(k) { return list(k).filter(function (x) { return x && x.d !== dev && now - x.t < ttl * 1000; }); }
+
+  var prev = cache.get(mine) || '';
+  if (prev && prev !== key) cache.put(prev, JSON.stringify(fresh(prev)), ttl);
+  if (!key) { cache.remove(mine); return { app: 'stocktake', others: [] }; }
+  var others = fresh(key);
+  cache.put(key, JSON.stringify(others.concat([{ d: dev, w: who, t: now }]).slice(-6)), ttl);
+  cache.put(mine, key, ttl);
+  var me = who.toUpperCase();
+  return {
+    app: 'stocktake',
+    others: others.filter(function (x) { return String(x.w).toUpperCase() !== me; })
+      .map(function (x) { return { who: x.w, ago: Math.max(0, Math.round((now - x.t) / 60000)) }; }),
+  };
 }

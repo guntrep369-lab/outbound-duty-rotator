@@ -22,8 +22,14 @@ body{font-family:var(--wms-font);color:var(--wms-text);-webkit-tap-highlight-col
 button,input{font-family:inherit}
 
 /* ── แถบบน: รอบ ทีม ชื่อ และสถานะการส่ง ── */
-.ct-top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:8px;padding:10px 14px;
+.ct-head{position:sticky;top:0;z-index:5}
+.ct-top{display:flex;align-items:center;gap:8px;padding:10px 14px;
   background:var(--wms-surface);border-bottom:1px solid var(--wms-border)}
+/* เส้นความคืบหน้าของทีมใต้แถบบน อยู่ตลอดทั้งตอนเลือกโลและตอนกรอก ยาวขึ้นทุกครั้งที่เสร็จโล */
+.ct-prog{height:0;overflow:hidden;background:#E0E7FF;transition:height .3s}
+.ct-prog.on{height:4px}
+.ct-prog i{position:relative;display:block;width:0;height:100%;overflow:hidden;border-radius:0 4px 4px 0;
+  background:linear-gradient(90deg,#6366F1,#8B5CF6 55%,#22C55E);transition:width .9s cubic-bezier(.2,.8,.2,1)}
 .ct-top .who{flex:1;min-width:0;font-size:13px;color:var(--wms-muted);line-height:1.35}
 .ct-top .who b{display:block;font-size:15px;color:var(--wms-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ct-net{flex:none;padding:5px 11px;border-radius:999px;border:1px solid var(--wms-border);background:var(--wms-surface);
@@ -143,24 +149,104 @@ button,input{font-family:inherit}
 .ct-toast b{display:block;font-size:17px;color:#047857}
 .ct-toast.all{border-color:#FDE68A;background:#FFFBEB}
 .ct-toast.all b{color:#B45309}
+.ct-toast.mile{border-color:#C4B5FD;background:#F5F3FF}
+.ct-toast.mile b{color:#6D28D9}
+.ct-toast.go{border-color:#C7D2FE}
+.ct-toast.go b{color:var(--wms-primary-dark)}
 @media (prefers-reduced-motion:no-preference){
   .ct-mas.hop,.ct-toast img{animation:wms-hop .7s cubic-bezier(.34,1.56,.64,1) both}
   .ct-mas.look,.ct-band.look img{animation:wms-peek 2.4s ease-in-out 2;transform-origin:50% 90%}
   .ct-mas.walk,.ct-hi img{animation:ct-bob .5s ease-in-out infinite alternate}
   .ct-toast{animation:ct-toast 1.9s ease both}
+  .ct-toast.long{animation-duration:2.8s}
 }
 @keyframes ct-bob{to{transform:translateY(-4px) rotate(-2deg)}}
 @keyframes ct-toast{0%{opacity:0;transform:translate(-50%,14px)}12%{opacity:1;transform:translate(-50%,0)}82%{opacity:1}100%{opacity:0;transform:translate(-50%,0)}}
+
+/* ── ความคืบหน้าบนรายการโล: วงแหวนเติมเต็ม เลขวิ่งขึ้น ── */
+.ct-hero{display:flex;align-items:center;gap:12px;margin-bottom:10px;padding:8px 14px 8px 8px;border-radius:14px;
+  background:linear-gradient(120deg,#EEF2FF,#F5F3FF);border:1px solid #C7D2FE}
+.ct-hero.full{background:linear-gradient(120deg,#ECFDF5,#F0FDF4);border-color:#A7F3D0}
+.ct-ring{position:relative;flex:none;width:60px;height:60px}
+.ct-ring svg{display:block;width:100%;height:100%;transform:rotate(-90deg)}
+.ct-ring circle{fill:none;stroke-width:6.5}
+.ct-ring .bg{stroke:#E0E7FF}
+.ct-ring .fg{stroke-linecap:round;transition:stroke-dashoffset 1s cubic-bezier(.2,.8,.2,1)}
+.ct-ring b{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;
+  color:var(--wms-primary-dark);font-variant-numeric:tabular-nums}
+.ct-hero.full .ct-ring b{color:#047857}
+.ct-hero .tx{flex:1;min-width:0;font-size:13px;line-height:1.45;color:var(--wms-muted)}
+.ct-hero .tx b{display:block;font-size:16.5px;color:var(--wms-text)}
+
+/* ── กำลังโหลดรอบ: สายพานของระบบตัวใหญ่ น้องกล่องเดินอยู่บนนั้น ── */
+.ct-load{padding:64px 10px 20px;text-align:center;font-size:14px;color:var(--wms-muted)}
+.ct-load .wms-busy-belt{display:block;margin:0 auto 44px;transform:scale(2);transform-origin:50% 100%}
+.ct-load b{display:block;margin-bottom:2px;font-size:16.5px;color:var(--wms-text)}
+
+/* ── ลูกเล่นตอนกด ── */
+.ct-btn,.ct-team{position:relative;overflow:hidden}
+.ct-rip{position:absolute;border-radius:50%;background:currentColor;opacity:.22;transform:scale(0);pointer-events:none}
+.ct-net.go{background-image:repeating-linear-gradient(-45deg,rgba(99,102,241,.16) 0 7px,transparent 7px 14px);background-size:19.8px 19.8px}
+.ct-pile .pend.sent{color:#047857}
+.ct-fly{position:fixed;left:0;top:0;z-index:7;padding:5px 13px;border-radius:999px;background:var(--wms-primary);color:#fff;
+  font-size:16px;font-weight:800;font-variant-numeric:tabular-nums;box-shadow:0 8px 22px rgba(79,70,229,.45);pointer-events:none;white-space:nowrap}
+.ct-rain{position:fixed;inset:0;z-index:8;overflow:hidden;pointer-events:none}
+.ct-rain i{position:absolute;top:-18px;width:8px;height:12px;border-radius:2px;
+  animation:ct-fall var(--d) cubic-bezier(.35,.55,.6,1) var(--t) both}
+.ct-lochead .nm{position:relative;overflow:hidden}
+
+/* เข้าหน้าใหม่เท่านั้นที่ขยับ วาดซ้ำในหน้าเดิม (ดึงข้อมูลทุกนาที แตะเลือกชื่อ) ไม่ขยับ
+   up = เปิดลิงก์ / เริ่มนับ · fwd = เข้าโล (สไลด์จากขวา + แสงสแกนผ่านชื่อโล) · back = กลับรายการ */
+@media (prefers-reduced-motion:no-preference){
+  .ct-go-up > *{animation:ct-rise .45s cubic-bezier(.2,.8,.2,1) both}
+  .ct-go-up > :nth-child(2){animation-delay:60ms}
+  .ct-go-up > :nth-child(3){animation-delay:110ms}
+  .ct-go-up > :nth-child(n+4){animation-delay:160ms}
+  .ct-go-up .ct-pick > *,.ct-go-up .ct-list > [style],.ct-go-back .ct-list > [style]{animation:ct-rise .42s cubic-bezier(.2,.8,.2,1) both;
+    animation-delay:calc(var(--i,12) * 30ms + 140ms)}
+  .ct-go-up .ct-hi img{animation:ct-walkin .9s cubic-bezier(.2,.8,.2,1) both,ct-bob .5s ease-in-out .9s infinite alternate}
+  .ct-go-fwd > *{animation:ct-in-r .36s cubic-bezier(.2,.8,.2,1) both}
+  .ct-go-back > *{animation:ct-in-l .36s cubic-bezier(.2,.8,.2,1) both}
+  .ct-go-fwd .ct-form{animation:ct-rise .5s cubic-bezier(.2,.8,.2,1) .1s both}
+  .ct-go-fwd .ct-lochead .nm::after{content:'';position:absolute;top:0;bottom:0;left:0;width:45%;pointer-events:none;
+    background:linear-gradient(90deg,transparent,rgba(99,102,241,.38),transparent);animation:ct-scan .95s ease-out .12s both}
+  .ct-bottom.ct-go{animation:ct-up .38s cubic-bezier(.2,.8,.2,1) both}
+  .ct-pile.fresh{animation:ct-land .65s cubic-bezier(.34,1.56,.64,1) .34s both}
+  .ct-pile .pend.sent{animation:ct-fade 1.4s ease .7s forwards}
+  .ct-hero.go .ct-ring{animation:wms-hop .7s cubic-bezier(.34,1.56,.64,1) both}
+  .ct-prog i::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.75),transparent);
+    transform:translateX(-100%);animation:ct-shine 2.6s ease-in-out infinite}
+  .ct-net.go{animation:ct-stripe .7s linear infinite}
+  .ct-rip{animation:ct-rip .55s ease-out forwards}
+}
+@keyframes ct-rise{from{opacity:0;transform:translateY(16px)}}
+@keyframes ct-in-r{from{opacity:0;transform:translateX(40px)}}
+@keyframes ct-in-l{from{opacity:0;transform:translateX(-40px)}}
+@keyframes ct-up{from{transform:translateY(100%)}}
+@keyframes ct-walkin{from{opacity:0;transform:translateX(-80px) rotate(-10deg)}}
+@keyframes ct-scan{from{transform:translateX(-110%)}to{transform:translateX(250%)}}
+@keyframes ct-land{0%{opacity:0;transform:translateY(-14px) scale(.9)}
+  55%{opacity:1;transform:scale(1.03);box-shadow:0 0 0 5px rgba(99,102,241,.32)}100%{box-shadow:0 0 0 0 rgba(99,102,241,0)}}
+@keyframes ct-fade{to{opacity:0}}
+@keyframes ct-shine{60%,100%{transform:translateX(100%)}}
+@keyframes ct-stripe{to{background-position:19.8px 0}}
+@keyframes ct-rip{to{transform:scale(1);opacity:0}}
+@keyframes ct-fall{to{transform:translate(var(--x),calc(100vh + 30px)) rotate(var(--r))}}
 </style>
 </head>
 <body>
 
-<div class="ct-top" id="top"></div>
+<header class="ct-head"><div class="ct-top" id="top"></div><div class="ct-prog" aria-hidden="true"><i id="progBar"></i></div></header>
 <main class="ct-main" id="main"></main>
 <div id="bottom"></div>
 
 <script src="../wms-gas.js"></script>
 <script src="../wms-stocktake.js"></script>
+<!-- พลุ สั่น เครื่องหมายถูก ป้ายเด้ง ชุดเดียวกับทั้งระบบ · หน้านี้ไม่มีเมนู WMS จึงไม่ใช้สายพานรอโหลดมุมล่าง (ส่งผลนับเบื้องหลังบ่อย จะกะพริบตลอด) -->
+<script type="module">
+import { celebrate, shake, saved, bump } from '../wms-motion.js';
+window.WmsMotion = { celebrate, shake, saved, bump };
+</script>
 <script>
 const ST = window.WmsStocktake;
 const $ = id => document.getElementById(id);
@@ -172,6 +258,19 @@ const MAS = { cheer: '../icons/mascot-cheer.png', look: '../icons/mascot-look.pn
 const MOVE = { cheer: 'hop', look: 'look', walk: 'walk', oops: '' };
 const mas = (pose, size) => `<img class="ct-mas ${MOVE[pose]} ${size || ''}" src="${MAS[pose]}" alt="" width="108" height="108">`;
 const pic = (pose, cls, html) => `<div class="ct-band pic ${cls} ${MOVE[pose]}"><img src="${MAS[pose]}" alt="" width="40" height="40"><span>${html}</span></div>`;
+
+/* ── ลูกเล่น: ขยับตอนเปลี่ยนหน้า เพิ่มกอง ส่งถึงชีต และเสร็จโล วาดซ้ำในหน้าเดิมไม่ขยับ
+      เครื่องที่ตั้ง "ลดการเคลื่อนไหว" ไว้ นิ่งทั้งหมด ข้อมูลขึ้นครบเหมือนเดิม ── */
+const STILL = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+const FX = (fn, ...a) => { const m = window.WmsMotion; if (m && m[fn]) m[fn](...a); };
+/** สั่นเบา ๆ ให้รู้ว่ากดติด (Android) iPhone ไม่สั่นก็ไม่เป็นไร */
+const buzz = (p) => { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) {} };
+let GO = '';              // หน้าถัดไปเข้ามาแบบไหน up / fwd / back ใช้ครั้งเดียว
+let FRESH = '';           // กองที่เพิ่งเพิ่ม เด้งลงรายการ
+let RING = null;          // % บนวงแหวนรอบก่อน วงแหวนวิ่งต่อจากค่านี้ (null = เพิ่งเข้ามา เริ่มจาก 0)
+const SENT = new Set();   // แถวที่เพิ่งส่งถึงชีต ขึ้น "✓ ส่งแล้ว" แป๊บเดียว
+const BELT = `<span class="wms-busy-belt" aria-hidden="true"><i></i><i></i><i></i><img src="${MAS.walk}" alt="" width="36" height="36"></span>`;
+const RING_C = 169.65;    // เส้นรอบวงของวงแหวน r = 27
 
 /* ทุกอย่างของหน้านี้อยู่ในเครื่อง ไม่ไปปนกับค่าของหน้าอื่น และไม่ถูกสำรองไปเครื่องอื่น (WmsSettings.SKIP) */
 const K = { cfg: 'wms:st:cfg', me: 'wms:st:me', dev: 'wms:st:dev', mine: 'wms:st:mine', rd: 'wms:st:rd' };
@@ -227,6 +326,13 @@ function banned(loc) {
   const me = String(ME.who).trim().toUpperCase();
   return !!hit && (hit[1] || []).some(w => String(w).trim().toUpperCase() === me);
 }
+/** จำนวนโลในรายการที่ทีมนี้นับแล้ว (ชุดเดียวกับที่ locState ถือว่านับแล้ว) */
+function doneN(locs) {
+  if (!ME) return 0;
+  const s = new Set();
+  ST.effective(entries()).forEach(e => { if (e.team === ME.team && e.pass === ME.pass) s.add(ST.up(e.loc)); });
+  return locs.filter(l => s.has(l.loc)).length;
+}
 function locState(loc, pend) {
   const rows = atLoc(loc);
   if (!rows.length) return null;
@@ -242,13 +348,15 @@ function urlOf(api, params) {
 }
 
 async function loadRound() {
-  NET.loading = true; paintTop();
+  /* ยังไม่มีข้อมูลรอบ: ขึ้นฉากรอโหลด (ก่อนหน้านี้ขึ้น "โหลดไม่ได้" ค้างไว้ระหว่างรอ) */
+  NET.loading = true; RD ? paintTop() : paint();
   try {
     const res = await WmsGas.json(urlOf('st-round'), 'st-round', { retries: 1, timeoutMs: 60000 });
     if (res.error) throw new Error(res.error);
     RD = { ...res, at: Date.now() };
     save(K.rd, { id: CFG.round, ...RD });
     NET.err = '';
+    NET.old = ST.oldScript(res);
   } catch (e) {
     const old = load(K.rd, null);
     if (old && old.id === CFG.round) { RD = old; NET.err = 'ออฟไลน์ ใช้ข้อมูลรอบที่โหลดไว้'; }
@@ -259,8 +367,23 @@ async function loadRound() {
   /* หัวหน้าเปิดรอบ 2: ทีมกับรายการโลเปลี่ยน ให้เลือกทีมของรอบ 2 ใหม่ (ผลที่ค้างส่งยังอยู่ครบ) */
   if (ME && RD && RD.round.pass > ME.pass && RD.round.status === 'นับรอบ 2') { ME = null; PICK = null; }
   if (!ME) VIEW = 'who';
+  GO = 'up';
   paint();
   if (ME) { pull(); flush(); }
+}
+
+/**
+ * งานเบื้องหลัง (ส่งเสร็จ ดึงแถวเพื่อน) ระหว่างอยู่ในหน้าโล วาดแค่รายการกองกับคำเตือน
+ * ฟอร์มที่กำลังพิมพ์ไม่ถูกแตะ คีย์บอร์ดไม่หุบ · หน้าอื่นวาดตามปกติ
+ */
+function bgPaint() {
+  const box = $('piles');
+  if (VIEW !== 'loc' || !box) { paint(); return; }
+  paintTop();
+  const h = pilesHTML();
+  if (box._html !== h) { box.innerHTML = h; box._html = h; }
+  const w = $('locWarn');
+  if (w) w.innerHTML = locWarn();
 }
 
 /** แถวของทีมที่ชีตรับแล้ว ขอเฉพาะแถวใหม่หลังแถวล่าสุดที่เคยได้ */
@@ -272,7 +395,7 @@ async function pull() {
     const res = await WmsGas.json(urlOf('st-mine', { team: t, since }), 'st-mine', { retries: 0, timeoutMs: 45000 });
     if (res.error) throw new Error(res.error);
     got(res, t, since);
-    paint();
+    bgPaint();
   } catch (e) { /* ไม่เป็นไร รอบหน้าค่อยดึง แถวในเครื่องยังอยู่ครบ */ }
 }
 
@@ -315,9 +438,13 @@ async function flush() {
       BOX.out = a.outbox;
       BOX.rej = BOX.rej.concat(a.rejected);
       save(outKey(), BOX);
+      const bad = new Set(a.rejected.map(i => i.uid));
+      sent.forEach(i => { if (!bad.has(i.uid)) SENT.add(i.uid); });
+      clearTimeout(NET.sentT);
+      NET.sentT = setTimeout(() => SENT.clear(), 2500);
       got(res, t, since);
       NET.fail = 0; NET.err = ''; NET.at = Date.now();
-      paint();
+      bgPaint();
     }
   } catch (e) {
     NET.fail++;
@@ -326,7 +453,7 @@ async function flush() {
     NET.timer = setTimeout(flush, wait);
   }
   NET.sending = false;
-  paint();
+  bgPaint();
 }
 
 function later() { clearTimeout(NET.timer); NET.timer = setTimeout(flush, 1500); }
@@ -352,35 +479,90 @@ function paintTop() {
   if (!CFG) { box.innerHTML = '<div class="who"><b>กรอกผลนับ</b></div>'; return; }
   const n = BOX.out.length;
   const net = !navigator.onLine ? ['off', `ออฟไลน์ · เก็บไว้ ${n}`]
-    : NET.sending ? ['wait', `กำลังส่ง ${n}…`]
+    : NET.sending ? ['wait go', `กำลังส่ง ${n}…`]
     : n && NET.err ? ['bad', `ส่งไม่ได้ · ค้าง ${n}`]
     : n ? ['wait', `รอส่ง ${n}`]
     : NET.loading ? ['wait', 'กำลังโหลด…'] : ['ok', '✓ ส่งครบ'];
   const t = team();
-  box.innerHTML = `<div class="who"><b>${esc(RD ? RD.round.name : 'นับสต๊อก')}</b>${t ? `${esc(t.name)} · ${esc(ME.who)}` : esc(CFG.round)}</div>` +
+  /* เส้นความคืบหน้าใต้แถบบน (ไม่ถูกวาดใหม่ ความยาวจึงค่อย ๆ ยืดออก) */
+  const bar = $('progBar');
+  const locs = t && VIEW !== 'who' ? myLocs() : [];
+  bar.parentElement.classList.toggle('on', locs.length > 0);
+  bar.style.width = locs.length ? (doneN(locs) * 100 / locs.length).toFixed(1) + '%' : '0';
+  const html = `<div class="who"><b>${esc(RD ? RD.round.name : 'นับสต๊อก')}</b>${t ? `${esc(t.name)} · ${esc(ME.who)}` : esc(CFG.round)}</div>` +
     `<button class="ct-net ${net[0]}" data-act="net" aria-label="สถานะการส่ง">${esc(net[1])}</button>`;
+  if (box._html === html) return;      // ไม่วาดซ้ำ เครื่องหมายถูกที่กำลังวาดตัวเองจะได้ไม่หาย
+  box.innerHTML = html; box._html = html;
+  /* ส่งครบ: เครื่องหมายถูกวาดตัวเอง · มีแถวรอส่งเพิ่ม: ป้ายเด้ง */
+  const pill = box.querySelector('.ct-net');
+  if (n) NET.had = true;
+  if (net[0] === 'ok' && NET.had) { NET.had = false; FX('saved', pill); FX('bump', pill); }
+  else if (n > (NET.n || 0)) FX('bump', pill);
+  NET.n = n;
 }
 
+/** หน้าหลักตามสถานะ คืน [เนื้อหา, ปุ่มล่าง] */
+function drawMain() {
+  if (!CFG) return [`<div class="ct-msg">${mas('look')}<b>เปิดจากลิงก์ที่หัวหน้าส่งให้</b><br>ลิงก์นับสต๊อกมีรหัสรอบอยู่ข้างใน ขอลิงก์ใหม่ใน LINE กลุ่มได้</div>`, ''];
+  if (!RD) {
+    return [NET.loading ? `<div class="ct-load" role="status">${BELT}<b>น้องกล่องกำลังไปหยิบรายการโลมาให้</b>รอแป๊บนึงนะ</div>`
+      : `<div class="ct-msg">${mas('oops')}<b>โหลดรอบนับไม่ได้</b><br>${esc(NET.err)}<br><br><button class="ct-btn" data-act="reload">ลองใหม่</button></div>`, ''];
+  }
+  if (RD.round.status === 'ปิดแล้ว') return [`<div class="ct-msg">${mas('cheer')}<b>รอบนี้ปิดแล้ว</b><br>ขอบคุณที่ช่วยนับ</div>`, ''];
+  if (VIEW === 'who' || !team()) return [whoView(), ''];
+  if (VIEW === 'loc' && LOC) return [bands() + locView(), locBottom()];
+  return [bands() + listView(), ''];
+}
+
+/** วาดหน้าหลัก ถ้าเหมือนเดิมทุกตัวอักษรไม่แตะ · GO = เพิ่งเปลี่ยนหน้า ให้เนื้อหาเลื่อนเข้ามา */
 function paintMain() {
   const box = $('main'), bot = $('bottom');
-  bot.innerHTML = '';
-  if (!CFG) {
-    box.innerHTML = `<div class="ct-msg">${mas('look')}<b>เปิดจากลิงก์ที่หัวหน้าส่งให้</b><br>ลิงก์นับสต๊อกมีรหัสรอบอยู่ข้างใน ขอลิงก์ใหม่ใน LINE กลุ่มได้</div>`;
-    return;
+  const go = STILL ? '' : GO;
+  GO = '';
+  const [m, b] = drawMain();
+  if (!go && m === box._html && b === bot._html) return;
+  ['ct-go-up', 'ct-go-fwd', 'ct-go-back'].forEach(c => box.classList.remove(c));
+  box.innerHTML = m; box._html = m;
+  bot.innerHTML = b; bot._html = b;
+  if (go) {
+    void box.offsetWidth;
+    box.classList.add('ct-go-' + go);
+    clearTimeout(box._go);
+    box._go = setTimeout(() => box.classList.remove('ct-go-' + go), 1500);
   }
-  if (!RD) {
-    box.innerHTML = NET.loading ? `<div class="ct-msg">${mas('walk', 'sm')}กำลังโหลดรอบนับ…</div>`
-      : `<div class="ct-msg">${mas('oops')}<b>โหลดรอบนับไม่ได้</b><br>${esc(NET.err)}<br><br><button class="ct-btn" data-act="reload">ลองใหม่</button></div>`;
-    return;
-  }
-  if (RD.round.status === 'ปิดแล้ว') { box.innerHTML = `<div class="ct-msg">${mas('cheer')}<b>รอบนี้ปิดแล้ว</b><br>ขอบคุณที่ช่วยนับ</div>`; return; }
-  if (VIEW === 'who' || !team()) { box.innerHTML = whoView(); return; }
-  if (VIEW === 'loc' && LOC) { box.innerHTML = bands() + locView(); bot.innerHTML = locBottom(); return; }
-  box.innerHTML = bands() + listView();
+  ringFx();
+}
+
+/** วงแหวนบนรายการโล: ถอยไปค่าครั้งก่อน (เพิ่งเข้ามา = 0 และวงเด้งขึ้น) แล้วเติมไปค่าจริง เลขกลางวงวิ่งตาม */
+function ringFx() {
+  const fg = $('ringFg'), n = $('ringN');
+  if (!fg) return;
+  const first = RING == null, from = first ? 0 : RING, to = Number(n.dataset.to);
+  RING = to;
+  if (from === to || STILL) return;
+  if (first) fg.closest('.ct-hero').classList.add('go');
+  fg.style.transition = 'none';
+  fg.style.strokeDashoffset = ringOff(from);
+  n.textContent = from + '%';
+  fg.getBoundingClientRect();
+  fg.style.transition = '';
+  fg.style.strokeDashoffset = ringOff(to);
+  const t0 = performance.now();
+  const step = (now) => {
+    const p = Math.min(1, (now - t0) / 1000), e = 1 - Math.pow(1 - p, 3);
+    n.textContent = Math.round(from + (to - from) * e) + '%';
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+/** สคริปต์ยังเป็นรุ่นเก่า (หัวหน้าลืม Deploy) นับต่อได้ แต่บางอย่างจะไม่ทำงาน */
+function oldBand() {
+  return NET.old ? pic('oops', 'bad', `<b>ระบบนับยังไม่อัปเดต</b> แจ้งหัวหน้าให้ Deploy สคริปต์นับสต๊อกเวอร์ชันใหม่ · นับต่อได้ ผลนับเก็บครบ`) : '';
 }
 
 function bands() {
-  let h = '';
+  let h = oldBand();
   if (!RD.round.pass) h += pic('look', 'warn', `<b>หัวหน้ายังไม่กดเริ่มนับ</b> กรอกไว้ได้ ผลนับเก็บในเครื่องและส่งให้เองเมื่อเปิดนับ<br><button class="ct-btn sm" data-act="reload">เช็คอีกครั้ง</button>`);
   else if (RD.round.status === 'ตั้งค่า') h += '<div class="ct-band warn">หัวหน้าพักการนับไว้ชั่วคราว ผลที่กรอกยังเก็บและส่งได้ตามปกติ</div>';
   else if (RD.round.status === 'วิเคราะห์') h += `<div class="ct-band info">หัวหน้าปิดรับนับรอบ ${RD.round.pass >= 2 ? 2 : 1} แล้ว ผลที่ค้างในเครื่องยังส่งได้ ถ้าจะนับเพิ่มถามหัวหน้าก่อน</div>`;
@@ -402,15 +584,15 @@ function whoView() {
   if (!list.length) return `<div class="ct-msg">${mas('look')}<b>ยังไม่มีทีมในรอบนี้</b><br>รอหัวหน้าแบ่งทีมก่อน แล้วกดลองใหม่<br><br><button class="ct-btn" data-act="reload">ลองใหม่</button></div>`;
   const sel = PICK || (ME ? { team: ME.team, who: ME.who } : { team: '', who: '' });
   PICK = sel;
-  const card = (t) => {
+  const card = (t, i) => {
     const n = ST.teamLocs(t, RD.locs).length;
     const z = pass >= 2 ? 'รอบ 2 นับซ้ำ' : t.zones.length > 3 ? `${t.zones[0]} … ${t.zones[t.zones.length - 1]} (${t.zones.length} แถว)` : t.zones.join(', ');
-    return `<button class="ct-team ${sel.team === t.id ? 'on' : ''}" data-team="${esc(t.id)}"><span>${esc(t.name)}<small>${esc(z)} · ${f(n)} โล</small></span><span class="k">${t.kind}</span></button>`;
+    return `<button class="ct-team ${sel.team === t.id ? 'on' : ''}" style="--i:${Math.min(i, 12)}" data-team="${esc(t.id)}"><span>${esc(t.name)}<small>${esc(z)} · ${f(n)} โล</small></span><span class="k">${t.kind}</span></button>`;
   };
   const inv = list.filter(t => t.kind !== 'Audit'), aud = list.filter(t => t.kind === 'Audit');
   const t = list.find(x => x.id === sel.team);
   const hi = pass >= 2 ? ['รอบ 2 มาช่วยนับซ้ำกัน', 'นับให้ละเอียดเหมือนรอบแรกนะ'] : ['สวัสดี มานับสต๊อกกัน', 'เลือกทีมกับชื่อ แล้วกดเริ่มนับ'];
-  return `<div class="ct-hi"><img src="${MAS.walk}" alt="" width="58" height="58"><span><b>${hi[0]}</b>${hi[1]}</span></div>` +
+  return oldBand() + `<div class="ct-hi"><img src="${MAS.walk}" alt="" width="58" height="58"><span><b>${hi[0]}</b>${hi[1]}</span></div>` +
     `<div class="ct-h">เลือกทีมของคุณ</div><div class="ct-pick">${inv.map(card).join('')}</div>` +
     (aud.length ? `<div class="ct-h">Audit</div><div class="ct-pick">${aud.map(card).join('')}</div>` : '') +
     (t ? `<div class="ct-h">ชื่อคุณ</div>
@@ -421,6 +603,26 @@ function whoView() {
 }
 
 /* ── รายการ Location ของทีม ──────────────────────────────────────────── */
+
+/**
+ * การ์ดความคืบหน้า วาดที่ค่าจริงเสมอ (วาดซ้ำได้ผลเหมือนเดิม หน้าจะได้ไม่ถูกวาดใหม่โดยไม่จำเป็น)
+ * ringFx พาวงแหวนวิ่งจากค่าครั้งก่อน กลับจากโลที่เพิ่งเสร็จจะเห็นวงยืดขึ้น
+ */
+const ringOff = (pct) => (RING_C * (1 - pct / 100)).toFixed(2);
+function hero(done, total, audit, min) {
+  const pct = total ? Math.floor(done * 100 / total) : 0;
+  const full = !audit && total > 0 && done === total;
+  const t = team();
+  const title = audit ? `สุ่มแล้ว ${f(done)} โล` : full ? 'นับครบทุกโลแล้ว' : `นับแล้ว ${f(done)} จาก ${f(total)} โล`;
+  const sub = audit ? `ต้องสุ่มอย่างน้อย ${min}% ทุกแถว · ${esc(t.name)}` : full ? 'เก่งมาก ขอบคุณที่ช่วยนับ' : `เหลืออีก ${f(total - done)} โล · ${esc(t.name)}`;
+  return `<div class="ct-hero ${full ? 'full' : ''}">
+      <div class="ct-ring"><svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="ctRingG" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="${full ? '#22C55E' : '#6366F1'}"/><stop offset="1" stop-color="${full ? '#15803D' : '#A855F7'}"/></linearGradient></defs>
+        <circle class="bg" cx="32" cy="32" r="27"/><circle class="fg" id="ringFg" cx="32" cy="32" r="27" stroke="url(#ctRingG)"
+          style="stroke-dasharray:${RING_C};stroke-dashoffset:${ringOff(pct)}"/></svg>
+        <b id="ringN" data-to="${pct}">${pct}%</b></div>
+      <div class="tx"><b>${title}</b>${sub}</div></div>`;
+}
 
 function listView() {
   const locs = myLocs();
@@ -435,25 +637,27 @@ function listView() {
   /* โลนอกรายการที่ทีมนี้นับไว้ หัวหน้าเห็นในหน้าความคืบหน้า */
   const known = new Set(locs.map(l => l.loc));
   const extra = [...new Set(ST.effective(entries()).filter(e => e.team === ME.team && e.pass === ME.pass && !known.has(ST.up(e.loc))).map(e => ST.up(e.loc)))];
-  let rows = '', grp = '';
+  let rows = '', grp = '', k = 0;
+  /* แถวบน ๆ ที่เห็นบนจอไล่ขึ้นทีละแถวตอนเข้าหน้า (ลำดับใน --i) ที่เหลือขึ้นพร้อมกัน */
+  const nth = () => (k < 16 ? ` style="--i:${k++}"` : '');
   show.forEach(l => {
     if (l.group !== grp) {
       grp = l.group;
       const gl = locs.filter(x => x.group === grp);
       const gd = gl.filter(x => st[x.loc]).length;
       const pct = Math.round(gd * 100 / gl.length);
-      rows += `<div class="ct-grp"><span>แถว ${esc(grp)}</span>` + (audit
+      rows += `<div class="ct-grp"${nth()}><span>แถว ${esc(grp)}</span>` + (audit
         ? `<span class="${pct >= min ? 'full' : 'low'}">สุ่มแล้ว ${gd}/${gl.length} · ${pct}% (ต้อง ${min}%)</span>`
         : `<span class="${gd === gl.length ? 'full' : ''}">${gd}/${gl.length}</span>`) + '</div>';
     }
     const s = st[l.loc];
     const no = banned(l.loc);
     const label = no && !s ? 'ให้คนอื่นนับ' : !s ? '' : s.empty ? 'ว่าง ✓' : `✓ ${s.n} กอง`;
-    rows += `<button class="ct-loc" data-loc="${esc(l.loc)}">${esc(l.loc)}<span class="st ${s ? (s.wait ? 'wait' : 'done') : no ? 'wait' : ''}">${label}${s && s.wait ? ' · รอส่ง' : ''}</span><span class="go">›</span></button>`;
+    rows += `<button class="ct-loc"${nth()} data-loc="${esc(l.loc)}">${esc(l.loc)}<span class="st ${s ? (s.wait ? 'wait' : 'done') : no ? 'wait' : ''}">${label}${s && s.wait ? ' · รอส่ง' : ''}</span><span class="go">›</span></button>`;
   });
   const typed = q && !known.has(q) && q.length >= 2 && ME.pass < 2;
   const left = locs.length - done;
-  return `<div class="ct-chips">
+  return hero(done, locs.length, audit, min) + `<div class="ct-chips">
       <button class="ct-chip ${FILTER === 'left' ? 'on' : ''}" data-filter="left">${audit ? 'ยังไม่สุ่ม' : 'เหลือ'}<b>${f(left)}</b></button>
       <button class="ct-chip ${FILTER === 'done' ? 'on' : ''}" data-filter="done">${audit ? 'สุ่มแล้ว' : 'นับแล้ว'}<b>${f(done)}</b></button>
       <button class="ct-chip ${FILTER === 'all' ? 'on' : ''}" data-filter="all">ทั้งหมด<b>${f(locs.length)}</b></button>
@@ -477,11 +681,20 @@ function skuName(long, sku) {
   return s ? s[2] : '';
 }
 
-function locView() {
+/** กองที่นับแล้วในโลนี้ · กองที่เพิ่งเพิ่มเด้งลง · แถวที่เพิ่งส่งถึงชีตขึ้น "✓ ส่งแล้ว" แล้วจางไป */
+function pilesHTML() {
   const rows = atLoc(LOC);
   const pend = pending();
-  const piles = rows.filter(r => r.type === 'นับ');
   const empty = rows.find(r => r.type === 'ว่าง');
+  return rows.filter(r => r.type === 'นับ').map(r => `<button class="ct-pile ${EDIT === r.uid ? 'on' : ''} ${FRESH === r.uid ? 'fresh' : ''}" data-pile="${esc(r.uid)}">
+      <span class="d">${esc(r.sku || r.long)}<small>${esc(skuName(r.long, r.sku) || '—')} · LOT ${esc(r.lot || '-')} · PO ${esc(r.po || '-')}${r.who && r.who !== ME.who ? ' · ' + esc(r.who) : ''}</small>${pend.has(r.uid) ? '<span class="pend">รอส่ง</span>' : SENT.has(r.uid) ? '<span class="pend sent">✓ ส่งแล้ว</span>' : ''}</span>
+      <span class="q">${f(r.qty)}</span></button>`).join('') +
+    (empty ? `<button class="ct-pile empty" data-act="unempty">ว่าง ✓ <span style="font-weight:400;font-size:13px">(แตะเพื่อยกเลิก)</span></button>` : '');
+}
+
+function locView() {
+  const rows = atLoc(LOC);
+  const piles = rows.filter(r => r.type === 'นับ');
   const p = ST.parseLoc(LOC);
   if (banned(LOC)) {
     return `<div class="ct-lochead"><button class="ct-btn sm" data-act="back" aria-label="กลับไปรายการโล">‹ โล</button>
@@ -489,12 +702,10 @@ function locView() {
       <div class="ct-msg">${mas('look')}<b>คุณนับโลนี้ในรอบ 1 แล้ว</b><br>รอบ 2 ให้คนอื่นในทีมนับ ผลจะได้เทียบกันได้จริง</div>`;
   }
   const editing = EDIT && piles.find(r => r.uid === EDIT);
-  const list = piles.map(r => `<button class="ct-pile ${EDIT === r.uid ? 'on' : ''}" data-pile="${esc(r.uid)}">
-      <span class="d">${esc(r.sku || r.long)}<small>${esc(skuName(r.long, r.sku) || '—')} · LOT ${esc(r.lot || '-')} · PO ${esc(r.po || '-')}${r.who && r.who !== ME.who ? ' · ' + esc(r.who) : ''}</small>${pend.has(r.uid) ? '<span class="pend">รอส่ง</span>' : ''}</span>
-      <span class="q">${f(r.qty)}</span></button>`).join('');
   return `<div class="ct-lochead"><button class="ct-btn sm" data-act="back" aria-label="กลับไปรายการโล">‹ โล</button>
       <div class="nm">${esc(LOC)}<small>แถว ${esc(p.group)}${piles.length ? ` · ${piles.length} กอง` : ''}</small></div></div>
-    <div class="ct-piles">${list}${empty ? `<button class="ct-pile empty" data-act="unempty">ว่าง ✓ <span style="font-weight:400;font-size:13px">(แตะเพื่อยกเลิก)</span></button>` : ''}</div>
+    <div id="locWarn">${locWarn()}</div>
+    <div class="ct-piles" id="piles">${pilesHTML()}</div>
     <div class="ct-form ${editing ? 'edit' : ''}">
       <div class="tt">${editing ? 'แก้กองนี้' : piles.length ? 'เพิ่มกองถัดไป' : 'กองแรก'}</div>
       <label class="ct-lb" for="fSku">SKU</label>
@@ -535,7 +746,9 @@ function hints() {
     ss.innerHTML = FORM.sku && hits.length ? `<div class="ct-sug">${hits.map(s => `<button data-sku="${esc(s[0] || s[1])}">${esc(s[0] || s[1])}<small>${esc(s[2])}${s[0] ? ' · ' + esc(s[1]) : ''}</small></button>`).join('')}</div>` : '';
   }
   const poHit = RD.pos.find(p => ST.norm(p[0]) === ST.norm(FORM.po));
-  if (poHit) { ph.className = 'ct-hint ok'; ph.textContent = poHit[1] ? `✓ PO ${poHit[0]} · ${poHit[1]}` : `✓ PO ${poHit[0]}`; ps.innerHTML = ''; }
+  const odd = poHit ? ST.pileWarn({ sku: FORM.sku, long: FORM.long, lot: FORM.lot, po: FORM.po }, RD.pos, RD.skus, true) : [];
+  if (poHit && odd.length) { ph.className = 'ct-hint bad'; ph.textContent = '⚠ ' + odd.join(' · '); ps.innerHTML = ''; }
+  else if (poHit) { ph.className = 'ct-hint ok'; ph.textContent = poHit[1] ? `✓ PO ${poHit[0]} · ${poHit[1]}` : `✓ PO ${poHit[0]}`; ps.innerHTML = ''; }
   else {
     const hits = ST.poSearch(RD.pos, FORM.po, 5);
     ph.className = 'ct-hint' + (FORM.po.length >= 4 && !hits.length ? ' bad' : '');
@@ -545,20 +758,79 @@ function hints() {
 }
 
 function openLoc(loc) {
+  const from = VIEW;
   LOC = ST.up(loc); VIEW = 'loc'; EDIT = ''; FORM = { sku: '', long: '', lot: '', po: '', qty: '' };
+  PRES = { loc: LOC, others: [] };
+  GO = 'fwd';
   paint(); hints(); window.scrollTo(0, 0);
+  /* มาจากรายการ: แถบปุ่มล่างเลื่อนขึ้นมา · โลต่อโล แถบอยู่ที่เดิม */
+  const bar = document.querySelector('.ct-bottom');
+  if (bar && from !== 'loc' && !STILL) bar.classList.add('ct-go');
   setTimeout(() => { const el = $('fSku'); if (el && !atLoc(LOC).length) el.focus(); }, 50);
+  if (!banned(LOC)) announce(LOC);
+}
+
+/* ── กันสองคนนับโลเดียวกัน ─────────────────────────────────────────────── */
+
+let PRES = { loc: '', others: [] };   // คนอื่นในงานเดียวกันที่เปิดโลนี้อยู่ (จากสคริปต์)
+
+/**
+ * บอกสคริปต์ว่าเครื่องนี้เปิดโลไหนอยู่ ('' = ออกจากโลแล้ว) ถ้ามีคนอื่นเปิดโลเดียวกันอยู่ ขึ้นเตือน
+ * เน็ตหลุด / สคริปต์รุ่นเก่า = ไม่เตือน นับต่อได้ตามปกติ · ใส่คำเตือนในกล่องของมันเอง ไม่วาดทั้งหน้า (คีย์บอร์ดไม่หุบ)
+ */
+function announce(loc) {
+  if (!ME || !CFG || !navigator.onLine) return;
+  const t = team();
+  WmsGas.post(CFG.url, { op: 'st-open', k: CFG.key, round: CFG.round, pass: ME.pass, kind: t ? t.kind : 'Inventory', who: ME.who, device: DEV, loc },
+    { timeoutMs: 15000, retries: 0 })
+    .then((res) => {
+      if (!res || res.error || !loc || LOC !== loc || VIEW !== 'loc') return;
+      PRES = { loc, others: res.others || [] };
+      const box = $('locWarn');
+      if (box) box.innerHTML = locWarn();
+    })
+    .catch(() => {});
+}
+
+/** เตือนในหน้าโล: มีคนเปิดโลนี้อยู่ · เพื่อนในทีมนับโลนี้ไปแล้ว */
+function locWarn() {
+  let h = '';
+  if (PRES.loc === LOC && PRES.others.length) {
+    const names = PRES.others.map(o => esc(o.who) + (o.ago ? ` (${o.ago} นาทีก่อน)` : ' (เมื่อกี้)')).join(', ');
+    h += pic('look', 'warn', `<b>${names} เปิดโลนี้อยู่</b><br>ตกลงกันก่อนว่าใครนับ ถ้านับกองเดียวกันซ้ำ ยอดจะเกิน`);
+  }
+  const me = String(ME.who).trim().toUpperCase();
+  const rows = atLoc(LOC).filter(r => r.who && String(r.who).trim().toUpperCase() !== me);
+  const mates = esc([...new Set(rows.map(r => r.who))].join(', '));
+  const n = rows.filter(r => r.type === 'นับ').length;
+  if (n) h += pic('look', 'info', `<b>${mates} นับโลนี้ไว้แล้ว ${n} กอง</b><br>กองที่มีชื่อเพื่อนอยู่ในรายการข้างล่าง ไม่ต้องนับซ้ำ`);
+  else if (rows.length) h += pic('look', 'info', `<b>${mates} ตั้งโลนี้ว่างไว้แล้ว</b><br>ถ้าเจอของในโลนี้ เพิ่มกองได้เลย`);
+  return h;
+}
+
+/** ช่องที่ต้องแก้: เคอร์เซอร์ไปที่ช่องนั้น ช่องสั่น เครื่องสั่นสั้น ๆ */
+function oops(id) {
+  const el = $(id);
+  if (el) { el.focus(); FX('shake', el); }
+  buzz([30, 40, 30]);
 }
 
 /** ค่าที่กรอก ผ่านแล้วคืนฟิลด์ของแถว ไม่ผ่านคืน null (บอกเหตุผลแล้ว) */
 function readForm() {
   const sku = ST.up(FORM.sku), lot = String(FORM.lot).trim(), po = String(FORM.po).trim();
   const qty = Number(String(FORM.qty).replace(/,/g, ''));
-  if (!sku) { alert('ใส่ SKU ก่อน'); $('fSku').focus(); return null; }
-  if (!(qty > 0) || !isFinite(qty)) { alert('ใส่จำนวนที่นับได้ (มากกว่า 0)\nถ้าโลว่าง กด "โลนี้ว่าง"'); $('fQty').focus(); return null; }
+  if (!sku) { alert('ใส่ SKU ก่อน'); oops('fSku'); return null; }
+  if (!(qty > 0) || !isFinite(qty)) { alert('ใส่จำนวนที่นับได้ (มากกว่า 0)\nถ้าโลว่าง กด "โลนี้ว่าง"'); oops('fQty'); return null; }
   const ex = ST.skuExact(RD.skus, sku);
-  if (!ex && !confirm(`ไม่พบ SKU "${sku}" ในคลัง\nแน่ใจว่าพิมพ์ถูก? (ถ้าใช่ กดตกลง)`)) { $('fSku').focus(); return null; }
-  return { sku: ex ? (ex[0] || ex[1]) : sku, long: ex ? ex[1] : '', lot, po, qty };
+  if (!ex && !confirm(`ไม่พบ SKU "${sku}" ในคลัง\nแน่ใจว่าพิมพ์ถูก? (ถ้าใช่ กดตกลง)`)) { oops('fSku'); return null; }
+  const v = { sku: ex ? (ex[0] || ex[1]) : sku, long: ex ? ex[1] : '', lot, po, qty };
+  /* PO / LOT ไม่เข้ากับ SKU ตามสมุด จับตั้งแต่ตรงนี้ หน้าวิเคราะห์จะได้ไม่มี "LOT/PO ผิด" ที่มาจากพิมพ์ผิด */
+  const warn = ST.pileWarn(v, RD.pos, RD.skus);
+  if (warn.length && !confirm('ดูป้ายอีกครั้ง\n• ' + warn.join('\n• ') + '\n\nแน่ใจว่าถูก? (ถ้าใช่ กดตกลง)')) {
+    oops(!lot || /^LOT/.test(warn[0]) ? 'fLot' : 'fPo');
+    return null;
+  }
+  return v;
 }
 
 /** stay = false ตอนบันทึกก่อนออกจากโล (ไม่ต้องวาดหน้าเดิมซ้ำ) · คืน true ถ้าบันทึกแล้ว */
@@ -570,12 +842,51 @@ function addPile(stay) {
   if (same && !confirm(`มีกอง ${v.sku} LOT ${v.lot || '-'} PO ${v.po || '-'} ในโลนี้แล้ว (${f(same.qty)})\nเพิ่มเป็นอีกกองแยก? ยอดจะรวมกัน`)) return false;
   const empty = rows.find(r => r.type === 'ว่าง');
   if (empty) push('ยกเลิก', { ref: empty.uid });
-  push('นับ', v);
+  const from = rectOf('[data-act="add"]');
+  const it = push('นับ', v);
   FORM = { sku: '', long: '', lot: '', po: '', qty: '' };
   if (stay === false) return true;
-  paint(); hints();
+  FRESH = it.uid;
+  paint(); hints(); landFx(from, it);
   setTimeout(() => { const el = $('fSku'); if (el) el.focus(); }, 30);
   return true;
+}
+
+function rectOf(sel) { const el = document.querySelector(sel); return el ? el.getBoundingClientRect() : null; }
+
+/** กองที่เพิ่งบันทึก: ป้าย +จำนวน ลอยโค้งจากปุ่มขึ้นไปลงรายการ กองนั้นเด้งลงมา เลขวิ่งจาก 0 */
+function landFx(from, it) {
+  FRESH = '';
+  buzz(12);
+  const row = document.querySelector(`.ct-pile[data-pile="${CSS.escape(it.uid)}"]`);
+  if (!row || STILL) return;
+  const q = row.querySelector('.q');
+  const qty = Number(it.qty);
+  if (Number.isInteger(qty) && qty > 1) {
+    const t0 = performance.now() + 340;
+    const step = (now) => {
+      const p = Math.max(0, Math.min(1, (now - t0) / 520));
+      q.textContent = f(Math.round(qty * (1 - Math.pow(1 - p, 3))));
+      if (p < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+  if (!from || !document.body.animate) return;
+  const to = q.getBoundingClientRect();
+  const fly = document.createElement('div');
+  fly.className = 'ct-fly';
+  fly.textContent = '+' + f(qty);
+  document.body.appendChild(fly);
+  const w = fly.offsetWidth, h = fly.offsetHeight;
+  const x0 = from.left + from.width / 2 - w / 2, y0 = from.top + from.height / 2 - h / 2;
+  const x1 = to.left + to.width / 2 - w / 2, y1 = to.top + to.height / 2 - h / 2;
+  const at = (x, y, s) => `translate(${Math.round(x)}px,${Math.round(y)}px) scale(${s})`;
+  fly.animate([
+    { transform: at(x0, y0, 0.6), opacity: 0 },
+    { transform: at((x0 + x1) / 2, Math.min(y0, y1) - 70, 1.15), opacity: 1, offset: 0.5 },
+    { transform: at(x1, y1, 0.5), opacity: 0.2 },
+  ], { duration: 560, easing: 'cubic-bezier(.3,.7,.4,1)', fill: 'forwards' });
+  setTimeout(() => fly.remove(), 620);
 }
 
 function editPile(uid) {
@@ -591,9 +902,10 @@ function editPile(uid) {
 function saveEdit(stay) {
   const v = readForm();
   if (!v) return false;
-  push('นับ', { ...v, ref: EDIT });
+  const from = rectOf('[data-act="save-edit"]');
+  const it = push('นับ', { ...v, ref: EDIT });
   EDIT = ''; FORM = { sku: '', long: '', lot: '', po: '', qty: '' };
-  if (stay !== false) { paint(); hints(); }
+  if (stay !== false) { FRESH = it.uid; paint(); hints(); landFx(from, it); }
   return true;
 }
 
@@ -613,28 +925,64 @@ function keepTyped() {
 function doneLoc() {
   if (!banned(LOC) && !typed() && !atLoc(LOC).length &&
       !confirm('โลนี้ยังไม่ได้กรอกอะไร\nข้ามไปก่อน? (ถ้าโลว่าง ให้กด "โลนี้ว่าง")')) return;
-  const loc = LOC;
-  if (keepTyped()) { nextLoc(); cheer(loc); }
+  const loc = LOC, before = doneN(myLocs());
+  if (keepTyped()) { nextLoc(); cheer(loc, before); }
 }
 
-/** เสร็จโลแล้ว น้องกล่องเด้งขึ้นมาแป๊บเดียว บอกว่าเหลืออีกกี่โล · กดทะลุได้ ไม่บังปุ่ม · ข้ามโลไม่ฉลอง */
+/** การ์ดน้องกล่องเด้งขึ้นเหนือปุ่มล่างแป๊บเดียว กดทะลุได้ ไม่บังปุ่ม */
 let TOAST = 0;
-function cheer(loc) {
-  if (banned(loc) || !atLoc(loc).length) return;
-  const locs = myLocs(), pend = pending();
-  const done = locs.filter(l => locState(l.loc, pend)).length;
-  const left = locs.length - done;
-  const all = !isAudit() && locs.length > 0 && left === 0;
-  const sub = isAudit() ? `สุ่มแล้ว ${f(done)} โล` : all ? 'นับครบทุกโลแล้ว 🎉' : `เหลือ ${f(left)} โล`;
+function toast(cls, html, ms) {
   const old = document.querySelector('.ct-toast');
   if (old) old.remove();
   clearTimeout(TOAST);
   const el = document.createElement('div');
-  el.className = 'ct-toast' + (all ? ' all' : '');
+  el.className = 'ct-toast ' + cls;
   el.setAttribute('role', 'status');
-  el.innerHTML = `<img src="${MAS.cheer}" alt="" width="58" height="58"><span><b>เสร็จ ${esc(loc)} ✓</b>${sub}</span>`;
+  el.innerHTML = `<img src="${MAS.cheer}" alt="" width="58" height="58"><span>${html}</span>`;
   document.body.appendChild(el);
-  TOAST = setTimeout(() => el.remove(), 2000);
+  TOAST = setTimeout(() => el.remove(), ms);
+  return el;
+}
+
+/* นับไปถึง 1 ใน 4 / ครึ่งทาง / 3 ใน 4 ของโลทั้งหมด ฉลองใหญ่ขึ้นหน่อย */
+const MILES = [[25, 'ไปได้ 1 ใน 4 แล้ว'], [50, 'ครึ่งทางแล้ว สู้ ๆ'], [75, 'อีกนิดเดียว']];
+
+/**
+ * เสร็จโลแล้ว: น้องกล่องเด้งขึ้นมาพร้อมพลุ บอกว่าเหลืออีกกี่โล · ข้ามโลไม่ฉลอง
+ * before = จำนวนโลที่นับแล้วก่อนกดเสร็จ ใช้ดูว่าเพิ่งข้ามหลักไหน และเพิ่งนับครบหรือเปล่า
+ */
+function cheer(loc, before) {
+  if (banned(loc) || !atLoc(loc).length) return;
+  const locs = myLocs(), done = doneN(locs);
+  const left = locs.length - done;
+  const audit = isAudit();
+  const all = !audit && locs.length > 0 && left === 0;
+  const fresh = before != null && done > before;
+  const mile = !audit && !all && fresh ? MILES.filter(m => before * 100 < m[0] * locs.length && done * 100 >= m[0] * locs.length).pop() : null;
+  const sub = audit ? `สุ่มแล้ว ${f(done)} โล` : all ? 'นับครบทุกโลแล้ว 🎉' : mile ? `${mile[1]} · เหลือ ${f(left)} โล` : `เหลือ ${f(left)} โล`;
+  const big = all || mile;
+  const el = toast(all ? 'all long' : mile ? 'mile long' : '', `<b>เสร็จ ${esc(loc)} ✓</b>${sub}`, big ? 2900 : 2000);
+  buzz(big ? [20, 70, 20, 70, 40] : [15, 60, 25]);
+  FX('celebrate', el);
+  if (big) setTimeout(() => FX('celebrate', el), 280);
+  if (all && fresh) rain();
+}
+
+/** เพิ่งนับครบทุกโล: พลุกระดาษโปรยลงมาทั้งจอ */
+function rain() {
+  if (STILL) return;
+  const box = document.createElement('div');
+  box.className = 'ct-rain';
+  box.setAttribute('aria-hidden', 'true');
+  const C = ['#6366F1', '#A5B4FC', '#22C55E', '#F59E0B', '#F472B6', '#38BDF8'];
+  for (let i = 0; i < 70; i++) {
+    const p = document.createElement('i');
+    p.style.cssText = `left:${(Math.random() * 100).toFixed(1)}%;background:${C[i % C.length]};--x:${Math.round(Math.random() * 140 - 70)}px;` +
+      `--r:${Math.round(Math.random() * 900 - 450)}deg;--d:${(1.8 + Math.random() * 1.6).toFixed(2)}s;--t:${Math.round(Math.random() * 900)}ms`;
+    box.appendChild(p);
+  }
+  document.body.appendChild(box);
+  setTimeout(() => box.remove(), 4600);
 }
 
 /** Inventory เดินต่อโลถัดไปที่ยังไม่นับตามทางเดิน · Audit กลับไปเลือกโลเอง */
@@ -645,8 +993,21 @@ function nextLoc() {
   const after = locs.slice(i + 1).concat(locs.slice(0, Math.max(i, 0)));
   const nx = isAudit() ? null : after.find(l => !locState(l.loc, pend) && !banned(l.loc));
   if (nx) { openLoc(nx.loc); return; }
-  VIEW = 'list'; LOC = ''; EDIT = ''; paint(); window.scrollTo(0, 0);
+  VIEW = 'list'; LOC = ''; EDIT = ''; GO = 'back'; paint(); window.scrollTo(0, 0);
+  announce('');
 }
+
+/* แตะปุ่ม: วงคลื่นแผ่ออกจากจุดที่นิ้วแตะ */
+document.addEventListener('pointerdown', (e) => {
+  const b = !STILL && e.target.closest && e.target.closest('.ct-btn,.ct-team');
+  if (!b) return;
+  const r = b.getBoundingClientRect(), s = Math.max(r.width, r.height) * 2.2;
+  const w = document.createElement('span');
+  w.className = 'ct-rip';
+  w.style.cssText = `width:${s}px;height:${s}px;left:${e.clientX - r.left - s / 2}px;top:${e.clientY - r.top - s / 2}px`;
+  b.appendChild(w);
+  setTimeout(() => w.remove(), 600);
+}, { passive: true });
 
 /* ── ปุ่มและช่อง ─────────────────────────────────────────────────────── */
 
@@ -674,17 +1035,19 @@ document.addEventListener('click', (e) => {
     case 'who-ok': {
       const typed = ($('whoIn') && $('whoIn').value.trim()) || '';
       const who = typed || PICK.who;
-      if (!who) { alert('เลือกหรือพิมพ์ชื่อคุณก่อน'); return; }
+      if (!who) { alert('เลือกหรือพิมพ์ชื่อคุณก่อน'); oops('whoIn'); return; }
       const tm = RD.teams.find(x => x.id === PICK.team && x.pass === (RD.round.pass || 1));
       if (BOX.out.length && ME && ME.team !== tm.id) { alert('ยังมีผลนับของทีมเดิมรอส่ง ' + BOX.out.length + ' แถว — รอให้ส่งครบก่อนเปลี่ยนทีม'); return; }
       ME = { round: CFG.round, pass: tm.pass, team: tm.id, who };
       save(K.me, ME);
       if (!MINE || MINE.team !== ME.team) MINE = null;
-      VIEW = 'list'; FILTER = 'left'; PICK = null;
+      VIEW = 'list'; FILTER = 'left'; PICK = null; GO = 'up'; RING = null;
       paint(); pull();
+      toast('go', `<b>สู้ ๆ นะ ${esc(who)}!</b>${esc(tm.name)} · ${f(myLocs().length)} โล`, 2000);
+      buzz(15);
       break;
     }
-    case 'back': if (VIEW !== 'loc' || keepTyped()) { VIEW = 'list'; LOC = ''; EDIT = ''; paint(); } break;
+    case 'back': if (VIEW !== 'loc' || keepTyped()) { VIEW = 'list'; LOC = ''; EDIT = ''; GO = 'back'; paint(); announce(''); } break;
     case 'add': addPile(); break;
     case 'save-edit': saveEdit(); break;
     case 'cancel-edit': EDIT = ''; FORM = { sku: '', long: '', lot: '', po: '', qty: '' }; paint(); hints(); break;
@@ -694,7 +1057,7 @@ document.addEventListener('click', (e) => {
     case 'empty':
       if (typed() && !confirm('มีกองที่พิมพ์ไว้แต่ยังไม่ได้เพิ่ม\nทิ้งที่พิมพ์ แล้วตั้งโลนี้ว่าง?')) break;
       FORM = { sku: '', long: '', lot: '', po: '', qty: '' };
-      { const loc = LOC; push('ว่าง', {}); nextLoc(); cheer(loc); }
+      { const loc = LOC, before = doneN(myLocs()); push('ว่าง', {}); nextLoc(); cheer(loc, before); }
       break;
     case 'unempty': { const em = atLoc(LOC).find(r => r.type === 'ว่าง'); if (em && confirm('ยกเลิก "ว่าง" ของโลนี้?')) { push('ยกเลิก', { ref: em.uid }); paint(); hints(); } break; }
     case 'next': doneLoc(); break;
@@ -705,7 +1068,7 @@ document.addEventListener('click', (e) => {
 document.addEventListener('input', (e) => {
   const id = e.target.id;
   if (id === 'fSku') { FORM.sku = e.target.value; hints(); }
-  else if (id === 'fLot') FORM.lot = e.target.value;
+  else if (id === 'fLot') { FORM.lot = e.target.value; hints(); }
   else if (id === 'fPo') { FORM.po = e.target.value; hints(); }
   else if (id === 'fQty') FORM.qty = e.target.value;
   else if (id === 'locQ') {

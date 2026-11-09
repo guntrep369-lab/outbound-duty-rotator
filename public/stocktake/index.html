@@ -256,6 +256,7 @@ async function get(api, params, quiet) {
     onProgress: (sec) => { if (sec > 3) { S.busy = S.busy.replace(/ \d+ วิ$/, '') + ` ${sec} วิ`; paintSrc(); } },
   });
   if (res && res.error) throw new Error(res.error);
+  if (api === 'st-rounds' || api === 'st-head') S.old = ST.oldScript(res);
   return res;
 }
 
@@ -331,7 +332,9 @@ function paintSrc() {
   box.innerHTML = `<select id="rsel" aria-label="รอบนับ">${opts}<option value="new" ${S.rid === 'new' ? 'selected' : ''}>+ รอบใหม่</option></select>` +
     pill + (r && S.rid !== 'new' ? `<span>${esc(r.id)}</span>` : '') + `<span class="sp"></span>` +
     (r && S.rid !== 'new' ? `<button class="st-btn" data-act="copy">คัดลอกลิงก์คนนับ</button>` : '') +
-    `<button class="st-btn" data-act="reload" ${S.busy ? 'disabled' : ''}>ดึงใหม่</button>` + msg;
+    `<button class="st-btn" data-act="reload" ${S.busy ? 'disabled' : ''}>ดึงใหม่</button>` + msg +
+    (S.old ? `<div class="st-msg err"><b>สคริปต์นับสต๊อกยังเป็นรุ่นเก่า</b> (รุ่น ${S.old.have || 'ไม่มีเลขรุ่น'} ต้องรุ่น ${S.old.need}) ·
+      เปิดชีตนับสต๊อก › ส่วนขยาย › Apps Script › วางไฟล์ stocktake-api.gs ล่าสุดทับ › ทำให้ใช้งานได้ › จัดการ › แก้ไข › เวอร์ชันใหม่</div>` : '');
 }
 
 function paintTabs() {
@@ -732,7 +735,11 @@ function analyzeView() {
   const problems = a.lines.filter(l => l.group !== G.OK).concat(a.audit);
   const order = (g) => { const i = ST.GROUPS.indexOf(g); return i < 0 ? 99 : i; };
   const q = ST.up(AQ);
-  const base = FILTER === 'ok' ? a.lines.filter(l => l.group === G.OK) : problems;
+  /* โลที่หลายคนนับในงานเดียวกัน ยอดอาจซ้ำ (หรือแค่แบ่งกันนับคนละกอง) */
+  const mloc = new Map();
+  (a.multi || []).forEach(m => mloc.set(m.loc, (mloc.get(m.loc) || []).concat([`${m.kind === 'Audit' ? 'Audit ' : ''}${m.who.join(', ')}`])));
+  const base = FILTER === 'ok' ? a.lines.filter(l => l.group === G.OK)
+    : FILTER === 'm' ? a.lines.concat(a.audit).filter(l => mloc.has(l.loc)) : problems;
   const list = base.filter(l => {
     if (FILTER.startsWith('g:') && l.group !== FILTER.slice(2)) return false;
     if (FILTER.startsWith('h:')) { const [row, lv] = FILTER.slice(2).split('|'); if (l.row !== row || (+lv && l.level !== +lv)) return false; }
@@ -760,7 +767,8 @@ function analyzeView() {
       <td><button class="st-i ${open ? 'on' : ''}" data-open="a:${esc(l.id)}" aria-label="รายละเอียด ${esc(l.loc)} ${esc(l.sku)}">i</button></td></tr>` +
       (open ? `<tr class="info"><td colspan="11"><b>${esc(l.note || l.group)}</b><br>
         ทีม ${esc(T[l.team] || l.team || '—')} · คนนับ ${esc((l.who || []).join(', ') || '—')}${l.auditor ? ' · Audit ' + esc(l.auditor.join(', ')) : ''} · แถว ${esc(l.row)}${l.level ? ' ชั้น ' + l.level : ''}
-        ${pair ? '<br>' + pair : ''}${l.fix ? `<br>แก้: <b>${esc(l.fix)}</b>` : ''}${l.sku ? ledgerHtml(l) : ''}</td></tr>` : '');
+        ${pair ? '<br>' + pair : ''}${l.fix ? `<br>แก้: <b>${esc(l.fix)}</b>` : ''}
+        ${mloc.has(l.loc) ? `<br>หลายคนนับโลนี้ (${esc(mloc.get(l.loc).join(' · '))}) ถามว่านับกองเดียวกันซ้ำไหม` : ''}${l.sku ? ledgerHtml(l) : ''}</td></tr>` : '');
   }).join('');
   return `${band}<div class="st-tot">
       <span>สมุด <b>${f(t.book)}</b></span><span>นับได้ <b>${f(t.inv)}</b></span><span>ต่าง <b>${signed(t.diff)}</b></span>
@@ -772,6 +780,7 @@ function analyzeView() {
       ${chip('', 'ปัญหาทั้งหมด', f(problems.length))}
       ${ST.GROUPS.filter(g => a.counts[g].n).map(g => chip('g:' + g, g, f(a.counts[g].n), gcls[g])).join('')}
       ${chip('ok', 'ตรง', f(a.counts[G.OK].n), 'green')}
+      ${mloc.size ? chip('m', 'หลายคนนับ', f(mloc.size), 'amber') : ''}
       <span class="sp"></span><input class="st-q" id="anQ" placeholder="ค้นหา โล / SKU / ชื่อ" value="${esc(AQ)}" aria-label="ค้นหาในผลวิเคราะห์">
     </div>
     ${hot ? `<div class="st-bar"><span class="st-lbl">ผิดบ่อย</span>${hot}</div>` : ''}
@@ -843,7 +852,9 @@ function round2View() {
   else band = `<div class="st-note" style="margin:0 0 8px">ระบบเลือกโลจากผลรอบ 1 ตามเกณฑ์ข้างล่าง · ทีมที่นับรอบ 2 ไม่ใช่ทีมเดิม และคนที่นับโลนั้นในรอบ 1 นับซ้ำไม่ได้
       · ไม่ต้องนับซ้ำ <button class="st-btn" data-go="close">ข้ามไปปิดรอบ</button></div>`;
 
-  const gchips = ST.GROUPS.map(g => `<button class="st-chip ${o.groups.includes(g) ? 'on' : ''}" data-r2g="${esc(g)}" ${closed ? 'disabled' : ''}>${esc(g)} <b>${f(p.counts.tags[g] || 0)}</b></button>`).join('');
+  const multiN = (analysis().multi || []).filter(m => m.kind !== 'Audit').length;
+  const gchips = ST.GROUPS.map(g => `<button class="st-chip ${o.groups.includes(g) ? 'on' : ''}" data-r2g="${esc(g)}" ${closed ? 'disabled' : ''}>${esc(g)} <b>${f(p.counts.tags[g] || 0)}</b></button>`).join('') +
+    (multiN ? `<button class="st-chip ${o.multi ? 'on' : ''}" data-r2m="1" ${closed ? 'disabled' : ''} title="โลที่ Inventory หลายคนนับในรอบ 1 ยอดอาจซ้ำ">${esc(ST.R2_MULTI)} <b>${f(multiN)}</b></button>` : '');
   const hot = p.hot.filter(h => h.bad).slice(0, 6).map(h =>
     `<span class="st-chip plain ${h.on ? 'amber' : ''}">${esc(h.row)} <b>${h.bad}/${h.checked}</b> ${h.pct}%${h.on ? ' · ทั้งแถว' : ''}</span>`).join('');
   const teamChips = inv.map(t => {
@@ -1147,6 +1158,7 @@ document.addEventListener('click', (e) => {
   if (d.filter !== undefined) { FILTER = FILTER === d.filter ? '' : d.filter; paintBody(); return; }
   if (d.open) { OPEN.has(d.open) ? OPEN.delete(d.open) : OPEN.add(d.open); paintBody(); return; }
   if (d.r2g) { r2Set(o => { o.groups = o.groups.includes(d.r2g) ? o.groups.filter(g => g !== d.r2g) : o.groups.concat([d.r2g]); }); return; }
+  if (d.r2m) { r2Set(o => { o.multi = !o.multi; }); return; }
   if (d.unedit) { setEdit(d.unedit, null); paintBody(); return; }
   if (d.addTeam) {
     const id = nextId(d.addTeam);

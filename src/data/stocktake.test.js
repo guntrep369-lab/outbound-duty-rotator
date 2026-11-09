@@ -48,7 +48,7 @@ const item = (o) => ({ uid: o.uid, pass: 1, team: 'INV1', who: 'สมชาย'
 
 describe('stocktake-api.gs — รหัสและรอบนับ', () => {
   it('ไม่ใส่ api บอกว่าเป็นสคริปต์นับสต๊อก', () => {
-    expect(loadStocktake().get({})).toEqual({ app: 'stocktake' });
+    expect(loadStocktake().get({})).toEqual({ app: 'stocktake', v: S.API_V });
   });
 
   it('ยังไม่ตั้ง HEAD_TOKEN ไม่ให้ใครใช้หน้าหัวหน้า แม้ส่งรหัสว่างมา', () => {
@@ -305,6 +305,47 @@ describe('stocktake-api.gs — แผนรอบ 2 นับรอบ 2 แล�
   });
 });
 
+describe('stocktake-api.gs — ใครเปิดโลไหนอยู่ (กันสองคนนับโลเดียวกัน)', () => {
+  const op = (api, o) => api.post({ op: 'st-open', round: 'ST1', pass: 1, kind: 'Inventory', ...o });
+
+  it('คนที่สองเปิดโลเดียวกัน เห็นคนแรก · คนแรกไม่เห็นตัวเอง', () => {
+    const api = loadStocktake();
+    expect(op(api, { device: 'd1', who: 'สมชาย', loc: 'r1-01-01' }).others).toEqual([]);
+    expect(op(api, { device: 'd2', who: 'สมหญิง', loc: 'R1-01-01' }).others).toEqual([{ who: 'สมชาย', ago: 0 }]);
+    expect(op(api, { device: 'd1', who: 'สมชาย', loc: 'R1-01-01' }).others).toEqual([{ who: 'สมหญิง', ago: 0 }]);
+  });
+
+  it('ไปโลอื่นหรือออกจากโล โลเดิมว่าง · คนละรอบนับ / Audit ไม่นับว่าซ้ำ · ชื่อเดียวกันสองเครื่องไม่เตือน', () => {
+    const api = loadStocktake();
+    op(api, { device: 'd1', who: 'สมชาย', loc: 'R1-01-01' });
+    op(api, { device: 'd1', who: 'สมชาย', loc: 'R1-01-02' });
+    expect(op(api, { device: 'd2', who: 'สมหญิง', loc: 'R1-01-01' }).others).toEqual([]);
+    op(api, { device: 'd2', who: 'สมหญิง', loc: '' });
+    expect(op(api, { device: 'd3', who: 'มานะ', loc: 'R1-01-01' }).others).toEqual([]);
+    expect(op(api, { device: 'd4', who: 'วิไล', kind: 'Audit', loc: 'R1-01-02' }).others).toEqual([]);
+    expect(op(api, { device: 'd5', who: 'ปรีชา', pass: 2, loc: 'R1-01-02' }).others).toEqual([]);
+    expect(op(api, { device: 'd6', who: 'สมชาย', loc: 'R1-01-02' }).others).toEqual([]);
+  });
+
+  it('เปิดค้างเกิน 15 นาทีถือว่าออกไปแล้ว · บอกกี่นาทีก่อน · ไม่แตะชีต', () => {
+    const api = loadStocktake();
+    let t = 1_800_000_000_000;
+    api.ctx.now_ = () => t;
+    op(api, { device: 'd1', who: 'สมชาย', loc: 'R1-01-01' });
+    t += 4 * 60000;
+    expect(op(api, { device: 'd2', who: 'สมหญิง', loc: 'R1-01-01' }).others).toEqual([{ who: 'สมชาย', ago: 4 }]);
+    t += 16 * 60000;
+    expect(op(api, { device: 'd3', who: 'มานะ', loc: 'R1-01-01' }).others).toEqual([]);
+    expect(api.lock.waits).toBe(0);
+    expect(api.ss.getSheets().length).toBe(0);
+  });
+
+  it('ต้องมีรหัสลิงก์ถ้าตั้งไว้ และต้องบอกรอบกับเครื่อง', () => {
+    expect(op(loadStocktake({ count: 'nab' }), { device: 'd1', loc: 'R1-01-01' }).error).toMatch(/ลิงก์นับไม่ถูก/);
+    expect(op(loadStocktake(), { device: '', loc: 'R1-01-01' }).error).toBeTruthy();
+  });
+});
+
 describe('stocktake-api.gs — หน้ากรอกของคนนับ', () => {
   it('หน้ากรอกไม่ได้ยอดในสมุดเลย ไม่มีช่องยอดแม้แต่ช่องเดียว', () => {
     const api = loadStocktake();
@@ -317,6 +358,34 @@ describe('stocktake-api.gs — หน้ากรอกของคนนับ'
     expect(v.locs).toEqual([['R1-01-01', 'R1'], ['R1-01-02', 'R1'], ['A-01-01', 'A-01'], ['A-01-02', 'A-01']]);
     expect(v.round.auditMin).toBe(20);
     expect(v.skus).toEqual([['AAA001', 'AAA0000000001', 'ที่นอนสมมติ']]);
+  });
+
+  it('ทุกคำตอบบอกรุ่นสคริปต์ ตรงกับรุ่นที่หน้าเว็บต้องใช้ · ไม่มีเลขรุ่น = รุ่นเก่า', () => {
+    const api = loadStocktake();
+    const id = ready(api);
+    expect(api.get({ api: 'st-round', round: id }).v).toBe(S.API_V);
+    expect(api.get({ api: 'st-head', round: id, t: HEAD }).v).toBe(S.API_V);
+    expect(api.post({ op: 'ไม่มี' })).toMatchObject({ error: expect.any(String), v: S.API_V });
+    expect(S.oldScript(api.get({ api: 'st-round', round: id }))).toBe(null);
+    expect(S.oldScript({ app: 'stocktake' })).toEqual({ have: 0, need: S.API_V });
+    expect(S.oldScript({ v: S.API_V - 1 })).toEqual({ have: S.API_V - 1, need: S.API_V });
+    expect(S.oldScript(null)).toBe(null);
+  });
+
+  it('PO เก็บ SKU กับ LOT ที่เคยรับ ส่งให้หน้ากรอกเป็นรายการ (ไม่มียอด) หัวตารางชีตเก่าถูกเขียนใหม่ให้ครบ', () => {
+    const api = loadStocktake();
+    const id = ready(api);
+    const sheet = api.ss.getSheetByName('รายการสินค้า');
+    sheet.getRange(1, 1, 1, 7).setValues([['รหัสรอบ', 'ชนิด', 'รหัส', 'รหัสเต็ม / Supplier', 'ชื่อสินค้า', '', '']]);
+    api.post({ op: 'st-baseline', t: HEAD, round: id, piles: PILES, skus: [['AAA001', 'AAA0000000001', 'ที่นอนสมมติ']],
+      pos: [['9900000001', 'ผู้ผลิต ก สมมติ', ['AAA0000000001', 'BBB0000000001'], ['8', '9']], ['9900000002', '', [], []], ['9900000003', 'ค']] });
+    const v = api.get({ api: 'st-round', round: id });
+    expect(v.pos).toEqual([
+      ['9900000001', 'ผู้ผลิต ก สมมติ', ['AAA0000000001', 'BBB0000000001'], ['8', '9']],
+      ['9900000002', '', [], []],
+      ['9900000003', 'ค', [], []],
+    ]);
+    expect(sheet.getRange(1, 1, 1, 7).getValues()[0].slice(5)).toEqual(['SKU ที่เคยรับ', 'LOT ที่เคยรับ']);
   });
 
   it('ตั้ง COUNT_TOKEN แล้ว ลิงก์ที่ไม่มีรหัสใช้ไม่ได้ รหัสหัวหน้าใช้แทนได้', () => {
@@ -468,8 +537,20 @@ describe('WmsStocktake.baseline — ยอดตั้งต้นตรงก�
     const b = S.baseline(fakeFifo(), (po) => `sup-${po}`);
     expect(b.piles.length).toBeGreaterThan(40);
     expect(b.piles.every((p) => p[0] && p[2] && p[6] !== 0)).toBe(true);
-    expect(b.pos[0]).toEqual(['9900000001', 'sup-9900000001']);
+    expect(b.pos[0].slice(0, 2)).toEqual(['9900000001', 'sup-9900000001']);
     expect(b.locs.find((l) => l.loc === 'DOCKLOAD').piles).toBe(0);
+  });
+
+  it('PO บอก SKU กับ LOT ที่เคยรับ (ไม่มียอด) ทุกกองในสมุดอยู่ใน PO ของตัวเอง', () => {
+    const b = S.baseline(fakeFifo());
+    const po = new Map(b.pos.map((p) => [p[0], p]));
+    expect(b.pos.every((p) => Array.isArray(p[2]) && Array.isArray(p[3]))).toBe(true);
+    expect(b.pos[0][2].length).toBeGreaterThan(0);
+    for (const p of b.piles.filter((x) => x[5])) {
+      expect(po.get(p[5])[2], `${p[0]} ${p[2]} PO ${p[5]}`).toContain(p[2]);
+      if (p[4]) expect(po.get(p[5])[3], `${p[0]} LOT ${p[4]} PO ${p[5]}`).toContain(p[4]);
+    }
+    expect(b.pos.flat(2).some((x) => typeof x === 'number')).toBe(false);
   });
 });
 
@@ -590,6 +671,27 @@ describe('WmsStocktake — ช่องพิมพ์และลิงก์',
     expect(S.formDirty({ ...same, lot: '9' }, pile)).toBe(true);
     expect(S.formDirty({ ...same, po: '9900000002' }, pile)).toBe(true);
     expect(S.formDirty({ ...same, sku: 'BBB001' }, pile)).toBe(true);
+  });
+
+  it('เตือนตอนกรอก: ไม่ใส่ LOT / PO, ไม่มี PO นี้, PO ไม่เคยรับ SKU นี้, LOT ไม่ตรงกับ PO', () => {
+    const SK = [['AAA001', 'AAA0000000001', 'ก'], ['BBB001', 'BBB0000000001', 'ข'], ['CCC001', 'CCC0000000001', 'ค']];
+    const PO = [['9900000001', 'ผู้ผลิต ก', ['AAA0000000001', 'BBB0000000001'], ['8', '9']], ['9900000002', '', [], []]];
+    const w = (o, typing) => S.pileWarn({ sku: 'AAA001', long: 'AAA0000000001', lot: '8', po: '9900000001', ...o }, PO, SK, typing);
+    expect(w({})).toEqual([]);
+    expect(w({ sku: 'aaa001', long: '', po: ' 9900000001 ' })).toEqual([]);
+    expect(w({ lot: '', po: '' })).toEqual(['ไม่ได้ใส่ LOT และ PO (ไม่มีป้าย ให้ใส่ 0)']);
+    expect(w({ lot: '' })).toEqual(['ไม่ได้ใส่ LOT (ไม่มีป้าย ให้ใส่ 0)']);
+    expect(w({ po: '' })).toEqual(['ไม่ได้ใส่ PO (ไม่มีป้าย ให้ใส่ 0)']);
+    expect(w({ lot: '', po: '' }, true)).toEqual([]);
+    expect(w({ lot: '0', po: '0' })).toEqual([]);
+    expect(w({ po: '9900000009' })).toEqual(['ไม่พบ PO 9900000009 ในสมุด']);
+    expect(w({ po: '990' }, true)).toEqual([]);
+    expect(w({ sku: 'CCC001', long: 'CCC0000000001' })).toEqual(['PO 9900000001 ไม่เคยรับ CCC001 (เคยรับ AAA001, BBB001)']);
+    expect(w({ lot: '7' })).toEqual(['LOT 7 ไม่ตรงกับ PO 9900000001 (PO นี้มี LOT 8, 9)']);
+    expect(w({ sku: 'CCC001', long: 'CCC0000000001', lot: '7' })).toHaveLength(2);
+    expect(w({ sku: 'CCC001', long: 'CCC0000000001', po: '9900000002', lot: '1' })).toEqual([]);
+    expect(S.pileWarn({ sku: 'X', lot: '1', po: '9900000001' }, [['9900000001', 'ก']], SK)).toEqual([]);
+    expect(S.pileWarn({ sku: 'X', lot: '1', po: '1' }, [], SK)).toEqual([]);
   });
 
   it('PO ขึ้นต้นด้วยที่พิมพ์ พร้อมชื่อ Supplier', () => {
@@ -748,6 +850,27 @@ describe('WmsStocktake.analyze — แยกกลุ่มปัญหา', () 
   });
 
   /* ── ขั้นที่ 3: แผนรอบ 2 ยอดสุดท้าย และไฟล์ปรับยอด ── */
+
+  it('หลายคนนับโลเดียวกัน: ติดธงแยก Inventory / Audit ทีมอื่นที่ไม่เอามารวมไม่นับ', () => {
+    expect(R.multi).toEqual([]);
+    const R3 = S.analyze({ piles: PILES2, teams: T2, locs: LOCS2, skus: SKUS, skip: ['RIB'], pass: 1, entries: ENTRIES.concat([
+      E({ loc: 'R1-03-01', sku: 'AAA001', qty: 1, who: 'สมหญิง' }),
+      E({ loc: 'A-01-02', sku: 'AAA002', qty: 1, ...AUD, who: 'ปรีชา' }),
+    ]) });
+    expect(R3.multi).toHaveLength(2);
+    expect(R3.multi).toEqual(expect.arrayContaining([
+      { loc: 'R1-03-01', kind: 'Inventory', who: ['สมชาย', 'สมหญิง'] },
+      { loc: 'A-01-02', kind: 'Audit', who: ['ปรีชา', 'วิไล'] },
+    ]));
+    const p = S.plan2(R3, { teams: T2, locs: LOCS2 });
+    const r3 = p.locs.find((l) => l.loc === 'R1-03-01');
+    expect(r3.tags).toContain('หลายคนนับ');
+    expect(r3.why).toContain('หลายคนนับ (สมชาย, สมหญิง)');
+    expect(p.locs.find((l) => l.loc === 'A-01-02').tags).not.toContain('หลายคนนับ');
+    const off = S.plan2(R3, { teams: T2, locs: LOCS2, opts: { multi: false } });
+    expect(off.opts.multi).toBe(false);
+    expect(off.locs.find((l) => l.loc === 'R1-03-01').tags).not.toContain('หลายคนนับ');
+  });
 
   describe('ขั้นที่ 3 — แผนรอบ 2', () => {
     const one = (p, loc) => p.locs.find((l) => l.loc === loc);
@@ -915,5 +1038,28 @@ describe('WmsStocktake — หน้าตาพิมพ์ผิด', () => {
     expect(S.similarCode('AAA0000000001', 'AAA0000000010')).toBe(true);
     expect(S.similarCode('AAA001', 'BBB001')).toBe(false);
     expect(S.similarCode('AAA001', 'AAA001')).toBe(false);
+  });
+});
+
+/* หน้ามือถือ: ส่งผลนับเบื้องหลังเสร็จ (ราว 1.5 วิหลังเพิ่มกอง) เคยวาดทั้งหน้าใหม่ ช่องที่กำลังพิมพ์กองถัดไปหลุด คีย์บอร์ดหุบ */
+describe('count.html — งานเบื้องหลังไม่วาดฟอร์มที่กำลังพิมพ์ใหม่', () => {
+  const HTML = fs.readFileSync(path.resolve(__dirname, '../../public/stocktake/count.html'), 'utf8');
+  const body = (name) => {
+    const at = HTML.indexOf(`async function ${name}(`);
+    expect(at, `ไม่มี ${name}()`).toBeGreaterThan(-1);
+    return HTML.slice(at, HTML.indexOf('\n}\n', at));
+  };
+  for (const name of ['flush', 'pull']) {
+    it(`${name}() วาดผ่าน bgPaint เท่านั้น`, () => {
+      const src = body(name);
+      expect(src).toMatch(/bgPaint\(\)/);
+      expect(src).not.toMatch(/(^|[^a-zA-Z])paint\(\)/m);
+    });
+  }
+  it('bgPaint ในหน้าโลแตะแค่รายการกองกับคำเตือน', () => {
+    const at = HTML.indexOf('function bgPaint(');
+    const src = HTML.slice(at, HTML.indexOf('\n}\n', at));
+    expect(src).toMatch(/\$\('piles'\)/);
+    expect(src).not.toMatch(/\$\('main'\)/);
   });
 });

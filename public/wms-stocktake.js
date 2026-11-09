@@ -108,15 +108,23 @@
    * supOf(po) → ชื่อ Supplier (ส่ง WmsSup เข้ามา) ไม่ส่ง = ไม่รู้ชื่อ
    * @returns {{piles: Array, skus: Array, pos: Array, locs: Array, lastRow: number, lastDate: string}}
    *   piles = [[Location, SKU, SKU เต็ม, ชื่อ, LOT, PO, ยอด, เปิดขาย 0/1]]
+   *   pos   = [[PO, Supplier, [SKU เต็มที่เคยรับ], [LOT ที่เคยรับ]]] ไม่มียอด ส่งไปหน้ากรอกได้
    *   locs  = [{loc, piles, rows}] ทุก Location ที่เคยมีในสมุด
    */
   function baseline(fifo, supOf) {
     var f = fifo || {};
     var skus = f.skus || [], pos = f.pos || [], locs = f.locs || [];
     var piles = {}, order = [], lastRow = 0, used = {};
+    /* PO ไหนเคยรับ SKU / LOT อะไร (ทุกแถวที่มี PO นั้น ไม่สนยอด) ให้หน้ากรอกเตือนตอนไม่เข้ากัน */
+    var poSku = {}, poLot = {};
     (f.rows || []).forEach(function (r) {
       var row = r[0], s = r[1], lot = r[2], po = r[3], from = r[4], to = r[5], qty = +r[6] || 0, flag = r[9] || 0;
       if (row > lastRow) lastRow = row;
+      if (po !== null && po !== undefined && po >= 0) {
+        (poSku[po] = poSku[po] || {})[s] = 1;
+        var lt = lot === null || lot === undefined ? '' : String(lot).trim();
+        if (lt) (poLot[po] = poLot[po] || {})[up(lt)] = lt;
+      }
       function at(loc) {
         var k = s + '|' + up(lot) + '|' + po + '|' + loc;
         if (!piles[k]) { piles[k] = { s: s, lot: lot, po: po, loc: loc, qty: 0, open: 0 }; order.push(k); }
@@ -140,7 +148,13 @@
     return {
       piles: out,
       skus: skus.filter(function (s) { return s && s[1]; }).map(function (s) { return [s[0] || '', s[1], s[2] || '']; }),
-      pos: pos.filter(function (p) { return p; }).map(function (p) { return [p, supOf ? supOf(p) || '' : '']; }),
+      pos: pos.map(function (p, i) {
+        if (!p) return null;
+        var sk = Object.keys(poSku[i] || {}).map(function (s) { return (skus[s] || [])[1] || (skus[s] || [])[0] || ''; })
+          .filter(function (x) { return x; }).sort(natCmp);
+        var lt = Object.keys(poLot[i] || {}).map(function (k) { return poLot[i][k]; }).sort(natCmp);
+        return [p, supOf ? supOf(p) || '' : '', sk, lt];
+      }).filter(function (p) { return p; }),
       locs: locs.map(function (l, i) { return { loc: up(l), piles: count[i] || 0, rows: used[i] || 0 }; }),
       lastRow: lastRow,
       lastDate: f.last || '',
@@ -400,6 +414,50 @@
       norm(f.po) !== norm(pile.po) || Number(q) !== Number(pile.qty);
   }
 
+  /**
+   * กองที่กรอกเข้ากับสมุดไหม (ไม่มียอด คนนับยังนับแบบไม่รู้ยอด)
+   * v = {sku, long, lot, po}  pos = [[PO, Supplier, [SKU เต็มที่เคยรับ], [LOT ที่เคยรับ]]]  skus = [[SKU, SKU เต็ม, ชื่อ]]
+   * typing = เช็คระหว่างพิมพ์ ไม่เตือนเรื่องช่องว่าง (ยังพิมพ์ไม่เสร็จ)
+   * LOT / PO = 0 คือไม่มีป้าย ไม่เช็คต่อ · รอบที่ดึงยอดก่อนมีข้อมูลนี้ (ไม่มีสองช่องหลัง) เช็คแค่ว่ามี PO นี้
+   * @returns {string[]} คำเตือน ว่าง = ผ่าน
+   */
+  function pileWarn(v, pos, skus, typing) {
+    var x = v || {}, out = [];
+    var s = function (a) { return String(a == null ? '' : a).trim(); };
+    var lot = s(x.lot), po = s(x.po);
+    if (!typing) {
+      if (!lot && !po) out.push('ไม่ได้ใส่ LOT และ PO (ไม่มีป้าย ให้ใส่ 0)');
+      else if (!lot) out.push('ไม่ได้ใส่ LOT (ไม่มีป้าย ให้ใส่ 0)');
+      else if (!po) out.push('ไม่ได้ใส่ PO (ไม่มีป้าย ให้ใส่ 0)');
+    }
+    if (!po || norm(po) === '0' || !(pos || []).length) return out;
+    var n = norm(po), hit = null;
+    for (var i = 0; i < pos.length && !hit; i++) if (norm(pos[i][0]) === n) hit = pos[i];
+    if (!hit) { if (!typing || po.length >= 4) out.push('ไม่พบ PO ' + po + ' ในสมุด'); return out; }
+    var have = hit[2] || [], lots = hit[3] || [];
+    var short = {};
+    (skus || []).forEach(function (k) { if (k[1]) short[norm(k[1])] = k[0] || k[1]; });
+    var key = [norm(x.long), norm(x.sku)].filter(function (k) { return k; });
+    if (have.length && key.length && !have.some(function (h) { var a = norm(h); return key.indexOf(a) !== -1 || key.indexOf(norm(short[a])) !== -1; })) {
+      var names = have.map(function (h) { return short[norm(h)] || h; });
+      out.push('PO ' + hit[0] + ' ไม่เคยรับ ' + (x.sku || x.long) +
+        (names.length <= 4 ? ' (เคยรับ ' + names.join(', ') + ')' : ' (เคยรับ ' + names.length + ' SKU อื่น)'));
+    }
+    if (lots.length && lot && norm(lot) !== '0' && !lots.some(function (l) { return norm(l) === norm(lot); })) {
+      out.push('LOT ' + lot + ' ไม่ตรงกับ PO ' + hit[0] + ' (PO นี้มี LOT ' + lots.slice(0, 4).join(', ') + (lots.length > 4 ? ' …' : '') + ')');
+    }
+    return out;
+  }
+
+  /* รุ่นสคริปต์ที่หน้าเว็บนี้ต้องใช้ (ต้องตรงกับ VERSION ใน apps-script/stocktake-api.gs) */
+  var API_V = 4;
+  /** คำตอบจากสคริปต์รุ่นเก่ากว่าที่หน้าเว็บต้องใช้ไหม (ลืม Deploy เวอร์ชันใหม่) → {have, need} หรือ null */
+  function oldScript(res) {
+    if (!res || typeof res !== 'object') return null;
+    var have = +res.v || 0;
+    return have >= API_V ? null : { have: have, need: API_V };
+  }
+
   /** SKU ที่พิมพ์ตรงตัวกับในรายการไหม (ตรง SKU หรือ SKU เต็ม) */
   function skuExact(skus, q) {
     var n = norm(q);
@@ -533,7 +591,8 @@
    *   4. ที่เหลือ      — ขาด / เกิน
    * Inv≠Audit แยกอีกรายการ: โลที่ Audit สุ่ม แล้วตัวเลขไม่ตรงกับ Inventory (ไม่สนยอดในสมุด)
    *
-   * @returns {{lines, audit, counts, totals, hot, people, done, auditRows}}
+   * @returns {{lines, audit, counts, totals, hot, people, done, auditRows, multi}}
+   *   multi = [{loc, kind, who}] โลที่มีหลายคนนับในงานเดียวกัน (Inventory ทีมที่ได้โลนั้น / Audit)
    *   done = โลที่ Inventory นับแล้ว  auditRows = {แถว: {checked, bad}} Audit ตรวจกี่โล ไม่ตรงกี่โล
    */
   function analyze(input) {
@@ -628,6 +687,17 @@
         a.forEach(function (e) { audWho[u][e.who || '?'] = 1; add(aud, u, e); });
       }
     });
+
+    /* โลที่มีหลายคนนับในงานเดียวกัน ยอดรวมทุกคน ถ้านับกองเดียวกันซ้ำ ยอดจะเกินเป็นสองเท่า
+       โลพื้นใหญ่ที่แบ่งกันนับคนละกองก็ขึ้นด้วย จึงเป็นแค่ธงให้ดู ไม่ใช่ผิดแน่ ๆ */
+    var multi = [];
+    [[invWho, 'Inventory'], [audWho, 'Audit']].forEach(function (x) {
+      Object.keys(x[0]).forEach(function (u) {
+        var w = Object.keys(x[0][u]).filter(function (n) { return n && n !== '?'; }).sort(natCmp);
+        if (w.length > 1) multi.push({ loc: u, kind: x[1], who: w });
+      });
+    });
+    multi.sort(function (p, q) { return locCmp(p.loc, q.loc) || natCmp(p.kind, q.kind); });
 
     var lines = [];
     function line(u, id, b, c, a) {
@@ -793,7 +863,7 @@
 
     return {
       lines: lines, audit: audit, counts: counts, totals: totals, hot: hot, people: people, teamName: teamName,
-      done: Object.keys(invDone).sort(locCmp), auditRows: auditRows,
+      done: Object.keys(invDone).sort(locCmp), auditRows: auditRows, multi: multi,
     };
   }
 
@@ -884,10 +954,11 @@
    * ค่าตั้งของแผนรอบ 2 (หัวหน้าปรับได้ เก็บในค่าตั้งของรอบ)
    *   groups = กลุ่มปัญหาที่ต้องนับซ้ำ  minQty = ต่างกันกี่ชิ้นขึ้นไปถึงนับซ้ำ (ยังไม่นับ / Audit ไม่สนข้อนี้)
    *   hotPct / hotMin = แถวที่ Audit ตรวจอย่างน้อย hotMin โล แล้วไม่ตรง hotPct% ขึ้นไป → นับซ้ำทั้งแถว
+   *   multi = นับซ้ำโลที่มีหลายคนนับในรอบ 1 (ยอดอาจซ้ำ)
    *   add = โลที่หัวหน้าเพิ่มเอง  drop = โลที่หัวหน้าตัดออก  set = {โล: ทีม} หัวหน้าเลือกทีมเอง
    */
-  var R2 = { groups: GROUPS.slice(), minQty: 1, hotPct: 30, hotMin: 2 };
-  var R2_ADD = 'หัวหน้าเพิ่ม', R2_PAIR = 'คู่วางผิดโล', R2_ROW = 'ทั้งแถว';
+  var R2 = { groups: GROUPS.slice(), minQty: 1, hotPct: 30, hotMin: 2, multi: true };
+  var R2_ADD = 'หัวหน้าเพิ่ม', R2_PAIR = 'คู่วางผิดโล', R2_ROW = 'ทั้งแถว', R2_MULTI = 'หลายคนนับ';
 
   function numOr(v, d, lo, hi) {
     var n = typeof v === 'number' ? v : (v === '' || v === null || v === undefined ? NaN : Number(v));
@@ -904,6 +975,7 @@
       minQty: numOr(o.minQty, R2.minQty, 0, 1e9),
       hotPct: numOr(o.hotPct, R2.hotPct, 0, 100),
       hotMin: numOr(o.hotMin, R2.hotMin, 1, 1e6),
+      multi: o.multi !== false,
       add: (o.add || []).map(up).filter(function (l) { return l; }),
       drop: (o.drop || []).map(up).filter(function (l) { return l; }),
       set: set,
@@ -986,6 +1058,10 @@
       });
     });
     hot.sort(function (a, b) { return b.pct - a.pct || b.bad - a.bad || groupCmp(a.row, b.row); });
+    /* Inventory หลายคนนับโลเดียวกัน (Audit ไม่ได้มีผลกับยอดสุดท้าย ไม่ต้องนับซ้ำ) */
+    if (opt.multi) {
+      (r.multi || []).forEach(function (m) { if (m.kind !== 'Audit') add(m.loc, R2_MULTI, m.who.join(', ')); });
+    }
     opt.add.forEach(function (l) { add(l, R2_ADD, ''); });
 
     /* แบ่งทีม ทีละแถวตามทางเดิน */
@@ -1061,6 +1137,7 @@
       if (g === G.MOVED && pair) return G.MOVED + ' ' + f3(Math.max(v.neg, v.pos)) + ' คู่ ' + pair.join(', ');
       if (g === R2_PAIR) return R2_PAIR + ' ' + v.join(', ');
       if (g === R2_ROW) return R2_ROW + ' ' + m.row + ' (' + v + ')';
+      if (g === R2_MULTI) return R2_MULTI + ' (' + v + ')';
       if (g === R2_ADD || g === G.LEFT || !v || typeof v !== 'object') return g;
       return g + ' ' + f3(Math.max(v.neg, v.pos));
     }).join(' · ');
@@ -1264,7 +1341,8 @@
   window.WmsStocktake = {
     ZONES: ZONES, OTHER: OTHER, SKIP: SKIP, AUDIT_MIN: AUDIT_MIN, G: G, GROUPS: GROUPS,
     analyze: analyze, suspects: suspects, summaryRows: summaryRows, qtyTypo: qtyTypo, similarCode: similarCode,
-    R2: R2, SRC: SRC, FLAG: FLAG, r2Opts: r2Opts, plan2: plan2, planRows: planRows, progress2: progress2,
+    R2: R2, R2_MULTI: R2_MULTI, SRC: SRC, FLAG: FLAG, r2Opts: r2Opts,
+    API_V: API_V, oldScript: oldScript, pileWarn: pileWarn, plan2: plan2, planRows: planRows, progress2: progress2,
     finalLines: finalLines, finalTotals: finalTotals, closeRows: closeRows, pairAdjust: pairAdjust, adjustBook: adjustBook,
     up: up, norm: norm,
     parseLoc: parseLoc, isRealLoc: isRealLoc, natCmp: natCmp, locCmp: locCmp, groupCmp: groupCmp, zoneOfGroup: zoneOfGroup,
