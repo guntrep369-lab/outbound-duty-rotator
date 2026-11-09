@@ -383,6 +383,17 @@
 
   function locName(res, l) { return res.locs[l.loc] || ''; }
 
+  /* ชื่อ Supplier ของ PO จากแท็บ PO. Truck (สคริปต์ส่งมาเป็น res.sup แปลงด้วย wms-sup.js) ไม่รู้คืน ''
+     แปลงตารางครั้งเดียวต่อคำตอบหนึ่งชุด */
+  var SUPM = typeof WeakMap === 'function' ? new WeakMap() : null;
+  function supOf(res, po) {
+    var S = window.WmsSup;
+    if (!S || !res || noPo(po)) return '';
+    var m = SUPM && SUPM.get(res);
+    if (!m) { m = S.map(res.sup); if (SUPM) SUPM.set(res, m); }
+    return S.of(m, po);
+  }
+
   /**
    * งานเติมของเก่าของหนึ่ง SKU: เอากองไหน จาก Location ไหน เข้าโลขายไหน
    * from = ที่ของกองเก่าที่ยังไม่เปิดขาย มากไปน้อย  to = โลขายของกองใหม่กว่าที่อยู่ตอนนี้
@@ -506,7 +517,7 @@
 
   /** ตารางคงเหลือราย LOT หนึ่งแถวต่อ SKU + LOT + PO (PO -01 -02 รวมแล้ว) */
   function stockTable(res, an, list) {
-    var head = ['SKU', 'SKU สั้น', 'ชื่อสินค้า', 'ลำดับ FIFO', 'LOT', 'เดือนของ LOT', 'อายุ (เดือน)', 'PO', 'รับเข้า', 'รอบรับเข้า',
+    var head = ['SKU', 'SKU สั้น', 'ชื่อสินค้า', 'ลำดับ FIFO', 'LOT', 'เดือนของ LOT', 'อายุ (เดือน)', 'PO', 'Supplier', 'รับเข้า', 'รอบรับเข้า',
       'คงเหลือ', 'ในโลขาย', 'ตั้งพื้น (ไม่เปิดขาย)', 'บนแร็ค', 'QA / IQA / RIB', 'Location', 'หมายเหตุ'];
     var out = [head];
     (list || an.stock.list).forEach(function (e) {
@@ -516,7 +527,7 @@
         if (x.lm && noPo(x.po)) notes.push('ไม่รู้ PO');
         if (e.refill.some(function (f) { return f.batch === x; })) notes.push('ควรเติมกองนี้ก่อน กองใหม่กว่าอยู่ในโลขายแล้ว');
         out.push([e.code, e.short, e.name, x.rank || '', x.lot, x.lm ? monthText(x.lm) : '', x.age === null ? '' : x.age,
-          x.po, recvText(x.recv), roundsText(x), x.qty, x.open, x.floor, x.rack, x.special,
+          x.po, supOf(res, x.po), recvText(x.recv), roundsText(x), x.qty, x.open, x.floor, x.rack, x.special,
           x.locs.map(function (l) { return res.locs[l.loc] + ' (' + l.qty + ')'; }).join(', '), notes.join(' · ')]);
       });
     });
@@ -525,16 +536,19 @@
 
   /** ตารางการเบิกที่ข้ามของเก่า หนึ่งแถวต่อแถวในสมุด */
   function skipTable(res, an, kind) {
-    var head = ['วันที่', 'ประเภท', 'SKU', 'ชื่อสินค้า', 'LOT ที่ออก', 'PO ที่ออก', 'รับเข้า', 'จำนวน', 'จาก Location', 'ไป Location',
+    var head = ['วันที่', 'ประเภท', 'SKU', 'ชื่อสินค้า', 'LOT ที่ออก', 'PO ที่ออก', 'Supplier ที่ออก', 'รับเข้า', 'จำนวน', 'จาก Location', 'ไป Location',
       'ผล', 'ของที่เก่ากว่าตอนนั้น', 'ชิ้นที่เก่ากว่า', 'แถวในชีต'];
     var out = [head];
     an.issues.forEach(function (it) {
       if (it.state !== 'lot' && it.state !== 'po') return;
       if (kind && it.kind !== kind) return;
       var sk = res.skus[it.sku];
-      out.push([dmy(it.date), KIND[it.kind], sk[1], sk[2], it.lot, it.po, recvText(it.recv), it.qty,
+      out.push([dmy(it.date), KIND[it.kind], sk[1], sk[2], it.lot, it.po, supOf(res, it.po), recvText(it.recv), it.qty,
         res.locs[it.from] || '', it.to >= 0 ? res.locs[it.to] : '', STATE[it.state],
-        it.older.map(function (o) { return 'LOT ' + o.lot + ' PO ' + o.po + ' @' + res.locs[o.loc] + ' ' + o.qty; }).join(', '),
+        it.older.map(function (o) {
+          var s = supOf(res, o.po);
+          return 'LOT ' + o.lot + ' PO ' + o.po + (s ? ' (' + s + ')' : '') + ' @' + res.locs[o.loc] + ' ' + o.qty;
+        }).join(', '),
         it.olderQty, it.row]);
     });
     return out;
@@ -588,7 +602,7 @@
     filterStock: filterStock, skipsBySku: skipsBySku, recvText: recvText, roundsText: roundsText,
     QUEUES: QUEUES, firstQueue: firstQueue, stockState: stockState, lotName: lotName, batchWords: batchWords, lotWords: lotWords,
     placeWords: placeWords, refillTask: refillTask, pickTask: pickTask, unknownTask: unknownTask,
-    stockTable: stockTable, skipTable: skipTable, agingTable: agingTable, summaryTable: summaryTable, tsv: tsv,
+    sup: supOf, stockTable: stockTable, skipTable: skipTable, agingTable: agingTable, summaryTable: summaryTable, tsv: tsv,
     KIND: KIND, STATE: STATE, COUNT_DAY: COUNT_DAY,
     /* หน้าสินค้าคงเหลือ ณ วันที่ (wms-balance.js) ใช้เดินสมุดด้วยกติกาเดียวกัน ยอดจะได้ไม่ต่างจากหน้านี้ */
     parse: parse, newState: newState, apply: apply, rounds: rounds, refKey: refKey,

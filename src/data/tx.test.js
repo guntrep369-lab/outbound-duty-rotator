@@ -12,6 +12,7 @@ import { sharedMocks } from './gas-shared-mock.js';
 
 const GS = fs.readFileSync(path.resolve(__dirname, '../../apps-script/tx-api.gs'), 'utf8');
 const JS = fs.readFileSync(path.resolve(__dirname, '../../public/wms-tx.js'), 'utf8');
+const SUP = fs.readFileSync(path.resolve(__dirname, '../../public/wms-sup.js'), 'utf8');
 
 const HEAD = ['SKU', 'SKU', 'Product Name', 'LOT', 'PO.', 'Location เบิก', 'Location รับ', 'QTY', 'รับ/เบิก', 'Note', 'Status', 'NAME'];
 
@@ -272,6 +273,44 @@ describe('tx-api.gs — แท็บความจุต่อพาเลท (
   it('หัวตารางไม่มีช่องความจุ บอกว่าขาดอะไร', () => {
     const tab = masterTab([['รหัส', 'ชื่อ'], ['AAA001', 'ที่นอน']]);
     expect(script(rows, { named: { 'ความจุต่อพาเลท': tab } })({ api: 'tx-fifo' }).cap.missing).toMatch(/หาหัวตาราง/);
+  });
+});
+
+describe('tx-api.gs — แท็บ PO. Truck (Supplier ของแต่ละ PO)', () => {
+  const rows = [row({ to: 'R01-01-02', qty: 9 })];
+
+  it('ไม่มีแท็บส่ง sup เป็น null', () => {
+    expect(script(rows)({ api: 'tx-fifo' }).sup).toBeNull();
+  });
+
+  it('หาคอลัมน์จากหัวตาราง PO ตัวพิมพ์ใหญ่ ข้ามแถวว่าง PO ซ้ำคนละ Supplier ใช้แถวแรกแล้วบอกไว้', () => {
+    const tab = masterTab([
+      ['Truck', 'PO.'],
+      ['รถสมมติเอ', '9900000001'],
+      ['รถสมมติเอ', ' 99000002 '],
+      ['รถสมมติบี', '9900000003'],
+      ['', '9900000004'],
+      ['รถสมมติบี', '9900000001'],
+      ['รถสมมติเอ', '99000002'],
+    ]);
+    expect(script(rows, { named: { 'PO. Truck': tab } })({ api: 'tx-fifo' }).sup).toEqual({
+      tab: 'PO. Truck', missing: '', dup: ['9900000001'],
+      rows: [['9900000001', 'รถสมมติเอ'], ['99000002', 'รถสมมติเอ'], ['9900000003', 'รถสมมติบี']],
+    });
+  });
+
+  it('หัวตารางไม่มีช่อง Supplier บอกว่าขาดอะไร', () => {
+    const tab = masterTab([['PO.', 'วันที่'], ['9900000001', '1/11']]);
+    expect(script(rows, { named: { 'PO. Truck': tab } })({ api: 'tx-fifo' }).sup.missing).toMatch(/หาหัวตาราง/);
+  });
+
+  it('ส่งไปกับ tx-summary (สต๊อกราย Location) และ tx-daily (LOT / PO) ด้วย', () => {
+    const tab = masterTab([['Truck', 'PO.'], ['รถสมมติเอ', '9900000001']]);
+    const want = { tab: 'PO. Truck', missing: '', dup: [], rows: [['9900000001', 'รถสมมติเอ']] };
+    const sales = [row({ to: 'R01-01-02', qty: 9 }), sale({ from: 'R01-01-02', qty: 1, note: day('2026-01-10') })];
+    expect(script(sales, { named: { 'PO. Truck': tab } })({ api: 'tx-summary' }).sup).toEqual(want);
+    expect(script(sales, { named: { 'PO. Truck': tab } })({ api: 'tx-daily' }).sup).toEqual(want);
+    expect(script(sales)({ api: 'tx-summary' }).sup).toBeNull();
   });
 });
 
@@ -2349,5 +2388,93 @@ describe('wms-tx.js — นับสต๊อก', () => {
     win.WmsGas = { post: async (url, body) => { sent.push(body); return { lines: [] }; } };
     await WmsTx.saveCount('https://x/exec', TODAY, [{ k: 'K1', qty: 5 }]);
     expect(sent).toEqual([{ op: 'count-save', date: TODAY, who: 'สมมติ', items: [{ k: 'K1', qty: 5 }] }]);
+  });
+});
+
+describe('wms-tx.js — Supplier (แท็บ PO. Truck)', () => {
+  let WmsTx;
+  const SUPTAB = { tab: 'PO. Truck', rows: [['9900000001', 'รถเอ'], ['9900000002', 'รถบี']], dup: [], missing: '' };
+
+  /* เลข PO สมมติ 99000000xx ทั้งหมด ในสมุดมีเลขรอบรับต่อท้าย (-01) แต่ในแท็บลงแค่เลขหลัก */
+  const DATA = {
+    app: 'transaction', saleDays: 10, lastDate: '2026-01-29', rows: 9,
+    skus: [['AAA001', 'L1', 'หมอนสมมติ'], ['BBB002', 'L2', 'ที่นอนสมมติ'], ['CCC003', 'L3', 'ผ้านวมสมมติ'], ['DDD004', 'L4', 'ท็อปเปอร์สมมติ']],
+    locs: ['A-01-01', 'R-01-01', 'R-02-01', 'A-01-02', 'A-01-03'],
+    keys: [
+      [0, 9, '9900000001-01', 0, 5, 1],     // AAA001 เปิดของรถเอ
+      [0, 8, '9900000001-02', 1, 30, 0],    // สำรองรถเอ LOT 8
+      [0, 7, '9900000002-01', 2, 100, 0],   // สำรองรถบี LOT 7 เก่ากว่า แต่ห้ามดึงมาเปิดพร้อมรถเอ
+      [1, 8, '9900000001-01', 3, 4, 1],     // BBB002 เปิดของรถเอ
+      [1, 8, '9900000002-01', 2, 60, 0],    // สำรองมีแต่ของรถบี
+      [2, 8, '9900000001-01', 4, 10, 1],    // CCC003 เปิดรถเอ
+      [2, 8, '9900000002-01', 3, 6, 1],     // และรถบีพร้อมกัน ผิดกติกา
+      [3, 8, '5500000001', 4, 2, 1],        // DDD004 โลเปิดไม่รู้ Supplier
+      [3, 8, '9900000002-01', 1, 40, 0],    // สำรองรถบี ใช้ได้ เพราะไม่รู้ว่าเปิดของใคร
+    ],
+    sold: [[0, 100], [1, 100], [2, 100], [3, 100]],
+  };
+
+  function load(withSup) {
+    const win = {};
+    if (withSup) new Function('window', SUP)(win);
+    new Function('window', 'sessionStorage', 'console', JS)(win, { getItem: () => null, setItem: () => {} }, { warn: () => {} });
+    WmsTx = win.WmsTx;
+  }
+
+  it('แต่ละแถวรู้ Supplier จากเลขหลัก PO และแยกสำรองเป็นของเจ้าที่เปิดอยู่กับเจ้าอื่น', () => {
+    load(true);
+    const d = WmsTx.expand({ ...DATA, sup: SUPTAB });
+    expect(d.hasSup).toBe(true);
+    expect(d.supNote).toBe('');
+    const a = d.skus.AAA001;
+    expect(a.rows.map((r) => r.sup)).toEqual(['รถเอ', 'รถบี', 'รถเอ']);   // เรียงโลเปิดก่อน แล้ว LOT เก่าไปใหม่
+    expect(a.sups).toEqual(['รถเอ']);
+    expect(a.reserveUse).toBe(30);
+    expect(a.reserveOther).toBe(100);
+    expect(a.otherSups).toEqual(['รถบี']);
+  });
+
+  it('ดึงจาก: เอาแค่สำรองของ Supplier ที่เปิดอยู่ แม้ของอีกเจ้า LOT เก่ากว่า', () => {
+    load(true);
+    const d = WmsTx.expand({ ...DATA, sup: SUPTAB });
+    expect(WmsTx.source(d.skus.AAA001)).toEqual({ lot: 8, loc: 'R-01-01', qty: 30, sup: 'รถเอ' });
+    expect(WmsTx.source(d.skus.BBB002)).toBe(null);
+    expect(WmsTx.source(d.skus.DDD004)).toEqual({ lot: 8, loc: 'R-01-01', qty: 40, sup: 'รถบี' });
+  });
+
+  it('ต้องเติม: สำรองมีแต่ของอีกเจ้า = ไม่มีสำรองให้เติม และบอกว่ารอของเจ้าที่เปิดอยู่หมดก่อน', () => {
+    load(true);
+    const d = WmsTx.expand({ ...DATA, sup: SUPTAB });
+    const r = WmsTx.refill(d, 3);
+    expect(r.ready.map((x) => x.sku)).toEqual(['DDD004', 'AAA001']);
+    expect(r.none.map((x) => x.sku)).toEqual(['BBB002', 'CCC003']);
+    expect(WmsTx.noReserveText(d.skus.BBB002)).toBe('สำรองที่มีเป็นของ รถบี 60 ชิ้น ห้ามเปิดพร้อม รถเอ รอของ รถเอ ในโลเปิดหมดก่อนแล้วค่อยเปิด');
+  });
+
+  it('เปิดขายพร้อมกัน 2 Supplier ถูกจับได้', () => {
+    load(true);
+    const d = WmsTx.expand({ ...DATA, sup: SUPTAB });
+    expect(WmsTx.twoOpen(d).map((x) => x.sku)).toEqual(['CCC003']);
+    expect(d.skus.CCC003.sups).toEqual(['รถบี', 'รถเอ']);
+    expect(d.totals.twoOpen).toBe(1);
+  });
+
+  it('สคริปต์รุ่นเก่ายังไม่ส่ง sup: ไม่รู้ชื่อ ไม่กันอะไร และบอกให้อัปเดตสคริปต์', () => {
+    load(true);
+    const d = WmsTx.expand(DATA);
+    expect(d.hasSup).toBe(false);
+    expect(d.supNote).toMatch(/ยังไม่ส่งชื่อ Supplier/);
+    expect(d.skus.AAA001.reserveUse).toBe(130);
+    expect(WmsTx.source(d.skus.AAA001)).toEqual({ lot: 7, loc: 'R-02-01', qty: 100 });
+    expect(WmsTx.twoOpen(d)).toEqual([]);
+  });
+
+  it('หน้าที่ไม่ได้โหลด wms-sup.js ยังทำงานเหมือนเดิม', () => {
+    load(false);
+    const d = WmsTx.expand({ ...DATA, sup: SUPTAB });
+    expect(d.hasSup).toBe(false);
+    expect(d.skus.AAA001.rows.every((r) => r.sup === '')).toBe(true);
+    expect(WmsTx.refill(d, 3).none.map((x) => x.sku)).toEqual(['CCC003']);   // ไม่มีสำรองเลยจริง ๆ
+    expect(WmsTx.source(d.skus.BBB002)).toEqual({ lot: 8, loc: 'R-02-01', qty: 60 });
   });
 });

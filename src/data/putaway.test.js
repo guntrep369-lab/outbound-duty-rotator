@@ -97,6 +97,7 @@ describe('wms-putaway.js — แท็บ INPUT ที่มีคอลัม�
   it('ไม่ติดหัวตาราง ดูจากหน้าตาข้อมูลว่าคอลัมน์ไหนเป็นอะไร', () => {
     const r = P.parsePlan(rows.map((x) => x.join('\t')).join('\n'));
     expect(r.how).toBe('look');
+    expect(r.head).toBe(-1);   // ไม่มีแถวหัวตาราง หน้าเว็บแสดงทุกแถวเป็นข้อมูล
     expect(r.skipped).toEqual([]);
     expect(r.lines.map((l) => [l.label, l.pid, l.sku, l.po, l.name, l.qty, l.truck, l.remark])).toEqual([
       ['NO. 1', 'AAA0000000001', 'AAA001', '9900000075-09', 'ที่นอน 5FT สมมติ', 15, 'Saffron', ''],
@@ -107,8 +108,10 @@ describe('wms-putaway.js — แท็บ INPUT ที่มีคอลัม�
   });
   it('ติดหัวตารางที่มีช่องว่างแทรก ใช้หัวตาราง', () => {
     const head = ['NO.', '', 'Product ID', 'LOT', 'PO.', 'SKU', 'Product Name', 'QTY', 'Truck', 'REMARK'];
-    const r = P.parsePlan([head, ...rows].map((x) => x.join('\t')).join('\n'));
+    const r = P.parsePlan([[''], head, ...rows].map((x) => x.join('\t')).join('\n'));
     expect(r.how).toBe('head');
+    expect(r.head).toBe(1);    // แถวหัวตารางในข้อความที่วาง (นับจาก 0) แถวว่างข้างบนก็นับ
+    expect(r.cols).toMatchObject({ no: 0, pid: 2, po: 4, sku: 5, qty: 7, truck: 8 });
     expect(r.lines).toHaveLength(4);
     expect(r.lines[2]).toMatchObject({ sku: 'AAA002', qty: 1100, label: 'NO. 3' });
   });
@@ -196,19 +199,57 @@ describe('wms-putaway.js — จัดที่เก็บตามกติก
     expect(rows(two[1])).toEqual([['R02-01-02', 9, 'rack'], ['R02-01-02', 10, 'move'], ['RIB', 1, 'rib']]);
   });
 
-  it('โลเปิดเหลือขายไม่ถึงเกณฑ์ ส่ง 1 พาเลทเข้าโลเปิดประจำ ติ๊ก OPEN เกณฑ์ปรับได้', () => {
-    const base = [
-      recv(0, 'R09-01-01', 30),
-      move(0, 'R09-01-01', 'B-01-01', 10, { open: true }),
+  it('โลเปิดเหลือขายไม่ถึงเกณฑ์และไม่มีสำรอง เข้าโลเปิด ติ๊ก OPEN เกณฑ์ปรับได้', () => {
+    const { snap, cap } = setup([
+      recv(0, 'B-01-01', 10, { open: true }),
       sell(0, 'B-01-01', 2, '2026-03-01'), sell(0, 'B-01-01', 2, '2026-03-02'),
-    ];
-    const { snap, cap } = setup(base);
+    ]);
     /* เหลือ 6 ขายวันละ 2 = 3 วัน ไม่ต่ำกว่า 3 */
     expect(P.plan([line('AAA001', 16)], snap, cap)[0].rows[0].tag).toBe('rack');
     const [o] = P.plan([line('AAA001', 20)], snap, cap, { coverDays: 4 });
     expect(rows(o)).toEqual([['B-01-01', 16, 'open'], ['R01-01-01', 4, 'rack']]);
     expect(o.rows[0].open).toBe(true);
-    expect(o.rows[0].why).toMatch(/เหลือขายอีก 3\.0 วัน/);
+    expect(o.rows[0].why).toMatch(/เหลือขายอีก 3\.0 วัน และไม่มีสำรองให้เติม/);
+  });
+
+  it('ยังมีสำรองในคลัง ไม่เอาของใหม่เข้าโลเปิด ให้เติมจากสำรองก่อนตาม FIFO', () => {
+    const { snap, cap } = setup([
+      recv(0, 'R09-01-01', 30),
+      move(0, 'R09-01-01', 'B-01-01', 10, { open: true }),
+      sell(0, 'B-01-01', 2, '2026-03-01'), sell(0, 'B-01-01', 2, '2026-03-02'),
+    ]);
+    expect(snap.info[0]).toMatchObject({ openQty: 6, reserve: 20, total: 26 });
+    const [o] = P.plan([line('AAA001', 20)], snap, cap, { coverDays: 4 });
+    expect(o.rows.some((r) => r.open)).toBe(false);
+    expect(o.hint).toBe('โลเปิดเหลือขายอีก 3.0 วัน แต่ยังมีสำรอง 20 ชิ้น ให้เติมโลเปิดจากสำรองก่อนตาม FIFO ของที่รับเข้าเก็บตามปกติ');
+  });
+
+  it('ขายเร็ว ส่งเข้าโลเปิดให้พอขายตามเกณฑ์ ไม่ใช่แค่พาเลทเดียว', () => {
+    const { snap, cap } = setup([
+      recv(0, 'B-01-01', 100, { open: true }),
+      sell(0, 'B-01-01', 40, '2026-03-01'), sell(0, 'B-01-01', 40, '2026-03-02'),
+    ]);
+    /* เหลือ 20 ขายวันละ 40 ต้องการ 120 − 20 = 100 → 7 พาเลท แต่รับมาแค่ 50 */
+    const [o] = P.plan([line('AAA001', 50)], snap, cap);
+    expect(rows(o)).toEqual([['B-01-01', 50, 'open']]);
+    expect(o.rows[0].why).toMatch(/ส่ง 50 ชิ้นให้พอขาย 3 วัน/);
+    const [o2] = P.plan([line('AAA001', 200)], snap, cap);
+    expect(o2.rows[0]).toMatchObject({ loc: 'B-01-01', qty: 112, open: true });
+  });
+
+  it('โลเปิดใช้โลที่เปิดอยู่ตอนนี้ ไม่ใช่โลที่เคยเติมบ่อยในอดีต', () => {
+    const hist = [recv(0, 'R09-01-01', 60)];
+    for (let k = 0; k < 3; k++) {
+      hist.push(move(0, 'R09-01-01', 'B-01-01', 10, { open: true }), sell(0, 'B-01-01', 10, `2026-03-0${k + 1}`));
+    }
+    /* โลพื้นช่องเดิมหมด ย้ายไปเปิดช่องข้าง ๆ */
+    hist.push(recv(0, 'B-01-02', 8, { open: true }));
+    const { snap } = setup(hist);
+    expect(snap.info[0].regular).toBe('B-01-02');
+    expect(snap.info[0].fills).toBe(0);
+    /* ไม่มีของเปิดอยู่เลย ใช้โลเปิดล่าสุดที่เคยรับของเข้า */
+    const gone = setup([...hist, sell(0, 'B-01-02', 8, '2026-03-05')]).snap;
+    expect(gone.info[0].regular).toBe('B-01-02');
   });
 
   it('ของหมดทั้งคลัง เข้าโลเปิดเลย', () => {
@@ -288,6 +329,64 @@ describe('wms-putaway.js — ตรวจแผนที่แก้แล้ว
     expect(dup2.lines[0].rows[0].map((x) => x.text)).toContain('ซ้ำกับ NO. 2 คนละ SKU (ปน SKU)');
     const auto = P.plan([...lines, line('AAA001', 35, { n: 3 }), line('FRE004', 9, { n: 4 })], snap, cap);
     expect(P.check([...lines, line('AAA001', 35, { n: 3 }), line('FRE004', 9, { n: 4 })], auto, snap, cap).red).toBe(0);
+  });
+});
+
+describe('wms-putaway.js — ห้ามเปิดคนละ Supplier พร้อมกัน (แท็บ PO. Truck)', () => {
+  /* โลเปิดมีของรถเอ 6 ชิ้น ขายวันละ 2 = 3 วัน ใช้เกณฑ์ 4 วันให้ต่ำกว่าเกณฑ์ */
+  const SUP = [['9900000001', 'รถเอ'], ['9900000002', 'รถบี'], ['9900000003', 'รถเอ']];
+  function supSetup(more = []) {
+    const res = fifo([
+      ...WAS,
+      recv(0, 'B-01-01', 10, { open: true, po: '9900000001' }),
+      sell(0, 'B-01-01', 2, '2026-03-01'), sell(0, 'B-01-01', 2, '2026-03-02'),
+      ...more,
+    ]);
+    res.sup = { tab: 'PO. Truck', rows: SUP, dup: [], missing: '' };
+    const snap = P.stock(res);
+    const cap = P.capMap(Object.entries(CAP).map(([k, v]) => [k, '', v]));
+    return { snap, cap };
+  }
+  const opt = { coverDays: 4 };
+
+  it('รู้ Supplier ของกองที่เปิดอยู่ และของบรรทัดแพลนจาก PO (ไม่มีในแท็บใช้ช่อง Truck)', () => {
+    const { snap } = supSetup();
+    expect(snap.info[0].openSup).toEqual({ รถเอ: 6 });
+    expect(P.lineSup(snap, line('AAA001', 1, { po: '9900000002-09' }))).toBe('รถบี');
+    expect(P.lineSup(snap, { ...line('AAA001', 1, { po: '9988776655' }), truck: ' รถซี ' })).toBe('รถซี');
+  });
+
+  it('โลเปิดเป็นของอีก Supplier ไม่ส่งเข้าโลเปิด แม้จะเหลือน้อยหรือ PO ตรง แล้วบอกเหตุผล', () => {
+    const { snap, cap } = supSetup();
+    const [o] = P.plan([line('AAA001', 20, { po: '9900000002-09' })], snap, cap, opt);
+    expect(o.sup).toBe('รถบี');
+    expect(o.rows.some((r) => r.open)).toBe(false);
+    expect(o.hint).toBe('โลเปิดตอนนี้เป็นของ รถเอ ของรอบนี้เป็นของ รถบี คนละ Supplier ห้ามเปิดใช้พร้อมกัน เก็บแยกไว้ก่อน รอของ รถเอ ในโลเปิดหมด');
+    /* ไม่มีในแท็บ ใช้ช่อง Truck ในแพลน */
+    const [t] = P.plan([{ ...line('AAA001', 20, { po: '9988776655' }), truck: 'รถบี' }], snap, cap, opt);
+    expect(t.rows.some((r) => r.open)).toBe(false);
+  });
+
+  it('Supplier เดียวกับที่เปิดอยู่ เติมโลเปิดได้ สำรองของอีก Supplier ไม่กันไว้', () => {
+    const { snap, cap } = supSetup([recv(0, 'R09-01-02', 30, { po: '9900000002' })]);
+    expect(snap.info[0]).toMatchObject({ reserve: 30, reserveSup: { รถบี: 30 } });
+    const [o] = P.plan([line('AAA001', 20, { po: '9900000003-09' })], snap, cap, opt);
+    expect(o.rows[0]).toMatchObject({ loc: 'B-01-01', open: true });
+    expect(o.rows[0].why).toMatch(/ไม่มีสำรองของ รถเอ ให้เติม/);
+    /* มีสำรองของรถเอ ต้องเติมจากสำรองก่อน */
+    const more = supSetup([recv(0, 'R09-01-02', 30, { po: '9900000001' })]);
+    const [o2] = P.plan([line('AAA001', 20, { po: '9900000003-09' })], more.snap, more.cap, opt);
+    expect(o2.rows.some((r) => r.open)).toBe(false);
+    expect(o2.hint).toMatch(/แต่ยังมีสำรองของ รถเอ 30 ชิ้น ให้เติมโลเปิดจากสำรองก่อน/);
+  });
+
+  it('แก้เองให้ติ๊ก OPEN คนละ Supplier กับที่เปิดอยู่ หรือสองบรรทัดคนละ Supplier เป็นสีแดง', () => {
+    const { snap, cap } = supSetup();
+    const bad = P.check([line('AAA001', 16, { po: '9900000002-09' })], [{ rows: [{ loc: 'B-01-01', qty: 16, open: true, tag: 'open' }] }], snap, cap);
+    expect(bad.red).toBe(1);
+    expect(bad.lines[0].rows[0].map((x) => x.text)).toContain('SKU นี้เปิดขายของ รถเอ อยู่ ของนี้เป็นของ รถบี ห้ามเปิดคนละ Supplier พร้อมกัน');
+    const ok = P.check([line('AAA001', 16, { po: '9900000003-09' })], [{ rows: [{ loc: 'B-01-01', qty: 16, open: true, tag: 'open' }] }], snap, cap);
+    expect(ok.red).toBe(0);
   });
 });
 

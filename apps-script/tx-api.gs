@@ -70,6 +70,10 @@ var BEFORE_SHEET = 'ยอดก่อนนับ';
 // หน้าจัดที่เก็บใช้แบ่งของเข้าแร็ค R ช่องละ 1 พาเลท
 var CAP_SHEET = 'ความจุต่อพาเลท';
 
+// แท็บ PO ไหนมาจาก Supplier (รถ) ไหน ผู้ใช้วางเอง (หัวตาราง Truck, PO.) สคริปต์อ่านอย่างเดียว
+// บาง SKU ผลิตจากคนละบริษัท คุณภาพไม่เท่ากัน ห้ามเปิดขายคนละ Supplier พร้อมกัน หน้าจัดที่เก็บใช้กันเติมโลเปิดผิด
+var SUP_SHEET = 'PO. Truck';
+
 var COUNT_SHEET = 'นับสต๊อก';
 var COUNT_PER_DAY = 20;     // รายการนับต่อวัน
 var COUNT_RISK_MAX = 10;    // รายการนับซ้ำกับรายการเสี่ยงรวมกันไม่เกินเท่านี้ ที่เหลือเป็นรายการสุ่ม
@@ -594,6 +598,7 @@ function summary_() {
     locs: locs,
     keys: keys,
     issues: issues_(rows, bals, today),
+    sup: sup_(ss),   // PO → Supplier (แท็บ PO. Truck) หน้าสต๊อกราย Location ใช้แสดงชื่อและกันเปิดคนละ Supplier พร้อมกัน
   };
 }
 
@@ -651,6 +656,7 @@ function daily_(from, to) {
   });
   out.lines.forEach(function (l) { l[0] = dayIdx[l[0]]; });
   out.convert = convert_(ss, rows);
+  out.sup = sup_(ss);   // PO → Supplier ให้หน้า LOT / PO ที่ขายออก ใส่ชื่อ Supplier
   return out;
 }
 
@@ -735,6 +741,7 @@ function history_(sku) {
  * conv = 1 บอกว่าสคริปต์รุ่นนี้ส่งธง 16 แล้ว รุ่นก่อนไม่มีธงนี้ หน้าเว็บจะได้ไม่เข้าใจว่าไม่เคยมีการแปลงเลย
  * lot0 = 1 บอกว่าส่งธง 32 กับ 64 แล้ว รุ่นก่อนแยกแถวรับคืนกับ M/E ออกจากแถวรับอื่นไม่ได้
  * before คือยอดจากแท็บ ยอดก่อนนับ (ดู before_) ไม่มีแท็บส่ง null
+ * cap คือความจุต่อพาเลท (ดู cap_) sup คือ PO → Supplier จากแท็บ PO. Truck (ดู sup_) หน้าจัดที่เก็บใช้ ไม่มีแท็บส่ง null
  * convert คือ MASTER แปลงสินค้า (ดู convert_) หน้าสินค้าคงเหลือ ณ วันที่ใช้รวมยอด SKU ที่แปลงคืนเป็น SKU ตอนซื้อ
  * จำนวนที่พิมพ์เป็นข้อความเป็น 0 และแถวที่ SKU คอลัมน์ B ว่างไม่ถูกส่ง เหมือน balances_
  */
@@ -771,6 +778,45 @@ function fifo_() {
   out.before = before_(ss, tz);
   out.convert = convert_(ss, rows);
   out.cap = cap_(ss);
+  out.sup = sup_(ss);
+  return out;
+}
+
+/**
+ * PO → Supplier จากแท็บ PO. Truck หาคอลัมน์จากหัวตาราง (Truck หรือ Supplier, PO.)
+ * ชื่อแท็บพิมพ์ต่างนิดหน่อยได้ (PO.Truck, PO Truck) rows = [[PO, Supplier]] PO ตัวพิมพ์ใหญ่ ตัดช่องว่าง
+ * PO เดียวกันมีสอง Supplier เก็บแถวแรกไว้ แล้วบอกใน dup ไม่มีแท็บส่ง null หาหัวตารางไม่เจอ missing บอกว่าขาดอะไร
+ */
+function sup_(ss) {
+  var sheet = ss.getSheetByName(SUP_SHEET);
+  if (!sheet) {
+    ss.getSheets().forEach(function (t) {
+      if (!sheet && t.getName && /^po\.?\s*truck$/i.test(String(t.getName()).trim())) sheet = t;
+    });
+  }
+  if (!sheet) return null;
+  var out = { tab: sheet.getName ? sheet.getName() : SUP_SHEET, rows: [], dup: [], missing: '' };
+  var h = sheet.getLastRow();
+  if (h < 2) { out.missing = 'แท็บยังไม่มีข้อมูล'; return out; }
+  var vals = sheet.getRange(1, 1, h, Math.max(sheet.getLastColumn(), 2)).getDisplayValues();
+  var c = { po: -1, sup: -1 };
+  vals[0].forEach(function (v, j) {
+    var t = String(v).trim();
+    if (c.po < 0 && /^po\.?$|^po\s*no|^เลข\s*po/i.test(t)) c.po = j;
+    else if (c.sup < 0 && /truck|supplier|^รถ|ผู้ผลิต|บริษัท/i.test(t)) c.sup = j;
+  });
+  if (c.po < 0 || c.sup < 0) { out.missing = 'หาหัวตาราง Truck กับ PO. ไม่เจอ'; return out; }
+  var seen = {};
+  for (var i = 1; i < vals.length; i++) {
+    var po = same_(vals[i][c.po]), sup = String(vals[i][c.sup]).trim();
+    if (!po || !sup) continue;
+    if (seen[po] !== undefined) {
+      if (seen[po].toUpperCase() !== sup.toUpperCase() && out.dup.indexOf(po) < 0) out.dup.push(po);
+      continue;
+    }
+    seen[po] = sup;
+    out.rows.push([po, sup]);
+  }
   return out;
 }
 

@@ -31,7 +31,7 @@
 (function () {
   'use strict';
 
-  var HEAD = ['วันที่', 'SKU', 'SKU ที่ขาย', 'ชื่อสินค้า', 'LOT', 'PO', 'จำนวน', 'หมายเหตุ'];
+  var HEAD = ['วันที่', 'SKU', 'SKU ที่ขาย', 'ชื่อสินค้า', 'LOT', 'PO', 'Supplier', 'จำนวน', 'หมายเหตุ'];
 
   /** LOT 0 คือไม่รู้ล็อต (ของที่ลงไว้ตอนนับสต๊อกก่อนเริ่มแยกล็อต) ช่องว่างก็ไม่รู้เหมือนกัน */
   function noLot(v) { return v === '' || +v === 0; }
@@ -68,13 +68,16 @@
   function build(ledger, est) {
     var at = {}, rows = [];
     var days = ledger.days || [], skus = ledger.skus || [], locs = ledger.locs || [];
+    /* ชื่อ Supplier ของ PO (แท็บ PO. Truck ส่งมากับ tx-daily ต้องโหลด wms-sup.js)
+       ช่อง sup ของบรรทัดรายออเดอร์คือบริษัทขนส่งอยู่แล้ว จึงเก็บชื่อ Supplier ไว้ที่ maker */
+    var S = window.WmsSup, supm = S ? S.map(ledger.sup) : {};
     function add(l, date, s, lot, raw, qty, tag) {
       var po = basePo(raw);
       /* พิมพ์เล็กใหญ่ต่างกันคือล็อตเดียวกัน เหมือนที่ชีตยอดใช้ SUMIFS */
       var k = [date, s[0], lot.toUpperCase(), po.toUpperCase(), tag.guess ? 'g' + tag.guess : tag.why ? 'u' + tag.why : ''].join('|');
       var r = at[k];
       if (!r) {
-        r = at[k] = { date: date, sku: s[0] || '', name: s[1] || '', lot: lot, po: po, qty: 0,
+        r = at[k] = { date: date, sku: s[0] || '', name: s[1] || '', lot: lot, po: po, maker: S && !noPo(po) ? S.of(supm, po) : '', qty: 0,
           rows: [], locs: [], bad: [], parts: [], noLot: noLot(lot), noPo: noPo(po), split: 1,
           guess: tag.guess || '', why: tag.why || '', from: [] };
         rows.push(r);
@@ -147,7 +150,7 @@
         date: date, sku: sku, name: (lot && lot.name) || (o && o.name) || '',
         ref: o ? o.ref : '', src: o ? o.src : '', online: o ? o.online : '', sup: o ? o.sup : '',
         seq: o ? seq[date + '|' + o.ref] : Infinity,
-        lot: lot ? lot.lot : '', po: lot ? lot.po : '', parts: lot ? lot.parts : [], qty: qty,
+        lot: lot ? lot.lot : '', po: lot ? lot.po : '', maker: (lot && lot.maker) || '', parts: lot ? lot.parts : [], qty: qty,
         noLot: lot ? lot.noLot : false, noPo: lot ? lot.noPo : false, miss: miss || '', split: 1,
         guess: (lot && lot.guess) || '', why: (lot && lot.why) || '', from: (lot && lot.from) || [],
       });
@@ -269,7 +272,7 @@
   /**
    * only: '' ทั้งหมด | 'split' ออกหลาย LOT/PO | 'unknown' ไม่รู้ LOT หรือ PO | 'gap' รายออเดอร์ที่หาคู่ไม่ได้
    *       | 'conv' แปลงคืนเป็น SKU ตอนซื้อ หรือแปลงไม่ได้เพราะ MASTER มีหลายตัว | 'guess' LOT/PO ประมาณจากแถวรับคืน M/E หรือแปลงสินค้า
-   * q ค้นใน SKU (ทั้งตอนซื้อและที่ขาย) ชื่อ LOT PO เลขออเดอร์ และเลขคำสั่งซื้อออนไลน์ ไม่สนตัวพิมพ์เล็กใหญ่
+   * q ค้นใน SKU (ทั้งตอนซื้อและที่ขาย) ชื่อ LOT PO Supplier เลขออเดอร์ และเลขคำสั่งซื้อออนไลน์ ไม่สนตัวพิมพ์เล็กใหญ่
    */
   function filter(rows, o) {
     var q = text(o && o.q).toUpperCase(), date = o && o.date, only = o && o.only;
@@ -283,7 +286,7 @@
       if (only === 'conv' && !r.sold && !r.many) return false;
       if (!q) return true;
       return r.po.toUpperCase().indexOf(qp) >= 0 ||
-        [r.sku, r.sold || '', r.name, r.lot, r.po, r.ref || '', r.online || ''].some(function (v) { return v.toUpperCase().indexOf(q) >= 0; });
+        [r.sku, r.sold || '', r.name, r.lot, r.po, r.maker || '', r.ref || '', r.online || ''].some(function (v) { return v.toUpperCase().indexOf(q) >= 0; });
     });
   }
 
@@ -327,17 +330,17 @@
     return out.join(' · ');
   }
 
-  var ORDER_HEAD = ['วันที่', 'ระบบ', 'เลขออเดอร์', 'หมายเลขคำสั่งซื้อออนไลน์', 'บริษัทขนส่ง', 'SKU', 'SKU ที่ขาย', 'ชื่อสินค้า', 'LOT', 'PO', 'จำนวน', 'หมายเหตุ'];
+  var ORDER_HEAD = ['วันที่', 'ระบบ', 'เลขออเดอร์', 'หมายเลขคำสั่งซื้อออนไลน์', 'บริษัทขนส่ง', 'SKU', 'SKU ที่ขาย', 'ชื่อสินค้า', 'LOT', 'PO', 'Supplier', 'จำนวน', 'หมายเหตุ'];
 
   /** ตารางเรียบ ๆ ทุกบรรทัดมี SKU ครบ วางใน Excel แล้วกรองหรือทำ Pivot ต่อได้ทันที SKU ที่ขายว่างไว้ถ้าไม่ได้แปลง */
   function table(rows, byOrder) {
     if (byOrder) {
       return [ORDER_HEAD].concat(rows.map(function (r) {
-        return [r.date, r.src, r.ref, r.online || '', r.sup || '', r.sku, r.sold || '', r.name, r.lot, r.po, r.qty, note(r)];
+        return [r.date, r.src, r.ref, r.online || '', r.sup || '', r.sku, r.sold || '', r.name, r.lot, r.po, r.maker || '', r.qty, note(r)];
       }));
     }
     return [HEAD].concat(rows.map(function (r) {
-      return [r.date, r.sku, r.sold || '', r.name, r.lot, r.po, r.qty, note(r)];
+      return [r.date, r.sku, r.sold || '', r.name, r.lot, r.po, r.maker || '', r.qty, note(r)];
     }));
   }
 

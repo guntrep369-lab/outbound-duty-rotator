@@ -10,10 +10,12 @@ import path from 'node:path';
 const FIFO = fs.readFileSync(path.resolve(__dirname, '../../public/wms-fifo.js'), 'utf8');
 const LOTPO = fs.readFileSync(path.resolve(__dirname, '../../public/wms-lotpo.js'), 'utf8');
 const JS = fs.readFileSync(path.resolve(__dirname, '../../public/wms-balance.js'), 'utf8');
+const SUP = fs.readFileSync(path.resolve(__dirname, '../../public/wms-sup.js'), 'utf8');
 
 let B;
 beforeAll(() => {
   const win = {};
+  new Function('window', SUP)(win);
   new Function('window', FIFO)(win);
   new Function('window', LOTPO)(win);
   new Function('window', JS)(win);
@@ -205,8 +207,20 @@ describe('table / tsv — ไฟล์ Report', () => {
       gr({ qty: 2, lot: 9, to: 'P-01-01', open: true, d: '2026-10-01' }),
     ]);
     const t = B.table(B.asOf(res, '2026-10-31').lines);
-    expect(t[0]).toEqual(['SKU', 'ชื่อสินค้า', 'SKU ที่แปลงมารวม', 'LOT', 'เดือนของ LOT', 'PO', 'รับเข้า', 'คงเหลือ', 'Location', 'หมายเหตุ']);
-    expect(t[1]).toEqual(['AAA0000000001', 'ชื่อ AAA0000000001', '', '9', 'ก.ย. 69', '9900000001', '2026-10-01', 7, 'G-01-01 (5), P-01-01 (2)', '']);
+    expect(t[0]).toEqual(['SKU', 'ชื่อสินค้า', 'SKU ที่แปลงมารวม', 'LOT', 'เดือนของ LOT', 'PO', 'Supplier', 'รับเข้า', 'คงเหลือ', 'Location', 'หมายเหตุ']);
+    expect(t[1]).toEqual(['AAA0000000001', 'ชื่อ AAA0000000001', '', '9', 'ก.ย. 69', '9900000001', '', '2026-10-01', 7, 'G-01-01 (5), P-01-01 (2)', '']);
+  });
+
+  it('ชื่อ Supplier จากแท็บ PO. Truck ใส่ในบรรทัด ในไฟล์ และค้นด้วยชื่อได้', () => {
+    const res = ledger([
+      gr({ qty: 5, lot: 9, po: '9900000001-01', to: 'G-01-01', d: '2026-10-01' }),
+      gr({ qty: 3, lot: 9, po: '9900000002-01', to: 'G-01-02', d: '2026-10-02' }),
+    ]);
+    res.sup = { tab: 'PO. Truck', rows: [['9900000001', 'รถเอ'], ['9900000002', 'รถบี']], dup: [], missing: '' };
+    const bal = B.asOf(res, '2026-10-31');
+    expect(bal.lines.map((l) => [l.po, l.sup])).toEqual([['9900000001', 'รถเอ'], ['9900000002', 'รถบี']]);
+    expect(B.table(bal.lines)[1][6]).toBe('รถเอ');
+    expect(B.filter(bal, { q: 'รถบี' }).map((l) => l.po)).toEqual(['9900000002']);
   });
 
   it('วางใน Excel: เลขยาวเกิน 15 หลักไม่ถูกปัด ข้อความขึ้นต้นด้วย = ไม่กลายเป็นสูตร', () => {

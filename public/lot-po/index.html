@@ -114,6 +114,7 @@
 .lp-tbl .k-src{min-width:150px}
 .lp-tbl .k-ord{min-width:120px}
 .lp-tbl .k-note{min-width:160px}
+.lp-sup{display:block;font-size:11.5px;font-weight:600;color:var(--wms-text)}
 /* สลับมุมมองอยู่บนสุดของเนื้อหา เส้นใต้แยกจากตัวกรองด้านล่าง */
 .lp-view{padding-bottom:12px;border-bottom:1px solid var(--wms-border)}
 
@@ -205,6 +206,7 @@
 <script src="../wms-gas.js"></script>
 <script src="../wms-shared.js"></script>
 <script src="../wms-cut.js"></script>
+<script src="../wms-sup.js"></script>
 <script src="../wms-lotpo.js"></script>
 <script src="../wms-lot0.js"></script>
 <script>
@@ -734,7 +736,7 @@ function guessHtml(r) {
 /** PO ที่ลง -01 -02 ต่อท้ายรวมเป็น PO เดียวกันแล้ว บอกว่ารวมรอบไหนไว้ */
 function poHtml(r) {
   const p = r.parts || [];
-  return lotHtml(r.po, r.noPo, 'PO') + (p.length > 1
+  return lotHtml(r.po, r.noPo, 'PO') + (r.maker ? `<span class="lp-sup">${esc(r.maker)}</span>` : '') + (p.length > 1
     ? `<span class="tx-sub" title="PO เดียวกันที่รับคนละวัน ส่วนท้ายคือวันที่รับเข้า">รวมรอบ ${esc(p.join(' '))}</span>` : '');
 }
 
@@ -781,7 +783,7 @@ function orderListHtml(rows) {
   }).join('');
   const t = WmsLotPo.totals(rows);
   return `<div class="tx-wrap"><table class="tx-tbl lp-tbl lp-ord">
-    <thead><tr>${DAY ? '' : '<th>วันที่</th>'}<th>ออเดอร์</th><th>SKU / ชื่อสินค้า</th><th>LOT</th><th>PO</th><th class="num">จำนวน</th><th>หมายเหตุ</th></tr></thead>
+    <thead><tr>${DAY ? '' : '<th>วันที่</th>'}<th>ออเดอร์</th><th>SKU / ชื่อสินค้า</th><th>LOT</th><th>PO · Supplier</th><th class="num">จำนวน</th><th>หมายเหตุ</th></tr></thead>
     <tbody>${body}
       <tr class="sum">${DAY ? '' : '<td></td>'}<td class="k-ord">${f(t.orders)} ออเดอร์</td><td class="k-sku">${f(t.lines)} บรรทัด</td><td></td><td></td><td class="num k-qty">${f(t.qty)}</td><td></td></tr>
     </tbody></table></div>${cutNote(rows)}`;
@@ -816,7 +818,7 @@ function listHtml() {
   const t = WmsLotPo.totals(rows);
   const cut = cutNote(rows);
   return `<div class="tx-wrap"><table class="tx-tbl lp-tbl">
-    <thead><tr>${DAY ? '' : '<th>วันที่</th>'}<th>SKU / ชื่อสินค้า</th><th>LOT</th><th>PO</th><th class="num">จำนวน</th><th>Location · แถวในชีต</th></tr></thead>
+    <thead><tr>${DAY ? '' : '<th>วันที่</th>'}<th>SKU / ชื่อสินค้า</th><th>LOT</th><th>PO · Supplier</th><th class="num">จำนวน</th><th>Location · แถวในชีต</th></tr></thead>
     <tbody>${body}
       <tr class="sum">${DAY ? '' : '<td></td>'}<td class="k-sku">รวม ${f(t.lines)} บรรทัด</td><td></td><td></td><td class="num k-qty">${f(t.qty)}</td><td></td></tr>
     </tbody></table></div>${cut}`;
@@ -871,7 +873,7 @@ function renderBody() {
   const cols = byOrder() ? WmsLotPo.ORDER_HEAD.join(' · ') : WmsLotPo.HEAD.join(' · ');
   $('body').innerHTML = `${views}${statusHtml()}<div id="est">${estHtml(scope)}</div>${convNote(scope)}${poNote(scope)}${byOrder() ? orderNote() : ''}
     <div class="tx-bar">
-      <input id="q" class="tx-input" type="search" placeholder="ค้นหา${byOrder() ? 'เลขออเดอร์ เลขออนไลน์' : ''} SKU ชื่อสินค้า LOT หรือ PO" value="${esc(Q)}" autocomplete="off">
+      <input id="q" class="tx-input" type="search" placeholder="ค้นหา${byOrder() ? 'เลขออเดอร์ เลขออนไลน์' : ''} SKU ชื่อสินค้า LOT PO หรือ Supplier" value="${esc(Q)}" autocomplete="off">
       ${opts}
     </div>
     <div class="tx-bar lp-out">

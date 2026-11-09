@@ -23,7 +23,7 @@
 (function (window) {
   'use strict';
 
-  var HEAD = ['SKU', 'ชื่อสินค้า', 'SKU ที่แปลงมารวม', 'LOT', 'เดือนของ LOT', 'PO', 'รับเข้า', 'คงเหลือ', 'Location', 'หมายเหตุ'];
+  var HEAD = ['SKU', 'ชื่อสินค้า', 'SKU ที่แปลงมารวม', 'LOT', 'เดือนของ LOT', 'PO', 'Supplier', 'รับเข้า', 'คงเหลือ', 'Location', 'หมายเหตุ'];
 
   function F() { return window.WmsFifo; }
   function text(v) { return v === null || v === undefined ? '' : String(v).trim(); }
@@ -132,6 +132,7 @@
       locs.sort(function (a, c) { return c.qty - a.qty; });
       var line = {
         sku: up(x.g.code), code: x.g.code, name: x.g.name, lot: lot, lm: lm, age: lm ? ref - lm.key : null, po: po,
+        sup: fifo.sup ? fifo.sup(res, po) : '',   // Supplier ของ PO จากแท็บ PO. Truck (ต้องโหลด wms-sup.js) ไม่รู้ = ''
         recv: recv, rounds: Object.keys(days).sort().map(function (d) { return { d: d, qty: days[d] }; }),
         qty: qty, locs: locs, bad: bad, conv: conv, many: x.g.many || null,
         noLot: noLot(lot), noPo: noPo(po),
@@ -171,7 +172,7 @@
 
   /**
    * ตัวกรองบนหน้า only = '' | unknown | conv | neg (neg ใช้บรรทัดติดลบแทนบรรทัดปกติ)
-   * ค้นได้ทั้ง SKU ชื่อ LOT PO และ Location  ค้นด้วย PO ที่มี -05 ท้ายก็เจอ ค้นด้วย SKU ที่แปลงก็เจอบรรทัดที่รวมไว้
+   * ค้นได้ทั้ง SKU ชื่อ LOT PO Supplier และ Location  ค้นด้วย PO ที่มี -05 ท้ายก็เจอ ค้นด้วย SKU ที่แปลงก็เจอบรรทัดที่รวมไว้
    */
   function filter(bal, o) {
     o = o || {};
@@ -183,6 +184,7 @@
     var qp = F().basePo(q);
     return list.filter(function (l) {
       if (up(l.code).indexOf(q) >= 0 || up(l.name).indexOf(q) >= 0 || up(l.po).indexOf(qp) >= 0) return true;
+      if (l.sup && up(l.sup).indexOf(q) >= 0) return true;
       if (up(l.lot) === q) return true;
       if (l.conv.some(function (c) { return up(c.sku).indexOf(q) >= 0; })) return true;
       return l.locs.concat(l.bad).some(function (x) { return up(x.loc).indexOf(q) >= 0; });
@@ -208,7 +210,7 @@
   function table(lines) {
     var out = [HEAD.slice()];
     lines.forEach(function (l) {
-      out.push([l.code, l.name, convText(l), l.lot, l.lm ? F().monthText(l.lm) : '', l.po, F().recvText(l.recv), l.qty,
+      out.push([l.code, l.name, convText(l), l.lot, l.lm ? F().monthText(l.lm) : '', l.po, l.sup || '', F().recvText(l.recv), l.qty,
         locText(l.qty > 0 ? l.locs : l.bad), notes(l)]);
     });
     return out;

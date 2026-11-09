@@ -133,7 +133,11 @@
    */
   function stock(res) {
     var skus = res.skus || [], locs = res.locs || [], pos = res.pos || [], days = res.days || [];
-    var byCode = {};
+    var byCode = {}, supMap = {};
+    ((res.sup && res.sup.rows) || []).forEach(function (r) {
+      var k = basePo(r[0]);
+      if (k && supMap[k] === undefined) supMap[k] = String(r[1] == null ? '' : r[1]).trim();
+    });
     skus.forEach(function (t, i) {
       [t[0], t[1]].forEach(function (k) { k = up(k); if (k && byCode[k] === undefined) byCode[k] = i; });
     });
@@ -177,21 +181,30 @@
     locs.forEach(function (l) { known[up(l)] = 1; });
     function inf(s) {
       return info[s] || (info[s] = {
-        piles: [], openQty: 0, openPo: {}, rib: 0, total: 0, rLocs: [], floorLocs: [],
+        piles: [], openQty: 0, openPo: {}, openSup: {}, reserveSup: {}, rib: 0, reserve: 0, total: 0, rLocs: [], floorLocs: [],
         perDay: span && sold[s] ? sold[s] / span : 0, regular: '', fills: 0,
       });
     }
+    var QIR = { RIB: 1, QA: 1, IQA: 1 };
     Object.keys(bal).forEach(function (k) {
       var q = round(bal[k]);
-      if (!(q > 0)) return;
       var p = k.split('|'), s = +p[0], loc = locs[+p[3]], L = up(loc), z = zoneOf(loc);
-      var x = inf(s), open = !!isOpen[k];
-      x.piles.push({ loc: loc, lot: p[1], po: p[2], qty: q, open: open });
-      x.total += q;
-      if (open && z !== 'special' && z !== 'R') {
+      /* ทั้งคลังนับยอดสุทธิ (รวมกองติดลบ) แบบหน้าสต๊อกราย Location */
+      if (q < 0) { inf(s).total = round(inf(s).total + q); return; }
+      if (!(q > 0)) return;
+      var x = inf(s), open = !!isOpen[k], sup = supMap[p[2]] || '';
+      x.piles.push({ loc: loc, lot: p[1], po: p[2], qty: q, open: open, sup: sup });
+      x.total = round(x.total + q);
+      /* โลเปิด / สำรอง / QA·IQA·RIB แบ่งแบบหน้าสต๊อกราย Location: Status เปิดคือโลเปิด ที่เหลือคือสำรอง */
+      if (QIR[L]) { /* ไม่นับเป็นโลเปิดหรือสำรอง */ }
+      else if (open) {
         x.openQty += q;
         var op = x.openPo[L] || (x.openPo[L] = {});
         op[p[2]] = (op[p[2]] || 0) + q;
+        x.openSup[sup] = (x.openSup[sup] || 0) + q;
+      } else {
+        x.reserve += q;
+        x.reserveSup[sup] = (x.reserveSup[sup] || 0) + q;
       }
       if (L === 'RIB') x.rib += q;
       if (z === 'R' && x.rLocs.indexOf(loc) === -1) x.rLocs.push(loc);
@@ -207,29 +220,37 @@
       }
     });
     Object.keys(sold).forEach(function (s) { inf(+s); });
-    /* โลเปิดประจำ: เติมบ่อยสุด เท่ากันเอาที่เติมล่าสุด ไม่เคยเติมเลยใช้โลเปิดที่มีของมากสุดตอนนี้
-       ของหมดแล้วไม่มีกองเหลือ ใช้โลเปิดล่าสุดที่เคยรับของเข้า */
     Object.keys(lastOpen).forEach(function (s) { if (sold[s] || fills[s]) inf(+s); });
-    Object.keys(fills).forEach(function (s) {
-      var best = null;
-      Object.keys(fills[s]).forEach(function (l) {
-        var e = fills[s][l];
-        if (!best || e.n > best.n || (e.n === best.n && e.at > best.at)) best = { loc: locs[+l], n: e.n, at: e.at };
-      });
-      var x = inf(+s);
-      x.regular = best.loc;
-      x.fills = best.n;
-    });
+    /* โลเปิดที่จะเติม: โลที่เปิดอยู่ตอนนี้ก่อน (โลพื้นย้ายไปเปิดช่องข้าง ๆ เมื่อช่องเดิมหมด)
+       พื้นกับชั้นวางก่อน แล้วโลเปิดอื่น ถ้าไม่มีของเปิดอยู่เลย ใช้โลเปิดล่าสุดที่เคยรับของเข้า
+       แล้วค่อยโลที่เคยเติมบ่อยสุด */
+    var locIdx = {};
+    locs.forEach(function (l, i) { if (locIdx[up(l)] === undefined) locIdx[up(l)] = i; });
     Object.keys(info).forEach(function (s) {
-      var x = info[s];
-      if (x.regular) return;
-      var top = null;
+      var x = info[s], byLoc = {};
       x.piles.forEach(function (p) {
-        var z = zoneOf(p.loc);
-        if (p.open && /^[A-DS]$/.test(z) && (!top || p.qty > top.qty)) top = p;
+        var L = up(p.loc);
+        if (!p.open || QIR[L]) return;
+        var e = byLoc[L] || (byLoc[L] = { loc: p.loc, qty: 0 });
+        e.qty += p.qty;
+      });
+      var top = null;
+      Object.keys(byLoc).forEach(function (L) {
+        var e = byLoc[L], rank = /^[A-DS]$/.test(zoneOf(e.loc)) ? 1 : 0;
+        if (!top || rank > top.rank || (rank === top.rank && e.qty > top.qty)) top = { loc: e.loc, qty: e.qty, rank: rank };
       });
       if (top) x.regular = top.loc;
       else if (lastOpen[s]) x.regular = lastOpen[s];
+      else if (fills[s]) {
+        var best = null;
+        Object.keys(fills[s]).forEach(function (l) {
+          var e = fills[s][l];
+          if (!best || e.n > best.n || (e.n === best.n && e.at > best.at)) best = { loc: locs[+l], n: e.n, at: e.at };
+        });
+        x.regular = best.loc;
+      }
+      var f = x.regular && fills[s] ? fills[s][locIdx[up(x.regular)]] : null;
+      x.fills = f ? f.n : 0;
     });
 
     var emptyR = [], emptyFloor = { A: [], B: [], C: [], D: [] };
@@ -245,7 +266,9 @@
 
     return {
       skus: skus, info: info, occ: occ, known: known, emptyR: emptyR, emptyFloor: emptyFloor, brandFloor: brandFloor,
-      last: last, saleDays: span,
+      last: last, saleDays: span, hasSup: Object.keys(supMap).length > 0,
+      /** Supplier ของ PO จากแท็บ PO. Truck ไม่มีในแท็บคืน '' */
+      supOf: function (po) { return supMap[basePo(po)] || ''; },
       code: function (ln) {
         var a = up(ln.pid), b = up(ln.sku);
         if (a && byCode[a] !== undefined) return byCode[a];
@@ -364,10 +387,22 @@
       if (!(ln.qty > 0)) { skipped.push({ n: ln.n, label: ln.label, why: 'จำนวนไม่ใช่ตัวเลขที่มากกว่า 0', code: ln.sku || ln.pid }); continue; }
       lines.push(ln);
     }
-    return { lines: lines, skipped: skipped, how: how, cols: col };
+    /* head = แถวหัวตาราง (นับจาก 0) ในข้อความที่วาง ไม่มีหัวตารางเป็น -1 หน้าเว็บใช้แสดงตารางที่วางแบบ Excel */
+    return { lines: lines, skipped: skipped, how: how, cols: col, head: how === 'head' ? start - 1 : -1 };
   }
 
   /* ── จัดที่เก็บ ───────────────────────────────────────────────────────── */
+
+  /** Supplier ของบรรทัดแพลน: PO ในแท็บ PO. Truck ก่อน ไม่มีในแท็บใช้ช่อง Truck ของแพลน */
+  function lineSup(snap, ln) {
+    var v = snap && snap.supOf ? snap.supOf(ln.po) : '';
+    return v || String(ln.truck == null ? '' : ln.truck).trim();
+  }
+  function sameSup(a, b) { return up(a) === up(b); }
+  /** Supplier อื่นที่มีของเปิดขายอยู่ (ยอดมากกว่า 0) ไม่นับของที่ไม่รู้ Supplier */
+  function otherSups(map, mine) {
+    return Object.keys(map || {}).filter(function (k) { return k && map[k] > 0 && !sameSup(k, mine); });
+  }
 
   function capOf(cap, ln) {
     var a = up(ln.pid), b = up(ln.sku);
@@ -393,7 +428,12 @@
     opt = Object.assign({}, DEFAULTS, opt || {});
     manual = manual || {};
     cap = cap || {};
-    var used = {}, ribAdd = {}, openAdd = {};
+    var used = {}, ribAdd = {}, openAdd = {}, openSupAdd = {};
+    function addOpenSup(key, sup, qty) {
+      if (!sup) return;
+      var m = openSupAdd[key] || (openSupAdd[key] = {});
+      m[sup] = (m[sup] || 0) + qty;
+    }
 
     function reserve(loc, key, qty) {
       var L = up(loc);
@@ -408,7 +448,7 @@
         if (r.move) { if (up(r.from) === 'RIB') ribAdd[key] = (ribAdd[key] || 0) - r.qty; return; }
         reserve(r.loc, key, r.qty);
         if (up(r.loc) === 'RIB') ribAdd[key] = (ribAdd[key] || 0) + r.qty;
-        if (r.open) openAdd[key] = (openAdd[key] || 0) + r.qty;
+        if (r.open) { openAdd[key] = (openAdd[key] || 0) + r.qty; addOpenSup(key, lineSup(snap, ln), r.qty); }
       });
     });
 
@@ -470,6 +510,15 @@
       if (manual[i]) { out.rows = manual[i]; return out; }
 
       var key = keyOf(snap, ln), po = basePo(ln.po), left = ln.qty;
+      var inSup = lineSup(snap, ln);
+      out.sup = inSup;
+      /* Supplier อื่นที่เปิดขาย SKU นี้อยู่ (รวมที่บรรทัดก่อนหน้าในแผนนี้ส่งเข้าโลเปิด) ห้ามเปิดคนละ Supplier พร้อมกัน */
+      var others = [];
+      if (inSup && x) {
+        var om = Object.assign({}, x.openSup), oa = openSupAdd[key] || {};
+        Object.keys(oa).forEach(function (k2) { om[k2] = (om[k2] || 0) + oa[k2]; });
+        others = otherSups(om, inSup);
+      }
       var brand = brandOf(ln.sku || (s >= 0 && snap.skus[s] ? snap.skus[s][0] : ''));
       function add(loc, qty, tag, why, extra) {
         var r = { loc: loc, qty: round(qty), open: tag === 'open', tag: tag, why: why };
@@ -499,19 +548,37 @@
         return out;
       }
 
-      /* ของหมด หรือโลเปิดเหลือขายไม่ถึงเกณฑ์ ส่งเข้าโลเปิดประจำ 1 พาเลท */
+      /* เข้าโลเปิดเลยเมื่อของหมดทั้งคลัง หรือโลเปิดเหลือขายไม่ถึงเกณฑ์และไม่มีสำรองให้เติม
+         ยังมีสำรองอยู่ต้องเติมจากสำรองก่อนตาม FIFO ของที่รับเข้าเก็บตามปกติ
+         จำนวน: ให้โลเปิดพอขายตามเกณฑ์ ปัดขึ้นเป็นพาเลท อย่างน้อย 1 พาเลท */
       var reg = x && x.regular;
       if (reg) {
         var openNow = x.openQty + (openAdd[key] || 0);
         var cover = x.perDay > 0 ? openNow / x.perDay : Infinity;
-        var why = '';
-        if (x.total + (openAdd[key] || 0) <= 0) why = 'ของหมดทั้งคลัง เข้าโลเปิดเลย';
-        else if (cover < opt.coverDays) why = openNow > 0 ? 'โลเปิดเหลือขายอีก ' + cover.toFixed(1) + ' วัน (เกณฑ์ ' + opt.coverDays + ' วัน)' : 'โลเปิดไม่มีของแล้ว';
+        var low = cover < opt.coverDays, why = '';
+        var coverText = openNow > 0 ? 'โลเปิดเหลือขายอีก ' + cover.toFixed(1) + ' วัน' : 'โลเปิดไม่มีของแล้ว';
+        /* สำรองที่ต้องใช้ก่อน: รู้ Supplier ของที่เปิดอยู่ นับแค่สำรองของ Supplier นั้น (กับที่ไม่รู้ Supplier) */
+        var openSups = Object.keys(x.openSup).filter(function (k2) { return k2 && x.openSup[k2] > 0; });
+        var resUse = x.reserve, resText = '';
+        if (snap.hasSup && openSups.length) {
+          resUse = (x.reserveSup[''] || 0);
+          openSups.forEach(function (k2) { resUse += x.reserveSup[k2] || 0; });
+          resText = openSups.join(', ');
+        }
+        if (others.length) {
+          out.hint = 'โลเปิดตอนนี้เป็นของ ' + others.join(', ') + ' ของรอบนี้เป็นของ ' + inSup +
+            ' คนละ Supplier ห้ามเปิดใช้พร้อมกัน เก็บแยกไว้ก่อน รอของ ' + others.join(', ') + ' ในโลเปิดหมด';
+        } else if (x.total + (openAdd[key] || 0) <= 0) why = 'ของหมดทั้งคลัง เข้าโลเปิดเลย';
+        else if (low && resUse > 0) {
+          out.hint = coverText + ' แต่ยังมีสำรอง' + (resText ? 'ของ ' + resText : '') + ' ' + round(resUse) + ' ชิ้น ให้เติมโลเปิดจากสำรองก่อนตาม FIFO ของที่รับเข้าเก็บตามปกติ';
+        } else if (low) why = coverText + ' และไม่มีสำรอง' + (resText ? 'ของ ' + resText + ' ' : '') + 'ให้เติม (เกณฑ์ ' + opt.coverDays + ' วัน)';
         if (why) {
-          var q = Math.min(left, c);
-          add(reg, q, 'open', why);
+          var need = x.perDay > 0 ? x.perDay * opt.coverDays - Math.max(openNow, 0) : 0;
+          var q = Math.min(left, Math.max(1, Math.ceil(need / c)) * c);
+          add(reg, q, 'open', why + (q > c ? ' ส่ง ' + round(q) + ' ชิ้นให้พอขาย ' + opt.coverDays + ' วัน' : ''));
           openAdd[key] = (openAdd[key] || 0) + q;
-          left -= q;
+          addOpenSup(key, inSup, q);
+          left = round(left - q);
         }
       }
 
@@ -528,9 +595,10 @@
       if (!(left > 0)) return out;
 
       /* เศษ: PO เดียวกับที่อยู่ในโลเปิดประจำ เติมเข้าไปได้เลย */
-      if (reg && x.openPo[up(reg)] && x.openPo[up(reg)][po] > 0) {
+      if (reg && !others.length && x.openPo[up(reg)] && x.openPo[up(reg)][po] > 0) {
         add(reg, left, 'open', 'เศษ ' + left + ' ชิ้น PO เดียวกับที่อยู่ในโลเปิด เติมเข้าโลเปิด');
         openAdd[key] = (openAdd[key] || 0) + left;
+        addOpenSup(key, inSup, left);
         return out;
       }
 
@@ -576,16 +644,18 @@
   /**
    * ตรวจทั้งแผนหลังคนแก้ (หรือที่ระบบเสนอเอง) ตามกติกา
    * @returns {{lines: Array<{sum:number, issues:string[], rows:Array<Array<{level:string,text:string}>>}>, red:number, warn:number}}
-   *   level: red = ปน SKU (ห้าม) | warn = ผิดกติกาหรือควรดู | info = แค่บอก
+   *   level: red = ห้าม (ปน SKU ในแร็ค R, เปิดคนละ Supplier พร้อมกัน) | warn = ผิดกติกาหรือควรดู | info = แค่บอก
    */
   function check(lines, out, snap, cap) {
     cap = cap || {};
-    var at = {};
+    var at = {}, openBy = {};
     out.forEach(function (o, i) {
       o.rows.forEach(function (r) {
         var L = up(r.loc);
         if (!L) return;
-        (at[L] = at[L] || []).push({ i: i, key: keyOf(snap, lines[i]), qty: +r.qty || 0, move: !!r.move });
+        var key = keyOf(snap, lines[i]);
+        (at[L] = at[L] || []).push({ i: i, key: key, qty: +r.qty || 0, move: !!r.move });
+        if (r.open && !r.move) (openBy[key] = openBy[key] || []).push({ i: i, sup: lineSup(snap, lines[i]), qty: +r.qty || 0 });
       });
     });
     var red = 0, warn = 0;
@@ -629,6 +699,15 @@
           if (otherPo.length) say('warn', 'โลพื้นนี้มี PO อื่นของ SKU นี้อยู่ ไม่ควรปน LOT/PO');
         }
         if (L === 'RIB' && !k.rib) say('info', 'RIB ปกติใช้กับที่นอน 3.5 ฟุตและท็อปเปอร์');
+        /* ห้ามเปิดขายคนละ Supplier พร้อมกัน: ของที่เปิดอยู่ในสมุด กับบรรทัดอื่นในแผนที่ติ๊ก OPEN SKU เดียวกัน */
+        var mySup = r.open ? lineSup(snap, ln) : '';
+        if (mySup) {
+          var xi = s >= 0 ? snap.info[s] : null;
+          var om = Object.assign({}, xi ? xi.openSup : {});
+          (openBy[key] || []).forEach(function (e) { if (e.i !== i && e.sup) om[e.sup] = (om[e.sup] || 0) + e.qty; });
+          var oth = otherSups(om, mySup);
+          if (oth.length) say('red', 'SKU นี้เปิดขายของ ' + oth.join(', ') + ' อยู่ ของนี้เป็นของ ' + mySup + ' ห้ามเปิดคนละ Supplier พร้อมกัน');
+        }
         return list;
       });
       return { sum: sum, issues: issues, rows: rows };
@@ -663,7 +742,7 @@
   window.WmsPutaway = {
     DEFAULTS: DEFAULTS, TAG_TEXT: TAG_TEXT,
     up: up, basePo: basePo, zoneOf: zoneOf, rackOf: rackOf, floorOf: floorOf, isFloor: isFloor, kindOf: kindOf,
-    capFromRows: capFromRows, capMap: capMap, stock: stock, parsePlan: parsePlan, plan: plan, check: check,
+    capFromRows: capFromRows, capMap: capMap, stock: stock, parsePlan: parsePlan, plan: plan, check: check, lineSup: lineSup,
     exportRows: exportRows, keyOf: keyOf, capOf: capOf,
   };
 })();

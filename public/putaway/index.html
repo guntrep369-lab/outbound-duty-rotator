@@ -29,132 +29,133 @@
 .tx-src button:disabled{opacity:.6;cursor:default}
 .tx-err{width:100%;font-size:13px;color:#B91C1C;font-weight:600}
 
-/* ── วางแพลนรับเข้า เป็นสิ่งแรกที่ต้องทำ ── */
-.pw-in{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:12px;padding:14px 20px;
-  background:var(--wms-surface);border-bottom:1px solid var(--wms-border)}
-.pw-h{font-size:15px;font-weight:700;color:var(--wms-text);margin-bottom:6px}
-.pw-h small{font-size:12px;font-weight:500;color:var(--wms-muted)}
-.pw-ta{width:100%;min-height:118px;padding:10px 12px;border-radius:10px;border:1.5px dashed var(--wms-border2);
-  background:var(--wms-surface2);font-family:ui-monospace,Consolas,monospace;font-size:12.5px;color:var(--wms-text);
-  resize:vertical;outline:none;white-space:pre;overflow:auto}
-.pw-ta:focus{border-style:solid;border-color:var(--wms-primary);background:var(--wms-surface)}
-.pw-go{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px;font-size:13px;color:var(--wms-muted)}
-.pw-side{display:flex;flex-direction:column;gap:10px}
-.pw-box{padding:11px 13px;border-radius:var(--wms-radius-sm);background:var(--wms-surface2);border:1px solid var(--wms-border);
-  font-size:13px;color:var(--wms-muted);line-height:1.6}
-.pw-box b{color:var(--wms-text)}
-.pw-box.warn{background:#FEF3C7;border-color:#FDE68A;color:#92400E}
-.pw-box.warn b{color:#92400E}
-.pw-box label{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-weight:600;color:var(--wms-text)}
-.pw-num{width:64px;padding:4px 8px;border-radius:8px;border:1.5px solid var(--wms-border2);background:var(--wms-surface);
-  font-family:var(--wms-font);font-size:14px;font-weight:700;color:var(--wms-text);text-align:center}
+/* ── วางแพลนรับเข้า: ตารางแบบ Excel กด Ctrl+V ที่ไหนก็ได้ในหน้า ── */
+.pw-in{padding:12px 20px;background:var(--wms-surface);border-bottom:1px solid var(--wms-border)}
+.pw-top{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:8px;font-size:13px;color:var(--wms-muted)}
+.pw-h{font-size:15px;font-weight:700;color:var(--wms-text);margin-right:4px}
+#planSt.bad{color:var(--wms-danger);font-weight:600}
+.pw-grid{position:relative;max-height:236px;overflow:auto;border:1px solid var(--wms-border2);border-radius:8px;
+  background:var(--wms-surface);outline:none;cursor:cell}
+.pw-grid:focus{border-color:var(--wms-primary);box-shadow:0 0 0 3px var(--wms-primary-light)}
+.pw-gt{border-collapse:separate;border-spacing:0;min-width:100%;font-size:12.5px}
+.pw-gt th,.pw-gt td{height:24px;padding:2px 8px;border-right:1px solid #E2E8F0;border-bottom:1px solid #E2E8F0;white-space:nowrap}
+.pw-gt thead th{position:sticky;top:0;z-index:2;background:#F1F5F9;text-align:left;font-size:11px;font-weight:600;color:var(--wms-muted)}
+.pw-gt thead th small{display:block;font-size:11.5px;font-weight:700;color:var(--wms-text)}
+.pw-gt thead th.use small{color:var(--wms-primary-dark)}
+.pw-gt .rn{position:sticky;left:0;z-index:1;min-width:34px;background:#F1F5F9;text-align:center;font-size:11px;color:var(--wms-muted)}
+.pw-gt thead .rn{z-index:3}
+.pw-gt td{max-width:300px;overflow:hidden;text-overflow:ellipsis;color:var(--wms-text)}
+.pw-gt td.num{text-align:right;font-variant-numeric:tabular-nums}
+.pw-gt tr.hd td{background:#F8FAFC;font-weight:600;color:var(--wms-muted)}
+.pw-gt tr.skip td{color:#94A3B8;text-decoration:line-through}
+.pw-gt tr.skip td.rn{text-decoration:none}
+.pw-gempty{position:absolute;inset:28px 0 0;display:flex;align-items:center;justify-content:center;padding:10px;
+  text-align:center;font-size:13.5px;color:var(--wms-muted);pointer-events:none}
+.pw-gempty b{color:var(--wms-text)}
+.pw-set{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;margin-top:8px;font-size:12.5px;color:var(--wms-muted)}
+.pw-set label{display:inline-flex;align-items:center;gap:6px}
+.pw-set b{color:var(--wms-text)}
+.pw-set .warn{color:#B45309;font-weight:600}
+.pw-num{width:54px;padding:2px 6px;border-radius:6px;border:1px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:13px;font-weight:700;color:var(--wms-text);text-align:center}
 .pw-num:focus{outline:none;border-color:var(--wms-primary)}
-.pw-link{background:none;border:0;padding:0;font:inherit;font-size:13px;color:var(--wms-primary-dark);
-  text-decoration:underline;cursor:pointer}
+.pw-link{background:none;border:0;padding:0;font:inherit;color:var(--wms-primary-dark);text-decoration:underline;cursor:pointer}
 .pw-file{display:none}
-.pw-drag{outline:2px dashed var(--wms-primary);outline-offset:-6px}
+.pw-drag{outline:2px dashed var(--wms-primary);outline-offset:3px;border-radius:6px}
 
-/* ── ยอดรวม ── */
-.tx-sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;padding:12px 20px;
-  background:var(--wms-surface);border-bottom:1px solid var(--wms-border)}
+/* ── ยอดรวม: แถบเดียว กดเพื่อดูเฉพาะกลุ่มนั้น ── */
+.tx-sum{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:9px 20px;background:var(--wms-surface);
+  border-bottom:1px solid var(--wms-border);font-size:13px;color:var(--wms-muted)}
 .tx-sum:empty{display:none}
-.tx-stat{padding:8px 11px;border-radius:var(--wms-radius-sm);background:var(--wms-surface2)}
-.tx-stat small{display:block;font-size:12px;color:var(--wms-muted)}
-.tx-stat b{font-size:20px;font-weight:700;color:var(--wms-text);font-variant-numeric:tabular-nums}
-.tx-stat b.s-rib{color:#C2410C}
-.tx-stat b.s-open{color:var(--wms-primary-dark)}
-.tx-stat b.s-red{color:#B91C1C}
-.tx-stat b.s-warn{color:#B45309}
-.tx-stat i{display:block;font-style:normal;font-size:12px;color:var(--wms-muted)}
+.pw-total{margin-right:6px}
+.pw-total b{color:var(--wms-text)}
+.pw-chip{display:inline-flex;align-items:baseline;gap:5px;padding:3px 11px;border-radius:999px;border:1px solid var(--wms-border);
+  background:var(--wms-surface2);font-family:var(--wms-font);font-size:12.5px;color:var(--wms-muted);cursor:pointer}
+.pw-chip b{font-size:14px;color:var(--wms-text);font-variant-numeric:tabular-nums}
+.pw-chip:hover{border-color:var(--wms-primary)}
+.pw-chip.on{border-color:var(--wms-primary);background:var(--wms-primary-light);color:var(--wms-primary-dark)}
+.pw-chip.zero{opacity:.5}
+.pw-chip.c-open b{color:var(--wms-primary-dark)}
+.pw-chip.c-rib b{color:#C2410C}
+.pw-chip.c-warn b{color:#B45309}
+.pw-chip.c-red b{color:#B91C1C}
 
-/* ── เนื้อหา ── */
-.tx-body{padding:14px 20px 60px}
-.tx-empty{padding:40px 20px;text-align:center;color:var(--wms-muted);font-size:14px;line-height:1.75}
+/* ── ผลลัพธ์: ตารางเดียว หนึ่งแถวต่อหนึ่งโล หน้าตาเหมือนแท็บ OUTPUT ── */
+.tx-body{padding:12px 20px 60px}
+.tx-empty{padding:34px 20px;text-align:center;color:var(--wms-muted);font-size:14px;line-height:1.75}
 .tx-empty b{color:var(--wms-text)}
 .tx-empty.bad{color:var(--wms-text)}
 .tx-empty.bad > b:first-child{color:var(--wms-danger)}
 .pw-why-list{display:inline-block;text-align:left;margin:6px auto 8px;padding-left:20px}
-#planSt.bad{color:var(--wms-danger);font-weight:600}
 .tx-opt{padding:5px 13px;border-radius:999px;border:1px solid var(--wms-border2);background:var(--wms-surface);
   font-family:var(--wms-font);font-size:13px;color:#334155;cursor:pointer}
 .tx-opt:hover{border-color:var(--wms-primary);color:var(--wms-primary-dark)}
 .tx-opt.p{background:var(--wms-primary);border-color:var(--wms-primary);color:#fff;font-weight:600}
 .tx-opt.p:hover{filter:brightness(1.08);color:#fff}
 .tx-opt:disabled{opacity:.6;cursor:default}
-.pw-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px;font-size:13px;color:var(--wms-muted)}
+.pw-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px;font-size:13px;color:var(--wms-muted)}
 .pw-bar .sp{flex:1}
-.pw-skip{margin-bottom:12px;font-size:13px;color:var(--wms-muted)}
+.pw-skip{font-size:12.5px;color:var(--wms-muted)}
 .pw-skip summary{cursor:pointer;color:var(--wms-primary-dark);font-weight:600}
-.pw-skip ul{margin:6px 0 0 18px}
+.pw-skip ul{margin:4px 0 0 18px}
+.pw-edit{font-size:12px;font-weight:600;color:var(--wms-primary-dark)}
 
-/* หนึ่งการ์ดต่อหนึ่งบรรทัดของแพลน หัวบอกสินค้า ข้างล่างคือโลที่จะเก็บ แก้ได้ทุกช่อง */
-.pw-line{margin-bottom:10px;background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:var(--wms-radius);overflow:hidden}
-.pw-line.bad{border-color:#FCA5A5}
-.pw-lh{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;padding:10px 13px;background:var(--wms-surface2);
-  border-bottom:1px solid var(--wms-border)}
-.pw-no{font-size:12px;font-weight:700;color:var(--wms-muted)}
-.pw-sku{font-size:14px;font-weight:700;color:var(--wms-text)}
-.pw-nm{flex:1;min-width:180px;font-size:13px;color:var(--wms-text)}
-.pw-q{font-size:15px;font-weight:700;color:var(--wms-text);font-variant-numeric:tabular-nums}
-.pw-meta{width:100%;display:flex;flex-wrap:wrap;gap:2px 14px;font-size:12px;color:var(--wms-muted)}
-.pw-meta b{color:var(--wms-text);font-weight:600}
-.pw-meta .low{color:#B45309;font-weight:600}
-.pw-iss{width:100%;font-size:12.5px;font-weight:600;color:#B45309}
-.pw-tbl{width:100%;border-collapse:collapse;font-size:13px}
-.pw-tbl th{text-align:left;padding:6px 10px;font-size:11.5px;font-weight:600;color:var(--wms-muted);border-bottom:1px solid var(--wms-border);white-space:nowrap}
-.pw-tbl td{padding:6px 10px;border-bottom:1px solid #F1F5F9;vertical-align:top}
-.pw-tbl tr:last-child td{border-bottom:0}
-.pw-tbl tr.r-rib td{background:#FFF7ED}
-.pw-tbl tr.r-red td{background:#FEF2F2}
-.pw-tbl tr.r-move td{background:#F8FAFC}
-.pw-loc,.pw-qty,.pw-rm{width:100%;padding:5px 8px;border-radius:8px;border:1.5px solid var(--wms-border2);background:var(--wms-surface);
-  font-family:var(--wms-font);font-size:13.5px;color:var(--wms-text)}
-.pw-loc{min-width:110px;font-weight:700;text-transform:uppercase}
-.pw-qty{width:76px;text-align:right;font-variant-numeric:tabular-nums}
-.pw-rm{min-width:120px}
-.pw-loc:focus,.pw-qty:focus,.pw-rm:focus{outline:none;border-color:var(--wms-primary)}
-.pw-loc.empty{border-color:#F59E0B;background:#FFFBEB}
-.pw-ck{width:18px;height:18px;accent-color:var(--wms-primary);cursor:pointer}
-.pw-tag{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700;white-space:nowrap}
+.pw-wrap{overflow:auto;max-height:calc(100vh - 150px);border:1px solid var(--wms-border2);border-radius:8px;background:var(--wms-surface)}
+.pw-xl{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
+.pw-xl th{position:sticky;top:0;z-index:2;padding:6px 8px;background:#F1F5F9;text-align:left;font-size:11.5px;font-weight:600;
+  color:var(--wms-muted);border-bottom:1px solid var(--wms-border2);border-right:1px solid #E2E8F0;white-space:nowrap}
+.pw-xl td{height:32px;padding:0 6px;border-bottom:1px solid #EEF2F6;border-right:1px solid #EEF2F6;white-space:nowrap;
+  vertical-align:middle;color:var(--wms-text)}
+.pw-xl tr.g1 td{border-top:1px solid #CBD5E1}
+.pw-xl tbody tr:first-child td{border-top:0}
+.pw-xl .num{text-align:right;font-variant-numeric:tabular-nums}
+.pw-xl .c-no{font-size:12px;color:var(--wms-muted)}
+.pw-xl .c-sku{font-weight:700}
+.pw-xl .c-nm{max-width:230px;overflow:hidden;text-overflow:ellipsis}
+.pw-xl .c-po{font-size:12px;color:var(--wms-muted)}
+.pw-xl td.short{color:#B45309;font-weight:700}
+.pw-xl tr.r-red td{background:#FEF2F2}
+.pw-xl tr.r-rib td{background:#FFF7ED}
+.pw-xl tr.r-move td{background:#F8FAFC;color:var(--wms-muted)}
+.pw-loc,.pw-qty,.pw-rm{height:28px;padding:0 6px;border:1px solid transparent;border-radius:4px;background:transparent;
+  font-family:var(--wms-font);font-size:13px;color:var(--wms-text)}
+.pw-loc:hover,.pw-qty:hover,.pw-rm:hover{border-color:var(--wms-border2);background:var(--wms-surface)}
+.pw-loc:focus,.pw-qty:focus,.pw-rm:focus{outline:none;border-color:var(--wms-primary);background:var(--wms-surface);box-shadow:0 0 0 2px var(--wms-primary-light)}
+.pw-loc{width:118px;font-weight:700;text-transform:uppercase}
+.pw-loc.empty{border-color:#FCD34D;background:#FEF3C7}
+.pw-qty{width:64px;text-align:right;font-variant-numeric:tabular-nums}
+.pw-rm{width:100%;min-width:120px}
+.pw-xl .c-open{text-align:center}
+.pw-ck{width:16px;height:16px;accent-color:var(--wms-primary);cursor:pointer;vertical-align:middle}
+.pw-tag{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:700;white-space:nowrap}
 .t-rack{background:#ECFDF5;color:#065F46}
 .t-open{background:var(--wms-primary-light);color:var(--wms-primary-dark)}
 .t-rib{background:#FFEDD5;color:#9A3412}
 .t-floor{background:#F0FDF4;color:#166534}
 .t-manual{background:#FEF3C7;color:#92400E}
 .t-move{background:var(--wms-surface2);color:var(--wms-muted)}
-.pw-why{display:block;margin-top:3px;font-size:12px;color:var(--wms-muted);line-height:1.45}
-.pw-msg{display:block;margin-top:3px;font-size:12px;line-height:1.45}
+.pw-msg{display:inline-block;max-width:250px;margin-left:6px;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;font-size:12px}
 .l-red{color:#B91C1C;font-weight:700}
 .l-warn{color:#B45309;font-weight:600}
 .l-info{color:var(--wms-muted)}
-.pw-x{width:28px;height:28px;border-radius:8px;border:1px solid transparent;background:none;color:var(--wms-muted);font-size:16px;cursor:pointer}
-.pw-x:hover{border-color:#FCA5A5;color:#B91C1C;background:#FEF2F2}
-.pw-lf{display:flex;flex-wrap:wrap;gap:8px;padding:7px 10px;border-top:1px solid #F1F5F9}
-.pw-small{padding:3px 11px;border-radius:999px;border:1px solid var(--wms-border2);background:var(--wms-surface);
-  font-family:var(--wms-font);font-size:12px;color:#334155;cursor:pointer}
-.pw-small:hover{border-color:var(--wms-primary);color:var(--wms-primary-dark)}
-.pw-edit{font-size:12px;font-weight:600;color:var(--wms-primary-dark)}
+.c-act{width:1%}
+.pw-ic{width:24px;height:24px;border-radius:6px;border:1px solid transparent;background:none;font-size:14px;line-height:1;
+  color:var(--wms-muted);cursor:pointer;vertical-align:middle}
+.pw-ic:hover{border-color:var(--wms-border2);background:var(--wms-surface2);color:var(--wms-primary-dark)}
+.pw-ic.x:hover{border-color:#FCA5A5;background:#FEF2F2;color:#B91C1C}
+.pw-ic.on{background:var(--wms-primary-light);color:var(--wms-primary-dark)}
+.pw-more td{padding:7px 12px;background:#F8FAFC;white-space:normal;font-size:12.5px;line-height:1.65;color:var(--wms-muted)}
+.pw-more b{color:var(--wms-text)}
+.pw-more .low{color:#B45309;font-weight:600}
+.pw-more .meta{display:flex;flex-wrap:wrap;gap:0 14px}
+.pw-more .tip{color:var(--wms-text)}
 
-@media (max-width:860px){
-  .pw-in{grid-template-columns:1fr}
-}
 @media (max-width:640px){
   .mod-title h2 .en,.mod-title p{display:none}
   .tx-src,.pw-in,.tx-sum,.tx-body{padding-left:16px;padding-right:16px}
-  .tx-sum{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .tx-opt{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 15px}
-  .pw-ta{font-size:16px}
-  .pw-loc,.pw-qty,.pw-rm,.pw-num{font-size:16px;min-height:40px}   /* ต่ำกว่า 16px iPhone จะซูมหน้าเองตอนแตะช่อง */
-
-  /* แถวเป็นการ์ด: โลกับจำนวนบนสุด สถานะกับเหตุผลตามมา หมายเหตุอยู่ล่าง */
-  .pw-tbl,.pw-tbl tbody{display:block}
-  .pw-tbl thead{display:none}
-  .pw-tbl tr{display:grid;grid-template-columns:minmax(0,1fr) 84px 40px 32px;gap:6px 8px;padding:9px 10px;border-bottom:1px solid #F1F5F9}
-  .pw-tbl td{display:block;padding:0;border:0}
-  .pw-tbl .c-tag{grid-column:1/-1;order:5}
-  .pw-tbl .c-rm{grid-column:1/-1;order:6}
-  .pw-tbl .c-open{display:flex;align-items:center;justify-content:center}
-  .pw-qty{width:100%}
+  .tx-opt{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:0 15px}
+  .pw-loc,.pw-qty,.pw-rm,.pw-num{font-size:16px}   /* ต่ำกว่า 16px iPhone จะซูมหน้าเองตอนแตะช่อง */
+  .pw-wrap{max-height:none}
 }
 </style>
 </head>
@@ -169,7 +170,7 @@
       <div class="ic"><img src="../icons/boxes.png" alt="" width="38" height="38"></div>
       <div>
         <h2>จัดที่เก็บ<span class="en"> · Putaway</span></h2>
-        <p>วางแพลนรับเข้าของวันนี้ ระบบเสนอโลเคชั่นตามช่องว่างจริงในสมุด Transaction ความจุต่อพาเลท และกติกาของคลัง แก้ได้ทุกแถว แล้วคัดลอกไปวางในชีตหรือโหลด Excel</p>
+        <p>วางแพลนรับเข้า (Ctrl+V) ได้โลเคชั่นทันที แก้ได้ทุกช่อง แล้วคัดลอกไปวางแท็บ OUTPUT</p>
       </div>
     </div>
   </div>
@@ -214,6 +215,8 @@ let ERR = '';
 let WAIT = null;
 let LOADING = false;
 let XLSX_LOAD = null;
+let FILTER = '';        // ดูเฉพาะกลุ่ม (แร็ค เข้าโลเปิด RIB พื้น เลือกเอง ผิดกติกา) '' = ทั้งหมด
+const MORE = new Set(); // บรรทัดที่กางรายละเอียดอยู่
 
 function readJson(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } }
 function writeJson(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
@@ -251,13 +254,6 @@ function compute() {
     OUT = []; CHK = null;
     if (!PLAN || !PLAN.lines) PLAN = { lines: [], skipped: [] };
   }
-}
-
-/** คอลัมน์ที่ระบบเดาจากหน้าตาข้อมูล (A, B, C…) ให้คนดูว่าเดาถูก */
-function colText() {
-  const c = PLAN.cols || {};
-  const L = (j) => (j >= 0 ? String.fromCharCode(65 + j) : '');
-  return [['SKU', c.sku], ['Product ID', c.pid], ['PO', c.po], ['QTY', c.qty]].filter((x) => x[1] >= 0).map((x) => `${x[0]} = ${L(x[1])}`).join(' · ');
 }
 
 /* ── โหลดสต๊อก ─────────────────────────────────────────────────────────── */
@@ -340,51 +336,107 @@ function renderSrc() {
   if (btn) btn.onclick = () => load(!!RES);
 }
 
-/* ── ช่องวางแพลน วาดครั้งเดียว ข้อความที่พิมพ์ค้างไว้จะได้ไม่หาย ── */
+/* ── ช่องวางแพลน: ตารางแบบ Excel วาดโครงครั้งเดียว ช่องเกณฑ์ที่พิมพ์ค้างไว้จะได้ไม่หาย ── */
+
+const COLNAME = { no: 'NO.', pid: 'Product ID', lot: 'LOT', po: 'PO', sku: 'SKU', name: 'ชื่อสินค้า', qty: 'QTY', truck: 'Truck', remark: 'REMARK' };
+const USED = ['pid', 'sku', 'po', 'qty', 'truck'];   // คอลัมน์ที่ระบบใช้คิด หัวคอลัมน์เป็นสีหลัก
+const EMPTY_COLS = ['no', 'pid', 'lot', 'po', 'sku', 'name', 'qty', 'truck', 'remark'];
+const GRID_MAX = 500;
+const colL = (j) => (j < 26 ? '' : String.fromCharCode(64 + Math.floor(j / 26))) + String.fromCharCode(65 + (j % 26));
 
 function renderInput() {
   $('inp').innerHTML = `
-    <div>
-      <div class="pw-h">วางแพลนรับเข้า <small>คัดลอกจากแท็บ INPUT ทั้งตาราง (ติดหัวตารางมาด้วยหรือไม่ก็ได้) แล้ววางในช่องนี้</small></div>
-      <textarea class="pw-ta" id="plan" spellcheck="false" placeholder="NO.&#9;Product ID&#9;LOT&#9;PO&#9;SKU&#9;Product Name&#9;QTY&#9;Truck&#9;REMARK"></textarea>
-      <div class="pw-go">
-        <button class="tx-opt p" id="goBtn">จัดที่เก็บ</button>
-        <button class="tx-opt" id="clearBtn">ล้าง</button>
-        <span id="planSt"></span>
-      </div>
+    <div class="pw-top">
+      <span class="pw-h">แพลนรับเข้า</span>
+      <button class="tx-opt p" id="pasteBtn" title="วางสิ่งที่คัดลอกไว้ (หรือกด Ctrl+V ที่ไหนก็ได้ในหน้านี้)">📋 วาง</button>
+      <button class="tx-opt" id="clearBtn">ล้าง</button>
+      <span id="planSt"></span>
     </div>
-    <div class="pw-side">
-      <div class="pw-box">
-        <label for="cover">เติมโลเปิดเมื่อเหลือขายไม่ถึง <input class="pw-num" id="cover" type="number" min="0" step="0.5"> วัน</label>
-        <div>ถึงเกณฑ์นี้ระบบส่ง 1 พาเลทเข้าโลเปิดประจำและติ๊ก OPEN ให้ ของหมดทั้งคลังส่งเข้าโลเปิดเสมอ</div>
-      </div>
-      <div class="pw-box" id="capSt"></div>
+    <div class="pw-grid" id="grid" tabindex="0" aria-label="ตารางแพลนรับเข้า คลิกแล้วกด Ctrl+V เพื่อวาง"></div>
+    <div class="pw-set" id="set">
+      <label for="cover">เติมโลเปิดเมื่อเหลือขายไม่ถึง <input class="pw-num" id="cover" type="number" min="0" step="0.5"> วัน</label>
+      <span id="capSt"></span>
+      <span id="supSt"></span>
       <input type="file" class="pw-file" id="capFile" accept=".xlsx,.xls,.csv">
     </div>`;
-  $('plan').value = TEXT;
   $('cover').value = OPT.coverDays;
 }
 
+/** ข้อความที่วางแสดงเป็นตาราง หัวคอลัมน์บอกว่าระบบอ่านช่องไหนเป็นอะไร แถวที่ข้ามขีดฆ่าไว้ */
+function renderGrid() {
+  const box = $('grid');
+  if (!box) return;
+  const grid = TEXT.replace(/\r/g, '').split('\n').map((l) => l.split('\t'));
+  const blank = (r) => !r.some((v) => String(v).trim());
+  if (grid.every(blank)) {
+    box.innerHTML = `<table class="pw-gt"><thead><tr><th class="rn"></th>${EMPTY_COLS.map((k, j) => `<th>${colL(j)}<small>${COLNAME[k]}</small></th>`).join('')}</tr></thead>
+      <tbody>${[1, 2, 3, 4, 5, 6].map((n) => `<tr><td class="rn">${n}</td>${EMPTY_COLS.map(() => '<td></td>').join('')}</tr>`).join('')}</tbody></table>
+      <div class="pw-gempty"><span>คัดลอกตารางจากแท็บ <b>INPUT</b> แล้วกด <b>Ctrl+V</b> (หรือปุ่ม 📋 วาง)</span></div>`;
+    return;
+  }
+  const cols = PLAN.cols || {};
+  const keyAt = {};
+  Object.keys(cols).forEach((k) => { if (cols[k] >= 0 && keyAt[cols[k]] === undefined) keyAt[cols[k]] = k; });
+  let n = 0;
+  grid.forEach((r) => { for (let j = r.length - 1; j >= n; j--) if (String(r[j]).trim()) { n = j + 1; break; } });
+  const skip = {};
+  PLAN.skipped.forEach((s) => { skip[s.n] = s.why; });
+  let body = '', shown = 0;
+  grid.forEach((r, i) => {
+    if (blank(r) || shown++ >= GRID_MAX) return;
+    const hd = i === PLAN.head;
+    const why = skip[i + 1];
+    let cells = '';
+    for (let j = 0; j < n; j++) {
+      const v = String(r[j] ?? '').trim();
+      const num = !hd && (keyAt[j] === 'qty' || keyAt[j] === 'no');
+      cells += `<td${num ? ' class="num"' : ''}${keyAt[j] === 'name' ? ` title="${esc(v)}"` : ''}>${esc(v)}</td>`;
+    }
+    body += `<tr${hd ? ' class="hd"' : why ? ` class="skip" title="ข้าม: ${esc(why)}"` : ''}><td class="rn">${i + 1}</td>${cells}</tr>`;
+  });
+  let head = '<th class="rn"></th>';
+  for (let j = 0; j < n; j++) {
+    const k = keyAt[j];
+    head += `<th${USED.includes(k) ? ' class="use"' : ''}>${colL(j)}<small>${k ? COLNAME[k] : '&nbsp;'}</small></th>`;
+  }
+  box.innerHTML = `<table class="pw-gt"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
 function renderCap() {
-  const c = capSrc();
   const box = $('capSt');
   if (!box) return;
-  const tabNote = RES && RES.cap === undefined ? 'สคริปต์ tx-api.gs รุ่นนี้ยังไม่อ่านแท็บความจุ ให้วางโค้ดใหม่แล้ว Deploy เป็น New version'
-    : RES && RES.cap && RES.cap.missing ? `แท็บ ${esc(RES.cap.tab)}: ${esc(RES.cap.missing)}` : '';
-  box.classList.toggle('warn', !c);
+  const c = capSrc();
   if (!c) {
-    box.innerHTML = `<b>ยังไม่มีความจุต่อพาเลท</b> ระบบจึงแบ่งพาเลทไม่ได้<br>
-      เพิ่มแท็บชื่อ <b>ความจุต่อพาเลท</b> ในไฟล์ชีตที่สคริปต์ Transaction ผูกอยู่ (หัวตาราง SKU, Product ID, STD / pallet) แล้วกดดึงสต๊อกใหม่
-      หรือ <button class="pw-link" data-capfile>เลือกไฟล์ความจุ</button> (ลากไฟล์มาวางที่กล่องนี้ก็ได้)${tabNote ? `<br>${tabNote}` : ''}`;
+    const why = RES && RES.cap === undefined ? 'สคริปต์ tx-api.gs รุ่นนี้ยังไม่อ่านแท็บความจุ ให้วางโค้ดใหม่แล้ว Deploy เป็น New version'
+      : RES && RES.cap && RES.cap.missing ? `แท็บ ${RES.cap.tab}: ${RES.cap.missing}`
+      : 'เพิ่มแท็บ ความจุต่อพาเลท (หัวตาราง SKU, Product ID, STD / pallet) ในไฟล์ชีต Transaction แล้วกดดึงสต๊อกใหม่ หรือลากไฟล์มาวางตรงนี้';
+    box.innerHTML = `<span class="warn" title="${esc(why)}">⚠️ ยังไม่มีความจุต่อพาเลท แบ่งพาเลทไม่ได้</span> · <button class="pw-link" data-capfile>เลือกไฟล์ความจุ</button>`;
     return;
   }
   const n = new Set(c.rows.map((r) => r[0] || r[1])).size;
   const zero = c.rows.filter((r) => !(r[2] > 0)).length;
-  box.innerHTML = c.from === 'file'
-    ? `ความจุจากไฟล์ <b>${esc(c.name)}</b> ${f(n)} SKU${zero ? ` (เป็น 0 อยู่ ${f(zero)})` : ''} · ${esc(new Date(c.at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }))}<br>
-       <button class="pw-link" data-capfile>เปลี่ยนไฟล์</button>${RES && RES.cap && !RES.cap.missing ? ` · <button class="pw-link" data-captab>ใช้แท็บในชีตแทน</button>` : ''}`
-    : `ความจุจากแท็บ <b>${esc(c.tab)}</b> ${f(n)} SKU${zero ? ` (เป็น 0 อยู่ ${f(zero)})` : ''}${c.blank ? ` · ช่องว่าง ${f(c.blank)} แถว` : ''}<br>
-       แก้ความจุในแท็บแล้วกดดึงสต๊อกใหม่ · <button class="pw-link" data-capfile>ใช้ไฟล์แทน</button>`;
+  const tip = [zero ? `เป็น 0 อยู่ ${f(zero)} SKU` : '', c.blank ? `ช่องว่าง ${f(c.blank)} แถว` : ''].filter(Boolean).join(' · ');
+  box.innerHTML = (c.from === 'file'
+    ? `<span title="${esc(tip)}">ความจุ: ไฟล์ <b>${esc(c.name)}</b> ${f(n)} SKU</span> · <button class="pw-link" data-capfile>เปลี่ยน</button>` +
+      (RES && RES.cap && !RES.cap.missing ? ` · <button class="pw-link" data-captab>ใช้แท็บในชีต</button>` : '')
+    : `<span title="${esc(tip)}">ความจุ: แท็บ <b>${esc(c.tab)}</b> ${f(n)} SKU</span> · <button class="pw-link" data-capfile>ใช้ไฟล์แทน</button>`);
+}
+
+/** แท็บ PO. Truck: PO ไหนของ Supplier ไหน ใช้กันเปิดขายคนละ Supplier พร้อมกัน */
+function renderSup() {
+  const box = $('supSt');
+  if (!box) return;
+  if (!RES) { box.innerHTML = ''; return; }
+  const sp = RES.sup;
+  if (!sp || sp.missing || !(sp.rows && sp.rows.length)) {
+    const why = sp === undefined ? 'สคริปต์ tx-api.gs รุ่นนี้ยังไม่อ่านแท็บ PO. Truck ให้วางโค้ดใหม่แล้ว Deploy เป็น New version'
+      : !sp ? 'ยังไม่มีแท็บ PO. Truck (หัวตาราง Truck, PO.) ในไฟล์ชีต Transaction'
+      : `แท็บ ${sp.tab}: ${sp.missing || 'ยังไม่มีข้อมูล'}`;
+    box.innerHTML = `<span class="warn" title="${esc(why)} · ตอนนี้รู้ Supplier แค่ของรถที่เข้า (ช่อง Truck)">⚠️ ยังไม่รู้ Supplier ของโลเปิด</span>`;
+    return;
+  }
+  box.innerHTML = `Supplier: <b>${f(sp.rows.length)}</b> PO` + (sp.dup && sp.dup.length
+    ? ` · <span class="warn" title="${esc(sp.dup.join(', '))} (ใช้แถวแรก)">PO ลงสอง Supplier ${f(sp.dup.length)}</span>` : '');
 }
 
 function xlsxLib() {
@@ -421,80 +473,143 @@ async function readCapFile(file) {
   }
 }
 
-/* ── ยอดรวม ────────────────────────────────────────────────────────────── */
+/* ── ยอดรวม: แถบเดียว กดเพื่อดูเฉพาะกลุ่ม ─────────────────────────────── */
 
-function renderSum() {
-  if (!SNAP || !PLAN.lines.length) { $('sum').innerHTML = ''; return; }
-  let qty = 0, pallets = 0, open = 0, rib = 0, floor = 0, manual = 0;
-  PLAN.lines.forEach((ln) => { qty += ln.qty; });
-  OUT.forEach((o) => o.rows.forEach((r) => {
-    if (r.move) return;
-    if (!r.loc) manual++;
-    else if (r.tag === 'rack' || P.zoneOf(r.loc) === 'R') pallets++;
-    if (r.open) open += +r.qty || 0;
-    else if (String(r.loc).toUpperCase() === 'RIB') rib += +r.qty || 0;
-    else if (P.isFloor(r.loc)) floor += +r.qty || 0;
-  }));
-  const stat = (label, n, sub, cls = '') => `<div class="tx-stat"><small>${esc(label)}</small><b class="${cls}">${f(n)}</b>${sub ? `<i>${esc(sub)}</i>` : ''}</div>`;
-  $('sum').innerHTML =
-    stat('บรรทัดในแพลน', PLAN.lines.length, `${f(qty)} ชิ้น`) +
-    stat('ขึ้นแร็ค R', pallets, 'ช่อง') +
-    stat('เข้าโลเปิด', open, 'ชิ้น · ติ๊ก OPEN', open ? 's-open' : '') +
-    stat('เศษเข้า RIB', rib, 'ชิ้น', rib ? 's-rib' : '') +
-    stat('ลงพื้น A–D', floor, 'ชิ้น') +
-    stat('ต้องเลือกโลเอง', manual, 'แถว', manual ? 's-warn' : '') +
-    stat('ปน SKU', CHK.red, CHK.red ? 'แก้ก่อนส่งงาน' : 'ไม่มี', CHK.red ? 's-red' : '');
+const GROUPS = [
+  ['rack', 'แร็ค', 'ช่อง', ''], ['open', 'เข้าโลเปิด', 'ชิ้น', 'c-open'], ['rib', 'RIB', 'ชิ้น', 'c-rib'],
+  ['floor', 'พื้น', 'ชิ้น', ''], ['manual', 'เลือกเอง', 'แถว', 'c-warn'], ['red', 'ผิดกติกา', 'แถว', 'c-red'],
+];
+
+/** แถวนี้อยู่กลุ่มไหน ใช้ทั้งนับและกรอง */
+function groupsOf(r, msgs) {
+  const g = [];
+  if ((msgs || []).some((m) => m.level === 'red')) g.push('red');
+  if (r.move) return g;
+  if (!r.loc) g.push('manual');
+  else if (r.open) g.push('open');
+  else if (String(r.loc).toUpperCase() === 'RIB') g.push('rib');
+  else if (r.tag === 'rack' || P.zoneOf(r.loc) === 'R') g.push('rack');
+  else if (P.isFloor(r.loc)) g.push('floor');
+  return g;
 }
 
-/* ── รายการ ────────────────────────────────────────────────────────────── */
+function counts() {
+  const c = {};
+  GROUPS.forEach(([k]) => { c[k] = { rows: 0, qty: 0, lines: new Set() }; });
+  OUT.forEach((o, i) => o.rows.forEach((r, j) => groupsOf(r, CHK.lines[i].rows[j]).forEach((g) => {
+    c[g].rows++;
+    c[g].qty += +r.qty || 0;
+    c[g].lines.add(i);
+  })));
+  return c;
+}
 
+function renderSum() {
+  if (!SNAP || !PLAN.lines.length || !CHK) { $('sum').innerHTML = ''; return; }
+  const qty = PLAN.lines.reduce((a, ln) => a + ln.qty, 0);
+  const c = counts();
+  if (FILTER && !c[FILTER].rows) FILTER = '';
+  $('sum').innerHTML = `<span class="pw-total"><b>${f(PLAN.lines.length)}</b> บรรทัด · <b>${f(qty)}</b> ชิ้น</span>` +
+    GROUPS.map(([k, label, unit, cls]) => {
+      const n = unit === 'ชิ้น' ? c[k].qty : c[k].rows;
+      return `<button class="pw-chip ${cls}${FILTER === k ? ' on' : ''}${n ? '' : ' zero'}" data-filter="${k}" aria-pressed="${FILTER === k}" ${n ? '' : 'disabled'}>${label} <b>${f(n)}</b> ${unit}</button>`;
+    }).join('') +
+    (FILTER ? ' <button class="pw-link" data-filter="">ดูทั้งหมด</button>' : '');
+}
+
+/* ── ตารางผล: หนึ่งแถวต่อหนึ่งโล บรรทัดแพลนเดียวกันอยู่ติดกัน ─────────────── */
+
+/** รายละเอียดของบรรทัด ซ่อนไว้ กด ⓘ / 💡 ถึงแสดง */
 function lineMeta(o, ln) {
   const bits = [];
   bits.push(`<span>${esc(o.kind.label)}</span>`);
   bits.push(o.cap > 0 ? `<span>พาเลทละ <b>${f(o.cap)}</b></span>` : `<span class="low">${o.cap === 0 ? 'ความจุเป็น 0' : 'ไม่มีความจุ'}</span>`);
-  if (ln.po) bits.push(`<span>PO <b>${esc(ln.po)}</b></span>`);
+  if (o.sup) bits.push(`<span>Supplier <b>${esc(o.sup)}</b></span>`);
   const x = o.info;
   if (o.s < 0) bits.push('<span class="low">ไม่มี SKU นี้ในสมุด</span>');
   if (x) {
     if (x.regular) {
       const cover = x.perDay > 0 ? x.openQty / x.perDay : Infinity;
       const low = cover < OPT.coverDays;
-      bits.push(`<span>โลเปิดประจำ <b>${esc(x.regular)}</b>${x.fills ? ` (เติม ${f(x.fills)} ครั้ง)` : ''}</span>`);
-      bits.push(`<span class="${low ? 'low' : ''}">โลเปิดมี ${f(x.openQty)} ชิ้น${x.perDay > 0 ? ` · ขายวันละ ${f(Math.round(x.perDay * 10) / 10)} · พอขาย ${cover === Infinity ? '-' : cover.toFixed(1)} วัน` : ' · ช่วงนี้ไม่มีขาย'}</span>`);
+      const sups = Object.keys(x.openSup || {}).filter((k) => k && x.openSup[k] > 0);
+      bits.push(`<span>${x.openQty > 0 ? 'โลเปิด' : 'โลเปิดล่าสุด'} <b>${esc(x.regular)}</b>${sups.length === 1 ? ` ของ ${esc(sups[0])}` : ''}</span>`);
+      if (sups.length > 1) bits.push(`<span class="low">เปิดขายอยู่ ${f(sups.length)} Supplier: ${esc(sups.join(', '))}</span>`);
+      bits.push(`<span class="${low ? 'low' : ''}">โลเปิดมี ${f(x.openQty)}${x.perDay > 0 ? ` · ขายวันละ ${f(Math.round(x.perDay * 10) / 10)} · พอขาย ${cover === Infinity ? '-' : cover.toFixed(1)} วัน` : ' · ช่วงนี้ไม่มีขาย'}</span>`);
     }
+    if (x.reserve > 0) bits.push(`<span>สำรอง <b>${f(x.reserve)}</b></span>`);
     if (x.rib > 0) bits.push(`<span>ใน RIB <b>${f(x.rib)}</b></span>`);
     bits.push(`<span>ทั้งคลัง ${f(x.total)}</span>`);
   }
   return bits.join('');
 }
 
-function rowHtml(i, j, r, msgs) {
-  const level = msgs.some((m) => m.level === 'red') ? 'r-red' : r.tag === 'rib' ? 'r-rib' : r.move ? 'r-move' : '';
-  const k = (field) => `data-i="${i}" data-j="${j}" data-f="${field}" data-k="${i}.${j}.${field}"`;
-  return `<tr class="${level}">
-    <td class="c-loc"><input class="pw-loc${r.loc ? '' : ' empty'}" list="pwLocs" value="${esc(r.loc)}" placeholder="เลือกโล" ${k('loc')} aria-label="Location"></td>
-    <td class="c-qty"><input class="pw-qty" type="number" min="0" step="any" value="${esc(r.qty)}" ${k('qty')} aria-label="จำนวน"></td>
-    <td class="c-open"><input class="pw-ck" type="checkbox" ${r.open ? 'checked' : ''} ${k('open')} aria-label="OPEN" title="เข้าโลเปิด"></td>
-    <td class="c-x"><button class="pw-x" data-del="${i}.${j}" title="ลบแถวนี้" aria-label="ลบแถว">×</button></td>
-    <td class="c-tag"><span class="pw-tag t-${esc(r.tag || 'manual')}">${esc(r.move ? 'ย้ายจาก ' + (r.from || 'RIB') : P.TAG_TEXT[r.tag] || 'แก้เอง')}</span>
-      ${r.why ? `<span class="pw-why">${esc(r.why)}</span>` : ''}
-      ${msgs.map((m) => `<span class="pw-msg l-${m.level}">${m.level === 'red' ? '⛔ ' : m.level === 'warn' ? '⚠️ ' : ''}${esc(m.text)}</span>`).join('')}</td>
-    <td class="c-rm"><input class="pw-rm" value="${esc(r.remark || '')}" placeholder="REMARK" ${k('remark')} aria-label="REMARK"></td>
+function lineCells(o, ln, ck) {
+  const short = ck.issues.length;
+  return `<td class="c-no">${esc(ln.no || ln.n)}${o.manual ? ' <span class="pw-edit" title="แก้เองแล้ว ระบบไม่คิดบรรทัดนี้ใหม่">✎</span>' : ''}</td>
+    <td class="c-sku">${esc(ln.sku || ln.pid)}</td>
+    <td class="c-nm" title="${esc(o.name || ln.name)}">${esc(o.name || ln.name)}</td>
+    <td class="c-po">${esc(ln.po)}</td>
+    <td class="num${short ? ' short' : ''}"${short ? ` title="${esc(ck.issues.join(' · '))}"` : ''}>${short ? '⚠️ ' : ''}${f(ln.qty)}</td>`;
+}
+
+/** ปุ่มของบรรทัด อยู่แถวแรก: ดูรายละเอียด และคืนค่าที่ระบบเสนอ */
+function lineBtns(i, o) {
+  return `<button class="pw-ic${MORE.has(i) ? ' on' : ''}" data-more="${i}" title="${o.hint ? esc(o.hint) : 'ดูรายละเอียด'}" aria-label="ดูรายละเอียด">${o.hint ? '💡' : 'ⓘ'}</button>` +
+    (o.manual ? `<button class="pw-ic" data-reset="${i}" title="คืนค่าที่ระบบเสนอ" aria-label="คืนค่าที่ระบบเสนอ">↺</button>` : '');
+}
+
+function rowHtml(i, j, o, ln, ck) {
+  const r = o.rows[j], msgs = ck.rows[j] || [];
+  const first = j === 0, last = j === o.rows.length - 1;
+  const red = msgs.filter((m) => m.level === 'red'), warn = msgs.filter((m) => m.level === 'warn');
+  const lv = red.length ? 'r-red' : r.tag === 'rib' ? 'r-rib' : r.move ? 'r-move' : '';
+  const k = (fld) => `data-i="${i}" data-j="${j}" data-f="${fld}" data-k="${i}.${j}.${fld}"`;
+  const tip = [r.why].concat(msgs.map((m) => m.text)).filter(Boolean).join(' · ');
+  return `<tr class="${first ? 'g1' : ''} ${lv}">
+    ${first ? lineCells(o, ln, ck) : '<td></td><td></td><td></td><td></td><td></td>'}
+    <td><input class="pw-loc${r.loc ? '' : ' empty'}" list="pwLocs" value="${esc(r.loc)}" placeholder="เลือกโล" ${k('loc')} aria-label="Location"></td>
+    <td class="num"><input class="pw-qty" type="number" min="0" step="any" value="${esc(r.qty)}" ${k('qty')} aria-label="จำนวน"></td>
+    <td class="c-open"><input class="pw-ck" type="checkbox" ${r.open ? 'checked' : ''} ${k('open')} aria-label="OPEN"></td>
+    <td class="c-tag"${tip ? ` title="${esc(tip)}"` : ''}><span class="pw-tag t-${esc(r.tag || 'manual')}">${esc(r.move ? 'ย้ายจาก ' + (r.from || 'RIB') : P.TAG_TEXT[r.tag] || 'แก้เอง')}</span>${
+      red.length ? `<span class="pw-msg l-red">⛔ ${esc(red[0].text)}</span>` : warn.length ? '<span class="pw-msg l-warn">⚠️</span>' : ''}</td>
+    <td><input class="pw-rm" value="${esc(r.remark || '')}" ${k('remark')} aria-label="REMARK"></td>
+    <td class="c-act">${first ? lineBtns(i, o) : ''}<button class="pw-ic x" data-del="${i}.${j}" title="ลบแถวนี้" aria-label="ลบแถว">×</button>${
+      last ? `<button class="pw-ic" data-add="${i}" title="เพิ่มแถว" aria-label="เพิ่มแถว">+</button>` : ''}</td>
   </tr>`;
+}
+
+/** บรรทัดที่ลบแถวหมดแล้ว เหลือแถวเดียวไว้กดเพิ่ม */
+function emptyLineRow(i, o, ln, ck) {
+  return `<tr class="g1 r-red">${lineCells(o, ln, ck)}<td colspan="5" class="l-red">ยังไม่มีแถว กด + เพื่อเพิ่ม</td>
+    <td class="c-act">${lineBtns(i, o)}<button class="pw-ic" data-add="${i}" title="เพิ่มแถว" aria-label="เพิ่มแถว">+</button></td></tr>`;
+}
+
+/** แถวรายละเอียดใต้บรรทัด: ข้อมูลสต๊อก คำแนะนำ และเหตุผลของแต่ละแถว */
+function moreRow(o, ln, ck) {
+  const why = o.rows.map((r, j) => {
+    const t = [r.why].concat((ck.rows[j] || []).map((m) => (m.level === 'red' ? '⛔ ' : m.level === 'warn' ? '⚠️ ' : '') + m.text)).filter(Boolean);
+    return t.length ? `<div><b>${esc(r.loc || 'ยังไม่เลือกโล')}</b> ${esc(t.join(' · '))}</div>` : '';
+  }).join('');
+  return `<tr class="pw-more"><td colspan="11">
+      <div class="meta">${lineMeta(o, ln)}</div>
+      ${o.hint ? `<div class="tip">💡 ${esc(o.hint)}</div>` : ''}
+      ${ck.issues.map((t) => `<div class="low">⚠️ ${esc(t)}</div>`).join('')}
+      ${why}
+    </td></tr>`;
 }
 
 function renderBody() {
   const body = $('body');
   if (!WmsSettings.txUrl()) {
-    body.innerHTML = `<div class="tx-empty">หน้านี้ใช้สต๊อกจากสมุด Transaction<br><b>ตั้ง Apps Script URL ของ Transaction</b> ที่<a href="../settings/">หน้าตั้งค่า</a>ก่อน</div>`;
+    body.innerHTML = `<div class="tx-empty">ตั้ง <b>Apps Script URL ของ Transaction</b> ที่<a href="../settings/">หน้าตั้งค่า</a>ก่อน</div>`;
     return;
   }
   if (!SNAP) {
-    body.innerHTML = `<div class="tx-empty">${BUSY ? 'กำลังโหลดสต๊อก…' : 'กด <b>ดึงสต๊อก</b> ด้านบนก่อน ระบบต้องรู้ว่าช่องไหนว่าง'}</div>`;
+    body.innerHTML = `<div class="tx-empty">${BUSY ? 'กำลังโหลดสต๊อก…' : 'กด <b>ดึงสต๊อก</b> ด้านบนก่อน'}</div>`;
     return;
   }
   if (CERR) {
-    body.innerHTML = `<div class="tx-empty bad">คิดที่เก็บไม่สำเร็จ: ${esc(CERR)}<br>ลองกด <b>จัดที่เก็บ</b> อีกครั้ง ถ้ายังไม่ได้ ส่งภาพหน้านี้ให้คนดูแลระบบ</div>`;
+    body.innerHTML = `<div class="tx-empty bad">คิดที่เก็บไม่สำเร็จ: ${esc(CERR)}<br>ลองวางแพลนใหม่ ถ้ายังไม่ได้ ส่งภาพหน้านี้ให้คนดูแลระบบ</div>`;
     return;
   }
   if (!PLAN.lines.length && TEXT.trim()) {
@@ -502,63 +617,45 @@ function renderBody() {
     PLAN.skipped.forEach((s) => { why[s.why] = (why[s.why] || 0) + 1; });
     const list = Object.entries(why).map(([w, n]) => `<li>${esc(w)} ${f(n)} แถว</li>`).join('');
     body.innerHTML = `<div class="tx-empty bad"><b>อ่านแพลนไม่ได้สักบรรทัด</b>${list ? `<ul class="pw-why-list">${list}</ul>` : '<br>'}
-      ลองคัดลอกจากแท็บ INPUT ให้ติดแถวหัวตาราง (NO., Product ID, PO, SKU, Product Name, QTY) มาด้วย แล้วกด <b>จัดที่เก็บ</b> อีกครั้ง
-      ${PLAN.how === 'look' && colText() ? `<br><small>ระบบเดาคอลัมน์ไว้: ${esc(colText())}</small>` : ''}</div>`;
+      ลองคัดลอกให้ติดแถวหัวตาราง (NO., Product ID, PO, SKU, QTY) มาด้วย</div>`;
     return;
   }
-  if (!PLAN.lines.length) {
-    body.innerHTML = `<div class="tx-empty">คัดลอกแพลนรับเข้าจากแท็บ INPUT มาวางในช่องด้านบน แล้วกด <b>จัดที่เก็บ</b><br>
-      ระบบเสนอโลให้ทุกบรรทัด แก้ได้ทุกช่อง แล้วคัดลอกกลับไปวางในแท็บ OUTPUT</div>`;
-    return;
-  }
+  if (!PLAN.lines.length) { body.innerHTML = ''; return; }
   const edited = Object.keys(MANUAL).length;
-  let html = `<div class="pw-bar">
-      <button class="tx-opt p" id="copyBtn">📋 คัดลอกไปวางในชีต</button>
-      <button class="tx-opt" id="xlsxBtn">⬇️ โหลด Excel</button>
-      <span class="sp"></span>
-      ${edited ? `<span class="pw-edit">แก้เอง ${f(edited)} บรรทัด</span> <button class="tx-opt" id="resetAll">คืนค่าที่ระบบเสนอทั้งหมด</button>` : ''}
-    </div>`;
-  if (PLAN.skipped.length) {
-    html += `<details class="pw-skip"><summary>ข้ามไป ${f(PLAN.skipped.length)} แถว</summary><ul>${PLAN.skipped.map((s) => `<li>${esc(s.label || 'แถว ' + s.n)}${s.code ? ` (${esc(s.code)})` : ''}: ${esc(s.why)}</li>`).join('')}</ul></details>`;
-  }
+  const only = FILTER ? counts()[FILTER].lines : null;
+  let rows = '';
   OUT.forEach((o, i) => {
+    if (only && !only.has(i)) return;
     const ln = PLAN.lines[i], ck = CHK.lines[i];
-    const bad = ck.rows.some((m) => m.some((x) => x.level === 'red'));
-    html += `<div class="pw-line${bad ? ' bad' : ''}">
-      <div class="pw-lh">
-        <span class="pw-no" title="แถวที่ ${ln.n} ของข้อความที่วาง">${esc(ln.label || 'แถว ' + ln.n)}</span>
-        <span class="pw-sku">${esc(ln.sku || ln.pid)}</span>
-        <span class="pw-nm">${esc(o.name || ln.name)}</span>
-        <span class="pw-q">${f(ln.qty)} ชิ้น</span>
-        <div class="pw-meta">${lineMeta(o, ln)}</div>
-        ${ck.issues.map((t) => `<div class="pw-iss">⚠️ ${esc(t)}</div>`).join('')}
-      </div>
-      <table class="pw-tbl">
-        <thead><tr><th>Location</th><th>QTY</th><th>OPEN</th><th></th><th>สถานะ</th><th>REMARK</th></tr></thead>
-        <tbody>${o.rows.map((r, j) => rowHtml(i, j, r, ck.rows[j])).join('')}</tbody>
-      </table>
-      <div class="pw-lf">
-        <button class="pw-small" data-add="${i}">+ เพิ่มแถว</button>
-        ${o.manual ? `<button class="pw-small" data-reset="${i}">คืนค่าที่ระบบเสนอ</button><span class="pw-edit">แก้เอง</span>` : ''}
-      </div>
-    </div>`;
+    rows += o.rows.length ? o.rows.map((r, j) => rowHtml(i, j, o, ln, ck)).join('') : emptyLineRow(i, o, ln, ck);
+    if (MORE.has(i)) rows += moreRow(o, ln, ck);
   });
-  body.innerHTML = html;
+  body.innerHTML = `<div class="pw-bar">
+      <button class="tx-opt p" id="copyBtn">📋 คัดลอกไปวางในชีต</button>
+      <button class="tx-opt" id="xlsxBtn">⬇️ Excel</button>
+      ${PLAN.skipped.length ? `<details class="pw-skip"><summary>ข้าม ${f(PLAN.skipped.length)} แถว</summary><ul>${PLAN.skipped.map((s) => `<li>${esc(s.label || 'แถว ' + s.n)}${s.code ? ` (${esc(s.code)})` : ''}: ${esc(s.why)}</li>`).join('')}</ul></details>` : ''}
+      <span class="sp"></span>
+      ${edited ? `<span class="pw-edit">✎ แก้เอง ${f(edited)} บรรทัด</span> <button class="tx-opt" id="resetAll">คืนค่าทั้งหมด</button>` : ''}
+    </div>
+    <div class="pw-wrap"><table class="pw-xl"><thead><tr>
+      <th>NO.</th><th>SKU</th><th>ชื่อสินค้า</th><th>PO</th><th class="num">แพลน</th>
+      <th>Location</th><th class="num">QTY</th><th>OPEN</th><th>ผล</th><th>REMARK</th><th></th>
+    </tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 function renderPlanSt() {
   const el = $('planSt');
   if (!el) return;
   el.classList.toggle('bad', !!(TEXT.trim() && !PLAN.lines.length));
-  if (PLAN.lines.length) {
-    el.textContent = `อ่านได้ ${f(PLAN.lines.length)} บรรทัด${PLAN.skipped.length ? ` ข้าม ${f(PLAN.skipped.length)}` : ''}` +
-      (PLAN.how === 'look' ? ` · ไม่มีหัวตาราง ดูจากข้อมูล: ${colText()}` : '');
-  } else el.textContent = TEXT.trim() ? 'อ่านแพลนไม่ได้สักบรรทัด ดูด้านล่าง' : '';
+  el.textContent = PLAN.lines.length ? `อ่านได้ ${f(PLAN.lines.length)} บรรทัด${PLAN.skipped.length ? ` · ข้าม ${f(PLAN.skipped.length)}` : ''}`
+    : TEXT.trim() ? 'อ่านแพลนไม่ได้ ดูด้านล่าง' : 'กด Ctrl+V ที่ไหนก็ได้ในหน้านี้';
 }
 
 function render() {
   renderSrc();
+  renderGrid();
   renderCap();
+  renderSup();
   renderPlanSt();
   renderSum();
   renderBody();
@@ -605,6 +702,13 @@ $('body').addEventListener('change', (e) => {
 });
 
 $('body').addEventListener('click', (e) => {
+  const more = e.target.closest('[data-more]');
+  if (more) {
+    const i = +more.dataset.more;
+    if (MORE.has(i)) MORE.delete(i); else MORE.add(i);
+    renderBody();
+    return;
+  }
   const del = e.target.closest('[data-del]');
   if (del) {
     const [i, j] = del.dataset.del.split('.').map(Number);
@@ -674,25 +778,61 @@ async function downloadXlsx() {
   btn.textContent = label;
 }
 
-/* ── ช่องวางแพลนกับเกณฑ์ ───────────────────────────────────────────────── */
+/* ── วางแพลนกับเกณฑ์ ───────────────────────────────────────────────────── */
 
-$('inp').addEventListener('click', (e) => {
-  if (e.target.closest('#goBtn')) {
-    const text = $('plan').value;
-    if (text !== TEXT && Object.keys(MANUAL).length && !confirm('แพลนเปลี่ยน ที่แก้เองไว้จะถูกล้าง แล้วจัดใหม่ทั้งหมด')) return;
-    if (text !== TEXT) MANUAL = {};
-    TEXT = text;
-    compute();
-    saveDraft();
-    render();
-    if (!SNAP && WmsSettings.txUrl() && !LOADING) load(false);
+/** แพลนใหม่: ที่แก้เองไว้ผูกกับลำดับบรรทัด แพลนเปลี่ยนจึงต้องล้าง */
+function setPlan(text) {
+  text = String(text || '').replace(/\r/g, '').replace(/\n+$/, '');
+  if (text === TEXT) return;
+  if (Object.keys(MANUAL).length && !confirm('วางแพลนใหม่ ที่แก้เองไว้จะถูกล้าง แล้วจัดใหม่ทั้งหมด')) return;
+  MANUAL = {};
+  MORE.clear();
+  FILTER = '';
+  TEXT = text;
+  compute();
+  saveDraft();
+  render();
+  if (!SNAP && WmsSettings.txUrl() && !LOADING) load(false);
+}
+
+/* Ctrl+V ที่ไหนก็ได้ในหน้า (ยกเว้นตอนอยู่ในช่องกรอก) คือวางแพลน ข้อความช่องเดียวไม่นับ กันวางพลาด */
+document.addEventListener('paste', (e) => {
+  const t = e.target;
+  if (t && t.closest && t.closest('input, textarea, select, [contenteditable="true"]')) return;
+  const text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
+  if (!text || !/[\t\n]/.test(text.trim())) return;
+  e.preventDefault();
+  setPlan(text);
+});
+
+$('sum').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-filter]');
+  if (!b || b.disabled) return;
+  FILTER = FILTER === b.dataset.filter ? '' : b.dataset.filter;
+  renderSum();
+  renderBody();
+});
+
+$('inp').addEventListener('click', async (e) => {
+  if (e.target.closest('#pasteBtn')) {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!/[\t\n]/.test(String(text).trim())) throw new Error('ไม่ใช่ตาราง');
+      setPlan(text);
+    } catch (err) {
+      const el = $('planSt');
+      el.classList.add('bad');
+      el.textContent = 'อ่านคลิปบอร์ดไม่ได้ คลิกที่ตารางแล้วกด Ctrl+V แทน';
+      $('grid').focus();
+    }
     return;
   }
   if (e.target.closest('#clearBtn')) {
-    if (TEXT && !confirm('ล้างแพลนและที่แก้เองทั้งหมด')) return;
+    if (!TEXT || !confirm('ล้างแพลนและที่แก้เองทั้งหมด')) return;
     TEXT = '';
     MANUAL = {};
-    $('plan').value = '';
+    MORE.clear();
+    FILTER = '';
     compute();
     saveDraft();
     render();
@@ -723,16 +863,16 @@ $('inp').addEventListener('change', (e) => {
   }
 });
 
-/* ลากไฟล์ความจุมาวางที่กล่องความจุ */
+/* ลากไฟล์ความจุมาวางที่แถบตั้งค่าใต้ตาราง */
 $('inp').addEventListener('dragover', (e) => {
-  const box = e.target.closest('#capSt');
+  const box = e.target.closest('#set');
   if (!box) return;
   e.preventDefault();
   box.classList.add('pw-drag');
 });
-$('inp').addEventListener('dragleave', (e) => { e.target.closest('#capSt')?.classList.remove('pw-drag'); });
+$('inp').addEventListener('dragleave', (e) => { e.target.closest('#set')?.classList.remove('pw-drag'); });
 $('inp').addEventListener('drop', (e) => {
-  const box = e.target.closest('#capSt');
+  const box = e.target.closest('#set');
   if (!box) return;
   e.preventDefault();
   box.classList.remove('pw-drag');

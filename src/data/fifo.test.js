@@ -458,7 +458,7 @@ describe('ส่งออก', () => {
     const an = F.analyze(res, '2026-10');
     const st = F.stockTable(res, an);
     expect(st[0]).toContain('ลำดับ FIFO');
-    expect(st[0].slice(7, 14)).toEqual(['PO', 'รับเข้า', 'รอบรับเข้า', 'คงเหลือ', 'ในโลขาย', 'ตั้งพื้น (ไม่เปิดขาย)', 'บนแร็ค']);
+    expect(st[0].slice(7, 15)).toEqual(['PO', 'Supplier', 'รับเข้า', 'รอบรับเข้า', 'คงเหลือ', 'ในโลขาย', 'ตั้งพื้น (ไม่เปิดขาย)', 'บนแร็ค']);
     expect(st.every((r) => r.length === st[0].length)).toBe(true);
     expect(st).toHaveLength(3);
     const sk = F.skipTable(res, an);
@@ -471,5 +471,35 @@ describe('ส่งออก', () => {
 
   it('คัดลอกเป็นคอลัมน์ แท็บและขึ้นบรรทัดในข้อความไม่ทำให้คอลัมน์เลื่อน', () => {
     expect(F.tsv([['a\tb', 'c\nd'], [1, null]])).toBe('a b\tc d\n1\t');
+  });
+});
+
+describe('ส่งออก — ชื่อ Supplier (แท็บ PO. Truck)', () => {
+  it('ใส่ Supplier ของแต่ละกองและของที่เก่ากว่า เมื่อโหลด wms-sup.js', () => {
+    const win = {};
+    new Function('window', fs.readFileSync(path.resolve(__dirname, '../../public/wms-sup.js'), 'utf8'))(win);
+    new Function('window', JS)(win);
+    const G = win.WmsFifo;
+    const res = ledger([
+      gr({ lot: 7, po: '9900000001-01', to: 'P1-01', open: true, qty: 5, d: '2026-09-02' }),
+      gr({ lot: 8, po: '9900000002-01', to: 'P1-02', open: true, qty: 5, d: '2026-09-20' }),
+      sale({ lot: 8, po: '9900000002-01', from: 'P1-02', qty: 3, d: '2026-10-03', row: 50 }),
+    ]);
+    res.sup = { tab: 'PO. Truck', rows: [['9900000001', 'รถเอ'], ['9900000002', 'รถบี']], dup: [], missing: '' };
+    const an = G.analyze(res, '2026-10');
+    const st = G.stockTable(res, an);
+    const i = st[0].indexOf('Supplier');
+    expect(st.slice(1).map((r) => [r[7], r[i]])).toEqual([['9900000001', 'รถเอ'], ['9900000002', 'รถบี']]);
+    const sk = G.skipTable(res, an);
+    expect(sk[1][sk[0].indexOf('Supplier ที่ออก')]).toBe('รถบี');
+    expect(sk[1]).toContain('LOT 7 PO 9900000001 (รถเอ) @P1-01 5');
+    expect(G.sup(res, '0')).toBe('');
+  });
+
+  it('ไม่ได้โหลด wms-sup.js คอลัมน์ Supplier ว่าง ไม่พัง', () => {
+    const res = ledger([gr({ lot: 7, to: 'P1-01', open: true, qty: 5, d: '2026-09-02' })]);
+    res.sup = { tab: 'PO. Truck', rows: [['9900000001', 'รถเอ']], dup: [], missing: '' };
+    const st = F.stockTable(res, F.analyze(res, '2026-10'));
+    expect(st[1][st[0].indexOf('Supplier')]).toBe('');
   });
 });

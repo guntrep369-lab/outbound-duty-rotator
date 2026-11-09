@@ -56,13 +56,15 @@
     var skus = {}, locs = {};
     var totals = { open: 0, reserve: 0, QA: 0, IQA: 0, RIB: 0, neg: 0, net: 0 };
     var openLocs = {}, reserveLocs = {}, stocked = 0;
+    /* ชื่อ Supplier ของแต่ละ PO (แท็บ PO. Truck ผ่าน wms-sup.js) ไม่มีก็เป็นค่าว่างทั้งหมด */
+    var S = window.WmsSup, supm = S ? S.map(s.sup) : {};
 
     function skuOf(i) {
       var t = s.skus[i];
       var k = t[0] || t[1];
       return skus[k] || (skus[k] = {
         sku: k, long: t[1], name: t[2], perDay: 0, total: 0, rows: [],
-        open: 0, reserve: 0, QA: 0, IQA: 0, RIB: 0,
+        open: 0, reserve: 0, QA: 0, IQA: 0, RIB: 0, openSup: {}, reserveSup: {},
       });
     }
 
@@ -74,6 +76,7 @@
       var row = {
         lot: k[1], po: k[2], loc: s.locs[k[3]], qty: k[4], open: !!k[5],
         bucket: bucketOf(s.locs[k[3]], k[5]),
+        sup: S ? S.of(supm, k[2]) : '',
       };
       var sku = skuOf(k[0]);
       row.sku = sku.sku;
@@ -84,6 +87,8 @@
       else {
         sku[row.bucket] += row.qty;
         totals[row.bucket] += row.qty;
+        if (row.bucket === 'open') sku.openSup[row.sup] = (sku.openSup[row.sup] || 0) + row.qty;
+        if (row.bucket === 'reserve') sku.reserveSup[row.sup] = (sku.reserveSup[row.sup] || 0) + row.qty;
         if (row.bucket === 'open') openLocs[row.loc] = 1;
         if (row.bucket === 'reserve') reserveLocs[row.loc] = 1;
       }
@@ -92,9 +97,12 @@
       l.rows.push(row);
     });
 
+    totals.twoOpen = 0;
     Object.keys(skus).forEach(function (k) {
       var x = skus[k];
       x.cover = x.perDay > 0 ? x.open / x.perDay : Infinity;
+      supSplit(x);
+      if (x.sups.length > 1) totals.twoOpen++;
       x.rows.sort(function (a, b) {
         return order(a.bucket) - order(b.bucket) || lotRank(a.lot) - lotRank(b.lot) ||
           String(a.loc).localeCompare(String(b.loc)) || String(a.po).localeCompare(String(b.po));
@@ -109,18 +117,53 @@
     totals.reserveLocs = Object.keys(reserveLocs).length;
     totals.skus = stocked;
     totals.locs = Object.keys(locs).filter(function (k) { return locs[k].rows.some(function (r) { return r.qty > 0; }); }).length;
-    return { skus: skus, locs: locs, totals: totals };
+    return { skus: skus, locs: locs, totals: totals, hasSup: Object.keys(supm).length > 0, supNote: S ? S.note(s.sup) : '' };
+  }
+
+  /**
+   * ห้ามเปิดขายคนละ Supplier พร้อมกัน: แยกสำรองเป็นของ Supplier ที่เปิดอยู่ (ดึงมาเติมได้) กับของเจ้าอื่น (รอก่อน)
+   *   sups         Supplier ที่มีของในโลเปิดตอนนี้ (รู้ชื่อเท่านั้น) มีมากกว่า 1 คือเปิดพร้อมกันอยู่แล้ว ต้องแก้
+   *   reserveUse   สำรองที่ดึงมาเติมโลเปิดได้ = ของ Supplier ที่เปิดอยู่ + ที่ไม่รู้ Supplier
+   *                ไม่รู้ว่าเปิดของใคร (หรือเปิดอยู่หลายเจ้า) ใช้สำรองทั้งหมด
+   *   reserveOther สำรองของ Supplier อื่น ต้องรอโลเปิดหมดก่อนถึงเปิดได้ otherSups คือชื่อเจ้าพวกนั้น
+   */
+  function supSplit(x) {
+    var S = window.WmsSup;
+    x.sups = S ? S.names(x.openSup) : [];
+    if (x.sups.length === 1) {
+      var mine = x.sups[0];
+      x.reserveUse = (x.reserveSup[mine] || 0) + (x.reserveSup[''] || 0);
+      x.otherSups = S.names(x.reserveSup).filter(function (n) { return n !== mine; });
+    } else {
+      x.reserveUse = x.reserve;
+      x.otherSups = [];
+    }
+    x.reserveOther = x.reserve - x.reserveUse;
+    return x;
+  }
+
+  /** SKU ที่ตอนนี้เปิดขายอยู่มากกว่า 1 Supplier เรียงตามรหัส */
+  function twoOpen(data) {
+    return Object.keys(data.skus).map(function (k) { return data.skus[k]; })
+      .filter(function (x) { return x.sups && x.sups.length > 1; })
+      .sort(function (a, b) { return String(a.sku).localeCompare(String(b.sku)); });
   }
 
   function order(bucket) { return ['open', 'reserve', 'QA', 'IQA', 'RIB'].indexOf(bucket); }
 
-  /** ควรไปดึงจากที่ไหนก่อน: LOT เก่าสุดในของสำรอง ถ้า LOT เท่ากันเอาจุดที่มีมากสุด */
+  /**
+   * ควรไปดึงจากที่ไหนก่อน: LOT เก่าสุดในของสำรอง ถ้า LOT เท่ากันเอาจุดที่มีมากสุด
+   * โลเปิดเป็นของ Supplier เดียว ดึงได้แค่สำรองของเจ้านั้น (กับที่ไม่รู้ Supplier) ห้ามเปิดคนละเจ้าพร้อมกัน
+   */
   function source(sku) {
     var g = {};
+    var only = sku.sups && sku.sups.length === 1 ? sku.sups[0] : null;
     sku.rows.forEach(function (r) {
       if (r.bucket !== 'reserve' || r.qty <= 0) return;
-      var k = r.lot + '|' + r.loc;
-      (g[k] = g[k] || { lot: r.lot, loc: r.loc, qty: 0 }).qty += r.qty;
+      if (only && r.sup && r.sup !== only) return;
+      var k = r.lot + '|' + r.loc + '|' + (r.sup || '');
+      if (!g[k]) { g[k] = { lot: r.lot, loc: r.loc, qty: 0 }; if (r.sup) g[k].sup = r.sup; }
+      g[k].qty += r.qty;
     });
     var list = Object.keys(g).map(function (k) { return g[k]; });
     list.sort(function (a, b) { return lotRank(a.lot) - lotRank(b.lot) || b.qty - a.qty; });
@@ -137,7 +180,8 @@
       var x = data.skus[k];
       if (!(x.perDay > 0) || x.cover >= days) return;
       var low = x.perDay < MIN_PER_DAY;
-      if (x.reserve > 0) { if (low) hiddenReady++; else ready.push(x); }
+      var use = x.reserveUse === undefined ? x.reserve : x.reserveUse;
+      if (use > 0) { if (low) hiddenReady++; else ready.push(x); }
       else if (low) hiddenNone++;
       else none.push(x);
     });
@@ -153,6 +197,10 @@
   /** งานของ SKU ที่ไม่มีของสำรอง QA, IQA, RIB ไม่ใช่ที่ดึงมาเติมตามปกติ แต่คนควรรู้ว่ายังมีของอยู่ตรงนั้น */
   function noReserveText(x) {
     var other = x.QA + x.IQA + x.RIB;
+    if (x.reserveOther > 0) {
+      return 'สำรองที่มีเป็นของ ' + x.otherSups.join(', ') + ' ' + fmt(x.reserveOther) + ' ชิ้น ห้ามเปิดพร้อม ' + x.sups[0] +
+        ' รอของ ' + x.sups[0] + ' ในโลเปิดหมดก่อนแล้วค่อยเปิด' + (other > 0 ? ' · มีที่ QA, IQA, RIB ' + fmt(other) + ' ชิ้น' : '');
+    }
     return other > 0 ? 'ไม่มีของบนชั้นวาง มีอยู่ที่ QA, IQA, RIB ' + fmt(other) + ' ชิ้น' : 'ไม่มีของบนชั้นวาง ต้องตามของเข้า';
   }
 
@@ -840,6 +888,8 @@
     parse: parse,
     expand: expand,
     source: source,
+    supSplit: supSplit,
+    twoOpen: twoOpen,
     refill: refill,
     coverText: coverText,
     noReserveText: noReserveText,

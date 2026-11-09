@@ -119,7 +119,7 @@ describe('PO ที่ลง -01 -02 ต่อท้ายคือ PO เดี
       ['9', '9900000001', 6, ['-05', '-20'], 2],
       ['10', '9900000001', 4, ['-14'], 2],
     ]);
-    expect(L.table(rows)[1]).toEqual(['2026-03-05', A, '', `ชื่อ ${A}`, '9', '9900000001', 6, '']);
+    expect(L.table(rows)[1]).toEqual(['2026-03-05', A, '', `ชื่อ ${A}`, '9', '9900000001', '', 6, '']);
     expect(L.filter(rows, { q: '9900000001-20' })).toHaveLength(2);
   });
 
@@ -237,10 +237,10 @@ describe('allocate ปันล็อตให้ออเดอร์', () => {
     const out = L.allocate(rows, orders([{ date: D, ref: 'X-77', sku: A, qty: 2, src: 'โอนย้าย' }]));
     expect(L.filter(out, { q: 'x-7' })).toHaveLength(1);
     expect(L.table(out, true)).toEqual([
-      ['วันที่', 'ระบบ', 'เลขออเดอร์', 'หมายเลขคำสั่งซื้อออนไลน์', 'บริษัทขนส่ง', 'SKU', 'SKU ที่ขาย', 'ชื่อสินค้า', 'LOT', 'PO', 'จำนวน', 'หมายเหตุ'],
-      [D, 'โอนย้าย', 'X-77', '', '', A, '', `ชื่อ ${A}`, '1', 'PO-1', 2, ''],
+      ['วันที่', 'ระบบ', 'เลขออเดอร์', 'หมายเลขคำสั่งซื้อออนไลน์', 'บริษัทขนส่ง', 'SKU', 'SKU ที่ขาย', 'ชื่อสินค้า', 'LOT', 'PO', 'Supplier', 'จำนวน', 'หมายเหตุ'],
+      [D, 'โอนย้าย', 'X-77', '', '', A, '', `ชื่อ ${A}`, '1', 'PO-1', '', 2, ''],
     ]);
-    expect(L.tsv(out, true).split('\n')[1].split('\t')).toHaveLength(12);
+    expect(L.tsv(out, true).split('\n')[1].split('\t')).toHaveLength(13);
   });
 
   it('ส่งออกมีเลขคำสั่งซื้อออนไลน์กับบริษัทขนส่ง เลขยาว Excel ไม่ปัด เลขที่ชีตปัดไปแล้วบอกในหมายเหตุ', () => {
@@ -270,9 +270,9 @@ describe('ส่งออก', () => {
       { date: '2026-03-05', sku: A, lot: 0, po: '0', qty: 3 },
     ]));
     expect(L.table(rows)).toEqual([
-      ['วันที่', 'SKU', 'SKU ที่ขาย', 'ชื่อสินค้า', 'LOT', 'PO', 'จำนวน', 'หมายเหตุ'],
-      ['2026-03-05', A, '', `ชื่อ ${A}`, '1', 'PO-1', 5, ''],
-      ['2026-03-05', A, '', `ชื่อ ${A}`, '0', '0', 3, 'ไม่รู้ LOT และ PO'],
+      ['วันที่', 'SKU', 'SKU ที่ขาย', 'ชื่อสินค้า', 'LOT', 'PO', 'Supplier', 'จำนวน', 'หมายเหตุ'],
+      ['2026-03-05', A, '', `ชื่อ ${A}`, '1', 'PO-1', '', 5, ''],
+      ['2026-03-05', A, '', `ชื่อ ${A}`, '0', '0', '', 3, 'ไม่รู้ LOT และ PO'],
     ]);
   });
 
@@ -281,7 +281,7 @@ describe('ส่งออก', () => {
     led.skus[0][1] = 'ชื่อ\nสองบรรทัด';
     const lines = L.tsv(L.build(led)).split('\n');
     expect(lines).toHaveLength(2);
-    expect(lines[1].split('\t')).toEqual(['2026-03-05', A, '', 'ชื่อ สองบรรทัด', '1', 'PO 1', '5', '']);
+    expect(lines[1].split('\t')).toEqual(['2026-03-05', A, '', 'ชื่อ สองบรรทัด', '1', 'PO 1', '', '5', '']);
   });
 
   it('CSV มี BOM ครอบช่องที่มีจุลภาค และกันช่องที่ Excel จะอ่านเป็นสูตร', () => {
@@ -290,12 +290,12 @@ describe('ส่งออก', () => {
     const text = L.csv(L.build(led));
     expect(text.startsWith('﻿')).toBe(true);
     const row = text.split('\r\n')[1];
-    expect(row).toBe(`2026-03-05,${A},,"ผ้า, สีขาว ""ใหญ่""",1,'=1+1,5,`);
+    expect(row).toBe(`2026-03-05,${A},,"ผ้า, สีขาว ""ใหญ่""",1,'=1+1,,5,`);
   });
 
   it('จำนวนติดลบยังเป็นตัวเลข ไม่ถูกใส่ เครื่องหมายนำหน้า', () => {
     const rows = L.build(ledger([{ date: '2026-03-05', sku: A, lot: 1, po: 'PO-1', qty: -2 }]));
-    expect(L.tsv(rows).split('\n')[1].split('\t')[6]).toBe('-2');
+    expect(L.tsv(rows).split('\n')[1].split('\t')[7]).toBe('-2');
   });
 });
 
@@ -316,7 +316,7 @@ describe('convert คืน SKU ที่แปลงแล้วเป็น SK
       [B, '', `ชื่อ ${B}`, 1],
     ]);
     expect(rows.find((r) => r.qty === 4).sku).toBe(AS);
-    expect(L.table(out)[2]).toEqual([D, A, AS, 'ชื่อตอนซื้อ', '2', 'PO-2', 4, '']);
+    expect(L.table(out)[2]).toEqual([D, A, AS, 'ชื่อตอนซื้อ', '2', 'PO-2', '', 4, '']);
     expect(L.totals(out).conv).toEqual({ lines: 1, qty: 4 });
     expect(L.filter(out, { only: 'conv' })).toHaveLength(1);
     expect(L.filter(out, { q: '-s' })).toHaveLength(1);
@@ -355,6 +355,36 @@ describe('convert คืน SKU ที่แปลงแล้วเป็น SK
       { date: D, ref: 'R1', sku: AS, qty: 2 },
     ])), { pairs: [[AS, A, 'ชื่อตอนซื้อ']] });
     expect(out.map((r) => [r.ref, r.sku, r.sold, r.qty, r.miss])).toEqual([['R2', A, AS, 1, ''], ['R1', A, AS, 2, '']]);
-    expect(L.table(out, true)[1]).toEqual([D, 'JST', 'R2', '', '', A, AS, 'ชื่อตอนซื้อ', '1', 'PO-1', 1, '']);
+    expect(L.table(out, true)[1]).toEqual([D, 'JST', 'R2', '', '', A, AS, 'ชื่อตอนซื้อ', '1', 'PO-1', '', 1, '']);
+  });
+});
+
+describe('ชื่อ Supplier (แท็บ PO. Truck)', () => {
+  it('บรรทัดรวมราย SKU และรายออเดอร์มี Supplier ของ PO ไม่ปนกับบริษัทขนส่ง และค้นด้วยชื่อได้', () => {
+    const win = {};
+    new Function('window', fs.readFileSync(path.resolve(__dirname, '../../public/wms-sup.js'), 'utf8'))(win);
+    new Function('window', JS)(win);
+    const M = win.WmsLotPo;
+    const led = ledger([
+      { date: '2026-03-05', sku: A, lot: 9, po: '9900000001-05', qty: 2 },
+      { date: '2026-03-05', sku: A, lot: 9, po: '9900000002-01', qty: 1 },
+      { date: '2026-03-05', sku: A, lot: 0, po: '0', qty: 1 },
+    ]);
+    led.sup = { tab: 'PO. Truck', rows: [['9900000001', 'รถเอ'], ['9900000002', 'รถบี']], dup: [], missing: '' };
+    const rows = M.build(led);
+    expect(rows.map((r) => [r.po, r.maker])).toEqual([['9900000001', 'รถเอ'], ['9900000002', 'รถบี'], ['0', '']]);   // ไม่รู้ LOT อยู่ท้าย
+    expect(M.table(rows)[1][6]).toBe('รถเอ');
+    expect(M.filter(rows, { q: 'รถบี' }).map((r) => r.po)).toEqual(['9900000002']);
+    const cut = {
+      days: ['2026-03-05'], skus: [[A, `ชื่อ ${A}`]], srcs: ['JST'],
+      lines: [[0, 'R1', 0, 3, 0]], refs: { R1: ['', 0] }, sups: ['ขนส่งเอ'],
+    };
+    const out = M.allocate(rows, cut);
+    expect(out.filter((r) => r.ref === 'R1').map((r) => [r.po, r.maker, r.sup])).toEqual([
+      ['9900000001', 'รถเอ', 'ขนส่งเอ'], ['9900000002', 'รถบี', 'ขนส่งเอ'],
+    ]);
+    const t = M.table(out, true);
+    expect(t[0].indexOf('Supplier')).toBe(10);
+    expect(t[1][10]).toBe('รถเอ');
   });
 });

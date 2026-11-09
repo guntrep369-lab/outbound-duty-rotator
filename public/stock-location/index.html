@@ -48,6 +48,12 @@
 .tx-warn{margin-bottom:12px;padding:10px 13px;border-radius:var(--wms-radius-sm);background:#FEF3C7;
   border:1px solid #FDE68A;color:#92400E;font-size:13px;line-height:1.6}
 .tx-warn b{font-weight:700}
+/* เปิดขายคนละ Supplier พร้อมกัน ผิดกติกา ต้องแก้ก่อนเรื่องอื่น */
+.tx-alarm{margin-bottom:12px;padding:10px 13px;border-radius:var(--wms-radius-sm);background:#FEE2E2;
+  border:1px solid #FECACA;color:#991B1B;font-size:13px;line-height:1.6}
+.tx-alarm b{font-weight:700}
+.tx-alarm ul{margin:6px 0 0;padding-left:18px}
+.tx-alarm li{margin:3px 0}
 .tx-h{margin:18px 0 8px;font-size:13.5px;font-weight:700;color:var(--wms-text)}
 .tx-h:first-child{margin-top:0}
 .tx-line{margin-bottom:10px;font-size:13.5px;color:var(--wms-text);line-height:1.5}
@@ -232,6 +238,7 @@ button.tx-card.on{border-color:var(--wms-primary);background:var(--wms-primary-l
 <script src="../wms-gas.js"></script>
 <script src="../wms-shared.js"></script>
 <script src="../wms-stock.js"></script>
+<script src="../wms-sup.js"></script>
 <script src="../wms-tx.js"></script>
 <script>
 const $ = id => document.getElementById(id);
@@ -472,6 +479,24 @@ const skuCell = (x) => `<button class="tx-link" data-sku="${esc(x.sku)}">${esc(x
 const coverCls = (c) => c < 1 ? 'tx-low' : c < 2 ? 'tx-mid' : '';
 const special = (x) => x.QA + x.IQA + x.RIB;
 
+/** ของในโลเปิดเป็นของ Supplier ไหน (รู้ชื่อเฉพาะเมื่อมีแท็บ PO. Truck) */
+const supOf = (x) => x.sups && x.sups.length ? ` (ของ ${esc(x.sups.join(', '))})` : '';
+
+/** SKU ที่ตอนนี้เปิดขายพร้อมกันมากกว่า 1 Supplier บอกว่าของแต่ละเจ้าอยู่ Location ไหน */
+function twoOpenBox() {
+  const list = WmsTx.twoOpen(DATA);
+  if (!list.length) return '';
+  const where = (x, n) => {
+    const at = x.rows.filter(r => r.bucket === 'open' && r.qty > 0 && r.sup === n);
+    return at.map(r => `<button class="tx-link" data-sku="${esc(x.sku)}" data-loc="${esc(r.loc)}">${esc(r.loc)}</button>` +
+      (at.length > 1 ? ` (${f(r.qty)})` : '')).join(', ');
+  };
+  return `<div class="tx-alarm"><b>เปิดขายพร้อมกัน 2 Supplier (${list.length} SKU)</b> ผิดกติกา ห้ามเปิดคนละ Supplier พร้อมกัน
+      ให้ย้ายของเจ้าหนึ่งออกจากโลเปิดไปเก็บสำรองก่อน รอของอีกเจ้าขายหมดแล้วค่อยเปิด
+      <ul>${list.map(x => `<li><button class="tx-link" data-sku="${esc(x.sku)}">${esc(x.sku)}</button> ${esc(x.name)} —
+        ${x.sups.map(n => `<b>${esc(n)}</b> ${f(x.openSup[n])} ชิ้น ที่ ${where(x, n)}`).join(' · ')}</li>`).join('')}</ul></div>`;
+}
+
 /** รายการงาน เรียงตามที่ refill() จัดมาแล้ว ข้อ 1 คือตัวที่จะหมดก่อน */
 function jobList(list, todo) {
   if (!list.length) return `<div class="tx-note">ไม่มีรายการ — เป็นเรื่องดี</div>`;
@@ -481,7 +506,7 @@ function jobList(list, todo) {
         <div class="what"><button class="tx-link" data-sku="${esc(x.sku)}">${esc(x.sku)}</button>
           <span class="${coverCls(x.cover)}">${esc(WmsTx.coverText(x))}</span></div>
         <div class="do">→ ${todo(x)}</div>
-        <span class="tx-sub">${esc(x.name)} · ขายวันละ ${x.perDay.toFixed(1)} · โลเปิดเหลือ ${f(x.open)}${x.reserve > 0 ? ` · สำรองรวม ${f(x.reserve)}` : ''}</span>
+        <span class="tx-sub">${esc(x.name)} · ขายวันละ ${x.perDay.toFixed(1)} · โลเปิดเหลือ ${f(x.open)}${supOf(x)}${x.reserve > 0 ? ` · สำรองรวม ${f(x.reserve)}` : ''}</span>
       </div>
     </li>`).join('')}</ol>`;
 }
@@ -499,10 +524,14 @@ function renderFill() {
   const r = WmsTx.refill(DATA, DAYS);
   const pull = (x) => {
     const s = WmsTx.source(x);
-    return `ไปดึงจาก <button class="tx-link" data-sku="${esc(x.sku)}" data-loc="${esc(s.loc)}">${esc(s.loc)}</button> lot ${esc(s.lot)} (มี ${f(s.qty)} ชิ้น)`;
+    if (!s) return esc(WmsTx.noReserveText(x));
+    return `ไปดึงจาก <button class="tx-link" data-sku="${esc(x.sku)}" data-loc="${esc(s.loc)}">${esc(s.loc)}</button> lot ${esc(s.lot)}` +
+      `${s.sup ? ` ของ ${esc(s.sup)}` : ''} (มี ${f(s.qty)} ชิ้น)` +
+      (x.reserveOther > 0 ? ` · สำรองของ ${esc(x.otherSups.join(', '))} ${f(x.reserveOther)} ชิ้น ห้ามดึงมาเปิดพร้อมกัน` : '');
   };
   const hidden = r.hiddenReady + r.hiddenNone;
   $('body').innerHTML =
+    twoOpenBox() +
     (unread ? `<div class="tx-warn">มีแถวขาย ${f(unread)} แถวที่อ่านวันที่ไม่ออก ยอดขายของแถวพวกนี้ไม่ถูกนับ รายการด้านล่างจึงอาจขาดไป ดูใน ${toBad}</div>` : '') +
     `<div class="tx-bar">แสดงของที่พอขายไม่ถึง ${[2, 3].map(n =>
       `<button class="tx-opt ${n === DAYS ? 'on' : ''}" data-days="${n}">${n} วัน</button>`).join('')}</div>` +
@@ -515,6 +544,8 @@ function renderFill() {
     `<p class="tx-note">เหลือขายอีก = ของในโลเปิด ÷ ยอดขายเฉลี่ย ${RAW.saleDays} วันล่าสุด (ถึง ${esc(WmsTx.shortDate(RAW.lastDate))})
       · สำรอง = ชั้นวางที่ไม่เปิด ไม่นับ QA, IQA, RIB
       · ไปดึงจาก = LOT เก่าก่อน LOT 0 ไว้ท้ายสุด ถ้า LOT เท่ากันเอาจุดที่มีมากสุด
+      · ดึงได้แค่สำรองของ Supplier เดียวกับที่เปิดอยู่ ห้ามเปิดคนละ Supplier พร้อมกัน
+      ${DATA.supNote ? `· ${esc(DATA.supNote)}` : ''}
       ${hidden ? `· ซ่อนรายการที่ขายไม่ถึงวันละ ${WmsTx.MIN_PER_DAY} ชิ้นไว้ ${hidden} SKU` : ''}</p>`;
 }
 
@@ -558,22 +589,29 @@ function renderFound() {
       </tr>`).join('')}</tbody></table></div>` : '');
 }
 
+/* คอลัมน์ Supplier แสดงเมื่อมีแท็บ PO. Truck เท่านั้น ไม่งั้นจะเป็นคอลัมน์ว่างทั้งแถบ */
+const supTh = () => DATA.hasSup ? '<th>Supplier</th>' : '';
+const supTd = (r) => DATA.hasSup ? `<td class="nw">${r.sup ? esc(r.sup) : '—'}</td>` : '';
+
 function skuDetail(x) {
   const card = (label, v, cls) => `<div class="tx-card"><small>${label}</small><b class="${cls || ''}">${v}</b></div>`;
   const cover = x.perDay > 0 ? x.cover.toFixed(1) + ' วัน' : (RAW.saleDays ? 'ไม่มียอดขาย' : 'ไม่ทราบ');
   const rows = x.rows.map(r => `<tr>
       <td class="nw"><button class="tx-link" data-open-loc="${esc(r.loc)}">${esc(r.loc)}</button></td>
       <td>${tag(r.bucket)}</td><td class="num">${esc(r.lot)}</td>
-      <td class="nw">${r.po && r.po !== '0' ? esc(r.po) : '—'}</td>
+      <td class="nw">${r.po && r.po !== '0' ? esc(r.po) : '—'}</td>${supTd(r)}
       <td class="num ${r.qty < 0 ? 'tx-neg' : ''}">${f(r.qty)}</td>
     </tr>`).join('');
-  return `<div class="tx-line"><b>${esc(x.sku)}</b> ${esc(x.name)}${x.perDay > 0 ? ` · ขายวันละ ${x.perDay.toFixed(1)}` : ''}
+  const sups = x.sups && x.sups.length > 1
+    ? ` · <span class="tx-neg">เปิดขายพร้อมกัน ${x.sups.length} Supplier: ${esc(x.sups.join(', '))} ห้ามเปิดพร้อมกัน</span>`
+    : x.sups && x.sups.length ? ` · เปิดขายของ <b>${esc(x.sups[0])}</b>` : '';
+  return `<div class="tx-line"><b>${esc(x.sku)}</b> ${esc(x.name)}${x.perDay > 0 ? ` · ขายวันละ ${x.perDay.toFixed(1)}` : ''}${sups}
       · <button class="tx-link" data-hist="${esc(x.sku)}">ดูประวัติ</button></div>
     <div class="tx-cards">${card('ทั้งหมด', f(x.total))}${card('โลเปิด', f(x.open))}${card('สำรอง', f(x.reserve))}
       ${card('QA, IQA, RIB', f(special(x)))}${card('โลเปิดพอขาย', cover, x.perDay > 0 ? coverCls(x.cover) : '')}</div>
     ${OPENLOC && DATA.locs[OPENLOC] ? locPanel(DATA.locs[OPENLOC]) : ''}
     ${x.rows.length ? `<div class="tx-wrap"><table class="tx-tbl"><thead><tr>
-        <th>Location</th><th>สถานะ</th><th class="num">LOT</th><th>PO</th><th class="num">จำนวน</th>
+        <th>Location</th><th>สถานะ</th><th class="num">LOT</th><th>PO</th>${supTh()}<th class="num">จำนวน</th>
       </tr></thead><tbody>${rows}</tbody></table></div>
       <p class="tx-note">เรียงจากโลเปิด แล้วตาม LOT เก่าไปใหม่ · กดชื่อ Location เพื่อดูว่าที่นั่นมีอะไรอีก</p>`
       : `<div class="tx-empty">SKU นี้ไม่มียอดคงเหลือแล้ว</div>`}`;
@@ -582,10 +620,10 @@ function skuDetail(x) {
 /** ของทั้งหมดในหนึ่ง Location */
 function locTable(l) {
   return `<div class="tx-wrap"><table class="tx-tbl"><thead><tr>
-      <th>SKU</th><th>สถานะ</th><th class="num">LOT</th><th>PO</th><th class="num">จำนวน</th>
+      <th>SKU</th><th>สถานะ</th><th class="num">LOT</th><th>PO</th>${supTh()}<th class="num">จำนวน</th>
     </tr></thead><tbody>${l.rows.slice(0, MAX).map(r => `<tr>
       <td>${skuCell(DATA.skus[r.sku])}</td><td>${tag(r.bucket)}</td><td class="num">${esc(r.lot)}</td>
-      <td class="nw">${r.po && r.po !== '0' ? esc(r.po) : '—'}</td><td class="num ${r.qty < 0 ? 'tx-neg' : ''}">${f(r.qty)}</td>
+      <td class="nw">${r.po && r.po !== '0' ? esc(r.po) : '—'}</td>${supTd(r)}<td class="num ${r.qty < 0 ? 'tx-neg' : ''}">${f(r.qty)}</td>
     </tr>`).join('')}</tbody></table></div>`;
 }
 

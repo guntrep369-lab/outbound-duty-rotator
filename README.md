@@ -329,6 +329,19 @@ number. The one thing it writes is its own `นับสต๊อก` tab, which
 | ข้อมูลผิด | Rows that look wrong, two short lines each: what and where, then which row to fix, with a hint |
 | ประวัติ | Every movement of one SKU, with a running total |
 
+**Suppliers.** Some SKUs come from different factories with different quality, so two suppliers' stock
+must never be on sale together. The tab `PO. Truck` (header Truck, PO.) in the ledger file says which
+supplier each PO is from, matched on the PO without its `-01` receiving suffix. With that tab:
+
+- หาของ shows a Supplier column for each pile and Location, and says whose stock is open.
+- ต้องเติม pulls only from reserve of the supplier that's open now (or reserve whose supplier isn't known).
+  When the only reserve is another supplier's, the SKU moves to ไม่มีสำรองให้เติม with a note to wait until
+  the open supplier's stock is gone.
+- A red box at the top of ต้องเติม lists SKUs that already have two suppliers open, with each supplier's
+  Locations.
+
+Without the tab (or with an older script) nothing is blocked and the page says why under the list.
+
 **How balances are worked out.** Same as the balance sheet's SUMIFS, keyed on column B + LOT + PO +
 Location: in = any row with a Location รับ, out = rows with a Location เบิก and type เบิก or ขาย. There is
 one deliberate difference: Status isn't part of the key. The sheet's formula splits the in-side by
@@ -776,7 +789,7 @@ Report for a month runs a few days into the next month, so the report has to cov
 - `LOT 0`, `PO 0` or a blank one means the LOT or PO isn't known (mostly stock from the last count). These
   lines are marked and can be listed on their own.
 - A quantity typed as text isn't added, the same as the balance sheet's SUMIFS, and the line says so.
-- Copy pastes into Excel as columns (วันที่, SKU, SKU ที่ขาย, ชื่อสินค้า, LOT, PO, จำนวน, หมายเหตุ), with the SKU on
+- Copy pastes into Excel as columns (วันที่, SKU, SKU ที่ขาย, ชื่อสินค้า, LOT, PO, Supplier, จำนวน, หมายเหตุ), with the SKU on
   every line. Download gives the same table as a CSV that Excel opens in Thai. Both take the whole
   selection, even when the page only draws the first 500 lines.
 
@@ -787,7 +800,7 @@ LOT first, to orders in the tab's row order. It's an allocation, not a record of
 which lot. On a day where เทียบรายวัน matches, every piece gets a LOT/PO. Otherwise the rest shows as
 ยอดไม่ลงกัน, either an order the ledger didn't sell or a sale with no order. Days after the ledger's last
 sale date are left out until the ledger reaches them. Copy and the CSV get วันที่, ระบบ, เลขออเดอร์,
-หมายเลขคำสั่งซื้อออนไลน์, บริษัทขนส่ง, SKU, SKU ที่ขาย, ชื่อสินค้า, LOT, PO, จำนวน, หมายเหตุ. The orders are fetched
+หมายเลขคำสั่งซื้อออนไลน์, บริษัทขนส่ง, SKU, SKU ที่ขาย, ชื่อสินค้า, LOT, PO, Supplier, จำนวน, หมายเหตุ. The orders are fetched
 when the view is opened (about 4 MB a month) and aren't kept on the device.
 
 - The online order number and carrier come from the same tab: columns `เลขคำสั่งซื้อออนไลน์` and `Sup`.
@@ -872,6 +885,11 @@ three systems and the Report), ! (only cut on different days) or ✕ (still diff
 changed since that check, the day says so. Fix the day in เช็ครายการตัดสต๊อก first, then send it.
 
 The fetched month stays on the device. Press ดึงใหม่ after the ledger changes.
+
+**Supplier.** Each line shows the supplier of its PO under the PO number, from the ledger file's
+`PO. Truck` tab (sent with `tx-daily`). Both files get a Supplier column right after PO, and the search box
+finds a supplier's name. In the per-order view the existing บริษัทขนส่ง column is still the delivery
+company; Supplier is the maker of the stock.
 
 ---
 
@@ -959,6 +977,10 @@ its letter. The rest is split in two:
 Script, then Deploy → Manage deployments → pencil icon → Version: New version → Deploy. Until then the
 page says the script has no FIFO yet.
 
+**Supplier.** The supplier of each pile shows under its PO, from the `PO. Truck` tab. In เบิกข้าม FIFO the
+older stock is tagged "คนละ Supplier" when it's from a different supplier than what went out, since two
+suppliers can't be open together. The Excel file has a Supplier column in both sheets.
+
 ---
 
 ## 📦 Stock as of Date (`/balance`)
@@ -992,9 +1014,11 @@ reads the same shared copy of the whole Transaction ledger as FIFO สต๊อ�
 - If the date is after the last sale the ledger has, the page says that sales after that day aren't
   taken off yet. It turns into a yellow warning when the gap is more than one day.
 - **⬇️ โหลด Report (Excel)** downloads `สินค้าคงเหลือ-YYYY-MM-DD.xlsx`, one sheet named with the date:
-  SKU, ชื่อสินค้า, SKU ที่แปลงมารวม, LOT, เดือนของ LOT, PO, รับเข้า, คงเหลือ, Location, หมายเหตุ. It follows the search and
+  SKU, ชื่อสินค้า, SKU ที่แปลงมารวม, LOT, เดือนของ LOT, PO, Supplier, รับเข้า, คงเหลือ, Location, หมายเหตุ. It follows the search and
   the filter, and holds every line even when the page draws only the first 500. Copy gives the same
   table for pasting into Excel.
+- **Supplier.** Each line shows its PO's supplier from the `PO. Truck` tab, the file has a Supplier column
+  after PO, and the search box finds a supplier's name.
 
 ---
 
@@ -1091,6 +1115,10 @@ Location for every pallet from the real free space in the Transaction ledger, ea
 and the warehouse's rules. Every row can be changed. Then copy the rows into the OUTPUT tab or download
 Excel. It reads the same shared copy of the ledger as FIFO สต๊อก (`tx-fifo`) and never writes to the sheet.
 
+- **Pasting:** copy the rows in Google Sheets and press Ctrl+V anywhere on the page (or 📋 วาง). The plan
+  shows as a spreadsheet: row numbers on the left, column letters on top with what each column was read as
+  (the ones used for planning in the main colour), and skipped rows struck through. Pasting a new plan
+  plans straight away; there's no separate button.
 - **The plan:** copy the rows from Google Sheets, header or not. With a header, columns are found by name
   (NO., Product ID, LOT, PO, SKU, Product Name, QTY, Truck, REMARK). Without one, the columns are worked
   out from what the data looks like (a 13-character Product ID, a short SKU, a 10-digit PO, a number after
@@ -1100,15 +1128,20 @@ Excel. It reads the same shared copy of the ledger as FIFO สต๊อก (`tx-
   its NO., so it matches the sheet.
 - **Pallet capacity** comes from a tab named `ความจุต่อพาเลท` in the file the Transaction script is
   bound to (header SKU, Product ID, STD / pallet; either code matches). An Excel file dropped on the
-  capacity box works too and takes over from the tab until you switch back. A SKU with no capacity, or 0,
+  settings line under the plan works too and takes over from the tab until you switch back. A SKU with no capacity, or 0,
   is left for you to place.
 - **The rules, in order, per line:**
   1. ของแถม (a name starting แถม, or a FRE code) goes to zone D: on top of the same PO if it's there,
      otherwise the first empty D location.
-  2. **OPEN:** one pallet goes straight into the SKU's regular open location when it's out of stock, or
-     when what's in the open location lasts less than the set number of days of sales (default **3**,
-     changeable on the page and kept on this device). The regular open location is the one the ledger
-     shows it refilled most often; failing that, its biggest open pile now, then its last one.
+  2. **OPEN:** incoming stock goes straight into the SKU's open location when it's out of stock, or when
+     what's in the open location lasts less than the set number of days of sales (default **3**,
+     changeable on the page and kept on this device) **and there's no reserve to refill it from**. With
+     reserve left, FIFO says refill from the reserve first, so the card says so and the new stock is put
+     away as usual. It sends enough to last the set days, rounded up to pallets, at least one. The open
+     location is the one holding open (เปิด) stock now, the biggest on the floor or shelves first (floor
+     open locations move to the next location when one runs out); with nothing open, the last open
+     location that received stock, then the one refilled most often. Open, reserve and total are counted
+     the same way as Stock by Location.
   3. Full pallets go to empty R locations, near where the SKU already sits. R level 1 (`-01`) is for 5FT and
      6FT mattresses only; everything else goes on level 2 and up. One SKU per location; no topping up.
   4. The remainder that doesn't fill a pallet:
@@ -1118,11 +1151,17 @@ Excel. It reads the same shared copy of the ledger as FIFO สต๊อก (`tx-
      - 5FT / 6FT → the SKU's own empty level-1 location, else an empty floor location (A–D) near it;
      - anything else → an empty level-2+ location.
   5. What still has nowhere to go is marked เลือกเอง.
-- **Each line's card** shows the kind, capacity, PO, regular open location, what's in it, sales per day,
-  days it lasts (red when under the setting), RIB, and stock in the warehouse.
+- **The result is one table, one row per Location,** like the OUTPUT tab: NO., SKU, name, PO and the
+  plan's QTY on the first row of each line, then Location, QTY, OPEN, the result tag and REMARK, all
+  editable in place. Red rows break a rule (the reason shows next to the tag), orange rows go to RIB, and
+  a ⚠️ by the plan QTY means the rows don't add up. Explanations stay out of the way: hover the tag, or press
+  ⓘ (💡 when there's advice) to open a row under the line with the kind, capacity, supplier, open location,
+  sales per day, days it lasts, reserve, RIB, stock in the warehouse, and why each row went where it did.
+- **The summary bar** (แร็ค, เข้าโลเปิด, RIB, พื้น, เลือกเอง, ผิดกติกา) filters the table to that group when
+  pressed.
 - **Changing a row** (Location, QTY, OPEN, REMARK), adding or deleting one keeps that line as you set it;
-  other lines are worked out again around it, so they don't take the same location.
-  คืนค่าที่ระบบเสนอ undoes one line, and the button at the top undoes all. The plan and your changes stay on
+  other lines are worked out again around it, so they don't take the same location. ✎ marks such a line;
+  ↺ undoes one line, and คืนค่าทั้งหมด at the top undoes all. The plan and your changes stay on
   this device until you clear them.
 - **Checks on every row:** another SKU already in an R location or in another line's row there (red; on
   the floor it's only a warning, since many floor locations already hold several SKUs, and rows ticked
@@ -1131,8 +1170,21 @@ Excel. It reads the same shared copy of the ledger as FIFO สต๊อก (`tx-
 - **📋 คัดลอกไปวางในชีต** copies the rows in the OUTPUT tab's order with OPEN as TRUE/FALSE.
   **⬇️ โหลด Excel** downloads `จัดที่เก็บ-YYYY-MM-DD.xlsx` with one sheet named OUTPUT.
 
-**Needs:** the new `tx-api.gs` (it sends the capacity tab with `tx-fifo`). With an older script the page
-still plans if you drop the capacity file, and says the script needs deploying.
+- **One supplier open at a time.** Some SKUs come from different factories with different quality, so two
+  suppliers' stock must never be on sale together. A tab named `PO. Truck` in the same file (header Truck,
+  PO.) says which supplier (truck) each PO is from; a PO not in the tab takes the plan's Truck column.
+  - When the SKU's open stock is from another supplier, nothing from this truck goes into the open
+    location, even when it's low or the PO matches; the card's 💡 note says to keep it apart until the
+    other supplier's open stock is gone.
+  - "Reserve to use first" counts only reserve from the supplier that's open now (plus reserve whose
+    supplier isn't known), so another supplier's reserve doesn't block topping up from the same supplier.
+  - A row ticked OPEN while another supplier is open (in the ledger or in another line of the plan) is
+    red. The card names the incoming supplier and the open location's, and flags a SKU that already has
+    two suppliers open. A PO listed under two suppliers is shown; the first row is used.
+
+**Needs:** the new `tx-api.gs` (it sends the capacity tab with `tx-fifo`, and `PO. Truck` with `tx-fifo`,
+`tx-summary` and `tx-daily`). With an older
+script the page still plans if you drop the capacity file, and says the script needs deploying.
 
 ---
 
@@ -1154,6 +1206,7 @@ public/
 │                          #   empty-*.png: empty-state art, chosen with the .art-* classes in wms-theme.css
 ├─ wms-settings.js         # settings backup / restore
 ├─ wms-shared.js           # ข้อมูลกลาง: read the shared copy, refresh it, ask every minute for a newer one
+├─ wms-sup.js              # PO → Supplier from the PO. Truck tab (stock-location, fifo, balance, lot-po)
 ├─ wms-*.js                # shared helpers (dates, stock, picking, trucks, search…)
 ├─ roster/                 # ตารางกะ (+ roster-sync.js: sharing through the sheet,
 │                          #   roster-people.js: group / day off by date, leave counts)

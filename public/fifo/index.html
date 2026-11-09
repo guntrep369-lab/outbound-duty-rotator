@@ -150,6 +150,7 @@ button.fi-kpi .go{margin-top:auto;padding-top:6px;font-size:12px;font-weight:600
 .fi-read{margin-bottom:12px;font-size:12px;color:var(--wms-muted);line-height:1.6}
 .fi-read summary{display:inline;cursor:pointer;color:var(--wms-primary-dark);font-weight:600}
 .fi-read b{color:var(--wms-text)}
+.fi-supn{display:block;font-size:11.5px;font-weight:600;color:var(--wms-text)}
 .fi-task > summary{grid-template-columns:minmax(150px,220px) minmax(0,1fr);align-items:start}
 .fi-do{min-width:0}
 .fi-act{display:block;font-size:15px;font-weight:700;color:var(--wms-text);line-height:1.4}
@@ -314,6 +315,7 @@ button.fi-kpi .go{margin-top:auto;padding-top:6px;font-size:12px;font-weight:600
 <script src="../wms-gas.js"></script>
 <script src="../wms-shared.js"></script>
 <script src="../wms-cut.js"></script>
+<script src="../wms-sup.js"></script>
 <script src="../wms-fifo.js"></script>
 <script>
 const $ = id => document.getElementById(id);
@@ -359,6 +361,8 @@ const ageLegend = (tail) => `<div class="tx-legend" aria-label="สีของ�
 
 const lotText = (x) => x.lm ? `LOT ${esc(x.lot)} · ${esc(WmsFifo.monthText(x.lm))}` : `<span class="tx-mid">LOT ${esc(x.lot || 'ว่าง')} · ไม่รู้ LOT</span>`;
 const poText = (po) => WmsFifo.noPo(po) ? '<span class="tx-sub">ไม่รู้ PO</span>' : esc(po);
+/* ชื่อ Supplier ของ PO (แท็บ PO. Truck) ไม่รู้ก็ไม่แสดง */
+const supText = (po) => { const s = WmsFifo.sup(RES, po); return s ? `<span class="fi-supn">${esc(s)}</span>` : ''; };
 
 /** วันรับเข้าของกอง PO ที่ลง -01 -02 รวมกันแล้ว บอกว่ารับกี่รอบ: รับ 3 รอบ 29/9 · 5/10 · 7/10 */
 function recvWords(x) {
@@ -633,7 +637,7 @@ function stockDetail(e) {
     return `<tr class="${hot.has(x) ? 'fi-hot' : ''}">
       <td class="nw k-rank">${x.rank ? `<span class="fi-rank${x.rank === 1 ? ' first' : ''}" title="ลำดับ FIFO">${x.rank}</span>` : '<span class="tx-sub">—</span>'}</td>
       <td class="nw k-lot">${lotText(x)}${x.age !== null ? `<span class="tx-sub">อายุ ${f(x.age)} เดือน</span>` : ''}</td>
-      <td class="nw k-po"${recvTitle(x) ? ` title="${esc(recvTitle(x))}"` : ''}>${poText(x.po)}<span class="tx-sub">${esc(recvWords(x))}</span></td>
+      <td class="nw k-po"${recvTitle(x) ? ` title="${esc(recvTitle(x))}"` : ''}>${poText(x.po)}${supText(x.po)}<span class="tx-sub">${esc(recvWords(x))}</span></td>
       <td class="num k-qty"><b>${f(x.qty)}</b></td>
       <td class="num k-open" data-label="ในโลขาย">${x.open ? f(x.open) : '—'}</td>
       <td class="num k-floor" data-label="ตั้งพื้น">${x.floor ? f(x.floor) : '—'}</td>
@@ -668,7 +672,8 @@ function renderStock() {
       สต๊อก${esc(asOf())} แต่ละ SKU เรียงกองจากเก่าไปใหม่ ตาม<b>เดือนของ LOT</b> แล้ว<b>วันที่รับเข้าของ PO</b>
       · PO ที่ลง <b>-01 -02</b> ต่อท้าย (วันที่รับเข้าคลัง) นับเป็น <b>PO เดียวกัน</b> รวมเป็นกองเดียว ใช้รอบไหนก่อนก็ได้
       · SKU เดียวอยู่ได้หลายคิว เพราะเป็นงานของคนละคน · กดแถวเพื่อดูว่าแต่ละกองอยู่ Location ไหน
-      · ปุ่มคัดลอกได้ทุก SKU ในคิวนี้ หนึ่งแถวต่อ SKU + LOT + PO</details>
+      · ปุ่มคัดลอกได้ทุก SKU ในคิวนี้ หนึ่งแถวต่อ SKU + LOT + PO
+      · ชื่อใต้เลข PO คือ <b>Supplier</b> จากแท็บ PO. Truck ห้ามเปิดขายคนละ Supplier พร้อมกัน${window.WmsSup && WmsSup.note(RES.sup) ? ` (${esc(WmsSup.note(RES.sup))})` : ''}</details>
     <div id="list"></div>`;
   renderStockList();
 }
@@ -697,12 +702,17 @@ function skipRows() { return WmsFifo.skipsBySku(RES, AN, { kind: KIND, q: Q }); 
 
 function skipDetail(e) {
   const rows = e.items.map((it) => {
-    const older = it.older.map((o) => `<span class="fi-loc${it.kind === 'sale' ? ' open' : ''}">LOT ${esc(o.lot)}${WmsFifo.noPo(o.po) ? '' : ` · PO ${esc(o.po)}`} @ ${esc(loc(o.loc))} · ${f(o.qty)}</span>`).join('');
+    const mine = WmsFifo.sup(RES, it.po);
+    const older = it.older.map((o) => {
+      const s = WmsFifo.sup(RES, o.po);
+      const other = s && mine && s !== mine;
+      return `<span class="fi-loc${it.kind === 'sale' ? ' open' : ''}"${other ? ' title="ของที่เก่ากว่าเป็นคนละ Supplier ห้ามเปิดขายพร้อมกัน"' : ''}>LOT ${esc(o.lot)}${WmsFifo.noPo(o.po) ? '' : ` · PO ${esc(o.po)}`}${s ? ` · ${esc(s)}${other ? ' (คนละ Supplier)' : ''}` : ''} @ ${esc(loc(o.loc))} · ${f(o.qty)}</span>`;
+    }).join('');
     const more = it.olderQty > it.older.reduce((a, o) => a + o.qty, 0) ? '<span class="tx-sub">และที่อื่น</span>' : '';
     return `<tr>
       <td class="nw k-date">${esc(dm(it.date))}${it.own ? '' : '<span class="tx-sub" title="แถวนี้ไม่มีวันที่ของตัวเอง ใช้วันที่ของแถวด้านบน">โดยประมาณ</span>'}</td>
       <td class="nw k-kind">${WmsFifo.KIND[it.kind]}<span class="tx-sub">${esc(loc(it.from))}${it.to >= 0 ? ` → ${esc(loc(it.to))}` : ''}</span></td>
-      <td class="nw k-out">${lotText(it)}<span class="tx-sub">${WmsFifo.noPo(it.po) ? 'ไม่รู้ PO' : `PO ${esc(it.po)}`}${it.recv ? ` · รับ ${esc(it.recv === WmsFifo.COUNT_DAY ? 'ก่อนนับสต๊อก' : dm(it.recv))}` : ''}</span></td>
+      <td class="nw k-out">${lotText(it)}<span class="tx-sub">${WmsFifo.noPo(it.po) ? 'ไม่รู้ PO' : `PO ${esc(it.po)}`}${mine ? ` · ${esc(mine)}` : ''}${it.recv ? ` · รับ ${esc(it.recv === WmsFifo.COUNT_DAY ? 'ก่อนนับสต๊อก' : dm(it.recv))}` : ''}</span></td>
       <td class="num k-qty"><b>${f(it.qty)}</b><span class="tx-sub">ชิ้น</span></td>
       <td class="k-res"><span class="fi-tag ${it.state === 'lot' ? 't-lot' : 't-po'}">${WmsFifo.STATE[it.state]}</span></td>
       <td class="k-older" data-label="ของที่เก่ากว่าตอนนั้น"><div class="fi-locs">${older}</div>${more}</td>
@@ -888,8 +898,8 @@ async function downloadXlsx() {
     };
     const title = `รายงาน FIFO ${monthName(MONTH)} · สต๊อก${asOf()}`;
     add('สรุป', WmsFifo.summaryTable(AN, title), [34, 14, 14]);
-    add('คงเหลือราย LOT', WmsFifo.stockTable(RES, AN), [16, 9, 40, 10, 6, 11, 10, 14, 13, 9, 9, 9, 12, 40, 30]);
-    add('เบิกข้าม FIFO', WmsFifo.skipTable(RES, AN), [11, 9, 16, 40, 9, 14, 13, 8, 13, 13, 10, 50, 12, 9]);
+    add('คงเหลือราย LOT', WmsFifo.stockTable(RES, AN), [16, 9, 40, 10, 6, 11, 10, 14, 14, 13, 9, 9, 9, 12, 40, 30]);
+    add('เบิกข้าม FIFO', WmsFifo.skipTable(RES, AN), [11, 9, 16, 40, 9, 14, 14, 13, 8, 13, 13, 10, 50, 12, 9]);
     add('อายุสต๊อก', WmsFifo.agingTable(AN), [12, 12, 11, 10, 11, 8]);
     X.writeFile(wb, `fifo-${MONTH}.xlsx`);
     btn.textContent = 'ดาวน์โหลดแล้ว';

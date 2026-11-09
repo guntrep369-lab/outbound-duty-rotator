@@ -102,6 +102,7 @@
 .bl-tbl tr.bl-in td:first-child{box-shadow:inset 3px 0 0 var(--wms-primary-light)}
 .bl-tbl .k-loc{min-width:160px}
 .bl-locs{display:flex;flex-wrap:wrap;gap:4px}
+.bl-sup{display:block;font-size:11.5px;font-weight:600;color:var(--wms-text)}
 .bl-loc{display:inline-flex;align-items:center;gap:4px;padding:1px 7px;border-radius:6px;background:var(--wms-surface2);
   border:1px solid var(--wms-border);font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums}
 .bl-loc.open{background:#ECFDF5;border-color:#A7F3D0;color:#065F46}
@@ -169,6 +170,7 @@
 <script src="../wms-settings.js"></script>
 <script src="../wms-gas.js"></script>
 <script src="../wms-shared.js"></script>
+<script src="../wms-sup.js"></script>
 <script src="../wms-fifo.js"></script>
 <script src="../wms-lotpo.js"></script>
 <script src="../wms-balance.js"></script>
@@ -343,7 +345,8 @@ function lotHtml(l) {
   if (l.noLot) return `<span class="tx-mid">${esc(l.lot || 'ว่าง')}</span><span class="tx-sub">ไม่รู้ LOT</span>`;
   return `${esc(l.lot)}${l.lm ? `<span class="tx-sub">${esc(WmsFifo.monthText(l.lm))}</span>` : ''}`;
 }
-const poHtml = (l) => l.noPo ? `<span class="tx-mid">${esc(l.po || 'ว่าง')}</span><span class="tx-sub">ไม่รู้ PO</span>` : esc(l.po);
+const poHtml = (l) => (l.noPo ? `<span class="tx-mid">${esc(l.po || 'ว่าง')}</span><span class="tx-sub">ไม่รู้ PO</span>` : esc(l.po)) +
+  (l.sup ? `<span class="bl-sup">${esc(l.sup)}</span>` : '');
 
 /** วันรับเข้า PO ที่ทยอยรับหลายรอบบอกจำนวนรอบ */
 function recvHtml(l) {
@@ -394,7 +397,7 @@ function listHtml() {
   const total = ONLY === 'neg' ? t.neg.qty : t.qty;
   const more = rows.length > SHOW_MAX ? `<div class="tx-more">แสดง ${f(SHOW_MAX)} จาก ${f(rows.length)} บรรทัด — ค้นหาเพื่อดูบรรทัดที่เหลือ ไฟล์ Excel และปุ่มคัดลอกได้ครบทุกบรรทัด</div>` : '';
   return `<div class="tx-wrap"><table class="tx-tbl bl-tbl">
-    <thead><tr><th>SKU / ชื่อสินค้า</th><th>LOT</th><th>PO</th><th class="num">คงเหลือ</th><th>รับเข้า</th><th>Location (ชิ้น)</th></tr></thead>
+    <thead><tr><th>SKU / ชื่อสินค้า</th><th>LOT</th><th>PO · Supplier</th><th class="num">คงเหลือ</th><th>รับเข้า</th><th>Location (ชิ้น)</th></tr></thead>
     <tbody>${body}
       <tr class="sum"><td class="k-sku">รวม ${f(rows.length)} บรรทัด</td><td></td><td></td><td class="num k-qty">${f(total)}</td><td></td><td></td></tr>
     </tbody></table>${more}</div>`;
@@ -437,7 +440,7 @@ function renderBody() {
   notes.push(`<div class="tx-note">ยอดของแต่ละบรรทัดคือของกองนั้นทุก Location รวมกัน · PO ที่ลง -01 -02 ท้ายเลขรวมเป็น PO เดียว · แถวที่ไม่มีวันที่ของตัวเองใช้วันที่ของแถวด้านบน</div>`);
   $('body').innerHTML = `${notes.join('')}
     <div class="tx-bar">
-      <input id="q" class="tx-input" type="search" placeholder="ค้นหา SKU ชื่อสินค้า LOT PO หรือ Location" value="${esc(Q)}" autocomplete="off">
+      <input id="q" class="tx-input" type="search" placeholder="ค้นหา SKU ชื่อสินค้า LOT PO Supplier หรือ Location" value="${esc(Q)}" autocomplete="off">
       ${opt('', 'ทั้งหมด', t.lines)}${opt('unknown', 'ไม่รู้ LOT/PO', t.unknown.lines)}${t.conv.lines || ONLY === 'conv' ? opt('conv', 'รวม SKU ที่แปลง', t.conv.lines) : ''}${t.neg.lines || ONLY === 'neg' ? opt('neg', 'ยอดติดลบ', t.neg.lines) : ''}
     </div>
     <div class="tx-bar bl-out">
@@ -516,7 +519,7 @@ async function downloadXlsx() {
     const X = await xlsxLib();
     const aoa = WmsBalance.table(chosen());
     const ws = X.utils.aoa_to_sheet(aoa);
-    ws['!cols'] = [18, 40, 22, 7, 11, 14, 13, 10, 40, 40].map((w) => ({ wch: w }));
+    ws['!cols'] = [18, 40, 22, 7, 11, 14, 14, 13, 10, 40, 40].map((w) => ({ wch: w }));
     ws['!autofilter'] = { ref: X.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: aoa.length - 1, c: aoa[0].length - 1 } }) };
     const wb = X.utils.book_new();
     const [y, m, d] = DATE.split('-');
