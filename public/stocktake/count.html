@@ -124,6 +124,33 @@ button,input{font-family:inherit}
 .ct-rej summary{font-weight:700;cursor:pointer}
 .ct-rej li{margin:4px 0 0 16px}
 .ct-foot{margin-top:18px;font-size:12px;color:var(--wms-faint);text-align:center;line-height:1.6}
+
+/* ── น้องกล่อง: ทักทายตอนเข้า ฉลองตอนเสร็จโล และอยู่ด้วยตอนติดขัด
+      ไม่อยู่ในฟอร์มกรอก SKU / จำนวน จะได้ไม่เกะกะตอนนับ ── */
+.ct-mas{display:block;width:108px;height:108px;margin:0 auto 8px;object-fit:contain}
+.ct-mas.sm{width:76px;height:76px}
+.ct-hi{display:flex;align-items:center;gap:10px;margin-bottom:14px;padding:8px 14px 8px 8px;border-radius:14px;
+  background:var(--wms-primary-light);border:1px solid #C7D2FE;color:var(--wms-primary-dark);font-size:13.5px;line-height:1.45}
+.ct-hi img{flex:none;width:58px;height:58px}
+.ct-hi b{display:block;font-size:16.5px}
+.ct-band.pic{display:flex;align-items:center;gap:10px}
+.ct-band.pic img{flex:none;width:40px;height:40px}
+.ct-band.pic > span{flex:1;min-width:0}
+.ct-toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));z-index:6;display:flex;align-items:center;gap:8px;
+  max-width:calc(100% - 28px);padding:6px 18px 6px 8px;border-radius:18px;background:var(--wms-surface);border:1px solid #A7F3D0;
+  box-shadow:0 10px 28px rgba(15,23,42,.18);transform:translateX(-50%);pointer-events:none;font-size:13.5px;color:var(--wms-muted);white-space:nowrap}
+.ct-toast img{flex:none;width:58px;height:58px}
+.ct-toast b{display:block;font-size:17px;color:#047857}
+.ct-toast.all{border-color:#FDE68A;background:#FFFBEB}
+.ct-toast.all b{color:#B45309}
+@media (prefers-reduced-motion:no-preference){
+  .ct-mas.hop,.ct-toast img{animation:wms-hop .7s cubic-bezier(.34,1.56,.64,1) both}
+  .ct-mas.look,.ct-band.look img{animation:wms-peek 2.4s ease-in-out 2;transform-origin:50% 90%}
+  .ct-mas.walk,.ct-hi img{animation:ct-bob .5s ease-in-out infinite alternate}
+  .ct-toast{animation:ct-toast 1.9s ease both}
+}
+@keyframes ct-bob{to{transform:translateY(-4px) rotate(-2deg)}}
+@keyframes ct-toast{0%{opacity:0;transform:translate(-50%,14px)}12%{opacity:1;transform:translate(-50%,0)}82%{opacity:1}100%{opacity:0;transform:translate(-50%,0)}}
 </style>
 </head>
 <body>
@@ -139,6 +166,12 @@ const ST = window.WmsStocktake;
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const f = n => Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 3 });
+
+/* น้องกล่อง ท่าเดียวกับทั้งระบบ (wms-motion.js) · hop = เด้งดีใจ, look = ส่องหา, walk = เดินถือกล่อง */
+const MAS = { cheer: '../icons/mascot-cheer.png', look: '../icons/mascot-look.png', oops: '../icons/mascot-oops.png', walk: '../icons/mascot-walk.png' };
+const MOVE = { cheer: 'hop', look: 'look', walk: 'walk', oops: '' };
+const mas = (pose, size) => `<img class="ct-mas ${MOVE[pose]} ${size || ''}" src="${MAS[pose]}" alt="" width="108" height="108">`;
+const pic = (pose, cls, html) => `<div class="ct-band pic ${cls} ${MOVE[pose]}"><img src="${MAS[pose]}" alt="" width="40" height="40"><span>${html}</span></div>`;
 
 /* ทุกอย่างของหน้านี้อยู่ในเครื่อง ไม่ไปปนกับค่าของหน้าอื่น และไม่ถูกสำรองไปเครื่องอื่น (WmsSettings.SKIP) */
 const K = { cfg: 'wms:st:cfg', me: 'wms:st:me', dev: 'wms:st:dev', mine: 'wms:st:mine', rd: 'wms:st:rd' };
@@ -332,15 +365,15 @@ function paintMain() {
   const box = $('main'), bot = $('bottom');
   bot.innerHTML = '';
   if (!CFG) {
-    box.innerHTML = '<div class="ct-msg"><b>เปิดจากลิงก์ที่หัวหน้าส่งให้</b><br>ลิงก์นับสต๊อกมีรหัสรอบอยู่ข้างใน ขอลิงก์ใหม่ใน LINE กลุ่มได้</div>';
+    box.innerHTML = `<div class="ct-msg">${mas('look')}<b>เปิดจากลิงก์ที่หัวหน้าส่งให้</b><br>ลิงก์นับสต๊อกมีรหัสรอบอยู่ข้างใน ขอลิงก์ใหม่ใน LINE กลุ่มได้</div>`;
     return;
   }
   if (!RD) {
-    box.innerHTML = NET.loading ? '<div class="ct-msg">⏳ กำลังโหลดรอบนับ…</div>'
-      : `<div class="ct-msg">โหลดรอบนับไม่ได้<br><b>${esc(NET.err)}</b><br><br><button class="ct-btn" data-act="reload">ลองใหม่</button></div>`;
+    box.innerHTML = NET.loading ? `<div class="ct-msg">${mas('walk', 'sm')}กำลังโหลดรอบนับ…</div>`
+      : `<div class="ct-msg">${mas('oops')}<b>โหลดรอบนับไม่ได้</b><br>${esc(NET.err)}<br><br><button class="ct-btn" data-act="reload">ลองใหม่</button></div>`;
     return;
   }
-  if (RD.round.status === 'ปิดแล้ว') { box.innerHTML = '<div class="ct-msg"><b>รอบนี้ปิดแล้ว</b><br>ขอบคุณที่ช่วยนับ</div>'; return; }
+  if (RD.round.status === 'ปิดแล้ว') { box.innerHTML = `<div class="ct-msg">${mas('cheer')}<b>รอบนี้ปิดแล้ว</b><br>ขอบคุณที่ช่วยนับ</div>`; return; }
   if (VIEW === 'who' || !team()) { box.innerHTML = whoView(); return; }
   if (VIEW === 'loc' && LOC) { box.innerHTML = bands() + locView(); bot.innerHTML = locBottom(); return; }
   box.innerHTML = bands() + listView();
@@ -348,11 +381,11 @@ function paintMain() {
 
 function bands() {
   let h = '';
-  if (!RD.round.pass) h += `<div class="ct-band warn"><b>หัวหน้ายังไม่กดเริ่มนับ</b> กรอกไว้ได้ ผลนับเก็บในเครื่องและส่งให้เองเมื่อเปิดนับ<br><button class="ct-btn sm" data-act="reload">เช็คอีกครั้ง</button></div>`;
+  if (!RD.round.pass) h += pic('look', 'warn', `<b>หัวหน้ายังไม่กดเริ่มนับ</b> กรอกไว้ได้ ผลนับเก็บในเครื่องและส่งให้เองเมื่อเปิดนับ<br><button class="ct-btn sm" data-act="reload">เช็คอีกครั้ง</button>`);
   else if (RD.round.status === 'ตั้งค่า') h += '<div class="ct-band warn">หัวหน้าพักการนับไว้ชั่วคราว ผลที่กรอกยังเก็บและส่งได้ตามปกติ</div>';
   else if (RD.round.status === 'วิเคราะห์') h += `<div class="ct-band info">หัวหน้าปิดรับนับรอบ ${RD.round.pass >= 2 ? 2 : 1} แล้ว ผลที่ค้างในเครื่องยังส่งได้ ถ้าจะนับเพิ่มถามหัวหน้าก่อน</div>`;
   else if (ME && ME.pass >= 2) h += '<div class="ct-band info"><b>รอบ 2 นับซ้ำ</b> นับทุกกองในโลเหมือนรอบ 1 · โลที่คุณนับในรอบ 1 ให้คนอื่นในทีมนับ</div>';
-  if (NET.err && BOX.out.length && navigator.onLine) h += `<div class="ct-band bad">ส่งไม่ได้: ${esc(NET.err)} — ผลนับยังอยู่ในเครื่อง จะลองส่งใหม่เอง</div>`;
+  if (NET.err && BOX.out.length && navigator.onLine) h += pic('oops', 'bad', `<b>ส่งไม่ได้</b> ${esc(NET.err)} — ผลนับยังอยู่ในเครื่อง จะลองส่งใหม่เอง`);
   if (BOX.rej.length) {
     h += `<details class="ct-rej"><summary>ชีตไม่รับ ${BOX.rej.length} แถว — แตะดู</summary><ul>` +
       BOX.rej.slice(-30).map(r => `<li>${esc(r.loc)} ${esc(r.type === 'นับ' ? `${r.sku} × ${r.qty}` : r.type)} — ${esc(r.why)}</li>`).join('') +
@@ -366,7 +399,7 @@ function bands() {
 function whoView() {
   const pass = RD.round.pass || 1;
   const list = RD.teams.filter(t => t.pass === pass && t.zones.length);
-  if (!list.length) return '<div class="ct-msg"><b>ยังไม่มีทีมในรอบนี้</b><br>รอหัวหน้าแบ่งทีมก่อน แล้วกดลองใหม่<br><br><button class="ct-btn" data-act="reload">ลองใหม่</button></div>';
+  if (!list.length) return `<div class="ct-msg">${mas('look')}<b>ยังไม่มีทีมในรอบนี้</b><br>รอหัวหน้าแบ่งทีมก่อน แล้วกดลองใหม่<br><br><button class="ct-btn" data-act="reload">ลองใหม่</button></div>`;
   const sel = PICK || (ME ? { team: ME.team, who: ME.who } : { team: '', who: '' });
   PICK = sel;
   const card = (t) => {
@@ -376,7 +409,9 @@ function whoView() {
   };
   const inv = list.filter(t => t.kind !== 'Audit'), aud = list.filter(t => t.kind === 'Audit');
   const t = list.find(x => x.id === sel.team);
-  return `<div class="ct-h">เลือกทีมของคุณ</div><div class="ct-pick">${inv.map(card).join('')}</div>` +
+  const hi = pass >= 2 ? ['รอบ 2 มาช่วยนับซ้ำกัน', 'นับให้ละเอียดเหมือนรอบแรกนะ'] : ['สวัสดี มานับสต๊อกกัน', 'เลือกทีมกับชื่อ แล้วกดเริ่มนับ'];
+  return `<div class="ct-hi"><img src="${MAS.walk}" alt="" width="58" height="58"><span><b>${hi[0]}</b>${hi[1]}</span></div>` +
+    `<div class="ct-h">เลือกทีมของคุณ</div><div class="ct-pick">${inv.map(card).join('')}</div>` +
     (aud.length ? `<div class="ct-h">Audit</div><div class="ct-pick">${aud.map(card).join('')}</div>` : '') +
     (t ? `<div class="ct-h">ชื่อคุณ</div>
       ${t.members.length ? `<div class="ct-names">${t.members.map(m => `<button class="ct-name ${sel.who === m ? 'on' : ''}" data-name="${esc(m)}">${esc(m)}</button>`).join('')}</div>` : ''}
@@ -426,7 +461,9 @@ function listView() {
     ${audit ? `<div class="ct-band info">Audit เลือกโลสุ่มตรวจเอง อย่างน้อย ${min}% ของแต่ละแถว · ไม่เห็นตัวเลขของทีม Inventory</div>` : ''}
     <input class="ct-in" id="locQ" placeholder="ค้นหาโล หรือพิมพ์โลที่ไม่มีในรายการ" value="${esc(Q)}" autocapitalize="characters" autocomplete="off" spellcheck="false">
     ${typed ? `<button class="ct-btn w" style="margin-top:8px" data-loc="${esc(q)}">นับโล ${esc(q)} (นอกรายการ)</button>` : ''}
-    <div class="ct-list" style="margin-top:10px">${rows || `<div class="ct-msg">${FILTER === 'left' && !q ? (audit ? 'สุ่มครบทุกแถวแล้ว' : '🎉 นับครบทุกโลแล้ว') : 'ไม่มีโลตามที่ค้น'}</div>`}</div>
+    <div class="ct-list" style="margin-top:10px">${rows || `<div class="ct-msg">${FILTER === 'left' && !q
+      ? `${mas('cheer')}<b>${audit ? 'สุ่มครบทุกแถวแล้ว' : 'นับครบทุกโลแล้ว'}</b><br>เก่งมาก ขอบคุณที่ช่วยนับ`
+      : `${mas('look', 'sm')}ไม่มีโลตามที่ค้น`}</div>`}</div>
     ${extra.length ? `<div class="ct-h">โลนอกรายการที่นับไว้</div><div class="ct-list">${extra.map(l => `<button class="ct-loc" data-loc="${esc(l)}">${esc(l)}<span class="st done">✓</span><span class="go">›</span></button>`).join('')}</div>` : ''}
     <div class="ct-foot"><button class="ct-btn sm" data-act="who">เปลี่ยนทีม/ชื่อ</button> <button class="ct-btn sm" data-act="reload">โหลดรายการใหม่</button></div>`;
 }
@@ -449,7 +486,7 @@ function locView() {
   if (banned(LOC)) {
     return `<div class="ct-lochead"><button class="ct-btn sm" data-act="back" aria-label="กลับไปรายการโล">‹ โล</button>
       <div class="nm">${esc(LOC)}<small>แถว ${esc(p.group)}</small></div></div>
-      <div class="ct-msg"><b>คุณนับโลนี้ในรอบ 1 แล้ว</b><br>รอบ 2 ให้คนอื่นในทีมนับ ผลจะได้เทียบกันได้จริง</div>`;
+      <div class="ct-msg">${mas('look')}<b>คุณนับโลนี้ในรอบ 1 แล้ว</b><br>รอบ 2 ให้คนอื่นในทีมนับ ผลจะได้เทียบกันได้จริง</div>`;
   }
   const editing = EDIT && piles.find(r => r.uid === EDIT);
   const list = piles.map(r => `<button class="ct-pile ${EDIT === r.uid ? 'on' : ''}" data-pile="${esc(r.uid)}">
@@ -524,18 +561,21 @@ function readForm() {
   return { sku: ex ? (ex[0] || ex[1]) : sku, long: ex ? ex[1] : '', lot, po, qty };
 }
 
-function addPile() {
+/** stay = false ตอนบันทึกก่อนออกจากโล (ไม่ต้องวาดหน้าเดิมซ้ำ) · คืน true ถ้าบันทึกแล้ว */
+function addPile(stay) {
   const v = readForm();
-  if (!v) return;
+  if (!v) return false;
   const rows = atLoc(LOC);
   const same = rows.find(r => r.type === 'นับ' && ST.norm(r.long || r.sku) === ST.norm(v.long || v.sku) && ST.norm(r.lot) === ST.norm(v.lot) && ST.norm(r.po) === ST.norm(v.po));
-  if (same && !confirm(`มีกอง ${v.sku} LOT ${v.lot || '-'} PO ${v.po || '-'} ในโลนี้แล้ว (${f(same.qty)})\nเพิ่มเป็นอีกกองแยก? ยอดจะรวมกัน`)) return;
+  if (same && !confirm(`มีกอง ${v.sku} LOT ${v.lot || '-'} PO ${v.po || '-'} ในโลนี้แล้ว (${f(same.qty)})\nเพิ่มเป็นอีกกองแยก? ยอดจะรวมกัน`)) return false;
   const empty = rows.find(r => r.type === 'ว่าง');
   if (empty) push('ยกเลิก', { ref: empty.uid });
   push('นับ', v);
   FORM = { sku: '', long: '', lot: '', po: '', qty: '' };
+  if (stay === false) return true;
   paint(); hints();
   setTimeout(() => { const el = $('fSku'); if (el) el.focus(); }, 30);
+  return true;
 }
 
 function editPile(uid) {
@@ -548,12 +588,53 @@ function editPile(uid) {
 }
 
 /** แก้ = แถวใหม่ที่ชี้แถวเดิม แถวเดิมยังอยู่ในชีต ใครแก้อะไรเมื่อไหร่ย้อนดูได้ */
-function saveEdit() {
+function saveEdit(stay) {
   const v = readForm();
-  if (!v) return;
+  if (!v) return false;
   push('นับ', { ...v, ref: EDIT });
   EDIT = ''; FORM = { sku: '', long: '', lot: '', po: '', qty: '' };
-  paint(); hints();
+  if (stay !== false) { paint(); hints(); }
+  return true;
+}
+
+/** ช่องที่พิมพ์ไว้แต่ยังไม่กด "+ เพิ่มกอง" / "บันทึกที่แก้" */
+function typed() {
+  const pile = EDIT ? atLoc(LOC).find(r => r.uid === EDIT) : null;
+  return ST.formDirty(FORM, pile);
+}
+
+/** ก่อนออกจากโล: บันทึกกองที่พิมพ์ค้างไว้ให้ก่อน ถ้ากรอกไม่ครบจะเตือนและอยู่โลเดิม */
+function keepTyped() {
+  if (!typed()) { EDIT = ''; return true; }
+  return EDIT ? saveEdit(false) : addPile(false);
+}
+
+/** ปุ่ม "เสร็จ → โลถัดไป" */
+function doneLoc() {
+  if (!banned(LOC) && !typed() && !atLoc(LOC).length &&
+      !confirm('โลนี้ยังไม่ได้กรอกอะไร\nข้ามไปก่อน? (ถ้าโลว่าง ให้กด "โลนี้ว่าง")')) return;
+  const loc = LOC;
+  if (keepTyped()) { nextLoc(); cheer(loc); }
+}
+
+/** เสร็จโลแล้ว น้องกล่องเด้งขึ้นมาแป๊บเดียว บอกว่าเหลืออีกกี่โล · กดทะลุได้ ไม่บังปุ่ม · ข้ามโลไม่ฉลอง */
+let TOAST = 0;
+function cheer(loc) {
+  if (banned(loc) || !atLoc(loc).length) return;
+  const locs = myLocs(), pend = pending();
+  const done = locs.filter(l => locState(l.loc, pend)).length;
+  const left = locs.length - done;
+  const all = !isAudit() && locs.length > 0 && left === 0;
+  const sub = isAudit() ? `สุ่มแล้ว ${f(done)} โล` : all ? 'นับครบทุกโลแล้ว 🎉' : `เหลือ ${f(left)} โล`;
+  const old = document.querySelector('.ct-toast');
+  if (old) old.remove();
+  clearTimeout(TOAST);
+  const el = document.createElement('div');
+  el.className = 'ct-toast' + (all ? ' all' : '');
+  el.setAttribute('role', 'status');
+  el.innerHTML = `<img src="${MAS.cheer}" alt="" width="58" height="58"><span><b>เสร็จ ${esc(loc)} ✓</b>${sub}</span>`;
+  document.body.appendChild(el);
+  TOAST = setTimeout(() => el.remove(), 2000);
 }
 
 /** Inventory เดินต่อโลถัดไปที่ยังไม่นับตามทางเดิน · Audit กลับไปเลือกโลเอง */
@@ -603,16 +684,20 @@ document.addEventListener('click', (e) => {
       paint(); pull();
       break;
     }
-    case 'back': VIEW = 'list'; LOC = ''; EDIT = ''; paint(); break;
+    case 'back': if (VIEW !== 'loc' || keepTyped()) { VIEW = 'list'; LOC = ''; EDIT = ''; paint(); } break;
     case 'add': addPile(); break;
     case 'save-edit': saveEdit(); break;
     case 'cancel-edit': EDIT = ''; FORM = { sku: '', long: '', lot: '', po: '', qty: '' }; paint(); hints(); break;
     case 'del':
       if (confirm('ลบกองนี้? (ในชีตจะมีแถวยกเลิกต่อท้าย แถวเดิมไม่หาย)')) { push('ยกเลิก', { ref: EDIT }); EDIT = ''; FORM = { sku: '', long: '', lot: '', po: '', qty: '' }; paint(); hints(); }
       break;
-    case 'empty': push('ว่าง', {}); nextLoc(); break;
+    case 'empty':
+      if (typed() && !confirm('มีกองที่พิมพ์ไว้แต่ยังไม่ได้เพิ่ม\nทิ้งที่พิมพ์ แล้วตั้งโลนี้ว่าง?')) break;
+      FORM = { sku: '', long: '', lot: '', po: '', qty: '' };
+      { const loc = LOC; push('ว่าง', {}); nextLoc(); cheer(loc); }
+      break;
     case 'unempty': { const em = atLoc(LOC).find(r => r.type === 'ว่าง'); if (em && confirm('ยกเลิก "ว่าง" ของโลนี้?')) { push('ยกเลิก', { ref: em.uid }); paint(); hints(); } break; }
-    case 'next': nextLoc(); break;
+    case 'next': doneLoc(); break;
     case 'rej-clear': BOX.rej = []; save(outKey(), BOX); paint(); break;
   }
 });

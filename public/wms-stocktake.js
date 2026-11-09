@@ -386,6 +386,20 @@
     return hits.slice(0, limit || 8).map(function (h) { return h.s; });
   }
 
+  /**
+   * ช่องกรอกมีของที่ยังไม่ได้บันทึกไหม (กด "เสร็จ" หรือ "‹ โล" จะได้บันทึกให้ก่อน ไม่ทิ้ง)
+   * pile = กองที่กำลังแก้ ถ้าเป็นกองใหม่ให้ส่ง null
+   */
+  function formDirty(form, pile) {
+    var f = form || {};
+    var s = function (v) { return String(v == null ? '' : v).trim(); };
+    var q = s(f.qty).replace(/,/g, '');
+    if (!pile) return !!(s(f.sku) || s(f.lot) || s(f.po) || q);
+    var k = norm(f.sku);
+    return (k !== norm(pile.sku) && k !== norm(pile.long)) || norm(f.lot) !== norm(pile.lot) ||
+      norm(f.po) !== norm(pile.po) || Number(q) !== Number(pile.qty);
+  }
+
   /** SKU ที่พิมพ์ตรงตัวกับในรายการไหม (ตรง SKU หรือ SKU เต็ม) */
   function skuExact(skus, q) {
     var n = norm(q);
@@ -1258,7 +1272,7 @@
     fromRow: fromRow, effective: effective, atLoc: atLoc, uid: uid, deviceId: deviceId,
     batch: batch, ack: ack, merge: merge,
     teamsOf: teamsOf, teamLocs: teamLocs, progress: progress,
-    skuSearch: skuSearch, skuExact: skuExact, poSearch: poSearch,
+    skuSearch: skuSearch, skuExact: skuExact, poSearch: poSearch, formDirty: formDirty,
     movesAfter: movesAfter, countLink: countLink, parseLink: parseLink,
   };
 })();

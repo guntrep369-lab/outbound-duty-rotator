@@ -574,6 +574,24 @@ describe('WmsStocktake — ช่องพิมพ์และลิงก์',
     expect(S.skuExact(SK, 'AAA00')).toBe(null);
   });
 
+  it('ช่องกรอกที่ยังไม่ได้บันทึก: กองใหม่มีอะไรพิมพ์ไว้ / กองที่แก้ต่างจากเดิม', () => {
+    const blank = { sku: '', long: '', lot: '', po: '', qty: '' };
+    expect(S.formDirty(blank, null)).toBe(false);
+    expect(S.formDirty({ ...blank, sku: '  ' }, null)).toBe(false);
+    expect(S.formDirty({ ...blank, sku: 'AAA001' }, null)).toBe(true);
+    expect(S.formDirty({ ...blank, qty: '5' }, null)).toBe(true);
+    expect(S.formDirty(undefined, null)).toBe(false);
+    const pile = { sku: 'AAA001', long: 'AAA0000000001', lot: '8', po: '9900000001', qty: 10 };
+    const same = { sku: 'aaa001', lot: ' 8', po: '9900000001', qty: '10' };
+    expect(S.formDirty(same, pile)).toBe(false);
+    expect(S.formDirty({ ...same, sku: 'AAA0000000001' }, pile)).toBe(false);
+    expect(S.formDirty({ ...same, qty: '1,0' }, pile)).toBe(false);
+    expect(S.formDirty({ ...same, qty: '12' }, pile)).toBe(true);
+    expect(S.formDirty({ ...same, lot: '9' }, pile)).toBe(true);
+    expect(S.formDirty({ ...same, po: '9900000002' }, pile)).toBe(true);
+    expect(S.formDirty({ ...same, sku: 'BBB001' }, pile)).toBe(true);
+  });
+
   it('PO ขึ้นต้นด้วยที่พิมพ์ พร้อมชื่อ Supplier', () => {
     expect(S.poSearch([['9900000001', 'ก'], ['9900000012', 'ข'], ['1200000001', 'ค']], '990000001')).toEqual([['9900000012', 'ข']]);
     expect(S.poSearch([['9900000001', 'ก']], '9')).toEqual([]);
