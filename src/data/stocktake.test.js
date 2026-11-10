@@ -1185,3 +1185,287 @@ describe('count.html — ปุ่มเปลี่ยนทีม/โหลด
     expect(HTML).toContain("case 'who-cancel':");
   });
 });
+
+/* ลบรอบ: รอบทดลอง / ตั้งผิด หัวหน้าลบได้ ต้องพิมพ์ชื่อรอบยืนยัน รอบอื่นต้องไม่โดนแตะ และมือถือที่เปิดลิงก์เก่าต้องไม่เห็นของค้าง */
+describe('ลบรอบ (st-round-del)', () => {
+  const SUM = ['R1-01-01', 'AAA001', 'AAA0000000001', 'ที่นอนสมมติ', '8', '9900000001', 10, 9, '', '', 9, -1, 'ขาด', 'ขาด 1', 'ทีม 1', 'สมชาย'];
+  const of = (api, tab, id, col = 0) => api.ss.tab(tab).grid.slice(1).filter((r) => r && r[col] === id).length;
+  const SETS = ['ทีมและโซน', 'Location', 'ยอดตั้งต้น', 'รายการสินค้า', 'ผลสรุป'];
+
+  it('ต้องเป็นหัวหน้า และพิมพ์ชื่อรอบตรงทุกตัว', () => {
+    const api = loadStocktake();
+    const id = ready(api);
+    expect(api.post({ op: 'st-round-del', round: id, confirm: ROUND.name }).error).toMatch(/รหัสหัวหน้า/);
+    expect(api.post({ op: 'st-round-del', t: HEAD, round: id, confirm: 'นับใหญ่' }).error).toMatch(/ไม่ตรง/);
+    expect(api.post({ op: 'st-round-del', t: HEAD, round: id }).error).toMatch(/ไม่ตรง/);
+    expect(api.get({ api: 'st-rounds', t: HEAD }).rounds.map((r) => r.id)).toEqual([id]);
+  });
+
+  it('เอาแถวของรอบนี้ออกทุกแท็บ รอบอื่นอยู่ครบ · ไม่ขึ้นในรายการรอบ · ลิงก์เก่าขึ้นว่าถูกลบ ส่งผลนับไม่ได้', () => {
+    const api = loadStocktake();
+    const a = ready(api), b = ready(api);
+    api.post({ op: 'st-count', round: a, items: [item({ uid: 'a1' }), item({ uid: 'a2', loc: 'R1-01-02' })] });
+    api.post({ op: 'st-count', round: b, items: [item({ uid: 'b1' })] });
+    api.post({ op: 'st-summary', t: HEAD, round: a, lines: [SUM] });
+    api.post({ op: 'st-summary', t: HEAD, round: b, lines: [SUM] });
+    const res = api.post({ op: 'st-round-del', t: HEAD, round: a, confirm: ` ${ROUND.name} `, by: 'หัวหน้าสมมติ' });
+    expect(res).toMatchObject({ deleted: a, inPlace: true });
+    expect(res.rows['บันทึกนับ']).toBe(2);
+    for (const tab of SETS) {
+      expect(of(api, tab, a), tab).toBe(0);
+      expect(of(api, tab, b), tab).toBeGreaterThan(0);
+    }
+    expect(api.get({ api: 'st-rounds', t: HEAD }).rounds.map((r) => r.id)).toEqual([b]);
+    expect(api.get({ api: 'st-round', round: a }).error).toMatch(/ถูกหัวหน้าลบแล้ว/);
+    expect(api.get({ api: 'st-head', t: HEAD, round: a }).error).toMatch(/ถูกหัวหน้าลบแล้ว/);
+    expect(api.post({ op: 'st-count', round: a, items: [item({ uid: 'a3' })] }).error).toMatch(/ถูกหัวหน้าลบแล้ว/);
+    expect(api.post({ op: 'st-round-del', t: HEAD, round: a, confirm: ROUND.name }).error, 'ลบซ้ำ').toMatch(/ถูกหัวหน้าลบแล้ว/);
+    const row = api.ss.tab('รอบนับ').grid.slice(1).find((r) => r[0] === a);
+    expect(row[4]).toBe('ลบแล้ว');
+    expect(row[13]).toBe('หัวหน้าสมมติ');
+  });
+
+  it('บันทึกนับตอนมีรอบอื่นเปิดอยู่: ล้างในที่เดิม เลขแถวของรอบนั้นไม่ขยับ หน้ากรอกที่อ่านต่อจากแถวเดิมไม่พลาดแถวใหม่', () => {
+    const api = loadStocktake();
+    const a = ready(api), b = ready(api);
+    api.post({ op: 'st-count', round: b, items: [item({ uid: 'b1' })] });
+    api.post({ op: 'st-count', round: a, items: [item({ uid: 'a1' }), item({ uid: 'a2', loc: 'R1-01-02' })] });
+    const seen = api.get({ api: 'st-mine', round: b, team: 'INV1', since: 0 });
+    expect(seen.last).toBe(4);
+    api.post({ op: 'st-round-del', t: HEAD, round: a, confirm: ROUND.name });
+    const log = api.ss.tab('บันทึกนับ');
+    expect(log.getLastRow(), 'แถวท้ายของรอบที่ลบไม่หาย').toBe(4);
+    expect(log.grid[2][0]).toBe('ลบแล้ว');
+    expect(log.grid[2].slice(1).every((v) => v === '')).toBe(true);
+    api.post({ op: 'st-count', round: b, items: [item({ uid: 'b2', loc: 'R1-01-02' })] });
+    const next = api.get({ api: 'st-mine', round: b, team: 'INV1', since: seen.last });
+    expect(next.rows.map((r) => r[14])).toEqual(['b2']);
+    expect(next.rows[0][0], 'ต่อท้ายแถว 4 ไม่ทับ').toBe(5);
+  });
+
+  it('ไม่มีรอบไหนเปิดอยู่: เอาแถวออกจริง · รอบที่ปิดแล้วก็ลบได้ · รหัสรอบไม่ถูกใช้ซ้ำ', () => {
+    const api = loadStocktake();
+    const a = ready(api);
+    api.post({ op: 'st-count', round: a, items: [item({ uid: 'a1' }), item({ uid: 'a2', loc: 'R1-01-02' })] });
+    api.post({ op: 'st-status', t: HEAD, round: a, status: 'วิเคราะห์' });
+    api.post({ op: 'st-close', t: HEAD, round: a, approver: 'หัวหน้าสมมติ', lines: [SUM] });
+    const res = api.post({ op: 'st-round-del', t: HEAD, round: a, confirm: ROUND.name });
+    expect(res).toMatchObject({ deleted: a, inPlace: false });
+    expect(api.ss.tab('บันทึกนับ').getLastRow(), 'เหลือแค่หัวตาราง').toBe(1);
+    expect(api.get({ api: 'st-rounds', t: HEAD }).rounds).toEqual([]);
+    const fresh = ready(api);
+    expect(fresh).not.toBe(a);
+    expect(api.get({ api: 'st-rounds', t: HEAD }).rounds.map((r) => r.id)).toEqual([fresh]);
+  });
+
+  it('ตั้งสถานะ "ลบแล้ว" ผ่าน st-status ไม่ได้', () => {
+    const api = loadStocktake();
+    const id = ready(api);
+    expect(api.post({ op: 'st-status', t: HEAD, round: id, status: 'ลบแล้ว' }).error).toBeTruthy();
+    expect(api.get({ api: 'st-rounds', t: HEAD }).rounds).toHaveLength(1);
+  });
+
+  it('หน้าเว็บ: ปุ่มลบกดได้เมื่อพิมพ์ชื่อตรง · หน้ากรอกไม่ใช้ข้อมูลที่โหลดไว้ของรอบที่ถูกลบ', () => {
+    const IDX = fs.readFileSync(path.resolve(__dirname, '../../public/stocktake/index.html'), 'utf8');
+    const CNT = fs.readFileSync(path.resolve(__dirname, '../../public/stocktake/count.html'), 'utf8');
+    expect(IDX).toMatch(/data-act="del-go" disabled/);
+    expect(IDX).toMatch(/g\.disabled = !!S\.old \|\| e\.target\.value\.trim\(\) !== r\.name/);
+    expect(IDX).toMatch(/op: 'st-round-del', round: r\.id, confirm: typed/);
+    expect(CNT).toMatch(/if \(\/ถูกหัวหน้าลบแล้ว\/\.test\(e\.message\)\) \{ RD = null;/);
+  });
+});
+
+/*
+ * นับ 2 วัน: วันแรกนับ R กับโลปิด (Outbound ยังส่งของจากโลเปิด) วันที่ 2 นับ S, A, B กับโลเปิด ตอนสต๊อกนิ่ง
+ * ตัดยอดเช้าวันที่ 2 ครั้งเดียว โลวันแรกที่มีรายการในสมุดหลังเริ่มนับต้องนับใหม่
+ */
+describe('นับ 2 วัน', () => {
+  const D2 = { zones: ['A'], locs: [], openToo: 0 };
+  const day2 = (o) => S.day2Of({ day2: { ...D2, ...o } });
+
+  it('day2Of / day2Test: ทั้งโซน + โลเปิดที่ระบุ · ไม่ได้ตั้ง = นับวันเดียว', () => {
+    expect(S.day2Of({})).toBe(null);
+    expect(S.day2Of({ day2: { zones: [], locs: [] } })).toBe(null);
+    const d = S.day2Of({ day2: { zones: ['s', 'A', 'B'], locs: ['c-01-02'], openToo: 1, row1: 500 } });
+    expect(d).toMatchObject({ zones: ['S', 'A', 'B'], locs: ['C-01-02'], row1: 500, on: 0, moved: [] });
+    const is = S.day2Test(d);
+    expect(['S-01-01', 'A-01-01', 'B-02-03', 'C-01-02'].every(is)).toBe(true);
+    expect(['R1-01-01', 'C-01-03', 'D-01-01', 'QA', ''].some(is)).toBe(false);
+    expect(S.day2Test(null)('A-01-01')).toBe(false);
+  });
+
+  it('day2Wait: ก่อนเปิดวันที่ 2 โลวันที่ 2 ยังนับไม่ได้ · เปิดแล้วนับได้ทุกโล', () => {
+    expect(S.day2Wait(day2())('A-01-01')).toBe(true);
+    expect(S.day2Wait(day2())('R1-01-01')).toBe(false);
+    expect(S.day2Wait(day2({ on: 1, at: 5 }))('A-01-01')).toBe(false);
+    expect(S.day2Wait(null)('A-01-01')).toBe(false);
+  });
+
+  it('day2Plan: โลเปิดขายนอกโซนที่เลือก นับวันที่ 2 ด้วย · โลปิดกับโลว่างเป็นวันแรก', () => {
+    const piles = [
+      ['C-01-02', 'AAA001', 'AAA0000000001', 'สมมติ', '8', '9900000001', 5, 1],
+      ['C-01-02', 'BBB001', 'BBB0000000001', 'สมมติ', '8', '9900000001', 5, 0],
+      ['C-01-03', 'AAA001', 'AAA0000000001', 'สมมติ', '8', '9900000001', 5, 0],
+      ['A-01-01', 'AAA001', 'AAA0000000001', 'สมมติ', '8', '9900000001', 5, 1],
+      ['D-02-01', 'AAA001', 'AAA0000000001', 'สมมติ', '8', '9900000001', 5, 1],
+    ];
+    expect(S.day2Plan(piles, ['s', 'A', 'B', 'A'], true)).toEqual({ zones: ['S', 'A', 'B'], locs: ['C-01-02', 'D-02-01'], openToo: 1 });
+    expect(S.day2Plan(piles, ['A'], false)).toEqual({ zones: ['A'], locs: [], openToo: 0 });
+  });
+
+  it('voidMoved: โลวันแรกที่ขยับ ผลนับก่อนเปิดวันที่ 2 ไม่ใช้ · นับใหม่หลังเปิดอยู่ครบ · โลอื่นไม่โดน', () => {
+    const at = Date.parse('2026-11-16T08:00:00+07:00');
+    const d = day2({ on: 1, at, moved: ['R1-01-01'] });
+    const e = (o) => ({ uid: o.uid, loc: 'R1-01-01', type: 'นับ', at: at - 20 * 3600000, clientAt: new Date(at - 20 * 3600000).toISOString(), ...o });
+    const rows = [
+      e({ uid: 'day1' }),
+      e({ uid: 'other', loc: 'R1-01-02' }),
+      e({ uid: 'late', at: at + 60000 }),                                              // นับวันแรก เครื่องออฟไลน์ ส่งถึงชีตวันที่ 2
+      e({ uid: 'day2', at: at + 3600000, clientAt: new Date(at + 3590000).toISOString() }),
+      e({ uid: 'skew', at: at + 600000, clientAt: new Date(at - 5 * 60000).toISOString() }),   // นาฬิกามือถือช้า 5 นาที
+      e({ uid: 'local', at: new Date(at + 7200000).toISOString(), clientAt: undefined }),      // แถวในเครื่องยังไม่ได้ส่ง
+      e({ uid: 'just', at: at - 60000, clientAt: new Date(at - 60000).toISOString() }),        // ชีตรับก่อนเปิดวันที่ 2 นาทีเดียว = ยังเป็นของวันแรก
+    ];
+    expect(S.voidMoved(rows, d).map((x) => x.uid)).toEqual(['other', 'day2', 'skew', 'local']);
+    expect(S.voidMoved(rows, day2({ moved: ['R1-01-01'] })), 'ยังไม่เปิดวันที่ 2').toHaveLength(7);
+    expect(S.voidMoved(rows, null)).toHaveLength(7);
+  });
+
+  it('day2Moved: แถวสมุดหลังเริ่มวันแรกที่แตะโลวันแรก = นับใหม่ · ขายจากโลเปิด (โลวันที่ 2) ไม่นับ', () => {
+    const fifo = {
+      skus: [['AAA001', 'AAA0000000001', 'ที่นอนสมมติ']], pos: ['9900000001'], days: ['2026-11-15'],
+      locs: ['R1-01-01', 'R1-01-02', 'A-01-01', 'C-01-02', 'C-01-03', 'DOCKLOAD'],
+      rows: [
+        [500, 0, 8, 0, -1, 0, 10, 0, 0, 8],     // ก่อนเริ่มวันแรก
+        [501, 0, 8, 0, 2, -1, 1, 2, 0, 8],      // ขายจาก A-01-01 (วันที่ 2) ปกติ
+        [502, 0, 8, 0, 3, -1, 1, 2, 0, 8],      // ขายจาก C-01-02 (โลเปิด วันที่ 2) ปกติ
+        [503, 0, 8, 0, 0, 2, 2, 1, 0, 9],       // เบิกจาก R1-01-01 ไปเติม A-01-01 → R1-01-01 ขยับ
+        [504, 0, 8, 0, -1, 4, 3, 0, 0, 8],      // รับเข้า C-01-03 (โลปิด วันแรก) → ขยับ
+        [505, 0, 8, 0, 4, 5, 1, 1, 0, 8],       // C-01-03 → DOCKLOAD (ไม่อยู่ในรายการนับ)
+      ],
+    };
+    const d = S.day2Of({ day2: { zones: ['A'], locs: ['C-01-02'], row1: 500 } });
+    const names = ['R1-01-01', 'R1-01-02', 'A-01-01', 'C-01-02', 'C-01-03'];
+    const moved = S.day2Moved(fifo, d, names);
+    expect(moved.map((m) => m.loc), 'เรียงตามทางเดิน').toEqual(['R1-01-01', 'C-01-03']);
+    expect(moved[1].rows.map((r) => r.row)).toEqual([504, 505]);
+    expect(S.day2Moved(fifo, S.day2Of({ day2: { zones: ['A'] } }), names), 'ยังไม่รู้แถวเริ่มวันแรก').toEqual([]);
+  });
+
+  it('analyze: โลที่รอวันที่ 2 ยังไม่เอามาคิด ทั้งยอดในสมุดและรายการโล · เปิดวันที่ 2 แล้วคิดครบ', () => {
+    const piles = [PILES[0], PILES[1], PILES[2]];
+    const locs = LOCS.map((l) => ({ loc: l[0], zone: l[1], group: l[2] }));
+    const run = (d) => S.analyze({ piles, entries: [], teams: TEAMS.map((t) => ({ ...t, pass: 1 })), locs, skus: [], pass: 1, day2: d });
+    const locsOf = (res) => [...new Set(res.lines.map((l) => l.loc))].sort();
+    expect(locsOf(run(null))).toEqual(['A-01-01', 'A-01-02', 'R1-01-01', 'R1-01-02']);
+    expect(locsOf(run(day2()))).toEqual(['R1-01-01', 'R1-01-02']);
+    expect(locsOf(run(day2({ on: 1, at: 5 })))).toEqual(['A-01-01', 'A-01-02', 'R1-01-01', 'R1-01-02']);
+  });
+
+  /* ── สคริปต์ ── */
+  const set = (api, id, d) => api.post({ op: 'st-day2', t: HEAD, round: id, day2: d });
+
+  it('st-day2: หัวหน้าเท่านั้น ตั้งได้ตอนตั้งค่า / นับรอบ 1 ยกเลิกได้ · เริ่มนับแล้วจำแถวสุดท้ายในสมุด', () => {
+    const api = loadStocktake();
+    const id = ready(api, { start: false });
+    expect(api.post({ op: 'st-day2', round: id, day2: D2 }).error).toMatch(/รหัสหัวหน้า/);
+    expect(set(api, id, { zones: ['a', 'A'], locs: ['r1-01-02'], openToo: 1 }).round.settings.day2).toEqual({ zones: ['A'], locs: ['R1-01-02'], openToo: 1, row1: 0 });
+    const started = api.post({ op: 'st-status', t: HEAD, round: id, status: 'นับรอบ 1' });
+    expect(started.round.settings.day2.row1, 'แถวสุดท้ายตอนดึงยอดตั้งต้น').toBe(500);
+    expect(set(api, id, null).round.settings.day2).toBeUndefined();
+    expect(set(api, id, D2).round.settings.day2.row1, 'ตั้งหลังเริ่มนับ').toBe(500);
+  });
+
+  it('บันทึกรอบจากหน้าที่เปิดค้างไว้ไม่ทับค่าแบ่งวัน', () => {
+    const api = loadStocktake();
+    const id = ready(api);
+    set(api, id, D2);
+    const res = api.post({ op: 'st-round-save', t: HEAD, round: { ...ROUND, id, settings: { auditMin: 30 } } });
+    expect(res.round.settings).toMatchObject({ auditMin: 30, day2: { zones: ['A'], row1: 500 } });
+  });
+
+  it('วันแรก: หน้ากรอกไม่เห็นโลที่รอวันที่ 2 และสคริปต์ไม่รับผลนับของโลนั้น · ปิดรับนับไม่ได้จนกว่าจะเปิดวันที่ 2', () => {
+    const api = loadStocktake();
+    const id = ready(api);
+    set(api, id, D2);
+    const view = api.get({ api: 'st-round', round: id });
+    expect(view.round.day).toBe(1);
+    expect(view.locs.map((l) => l[0])).toEqual(['R1-01-01', 'R1-01-02']);
+    expect(view.wait).toEqual([['A-01-01', 'A-01'], ['A-01-02', 'A-01']]);
+    expect(view.day2).toMatchObject({ zones: ['A'], on: 0, moved: [] });
+    const res = api.post({ op: 'st-count', round: id, team: 'INV1', items: [item({ uid: 'r1' }), item({ uid: 'a1', team: 'INV2', who: 'มานะ', loc: 'A-01-01' })] });
+    expect(res.saved).toBe(1);
+    expect(res.rejected).toEqual([{ uid: 'a1', why: expect.stringMatching(/นับวันที่ 2/) }]);
+    expect(res.round.day).toBe(1);
+    expect(api.post({ op: 'st-status', t: HEAD, round: id, status: 'วิเคราะห์' }).error).toMatch(/ยังไม่ได้เปิดนับวันที่ 2/);
+  });
+
+  it('เปิดวันที่ 2: ระหว่างนับรอบ 1 เท่านั้น เปิดซ้ำไม่ได้ · หน้ากรอกเห็นครบทุกโล รู้ว่าโลไหนต้องนับใหม่ · ส่งผลนับโลวันที่ 2 ได้', () => {
+    const api = loadStocktake();
+    const id = ready(api, { start: false });
+    expect(api.post({ op: 'st-day2-open', t: HEAD, round: id, moved: [] }).error).toMatch(/ไม่ได้แบ่งนับ 2 วัน/);
+    set(api, id, D2);
+    expect(api.post({ op: 'st-day2-open', t: HEAD, round: id, moved: [] }).error).toMatch(/ระหว่างนับรอบ 1/);
+    api.post({ op: 'st-status', t: HEAD, round: id, status: 'นับรอบ 1' });
+    expect(api.post({ op: 'st-day2-open', round: id, moved: [] }).error).toMatch(/รหัสหัวหน้า/);
+    const res = api.post({ op: 'st-day2-open', t: HEAD, round: id, moved: ['r1-01-02', 'R1-01-02'], by: 'หัวหน้าสมมติ' });
+    expect(res.round.settings.day2).toMatchObject({ zones: ['A'], row1: 500, on: 1, moved: ['R1-01-02'], by: 'หัวหน้าสมมติ' });
+    expect(res.round.settings.day2.at).toBeGreaterThan(0);
+    expect(api.post({ op: 'st-day2-open', t: HEAD, round: id, moved: [] }).error).toMatch(/เปิดนับวันที่ 2 ไปแล้ว/);
+    expect(set(api, id, null).error).toMatch(/เปลี่ยนการแบ่งวันไม่ได้/);
+    const view = api.get({ api: 'st-round', round: id });
+    expect(view.round.day).toBe(2);
+    expect(view.locs).toHaveLength(4);
+    expect(view.wait).toEqual([]);
+    expect(view.day2).toMatchObject({ on: 1, moved: ['R1-01-02'] });
+    expect(api.post({ op: 'st-count', round: id, items: [item({ uid: 'a1', team: 'INV2', who: 'มานะ', loc: 'A-01-01' })] }).saved).toBe(1);
+    expect(api.get({ api: 'st-mine', round: id, team: 'INV2', since: 0 }).round.day).toBe(2);
+    expect(api.post({ op: 'st-status', t: HEAD, round: id, status: 'วิเคราะห์' }).round.status).toBe('วิเคราะห์');
+  });
+
+  it('รอบที่ไม่ได้แบ่งวัน: หน้ากรอกได้ทุกโล day = 0 เหมือนเดิม', () => {
+    const api = loadStocktake();
+    const id = ready(api);
+    const view = api.get({ api: 'st-round', round: id });
+    expect(view.round.day).toBe(0);
+    expect(view.locs).toHaveLength(4);
+    expect(view.wait).toEqual([]);
+    expect(view.day2).toBe(null);
+  });
+});
+
+/* นับ 2 วัน: สายไฟของสองหน้า — หลุดเส้นใดเส้นหนึ่ง ตัวเลขจะผิดแบบเงียบ ๆ (โลที่ยังขายอยู่ถูกนับ / ผลนับวันแรกของโลที่ขยับถูกใช้) */
+describe('นับ 2 วัน — หน้าหัวหน้าและหน้ากรอก', () => {
+  const IDX = fs.readFileSync(path.resolve(__dirname, '../../public/stocktake/index.html'), 'utf8');
+  const CNT = fs.readFileSync(path.resolve(__dirname, '../../public/stocktake/count.html'), 'utf8');
+
+  it('หน้าหัวหน้า: ก่อนเปิดวันที่ 2 ความคืบหน้ากับผลวิเคราะห์ไม่รวมโลที่รอ · แถวที่ใช้คิดตัดผลนับวันแรกของโลที่ขยับ', () => {
+    expect(IDX).toMatch(/function countLocs\(\) \{ const w = ST\.day2Wait\(day2\(\)\); return countLocsAll\(\)\.filter\(l => !w\(l\.loc\)\); \}/);
+    expect(IDX).toMatch(/S\.log = ST\.voidMoved\(S\.raw, day2\(\)\);/);
+    expect(IDX).toMatch(/ST\.analyze\(\{[^}]*pass: 1, day2: day2\(\) \}\)/);
+  });
+
+  it('หน้าหัวหน้า: เปิดวันที่ 2 = ดึงยอดสมุดใหม่ก่อน แล้วส่งโลวันแรกที่ขยับ · ปิดรับนับไม่ได้ถ้ายังไม่เปิดวันที่ 2', () => {
+    const at = IDX.indexOf('async function openDay2(');
+    const body = IDX.slice(at, IDX.indexOf('\n}\n', at));
+    expect(body.indexOf('await pullCore(r)')).toBeGreaterThan(-1);
+    expect(body.indexOf("op: 'st-day2-open'")).toBeGreaterThan(body.indexOf('await pullCore(r)'));
+    expect(body).toMatch(/ST\.day2Moved\(fifo, d, /);
+    expect(IDX).toMatch(/if \(d2 && !d2\.on\) \{ alert\('ยังไม่ได้เปิดนับวันที่ 2/);
+  });
+
+  it('หน้าหัวหน้า: เช็คสมุดวันแรกดูเฉพาะแถวที่แตะโลวันแรก (ขายจากโลเปิดเป็นเรื่องปกติ)', () => {
+    expect(IDX).toMatch(/list = list\.filter\(m => mine\.has\(ST\.up\(m\.from\)\) \|\| mine\.has\(ST\.up\(m\.to\)\)\);/);
+  });
+
+  it('หน้าหัวหน้า: ดึงยอดตั้งต้นใหม่ตอนยังไม่เริ่มนับ อัปเดตโลเปิดที่นับวันที่ 2 ให้ · เริ่มนับแล้วไม่เปลี่ยน', () => {
+    expect(IDX).toMatch(/d2 && !d2\.on && d2\.openToo && r\.status === 'ตั้งค่า' \? ST\.day2Plan\(b\.piles, d2\.zones, true\) : null/);
+  });
+
+  it('หน้ากรอก: ตัดผลนับวันแรกของโลที่ขยับ · กันเพิ่มโลที่รอวันที่ 2 · หัวหน้าเปิดวันที่ 2 แล้วโหลดรายการใหม่เอง', () => {
+    expect(CNT).toMatch(/return ST\.voidMoved\(ST\.merge\(\(MINE && MINE\.rows\) \|\| \[\], local\), RD && RD\.day2\);/);
+    expect(CNT).toMatch(/go\.disabled = !c\.kind \|\| wait;/);
+    expect(CNT).toMatch(/if \(!c\.kind \|\| waitLoc\(c\.loc\)\) return;/);
+    expect(CNT).toMatch(/RD\.round\.day !== day\) \{ DAY_MSG = RD\.round\.day === 2; setTimeout\(loadRound, 0\); \}/);
+  });
+});

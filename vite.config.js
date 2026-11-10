@@ -28,7 +28,7 @@ function folderIndex() {
 
 /**
  * Apps Script ปลอมสำหรับลองหน้านับสต๊อกใหญ่ใน dev server เท่านั้น (ไม่อยู่ในไฟล์ที่ build)
- *   /__fake/tx         ตอบ tx-fifo จากสมุดสมมติ ?api=fake-move เพิ่มแถวขายหลังตัดยอดไว้ลองคำเตือน
+ *   /__fake/tx         ตอบ tx-fifo จากสมุดสมมติ ?api=fake-move เพิ่มแถวขายหลังตัดยอดไว้ลองคำเตือน (&from=0 = ขายจากโลแร็ค)
  *   /__fake/stocktake  รัน apps-script/stocktake-api.gs ตัวจริงกับชีตในหน่วยความจำ
  *                      รหัสหัวหน้า demo-head รหัสคนนับ demo-count ข้อมูลหายเมื่อปิด dev server
  * ตั้งในหน้านับสต๊อกใหญ่: URL = http://localhost:5173/__fake/stocktake รหัส = demo-head
@@ -49,7 +49,8 @@ function fakeGas() {
         const send = (o) => { res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.end(JSON.stringify(o)); };
         if (pathname === '/__fake/tx') {
           if (params.api === 'fake-move') {
-            moves.push([0, 9, 0, 66, -1, 1, 2, -1, 0]);
+            /* from = ลำดับโลในสมุดสมมติ (0 = R1-01-01 โลแร็ค, ไม่ใส่ = 66 โลเปิดฝั่ง B) ไว้ลองนับ 2 วัน: ขายจากโลเปิดไม่เตือน เบิกจากแร็คเตือน */
+            moves.push([0, 9, 0, +params.from >= 0 ? +params.from : 66, -1, 1, 2, -1, 0]);
             return send({ ok: 1, moves: moves.length });
           }
           if (params.api === 'tx-fifo') return send(fakeFifo({ extraRows: moves }));

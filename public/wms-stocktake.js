@@ -545,7 +545,7 @@
   }
 
   /* รุ่นสคริปต์ที่หน้าเว็บนี้ต้องใช้ (ต้องตรงกับ VERSION ใน apps-script/stocktake-api.gs) */
-  var API_V = 4;
+  var API_V = 6;
   /** คำตอบจากสคริปต์รุ่นเก่ากว่าที่หน้าเว็บต้องใช้ไหม (ลืม Deploy เวอร์ชันใหม่) → {have, need} หรือ null */
   function oldScript(res) {
     if (!res || typeof res !== 'object') return null;
@@ -603,6 +603,112 @@
    * ลิงก์หน้ากรอกที่หัวหน้าส่งให้คนนับ URL สคริปต์กับรหัสอยู่หลัง # ไม่ถูกส่งไปที่ GitHub
    * หน้ากรอกเก็บไว้ในเครื่องแล้วลบออกจากช่องที่อยู่ทันที
    */
+  /* ── นับ 2 วัน ────────────────────────────────────────────────────────── */
+
+  /**
+   * รอบที่แบ่งนับ 2 วัน
+   *   วันแรก   = โลที่ไม่มีของขายออกระหว่างนับ (R กับโลปิดของ C/D) Outbound ยังส่งของจากโลเปิดได้
+   *   วันที่ 2 = โลที่ยังขายอยู่ในวันแรก (S, A, B ทั้งโซน กับโลเปิดในโซนอื่น) นับตอนสต๊อกนิ่งแล้ว
+   * ตัดยอดเช้าวันที่ 2 ครั้งเดียว ผลนับวันแรกเทียบกับยอดนั้นได้ ถ้าโลนั้นไม่มีรายการในสมุดหลังเริ่มนับวันแรก
+   * โลวันแรกที่ขยับ (moved) นับใหม่วันที่ 2 ผลนับวันแรกของโลนั้นไม่ใช้
+   *
+   * ค่าตั้งของรอบ settings.day2 = { zones: [โซนที่นับวันที่ 2 ทั้งโซน], locs: [โลเปิดในโซนอื่น], openToo: 1 = เอาโลเปิดด้วย,
+   *   row1: แถวสุดท้ายในสมุดตอนเริ่มวันแรก, on: 1 = เปิดนับวันที่ 2 แล้ว, at: เวลาที่เปิด (ms), moved: [โลวันแรกที่ขยับ] }
+   * ไม่มี / ว่าง = นับวันเดียว → null
+   */
+  function day2Of(settings) {
+    var d = settings && settings.day2;
+    if (!d || typeof d !== 'object') return null;
+    var list = function (v) { return (Array.isArray(v) ? v : []).map(up).filter(function (x) { return x; }); };
+    var zones = list(d.zones), locs = list(d.locs);
+    if (!zones.length && !locs.length && !d.openToo) return null;
+    return { zones: zones, locs: locs, openToo: d.openToo ? 1 : 0, row1: +d.row1 || 0, on: d.on ? 1 : 0, at: +d.at || 0, moved: list(d.moved) };
+  }
+
+  /** ตัวเช็คว่าโลนี้นับวันที่ 2 ไหม (อยู่ในโซนที่เลือก หรือเป็นโลเปิดที่ระบุ) ไม่ได้แบ่งวัน = ไม่ใช่ทุกโล */
+  function day2Test(day2) {
+    if (!day2) return function () { return false; };
+    var z = {}, l = {};
+    (day2.zones || []).forEach(function (x) { z[up(x)] = 1; });
+    (day2.locs || []).forEach(function (x) { l[up(x)] = 1; });
+    return function (loc) { var u = up(loc); return !!(u && (l[u] || z[up(parseLoc(u).zone)])); };
+  }
+
+  /** ตัวเช็คว่าโลนี้ยังนับไม่ได้ (รอวันที่ 2) เปิดวันที่ 2 แล้ว หรือไม่ได้แบ่งวัน = นับได้ทุกโล */
+  function day2Wait(day2) {
+    return day2 && !day2.on ? day2Test(day2) : function () { return false; };
+  }
+
+  /**
+   * แบ่งวันตามกติกา: โซนที่เลือกนับวันที่ 2 ทั้งโซน · openToo = โลที่สมุดบอกว่าเปิดขายอยู่ในโซนอื่นนับวันที่ 2 ด้วย
+   * piles = ยอดตั้งต้น [[Location, SKU, SKU เต็ม, ชื่อ, LOT, PO, ยอด, เปิดขาย]] โลว่างตามสมุดไม่มีกอง จึงเป็นวันแรก
+   * @returns {{zones: string[], locs: string[], openToo: number}}
+   */
+  function day2Plan(piles, zones, openToo) {
+    var z = {}, zl = [];
+    (zones || []).forEach(function (x) { var u = up(x); if (u && !z[u]) { z[u] = 1; zl.push(u); } });
+    var seen = {}, locs = [];
+    if (openToo) {
+      (piles || []).forEach(function (p) {
+        var u = up(p[0]);
+        if (!p[7] || !u || seen[u] || z[up(parseLoc(u).zone)]) return;
+        seen[u] = 1;
+        locs.push(u);
+      });
+    }
+    return { zones: zl, locs: locs.sort(locCmp), openToo: openToo ? 1 : 0 };
+  }
+
+  var DAY2_SLACK = 15 * 60000;   // นาฬิกามือถือคลาดจากชีตได้ไม่กี่นาที ใช้เฉพาะแถวที่ต้องเชื่อเวลาบนเครื่อง
+  var DAY2_LATE = 10 * 60000;    // เวลาบนเครื่องเร็วกว่าเวลาที่ชีตรับเกินนี้ = นับตอนออฟไลน์แล้วเพิ่งส่ง
+
+  /**
+   * เวลานับของแถว → [ms, เทียบตรง ๆ ได้ไหม]
+   *   ชีตรับแล้ว และเวลาบนเครื่องใกล้กับเวลาที่ชีตรับ = ใช้เวลาที่ชีตรับ (นาฬิกาเดียวกับเวลาเปิดวันที่ 2 เทียบตรง ๆ ได้)
+   *   นับตอนออฟไลน์แล้วเพิ่งส่ง (เวลาบนเครื่องเร็วกว่ามาก) หรือแถวที่ยังไม่ได้ส่ง = ใช้เวลาบนเครื่อง เผื่อนาฬิกาคลาด
+   */
+  function stampOf(e) {
+    var server = e && typeof e.at === 'number' && e.at > 0 ? e.at : 0;
+    var client = Date.parse(e && e.clientAt) || (e && typeof e.at === 'string' ? Date.parse(e.at) : 0) || 0;
+    if (server && (!client || client >= server - DAY2_LATE)) return [server, true];
+    return [client || server, false];
+  }
+
+  /** เวลานับของแถว (ms) */
+  function countedAt(e) { return stampOf(e)[0]; }
+
+  /** ตัดผลนับวันแรกของโลที่ขยับหลังนับออก (โลนั้นนับใหม่วันที่ 2) แถวที่นับหลังเปิดวันที่ 2 อยู่ครบ */
+  function voidMoved(entries, day2) {
+    var list = entries || [];
+    if (!day2 || !day2.on || !day2.at || !(day2.moved || []).length) return list;
+    var m = {};
+    day2.moved.forEach(function (l) { m[up(l)] = 1; });
+    return list.filter(function (e) {
+      if (!m[up(e.loc)]) return true;
+      var t = stampOf(e);
+      return t[0] >= day2.at - (t[1] ? 0 : DAY2_SLACK);
+    });
+  }
+
+  /**
+   * โลวันแรกที่มีรายการในสมุดหลังเริ่มนับวันแรก (แถวหลัง row1) → ต้องนับใหม่วันที่ 2
+   * วันที่ในสมุดไม่มีเวลา รู้ไม่ได้ว่าขยับก่อนหรือหลังคนนับผ่านโลนั้น จึงให้นับใหม่ทุกโลที่ขยับ
+   * fifo = คำตอบ tx-fifo ตอนเช้าวันที่ 2 · locNames = โลในรายการนับ (ไม่รวมแถวที่ตั้งไม่นับ)
+   * @returns {Array<{loc, rows: Array}>} เรียงตามทางเดิน · ยังไม่รู้ row1 = [] (เช็คไม่ได้)
+   */
+  function day2Moved(fifo, day2, locNames) {
+    if (!day2 || !day2.row1) return [];
+    var is = day2Test(day2), mine = {}, by = {};
+    (locNames || []).forEach(function (l) { var u = up(l); if (u && !is(u)) mine[u] = 1; });
+    movesAfter(fifo, day2.row1, '').forEach(function (m) {
+      [m.from, m.to].forEach(function (l) {
+        var u = up(l);
+        if (u && mine[u]) (by[u] = by[u] || []).push(m);
+      });
+    });
+    return Object.keys(by).sort(locCmp).map(function (u) { return { loc: u, rows: by[u] }; });
+  }
+
   function countLink(pageUrl, scriptUrl, key, roundId) {
     return String(pageUrl).split('#')[0] + '#u=' + encodeURIComponent(scriptUrl || '') +
       (key ? '&k=' + encodeURIComponent(key) : '') + '&r=' + encodeURIComponent(roundId || '');
@@ -695,6 +801,7 @@
     var pass = o.pass || 1;
     var skip = {};
     (o.skip || []).forEach(function (g) { skip[up(g)] = 1; });
+    var later = day2Wait(o.day2 || null);   // นับ 2 วัน: โลที่รอวันที่ 2 ยังไม่เอามาคิด ยอดในสมุดยังขยับอยู่
     var only = null;
     if (o.only) { only = {}; o.only.forEach(function (l) { only[up(l)] = 1; }); }
     var info = {}, canon = {};
@@ -723,7 +830,7 @@
       var u = up(loc);
       if (!u) return null;
       var p = parseLoc(u);
-      if (skip[up(p.group)] || (only && !only[u])) return null;
+      if (skip[up(p.group)] || (only && !only[u]) || later(u)) return null;
       if (!universe[u]) { universe[u] = 1; meta[u] = p; }
       return u;
     }
@@ -1448,5 +1555,6 @@
     skuSearch: skuSearch, skuExact: skuExact, poSearch: poSearch, formDirty: formDirty,
     qtyOf: qtyOf, poChoices: poChoices, lotChoices: lotChoices,
     movesAfter: movesAfter, countLink: countLink, parseLink: parseLink,
+    day2Of: day2Of, day2Test: day2Test, day2Wait: day2Wait, day2Plan: day2Plan, voidMoved: voidMoved, day2Moved: day2Moved, countedAt: countedAt,
   };
 })();

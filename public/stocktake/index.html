@@ -30,6 +30,17 @@
 .st-btn.p{background:var(--wms-primary);border-color:var(--wms-primary);color:#fff;font-weight:600}
 .st-btn.p:hover:not(:disabled){filter:brightness(1.08);color:#fff}
 .st-btn:disabled{opacity:.55;cursor:default}
+.st-btn.r{color:#B91C1C;border-color:#FECACA}
+.st-btn.r:hover:not(:disabled){border-color:#DC2626;color:#991B1B}
+.st-btn.rp{background:#DC2626;border-color:#DC2626;color:#fff;font-weight:600}
+.st-btn.rp:hover:not(:disabled){filter:brightness(1.08);color:#fff}
+/* ลบรอบ: กล่องแดง ต้องพิมพ์ชื่อรอบให้ตรงก่อน */
+.st-del{margin-top:14px;max-width:620px;padding:10px 12px;border:1px solid #FECACA;border-radius:var(--wms-radius-sm);background:#FEF2F2;
+  font-size:12.5px;line-height:1.6;color:#7F1D1D}
+.st-del b{display:block;font-size:13.5px;color:#991B1B}
+.st-del label{display:block;margin-top:8px;font-weight:600}
+.st-del .st-in{display:block;max-width:380px;margin:4px 0 8px;height:30px;border-color:#FCA5A5;background:#fff}
+.st-del .no{margin-top:6px;font-weight:700;color:#B91C1C}
 .st-msg{width:100%;font-size:12.5px;line-height:1.5}
 .st-msg.err{color:#B91C1C;font-weight:600}
 .st-msg.ok{color:#047857;font-weight:600}
@@ -92,6 +103,9 @@ select.st-in{cursor:pointer;padding-right:2px}
   background:var(--wms-surface);font-family:var(--wms-font);font-size:12px;color:var(--wms-muted);cursor:pointer;white-space:nowrap}
 .st-chip b{font-size:13.5px;color:var(--wms-text);font-variant-numeric:tabular-nums}
 .st-chip:hover{border-color:var(--wms-primary)}
+.st-chip:disabled{opacity:.6;cursor:default}
+.st-ck{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;color:var(--wms-muted);cursor:pointer}
+.st-ck b{color:var(--wms-text)}
 .st-chip.on{border-color:var(--wms-primary);background:var(--wms-primary-light);color:var(--wms-primary-dark)}
 .st-chip.red b{color:#B91C1C}
 .st-chip.amber b{color:#B45309}
@@ -220,7 +234,7 @@ const TABS = [['setup', 'ตั้งรอบ', '../icons/settings.png'], ['tea
 const LIVE_TABS = ['progress', 'analyze', 'round2', 'close'];   // แท็บที่ดึงบันทึกนับใหม่ทุกนาที
 let TAB = TABS.some(t => t[0] === new URLSearchParams(location.search).get('tab')) ? new URLSearchParams(location.search).get('tab') : 'setup';
 
-const S = { rounds: null, rid: load(KEY_ROUND), head: null, log: [], since: 0, at: 0, busy: '', err: '', ok: '', fresh: false };
+const S = { rounds: null, rid: load(KEY_ROUND), head: null, log: [], raw: [], since: 0, at: 0, busy: '', err: '', ok: '', fresh: false };
 let DRAFT = null;      // ทีม/โซนที่กำลังแก้ ยังไม่บันทึก
 let MOVES = null;      // แถวสมุดหลังดึงยอดตั้งต้น {list, at, err}
 let FIFO = null;       // สมุดที่อ่านไว้ {data, at} ใช้ทั้งเช็คแถวใหม่และหาแถวที่น่าสงสัย
@@ -230,6 +244,7 @@ let AQ = '';           // ช่องค้นหาในแท็บวิเ
 let FILTER = '';       // ชิปที่กดกรองอยู่
 const OPEN = new Set();   // แถวที่กาง ⓘ
 let TOAST = '';
+let DEL = false;       // กล่องยืนยันลบรอบกางอยู่
 let R2D = null;        // ค่าตั้งแผนรอบ 2 ที่กำลังแก้ {rid, opts} เริ่มจากที่บันทึกไว้ในรอบ
 let PN = null;         // แผนรอบ 2 ที่คิดไว้
 let AN2 = null;        // ผลวิเคราะห์รอบ 2 (เฉพาะโลในแผนที่บันทึก)
@@ -286,13 +301,14 @@ function loadRounds() {
 async function loadHead() {
   S.head = await get('st-head', { round: S.rid });
   save(KEY_ROUND, S.rid);
-  S.log = []; S.since = 0; DRAFT = null; MOVES = null; OPEN.clear(); FILTER = '';
+  S.log = []; S.raw = []; S.since = 0; DRAFT = null; MOVES = null; OPEN.clear(); FILTER = ''; DEL = false;
   await loadLog();
 }
 
 async function loadLog(quiet) {
   const r = await get('st-log', { round: S.rid, since: S.since }, quiet);
-  S.log = ST.merge(S.log, r.rows.map(ST.fromRow));
+  S.raw = ST.merge(S.raw, r.rows.map(ST.fromRow));
+  S.log = ST.voidMoved(S.raw, day2());   // นับ 2 วัน: โลวันแรกที่ขยับ ผลนับวันแรกไม่ใช้ รอนับใหม่วันที่ 2
   S.since = r.last;
   S.at = Date.now();
   if (r.round && S.head) Object.assign(S.head.round, r.round);
@@ -303,8 +319,12 @@ async function loadLog(quiet) {
 function R() { return S.head && S.head.round; }
 function locList() { return S.head ? S.head.locs.map(l => ({ loc: l[0], zone: l[1], group: l[2], src: l[3] })) : []; }
 function skipSet() { return new Set(((R() && R().settings.skip) || []).map(ST.up)); }
-/** โลที่นับจริงในรอบนี้ ไม่รวมแถวที่ตั้งไม่นับ */
-function countLocs() { const sk = skipSet(); return locList().filter(l => !sk.has(ST.up(l.group))); }
+/** นับ 2 วัน: ค่าแบ่งวันของรอบ (null = นับวันเดียว) */
+function day2() { return R() ? ST.day2Of(R().settings) : null; }
+/** โลที่นับจริงในรอบนี้ทั้งสองวัน ไม่รวมแถวที่ตั้งไม่นับ */
+function countLocsAll() { const sk = skipSet(); return locList().filter(l => !sk.has(ST.up(l.group))); }
+/** โลที่นับได้ตอนนี้: ก่อนเปิดวันที่ 2 ไม่รวมโลที่รอวันที่ 2 (ความคืบหน้ากับผลวิเคราะห์ของวันแรกจึงคิดจากโลวันแรกเท่านั้น) */
+function countLocs() { const w = ST.day2Wait(day2()); return countLocsAll().filter(l => !w(l.loc)); }
 function auditMin() { const m = R() && R().settings.auditMin; return m === undefined || m === '' ? ST.AUDIT_MIN : +m; }
 function prog() { return ST.progress(countLocs(), S.head.teams, S.log, { pass: 1, auditMin: auditMin() }); }
 function counting() { return R() && /^นับรอบ/.test(R().status); }
@@ -422,9 +442,13 @@ function setupView() {
   const baseDetail = r.set
     ? `ชุดที่ <b>${r.set}</b> · <b>${f(S.head.piles.length)}</b> กอง ใน <b>${f(locN)}</b> โล · แถวสุดท้ายในสมุด <b>${f(r.lastRow)}</b> · ดึงเมื่อ ${esc(r.pulledAt)}`
     : `ยังไม่ได้ดึง — กดหลังเวลาตัดยอด (${esc(r.cutoff)}) เมื่อทีมลงสมุดครบแล้ว`;
-  const teamOk = inv.length > 0 && p.unassigned === 0 && p.total > 0;
-  const teamDetail = p.total
-    ? `Inventory <b>${inv.length}</b> ทีม · มีทีมแล้ว <b>${f(p.total - p.unassigned)}/${f(p.total)}</b> โล${p.unassigned ? ` · <span class="no">ยังไม่มีทีม ${f(p.unassigned)} โล</span>` : ''} · Audit <b>${aud.length}</b> คน ดู ${f(p.audit.n)} โล`
+  /* นับ 2 วัน: ทีมต้องครบทุกโลทั้งสองวันตั้งแต่ก่อนเริ่ม (วันที่ 2 ไม่ต้องกลับมาแบ่งทีมอีก) */
+  const d2 = day2();
+  const all = countLocsAll();
+  const pa = d2 && !d2.on ? ST.progress(all, S.head.teams, S.log, { pass: 1, auditMin: auditMin() }) : p;
+  const teamOk = inv.length > 0 && pa.unassigned === 0 && pa.total > 0;
+  const teamDetail = pa.total
+    ? `Inventory <b>${inv.length}</b> ทีม · มีทีมแล้ว <b>${f(pa.total - pa.unassigned)}/${f(pa.total)}</b> โล${pa.unassigned ? ` · <span class="no">ยังไม่มีทีม ${f(pa.unassigned)} โล</span>` : ''} · Audit <b>${aud.length}</b> คน ดู ${f(pa.audit.n)} โล`
     : 'ยังไม่มีรายการ Location — ดึงยอดตั้งต้นก่อน';
   const linkRow = `<span class="st-sub">ส่งใน LINE ให้คนนับ เปิดแล้วเลือกทีมกับชื่อตัวเอง ไม่ต้องล็อกอิน</span><span class="st-link">${esc(link())}</span>`;
   const c1 = r.status === 'นับรอบ 1';
@@ -434,7 +458,7 @@ function setupView() {
     : c1 ? `<button class="st-btn" data-act="pause">กลับไปตั้งค่า</button>` : '';
   const goDetail = r.status === 'ตั้งค่า'
     ? (r.set && teamOk ? 'พร้อมแล้ว กดเริ่มเมื่อหยุดรับ-จ่ายของ คนนับจะส่งผลได้หลังจากนี้' : 'ต้องมียอดตั้งต้น และทุกโลมีทีม Inventory ก่อน')
-    : c1 ? `กำลังนับ · นับแล้ว <b>${f(p.done)}/${f(p.total)}</b> โล (${p.pct}%) · <button class="st-btn" data-go="progress">ดูความคืบหน้า</button>`
+    : c1 ? `กำลังนับ${d2 ? (d2.on ? 'วันที่ 2' : 'วันแรก') : ''} · นับแล้ว <b>${f(p.done)}/${f(p.total)}</b> โล (${p.pct}%) · <button class="st-btn" data-go="progress">ดูความคืบหน้า</button>`
     : `ปิดรับแล้ว · นับได้ <b>${f(p.done)}/${f(p.total)}</b> โล`;
   const plan = planSaved();
   const p2 = plan.length ? ST.progress2(plan, S.log) : null;
@@ -442,18 +466,43 @@ function setupView() {
     : !plan.length ? 'ยังไม่ได้บันทึกแผน — ไม่ต้องนับซ้ำก็ข้ามไปปิดรอบได้'
     : `แผน <b>${f(plan.length)}</b> โล · ${r.pass >= 2 ? `นับแล้ว <b>${f(p2.done)}/${f(p2.total)}</b> (${p2.pct}%)` : 'ยังไม่เปิดนับ'}${r.status === 'นับรอบ 2' ? ' · <b>กำลังนับ</b>' : ''}`;
   const closed = r.status === 'ปิดแล้ว';
+  let d2Row = '';
+  if (d2) {
+    const is2 = ST.day2Test(d2);
+    const n2 = all.filter(l => is2(l.loc)).length;
+    const detail = d2.on
+      ? `เปิดเมื่อ ${esc(r.settings.day2.when || '')} · โลวันแรกที่ขยับ <b>${f(d2.moved.length)}</b> โล${d2.moved.length ? ` ให้นับใหม่วันที่ 2 <span class="st-sub">${esc(d2.moved.slice(0, 8).join(', '))}${d2.moved.length > 8 ? ' …' : ''}</span>` : ''}`
+      : `วันแรก <b>${f(all.length - n2)}</b> โล · วันที่ 2 อีก <b>${f(n2)}</b> โล (โซน ${esc(d2.zones.join(', ') || '—')}${d2.locs.length ? ` + โลเปิด ${f(d2.locs.length)}` : ''}) — กดเมื่อรายการของวันแรกลงสมุดครบ และหยุดส่งของแล้ว`;
+    const btn = d2.on ? '' : `<button class="st-btn ${c1 ? 'p' : ''}" data-act="day2-open" ${c1 && !S.busy ? '' : 'disabled'}>เปิดนับวันที่ 2</button>`;
+    d2Row = step('', 'นับวันที่ 2', d2.on, detail, btn);
+  }
   return `<div class="st-h">ขั้นตอน</div>
     <div class="st-wrap"><table class="st-xl st-steps"><tbody>
       ${step(1, 'ยอดตั้งต้น', r.set > 0, baseDetail, `<button class="st-btn ${r.set ? '' : 'p'}" data-act="base" ${S.busy ? 'disabled' : ''}>${r.set ? 'ดึงใหม่' : 'ดึงยอดตั้งต้น'}</button>`)}
       ${step(2, 'ทีม/โซน', teamOk, teamDetail, `<button class="st-btn" data-go="teams">แบ่งทีม</button>`)}
       ${step(3, 'ลิงก์คนนับ', true, linkRow, `<button class="st-btn" data-act="copy">คัดลอก</button>${navigator.share ? '<button class="st-btn" data-act="share">แชร์</button>' : ''}`)}
-      ${step(4, 'นับรอบ 1', r.status !== 'ตั้งค่า', goDetail, go)}
+      ${step(4, 'นับรอบ 1', r.status !== 'ตั้งค่า', goDetail, go)}${d2Row}
       ${step(5, 'วิเคราะห์', after1, r.settings.summaryAt ? `บันทึกผลสรุปลงชีตล่าสุด ${esc(r.settings.summaryAt)} · ${f(r.settings.summaryRows)} แถว` : 'ดูขาด/เกิน/วางผิดโล ระหว่างนับได้เลย ปิดรับนับรอบ 1 เมื่อทุกทีมเสร็จ', r.pass ? '<button class="st-btn" data-go="analyze">ดูผล</button>' : '')}
       ${step(6, 'นับรอบ 2', r.pass >= 2, r2Detail, after1 ? '<button class="st-btn" data-go="round2">แผนรอบ 2</button>' : '')}
       ${step(7, 'ปิดรอบ', closed, closed ? `อนุมัติโดย <b>${esc(r.approvedBy)}</b> เมื่อ ${esc(r.approvedAt)}` : 'ตรวจยอดสุดท้าย หัวหน้าอนุมัติ แล้วได้ไฟล์ Excel ปรับยอด (แอปไม่แก้สมุด)', after1 ? '<button class="st-btn" data-go="close">ยอดสุดท้าย</button>' : '')}
     </tbody></table></div>
     ${WmsSettings.txUrl() ? '' : '<div class="st-warn" style="margin-top:10px">ยังไม่มี URL Transaction ในหน้าตั้งค่า — ต้องมีก่อนดึงยอดตั้งต้น</div>'}
-    <div class="st-h">รอบนี้</div>` + roundForm(r) + cfgMore();
+    <div class="st-h">รอบนี้</div>` + roundForm(r) + delArea(r) + cfgMore();
+}
+
+/** ลบรอบ (รอบทดลอง / ตั้งผิด): ซ่อนหลังปุ่มเล็ก กางแล้วต้องพิมพ์ชื่อรอบให้ตรงทุกตัว ปุ่มลบถึงจะกดได้ */
+function delArea(r) {
+  if (!DEL) return `<div class="st-bar" style="margin-top:14px"><button class="st-btn r" data-act="del-open">ลบรอบนี้…</button><span class="st-sub">สำหรับรอบทดลอง / รอบที่ตั้งผิด</span></div>`;
+  const n = S.raw.length;
+  return `<div class="st-del">
+    <b>ลบรอบ "${esc(r.name)}" (${esc(r.id)}) ทิ้งทั้งหมด</b>
+    ลบทีม/โซน · Location · ยอดตั้งต้น · รายการสินค้า · บันทึกนับ ${f(n)} แถว · ผลสรุป · แผนรอบ 2 ของรอบนี้ออกจากชีต<br>
+    กู้คืนไม่ได้ · ลิงก์คนนับของรอบนี้จะใช้ไม่ได้อีก · ข้อมูลของรอบอื่นไม่โดนแตะ
+    ${S.old ? `<div class="no">ต้อง Deploy สคริปต์นับสต๊อกรุ่น ${ST.API_V} ก่อน ถึงจะลบได้</div>` : ''}
+    <label for="delName">พิมพ์ชื่อรอบเพื่อยืนยัน</label>
+    <input class="st-in" id="delName" placeholder="${esc(r.name)}" autocomplete="off" spellcheck="false">
+    <div class="st-bar"><button class="st-btn rp" id="delGo" data-act="del-go" disabled>ลบถาวร</button><button class="st-btn" data-act="del-cancel">ยกเลิก</button></div>
+  </div>`;
 }
 
 /* ── ดึงยอดตั้งต้น ───────────────────────────────────────────────────── */
@@ -465,27 +514,60 @@ function cutoffMs(c) { return new Date(String(c).replace(' ', 'T') + ':00+07:00'
  * คิดยอดในเบราว์เซอร์ด้วยกติกาเดียวกับสคริปต์ แล้วส่งไปเก็บในชีตนับสต๊อก
  * รายการ Location เติมโลที่มีของเพิ่มเข้าไป โลที่หัวหน้าเพิ่มเองหรือแบ่งทีมไว้แล้วไม่หาย
  */
+/** อ่านสมุด คิดยอดตั้งต้น เก็บเป็นชุดใหม่ และเพิ่มโลใหม่เข้ารายการ ใช้ทั้งตอนดึงยอดปกติและตอนเปิดนับวันที่ 2 → {fifo, b, locs} */
+async function pullCore(r) {
+  const tx = WmsSettings.txUrl();
+  const fifo = await WmsGas.json(tx, 'tx-fifo', { onProgress: (sec) => { S.busy = `กำลังอ่านสมุด Transaction… ${sec} วิ`; paintSrc(); } });
+  if (fifo.error) throw new Error('สมุด Transaction: ' + fifo.error);
+  if (!fifo.rows) throw new Error('URL Transaction ไม่ได้ตอบสมุดมา ตรวจในหน้าตั้งค่า');
+  const sm = WmsSup.map(fifo.sup);
+  const b = ST.baseline(fifo, (po) => WmsSup.of(sm, po));
+  S.busy = 'กำลังบันทึกยอดตั้งต้น…'; paintSrc();
+  await post({ op: 'st-baseline', round: r.id, piles: b.piles, skus: b.skus, pos: b.pos, lastRow: b.lastRow, lastDate: b.lastDate });
+  const have = new Map(S.head.locs.map(l => [ST.up(l[0]), l]));
+  ST.locations(b).forEach(l => { if (!have.has(l.loc)) have.set(l.loc, [l.loc, l.zone, l.group, l.src]); });
+  const locs = [...have.values()].sort((a, c) => ST.locCmp(a[0], c[0]));
+  const teams = ST.teamsOf(S.head.teams, 1).map(t => ({ ...t, locs: t.locs }));
+  await post({ op: 'st-teams', round: r.id, pass: 1, teams, locs });
+  return { fifo, b, locs };
+}
+
+/**
+ * เปิดนับวันที่ 2: ดึงยอดสมุดชุดใหม่ (ตัดยอดเช้าวันที่ 2) แล้วเช็คว่าโลวันแรกโลไหนมีรายการในสมุดหลังเริ่มนับ
+ * โลที่ขยับนับใหม่วันนี้ ผลนับวันแรกของโลนั้นไม่ใช้ · หน้ากรอกของคนนับจะเห็นโลวันที่ 2 เองภายในหนึ่งนาที
+ */
+async function openDay2() {
+  const r = R(), d = day2();
+  if (!r || !d || d.on) return;
+  if (!WmsSettings.txUrl()) { S.err = 'ใส่ URL Transaction ในหน้าตั้งค่าก่อน'; paint(); return; }
+  if (!confirm('เปิดนับวันที่ 2?\n\n• รายการขายของวันแรกต้องลงสมุดครบแล้ว และหยุดส่งของแล้ว\n• ระบบจะดึงยอดสมุดใหม่ แล้วเช็คว่าโลวันแรกโลไหนขยับ (โลนั้นนับใหม่วันนี้)\n\nเปิดแล้วย้อนกลับไม่ได้')) return;
+  await job('กำลังอ่านสมุด Transaction…', async () => {
+    const { fifo, locs } = await pullCore(r);
+    const sk = skipSet();
+    const moved = ST.day2Moved(fifo, d, locs.filter(l => !sk.has(ST.up(l[2]))).map(l => l[0]));
+    S.busy = 'กำลังเปิดนับวันที่ 2…'; paintSrc();
+    await post({ op: 'st-day2-open', round: r.id, moved: moved.map(m => m.loc) });
+    await loadHead();
+    S.ok = `✓ เปิดนับวันที่ 2 แล้ว · ยอดตั้งต้นชุดที่ ${R().set} · ` + (!d.row1 ? 'เช็คโลที่ขยับไม่ได้ (ไม่รู้แถวสมุดตอนเริ่มวันแรก)'
+      : moved.length ? `โลวันแรกที่ขยับ ${f(moved.length)} โล ให้นับใหม่วันนี้` : 'โลวันแรกไม่มีโลไหนขยับ');
+  });
+}
+
 async function pullBase() {
   const tx = WmsSettings.txUrl();
   if (!tx) { S.err = 'ใส่ URL Transaction ในหน้าตั้งค่าก่อน'; paint(); return; }
   const r = R();
   if (Date.now() < cutoffMs(r.cutoff) && !confirm(`ยังไม่ถึงเวลาตัดยอด (${r.cutoff})\nของที่ขายหลังจากนี้จะไม่อยู่ในยอดตั้งต้น ดึงตอนนี้เลยไหม?`)) return;
-  if (r.set && !confirm(`มียอดตั้งต้นชุดที่ ${r.set} แล้ว ดึงใหม่เป็นชุดที่ ${r.set + 1}?\nชุดเดิมยังเก็บไว้ในชีต`)) return;
+  const d2 = day2();
+  if (r.set && !confirm(`มียอดตั้งต้นชุดที่ ${r.set} แล้ว ดึงใหม่เป็นชุดที่ ${r.set + 1}?\nชุดเดิมยังเก็บไว้ในชีต` +
+    (d2 && !d2.on && r.status === 'นับรอบ 1' ? '\n\nถ้าจะเริ่มนับวันที่ 2 ให้กด "เปิดนับวันที่ 2" แทน (ดึงยอดให้เอง และเช็คโลวันแรกที่ขยับ)' : ''))) return;
   await job('กำลังอ่านสมุด Transaction…', async () => {
-    const fifo = await WmsGas.json(tx, 'tx-fifo', { onProgress: (sec) => { S.busy = `กำลังอ่านสมุด Transaction… ${sec} วิ`; paintSrc(); } });
-    if (fifo.error) throw new Error('สมุด Transaction: ' + fifo.error);
-    if (!fifo.rows) throw new Error('URL Transaction ไม่ได้ตอบสมุดมา ตรวจในหน้าตั้งค่า');
-    const sm = WmsSup.map(fifo.sup);
-    const b = ST.baseline(fifo, (po) => WmsSup.of(sm, po));
-    S.busy = 'กำลังบันทึกยอดตั้งต้น…'; paintSrc();
-    await post({ op: 'st-baseline', round: r.id, piles: b.piles, skus: b.skus, pos: b.pos, lastRow: b.lastRow, lastDate: b.lastDate });
-    const have = new Map(S.head.locs.map(l => [ST.up(l[0]), l]));
-    ST.locations(b).forEach(l => { if (!have.has(l.loc)) have.set(l.loc, [l.loc, l.zone, l.group, l.src]); });
-    const locs = [...have.values()].sort((a, c) => ST.locCmp(a[0], c[0]));
-    const teams = ST.teamsOf(S.head.teams, 1).map(t => ({ ...t, locs: t.locs }));
-    await post({ op: 'st-teams', round: r.id, pass: 1, teams, locs });
+    const { b, locs } = await pullCore(r);
+    /* นับ 2 วัน: โลเปิดที่นับวันที่ 2 คิดจากยอดชุดล่าสุด อัปเดตให้เฉพาะตอนยังไม่เริ่มนับ (เริ่มแล้วห้ามเปลี่ยน คนนับวันแรกนับตามชุดเดิมอยู่) */
+    const fresh = d2 && !d2.on && d2.openToo && r.status === 'ตั้งค่า' ? ST.day2Plan(b.piles, d2.zones, true) : null;
+    if (fresh) await post({ op: 'st-day2', round: r.id, day2: fresh });
     await loadHead();
-    S.ok = `✓ ดึงยอดตั้งต้นชุดที่ ${R().set} แล้ว ${f(b.piles.length)} กอง · Location ${f(locs.length)} โล`;
+    S.ok = `✓ ดึงยอดตั้งต้นชุดที่ ${R().set} แล้ว ${f(b.piles.length)} กอง · Location ${f(locs.length)} โล${fresh ? ` · โลเปิดที่นับวันที่ 2 ${f(fresh.locs.length)} โล` : ''}`;
   });
 }
 
@@ -500,6 +582,7 @@ function draftFrom(h) {
     teams: t1.map(t => ({ id: t.id, kind: t.kind, name: t.name, members: t.members.join(', ') })),
     inv, aud,
     locs: h.locs.map(l => ({ loc: l[0], zone: l[1], group: l[2], src: l[3] })),
+    day2: (d2 => d2 ? { zones: d2.zones.slice(), open: !!d2.openToo, on: d2.on } : null)(ST.day2Of(h.round.settings)),
     dirty: 0,
   };
 }
@@ -534,6 +617,26 @@ function teamsView() {
       <td class="num">${f(t.kind === 'Audit' ? cnt(d.aud, t.id) : cnt(d.inv, t.id))}</td>
       <td><button class="st-x" data-del-team="${i}" aria-label="ลบทีม ${esc(t.name)}">×</button></td></tr>`).join('');
 
+  /* นับ 2 วัน: โซนที่เลือกนับวันที่ 2 ทั้งโซน + โลที่สมุดบอกว่าเปิดขายอยู่ในโซนอื่น */
+  const dz = d.day2;
+  const zl = [...new Set(gl.map(g => g.zone))];
+  const openLoc = new Set((S.head ? S.head.piles : []).filter(p => p[7]).map(p => ST.up(p[0])));
+  const openIn = (g) => g.locs.filter(l => openLoc.has(ST.up(l))).length;
+  const day2N = (g) => !dz || d.inv[g.group] === ST.SKIP ? 0 : dz.zones.includes(g.zone) ? g.n : dz.open ? openIn(g) : 0;
+  const n2 = gl.reduce((a, g) => a + day2N(g), 0);
+  const nAll = gl.filter(g => d.inv[g.group] !== ST.SKIP).reduce((a, g) => a + g.n, 0);
+  const openOther = dz ? gl.filter(g => !dz.zones.includes(g.zone) && d.inv[g.group] !== ST.SKIP).reduce((a, g) => a + openIn(g), 0) : 0;
+  const dayOf = (g) => dz.zones.includes(g.zone) ? '2' : dz.open && openIn(g) ? `1 · โลเปิด ${f(openIn(g))} → 2` : '1';
+  const lock = dz && dz.on ? 'disabled' : '';
+  const dayBar = `<div class="st-h">วันนับ <span class="st-sub">นับ 2 วัน = วันแรกนับโลที่ไม่มีของขายออก · วันที่ 2 นับโลที่ยังขายอยู่ในวันแรก ตอนสต๊อกนิ่งแล้ว (ตัดยอดเช้าวันที่ 2)</span></div>
+    <div class="st-bar">
+      ${dz && dz.on ? '<span class="st-chip plain green">นับ 2 วัน · เปิดวันที่ 2 แล้ว</span>'
+        : `<button class="st-chip ${dz ? '' : 'on'}" data-day2="off">นับวันเดียว</button><button class="st-chip ${dz ? 'on' : ''}" data-day2="on">นับ 2 วัน</button>`}
+      ${dz ? `<span class="st-sub">วันที่ 2 นับโซน</span>${zl.map(z => `<button class="st-chip ${dz.zones.includes(z) ? 'on' : ''}" data-day2z="${esc(z)}" ${lock}>${esc(z)}</button>`).join('')}
+        <label class="st-ck"><input type="checkbox" data-day2open ${dz.open ? 'checked' : ''} ${lock}> + โลเปิดขายในโซนอื่น <b>${f(openOther)}</b></label>
+        <span class="sp"></span><span>วันแรก <b>${f(nAll - n2)}</b> โล · วันที่ 2 <b>${f(n2)}</b> โล</span>` : ''}
+    </div>`;
+
   let rows = '';
   let zone = '';
   const show = (g) => !FILTER || (FILTER === 'none' ? !d.inv[g.group] : FILTER === 'skip' ? d.inv[g.group] === ST.SKIP
@@ -542,12 +645,12 @@ function teamsView() {
     if (g.zone !== zone) {
       zone = g.zone;
       const zg = gl.filter(x => x.zone === zone);
-      rows += `<tr class="z"><td>โซน ${esc(zone)}</td><td class="num">${f(zg.reduce((s, x) => s + x.n, 0))}</td><td class="num">${f(zg.reduce((s, x) => s + gp[x.group], 0))}</td>
+      rows += `<tr class="z"><td>โซน ${esc(zone)}</td><td class="num">${f(zg.reduce((s, x) => s + x.n, 0))}</td><td class="num">${f(zg.reduce((s, x) => s + gp[x.group], 0))}</td>${dz ? '<td></td>' : ''}
         <td><select class="st-in" data-zone-inv="${esc(zone)}" aria-label="ทีม Inventory ทั้งโซน ${esc(zone)}"><option value="">ทั้งโซน…</option>${invT.map(t => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('')}<option value="${ST.SKIP}">ไม่นับ</option></select></td>
         <td><select class="st-in" data-zone-aud="${esc(zone)}" aria-label="Audit ทั้งโซน ${esc(zone)}"><option value="">ทั้งโซน…</option>${audT.map(t => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('')}<option value="${ST.SKIP}">ไม่มี</option></select></td></tr>`;
     }
     const iv = d.inv[g.group] || '';
-    rows += `<tr><td class="k">${esc(g.group)}</td><td class="num">${f(g.n)}</td><td class="num mu">${f(gp[g.group])}</td>
+    rows += `<tr><td class="k">${esc(g.group)}</td><td class="num">${f(g.n)}</td><td class="num mu">${f(gp[g.group])}</td>${dz ? `<td class="mu">${iv === ST.SKIP ? '—' : dayOf(g)}</td>` : ''}
       <td><select class="st-in ${!iv ? 'none' : iv === ST.SKIP ? 'skip' : ''}" data-inv="${esc(g.group)}" aria-label="ทีม Inventory แถว ${esc(g.group)}">${opt(invT, iv === ST.SKIP ? '' : iv, 'ยังไม่มีทีม')}<option value="${ST.SKIP}" ${iv === ST.SKIP ? 'selected' : ''}>ไม่นับ</option></select></td>
       <td><select class="st-in" data-aud="${esc(g.group)}" aria-label="Audit แถว ${esc(g.group)}">${opt(audT, d.aud[g.group] || '', '—')}</select></td></tr>`;
   });
@@ -557,6 +660,7 @@ function teamsView() {
       <tbody>${teamRows || '<tr><td colspan="6" class="mu">ยังไม่มีทีม — กดเพิ่มข้างล่าง</td></tr>'}</tbody></table></div>
     <div class="st-bar" style="margin-top:6px"><button class="st-btn" data-add-team="Inventory">+ ทีม Inventory</button><button class="st-btn" data-add-team="Audit">+ Audit</button></div>
 
+    ${dayBar}
     <div class="st-h">แบ่งแถว <span class="st-sub">${f(d.locs.length)} โล · วางรายการ Location ด้วย Ctrl+V เพื่อเพิ่มโลที่ไม่มีในสมุด</span></div>
     <div class="st-bar">
       ${chip('', 'ทั้งหมด', d.locs.length)}
@@ -570,8 +674,8 @@ function teamsView() {
       <button class="st-btn" data-auto="aud" ${audT.length ? '' : 'disabled'}>แบ่ง Audit อัตโนมัติ</button>
     </div>
     ${TOAST ? `<div class="st-toast">${esc(TOAST)}</div>` : ''}
-    <div class="st-wrap"><table class="st-xl"><thead><tr><th>แถว</th><th class="num">โล</th><th class="num">กองในสมุด</th><th>ทีม Inventory</th><th>Audit</th></tr></thead>
-      <tbody>${rows || '<tr><td colspan="5" class="mu">ไม่มีแถวตามที่กรอง</td></tr>'}</tbody></table></div>
+    <div class="st-wrap"><table class="st-xl"><thead><tr><th>แถว</th><th class="num">โล</th><th class="num">กองในสมุด</th>${dz ? '<th>วันนับ</th>' : ''}<th>ทีม Inventory</th><th>Audit</th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="${dz ? 6 : 5}" class="mu">ไม่มีแถวตามที่กรอง</td></tr>`}</tbody></table></div>
     <div class="st-save"><span>${d.dirty ? `<b>แก้แล้ว ${d.dirty} อย่าง ยังไม่บันทึก</b>` : 'บันทึกแล้ว'}</span><span class="sp"></span>
       ${d.dirty ? '<button class="st-btn" data-act="undo">ยกเลิกที่แก้</button>' : ''}
       <button class="st-btn p" data-act="teams-save" ${S.busy ? 'disabled' : ''}>บันทึกทีม/โซน</button></div>`;
@@ -611,9 +715,14 @@ async function saveTeams() {
   const locs = d.locs.map(l => [l.loc, l.zone, l.group, l.src]);
   await job('กำลังบันทึกทีม/โซน…', async () => {
     await post({ op: 'st-teams', round: S.rid, pass: 1, teams, locs, skip });
+    /* นับ 2 วัน: โลเปิดคิดจากยอดตั้งต้นชุดล่าสุด ส่งเมื่อเปลี่ยนจากที่บันทึกไว้เท่านั้น (เปิดวันที่ 2 แล้วแก้ไม่ได้) */
+    const had = day2();
+    const plan = d.day2 ? ST.day2Plan(S.head.piles, d.day2.zones, d.day2.open) : null;
+    const same = (a, b) => JSON.stringify(a && [a.zones, a.locs, a.openToo]) === JSON.stringify(b && [b.zones, b.locs, b.openToo]);
+    if (!(had && had.on) && !same(plan, had)) await post({ op: 'st-day2', round: S.rid, day2: plan });
     S.head = await get('st-head', { round: S.rid });
     DRAFT = null; TOAST = '';
-    S.ok = `✓ บันทึกทีม/โซนแล้ว ${teams.length} ทีม`;
+    S.ok = `✓ บันทึกทีม/โซนแล้ว ${teams.length} ทีม${plan ? ` · นับ 2 วัน (วันที่ 2: โซน ${plan.zones.join(', ') || '—'}${plan.locs.length ? ` + โลเปิด ${plan.locs.length}` : ''})` : ''}`;
   });
 }
 
@@ -647,12 +756,15 @@ function progressView() {
   }).join('');
 
   const mv = MOVES && MOVES.list && MOVES.list.length
-    ? `<div class="st-warn"><b>สมุดมีแถวใหม่ ${f(MOVES.list.length)} แถวหลังดึงยอดตั้งต้น</b> (แถว ${f(MOVES.list[0].row)}${MOVES.list.length > 1 ? `–${f(MOVES.list[MOVES.list.length - 1].row)}` : ''})
+    ? `<div class="st-warn"><b>${MOVES.day1 ? `โลวันแรกมีของขยับ ${f(MOVES.list.length)} แถวในสมุด` : `สมุดมีแถวใหม่ ${f(MOVES.list.length)} แถวหลังดึงยอดตั้งต้น`}</b> (แถว ${f(MOVES.list[0].row)}${MOVES.list.length > 1 ? `–${f(MOVES.list[MOVES.list.length - 1].row)}` : ''})
         <button class="st-i ${OPEN.has('#moves') ? 'on' : ''}" data-open="#moves" aria-label="ดูแถวที่ลงใหม่">i</button>
         ${OPEN.has('#moves') ? `<div style="margin-top:6px">${MOVES.list.slice(0, 50).map(m => `แถว <b>${f(m.row)}</b> ${esc(m.date || '')} ${esc(m.type)} ${esc(m.sku)} × ${f(m.qty)} ${esc(m.from || '')}${m.to ? ' → ' + esc(m.to) : ''} · <b>${esc(m.when)}</b>`).join('<br>')}
-          <br>ก่อนตัดยอด = ของที่ขาย/รับก่อนตัดยอดแต่เพิ่งลง → ดึงยอดตั้งต้นใหม่ · ระหว่างนับ = มีของเข้า-ออกจริง → โลนั้นต้องนับใหม่</div>` : ''}</div>`
+          <br>${MOVES.day1 ? 'โลพวกนี้จะถูกให้นับใหม่ตอนเปิดนับวันที่ 2 · วันแรกห้ามเบิก / เติมของจากโลที่นับวันแรก (R กับโลปิด)' : 'ก่อนตัดยอด = ของที่ขาย/รับก่อนตัดยอดแต่เพิ่งลง → ดึงยอดตั้งต้นใหม่ · ระหว่างนับ = มีของเข้า-ออกจริง → โลนั้นต้องนับใหม่'}</div>` : ''}</div>`
     : '';
   return `${mv}<div class="st-bar">
+      ${(d => !d ? '' : d.on
+        ? `<span class="st-chip plain green">วันที่ 2${d.moved.length ? ` · นับใหม่ <b>${f(d.moved.length)}</b> โล` : ''}</span>`
+        : `<span class="st-chip plain amber">วันแรก · รอวันที่ 2 <b>${f(countLocsAll().length - countLocs().length)}</b> โล</span>`)(day2())}
       ${chip('', 'นับครบ', `${f(p.done)}/${f(p.total)} · ${p.pct}%`, p.pct === 100 ? 'green' : '')}
       ${p.teams.filter(t => t.kind !== 'Audit').map(t => chip(t.id, t.name, t.pct + '%', t.pct === 100 ? 'green' : '')).join('')}
       <span class="st-chip plain ${p.audit.pct < p.audit.min ? 'amber' : 'green'}">Audit <b>${p.audit.pct}% / ${p.audit.min}%</b></span>
@@ -665,7 +777,7 @@ function progressView() {
     <div class="st-wrap"><table class="st-xl"><thead><tr><th>แถว</th><th>ทีม</th><th class="num">โล</th><th class="num">นับแล้ว</th><th class="num">เหลือ</th><th>Audit</th><th class="num">สุ่ม</th><th class="num">%</th><th></th></tr></thead>
       <tbody>${rows || '<tr><td colspan="9" class="mu">ไม่มีแถวตามที่กรอง</td></tr>'}</tbody></table></div>
     ${p.extra.length ? `<div class="st-note">โลที่คนนับเพิ่มเองนอกรายการ: ${p.extra.map(x => `${esc(x.loc)} (${x.n})`).join(', ')}</div>` : ''}
-    ${MOVES && MOVES.err ? `<div class="st-note">เช็คสมุดไม่สำเร็จ: ${esc(MOVES.err)}</div>` : MOVES && !MOVES.list.length ? `<div class="st-note">✓ สมุดไม่มีแถวใหม่หลังดึงยอดตั้งต้น (เช็คเมื่อ ${new Date(MOVES.at).toLocaleTimeString('th-TH')})</div>` : ''}`;
+    ${MOVES && MOVES.err ? `<div class="st-note">เช็คสมุดไม่สำเร็จ: ${esc(MOVES.err)}</div>` : MOVES && !MOVES.list.length ? `<div class="st-note">✓ ${MOVES.day1 ? 'โลวันแรกไม่มีของขยับในสมุด' : 'สมุดไม่มีแถวใหม่หลังดึงยอดตั้งต้น'} (เช็คเมื่อ ${new Date(MOVES.at).toLocaleTimeString('th-TH')})</div>` : ''}`;
 }
 
 /**
@@ -687,7 +799,15 @@ async function checkMoves(fresh) {
   if (!tx || !R() || !R().lastRow) return;
   const run = async () => {
     const fifo = await loadFifo(fresh);
-    MOVES = { list: ST.movesAfter(fifo, R().lastRow, R().cutoff), at: Date.now() };
+    const d = day2();
+    let list = ST.movesAfter(fifo, d && !d.on && d.row1 ? d.row1 : R().lastRow, R().cutoff);
+    /* นับ 2 วัน วันแรก: Outbound ขายจากโลเปิด (โลวันที่ 2) เป็นเรื่องปกติ ดูเฉพาะแถวที่แตะโลวันแรก = โลนั้นต้องนับใหม่ */
+    const day1 = !!(d && !d.on);
+    if (day1) {
+      const mine = new Set(countLocs().map(l => ST.up(l.loc)));
+      list = list.filter(m => mine.has(ST.up(m.from)) || mine.has(ST.up(m.to)));
+    }
+    MOVES = { list, at: Date.now(), day1 };
   };
   if (!fresh) { try { await run(); } catch (e) { MOVES = { list: [], err: e.message, at: Date.now() }; } paintBody(); return; }
   await job('กำลังอ่านสมุด Transaction…', async () => { try { await run(); } catch (e) { MOVES = { list: [], err: e.message, at: Date.now() }; } });
@@ -701,7 +821,7 @@ const AN_LIMIT = 300;   // แถวที่วาดต่อครั้ง �
 /** คิดจากยอดตั้งต้นกับบันทึกนับที่มีในหน้าอยู่แล้ว ไม่ต้องถามสคริปต์ คิดใหม่เมื่อมีแถวใหม่หรือข้อมูลรอบเปลี่ยน */
 function analysis() {
   if (AN && AN.head === S.head && AN.n === S.log.length && AN.since === S.since) return AN.res;
-  const res = ST.analyze({ piles: S.head.piles, entries: S.log, teams: S.head.teams, locs: countLocs(), skus: S.head.skus, skip: R().settings.skip || [], pass: 1 });
+  const res = ST.analyze({ piles: S.head.piles, entries: S.log, teams: S.head.teams, locs: countLocs(), skus: S.head.skus, skip: R().settings.skip || [], pass: 1, day2: day2() });
   AN = { head: S.head, n: S.log.length, since: S.since, res };
   return res;
 }
@@ -1115,6 +1235,24 @@ async function saveRound() {
   });
 }
 
+async function delRound() {
+  const r = R();
+  const typed = (($('delName') || {}).value || '').trim();
+  if (!r || typed !== r.name) return;
+  await job('กำลังลบรอบ…', async () => {
+    const res = await post({ op: 'st-round-del', round: r.id, confirm: typed });
+    DEL = false;
+    S.rounds = (await get('st-rounds')).rounds;
+    S.rid = S.rounds[0] ? S.rounds[0].id : 'new';
+    S.head = null;
+    if (S.rid !== 'new') await loadHead(); else save(KEY_ROUND, 'new');
+    TAB = 'setup';
+    history.replaceState(null, '', '?tab=setup');
+    const n = (res.rows && res.rows['บันทึกนับ']) || 0;
+    S.ok = `✓ ลบรอบ ${r.name} (${res.deleted}) แล้ว · บันทึกนับ ${f(n)} แถว${res.inPlace && n ? ' ล้างในที่เดิม (มีรอบอื่นเปิดอยู่ เลขแถวของรอบนั้นจะได้ไม่ขยับ)' : ''}`;
+  });
+}
+
 async function setStatus(status) {
   const was = R() && R().status;
   await job('กำลังเปลี่ยนสถานะ…', async () => {
@@ -1183,6 +1321,22 @@ document.addEventListener('click', (e) => {
     touch(`✓ แบ่ง ${d.auto === 'aud' ? 'Audit' : 'Inventory'} ${ids.length} ${d.auto === 'aud' ? 'คน' : 'ทีม'} แล้ว ตรวจแล้วกดบันทึก`);
     return;
   }
+  if (d.day2) {
+    const dd = D();
+    if (dd.day2 && dd.day2.on) return;
+    const zs = new Set(dd.locs.map(l => l.zone));
+    dd.day2 = d.day2 === 'on' ? (dd.day2 || { zones: ['S', 'A', 'B'].filter(z => zs.has(z)), open: true }) : null;
+    touch();
+    return;
+  }
+  if (d.day2z) {
+    const dd = D();
+    if (!dd.day2 || dd.day2.on) return;
+    const i = dd.day2.zones.indexOf(d.day2z);
+    if (i < 0) dd.day2.zones.push(d.day2z); else dd.day2.zones.splice(i, 1);
+    touch();
+    return;
+  }
   const act = d.act;
   if (act === 'reload') loadRounds();
   else if (act === 'copy') copyLink();
@@ -1196,7 +1350,12 @@ document.addEventListener('click', (e) => {
   else if (act === 'cfg') saveCfg();
   else if (act === 'moves') checkMoves(true);
   else if (act === 'summary') saveSummary();
-  else if (act === 'close1') { if (confirm('ปิดรับนับรอบ 1?\nเครื่องที่ยังค้างส่งจะยังส่งเข้ามาได้ ย้อนกลับไปนับต่อได้')) setStatus('วิเคราะห์'); }
+  else if (act === 'close1') {
+    const d2 = day2();
+    if (d2 && !d2.on) { alert('ยังไม่ได้เปิดนับวันที่ 2\nโลที่รอวันที่ 2 ยังไม่ได้นับ — กด "เปิดนับวันที่ 2" ในแท็บตั้งรอบก่อน'); return; }
+    if (confirm('ปิดรับนับรอบ 1?\nเครื่องที่ยังค้างส่งจะยังส่งเข้ามาได้ ย้อนกลับไปนับต่อได้')) setStatus('วิเคราะห์');
+  }
+  else if (act === 'day2-open') openDay2();
   else if (act === 'reopen') setStatus('นับรอบ 1');
   else if (act === 'plan-save') savePlan();
   else if (act === 'r2-undo') { R2D = null; paintBody(); }
@@ -1208,6 +1367,9 @@ document.addEventListener('click', (e) => {
   else if (act === 'stop2') { if (confirm('ปิดรับนับรอบ 2?\nเครื่องที่ค้างส่งยังส่งเข้ามาได้ เปิดนับต่อได้')) setStatus('วิเคราะห์'); }
   else if (act === 'xlsx') downloadXlsx();
   else if (act === 'close') closeRound();
+  else if (act === 'del-open') { DEL = true; paintBody(); const el = $('delName'); if (el) el.focus(); }
+  else if (act === 'del-cancel') { DEL = false; paintBody(); }
+  else if (act === 'del-go') delRound();
 });
 
 document.addEventListener('change', (e) => {
@@ -1216,6 +1378,11 @@ document.addEventListener('change', (e) => {
     S.rid = t.value; S.err = ''; S.ok = '';
     if (S.rid === 'new') { S.head = null; TAB = 'setup'; paint(); return; }
     job('กำลังโหลดรอบ…', loadHead);
+    return;
+  }
+  if (d.day2open !== undefined) {
+    const dd = D();
+    if (dd.day2 && !dd.day2.on) { dd.day2.open = t.checked; touch(); }
     return;
   }
   if (d.r2drop !== undefined) { r2Set(o => { o.drop = t.checked ? o.drop.filter(l => l !== d.r2drop) : o.drop.concat([d.r2drop]); }); return; }
@@ -1252,6 +1419,11 @@ document.addEventListener('change', (e) => {
 });
 
 document.addEventListener('input', (e) => {
+  if (e.target.id === 'delName') {
+    const g = $('delGo'), r = R();
+    if (g && r) g.disabled = !!S.old || e.target.value.trim() !== r.name;
+    return;
+  }
   if (e.target.id === 'anQ') {
     AQ = e.target.value;
     const pos = e.target.selectionStart;

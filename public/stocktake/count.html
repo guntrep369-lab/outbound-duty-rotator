@@ -437,7 +437,21 @@ function pending() { const s = new Set(BOX.out.map(i => i.uid)); return s; }
 /** แถวทั้งหมดของทีมนี้: ที่ชีตรับแล้ว + ที่ยังรอส่งในเครื่อง */
 function entries() {
   const local = BOX.out.map(i => ({ ...i, clientAt: i.at }));
-  return ST.merge((MINE && MINE.rows) || [], local);
+  /* นับ 2 วัน: โลวันแรกที่ของขยับหลังนับ ผลนับวันแรกไม่ใช้ โลนั้นกลับเป็นยังไม่นับ ให้นับใหม่วันที่ 2 */
+  return ST.voidMoved(ST.merge((MINE && MINE.rows) || [], local), RD && RD.day2);
+}
+
+/* ── นับ 2 วัน ──────────────────────────────────────────────────────────
+   วันแรกรายการโลจากสคริปต์ไม่มีโลที่รอวันที่ 2 (RD.wait) · หัวหน้าเปิดวันที่ 2 แล้วโลพวกนั้นขึ้นมาเอง */
+let DAY_MSG = false;      // เพิ่งรู้ว่าหัวหน้าเปิดวันที่ 2 ระหว่างที่หน้านี้เปิดอยู่ โหลดรายการเสร็จแล้วบอกคนนับ
+function day2On() { return !!(RD && RD.day2 && RD.day2.on); }
+/** โลวันแรกที่ของขยับหลังนับ ต้องนับใหม่วันที่ 2 */
+function movedLoc(loc) { return day2On() && (RD.day2.moved || []).includes(ST.up(loc)); }
+/** โลที่ยังนับไม่ได้ (รอวันที่ 2): อยู่ในรายการรอ หรืออยู่ในโซนที่นับวันที่ 2 (โลนอกรายการที่คนพิมพ์เพิ่มเอง) */
+function waitLoc(loc) {
+  if (!RD || !RD.day2 || RD.day2.on) return false;
+  const u = ST.up(loc);
+  return (RD.wait || []).some(l => ST.up(l[0]) === u) || (RD.day2.zones || []).includes(ST.parseLoc(u).zone);
 }
 function atLoc(loc) { return ME ? ST.atLoc(entries(), loc, ME.team, ME.pass) : []; }
 /** รอบ 2: คนที่นับโลนี้ในรอบ 1 ห้ามนับซ้ำ (สคริปต์ก็ตีกลับ แต่บอกก่อนจะได้ไม่เสียเวลานับ) */
@@ -480,7 +494,9 @@ async function loadRound() {
     NET.old = ST.oldScript(res);
   } catch (e) {
     const old = load(K.rd, null);
-    if (old && old.id === CFG.round) { RD = old; NET.err = 'ออฟไลน์ ใช้ข้อมูลรอบที่โหลดไว้'; }
+    /* หัวหน้าลบรอบนี้แล้ว: ไม่ใช้ข้อมูลที่โหลดไว้ ไม่งั้นนับต่อได้เหมือนออฟไลน์ แต่ส่งไม่ได้ตลอดไป */
+    if (/ถูกหัวหน้าลบแล้ว/.test(e.message)) { RD = null; if (old && old.id === CFG.round) save(K.rd, null); NET.err = e.message; }
+    else if (old && old.id === CFG.round) { RD = old; NET.err = 'ออฟไลน์ ใช้ข้อมูลรอบที่โหลดไว้'; }
     else NET.err = e.message;
   }
   NET.loading = false;
@@ -490,6 +506,8 @@ async function loadRound() {
   if (!ME) VIEW = 'who';
   GO = 'up';
   paint();
+  if (DAY_MSG && ME && day2On()) toast('go', '<b>เปิดนับวันที่ 2 แล้ว</b>โลที่รอไว้ขึ้นในรายการแล้ว', 4000);
+  DAY_MSG = false;
   if (ME) { pull(); flush(); }
 }
 
@@ -521,8 +539,10 @@ async function pull() {
 }
 
 function got(res, t, since) {
-  const was = RD && RD.round.pass;
+  const was = RD && RD.round.pass, day = RD && RD.round.day;
   if (res.round && RD) Object.assign(RD.round, res.round);
+  /* นับ 2 วัน: หัวหน้าเปิดวันที่ 2 (หรือเปลี่ยนการแบ่งวัน) รายการโลเปลี่ยน โหลดใหม่ */
+  if (RD && day !== undefined && RD.round.day !== undefined && RD.round.day !== day) { DAY_MSG = RD.round.day === 2; setTimeout(loadRound, 0); }
   /* เปิดรอบ 2 ระหว่างที่หน้านี้เปิดอยู่: โหลดทีม/แผนของรอบ 2 ใหม่ */
   if (RD && was && RD.round.pass > was) setTimeout(loadRound, 0);
   if (!ME || ME.team !== t) return;
@@ -783,16 +803,23 @@ function listView() {
     }
     const s = st[l.loc];
     const no = banned(l.loc);
-    const label = no && !s ? 'ให้คนอื่นนับ' : !s ? '' : s.empty ? 'ว่าง ✓' : `✓ ${s.n} กอง`;
-    rows += `<button class="ct-loc"${nth()} data-loc="${esc(l.loc)}">${esc(l.loc)}<span class="st ${s ? (s.wait ? 'wait' : 'done') : no ? 'wait' : ''}">${label}${s && s.wait ? ' · รอส่ง' : ''}</span><span class="go">›</span></button>`;
+    const again = !s && movedLoc(l.loc);      // ของขยับหลังนับวันแรก นับใหม่
+    const label = no && !s ? 'ให้คนอื่นนับ' : again ? 'นับใหม่' : !s ? '' : s.empty ? 'ว่าง ✓' : `✓ ${s.n} กอง`;
+    rows += `<button class="ct-loc"${nth()} data-loc="${esc(l.loc)}">${esc(l.loc)}<span class="st ${s ? (s.wait ? 'wait' : 'done') : no || again ? 'wait' : ''}">${label}${s && s.wait ? ' · รอส่ง' : ''}</span><span class="go">›</span></button>`;
   });
   const typed = q && !known.has(q) && q.length >= 2 && ME.pass < 2;
   const left = locs.length - done;
+  /* นับ 2 วัน: วันแรกบอกว่ายังมีโลรอวันที่ 2 · วันที่ 2 บอกโลที่ต้องนับใหม่ */
+  const waitN = RD.wait && RD.wait.length && ME.pass < 2 ? ST.teamLocs(team(), RD.wait).length : 0;
+  const againN = day2On() ? locs.filter(l => !st[l.loc] && movedLoc(l.loc)).length : 0;
+  const dayBand = waitN ? `<div class="ct-band info"><b>วันแรก</b> นับเฉพาะโลที่ไม่มีของขายออก · อีก <b>${f(waitN)}</b> โลของทีมจะขึ้นให้นับวันที่ 2</div>`
+    : againN ? `<div class="ct-band warn"><b>${f(againN)} โลต้องนับใหม่</b> ของขยับหลังนับวันแรก (มีป้าย "นับใหม่")</div>` : '';
   return hero(done, locs.length, audit, min) + `<div class="ct-chips">
       <button class="ct-chip ${FILTER === 'left' ? 'on' : ''}" data-filter="left">${audit ? 'ยังไม่สุ่ม' : 'เหลือ'}<b>${f(left)}</b></button>
       <button class="ct-chip ${FILTER === 'done' ? 'on' : ''}" data-filter="done">${audit ? 'สุ่มแล้ว' : 'นับแล้ว'}<b>${f(done)}</b></button>
       <button class="ct-chip ${FILTER === 'all' ? 'on' : ''}" data-filter="all">ทั้งหมด<b>${f(locs.length)}</b></button>
     </div>
+    ${dayBand}
     ${audit ? `<div class="ct-band info">Audit เลือกโลสุ่มตรวจเอง อย่างน้อย ${min}% ของแต่ละแถว · ไม่เห็นตัวเลขของทีม Inventory</div>` : ''}
     <div class="ct-qrow"><input class="ct-in" id="locQ" placeholder="ค้นหาโล" value="${esc(Q)}" autocapitalize="characters" autocomplete="off" spellcheck="false">${ME.pass < 2 ? '<button type="button" class="ct-btn" data-act="addloc">+ เพิ่มโล</button>' : ''}</div>
     ${typed ? `<button class="ct-btn w" style="margin-top:8px" data-act="addloc">+ เพิ่มโล ${esc(q)} (นอกรายการ)</button>` : ''}
@@ -927,6 +954,7 @@ function announce(loc) {
 /** เตือนในหน้าโล: มีคนเปิดโลนี้อยู่ · เพื่อนในทีมนับโลนี้ไปแล้ว */
 function locWarn() {
   let h = '';
+  if (movedLoc(LOC)) h += pic('look', 'info', '<b>นับโลนี้ใหม่ทั้งโล</b><br>ของในโลนี้ขยับหลังนับวันแรก ผลนับวันแรกไม่ใช้');
   if (PRES.loc === LOC && PRES.others.length) {
     const names = PRES.others.map(o => esc(o.who) + (o.ago ? ` (${o.ago} นาทีก่อน)` : ' (เมื่อกี้)')).join(', ');
     h += pic('look', 'warn', `<b>${names} เปิดโลนี้อยู่</b><br>ตกลงกันก่อนว่าใครนับ ถ้านับกองเดียวกันซ้ำ ยอดจะเกิน`);
@@ -1465,7 +1493,9 @@ function addLocHint() {
   const c = chk($('addQ').value);
   /* ยังพิมพ์ไม่ครบ (มีโลที่ขึ้นต้นเหมือนกัน) ยังไม่เตือนว่าไม่มีในคลัง */
   const typing = (c.kind === 'new' || c.kind === 'odd') && c.sug.length;
-  const msg = typing ? ['', 'พิมพ์ต่อให้ครบ หรือแตะโลข้างล่าง'] : {
+  /* นับ 2 วัน: โลที่ยังขายของออกอยู่ นับวันแรกตัวเลขใช้ไม่ได้ */
+  const wait = !!c.kind && waitLoc(c.loc);
+  const msg = wait ? ['bad', `${c.loc} นับวันที่ 2 (วันนี้ยังมีของขายออก) ยังนับไม่ได้`] : typing ? ['', 'พิมพ์ต่อให้ครบ หรือแตะโลข้างล่าง'] : {
     mine: ['ok', `✓ ${c.loc} อยู่ในรายการของคุณแล้ว`],
     other: ['info', c.team ? `${c.loc} อยู่ในรายการของ ${c.team} — เจอของวางผิดที่ นับเพิ่มได้` : `${c.loc} มีในคลัง แต่ยังไม่มีทีมไหนได้ — นับเพิ่มได้`],
     new: ['bad', `⚠ ไม่มี ${c.loc} ในรายการโลของคลัง — ถ้ามีจริง (โลใหม่ / วางชั่วคราว) นับได้เลย`],
@@ -1480,14 +1510,14 @@ function addLocHint() {
     return `<button type="button" data-addsug="${esc(l)}">${esc(l)}<small>${o.kind === 'mine' ? 'ในรายการของคุณ' : o.team ? esc(o.team) : 'ยังไม่มีทีมไหนได้'}</small></button>`;
   }).join('')}</div>` : '';
   const go = $('addGo');
-  go.disabled = !c.kind;
+  go.disabled = !c.kind || wait;
   go.textContent = c.kind ? `นับโล ${c.loc}` : 'นับโลนี้';
   return c;
 }
 
 function addLocGo() {
   const c = addLocHint();
-  if (!c.kind) return;
+  if (!c.kind || waitLoc(c.loc)) return;
   const ask = c.kind === 'odd' ? `"${c.loc}" ไม่เหมือนชื่อโลในคลัง\nแน่ใจว่าพิมพ์ถูก? (ถ้าใช่ กดตกลง)`
     : c.kind === 'new' ? `ไม่มี ${c.loc} ในรายการโลของคลัง\nนับเป็นโลใหม่ / ที่วางชั่วคราว? (ถ้าใช่ กดตกลง)` : '';
   if (ask && !confirm(ask)) { oops('addQ'); return; }

@@ -33,6 +33,9 @@
  * POST {op:'st-summary'}     เขียนผลวิเคราะห์ลงแท็บผลสรุป แทนชุดเดิมของรอบ (หัวหน้า)
  * POST {op:'st-plan'}        บันทึกแผนนับรอบ 2 และทีมของรอบนับ 2 (หัวหน้า)
  * POST {op:'st-close'}       อนุมัติยอดสุดท้ายและปิดรอบ เก็บชื่อคนอนุมัติกับเวลา ปิดแล้วแก้อะไรไม่ได้อีก (หัวหน้า)
+ * POST {op:'st-round-del'}   ลบรอบ (รอบทดลอง / ตั้งผิด) ต้องพิมพ์ชื่อรอบยืนยัน ลบแถวของรอบออกจากทุกแท็บ (หัวหน้า)
+ * POST {op:'st-day2'}        ตั้ง / ยกเลิกการแบ่งนับ 2 วัน: โซนกับโลเปิดที่นับวันที่ 2 (หัวหน้า)
+ * POST {op:'st-day2-open'}   เปิดนับวันที่ 2 พร้อมรายการโลวันแรกที่ขยับ ต้องนับใหม่ (หัวหน้า)
  * POST {op:'st-count'}       ส่งผลนับเป็นชุด ส่งซ้ำได้ แถวที่เคยรับแล้วไม่ถูกเขียนซ้ำ (คนนับ)
  * POST {op:'st-open'}        เครื่องนี้เปิดโลไหนอยู่ ตอบว่ามีใครในงานเดียวกันเปิดโลนั้นอยู่ (คนนับ ไม่ลงชีต)
  * ไม่ใส่ api                 บอกแค่ว่าเป็นสคริปต์นี้ ให้หน้าเว็บเช็คว่าใส่ URL ถูกตัว
@@ -41,7 +44,7 @@
  */
 
 /* เพิ่มทีละ 1 ทุกครั้งที่หน้าเว็บต้องใช้ของใหม่จากสคริปต์ (ต้องตรงกับ API_V ใน public/wms-stocktake.js) */
-var VERSION = 4;
+var VERSION = 6;
 
 // รหัสหัวหน้า ตั้งเป็นคำที่เดายาก เช่น 'stock-หัวหน้า-2569' แล้วใส่คำเดียวกันในหน้านับสต๊อกใหญ่
 var HEAD_TOKEN = '';
@@ -102,6 +105,8 @@ var STATUS_ANALYZE = 'วิเคราะห์';
 var STATUS_COUNT2 = 'นับรอบ 2';
 var STATUS_CLOSED = 'ปิดแล้ว';
 var STATUSES = [STATUS_SETUP, STATUS_COUNT1, STATUS_ANALYZE, STATUS_COUNT2, STATUS_CLOSED];
+/* รอบที่หัวหน้าลบแล้ว (st-round-del) ไม่อยู่ใน STATUSES ตั้งผ่าน st-status ไม่ได้ · แถวรอบยังอยู่ รหัสรอบจะได้ไม่ถูกใช้ซ้ำ */
+var STATUS_DELETED = 'ลบแล้ว';
 var KINDS = ['Inventory', 'Audit'];
 var TYPES = ['นับ', 'ว่าง', 'ยกเลิก'];   // แก้กอง = แถวนับใหม่ที่ชี้แถวเดิมในช่องแทนแถว ลบกอง = ยกเลิก
 var BATCH_MAX = 200;                     // แถวต่อหนึ่งครั้งที่ส่ง หน้ากรอกส่งทีละไม่เกิน 40 อยู่แล้ว
@@ -141,6 +146,9 @@ function doPost(e) {
     if (req.op === 'st-summary') { head_(req.t); return out_(summary_(req)); }
     if (req.op === 'st-plan') { head_(req.t); return out_(plan_(req)); }
     if (req.op === 'st-close') { head_(req.t); return out_(close_(req)); }
+    if (req.op === 'st-round-del') { head_(req.t); return out_(roundDel_(req)); }
+    if (req.op === 'st-day2') { head_(req.t); return out_(day2Set_(req)); }
+    if (req.op === 'st-day2-open') { head_(req.t); return out_(day2Open_(req)); }
     return out_({ error: 'ไม่รู้จักคำสั่งนี้' });
   } catch (err) {
     return out_({ error: String(err && err.message || err) });
@@ -277,6 +285,7 @@ function round_(id) {
   if (!id) throw new Error('ไม่ได้บอกรอบนับ');
   var hit = allRounds_().filter(function (r) { return r.id === id; })[0];
   if (!hit) throw new Error('ไม่พบรอบนับ ' + id);
+  if (hit.status === STATUS_DELETED) throw new Error('รอบนับ ' + id + ' ถูกหัวหน้าลบแล้ว ขอลิงก์ใหม่จากหัวหน้า');
   return hit;
 }
 
@@ -306,7 +315,70 @@ function public_(r) {
 
 function rounds_() {
   setup_();
-  return { app: 'stocktake', rounds: allRounds_().map(public_).reverse() };
+  return { app: 'stocktake', rounds: allRounds_().filter(function (r) { return r.status !== STATUS_DELETED; }).map(public_).reverse() };
+}
+
+/**
+ * ลบรอบ (รอบทดลอง / ตั้งผิด) หัวหน้าต้องส่งชื่อรอบมาตรงทุกตัว กันลบผิดรอบจากหน้าที่เปิดค้างไว้
+ *   ทีมและโซน Location ยอดตั้งต้น รายการสินค้า ผลสรุป แผนรอบ 2: เอาแถวของรอบนี้ออก แถวรอบอื่นอยู่ครบ
+ *   บันทึกนับ: ดู clearLog_
+ *   แถวในแท็บรอบนับเหลือไว้ สถานะ "ลบแล้ว" — รหัสรอบมาจากวันที่สร้าง + ลำดับ ถ้าเอาแถวออก รอบที่สร้างวันเดียวกันจะได้รหัสเดิม
+ *   แล้วมือถือที่เคยเปิดลิงก์เก่า (จำกองที่นับตามรหัสรอบ) จะเห็นกองของรอบที่ลบไปแล้ว
+ */
+function roundDel_(req) {
+  var id = text_(req.round);
+  var who = plain_(req.by, 60);
+  return withLock_(function () {
+    var r = round_(id);
+    if (text_(req.confirm) !== r.name) return { error: 'ชื่อรอบที่พิมพ์ไม่ตรง ต้องพิมพ์ "' + r.name + '" ให้ตรงทุกตัว' };
+    var rows = {};
+    [T_TEAM, T_LOC, T_BASE, T_MASTER, T_SUM, T_PLAN].forEach(function (name) {
+      var n = rows_(name).filter(function (x) { return text_(x[0]) === r.id; }).length;
+      if (n) replace_(name, r.id, []);
+      rows[name] = n;
+    });
+    var busy = allRounds_().some(function (o) {
+      return o.id !== r.id && o.status !== STATUS_CLOSED && o.status !== STATUS_DELETED;
+    });
+    rows[T_LOG] = clearLog_(r.id, busy);
+    r.status = STATUS_DELETED;
+    r.settings = {};
+    r.editBy = who;
+    r.editAt = stamp_();
+    writeRound_(r);
+    return { app: 'stocktake', deleted: r.id, rows: rows, inPlace: busy };
+  });
+}
+
+/**
+ * แถวบันทึกนับของรอบที่ลบ หน้ากรอกกับหน้าหัวหน้าอ่านต่อจากเลขแถวสุดท้ายที่เคยเห็น (since)
+ *   มีรอบอื่นยังไม่ปิด: ล้างแถวในที่เดิม เหลือคำว่า "ลบแล้ว" ช่องแรก เลขแถวของรอบอื่นไม่ขยับ แถวท้ายไม่หาย
+ *   ไม่มีรอบไหนเปิดอยู่: เอาแถวออกจริง แท็บสะอาด
+ * คืนจำนวนแถวของรอบนี้
+ */
+function clearLog_(id, inPlace) {
+  var sheet = tab_(T_LOG);
+  var cols = TABS[T_LOG].head.length;
+  var old = rows_(T_LOG);
+  var mine = function (c) { return text_(c[1]) === id; };
+  var n = old.filter(mine).length;
+  if (!n) return 0;
+  var all;
+  if (inPlace) {
+    all = old.map(function (c) {
+      if (!mine(c)) return c;
+      var blank = c.map(function () { return ''; });
+      blank[0] = STATUS_DELETED;
+      return blank;
+    });
+  } else {
+    all = old.filter(function (c) { return !mine(c); });
+  }
+  sheet.getRange(2, 1, old.length, cols).clearContent();
+  if (!all.length) return n;
+  TABS[T_LOG].text.forEach(function (c) { sheet.getRange(2, c, all.length, 1).setNumberFormat('@'); });
+  sheet.getRange(2, 1, all.length, cols).setValues(all);
+  return n;
 }
 
 var SETTINGS_MAX = 30000;   // ค่าตั้งของรอบเป็น JSON ในช่องเดียว (ช่องหนึ่งรับได้ 50,000 ตัวอักษร) แผนรอบ 2 อยู่ในนี้ด้วย
@@ -336,6 +408,9 @@ function roundSave_(req) {
       if (r.status !== STATUS_SETUP && (date !== r.date || cutoff !== r.cutoff)) {
         return { error: 'เริ่มนับแล้ว เปลี่ยนวันที่หรือเวลาตัดยอดไม่ได้' };
       }
+      /* การแบ่งนับ 2 วันแก้ผ่าน st-day2 เท่านั้น หน้าตั้งรอบที่เปิดค้างไว้ (ค่าตั้งชุดเก่า) ต้องไม่ทับ */
+      var keep = r.settings && r.settings.day2;
+      if (keep) settings.day2 = keep; else delete settings.day2;
       r.name = name; r.date = date; r.cutoff = cutoff; r.settings = settings;
       r.editBy = who; r.editAt = now;
       writeRound_(r);
@@ -534,6 +609,12 @@ function status_(req) {
       if (!inv.length) return { error: 'ยังไม่มีทีม Inventory ของรอบ 1' };
       if (!locsOf_(r.id).length) return { error: 'ยังไม่ได้บันทึกรายการ Location' };
       r.pass = Math.max(r.pass, 1);
+      /* นับ 2 วัน: จำแถวสุดท้ายในสมุดตอนเริ่มวันแรก แถวหลังจากนี้ที่แตะโลวันแรก = โลนั้นขยับ ต้องนับใหม่ */
+      if (r.settings && r.settings.day2 && !r.settings.day2.row1) r.settings.day2.row1 = r.lastRow;
+    }
+    if (to === STATUS_ANALYZE && r.status === STATUS_COUNT1) {
+      var d2 = day2_(r);
+      if (d2 && !d2.on) return { error: 'ยังไม่ได้เปิดนับวันที่ 2 (โลที่รอวันที่ 2 ยังไม่ได้นับ) เปิดก่อน หรือยกเลิกการแบ่ง 2 วันในแท็บทีม/โซน' };
     }
     r.status = to;
     r.editBy = who; r.editAt = stamp_();
@@ -549,6 +630,100 @@ function status_(req) {
  * แท็บนี้เป็นภาพตอนกดบันทึก ตัวเลขจริงยังคิดจากบันทึกนับเสมอ ไม่มีใครต้องแก้แท็บนี้มือ
  */
 var SUM_NUM = [6, 7, 8, 9, 10, 11];
+
+/* ── นับ 2 วัน ──────────────────────────────────────────────────────────────
+ * วันแรกนับโลที่ไม่มีของขายออก (R กับโลปิด) Outbound ยังส่งของจากโลเปิดได้ · วันที่ 2 นับโลที่ยังขายอยู่ในวันแรก
+ * ตัดยอดเช้าวันที่ 2 ครั้งเดียว ผลนับวันแรกเทียบกับยอดนั้นได้ถ้าโลนั้นไม่มีรายการในสมุดหลังเริ่มนับ (หน้าหัวหน้าเช็คจากสมุดตอนเปิดวันที่ 2)
+ * ค่าตั้งของรอบ settings.day2 = { zones: [โซนที่นับวันที่ 2 ทั้งโซน], locs: [โลเปิดในโซนอื่น], openToo, row1: แถวสุดท้ายในสมุดตอนเริ่มวันแรก,
+ *   on: 1 = เปิดนับวันที่ 2 แล้ว, at: เวลาที่เปิด (ms), moved: [โลวันแรกที่ขยับ นับใหม่วันที่ 2] }
+ */
+var DAY2_ZONES_MAX = 40;
+var DAY2_LOCS_MAX = 3000;
+
+function codes_(v, max) {
+  var seen = {}, out = [];
+  (Array.isArray(v) ? v : []).forEach(function (x) {
+    var c = code_(x, max);
+    if (c && !seen[c]) { seen[c] = 1; out.push(c); }
+  });
+  return out;
+}
+
+/** ค่าแบ่งวันของรอบ ไม่ได้แบ่ง = null */
+function day2_(r) {
+  var d = r.settings && r.settings.day2;
+  if (!d || typeof d !== 'object') return null;
+  var zones = codes_(d.zones, 20), locs = codes_(d.locs, 40);
+  if (!zones.length && !locs.length && !d.openToo) return null;
+  return { zones: zones, locs: locs, openToo: d.openToo ? 1 : 0, row1: +d.row1 || 0, on: d.on ? 1 : 0, at: +d.at || 0, moved: codes_(d.moved, 40) };
+}
+
+/** โลในรายการของรอบที่ยังนับไม่ได้ (รอวันที่ 2) → {โล: 1} เปิดวันที่ 2 แล้ว หรือไม่ได้แบ่งวัน = ว่าง */
+function day2Wait_(r, d, locs) {
+  var out = {};
+  if (!d || d.on) return out;
+  var z = {};
+  d.zones.forEach(function (x) { z[x] = 1; });
+  d.locs.forEach(function (l) { out[l] = 1; });
+  (locs || locsOf_(r.id)).forEach(function (l) { if (z[l[1]]) out[l[0]] = 1; });
+  return out;
+}
+
+/** สิ่งที่หน้ากรอกต้องรู้ทุกครั้งที่คุยกับสคริปต์: สถานะ รอบนับ และวันนับ (0 = นับวันเดียว) วันเปลี่ยน = โหลดรายการโลใหม่ */
+function lite_(r) {
+  var d = day2_(r);
+  return { id: r.id, status: r.status, pass: r.pass, day: d ? (d.on ? 2 : 1) : 0 };
+}
+
+/** ตั้ง / ยกเลิก (day2 ว่าง) การแบ่งนับ 2 วัน ได้ตอนตั้งค่าหรือระหว่างนับรอบ 1 ก่อนเปิดวันที่ 2 */
+function day2Set_(req) {
+  var x = req.day2 && typeof req.day2 === 'object' ? req.day2 : null;
+  var zones = x ? codes_(x.zones, 20) : [], locs = x ? codes_(x.locs, 40) : [];
+  if (zones.length > DAY2_ZONES_MAX || locs.length > DAY2_LOCS_MAX) return { error: 'รายการนับวันที่ 2 ยาวเกินไป' };
+  var who = plain_(req.by, 60);
+  return withLock_(function () {
+    var r = round_(text_(req.round));
+    if (r.status !== STATUS_SETUP && r.status !== STATUS_COUNT1) return { error: 'ตั้งแบ่งวันนับได้ตอนตั้งค่าหรือระหว่างนับรอบ 1 เท่านั้น' };
+    var old = day2_(r);
+    if (old && old.on) return { error: 'เปิดนับวันที่ 2 ไปแล้ว เปลี่ยนการแบ่งวันไม่ได้' };
+    r.settings = r.settings || {};
+    if (!x || (!zones.length && !locs.length && !x.openToo)) {
+      delete r.settings.day2;
+    } else {
+      r.settings.day2 = {
+        zones: zones, locs: locs, openToo: x.openToo ? 1 : 0,
+        row1: (old && old.row1) || (r.status === STATUS_COUNT1 ? r.lastRow : 0),
+      };
+      if (JSON.stringify(r.settings).length > SETTINGS_MAX) return { error: 'โลเปิดที่ต้องนับวันที่ 2 เยอะเกินจะเก็บได้ ให้เลือกทั้งโซนแทน' };
+    }
+    r.editBy = who; r.editAt = stamp_();
+    writeRound_(r);
+    return { app: 'stocktake', round: public_(r) };
+  });
+}
+
+/**
+ * เปิดนับวันที่ 2 หน้าหัวหน้าดึงยอดสมุดชุดใหม่ (st-baseline) ก่อน แล้วส่งรายการโลวันแรกที่มีรายการในสมุดหลังเริ่มนับมา
+ * โลพวกนั้นนับใหม่วันที่ 2 ผลนับวันแรกของโลนั้นหน้าเว็บไม่ใช้ (แถวในชีตอยู่ครบ) เปิดแล้วย้อนกลับไม่ได้
+ */
+function day2Open_(req) {
+  var moved = codes_(req.moved, 40);
+  if (moved.length > DAY2_LOCS_MAX) return { error: 'โลที่ขยับเยอะเกินไป (' + moved.length + ' โล) ตรวจว่าดึงสมุดถูกไฟล์' };
+  var who = plain_(req.by, 60);
+  return withLock_(function () {
+    var r = round_(text_(req.round));
+    var d = day2_(r);
+    if (!d) return { error: 'รอบนี้ไม่ได้แบ่งนับ 2 วัน' };
+    if (d.on) return { error: 'เปิดนับวันที่ 2 ไปแล้ว' };
+    if (r.status !== STATUS_COUNT1) return { error: 'เปิดนับวันที่ 2 ได้ระหว่างนับรอบ 1 เท่านั้น' };
+    var now = stamp_();
+    r.settings.day2 = { zones: d.zones, locs: d.locs, openToo: d.openToo, row1: d.row1, on: 1, at: now_(), moved: moved, by: who, when: now };
+    if (JSON.stringify(r.settings).length > SETTINGS_MAX) return { error: 'โลที่ขยับเยอะเกินจะเก็บได้ (' + moved.length + ' โล)' };
+    r.editBy = who; r.editAt = now;
+    writeRound_(r);
+    return { app: 'stocktake', round: public_(r), moved: moved.length };
+  });
+}
 
 /** ตรวจและทำความสะอาดแถวผลสรุป 16 ช่อง → {rows} หรือ {error} ใช้ทั้งบันทึกผลและปิดรอบ */
 function sumClean_(lines, id) {
@@ -721,11 +896,17 @@ function countView_(id) {
   setup_();
   var r = round_(id);
   var m = master_(r.id);
+  /* นับ 2 วัน: วันแรกรายการโลไม่มีโลที่รอวันที่ 2 (ยังขายของออกอยู่ นับตอนนี้ตัวเลขใช้ไม่ได้) ส่งแยกไว้ให้หน้ากรอกกันคนเพิ่มโลพวกนี้เอง */
+  var d = day2_(r);
+  var all = locsOf_(r.id);
+  var wait = day2Wait_(r, d, all);
   return {
     app: 'stocktake',
-    round: { id: r.id, name: r.name, date: r.date, status: r.status, pass: r.pass, auditMin: +(r.settings && r.settings.auditMin) || 0 },
+    round: { id: r.id, name: r.name, date: r.date, status: r.status, pass: r.pass, auditMin: +(r.settings && r.settings.auditMin) || 0, day: d ? (d.on ? 2 : 1) : 0 },
     teams: teamsOf_(r.id).map(function (t) { return { pass: t.pass, id: t.id, kind: t.kind, name: t.name, members: t.members, zones: t.zones }; }),
-    locs: locsOf_(r.id).map(function (l) { return [l[0], l[2]]; }),
+    locs: all.filter(function (l) { return !wait[l[0]]; }).map(function (l) { return [l[0], l[2]]; }),
+    wait: all.filter(function (l) { return wait[l[0]]; }).map(function (l) { return [l[0], l[2]]; }),
+    day2: d ? { zones: d.zones, on: d.on, at: d.at, moved: d.moved } : null,
     skus: m.skus, pos: m.pos,
     /* รอบ 2: โล + คนที่ห้ามนับซ้ำ (ไม่มีเหตุผล ไม่มีตัวเลข คนนับไม่รู้ว่าโลนี้ผิดอะไร) */
     plan: planOf_(r.id).map(function (p) { return [p[0], p[4]]; }),
@@ -741,7 +922,7 @@ function logView_(id, since, team) {
   setup_();
   return withLock_(function () {
     var r = round_(id);
-    return { app: 'stocktake', round: { id: r.id, status: r.status, pass: r.pass }, rows: logRows_(r.id, since, team), last: tab_(T_LOG).getLastRow() };
+    return { app: 'stocktake', round: lite_(r), rows: logRows_(r.id, since, team), last: tab_(T_LOG).getLastRow() };
   });
 }
 
@@ -792,6 +973,14 @@ function count_(req) {
       return (forbid[loc] || []).indexOf(String(who).toUpperCase()) >= 0;
     }
 
+    /* นับ 2 วัน: โลที่รอวันที่ 2 ยังขายของออกอยู่ ผลนับวันแรกของโลพวกนี้ใช้ไม่ได้ ไม่รับ (อ่านรายการโลเมื่อเจอแถวแรกที่ต้องเช็คเท่านั้น) */
+    var d2 = day2_(r), wait = null;
+    function waiting(loc) {
+      if (!d2 || d2.on) return false;
+      if (!wait) wait = day2Wait_(r, d2);
+      return !!wait[loc];
+    }
+
     var sheet = tab_(T_LOG);
     var n = sheet.getLastRow() - 1;
     var have = {};
@@ -815,6 +1004,7 @@ function count_(req) {
       if (!loc) return no('ไม่มี Location');
       var who = plain_(i.who, 40).replace(/,/g, ' ');
       if (pass >= 2 && type !== 'ยกเลิก' && banned(loc, who)) return no(who + ' นับโล ' + loc + ' ในรอบ 1 แล้ว ให้คนอื่นนับ');
+      if (pass === 1 && type !== 'ยกเลิก' && waiting(loc)) return no('โล ' + loc + ' นับวันที่ 2 ยังไม่เปิดให้นับ');
       var ref = plain_(i.ref, 60);
       var qty = '';
       var sku = '', long = '', lot = '', po = '';
@@ -836,7 +1026,7 @@ function count_(req) {
     var since = +req.since || 0;
     return {
       app: 'stocktake', saved: rows.length, dup: dup, rejected: rejected,
-      round: { id: r.id, status: r.status, pass: r.pass },
+      round: lite_(r),
       rows: req.team ? logRows_(r.id, since, code_(req.team, 20)) : [],
       last: sheet.getLastRow(),
     };
