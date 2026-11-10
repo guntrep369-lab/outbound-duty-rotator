@@ -36,6 +36,15 @@ button,input{font-family:inherit}
   background:linear-gradient(90deg,#6366F1,#8B5CF6 55%,#22C55E);transition:width .9s cubic-bezier(.2,.8,.2,1)}
 .ct-top .who{flex:1;min-width:0;font-size:13px;color:var(--wms-muted);line-height:1.35}
 .ct-top .who b{display:block;font-size:15px;color:var(--wms-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ct-top .sw{display:inline-flex;align-items:center;gap:3px;max-width:100%;padding:4px 0;margin:-4px 0;border:0;background:none;
+  font:inherit;font-size:13px;font-weight:600;color:var(--wms-primary);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ct-top .sw span{font-size:11px}
+.ct-ico{flex:none;width:38px;height:36px;display:grid;place-items:center;padding:0;border:1px solid var(--wms-border);border-radius:10px;
+  background:var(--wms-surface);color:var(--wms-muted);cursor:pointer}
+.ct-ico:active{transform:scale(.94)}
+.ct-ico svg{width:19px;height:19px}
+.ct-ico.spin svg{animation:ct-spin .8s linear infinite}
+@keyframes ct-spin{to{transform:rotate(360deg)}}
 .ct-net{flex:none;padding:5px 11px;border-radius:999px;border:1px solid var(--wms-border);background:var(--wms-surface);
   font-size:12.5px;font-weight:600;color:var(--wms-muted);white-space:nowrap}
 .ct-net.ok{background:#ECFDF5;border-color:#A7F3D0;color:#047857}
@@ -245,6 +254,46 @@ html.intro body{overflow:hidden}
 body.pad-on .ct-main{padding-bottom:380px}
 .ct-form .tt{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .ct-padsw{border:0;background:none;padding:2px 0;font-family:inherit;font-size:12.5px;font-weight:600;color:var(--wms-primary);cursor:pointer}
+body.ov-on{overflow:hidden}
+
+/* ── สแกนบาร์โค้ดช่อง SKU: มีไว้เผื่อ จะพิมพ์เองก็ได้ ── */
+.ct-skurow,.ct-qrow{display:flex;gap:8px}
+.ct-skurow .ct-in,.ct-qrow .ct-in{flex:1;min-width:0}
+.ct-qrow .ct-btn{flex:none;padding:0 14px;font-size:15px;color:var(--wms-primary-dark);border-color:#C7D2FE}
+.ct-scanbtn{flex:none;width:54px;height:48px;display:grid;place-items:center;padding:0;border:1px solid #C7D2FE;border-radius:10px;
+  background:var(--wms-primary-light);color:var(--wms-primary-dark);cursor:pointer}
+.ct-scanbtn:active{transform:scale(.95)}
+.ct-scanbtn svg{width:26px;height:26px}
+.ct-scan{position:fixed;inset:0;z-index:30;background:#000;color:#fff;overflow:hidden}
+.ct-scan[hidden],.ct-sheet[hidden],.ct-scan .ct-btn[hidden]{display:none}
+.ct-scan video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.ct-scan .fr{position:absolute;left:50%;top:45%;width:min(82vw,340px);height:min(46vw,190px);transform:translate(-50%,-50%);
+  border:3px solid rgba(255,255,255,.92);border-radius:16px;box-shadow:0 0 0 100vmax rgba(0,0,0,.5);transition:border-color .15s,box-shadow .15s}
+.ct-scan .fr i{position:absolute;left:7%;right:7%;top:50%;height:2px;border-radius:2px;background:#F87171;box-shadow:0 0 10px 2px rgba(248,113,113,.75);
+  animation:ct-laser 1.5s ease-in-out infinite alternate}
+.ct-scan.hit .fr{border-color:#4ADE80;box-shadow:0 0 0 100vmax rgba(0,0,0,.5),0 0 0 9px rgba(74,222,128,.45)}
+.ct-scan.hit .fr i{display:none}
+.ct-scan .tp{position:absolute;left:0;right:0;top:0;padding:calc(18px + env(safe-area-inset-top)) 16px 14px;text-align:center}
+.ct-scan .tp b{display:block;font-size:18px}
+.ct-scan .tp span{display:block;margin-top:4px;font-size:14px;line-height:1.45;color:#E2E8F0}
+.ct-scan .bt{position:absolute;left:0;right:0;bottom:0;display:flex;gap:8px;padding:12px 16px calc(18px + env(safe-area-inset-bottom))}
+.ct-scan .bt .ct-btn{flex:1;background:rgba(255,255,255,.95);border-color:transparent}
+.ct-scan .bt .ct-btn.on{background:#FDE68A}
+@keyframes ct-laser{from{top:14%}to{top:86%}}
+@media (prefers-reduced-motion:reduce){.ct-scan .fr i{animation:none}}
+
+/* ── เพิ่มโล (ของวางผิดที่ / โลที่ไม่มีในรายการ): แผ่นเลื่อนลงจากบน ช่องพิมพ์ไม่โดนคีย์บอร์ดบัง ── */
+.ct-sheet{position:fixed;inset:0;z-index:25;display:flex;align-items:flex-start;background:rgba(15,23,42,.45)}
+.ct-sheet .bx{width:100%;max-width:560px;margin:0 auto;padding:calc(10px + env(safe-area-inset-top)) 16px 16px;border-radius:0 0 18px 18px;
+  background:var(--wms-surface);box-shadow:0 12px 32px rgba(15,23,42,.22)}
+.ct-sheet .hd{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ct-sheet .hd b{font-size:18px}
+.ct-sheet .x{min-width:44px;min-height:44px;border:0;background:none;font-size:20px;color:var(--wms-muted);cursor:pointer}
+.ct-sheet .sb{margin:0 0 10px;font-size:13.5px;line-height:1.5;color:var(--wms-muted)}
+.ct-hint.info{color:#3730A3;font-weight:600}
+.ct-tag{margin-left:6px;padding:1px 7px;border-radius:999px;background:#FEF3C7;color:#92400E;font-size:11.5px;font-weight:700}
+@media (prefers-reduced-motion:no-preference){.ct-sheet:not([hidden]) .bx{animation:ct-drop .26s cubic-bezier(.2,.8,.2,1) both}}
+@keyframes ct-drop{from{transform:translateY(-100%)}}
 
 /* เข้าหน้าใหม่เท่านั้นที่ขยับ วาดซ้ำในหน้าเดิม (ดึงข้อมูลทุกนาที แตะเลือกชื่อ) ไม่ขยับ
    up = เปิดลิงก์ / เริ่มนับ · fwd = เข้าโล (สไลด์จากขวา + แสงสแกนผ่านชื่อโล) · back = กลับรายการ */
@@ -295,6 +344,22 @@ body.pad-on .ct-main{padding-bottom:380px}
 <main class="ct-main" id="main"></main>
 <div id="bottom"></div>
 <div class="ct-pad" id="pad" aria-hidden="true"></div>
+<div class="ct-scan" id="scan" hidden>
+  <video id="scanV" playsinline muted autoplay></video>
+  <div class="fr" aria-hidden="true"><i></i></div>
+  <div class="tp"><b>สแกนบาร์โค้ด SKU</b><span id="scanMsg" role="status">เล็งบาร์โค้ดให้อยู่ในกรอบ</span></div>
+  <div class="bt"><button type="button" class="ct-btn" id="scanTorch" data-act="scan-torch" hidden>ไฟฉาย</button><button type="button" class="ct-btn" data-act="scan-close">ปิด · พิมพ์เอง</button></div>
+</div>
+<div class="ct-sheet" id="addLoc" hidden>
+  <div class="bx" role="dialog" aria-modal="true" aria-labelledby="addT">
+    <div class="hd"><b id="addT">เพิ่มโล</b><button type="button" class="x" data-act="addloc-close" aria-label="ปิด">✕</button></div>
+    <div class="sb">เจอของวางผิดที่ หรือโลที่ไม่มีในรายการ พิมพ์ชื่อโลที่เจอของ</div>
+    <input class="ct-in" id="addQ" placeholder="เช่น R1-03-02" autocapitalize="characters" autocomplete="off" spellcheck="false" enterkeyhint="go">
+    <div id="addHint" class="ct-hint"></div>
+    <div id="addSug"></div>
+    <button type="button" class="ct-btn p w" style="margin-top:10px" id="addGo" data-act="addloc-go" disabled>นับโลนี้</button>
+  </div>
+</div>
 
 <script src="../wms-gas.js"></script>
 <script src="../wms-stocktake.js"></script>
@@ -530,6 +595,8 @@ function push(type, fields) {
 
 function paint() { paintTop(); paintMain(); }
 
+const RELOAD_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>';
+
 function paintTop() {
   const box = $('top');
   if (!CFG) { box.innerHTML = '<div class="who"><b>กรอกผลนับ</b></div>'; return; }
@@ -545,7 +612,11 @@ function paintTop() {
   const locs = t && VIEW !== 'who' ? myLocs() : [];
   bar.parentElement.classList.toggle('on', locs.length > 0);
   bar.style.width = locs.length ? (doneN(locs) * 100 / locs.length).toFixed(1) + '%' : '0';
-  const html = `<div class="who"><b>${esc(RD ? RD.round.name : 'นับสต๊อก')}</b>${t ? `${esc(t.name)} · ${esc(ME.who)}` : esc(CFG.round)}</div>` +
+  /* เปลี่ยนทีม/ชื่อ กับ โหลดรายการใหม่ อยู่แถบบนที่ติดจอ ไม่ต้องเลื่อนลงไปหา · ในหน้าโลซ่อน กันแตะพลาดระหว่างกรอก */
+  const me = t ? `${esc(t.name)} · ${esc(ME.who)}` : esc(CFG.round);
+  const html = `<div class="who"><b>${esc(RD ? RD.round.name : 'นับสต๊อก')}</b>${t && VIEW === 'list'
+      ? `<button type="button" class="sw" data-act="who" aria-label="เปลี่ยนทีมหรือชื่อ">${me}<span aria-hidden="true">▾</span></button>` : me}</div>` +
+    (RD && VIEW !== 'loc' ? `<button type="button" class="ct-ico ${NET.loading ? 'spin' : ''}" data-act="reload" aria-label="โหลดรายการใหม่" title="โหลดรายการใหม่">${RELOAD_ICON}</button>` : '') +
     `<button class="ct-net ${net[0]}" data-act="net" aria-label="สถานะการส่ง">${esc(net[1])}</button>`;
   if (box._html === html) return;      // ไม่วาดซ้ำ เครื่องหมายถูกที่กำลังวาดตัวเองจะได้ไม่หาย
   box.innerHTML = html; box._html = html;
@@ -650,7 +721,9 @@ function whoView() {
   const inv = list.filter(t => t.kind !== 'Audit'), aud = list.filter(t => t.kind === 'Audit');
   const t = list.find(x => x.id === sel.team);
   const hi = pass >= 2 ? ['รอบ 2 มาช่วยนับซ้ำกัน', 'นับให้ละเอียดเหมือนรอบแรกนะ'] : ['สวัสดี มานับสต๊อกกัน', 'เลือกทีมกับชื่อ แล้วกดเริ่มนับ'];
-  return oldBand() + `<div class="ct-hi"><img src="${MAS.walk}" alt="" width="58" height="58"><span><b>${hi[0]}</b>${hi[1]}</span></div>` +
+  /* เข้ามาจากชื่อบนแถบบน (มีทีมอยู่แล้ว) กลับไปนับต่อได้โดยไม่ต้องเลือกใหม่ */
+  const back = ME && team() ? '<button type="button" class="ct-btn sm" style="margin-bottom:10px" data-act="who-cancel">‹ กลับไปนับต่อ</button>' : '';
+  return oldBand() + back + `<div class="ct-hi"><img src="${MAS.walk}" alt="" width="58" height="58"><span><b>${hi[0]}</b>${hi[1]}</span></div>` +
     `<div class="ct-h">เลือกทีมของคุณ</div><div class="ct-pick">${inv.map(card).join('')}</div>` +
     (aud.length ? `<div class="ct-h">Audit</div><div class="ct-pick">${aud.map(card).join('')}</div>` : '') +
     (t ? `<div class="ct-h">ชื่อคุณ</div>
@@ -721,13 +794,13 @@ function listView() {
       <button class="ct-chip ${FILTER === 'all' ? 'on' : ''}" data-filter="all">ทั้งหมด<b>${f(locs.length)}</b></button>
     </div>
     ${audit ? `<div class="ct-band info">Audit เลือกโลสุ่มตรวจเอง อย่างน้อย ${min}% ของแต่ละแถว · ไม่เห็นตัวเลขของทีม Inventory</div>` : ''}
-    <input class="ct-in" id="locQ" placeholder="ค้นหาโล หรือพิมพ์โลที่ไม่มีในรายการ" value="${esc(Q)}" autocapitalize="characters" autocomplete="off" spellcheck="false">
-    ${typed ? `<button class="ct-btn w" style="margin-top:8px" data-loc="${esc(q)}">นับโล ${esc(q)} (นอกรายการ)</button>` : ''}
+    <div class="ct-qrow"><input class="ct-in" id="locQ" placeholder="ค้นหาโล" value="${esc(Q)}" autocapitalize="characters" autocomplete="off" spellcheck="false">${ME.pass < 2 ? '<button type="button" class="ct-btn" data-act="addloc">+ เพิ่มโล</button>' : ''}</div>
+    ${typed ? `<button class="ct-btn w" style="margin-top:8px" data-act="addloc">+ เพิ่มโล ${esc(q)} (นอกรายการ)</button>` : ''}
     <div class="ct-list" style="margin-top:10px">${rows || `<div class="ct-msg">${FILTER === 'left' && !q
       ? `${mas('cheer')}<b>${audit ? 'สุ่มครบทุกแถวแล้ว' : 'นับครบทุกโลแล้ว'}</b><br>เก่งมาก ขอบคุณที่ช่วยนับ`
       : `${mas('look', 'sm')}ไม่มีโลตามที่ค้น`}</div>`}</div>
     ${extra.length ? `<div class="ct-h">โลนอกรายการที่นับไว้</div><div class="ct-list">${extra.map(l => `<button class="ct-loc" data-loc="${esc(l)}">${esc(l)}<span class="st done">✓</span><span class="go">›</span></button>`).join('')}</div>` : ''}
-    <div class="ct-foot"><button class="ct-btn sm" data-act="who">เปลี่ยนทีม/ชื่อ</button> <button class="ct-btn sm" data-act="reload">โหลดรายการใหม่</button></div>`;
+`;
 }
 
 /* ── หน้า Location: กองที่นับ + ฟอร์มเพิ่มกอง ───────────────────────── */
@@ -761,13 +834,13 @@ function locView() {
   }
   const editing = EDIT && piles.find(r => r.uid === EDIT);
   return `<div class="ct-lochead"><button class="ct-btn sm" data-act="back" aria-label="กลับไปรายการโล">‹ โล</button>
-      <div class="nm">${esc(LOC)}<small>แถว ${esc(p.group)}${piles.length ? ` · ${piles.length} กอง` : ''}</small></div></div>
+      <div class="nm">${esc(LOC)}${myLocs().some(l => ST.up(l.loc) === LOC) ? '' : '<span class="ct-tag">นอกรายการ</span>'}<small>แถว ${esc(p.group)}${piles.length ? ` · ${piles.length} กอง` : ''}</small></div></div>
     <div id="locWarn">${locWarn()}</div>
     <div class="ct-piles" id="piles">${pilesHTML()}</div>
     <div class="ct-form ${editing ? 'edit' : ''}">
       <div class="tt"><span>${editing ? 'แก้กองนี้' : piles.length ? 'เพิ่มกองถัดไป' : 'กองแรก'}</span><button type="button" class="ct-padsw" id="padSw" data-act="pad">${padSwText()}</button></div>
       <label class="ct-lb" for="fSku">SKU</label>
-      <input class="ct-in" id="fSku" value="${esc(FORM.sku)}" autocapitalize="characters" autocomplete="off" spellcheck="false" enterkeyhint="next" placeholder="พิมพ์รหัสหรือชื่อสินค้า">
+      <div class="ct-skurow"><input class="ct-in" id="fSku" value="${esc(FORM.sku)}" autocapitalize="characters" autocomplete="off" spellcheck="false" enterkeyhint="next" placeholder="พิมพ์รหัสหรือชื่อสินค้า">${CAM ? `<button type="button" class="ct-scanbtn" data-act="scan" aria-label="สแกนบาร์โค้ด">${SCAN_ICON}</button>` : ''}</div>
       <div id="skuHint" class="ct-hint"></div><div id="skuSug"></div>
       <div class="ct-grid">
         <div><label class="ct-lb" for="fLot">LOT</label><input class="ct-in" id="fLot" value="${esc(FORM.lot)}" inputmode="${padMode('fLot')}" autocomplete="off" enterkeyhint="next"></div>
@@ -1235,6 +1308,196 @@ document.addEventListener('focusout', (e) => {
   }, 0);
 });
 
+/* ── หน้าซ้อน (กล้องสแกน / เพิ่มโล): ปุ่มย้อนกลับของมือถือปิดหน้าซ้อนก่อน ไม่หลุดออกจากหน้านับ ── */
+
+let OV = '';
+function ovOpen(name) { OV = name; try { history.pushState({ ov: name }, ''); } catch (e) {} }
+function ovDone() { OV = ''; try { if (history.state && history.state.ov) history.back(); } catch (e) {} }
+window.addEventListener('popstate', () => {
+  const o = OV;
+  OV = '';
+  if (o === 'scan') scanClose(true);
+  else if (o === 'addloc') addLocClose(true);
+});
+
+/* ── สแกนบาร์โค้ดช่อง SKU (มีไว้เผื่อ จะพิมพ์เองก็ได้) ─────────────────────
+   มือถือที่มีตัวอ่านในเครื่อง (Chrome Android) ใช้ของเครื่อง · ไม่มี (iPhone) โหลดตัวอ่าน barcode-detector ตอนกดสแกนครั้งแรก
+   อ่านได้ = กรอบเขียว เครื่องสั่น ใส่ช่อง SKU ปิดกล้อง ไปช่อง LOT */
+
+const CAM = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+const SCAN_LIB = 'https://cdn.jsdelivr.net/npm/barcode-detector@3.2.3/dist/es/ponyfill.js';
+const SCAN_FMT = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'code_93', 'itf', 'codabar', 'qr_code', 'data_matrix'];
+const SCAN_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 8v8M10.5 8v8M14 8v8M17 8v8"/></svg>';
+const SCAN = { on: false, stream: null, det: null, timer: 0, torch: false };
+
+async function scanDetector() {
+  if (SCAN.det) return SCAN.det;
+  if ('BarcodeDetector' in window) {
+    try {
+      const have = await window.BarcodeDetector.getSupportedFormats();
+      const fmt = SCAN_FMT.filter(x => have.includes(x));
+      if (fmt.length) return (SCAN.det = new window.BarcodeDetector({ formats: fmt }));
+    } catch (e) { /* ใช้ตัวอ่านที่โหลดแทน */ }
+  }
+  const m = await import(SCAN_LIB);
+  return (SCAN.det = new m.BarcodeDetector({ formats: SCAN_FMT }));
+}
+
+function scanMsg(t) { const el = $('scanMsg'); if (el) el.textContent = t; }
+
+async function scanOpen() {
+  if (OV) return;
+  const a = document.activeElement;
+  if (a && a.blur) a.blur();
+  padHide();
+  SCAN.on = true; SCAN.torch = false;
+  const box = $('scan'), torch = $('scanTorch');
+  box.hidden = false; box.classList.remove('hit');
+  torch.hidden = true; torch.classList.remove('on'); torch.textContent = 'ไฟฉาย';
+  document.body.classList.add('ov-on');
+  scanMsg('กำลังเปิดกล้อง…');
+  ovOpen('scan');
+  const detP = scanDetector();
+  detP.catch(() => {});
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } });
+    if (!SCAN.on) { stream.getTracks().forEach(t => t.stop()); return; }
+    SCAN.stream = stream;
+    const v = $('scanV');
+    v.srcObject = stream;
+    await v.play().catch(() => {});
+    const tr = stream.getVideoTracks()[0];
+    const caps = tr && tr.getCapabilities ? tr.getCapabilities() : {};
+    if (caps && caps.torch) torch.hidden = false;
+    scanMsg('กำลังเตรียมตัวอ่าน…');
+    const det = await detP;
+    if (!SCAN.on) return;
+    scanMsg('เล็งบาร์โค้ดให้อยู่ในกรอบ');
+    const tick = async () => {
+      if (!SCAN.on) return;
+      try {
+        if (v.readyState >= 2) {
+          const found = (await det.detect(v)).find(x => x && x.rawValue);
+          if (found && SCAN.on) { scanHit(found.rawValue); return; }
+        }
+      } catch (e) { /* เฟรมนี้อ่านไม่ได้ ลองเฟรมถัดไป */ }
+      SCAN.timer = setTimeout(tick, 120);
+    };
+    tick();
+  } catch (e) {
+    if (!SCAN.on) return;
+    const n = e && e.name;
+    scanMsg(n === 'NotAllowedError' || n === 'SecurityError' ? 'ไม่ได้อนุญาตให้ใช้กล้อง — เปิดสิทธิ์กล้องให้เว็บนี้ในเบราว์เซอร์ แล้วกดสแกนใหม่'
+      : n === 'NotFoundError' || n === 'OverconstrainedError' ? 'ไม่พบกล้องในเครื่องนี้ — ปิดแล้วพิมพ์ SKU เองได้'
+      : n === 'NotReadableError' ? 'กล้องถูกแอปอื่นใช้อยู่ — ปิดแอปนั้นแล้วลองใหม่'
+      : 'เปิดตัวอ่านบาร์โค้ดไม่ได้ (เน็ตหลุด?) — ปิดแล้วพิมพ์ SKU เองได้');
+  }
+}
+
+function scanClose(fromPop) {
+  const box = $('scan');
+  if (box.hidden) return;
+  SCAN.on = false;
+  clearTimeout(SCAN.timer);
+  if (SCAN.stream) SCAN.stream.getTracks().forEach(t => t.stop());
+  SCAN.stream = null;
+  $('scanV').srcObject = null;
+  box.hidden = true;
+  document.body.classList.remove('ov-on');
+  if (!fromPop) ovDone();
+}
+
+function scanHit(raw) {
+  SCAN.on = false;
+  clearTimeout(SCAN.timer);
+  const r = ST.scanSku(raw, RD ? RD.skus : []);
+  $('scan').classList.add('hit');
+  scanMsg('อ่านได้ ' + r.code);
+  buzz([20, 40, 20]);
+  setTimeout(() => {
+    scanClose();
+    const el = $('fSku');
+    if (VIEW !== 'loc' || !el) return;
+    FORM.sku = r.sku; el.value = r.sku; hints();
+    if (r.hit) $('fLot').focus();
+    else oops('fSku');
+  }, 320);
+}
+
+function scanTorch() {
+  const tr = SCAN.stream && SCAN.stream.getVideoTracks()[0];
+  if (!tr) return;
+  SCAN.torch = !SCAN.torch;
+  tr.applyConstraints({ advanced: [{ torch: SCAN.torch }] }).catch(() => { SCAN.torch = false; });
+  const b = $('scanTorch');
+  b.classList.toggle('on', SCAN.torch);
+  b.textContent = SCAN.torch ? 'ปิดไฟ' : 'ไฟฉาย';
+}
+
+/* สลับแอป / ปิดจอ ระหว่างสแกน = ปิดกล้อง ไม่ค้างกินแบต */
+document.addEventListener('visibilitychange', () => { if (document.hidden && OV === 'scan') scanClose(); });
+
+/* ── เพิ่มโล: ของวางผิดที่ / โลที่ไม่มีในรายการ (รอบ 1) ─────────────────── */
+
+function addLocOpen() {
+  if (!RD || !ME || OV) return;
+  const s = $('addLoc'), q = $('addQ');
+  s.hidden = false;
+  document.body.classList.add('ov-on');
+  q.value = ST.up(Q);
+  addLocHint();
+  ovOpen('addloc');
+  q.focus();
+}
+
+function addLocClose(fromPop) {
+  const s = $('addLoc');
+  if (s.hidden) return;
+  s.hidden = true;
+  document.body.classList.remove('ov-on');
+  $('addQ').blur();
+  if (!fromPop) ovDone();
+}
+
+/** คำใบ้ใต้ช่อง: อยู่ในรายการแล้ว / ของทีมอื่น / ไม่มีในคลัง + ปุ่มโลที่ขึ้นต้นเหมือนกัน */
+function addLocHint() {
+  const chk = (v) => ST.locCheck(v, RD.locs, RD.teams, ME.team, ME.pass, 6);
+  const c = chk($('addQ').value);
+  /* ยังพิมพ์ไม่ครบ (มีโลที่ขึ้นต้นเหมือนกัน) ยังไม่เตือนว่าไม่มีในคลัง */
+  const typing = (c.kind === 'new' || c.kind === 'odd') && c.sug.length;
+  const msg = typing ? ['', 'พิมพ์ต่อให้ครบ หรือแตะโลข้างล่าง'] : {
+    mine: ['ok', `✓ ${c.loc} อยู่ในรายการของคุณแล้ว`],
+    other: ['info', c.team ? `${c.loc} อยู่ในรายการของ ${c.team} — เจอของวางผิดที่ นับเพิ่มได้` : `${c.loc} มีในคลัง แต่ยังไม่มีทีมไหนได้ — นับเพิ่มได้`],
+    new: ['bad', `⚠ ไม่มี ${c.loc} ในรายการโลของคลัง — ถ้ามีจริง (โลใหม่ / วางชั่วคราว) นับได้เลย`],
+    odd: ['bad', '⚠ ชื่อไม่เหมือนโลในคลัง — ตรวจตัวสะกดอีกครั้ง'],
+    '': ['', 'พิมพ์ชื่อโลอย่างน้อย 2 ตัว หรือแตะโลที่ขึ้นมา'],
+  }[c.kind];
+  const h = $('addHint');
+  h.className = 'ct-hint ' + msg[0];
+  h.textContent = msg[1];
+  $('addSug').innerHTML = c.sug.length ? `<div class="ct-sug">${c.sug.map(l => {
+    const o = chk(l);
+    return `<button type="button" data-addsug="${esc(l)}">${esc(l)}<small>${o.kind === 'mine' ? 'ในรายการของคุณ' : o.team ? esc(o.team) : 'ยังไม่มีทีมไหนได้'}</small></button>`;
+  }).join('')}</div>` : '';
+  const go = $('addGo');
+  go.disabled = !c.kind;
+  go.textContent = c.kind ? `นับโล ${c.loc}` : 'นับโลนี้';
+  return c;
+}
+
+function addLocGo() {
+  const c = addLocHint();
+  if (!c.kind) return;
+  const ask = c.kind === 'odd' ? `"${c.loc}" ไม่เหมือนชื่อโลในคลัง\nแน่ใจว่าพิมพ์ถูก? (ถ้าใช่ กดตกลง)`
+    : c.kind === 'new' ? `ไม่มี ${c.loc} ในรายการโลของคลัง\nนับเป็นโลใหม่ / ที่วางชั่วคราว? (ถ้าใช่ กดตกลง)` : '';
+  if (ask && !confirm(ask)) { oops('addQ'); return; }
+  addLocClose();
+  Q = '';
+  openLoc(c.loc);
+}
+
+$('addLoc').addEventListener('click', (e) => { if (e.target.id === 'addLoc') addLocClose(); });
+
 /* ── ปุ่มและช่อง ─────────────────────────────────────────────────────── */
 
 document.addEventListener('click', (e) => {
@@ -1250,6 +1513,7 @@ document.addEventListener('click', (e) => {
   }
   if (d.name) { PICK.who = d.name; paintMain(); return; }
   if (d.filter) { FILTER = d.filter; paintMain(); return; }
+  if (d.addsug) { const q = $('addQ'); q.value = d.addsug; addLocHint(); q.focus(); return; }
   if (d.loc) { openLoc(d.loc); return; }
   if (d.pile) { EDIT === d.pile ? (EDIT = '', FORM = { sku: '', long: '', lot: '', po: '', qty: '' }, paint(), hints()) : editPile(d.pile); return; }
   if (d.sku) { FORM.sku = d.sku; $('fSku').value = d.sku; hints(); $('fLot').focus(); return; }
@@ -1257,7 +1521,8 @@ document.addEventListener('click', (e) => {
   switch (d.act) {
     case 'reload': loadRound(); break;
     case 'net': flush(); pull(); break;
-    case 'who': PICK = null; VIEW = 'who'; paint(); break;
+    case 'who': PICK = null; VIEW = 'who'; GO = 'fwd'; paint(); window.scrollTo(0, 0); break;
+    case 'who-cancel': PICK = null; VIEW = 'list'; GO = 'back'; paint(); break;
     case 'who-ok': {
       const typed = ($('whoIn') && $('whoIn').value.trim()) || '';
       const who = typed || PICK.who;
@@ -1289,6 +1554,12 @@ document.addEventListener('click', (e) => {
     case 'next': doneLoc(); break;
     case 'rej-clear': BOX.rej = []; save(outKey(), BOX); paint(); break;
     case 'pad': setPad(!PAD); break;
+    case 'scan': scanOpen(); break;
+    case 'scan-close': scanClose(); break;
+    case 'scan-torch': scanTorch(); break;
+    case 'addloc': addLocOpen(); break;
+    case 'addloc-close': addLocClose(); break;
+    case 'addloc-go': addLocGo(); break;
   }
 });
 
@@ -1298,6 +1569,7 @@ document.addEventListener('input', (e) => {
   else if (id === 'fLot') { FORM.lot = e.target.value; hints(); padChipsNow(); }
   else if (id === 'fPo') { FORM.po = e.target.value; hints(); padChipsNow(); }
   else if (id === 'fQty') { FORM.qty = e.target.value; const h = $('qtyHint'); if (h) h.textContent = qtyHint(); }
+  else if (id === 'addQ') addLocHint();
   else if (id === 'locQ') {
     Q = e.target.value;
     const pos = e.target.selectionStart;
@@ -1308,7 +1580,9 @@ document.addEventListener('input', (e) => {
 
 /* Enter = ไปช่องถัดไป ช่องจำนวนกด Enter = เพิ่มกอง เหมือนกรอกลงชีต */
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && OV) { OV === 'scan' ? scanClose() : addLocClose(); return; }
   if (e.key !== 'Enter') return;
+  if (e.target.id === 'addQ') { e.preventDefault(); addLocGo(); return; }
   const order = ['fSku', 'fLot', 'fPo', 'fQty'];
   const i = order.indexOf(e.target.id);
   if (i === -1) return;

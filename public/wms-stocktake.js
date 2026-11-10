@@ -316,6 +316,45 @@
   }
 
   /**
+   * โลที่พิมพ์ในช่อง "เพิ่มโล" (ของวางผิดที่ / โลที่ไม่มีในรายการ) อยู่ตรงไหนของรอบนับ
+   *   mine  = อยู่ในรายการของทีมนี้อยู่แล้ว
+   *   other = มีในคลัง แต่อยู่ในรายการทีมอื่น (team = ชื่อทีม) หรือยังไม่มีทีมไหนได้ (team = '')
+   *   new   = ไม่มีในรายการโลของคลัง แต่ชื่อเป็นรูปแบบโลจริง (โลใหม่ / ตั้งของชั่วคราว)
+   *   odd   = ชื่อไม่เหมือนโลในคลังเลย น่าจะพิมพ์ผิด
+   * sug = โลในคลังที่ขึ้นต้นด้วยที่พิมพ์ ไม่เกิน limit · พิมพ์ไม่ถึง 2 ตัว kind = ''
+   */
+  function locCheck(q, locList, teams, teamId, pass, limit) {
+    var u = up(q);
+    var res = { loc: u, kind: '', team: '', sug: [] };
+    if (u.length < 2) return res;
+    var list = (locList || []).map(function (l) { return Array.isArray(l) ? { loc: l[0], group: l[1] } : l; });
+    res.sug = list.filter(function (l) { var x = up(l.loc); return x !== u && x.indexOf(u) === 0; })
+      .sort(function (a, b) { return locCmp(a.loc, b.loc); })
+      .slice(0, limit || 6).map(function (l) { return l.loc; });
+    var hit = null;
+    for (var i = 0; i < list.length; i++) if (up(list[i].loc) === u) { hit = list[i]; break; }
+    if (!hit) { res.kind = isRealLoc(u) ? 'new' : 'odd'; return res; }
+    res.loc = hit.loc;
+    var p = pass || 1;
+    var has = function (t) {
+      return (t.pass || 1) === p && (t.zones || []).some(function (z) { return up(z) === up(hit.group) || up(z) === u; });
+    };
+    var all = (teams || []).filter(has);
+    if (all.some(function (t) { return t.id === teamId; })) { res.kind = 'mine'; return res; }
+    var own = all.filter(function (t) { return t.kind !== 'Audit'; })[0] || all[0];
+    res.kind = 'other';
+    res.team = own ? (own.name || own.id) : '';
+    return res;
+  }
+
+  /** ค่าที่กล้องอ่านได้ → ใส่ช่อง SKU · ตรงกับ SKU / SKU เต็มในคลัง hit = แถวนั้น · ตัดช่องว่างและตัวคั่นที่มองไม่เห็นทิ้ง */
+  function scanSku(raw, skus) {
+    var code = String(raw == null ? '' : raw).replace(/[\u0000-\u001f\u007f]/g, '').trim();
+    var hit = skuExact(skus, code);
+    return { code: code, hit: hit, sku: hit ? (hit[0] || hit[1]) : code };
+  }
+
+  /**
    * ความคืบหน้าของรอบนับ ให้หน้าหัวหน้า
    *   นับแล้ว (Inventory) = มีแถวนับหรือว่างที่ยังมีผลจากทีม Inventory ทีมไหนก็ได้ในรอบนับนี้
    *   Audit สุ่มแล้ว = มีแถวจาก Audit คนไหนก็ได้ที่โลนั้น
@@ -1405,7 +1444,7 @@
     baseline: baseline, locations: locations, parseLocList: parseLocList, groups: groups, autoSplit: autoSplit,
     fromRow: fromRow, effective: effective, atLoc: atLoc, uid: uid, deviceId: deviceId,
     batch: batch, ack: ack, merge: merge,
-    teamsOf: teamsOf, teamLocs: teamLocs, progress: progress,
+    teamsOf: teamsOf, teamLocs: teamLocs, locCheck: locCheck, scanSku: scanSku, progress: progress,
     skuSearch: skuSearch, skuExact: skuExact, poSearch: poSearch, formDirty: formDirty,
     qtyOf: qtyOf, poChoices: poChoices, lotChoices: lotChoices,
     movesAfter: movesAfter, countLink: countLink, parseLink: parseLink,

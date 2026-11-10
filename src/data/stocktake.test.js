@@ -1122,3 +1122,66 @@ describe('count.html — ฉากเปิดแอป', () => {
     expect(HTML).toMatch(/prefers-reduced-motion: reduce\)'\)\.matches\) document\.documentElement\.classList\.add\('intro'\)/);
   });
 });
+
+/* ปุ่มที่น้อง ๆ ขอหลังลองใช้: สแกนบาร์โค้ดช่อง SKU (มีไว้เผื่อ) · เพิ่มโล (ของวางผิดที่ / โลที่ไม่มีในรายการ) */
+describe('count.html — สแกนบาร์โค้ดกับเพิ่มโล', () => {
+  const HTML = fs.readFileSync(path.resolve(__dirname, '../../public/stocktake/count.html'), 'utf8');
+  const locs = [['R1-01-01', 'R1'], ['R1-01-02', 'R1'], ['R1-02-01', 'R1'], ['A-01-01', 'A-01'], ['A-01-02', 'A-01'], ['QA', 'QA']];
+  const teams = [
+    { id: 'INV1', pass: 1, kind: 'Inventory', name: 'ทีม 1', zones: ['R1'] },
+    { id: 'AUD1', pass: 1, kind: 'Audit', name: 'Audit 1', zones: ['R1', 'A-01'] },
+    { id: 'INV2', pass: 1, kind: 'Inventory', name: 'ทีม 2', zones: ['A-01'] },
+    { id: 'R2T1', pass: 2, kind: 'Inventory', name: 'รอบ 2 ทีม 1', zones: ['QA'] },
+  ];
+  const chk = (q, team = 'INV1', pass = 1) => S.locCheck(q, locs, teams, team, pass);
+
+  it('locCheck: ในรายการของทีมตัวเอง = mine', () => {
+    expect(chk('r1-01-02')).toMatchObject({ loc: 'R1-01-02', kind: 'mine', team: '' });
+    expect(chk('A-01-01', 'AUD1').kind, 'Audit มีแถวนี้ด้วย').toBe('mine');
+  });
+  it('locCheck: มีในคลังแต่เป็นของทีมอื่น = other บอกชื่อทีม Inventory ก่อน Audit', () => {
+    expect(chk('A-01-02')).toMatchObject({ kind: 'other', team: 'ทีม 2' });
+    expect(chk('QA'), 'รอบ 2 ไม่นับว่าเป็นเจ้าของในรอบ 1').toMatchObject({ kind: 'other', team: '' });
+  });
+  it('locCheck: ไม่มีในคลัง แยกชื่อรูปแบบโลจริง (new) กับพิมพ์มั่ว (odd)', () => {
+    expect(chk('R9-01-01').kind).toBe('new');
+    expect(chk('ZZZ').kind).toBe('odd');
+    expect(chk('R').kind, 'พิมพ์ไม่ถึง 2 ตัว').toBe('');
+  });
+  it('locCheck: ปุ่มโลที่ขึ้นต้นเหมือนกัน เรียงตามทางเดิน ไม่ซ้ำกับที่พิมพ์ตรงตัว', () => {
+    expect(chk('R1-0').sug).toEqual(['R1-01-01', 'R1-01-02', 'R1-02-01']);
+    expect(chk('R1-01-01').sug).toEqual([]);
+    expect(S.locCheck('R1', locs, teams, 'INV1', 1, 2).sug).toHaveLength(2);
+  });
+  it('scanSku: ตรงกับ SKU เต็ม → ใส่ SKU สั้น · ไม่พบ = ใส่ค่าที่อ่านได้ · ตัดตัวคั่นที่มองไม่เห็น', () => {
+    const skus = [['AAA001', 'AAA0000000001', 'ที่นอนสมมติ'], ['', '8850000000017', 'ของแถมสมมติ']];
+    expect(S.scanSku(' AAA0000000001\n', skus)).toMatchObject({ code: 'AAA0000000001', sku: 'AAA001' });
+    expect(S.scanSku('\u001d8850000000017', skus).sku, 'ไม่มี SKU สั้น ใช้ SKU เต็ม').toBe('8850000000017');
+    expect(S.scanSku('08850000000017', skus).hit, 'UPC ที่มี 0 นำหน้า').not.toBe(null);
+    expect(S.scanSku('4900000000000', skus)).toMatchObject({ code: '4900000000000', sku: '4900000000000', hit: null });
+  });
+  it('ปุ่มสแกนขึ้นเฉพาะเครื่องที่มีกล้อง ตัวอ่านสำรองล็อกเวอร์ชัน โหลดตอนกดเท่านั้น', () => {
+    expect(HTML).toMatch(/\$\{CAM \? `<button type="button" class="ct-scanbtn" data-act="scan"/);
+    expect(HTML).toMatch(/const SCAN_LIB = 'https:\/\/cdn\.jsdelivr\.net\/npm\/barcode-detector@\d+\.\d+\.\d+\/dist\/es\/ponyfill\.js'/);
+    expect(HTML).not.toMatch(/<script[^>]+barcode-detector/);
+    expect(HTML, 'ปิดกล้องตอนสลับแอป').toMatch(/document\.hidden && OV === 'scan'\) scanClose\(\)/);
+  });
+  it('ปุ่มเพิ่มโลขึ้นเฉพาะรอบ 1 (รอบ 2 นับเฉพาะโลที่แตกต่าง)', () => {
+    expect(HTML).toMatch(/\$\{ME\.pass < 2 \? '<button type="button" class="ct-btn" data-act="addloc">\+ เพิ่มโล<\/button>' : ''\}/);
+    for (const act of ['scan', 'scan-close', 'scan-torch', 'addloc', 'addloc-close', 'addloc-go']) expect(HTML, act).toContain(`case '${act}':`);
+  });
+});
+
+/* เปลี่ยนทีม/ชื่อ กับ โหลดรายการใหม่ เคยอยู่ท้ายรายการโล ต้องเลื่อนลงไปหา ย้ายขึ้นแถบบนที่ติดจอ */
+describe('count.html — ปุ่มเปลี่ยนทีม/โหลดใหม่อยู่แถบบน', () => {
+  const HTML = fs.readFileSync(path.resolve(__dirname, '../../public/stocktake/count.html'), 'utf8');
+  const top = HTML.slice(HTML.indexOf('function paintTop('), HTML.indexOf('\n}\n', HTML.indexOf('function paintTop(')));
+  it('แถบบนมีชื่อที่แตะเปลี่ยนทีมได้ (หน้ารายการโล) กับปุ่มโหลดใหม่ (ไม่ขึ้นในหน้าโล)', () => {
+    expect(top).toMatch(/t && VIEW === 'list'\s*\? `<button type="button" class="sw" data-act="who"/);
+    expect(top).toMatch(/RD && VIEW !== 'loc' \? `<button type="button" class="ct-ico[^`]*data-act="reload"/);
+  });
+  it('ท้ายรายการโลไม่มีปุ่มซ้ำแล้ว · หน้าเลือกทีมมีปุ่มกลับไปนับต่อ', () => {
+    expect(HTML).not.toMatch(/<div class="ct-foot"><button[^>]*data-act="who"/);
+    expect(HTML).toContain("case 'who-cancel':");
+  });
+});
