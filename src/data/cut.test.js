@@ -656,6 +656,116 @@ describe('cut-api.gs — อ่านชีต', () => {
   });
 });
 
+describe('cut-api.gs — จับเวลาและไฟล์ใหญ่', () => {
+  const T0 = new Date('2026-03-10T03:00:00Z');
+  const BKK = 7 * 3600000;
+
+  /**
+   * ชีตปลอมที่นับว่าสคริปต์ขอให้ Google แปลงวันที่กี่ครั้ง และให้การอ่านข้อมูลแต่ละก้อนกินเวลา readMs
+   * แปลงวันที่ตามเวลาไทยจริง (UTC+7) เทสต์อื่นใช้วันของ UTC ซึ่งจับเรื่องข้ามเที่ยงคืนไม่ได้
+   */
+  function timed(d, readMs = 0) {
+    const book = bookOf(d);
+    const seen = { format: 0 };
+    const ss = {
+      getSheetByName: (n) => {
+        if (!book[n]) return null;
+        const sh = sheet(book[n]);
+        return {
+          ...sh,
+          getRange: (r, ...rest) => ({
+            getValues: () => {
+              if (r > 1) vi.setSystemTime(Date.now() + readMs);
+              return sh.getRange(r, ...rest).getValues();
+            },
+          }),
+        };
+      },
+      getSpreadsheetTimeZone: () => 'Asia/Bangkok',
+    };
+    const env = {
+      SpreadsheetApp: { getActiveSpreadsheet: () => ss },
+      Utilities: { formatDate: (x) => { seen.format++; return new Date(x.getTime() + BKK).toISOString().slice(0, 10); } },
+      ContentService: { createTextOutput: (s) => ({ text: s, setMimeType() { return this; } }), MimeType: { JSON: 'json' } },
+    };
+    const s = new Function(...Object.keys(env), `${GS}\nreturn { doGet: doGet };`)(...Object.values(env));
+    const get = (parameter) => JSON.parse(s.doGet({ parameter }).text);
+    return { seen, get, check: () => get({ api: 'cut-check' }) };
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(T0);
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it('ขอให้ Google แปลงวันที่ครั้งเดียวต่อช่วงเวลา ไม่ใช่ทุกแถว', () => {
+    const many = Array.from({ length: 60 }, (_, i) => fine(String(7000 + i)));
+    const c = timed(join(...many));
+    const r = c.check();
+    expect(r.info.matched.lines).toBe(60);
+    expect(c.seen.format).toBe(1);   // JST 60 แถว + TRcloud 60 แถว วันเวลาเดียวกันทั้งหมด
+  });
+
+  it('เวลาต่างกันในวันเดียวกันได้วันเดียวกัน ข้ามเที่ยงคืนเวลาไทยได้วันถัดไป', () => {
+    const at = (iso) => new Date(iso);
+    const c = timed({
+      jst: [
+        jst('5001', A, 1, { date: at('2026-03-05T02:00:00Z') }),   // 09:00 วันที่ 5
+        jst('5002', A, 2, { date: at('2026-03-05T16:59:59Z') }),   // 23:59 วันที่ 5
+        jst('5003', A, 4, { date: at('2026-03-05T17:00:00Z') }),   // 00:00 วันที่ 6
+        jst('5004', A, 8, { date: at('2026-03-05T17:14:59Z') }),   // 00:14 วันที่ 6 ช่วง 15 นาทีเดียวกับแถวบน
+      ],
+      tx: [tx('5001', A, 1), tx('5002', A, 2), tx('5003', A, 4, { date: '2026-03-06' }), tx('5004', A, 8, { date: '2026-03-06' })],
+      tr: [
+        tr('5001', A, 1, { date: at('2026-03-05T02:00:00Z') }), tr('5002', A, 2, { date: at('2026-03-05T16:59:59Z') }),
+        tr('5003', A, 4, { date: at('2026-03-05T17:00:00Z') }), tr('5004', A, 8, { date: at('2026-03-05T17:14:59Z') }),
+      ],
+    });
+    const r = c.check();
+    const want = { [`2026-03-05|${A}`]: 3, [`2026-03-06|${A}`]: 12 };
+    expect(dailyOf(r, 'r')).toEqual(want);
+    expect(dailyOf(r, 't')).toEqual(want);
+    expect(dailyOf(r, 'x')).toEqual(want);
+    expect(r.rows).toEqual([]);
+    expect(c.seen.format).toBe(3);   // สามช่วงเวลา สองแท็บ แถวที่สี่ใช้คำตอบของแถวที่สาม
+  });
+
+  it('ตรวจจบ บอกเวลาที่ใช้และจำนวนแถวของแต่ละแท็บ', () => {
+    const c = timed(join(fine('5001'), fine('5002'), { crm: [crm('C-1', B, 1)], tx: [tx('C-1', B, 1, { src: 'CRM' })], tr: [tr('C-1', B, 1)] }), 2000);
+    const r = c.check();
+    expect(r.took.tabs).toEqual([
+      { tab: 'JST', rows: 2, open: 0, read: 2000, work: 0 },
+      { tab: 'CRM', rows: 1, open: 0, read: 2000, work: 0 },
+      { tab: 'Transaction', rows: 3, open: 0, read: 2000, work: 0 },
+      { tab: 'TRcloud', rows: 3, open: 0, read: 2000, work: 0 },
+    ]);
+    expect(r.took.ms).toBe(8000);
+    expect(r.took.compare).toBe(0);
+  });
+
+  it('ไฟล์ใหญ่จนอ่านไม่ทัน หยุดเองก่อน Apps Script ตัดจบ บอกแท็บที่หยุดและเวลาของแท็บก่อนหน้า', () => {
+    const c = timed(join(fine('5001'), fine('5002')), 150000);
+    const r = c.check();
+    expect(r.kinds).toBeUndefined();
+    expect(r.error).toContain('ข้อมูลเยอะเกิน ตรวจไม่จบใน 5 นาที');
+    expect(r.error).toContain('หยุดที่แท็บ TRcloud แถว 0 จาก 2');
+    expect(r.error).toContain('JST อ่าน 150 คิด 0 วิ');
+    expect(r.error).toContain('Transaction อ่าน 150 คิด 0 วิ');
+    expect(r.error).toContain('ย้ายข้อมูลของเดือนที่ปิดแล้วออก');
+  });
+
+  it('รอบที่หยุดเองไม่ทิ้งนาฬิกาค้าง รอบถัดไปเริ่มนับใหม่ และ cut-orders ไม่ถูกจับเวลา', () => {
+    const c = timed(join(fine('5001'), fine('5002')), 150000);
+    expect(c.check().error).toContain('ข้อมูลเยอะเกิน');
+    const again = c.check();   // นาฬิกาปลอมเดินไปแล้ว 5 นาที ถ้านับต่อจากรอบก่อนจะล้มตั้งแต่ก้อนแรก
+    expect(again.error).toContain('หยุดที่แท็บ TRcloud');
+    const orders = c.get({ api: 'cut-orders', from: DAY, to: DAY });
+    expect(orders.error).toBeUndefined();
+    expect(orders.lines.length).toBe(2);
+  });
+});
+
 describe('cut-api.gs — รายงานโอนย้าย', () => {
   const move = (slip, sku, qty, o = {}) => ({ tx: [tx(slip, sku, qty, { src: 'โอนย้าย', ...o })], tr: [tr(slip, sku, qty)] });
 
@@ -916,8 +1026,22 @@ describe('cut-api.gs — ข้อมูลกลาง', () => {
   function setup(d = join(fine('5001'), fine('5002', B, 2))) {
     const g = sharedMocks();
     const tabs = bookOf(d);
+    const slow = { readMs: 0 };   // ตั้งแล้วการอ่านข้อมูลแต่ละก้อนกินเวลาเท่านี้ ใช้จำลองไฟล์ใหญ่
     const ss = {
-      getSheetByName: (n) => (tabs[n] ? { ...sheet(tabs[n]), getSheetId: () => 9 } : null),
+      getSheetByName: (n) => {
+        if (!tabs[n]) return null;
+        const sh = sheet(tabs[n]);
+        return {
+          ...sh,
+          getSheetId: () => 9,
+          getRange: (r, ...rest) => ({
+            getValues: () => {
+              if (r > 1 && slow.readMs) vi.setSystemTime(Date.now() + slow.readMs);
+              return sh.getRange(r, ...rest).getValues();
+            },
+          }),
+        };
+      },
       getSpreadsheetTimeZone: () => 'Asia/Bangkok',
       getName: () => 'ไฟล์ตัดสต๊อกสมมติ',
       getUrl: () => 'https://docs.example/d/2/edit',
@@ -931,7 +1055,7 @@ describe('cut-api.gs — ข้อมูลกลาง', () => {
     };
     const s = new Function(...Object.keys(env), `${GS}\nreturn { doGet, doPost, sharedTick, installShared, stopShared };`)(...Object.values(env));
     return {
-      g, tabs, s,
+      g, tabs, s, slow,
       get: (parameter) => JSON.parse(s.doGet({ parameter }).text),
       post: (body) => JSON.parse(s.doPost({ postData: { contents: JSON.stringify(body) } }).text),
     };
@@ -979,11 +1103,56 @@ describe('cut-api.gs — ข้อมูลกลาง', () => {
     expect(c.post({ op: 'shared-fresh', api: 'cut-orders', by: 'คนเอ' }).error).toBe('ไม่รู้จักข้อมูลชุดนี้');
   });
 
-  it('ตรวจล้ม (แท็บ Report ว่าง) ไม่เก็บอะไร คนกดได้ข้อความผิดพลาด', () => {
+  it('ตรวจล้ม (แท็บ Report ว่าง) ไม่เก็บผล คนกดได้ข้อความผิดพลาด และทุกเครื่องเห็นว่ารอบล่าสุดล้มเพราะอะไร', () => {
     const c = setup({ jst: [], tx: [tx('5001', A, 1)], tr: [tr('5001', A, 1)] });
     expect(c.post({ op: 'shared-fresh', api: 'cut-check', by: 'คนเอ' }).error).toContain('แท็บ Report ยังไม่มีข้อมูล');
     expect(c.g.info('cut-check')).toBeNull();
     expect(c.g.store['shared-run:cut-check']).toBeUndefined();
+    const err = c.get({ api: 'shared-at' }).err['cut-check'];
+    expect(err).toMatchObject({ at: T0.getTime(), by: 'คนเอ', auto: false });
+    expect(err.msg).toContain('แท็บ Report ยังไม่มีข้อมูล');
+  });
+
+  it('ไฟล์ใหญ่จนตรวจไม่จบ หยุดเอง เก็บข้อความไว้ให้ทุกเครื่อง ผลชุดเดิมยังอยู่ รอบที่สำเร็จล้างข้อความ', () => {
+    const c = setup();
+    const first = c.post({ op: 'shared-fresh', api: 'cut-check', by: 'คนเอ' });
+    expect(first.took.tabs.map((t) => t.tab)).toEqual(['JST', 'CRM', 'Transaction', 'TRcloud']);
+    c.slow.readMs = 150000;
+    vi.setSystemTime(new Date(T0.getTime() + 60 * MIN));
+    expect(c.post({ op: 'shared-fresh', api: 'cut-check', by: 'คนบี' }).error).toContain('ข้อมูลเยอะเกิน');
+    const st = c.get({ api: 'shared-at' });
+    expect(st.run).toEqual({});
+    expect(st.err['cut-check']).toMatchObject({ by: 'คนบี', auto: false });
+    expect(st.err['cut-check'].msg).toContain('หยุดที่แท็บ TRcloud');
+    expect(st.shared['cut-check'].by).toBe('คนเอ');
+    expect(c.get({ api: 'cut-check', shared: '1' })).toEqual(first);
+    c.slow.readMs = 0;
+    expect(c.post({ op: 'shared-fresh', api: 'cut-check', by: 'คนบี' }).shared.by).toBe('คนบี');
+    expect(c.get({ api: 'shared-at' }).err).toEqual({});
+  });
+
+  it('รอบที่ Apps Script ตัดจบกลางทางทิ้งป้ายกำลังตรวจค้างไว้ เกิน 7 นาทีแล้วบอกว่ารอบนั้นไม่จบ', () => {
+    const c = setup();
+    c.g.running('cut-check', 3 * MIN, 'คนบี');
+    expect(c.get({ api: 'shared-at' }).err).toEqual({});   // ยังอยู่ในเวลา นับว่ากำลังตรวจ
+    c.g.running('cut-check', 10 * MIN, 'คนบี');
+    const st = c.get({ api: 'shared-at' });
+    expect(st.run).toEqual({});
+    expect(st.err['cut-check']).toMatchObject({ at: T0.getTime() - 10 * MIN, by: 'คนบี', auto: false, dead: true });
+    expect(st.err['cut-check'].msg).toContain('6 นาที');
+    /* กดตรวจใหม่ได้ ไม่ติด busy และรอบที่สำเร็จล้างป้ายค้าง */
+    expect(c.post({ op: 'shared-fresh', api: 'cut-check', by: 'คนเอ' }).shared.by).toBe('คนเอ');
+    expect(c.get({ api: 'shared-at' }).err).toEqual({});
+  });
+
+  it('ป้ายค้างที่เก่ากว่าผลชุดล่าสุดหรือเก่ากว่าข้อความล้มล่าสุด ไม่ต้องบอกซ้ำ', () => {
+    const c = setup();
+    c.post({ op: 'shared-fresh', api: 'cut-check', by: 'คนเอ' });
+    c.g.running('cut-check', 10 * MIN, 'คนบี');
+    expect(c.get({ api: 'shared-at' }).err).toEqual({});
+    c.g.store['shared:cut-check'] = JSON.stringify({ ...c.g.info('cut-check'), at: T0.getTime() - 20 * MIN });
+    c.g.store['shared-err:cut-check'] = JSON.stringify({ at: T0.getTime() - 5 * MIN, by: '', auto: true, msg: 'ล้มทีหลัง' });
+    expect(c.get({ api: 'shared-at' }).err['cut-check']).toEqual({ at: T0.getTime() - 5 * MIN, by: '', auto: true, msg: 'ล้มทีหลัง' });
   });
 
   it('shared-at บอกจำนวนแถวของบันทึกการแก้ด้วย ตรงกับ rows ของ cut-fixlog', () => {

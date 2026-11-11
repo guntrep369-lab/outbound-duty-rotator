@@ -16,6 +16,7 @@
  * ช่องรายวันที่สามแหล่งนี้ไม่เท่ากันส่งรายออเดอร์ไปด้วย ให้ชี้ได้ว่าต่างเพราะออเดอร์ไหน
  *
  * ?api=cut-check   ผลการเทียบ (trc คือ TRcloud เทียบ Report ทีละ ออเดอร์ + SKU + วัน ให้แท็บ TRcloud เทียบ Report)
+ *                  took คือเวลาที่ใช้กับแต่ละแท็บ ไฟล์ใหญ่จนตรวจไม่จบใน 5 นาที หยุดเองพร้อมบอกว่าช้าที่ไหน (ส่วน "จับเวลา")
  * ?api=cut-orders&from=...&to=...  แถวตัดของแท็บ Transaction ทีละออเดอร์ ให้หน้า LOT / PO ที่ขายออกปันล็อตให้แต่ละออเดอร์
  *                                  พร้อมเลขคำสั่งซื้อออนไลน์กับบริษัทขนส่งของแต่ละออเดอร์ ให้ไฟล์ส่งออกรายออเดอร์
  * ?api=cut-fixlog  บันทึกการแก้ทั้งหมด (รายการที่กดแก้แล้ว ยกเลิก หรือตรวจแล้วหาย)
@@ -89,11 +90,25 @@ function ref_(v) { return text_(v).split(' · ')[0].trim().toUpperCase(); }
 
 function code_(v) { return text_(v).toUpperCase(); }
 
+/*
+ * Utilities.formatDate ข้ามไปถามบริการของ Google ทุกครั้งที่เรียก ช้ากว่าโค้ดธรรมดาหลายร้อยเท่า
+ * สี่แท็บรวมหลายแสนแถว เรียกทุกแถวจึงกินเวลาเป็นนาที และโตตามจำนวนแถว
+ * ทั้งไฟล์มีวันที่ไม่กี่สิบวัน จึงจำคำตอบไว้ทีละช่วง 15 นาที เขตเวลาทุกเขตห่างจาก UTC เป็นจำนวนเท่าของ 15 นาที
+ * เวลาในช่วง 15 นาทีเดียวกันจึงตกวันเดียวกันเสมอ ไม่ว่าไฟล์จะตั้งเขตเวลาไหน
+ */
+var DAY_SLOT_MS = 900000;
+var DAY_SEEN = {};
+
+function dayOf_(v, tz) {
+  var t = v.getTime();
+  if (isNaN(t)) return '';
+  var id = tz + '|' + Math.floor(t / DAY_SLOT_MS);
+  return DAY_SEEN[id] || (DAY_SEEN[id] = Utilities.formatDate(v, tz, 'yyyy-MM-dd'));
+}
+
 /** แท็บที่ดึงมาด้วยสูตรมีทั้งวันที่จริงและข้อความปนกัน ขึ้นกับไฟล์ต้นทาง จึงต้องอ่านได้ทั้งคู่ */
 function plainDate_(v, tz) {
-  if (v && typeof v.getTime === 'function') {
-    return isNaN(v.getTime()) ? '' : Utilities.formatDate(v, tz, 'yyyy-MM-dd');
-  }
+  if (v && typeof v.getTime === 'function') return dayOf_(v, tz);
   var s = text_(v).replace(/[\sT]+\d{1,2}:\d{2}.*$/, '');
   var m = /^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/.exec(s);
   if (m) return ymd_(m[1], m[2], m[3]);
@@ -137,10 +152,55 @@ function eachRow_(tab, fn) {
   var width = 0;
   for (var key in tab.at) width = Math.max(width, tab.at[key] + 1);
   width = Math.min(width, tab.lastCol);
+  var lap = lap_(tab);
   for (var from = 2; from <= tab.lastRow; from += READ_ROWS) {
+    if (lap) inBudget_(lap, from - 2);
+    var a = Date.now();
     var rows = tab.sh.getRange(from, 1, Math.min(READ_ROWS, tab.lastRow - from + 1), width).getValues();
+    var b = Date.now();
     for (var i = 0; i < rows.length; i++) fn(rows[i], tab.at);
+    if (lap) { lap.read += b - a; lap.work += Date.now() - b; }
   }
+  if (CLOCK) CLOCK.last = Date.now();
+}
+
+/* ── จับเวลา ───────────────────────────────────────────────────────────── */
+
+/*
+ * Apps Script ตัดจบที่ 6 นาทีแบบเงียบ ๆ ไม่มีข้อความ ไม่มีผล และไม่รู้ว่าช้าที่แท็บไหน
+ * การตรวจจึงจับเวลาเองทีละแท็บ: open = เปิดแท็บกับอ่านหัวตาราง (แท็บที่ดึงด้วยสูตรรอสูตรตรงนี้), read = อ่านค่า, work = คิด
+ * เกิน BUDGET_MS หยุดเองพร้อมข้อความว่าเวลาหมดไปกับอะไร เวลาที่เหลือต้องพอให้จัดประเภทกับเก็บผลกลางหลังอ่านครบ
+ */
+var BUDGET_MS = 290000;
+var CLOCK = null;   // มีค่าเฉพาะระหว่าง check_ ทางอื่นที่อ่านแท็บ (cut-orders, report-rows) ไม่จับเวลา
+var TAB_SHORT = {};
+TAB_SHORT[TAB_JST] = 'JST';
+TAB_SHORT[TAB_CRM] = 'CRM';
+TAB_SHORT[TAB_TF] = 'โอนย้าย';
+TAB_SHORT[TAB_TX] = 'Transaction';
+TAB_SHORT[TAB_TR] = 'TRcloud';
+
+function lap_(tab) {
+  if (!CLOCK) return null;
+  var lap = { tab: TAB_SHORT[tab.name] || tab.name, rows: Math.max(0, tab.lastRow - 1), open: Date.now() - CLOCK.last, read: 0, work: 0 };
+  CLOCK.tabs.push(lap);
+  return lap;
+}
+
+function sec_(ms) { return Math.round(ms / 1000); }
+
+/** "JST อ่าน 40 คิด 12 วิ, CRM อ่าน 6 คิด 2 วิ" เวลาเปิดแท็บรวมอยู่ในอ่าน */
+function tookText_(tabs) {
+  return tabs.map(function (t) {
+    return t.tab + ' อ่าน ' + sec_(t.open + t.read) + ' คิด ' + sec_(t.work) + ' วิ';
+  }).join(', ');
+}
+
+function inBudget_(lap, done) {
+  if (Date.now() - CLOCK.at < BUDGET_MS) return;
+  throw new Error('ข้อมูลเยอะเกิน ตรวจไม่จบใน ' + Math.round(BUDGET_MS / 60000) + ' นาที หยุดที่แท็บ ' + lap.tab
+    + ' แถว ' + done.toLocaleString('en-US') + ' จาก ' + lap.rows.toLocaleString('en-US')
+    + ' (' + tookText_(CLOCK.tabs) + ') ให้ย้ายข้อมูลของเดือนที่ปิดแล้วออกจากไฟล์นี้ แล้วตรวจใหม่');
 }
 
 /* ── รวมยอดราย ออเดอร์ + SKU ───────────────────────────────────────────── */
@@ -814,7 +874,21 @@ function online_(v) {
   return text_(v);
 }
 
+/** ผลการเทียบ พร้อม took: เวลาที่ใช้ทั้งหมด เวลาจัดประเภท และเวลาของแต่ละแท็บ (ดูส่วน "จับเวลา") */
 function check_() {
+  CLOCK = { at: Date.now(), last: Date.now(), tabs: [] };
+  try {
+    var w = readAll_();
+    var from = Date.now();
+    var out = compare_(w);
+    out.took = { ms: Date.now() - CLOCK.at, compare: Date.now() - from, tabs: CLOCK.tabs };
+    return out;
+  } finally {
+    CLOCK = null;
+  }
+}
+
+function readAll_() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var tz = ss.getSpreadsheetTimeZone();
   var w = newWork_();
@@ -859,7 +933,7 @@ function check_() {
   if (!w.tabs.tx.rows) throw new Error('แท็บ Transaction ยังไม่มีข้อมูล');
   if (!w.tabs.tr.rows) throw new Error('แท็บ TRcloud ยังไม่มีข้อมูล');
 
-  return compare_(w);
+  return w;
 }
 
 /* ── แถว Report ของออเดอร์ที่เลือก ──────────────────────────────────────── */
@@ -1067,6 +1141,7 @@ var SHARED_EVERY_HOURS = 2;       // ตั้งเวลาตรวจเอ�
 var SHARED_FROM_HOUR = 8;         // ตั้งเวลาทำงานเฉพาะ 8:00 ถึงก่อน 18:00 ตามเวลาของไฟล์ชีต นอกเวลางานไม่มีใครดู
 var SHARED_TO_HOUR = 18;
 var SHARED_BUSY_MS = 7 * 60000;   // Apps Script ตัดจบที่ 6 นาที ป้ายกำลังคิดที่ค้างนานกว่านี้คือตัวที่ตายไปแล้ว
+var SHARED_DEAD = 'รอบตรวจนี้ไม่จบ Apps Script ตัดจบเองที่ 6 นาที ข้อมูลในไฟล์น่าจะเยอะเกิน ให้ย้ายข้อมูลของเดือนที่ปิดแล้วออกจากไฟล์นี้ แล้วตรวจใหม่';
 
 function sharedJson_(all, k) {
   try { return all[k] ? JSON.parse(all[k]) : null; } catch (err) { return null; }
@@ -1141,7 +1216,8 @@ function sharedSave_(name, params, data, meta) {
 /**
  * คิดใหม่แล้วเก็บ มีคนกำลังคิดชุดเดียวกันอยู่ ตอบ busy ให้หน้าเว็บรอชุดนั้นแทน
  * คิดซ้อนไม่ทำให้ตัวเลขผิด แต่กินโควตาเวลาของ Apps Script และทุกคนรอนานขึ้น
- * งานตั้งเวลาที่ล้มเก็บข้อความไว้ใน shared-err ไม่มีใครเห็นหน้าจอตอนนั้น จึงต้องบอกผ่านหน้าเว็บทีหลัง
+ * รอบที่ล้มเก็บข้อความไว้ใน shared-err งานตั้งเวลาไม่มีใครเห็นหน้าจอตอนนั้น และคนกดอาจรอจนหน้าเว็บหมดเวลาไปก่อน
+ * จึงต้องบอกผ่านหน้าเว็บทีหลัง ทุกเครื่องเห็นว่ารอบล่าสุดไม่สำเร็จเพราะอะไร จนกว่าจะมีรอบที่สำเร็จ
  */
 function sharedFresh_(name, params, who, compute) {
   var run = running_(name);
@@ -1155,7 +1231,9 @@ function sharedFresh_(name, params, who, compute) {
     props.deleteProperty('shared-err:' + name);
     return data;
   } catch (err) {
-    if (who.auto) props.setProperty('shared-err:' + name, JSON.stringify({ at: Date.now(), msg: String(err && err.message || err).slice(0, 300) }));
+    props.setProperty('shared-err:' + name, JSON.stringify({
+      at: Date.now(), by: who.by, auto: !!who.auto, msg: String(err && err.message || err).slice(0, 500),
+    }));
     throw err;
   } finally {
     props.deleteProperty('shared-run:' + name);
@@ -1190,8 +1268,10 @@ function sharedAt_() {
     var i = sharedJson_(all, 'shared:' + n);
     if (i) out.shared[n] = { at: i.at, by: i.by, auto: i.auto, ms: i.ms, params: i.params };
     var r = sharedJson_(all, 'shared-run:' + n);
-    if (r && Date.now() - r.at < SHARED_BUSY_MS) out.run[n] = { at: r.at, by: r.by, auto: r.auto };
     var e = sharedJson_(all, 'shared-err:' + n);
+    if (r && Date.now() - r.at < SHARED_BUSY_MS) out.run[n] = { at: r.at, by: r.by, auto: r.auto };
+    /* ป้ายกำลังคิดถูกลบทุกครั้งที่รอบนั้นจบ ไม่ว่าสำเร็จหรือล้ม ป้ายที่ค้างเกินเวลาคือรอบที่ Apps Script ตัดจบกลางทาง */
+    else if (r && !(i && i.at > r.at) && !(e && e.at > r.at)) e = { at: r.at, by: r.by, auto: !!r.auto, dead: true, msg: SHARED_DEAD };
     if (e) out.err[n] = e;
   });
   var log = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TAB_LOG);

@@ -367,7 +367,9 @@ const dm = d => { const p = String(d || '').split('-'); return p.length === 3 ? 
 
 const CACHE = 'wms:cut:result';   // ผลรอบล่าสุด สคริปต์อ่านชีตทั้งไฟล์ เปิดหน้ากลับมาจึงไม่ควรต้องรอใหม่
 const LEDGER_CACHE = 'wms:cut:ledger';   // ยอดขายรายวันจากสต๊อกราย Location คนละสคริปต์กับด้านบน ดึงใหม่แยกกันได้
-const TIMEOUT = 300000;           // อ่านสี่แท็บรวมหลายแสนแถว เผื่อเวลาให้ใกล้เพดาน 6 นาทีของ Apps Script
+/* อ่านสี่แท็บรวมหลายแสนแถว สคริปต์หยุดเองราวนาทีที่ 5 พร้อมข้อความว่าช้าที่แท็บไหน และ Apps Script ตัดจบที่ 6 นาที
+   หน้าเว็บจึงรอนานกว่านั้นเล็กน้อย เลิกรอก่อนจะไม่ได้ข้อความนั้น ได้แค่ "หมดเวลา" */
+const TIMEOUT = 375000;
 const L = WmsCut.LABEL;
 
 const KINDS = {
@@ -487,7 +489,10 @@ function renderSrc() {
   const started = (run) => new Date(run.at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
   if (!BUSY && SH.cut) html += `<span class="pill">⏳ ${esc(WmsShared.runner(SH.cut))} กำลังตรวจใหม่ (เริ่ม ${esc(started(SH.cut))}) เสร็จแล้วขึ้นให้เอง</span>`;
   else if (!BUSY && SH.tx) html += `<span class="pill">⏳ ${esc(WmsShared.runner(SH.tx))} กำลังดึงยอดขายชุดใหม่ เสร็จแล้วขึ้นให้เอง</span>`;
-  if (SH.err && RAW && SH.err.at > WmsShared.stamp(RAW)) html += `<span class="pill warn" title="${esc(SH.err.msg)}">⚠️ รอบตรวจอัตโนมัติไม่สำเร็จ</span>`;
+  /* กดแล้วข้อความเต็มขึ้นบรรทัดล่าง มือถือไม่มีเมาส์ให้ชี้ดู title */
+  if (!BUSY && !SH.cut && SH.err && SH.err.at > WmsShared.stamp(RAW)) {
+    html += `<span class="pill warn" id="errPill" role="button" tabindex="0" style="cursor:pointer" title="${esc(SH.err.msg)}">⚠️ ${SH.err.auto ? 'รอบอัตโนมัติ' : 'ตรวจ'}ไม่สำเร็จ ${esc(atText(SH.err.at))} ⓘ</span>`;
+  }
   html += `<span class="sp"></span>`;
   if (url) {
     const wait = BUSY || SH.cut;
@@ -499,13 +504,28 @@ function renderSrc() {
   $('src').innerHTML = html;
   const btn = $('runBtn');
   if (btn) btn.onclick = run;
+  const pill = $('errPill');
+  if (pill) pill.onclick = pill.onkeydown = (e) => {
+    if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+    ERR = ERR === SH.err.msg ? '' : SH.err.msg;
+    renderSrc();
+  };
 }
 
 /** ป้ายบนเวลาที่ตรวจ บอกว่าทุกเครื่องเห็นชุดเดียวกัน และสคริปต์ใช้เวลาตรวจนานเท่าไร */
 function sharedTitle(r) {
   const s = r && r.shared;
-  if (!s) return 'ชุดนี้ตรวจในเครื่องนี้เอง เครื่องอื่นอาจเห็นคนละชุด';
-  return `ข้อมูลกลาง ทุกเครื่องเห็นชุดเดียวกัน${s.ms ? ` · สคริปต์ใช้เวลา ${Math.round(s.ms / 1000)} วินาที` : ''}`;
+  const took = tookText(r);
+  if (!s) return `ชุดนี้ตรวจในเครื่องนี้เอง เครื่องอื่นอาจเห็นคนละชุด${took ? ` · ${took}` : ''}`;
+  return `ข้อมูลกลาง ทุกเครื่องเห็นชุดเดียวกัน${s.ms ? ` · สคริปต์ใช้เวลา ${Math.round(s.ms / 1000)} วินาที` : ''}${took ? ` · ${took}` : ''}`;
+}
+
+/** เวลาที่สคริปต์ใช้กับแต่ละแท็บ (อ่าน + คิด) สคริปต์รุ่นก่อนไม่ส่งมา ได้ค่าว่าง */
+function tookText(r) {
+  const t = r && r.took;
+  if (!t || !Array.isArray(t.tabs)) return '';
+  const sec = (ms) => Math.round(ms / 1000);
+  return t.tabs.map((x) => `${x.tab} ${sec(x.open + x.read + x.work)} วิ (${f(x.rows)} แถว)`).join(' · ');
 }
 
 /**
@@ -550,6 +570,7 @@ async function run() {
     BUSY = '';
     BEFORE = null;
     render();
+    WATCH.now();   // หน้าเว็บเลิกรอไปก่อนก็ได้ ถามสคริปต์ว่ารอบนั้นจบยังไง ยังตรวจอยู่ ได้ผลแล้ว หรือล้มเพราะอะไร
     return;
   }
   await loadLedger(true);

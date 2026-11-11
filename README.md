@@ -759,6 +759,19 @@ is deployed, ตรวจใหม่ works as before and only that device sees 
 The last result also stays on the device, so reopening the page doesn't wait. The Lot & PO Out page reads it
 from there.
 
+**When the file gets too big to check.** Apps Script stops any run at 6 minutes without saying why, so the
+script times itself:
+
+- It stops by itself after about 5 minutes and says which tab it was on, how far it got, and how many seconds
+  each tab took to read and to work through. The fix is to move closed months out of the file.
+- A check that fails, or one Apps Script cut off, shows on every device as `ตรวจไม่สำเร็จ … ⓘ` with its time
+  (`รอบอัตโนมัติไม่สำเร็จ` for a timer run). Press it to read why. It goes away after the next check that
+  succeeds.
+- A check that works carries the same timings. Hover over `ตรวจเมื่อ` to see seconds and rows per tab, so
+  you can tell how close the file is to the limit.
+- Dates are formatted once per 15 minutes of clock time, not once per row. Formatting a date is a call to a
+  Google service, which is slow when made for each of several hundred thousand rows.
+
 ---
 
 ## 🏷️ Lot & PO Out (`/lot-po`)
