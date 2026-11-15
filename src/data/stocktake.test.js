@@ -1469,3 +1469,205 @@ describe('นับ 2 วัน — หน้าหัวหน้าและ�
     expect(CNT).toMatch(/RD\.round\.day !== day\) \{ DAY_MSG = RD\.round\.day === 2; setTimeout\(loadRound, 0\); \}/);
   });
 });
+
+/*
+ * ห้องควบคุมการนับ: หัวหน้าดูหน้านี้ตัดสินใจระหว่างวันนับ (ย้ายคน เรียกทีมที่เงียบ สงสัยยอดตั้งต้น)
+ * ตัวเลขผิดแล้วตัดสินใจผิดทั้งวัน: เวลาเสร็จ ความเร็ว ทีมเงียบ แถวที่ต่างกับสมุดผิดปกติ
+ */
+describe('ห้องควบคุมการนับ', () => {
+  const T = Date.parse('2026-12-20T10:00:00+07:00');
+  const M = 60000;
+  const row = (g, n, zone = 'R') => Array.from({ length: n }, (_, i) => ({ loc: `${g}-01-${String(i + 1).padStart(2, '0')}`, group: g, zone }));
+  const TM = [
+    { id: 'INV1', pass: 1, kind: 'Inventory', name: 'ทีม 1', zones: ['R1'] },
+    { id: 'INV2', pass: 1, kind: 'Inventory', name: 'ทีม 2', zones: ['R2'] },
+    { id: 'AUD1', pass: 1, kind: 'Audit', name: 'วิไล', zones: ['R1', 'R2'] },
+  ];
+  /** แถวนับ: min = กี่นาทีก่อนตอนนี้ */
+  const e = (loc, min, o) => ({ uid: `${loc}@${min}`, pass: 1, team: 'INV1', kind: 'Inventory', who: 'สมชาย', loc, type: 'นับ', qty: 1, at: T - min * M, ...o });
+  const run = (o) => S.control({ teams: TM, now: T, counting: true, ...o });
+
+  it('cellPos: แร็ค = ช่อง × ชั้น · พื้น = ตำแหน่ง (ชั้นถ้ามี) · ชื่อพิเศษ = ช่องเดียว', () => {
+    expect(S.cellPos('r1-03-02')).toEqual({ col: 3, row: 2 });
+    expect(S.cellPos('A-01-02')).toEqual({ col: 2, row: 1 });
+    expect(S.cellPos('A-01-02-03')).toEqual({ col: 2, row: 3 });
+    expect(S.cellPos('QA')).toEqual({ col: 1, row: 1 });
+  });
+
+  it('ความเร็วกับเวลาเสร็จ: คิดจากเวลาที่ใช้ต่อโล ทีมที่ช้าสุดคือเวลาเสร็จของทั้งรอบ ความเร็วรวม = ทุกทีมรวมกัน', () => {
+    const locs = row('R1', 10).concat(row('R2', 20));
+    const entries = [29, 24, 19, 14, 9, 4].map((m, i) => e(locs[i].loc, m))
+      .concat([28, 20, 12, 4].map((m, i) => e(locs[10 + i].loc, m, { team: 'INV2', who: 'มานะ' })));
+    const r = run({ locs, entries });
+    expect(r).toMatchObject({ total: 30, done: 10, left: 20, pct: 33, paused: 0, active: 2, pace: 19.5 });
+    const [a, b] = r.teams;
+    expect(a, 'โลละ 5 นาที').toMatchObject({ id: 'INV1', done: 6, left: 4, pace: 12, idle: 4, here: 1, guess: false });
+    expect((a.eta - T) / M).toBeCloseTo(20, 5);
+    expect(b, 'โลละ 8 นาที').toMatchObject({ id: 'INV2', done: 4, left: 16, pace: 7.5 });
+    expect((b.eta - T) / M).toBeCloseTo(128, 5);
+    expect(r.etaTeam, 'ทีม 2 เหลือเยอะกว่าและช้ากว่า').toBe('INV2');
+    expect(r.eta).toBe(b.eta);
+    expect(r.teams.map((t) => t.id), 'Audit ไม่อยู่ในช่องทีม').toEqual(['INV1', 'INV2']);
+    expect(r.alerts).toEqual([{ level: 'info', code: 'slow', team: 'INV2', text: 'ทีม 2 จะเสร็จช้ากว่า ทีม 1 ราว 108 นาที' }]);
+  });
+
+  it('เพิ่งเริ่มนับ: โลเดียวยังไม่รู้ว่าใช้เวลาเท่าไร ยังไม่บอกความเร็วกับเวลาเสร็จ · สองโลขึ้นไปถึงบอก', () => {
+    const locs = row('R1', 10);
+    const one = run({ locs, entries: [e(locs[0].loc, 1)] });
+    expect(one.teams[0]).toMatchObject({ pace: 0, eta: 0, started: true });
+    expect(one.eta, 'ไม่เดาเวลาเสร็จจากโลเดียว').toBe(0);
+    expect(run({ locs, entries: [e(locs[0].loc, 10), e(locs[1].loc, 2)] }).teams[0].pace, 'โลละ 8 นาที').toBe(7.5);
+  });
+
+  it('โลที่กองเยอะ: ใช้เวลานานแต่มีแถวเข้ามาเรื่อย ๆ ยังเป็นเวลาทำงาน ไม่ถูกมองเป็นช่วงพัก', () => {
+    const locs = row('R1', 10);
+    const entries = [40, 35, 30, 25, 20].map((m) => e(locs[0].loc, m)).concat([e(locs[1].loc, 15)]);
+    expect(run({ locs, entries }).teams[0].pace, 'หนึ่งโลใช้ 25 นาที').toBe(2.4);
+  });
+
+  it('พักเที่ยง: ช่วงที่ทีมไม่ส่งอะไรเลยเกิน 10 นาทีไม่นับเป็นเวลาทำงาน · ทั้งรอบหยุดบอกว่าหยุดกี่นาที ไม่เตือนรายทีม', () => {
+    const locs = row('R1', 10).concat(row('R2', 10));
+    const before = [70, 65, 60, 55, 50, 45].map((m, i) => e(locs[i].loc, m))
+      .concat([62, 48].map((m, i) => e(locs[10 + i].loc, m, { team: 'INV2', who: 'มานะ' })));
+    const r = run({ locs, entries: before });
+    expect(r.paused).toBe(45);
+    expect(r.active).toBe(0);
+    expect(r.teams[0].pace, 'ความเร็วของช่วงก่อนพัก').toBe(12);
+    expect(r.teams[1], 'สองโลห่างกัน 14 นาที ไม่มีแถวคั่น = ไม่รู้เวลาทำงานจริง ใช้ของทีมอื่นไปก่อน').toMatchObject({ pace: 0, guess: true });
+    expect(r.eta).toBeGreaterThan(T);
+    expect(r.alerts.map((x) => [x.level, x.code])).toEqual([['info', 'paused']]);
+    expect(r.alerts[0].text).toBe('ทุกทีมหยุดนับ 45 นาที');
+    /* กลับจากพักแล้วนับได้โลเดียว: ความเร็วยังเป็นของช่วงก่อนพัก ไม่ใช่หนึ่งโลใน 44 นาที (เคยขึ้นว่าเสร็จเกิน 12 ชม.) */
+    const back = run({ locs, entries: before.concat([e(locs[6].loc, 1)]) });
+    expect(back.paused).toBe(0);
+    expect(back.teams[0]).toMatchObject({ done: 7, left: 3, pace: 12 });
+    expect((back.teams[0].eta - T) / M).toBeCloseTo(15, 5);
+  });
+
+  it('หยุดข้ามคืน (เช้าวันที่ 2): บอกเป็นชั่วโมง ไม่ใช่ 890 นาที', () => {
+    expect(S.spanText(45)).toBe('45 นาที');
+    expect(S.spanText(119)).toBe('119 นาที');
+    expect(S.spanText(900)).toBe('15 ชม.');
+    const locs = row('R1', 10).concat(row('R2', 10));
+    const r = run({ locs, entries: [e(locs[0].loc, 900), e(locs[1].loc, 895), e(locs[10].loc, 890, { team: 'INV2', who: 'มานะ' })] });
+    expect(r.alerts.map((x) => x.text)).toEqual(['ทุกทีมหยุดนับ 15 ชม.']);
+    expect(r.teams[0].pace, 'ความเร็วของเมื่อวานยังใช้ประมาณเวลาเสร็จของวันนี้ได้').toBe(12);
+  });
+
+  it('ทีมเงียบขณะที่ทีมอื่นยังนับ = เตือนพร้อมโลล่าสุด · ทีมที่ยังไม่เริ่มหลังคนอื่นเริ่มไป 20 นาที = เตือน', () => {
+    const locs = row('R1', 10).concat(row('R2', 10));
+    const quiet = run({ locs, entries: [e(locs[0].loc, 40), e(locs[1].loc, 25), e(locs[10].loc, 3, { team: 'INV2', who: 'มานะ' })] });
+    expect(quiet.alerts.filter((x) => x.level === 'warn')).toEqual([
+      { level: 'warn', code: 'idle', team: 'INV1', text: 'ทีม 1 เงียบ 25 นาที ล่าสุดที่ R1-01-02 (สมชาย)' },
+    ]);
+    const late = run({ locs, entries: [e(locs[0].loc, 30), e(locs[1].loc, 25), e(locs[2].loc, 2)] });
+    expect(late.alerts.filter((x) => x.level === 'warn')).toEqual([{ level: 'warn', code: 'unstarted', team: 'INV2', text: 'ทีม 2 ยังไม่เริ่มนับ' }]);
+    expect(late.teams[0].pace).toBe(12);
+    expect(late.teams[1], 'ยังไม่มีความเร็วของตัวเอง ใช้ของทีมอื่นไปก่อน').toMatchObject({ started: false, pace: 0, guess: true });
+    expect((late.teams[1].eta - T) / M).toBeCloseTo(50, 5);
+    expect(late).toMatchObject({ etaTeam: 'INV2', etaGuess: true });
+    const closed = run({ locs, counting: false, entries: [e(locs[0].loc, 40), e(locs[10].loc, 3, { team: 'INV2', who: 'มานะ' })] });
+    expect(closed.alerts, 'ปิดรับนับแล้วไม่เตือนเรื่องทีมเงียบ').toEqual([]);
+  });
+
+  it('ทีมหนึ่งเสร็จแล้ว อีกทีมยังเหลืออีกนาน = บอกให้ย้ายไปช่วย', () => {
+    const locs = row('R1', 2).concat(row('R2', 30));
+    const entries = [e(locs[0].loc, 20), e(locs[1].loc, 15)].concat([25, 5].map((m, i) => e(locs[2 + i].loc, m, { team: 'INV2', who: 'มานะ' })));
+    const r = run({ locs, entries });
+    expect(r.teams[0]).toMatchObject({ left: 0, pct: 100, eta: 0 });
+    expect(r.alerts.map((x) => x.code)).toEqual(['help']);
+    expect(r.alerts[0].text).toBe('ทีม 1 เสร็จแล้ว ย้ายไปช่วย ทีม 2 ได้ (เหลือ 28 โล)');
+  });
+
+  it('ผัง: ยังไม่นับ / ตรง / ต่างกับสมุด / นับใหม่ / รอวันที่ 2 · จุดคนนับอยู่ที่โลล่าสุดใน 5 นาที · Audit ไม่นับว่านับแล้ว', () => {
+    const locs = row('R1', 5);
+    const wait = ['A-01-01', 'A-01-02'].map((loc) => ({ loc, group: 'A-01', zone: 'A' }));
+    const entries = [
+      e('R1-01-01', 30), e('R1-01-02', 12), e('R1-01-02', 3, { uid: 'again', who: 'สมหญิง' }),
+      e('R1-01-04', 2, { team: 'AUD1', kind: 'Audit', who: 'วิไล' }),
+      e('R1-01-05', 50, { uid: 'gone' }), e('R1-01-05', 49, { uid: 'cancel', type: 'ยกเลิก', ref: 'gone' }),
+    ];
+    const r = run({ locs, wait, entries, lines: [{ loc: 'R1-01-02', group: 'ขาด' }, { loc: 'R1-01-01', group: 'ตรง' }, { loc: 'R1-01-03', group: 'ยังไม่นับ' }], again: ['r1-01-03'] });
+    expect(Object.fromEntries(Object.entries(r.cells).map(([l, c]) => [l, c.s]))).toEqual({
+      'R1-01-01': 'ok', 'R1-01-02': 'bad', 'R1-01-03': 'again', 'R1-01-04': 'todo', 'R1-01-05': 'todo', 'A-01-01': 'wait', 'A-01-02': 'wait',
+    });
+    expect(r.cells['R1-01-02']).toMatchObject({ who: ['สมชาย', 'สมหญิง'], here: ['สมหญิง'], team: 'INV1', at: T - 12 * M });
+    expect(r.cells['R1-01-04'].here, 'Audit ก็ขึ้นจุดบนผัง').toEqual(['วิไล']);
+    expect(r).toMatchObject({ total: 5, done: 2, active: 2, acc: { checked: 2, ok: 1, pct: 50 } });
+    expect(r.groups.map((g) => [g.group, g.total, g.done, g.bad, g.wait, g.team])).toEqual([['R1', 5, 2, 1, 0, 'INV1'], ['A-01', 0, 0, 0, 2, '']]);
+    expect(r.alerts.map((x) => x.code)).toEqual(['again']);
+  });
+
+  it('แถวที่ต่างกับสมุดผิดปกติ: นับแล้ว 5 โลขึ้นไป ต่าง 3 โลและ 40% ขึ้นไป = เตือน (ติดป้ายว่าห้ามขึ้นจอคนนับ)', () => {
+    const locs = row('R1', 10);
+    const entries = [9, 8, 7, 6, 5].map((m, i) => e(locs[i].loc, m));
+    const bad = (n) => locs.slice(0, n).map((l) => ({ loc: l.loc, group: 'เกิน' }));
+    expect(run({ locs, entries, lines: bad(2) }).alerts).toEqual([]);
+    const r = run({ locs, entries, lines: bad(3) });
+    expect(r.alerts).toEqual([{ level: 'warn', code: 'spike', blind: true, group: 'R1', text: expect.stringMatching(/^แถว R1 ต่างกับสมุด 3 จาก 5 โล/) }]);
+    expect(run({ locs, entries: entries.slice(0, 4), lines: bad(4) }).alerts, 'นับยังไม่ถึง 5 โล ยังไม่สรุป').toEqual([]);
+  });
+
+  it('ครบทุกโล = 100% กับข้อความนับครบ · เหลือโลเดียวจากพันโลยังไม่ขึ้น 100', () => {
+    const locs = row('R1', 3);
+    const done = run({ locs, entries: locs.map((l, i) => e(l.loc, 9 - i)) });
+    expect(done).toMatchObject({ pct: 100, left: 0, eta: 0 });
+    expect(done.alerts).toEqual([{ level: 'ok', code: 'done', text: 'นับครบทุกโลแล้ว' }]);
+    const many = Array.from({ length: 1000 }, (_, i) => ({ loc: `R1-${String(i + 1).padStart(4, '0')}-01`, group: 'R1', zone: 'R' }));
+    expect(run({ locs: many, entries: many.slice(0, 999).map((l) => e(l.loc, 5)) }).pct).toBe(99);
+  });
+
+  it('นาฬิกาเครื่องหัวหน้าช้ากว่าชีต: ไม่ขึ้นว่าทีมเงียบติดลบ ใช้เวลาของแถวล่าสุดเป็นตอนนี้', () => {
+    const locs = row('R1', 4);
+    const r = run({ locs, entries: [e(locs[0].loc, -7)] });
+    expect(r.now).toBe(T + 7 * M);
+    expect(r.teams[0]).toMatchObject({ idle: 0, here: 1 });
+  });
+
+  it('รอบ 2: ทีมได้เป็นรายโล ใช้แถวของรอบนับ 2 เท่านั้น', () => {
+    const locs = row('R1', 3);
+    const teams = TM.concat([{ id: 'INV2', pass: 2, kind: 'Inventory', name: 'ทีม 2', zones: ['R1-01-01', 'R1-01-02'] }]);
+    const r = S.control({ locs: locs.slice(0, 2), teams, pass: 2, now: T, counting: true, entries: [e('R1-01-01', 20), e('R1-01-02', 3, { pass: 2, team: 'INV2', who: 'มานะ' })] });
+    expect(r).toMatchObject({ total: 2, done: 1 });
+    expect(r.teams.map((t) => [t.id, t.total, t.done])).toEqual([['INV2', 2, 1]]);
+    expect(r.cells['R1-01-02']).toMatchObject({ s: 'ok', team: 'INV2' });
+    expect(r.cells['R1-01-01'].s, 'นับในรอบ 1 ไม่นับว่ารอบ 2 นับแล้ว').toBe('todo');
+  });
+});
+
+/* ห้องควบคุมบนหน้าหัวหน้า: จอทีวีเปิดให้คนนับเห็น ถ้าหลุดบอกว่าโลไหนต่างกับสมุด การนับแบบไม่รู้ยอดก็ไม่มีความหมาย */
+describe('ห้องควบคุมการนับ — หน้าหัวหน้ากับจอทีวี', () => {
+  const IDX = fs.readFileSync(path.resolve(__dirname, '../../public/stocktake/index.html'), 'utf8');
+  const fn = (name) => {
+    const at = IDX.indexOf(`function ${name}(`);
+    expect(at, `ไม่มี ${name}()`).toBeGreaterThan(-1);
+    return IDX.slice(at, IDX.indexOf('\n}\n', at));
+  };
+
+  it('มีแท็บห้องควบคุม และดึงบันทึกนับเองทุก 20 วินาทีตอนเปิดแท็บนี้', () => {
+    expect(IDX).toMatch(/\['control', 'ห้องควบคุม', '\.\.\/icons\/boxes\.png'\]/);
+    expect(IDX).toMatch(/const LIVE_TABS = \['control', 'progress', 'analyze', 'round2', 'close'\];/);
+    expect(IDX).toMatch(/if \(\+\+POLL_N % 3 && TAB !== 'control'\) return;/);
+    expect(IDX).toMatch(/\}, POLL_MS \/ 3\);/);
+    expect(fs.existsSync(path.resolve(__dirname, '../../public/icons/boxes.png'))).toBe(true);
+  });
+
+  it('จอทีวี: ช่องที่ต่างกับสมุดแสดงเป็นนับแล้ว กดดูรายละเอียดไม่ได้ ไม่มีตัวเลขความแม่นยำ คำเตือนที่บอกผลต่างไม่ขึ้น', () => {
+    expect(fn('ctShown')).toMatch(/return CT\.tv && s === 'bad' \? 'ok' : s;/);
+    const cell = fn('ctCell');
+    expect(cell, 'ข้อความกับสีของช่องมาจากสีที่แสดงจริง').toMatch(/CT_STATE\[shown\]/);
+    expect(cell).not.toMatch(/CT_STATE\[c\.s\]/);
+    expect(cell, 'จอทีวีไม่มีปุ่มในผัง').toMatch(/return CT\.tv \|\| c\.s === 'wait'\s*\? `<i class=/);
+    expect(fn('ctSel')).toMatch(/if \(!c \|\| CT\.tv\) return '';/);
+    const view = fn('controlView');
+    expect(view).toMatch(/controlAlerts\(cm\)\.filter\(a => !\(tv && a\.blind\)\)/);
+    expect(view, 'ช่องตรงกับสมุดมีเฉพาะหน้าหัวหน้า').toMatch(/\(tv \? kpi\('เหลือ'/);
+    expect(fn('ctMap')).toMatch(/\$\{CT\.tv \? '' : key\('bad', 'ต่างกับสมุด'\)\}/);
+  });
+
+  it('จอทีวีซ่อนเมนูกับแท็บ จึงเปิดได้เฉพาะตอนมีรอบให้ดู และกดออกได้ทั้งปุ่มกับ Esc', () => {
+    expect(IDX).toMatch(/classList\.toggle\('st-tv', CT\.tv && TAB === 'control' && !!S\.head && S\.rid !== 'new'/);
+    expect(IDX).toMatch(/else if \(act === 'tv-exit'\) setTv\(false\);/);
+    expect(IDX).toMatch(/e\.key === 'Escape' && CT\.tv && TAB === 'control' && !document\.fullscreenElement\) setTv\(false\)/);
+  });
+});

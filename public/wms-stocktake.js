@@ -709,6 +709,266 @@
     return Object.keys(by).sort(locCmp).map(function (u) { return { loc: u, rows: by[u] }; });
   }
 
+  /* ── ห้องควบคุมการนับ ─────────────────────────────────────────────────── */
+
+  /*
+   * ค่าตั้งของห้องควบคุม หน่วยเป็นนาที ยกเว้นที่บอก
+   *   win   ความเร็วคิดจากเวลาทำงานล่าสุดนานเท่านี้
+   *   gap   ทีมไม่ส่งอะไรเลยนานเกินนี้ = พัก ไม่นับเป็นเวลาทำงาน · ไม่มีใครนับเลยนานเกินนี้ = ทั้งรอบหยุดอยู่
+   *   idle  ทีมเงียบนานเกินนี้ขณะที่ทีมอื่นยังนับ = เตือน
+   *   here  คนที่นับภายในนี้ถือว่ายังอยู่ที่โลนั้น (จุดบนผัง)
+   *   spikeMin / spikeBad / spikePct  แถวที่นับแล้วอย่างน้อย spikeMin โล ต่างกับสมุดอย่างน้อย spikeBad โล และตั้งแต่ spikePct% = ผิดปกติ
+   *   slow  ทีมที่จะเสร็จช้ากว่าทีมที่ว่างก่อนเกินนี้ = บอกให้ย้ายคนไปช่วย
+   */
+  var CTRL = { win: 30, gap: 10, idle: 20, here: 5, spikeMin: 5, spikeBad: 3, spikePct: 40, slow: 45 };
+  var MIN_MS = 60000;
+
+  /** ตำแหน่งของโลในผังของแถว: แร็ค = ช่อง × ชั้น · พื้น / ชั้นวาง = ตำแหน่ง × ชั้น (ถ้ามี) · ชื่อพิเศษ (QA) = ช่องเดียว */
+  function cellPos(loc) {
+    var m = LOC_RE.exec(up(loc));
+    if (!m) return { col: 1, row: 1 };
+    if (m[1] === 'R' && m[2]) return { col: +m[3], row: +m[4] };
+    return { col: +m[4], row: m[5] ? +m[5] : 1 };
+  }
+
+  /**
+   * ความเร็วตอนทำงานจริง (โล/ชม.) ของทีมหนึ่ง
+   *   done = เวลาที่แต่ละโลของทีมถูกนับ (แถวแรกของโลนั้น)   acts = เวลาของทุกแถวที่ทีมส่งมา (ทุกกอง ทุกการแก้)
+   * เวลาที่ใช้กับหนึ่งโล = จากแถวแรกของโลนั้นถึงแถวแรกของโลถัดไป หักช่วงที่ทีมไม่ส่งอะไรเลยนานเกิน gap นาที
+   * (พัก กินข้าว ข้ามคืน) โลที่นานเพราะกองเยอะยังนับเป็นเวลาทำงาน เพราะมีแถวเข้ามาเรื่อย ๆ
+   * ดูย้อนจากโลล่าสุดกลับไปจนได้เวลาทำงานครบ win นาที ตัวเลขจึงเป็นของช่วงล่าสุด และเวลาพักไม่ดึงให้ช้าลง
+   * (ทีมที่เพิ่งกลับจากพักแล้วนับได้โลเดียว ยังได้ความเร็วของช่วงก่อนพัก ไม่ใช่หนึ่งโลต่อครึ่งชั่วโมง)
+   * ยังมีไม่ถึงสองโล หรือทุกช่วงเป็นช่วงพัก = ยังคิดไม่ได้ คืน 0
+   */
+  function paceOf(done, acts, win, gap) {
+    var num = function (x, y) { return x - y; };
+    var T = done.slice().sort(num), A = acts.slice().sort(num);
+    var winMs = win * MIN_MS, gapMs = gap * MIN_MS;
+    var k = 0, D = 0, j = A.length - 1;
+    for (var i = T.length - 1; i >= 1 && D < winMs; i--) {
+      var lo = T[i - 1], hi = T[i], work = 0, at = hi;
+      while (j >= 0 && A[j] >= hi) j--;
+      var p = j;
+      for (; p >= 0 && A[p] > lo; p--) {
+        if (at - A[p] <= gapMs) work += at - A[p];
+        at = A[p];
+      }
+      if (at - lo <= gapMs) work += at - lo;
+      j = p;
+      if (work > 0) { k++; D += work; }
+    }
+    return k ? Math.round(k * 36000000 / D) / 10 : 0;
+  }
+
+  /** ระยะเวลาเป็นคำ: ไม่ถึงสองชั่วโมงบอกเป็นนาที นานกว่านั้น (ข้ามคืนระหว่างวันแรกกับวันที่ 2) บอกเป็นชั่วโมง */
+  function spanText(min) { return min < 120 ? min + ' นาที' : Math.round(min / 60) + ' ชม.'; }
+
+  /** % ที่ไม่ขึ้น 100 จนกว่าจะครบจริง (เหลือโลเดียวจากพันโลปัดแล้วได้ 100) */
+  function pctOf(done, total) {
+    if (!total) return 0;
+    return done >= total ? 100 : Math.min(99, Math.round(done * 100 / total));
+  }
+
+  /**
+   * ห้องควบคุมการนับ: ภาพรวมสดของรอบนับ คิดจากบันทึกนับที่มีอยู่แล้ว ไม่ต้องถามสคริปต์เพิ่ม
+   *
+   * in = {
+   *   locs     โลที่นับได้ตอนนี้ [{loc, group, zone}] (ไม่รวมแถวที่ไม่นับ และโลที่รอวันที่ 2)
+   *   wait     โลที่รอวันที่ 2 [{loc, group, zone}] ขึ้นในผังเป็นช่องรอ
+   *   teams    ทีมทั้งหมดของรอบ   pass = รอบนับ
+   *   entries  แถวบันทึกนับ (ตัดผลนับวันแรกของโลที่ขยับแล้ว)
+   *   lines    ผลวิเคราะห์ (analyze().lines) ใช้บอกว่าโลที่นับแล้วต่างกับสมุดไหม
+   *   again    โลที่ต้องนับใหม่ (ของขยับหลังนับวันแรก)
+   *   now      เวลาตอนนี้ (ms)   counting = เปิดรับนับอยู่ไหม (เตือนเรื่องทีมเงียบเฉพาะตอนเปิดนับ)
+   *   opts     ค่าตั้งที่ต่างจาก CTRL
+   * }
+   *
+   * โลถือว่านับแล้วเมื่อทีม Inventory ทีมไหนก็ได้มีแถวที่ยังมีผลอยู่ (เหมือน progress) เวลาที่นับ = แถวแรกของโลนั้น
+   * ความเร็วคิดจากเวลาที่ทำงานจริงของแต่ละทีม (ดู paceOf) ความเร็วรวม = ผลรวมของทีมที่ยังมีงานเหลือ
+   * เวลาคาดว่าเสร็จคิดทีละทีม เพราะแต่ละทีมมีแถวของตัวเอง ทีมที่เสร็จช้าสุดคือเวลาเสร็จของทั้งรอบ
+   * ทีมที่ยังไม่มีความเร็วของตัวเอง (ยังไม่เริ่ม) ใช้ความเร็วเฉลี่ยของทีมอื่นไปก่อน (guess)
+   *
+   * @returns {{now, total, done, left, pct, pace, eta, etaTeam, etaGuess, paused, active, first, last,
+   *            acc: {checked, ok, pct}, teams, groups, cells, alerts}}
+   *   cells  = {โล: {s: todo|ok|bad|again|wait, at, who: [คนนับ], here: [คนที่อยู่ตรงนี้ตอนนี้], team}}
+   *   teams  = [{id, name, total, done, left, pct, pace, eta, guess, last: {loc, who, at}, idle, started, here}]
+   *   groups = [{group, zone, locs, total, done, bad, wait, team}]
+   *   alerts = [{level: warn|info|ok, code, text, blind?, team?, group?}] blind = บอกผลต่างกับสมุด ห้ามขึ้นจอที่คนนับเห็น
+   */
+  function control(input) {
+    var o = input || {};
+    var pass = o.pass || 1;
+    var c = {}, key;
+    for (key in CTRL) c[key] = o.opts && o.opts[key] != null ? +o.opts[key] : CTRL[key];
+    var tidy = function (l) { return { loc: up(l.loc), group: l.group, zone: l.zone }; };
+    var locs = (o.locs || []).map(tidy), wait = (o.wait || []).map(tidy);
+    var listed = {}, badLoc = {}, again = {};
+    locs.forEach(function (l) { listed[l.loc] = 1; });
+    (o.lines || []).forEach(function (L) { if (L.group !== G.OK && L.group !== G.LEFT) badLoc[up(L.loc)] = 1; });
+    (o.again || []).forEach(function (l) { again[up(l)] = 1; });
+
+    /* นาฬิกาเครื่องหัวหน้าช้ากว่าชีต แถวล่าสุดจะดูเหมือนมาจากอนาคต ใช้เวลาของแถวล่าสุดเป็น "ตอนนี้" แทน */
+    var now = o.now || Date.now();
+    var mine = (o.entries || []).filter(function (e) { return (e.pass || 1) === pass; });
+    mine.forEach(function (e) { var t = countedAt(e); if (t > now) now = t; });
+
+    /* โลไหนนับแล้ว ตอนไหน ใครนับ: แถวที่ยังมีผลของ Inventory */
+    var doneAt = {}, whoAt = {};
+    effective(mine).forEach(function (e) {
+      if (e.kind === 'Audit') return;
+      var u = up(e.loc), t = countedAt(e) || 0;
+      if (doneAt[u] === undefined) doneAt[u] = t;
+      else if (t && (!doneAt[u] || t < doneAt[u])) doneAt[u] = t;
+      (whoAt[u] = whoAt[u] || {})[e.who || '?'] = 1;
+    });
+
+    /* ใครอยู่ไหนล่าสุด: ทุกแถว รวมแถวที่ถูกแก้หรือยกเลิก (ยังทำงานอยู่ที่โลนั้น) */
+    var people = {}, teamLast = {}, teamActs = {}, lastAny = 0, firstAny = 0;
+    mine.forEach(function (e) {
+      var t = countedAt(e);
+      if (!t) return;
+      if (!firstAny || t < firstAny) firstAny = t;
+      if (t > lastAny) lastAny = t;
+      var id = (e.team || '') + '|' + (e.who || '?');
+      if (!people[id] || t > people[id].at) people[id] = { who: e.who || '?', team: e.team || '', kind: e.kind || '', loc: up(e.loc), at: t };
+      if (e.kind === 'Audit') return;
+      (teamActs[e.team] = teamActs[e.team] || []).push(t);
+      if (!teamLast[e.team] || t > teamLast[e.team].at) teamLast[e.team] = { loc: up(e.loc), who: e.who || '?', at: t };
+    });
+
+    var owner = {};
+    var tl = teamsOf(o.teams, pass).filter(function (t) { return t.kind !== 'Audit'; });
+    tl.forEach(function (t) { (t.zones || []).forEach(function (z) { owner[up(z)] = t.id; }); });
+    var hereMs = c.here * MIN_MS;
+    var teams = tl.map(function (t) {
+      var list = teamLocs(t, locs), done = 0, times = [];
+      list.forEach(function (l) {
+        if (doneAt[l.loc] === undefined) return;
+        done++;
+        if (doneAt[l.loc]) times.push(doneAt[l.loc]);
+      });
+      var last = teamLast[t.id] || null;
+      var here = 0;
+      Object.keys(people).forEach(function (id) {
+        var p = people[id];
+        if (p.team === t.id && p.kind !== 'Audit' && now - p.at <= hereMs) here++;
+      });
+      return {
+        id: t.id, name: t.name || t.id, total: list.length, done: done, left: list.length - done, pct: pctOf(done, list.length),
+        pace: paceOf(times, teamActs[t.id] || [], c.win, c.gap), eta: 0, guess: false,
+        last: last, idle: last ? Math.floor((now - last.at) / MIN_MS) : null, started: !!last, here: here,
+      };
+    });
+
+    var paced = teams.filter(function (t) { return t.pace > 0; });
+    var avg = paced.length ? paced.reduce(function (sum, t) { return sum + t.pace; }, 0) / paced.length : 0;
+    teams.forEach(function (t) {
+      var p = t.pace || avg;
+      if (!t.left || !p) return;
+      t.eta = Math.round(now + t.left / p * 3600000);
+      t.guess = !t.pace;
+    });
+    var open = teams.filter(function (t) { return t.left > 0; });
+    var eta = 0, etaTeam = null;
+    if (open.length && open.every(function (t) { return t.eta; })) {
+      open.forEach(function (t) { if (t.eta > eta) { eta = t.eta; etaTeam = t; } });
+    }
+
+    var total = locs.length, done = 0, bad = 0;
+    locs.forEach(function (l) {
+      if (doneAt[l.loc] === undefined) return;
+      done++;
+      if (badLoc[l.loc]) bad++;
+    });
+    var left = total - done;
+    var quiet = lastAny ? now - lastAny : 0;
+    var paused = done && left && quiet > c.gap * MIN_MS ? Math.floor(quiet / MIN_MS) : 0;
+
+    var cells = {};
+    locs.forEach(function (l) {
+      var d = doneAt[l.loc] !== undefined;
+      cells[l.loc] = {
+        s: d ? (badLoc[l.loc] ? 'bad' : 'ok') : again[l.loc] ? 'again' : 'todo',
+        at: d ? doneAt[l.loc] : 0, who: d ? Object.keys(whoAt[l.loc]) : [], here: [],
+        team: owner[up(l.group)] || owner[l.loc] || '',
+      };
+    });
+    wait.forEach(function (l) {
+      if (!cells[l.loc]) cells[l.loc] = { s: 'wait', at: 0, who: [], here: [], team: owner[up(l.group)] || owner[l.loc] || '' };
+    });
+    var active = 0;
+    Object.keys(people).forEach(function (id) {
+      var p = people[id];
+      if (now - p.at > hereMs) return;
+      active++;
+      if (cells[p.loc]) cells[p.loc].here.push(p.who);
+    });
+
+    var gl = groups(locs.concat(wait)).map(function (g) {
+      var out = { group: g.group, zone: g.zone, locs: g.locs.slice().sort(locCmp), total: 0, done: 0, bad: 0, wait: 0, team: owner[up(g.group)] || '' };
+      out.locs.forEach(function (l) {
+        var st = cells[l].s;
+        if (st === 'wait') { out.wait++; return; }
+        out.total++;
+        if (st === 'ok' || st === 'bad') out.done++;
+        if (st === 'bad') out.bad++;
+      });
+      return out;
+    });
+
+    var alerts = [];
+    if (o.counting) {
+      var running = teams.filter(function (t) { return t.started && t.left > 0; });
+      if (running.length && running.every(function (t) { return t.idle >= c.idle; })) {
+        alerts.push({ level: 'info', code: 'paused', text: 'ทุกทีมหยุดนับ ' + spanText(Math.min.apply(null, running.map(function (t) { return t.idle; }))) });
+      } else {
+        running.forEach(function (t) {
+          if (t.idle >= c.idle) {
+            alerts.push({ level: 'warn', code: 'idle', team: t.id, text: t.name + ' เงียบ ' + spanText(t.idle) + ' ล่าสุดที่ ' + t.last.loc + ' (' + t.last.who + ')' });
+          }
+        });
+      }
+      if (firstAny && now - firstAny >= c.idle * MIN_MS) {
+        teams.forEach(function (t) {
+          if (!t.started && t.left > 0) alerts.push({ level: 'warn', code: 'unstarted', team: t.id, text: t.name + ' ยังไม่เริ่มนับ' });
+        });
+      }
+      /* ทีมที่เสร็จช้าสุด เทียบกับทีมที่ว่างก่อน (เสร็จแล้ว หรือจะเสร็จก่อนนานพอ) */
+      if (etaTeam && teams.length > 1) {
+        var free = teams.filter(function (t) { return !t.left && t.total; })[0];
+        var early = open.filter(function (t) { return t !== etaTeam; }).sort(function (a, b) { return a.eta - b.eta; })[0];
+        if (free && eta - now >= c.slow * MIN_MS) {
+          alerts.push({ level: 'info', code: 'help', team: etaTeam.id, text: free.name + ' เสร็จแล้ว ย้ายไปช่วย ' + etaTeam.name + ' ได้ (เหลือ ' + etaTeam.left + ' โล)' });
+        } else if (!free && early && eta - early.eta >= c.slow * MIN_MS) {
+          alerts.push({ level: 'info', code: 'slow', team: etaTeam.id, text: etaTeam.name + ' จะเสร็จช้ากว่า ' + early.name + ' ราว ' + Math.round((eta - early.eta) / MIN_MS) + ' นาที' });
+        }
+      }
+    }
+    gl.forEach(function (g) {
+      if (g.done >= c.spikeMin && g.bad >= c.spikeBad && g.bad * 100 >= c.spikePct * g.done) {
+        alerts.push({
+          level: 'warn', code: 'spike', blind: true, group: g.group,
+          text: 'แถว ' + g.group + ' ต่างกับสมุด ' + g.bad + ' จาก ' + g.done + ' โล ยอดตั้งต้นของแถวนี้อาจไม่ตรง หรือมีของขยับ',
+        });
+      }
+    });
+    var againLeft = Object.keys(again).filter(function (l) { return listed[l] && doneAt[l] === undefined; }).length;
+    if (againLeft) alerts.push({ level: 'warn', code: 'again', text: 'โลที่ต้องนับใหม่เหลือ ' + againLeft + ' โล (ของขยับหลังนับวันแรก)' });
+    if (total && !left) alerts.push({ level: 'ok', code: 'done', text: 'นับครบทุกโลแล้ว' });
+    var rank = { warn: 0, info: 1, ok: 2 };
+    alerts = alerts.map(function (a, i) { a.i = i; return a; }).sort(function (a, b) { return rank[a.level] - rank[b.level] || a.i - b.i; });
+    alerts.forEach(function (a) { delete a.i; });
+
+    return {
+      now: now, total: total, done: done, left: left, pct: pctOf(done, total),
+      pace: Math.round(open.reduce(function (sum, t) { return sum + t.pace; }, 0) * 10) / 10,
+      eta: eta, etaTeam: etaTeam ? etaTeam.id : '', etaGuess: !!(etaTeam && etaTeam.guess),
+      paused: paused, active: active, first: firstAny, last: lastAny,
+      acc: { checked: done, ok: done - bad, pct: done ? Math.round((done - bad) * 100 / done) : null },
+      teams: teams, groups: gl, cells: cells, alerts: alerts,
+    };
+  }
+
   function countLink(pageUrl, scriptUrl, key, roundId) {
     return String(pageUrl).split('#')[0] + '#u=' + encodeURIComponent(scriptUrl || '') +
       (key ? '&k=' + encodeURIComponent(key) : '') + '&r=' + encodeURIComponent(roundId || '');
@@ -1556,5 +1816,6 @@
     qtyOf: qtyOf, poChoices: poChoices, lotChoices: lotChoices,
     movesAfter: movesAfter, countLink: countLink, parseLink: parseLink,
     day2Of: day2Of, day2Test: day2Test, day2Wait: day2Wait, day2Plan: day2Plan, voidMoved: voidMoved, day2Moved: day2Moved, countedAt: countedAt,
+    CTRL: CTRL, control: control, cellPos: cellPos, spanText: spanText,
   };
 })();

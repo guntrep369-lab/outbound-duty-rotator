@@ -181,6 +181,98 @@ select.st-in{cursor:pointer;padding-right:2px}
   font-family:var(--wms-font);font-size:13px}
 .st-ap:focus{outline:none;border-color:var(--wms-primary)}
 
+/* ── ห้องควบคุมการนับ: ตัวเลขสรุป ผังคลังสด ช่องทีม เรื่องที่ต้องดู ── */
+.ct-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:10px}
+.ct-kpi{min-width:0;padding:10px 14px;border-radius:var(--wms-radius-sm);background:var(--wms-surface);border:1px solid var(--wms-border)}
+.ct-kpi .lb{font-size:12px;color:var(--wms-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ct-kpi .v{font-size:26px;font-weight:700;line-height:1.25;color:var(--wms-text);font-variant-numeric:tabular-nums;white-space:nowrap}
+.ct-kpi .sub{min-height:18px;font-size:12px;color:var(--wms-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ct-kpi .bar,.ct-team .bar{height:5px;border-radius:3px;background:#E2E8F0;overflow:hidden}
+.ct-kpi .bar{margin-top:6px}
+.ct-kpi .bar i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,#6366F1,#22C55E);transition:width .8s cubic-bezier(.2,.8,.2,1)}
+.ct-kpi .tg{display:flex;align-items:center;gap:6px;margin-top:4px;font-size:12px;color:var(--wms-muted)}
+.ct-kpi .tg input{height:24px;padding:0 4px;border:1px solid var(--wms-border2);border-radius:6px;background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:12px;color:var(--wms-text)}
+.ct-alerts{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+.ct-al{display:flex;align-items:baseline;gap:8px;padding:6px 12px;border-radius:8px;font-size:13px;line-height:1.5}
+.ct-al.warn{background:#FEF3C7;border:1px solid #FDE68A;color:#92400E}
+.ct-al.info{background:#EEF2FF;border:1px solid #C7D2FE;color:#3730A3}
+.ct-al.ok{background:#ECFDF5;border:1px solid #A7F3D0;color:#047857}
+.ct-grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:12px;align-items:start}
+/* แร็คที่ช่องเยอะกว่าความกว้างจอ (มือถือ) เลื่อนซ้ายขวาในกรอบผัง หน้าไม่ล้น */
+.ct-map{min-width:0;overflow-x:auto;padding:12px 14px;border-radius:var(--wms-radius-sm);background:var(--wms-surface);border:1px solid var(--wms-border);--c:12px}
+/* โซนเล็ก (QA, RIB, ชั้นวาง) อยู่ข้างกันได้ โซนใหญ่กินทั้งบรรทัดเอง */
+.ct-zones{display:flex;flex-wrap:wrap;gap:14px 32px;align-items:flex-start;margin-bottom:10px}
+.ct-zone{min-width:0;max-width:100%}
+.ct-zone > .zh{margin-bottom:6px;font-size:12px;font-weight:700;color:var(--wms-muted)}
+.ct-zone > .zh b{color:var(--wms-text)}
+.ct-rows{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:flex-end}
+.ct-g .gh{margin-bottom:3px;font-size:11.5px;color:var(--wms-muted);white-space:nowrap}
+.ct-g .gh b{font-size:12px;color:var(--wms-text)}
+.ct-g.full .gh b{color:#047857}
+.ct-g.dim{opacity:.22}
+.ct-cells{display:grid;gap:2px;grid-auto-rows:var(--c)}
+.ct-c{display:block;width:var(--c);height:var(--c);padding:0;border:1px solid #CBD5E1;border-radius:3px;background:#F1F5F9}
+button.ct-c{cursor:pointer}
+.ct-c.ok{background:#22C55E;border-color:#16A34A}
+.ct-c.bad{background:#F59E0B;border-color:#D97706}
+.ct-c.again{background:#FEE2E2;border-color:#EF4444}
+.ct-c.wait{background:transparent;border-style:dashed}
+.ct-c.off{opacity:.18}
+.ct-c.here{position:relative;z-index:1;outline:2px solid #6366F1;outline-offset:1px}
+.ct-c.sel{position:relative;z-index:2;outline:2px solid #0F172A;outline-offset:1px}
+@media (prefers-reduced-motion:no-preference){
+  .ct-c.flip{animation:ct-flip .5s cubic-bezier(.34,1.56,.64,1)}
+  .ct-c.here:not(.sel){animation:ct-here 1.4s ease-in-out infinite}
+}
+@keyframes ct-flip{from{transform:scale(.3);opacity:.3}}
+@keyframes ct-here{50%{outline-color:rgba(99,102,241,.2)}}
+.ct-legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:4px;font-size:12px;color:var(--wms-muted)}
+.ct-legend span{display:inline-flex;align-items:center;gap:5px}
+.ct-side{display:flex;flex-direction:column;gap:8px}
+.ct-team{display:block;width:100%;padding:9px 12px;border-radius:var(--wms-radius-sm);border:1px solid var(--wms-border);background:var(--wms-surface);
+  font-family:var(--wms-font);color:var(--wms-text);text-align:left;cursor:pointer}
+.ct-team:hover{border-color:var(--wms-border2)}
+.ct-team.on{border-color:var(--wms-primary);box-shadow:0 0 0 2px rgba(79,70,229,.15)}
+.ct-team .tn{display:flex;align-items:center;gap:6px;font-size:13.5px;font-weight:700}
+.ct-team .dot{flex:none;width:8px;height:8px;border-radius:50%;background:#CBD5E1}
+.ct-team .dot.live{background:#22C55E}
+.ct-team .dot.idle{background:#F59E0B}
+.ct-team .pc{margin-left:auto;font-variant-numeric:tabular-nums}
+.ct-team .bar{margin:6px 0}
+.ct-team .bar i{display:block;height:100%;border-radius:3px;background:#6366F1;transition:width .8s cubic-bezier(.2,.8,.2,1)}
+.ct-team.done .bar i{background:#22C55E}
+.ct-team .ln{font-size:12px;line-height:1.55;color:var(--wms-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ct-team .ln b{font-weight:600;color:var(--wms-text)}
+.ct-aud{padding:8px 12px;border-radius:var(--wms-radius-sm);border:1px dashed var(--wms-border2);font-size:12.5px;color:var(--wms-muted)}
+.ct-aud b{color:var(--wms-text)}
+.ct-sel{margin-top:10px;padding:10px 12px;border-radius:var(--wms-radius-sm);border:1px solid var(--wms-border);background:var(--wms-surface);font-size:13px;line-height:1.6}
+.ct-sel .hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ct-sel .hd .sp{flex:1}
+.ct-tvhead{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.ct-tvhead .nm b{display:block;font-size:22px;line-height:1.3;color:var(--wms-text)}
+.ct-tvhead .nm span{font-size:14px;color:var(--wms-muted)}
+.ct-tvhead .sp{flex:1}
+.ct-tvhead .clock{margin-right:8px;font-size:36px;font-weight:700;color:var(--wms-text);font-variant-numeric:tabular-nums}
+/* จอทีวีในคลัง: ไม่มีเมนูกับแถบของหน้า ตัวใหญ่ขึ้น และไม่บอกว่าโลไหนต่างกับสมุด คนนับต้องนับโดยไม่รู้ยอด */
+body.st-tv [data-wms-shell],body.st-tv .sysbar,body.st-tv .mod-head,body.st-tv .st-src,body.st-tv .tx-tabs{display:none !important}
+body.st-tv .wms-shell,body.st-tv .wms-main{display:block}
+body.st-tv .st-body{padding:16px 20px 24px}
+body.st-tv .ct-kpi{padding:14px 18px}
+body.st-tv .ct-kpi .lb,body.st-tv .ct-kpi .sub{font-size:15px}
+body.st-tv .ct-kpi .v{font-size:44px}
+body.st-tv .ct-al{font-size:16px;padding:9px 14px}
+body.st-tv .ct-grid{grid-template-columns:minmax(0,1fr) 360px}
+body.st-tv .ct-team .tn{font-size:17px}
+body.st-tv .ct-team .ln{font-size:14px}
+body.st-tv .ct-zone > .zh,body.st-tv .ct-legend{font-size:14px}
+body.st-tv .ct-g .gh{font-size:13px}
+body.st-tv .ct-g .gh b{font-size:14px}
+@media (max-width:900px){
+  .ct-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .ct-grid,body.st-tv .ct-grid{grid-template-columns:minmax(0,1fr)}
+}
+
 @media (max-width:640px){
   .st-src{padding:8px 12px}
   .st-body{padding:12px 12px 90px}
@@ -229,9 +321,10 @@ function load(k) { try { return localStorage.getItem(k) || ''; } catch (e) { ret
 function save(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 
 /* ?tab= ไว้ส่งลิงก์ตรงไปหน้าความคืบหน้า */
-const TABS = [['setup', 'ตั้งรอบ', '../icons/settings.png'], ['teams', 'ทีม/โซน', '../icons/list-checks.png'], ['progress', 'ความคืบหน้า', '../icons/tab-count.png'],
+const TABS = [['setup', 'ตั้งรอบ', '../icons/settings.png'], ['teams', 'ทีม/โซน', '../icons/list-checks.png'], ['control', 'ห้องควบคุม', '../icons/boxes.png'],
+  ['progress', 'ความคืบหน้า', '../icons/tab-count.png'],
   ['analyze', 'วิเคราะห์', '../icons/tab-compare.png'], ['round2', 'รอบ 2', '../icons/tab-refill.png'], ['close', 'ปิดรอบ', '../icons/tab-fix.png']];
-const LIVE_TABS = ['progress', 'analyze', 'round2', 'close'];   // แท็บที่ดึงบันทึกนับใหม่ทุกนาที
+const LIVE_TABS = ['control', 'progress', 'analyze', 'round2', 'close'];   // แท็บที่ดึงบันทึกนับใหม่เอง (ห้องควบคุมทุก 20 วินาที ที่เหลือทุกนาที)
 let TAB = TABS.some(t => t[0] === new URLSearchParams(location.search).get('tab')) ? new URLSearchParams(location.search).get('tab') : 'setup';
 
 const S = { rounds: null, rid: load(KEY_ROUND), head: null, log: [], raw: [], since: 0, at: 0, busy: '', err: '', ok: '', fresh: false };
@@ -374,9 +467,12 @@ function paintTabs() {
 
 function paintBody() {
   const box = $('body');
+  /* จอทีวีซ่อนเมนูกับแท็บ ใช้ได้เฉพาะตอนมีรอบให้ดู ไม่งั้นจะไม่มีทางกดออก */
+  document.body.classList.toggle('st-tv', CT.tv && TAB === 'control' && !!S.head && S.rid !== 'new' && !!cfg().url && !!cfg().t);
   if (!cfg().url || !cfg().t) { box.innerHTML = cfgBox(true); return; }
   if (!S.rounds) { box.innerHTML = S.busy ? '<div class="st-empty">⏳ กำลังโหลด…</div>' : `<div class="st-empty">โหลดรอบนับไม่ได้<br><button class="st-btn" data-act="reload">ลองใหม่</button></div>` + cfgMore(); return; }
   if (S.rid === 'new' || !S.head) { box.innerHTML = TAB === 'setup' || S.rid === 'new' ? setupNew() : '<div class="st-empty">⏳ กำลังโหลด…</div>'; return; }
+  if (TAB === 'control') { box.innerHTML = controlView(); controlAfter(); return; }
   if (TAB === 'teams') box.innerHTML = teamsView();
   else if (TAB === 'progress') box.innerHTML = progressView();
   else if (TAB === 'analyze') box.innerHTML = analyzeView();
@@ -725,6 +821,256 @@ async function saveTeams() {
     S.ok = `✓ บันทึกทีม/โซนแล้ว ${teams.length} ทีม${plan ? ` · นับ 2 วัน (วันที่ 2: โซน ${plan.zones.join(', ') || '—'}${plan.locs.length ? ` + โลเปิด ${plan.locs.length}` : ''})` : ''}`;
   });
 }
+
+/* ── แท็บห้องควบคุม ─────────────────────────────────────────────────────
+   ภาพรวมสดของวันนับ: ตัวเลขสรุป ผังคลังที่เปลี่ยนสีตามผลนับ ช่องทีม และเรื่องที่ต้องดู (ST.control)
+   ใช้บันทึกนับที่หน้านี้ดึงอยู่แล้ว ไม่ถามสคริปต์เพิ่ม
+   โหมดจอทีวี (?tv=1) ไว้เปิดในคลังให้คนนับเห็น จึงไม่บอกว่าโลไหนต่างกับสมุด คนนับต้องนับโดยไม่รู้ยอด */
+
+const KEY_TARGET = 'wms:st:target';   // เวลาที่อยากให้เสร็จของแต่ละรอบ {รหัสรอบ: 'HH:mm'} เก็บในเครื่องหัวหน้า
+const CT_FLOW = 24;                   // แถวที่วาดเป็นตารางไม่ได้ (ชื่อซ้ำตำแหน่ง / ยาวมาก) เรียงต่อกันบรรทัดละเท่านี้
+const CT = {
+  rid: '', sel: '', team: '', cm: null,
+  prev: null,      // สีของแต่ละช่องตอนวาดครั้งก่อน ช่องที่เปลี่ยนจะเด้ง
+  zones: null,     // โซนที่ครบแล้วตอนวาดครั้งก่อน โซนที่เพิ่งครบน้องกล่องฉลองหนึ่งครั้ง
+  wasLeft: false,
+  tv: new URLSearchParams(location.search).get('tv') === '1',
+};
+let WAKE = null;
+
+const hm = (ms) => new Date(ms).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false });
+function targets() { try { return JSON.parse(load(KEY_TARGET) || '{}') || {}; } catch (e) { return {}; } }
+function targetOf() { return targets()[S.rid] || ''; }
+function setTarget(v) {
+  const m = targets();
+  if (v) m[S.rid] = v; else delete m[S.rid];
+  save(KEY_TARGET, JSON.stringify(m));
+}
+
+/** รอบ 2 กำลังเปิด = ดูโลในแผนรอบ 2 · นอกนั้นดูรอบ 1: โลที่นับได้ตอนนี้ กับโลที่รอวันที่ 2 */
+function controlModel() {
+  const r = R(), d = day2();
+  if (r.status === 'นับรอบ 2') {
+    const a2 = analysis2();
+    const locs = planSaved().map(p => { const x = ST.parseLoc(p.loc); return { loc: p.loc, group: p.row || x.group, zone: x.zone }; });
+    const lines = a2 ? a2.lines : [];
+    return { pass: 2, label: 'รอบ 2', d: null, lines, m: ST.control({ locs, teams: S.head.teams, pass: 2, entries: S.log, lines, now: Date.now(), counting: true }) };
+  }
+  const w = ST.day2Wait(d);
+  const lines = analysis().lines;
+  return {
+    pass: 1, label: d ? (d.on ? 'วันที่ 2' : 'วันแรก') : '', d, lines,
+    m: ST.control({
+      locs: countLocs(), wait: countLocsAll().filter(l => w(l.loc)), teams: S.head.teams, pass: 1, entries: S.log, lines,
+      again: d && d.on ? d.moved : [], now: Date.now(), counting: r.status === 'นับรอบ 1',
+    }),
+  };
+}
+
+/** เรื่องที่ต้องดู: ของ ST.control บวกเรื่องที่หน้านี้รู้เอง (โลไม่มีทีม สมุดขยับ หลายคนนับ เป้าเวลา) */
+function controlAlerts(cm) {
+  const m = cm.m;
+  const out = m.alerts.map(a => ({ ...a }));
+  if (cm.pass === 1) {
+    const p = prog();
+    if (p.unassigned) out.push({ level: 'warn', code: 'unassigned', text: `ยังไม่มีทีม ${f(p.unassigned)} โล แบ่งทีมในแท็บทีม/โซน` });
+    if (MOVES && MOVES.day1 && MOVES.list.length) out.push({ level: 'warn', code: 'moves', blind: true, text: `โลวันแรกมีของขยับในสมุด ${f(MOVES.list.length)} แถว จะถูกให้นับใหม่ตอนเปิดนับวันที่ 2` });
+    const multi = (analysis().multi || []).filter(x => x.kind !== 'Audit').length;
+    if (multi) out.push({ level: 'info', code: 'multi', blind: true, text: `มี ${f(multi)} โลที่หลายคนนับ ยอดอาจซ้ำ ดูในแท็บวิเคราะห์` });
+    if (p.extra.length) out.push({ level: 'info', code: 'extra', blind: true, text: `คนนับเพิ่มโลนอกรายการ ${f(p.extra.length)} โล` });
+    const done = out.find(x => x.code === 'done');
+    if (done && cm.d && !cm.d.on) done.text = 'นับวันแรกครบแล้ว กดเปิดนับวันที่ 2 ได้ในแท็บตั้งรอบ';
+    else if (done && R().status === 'นับรอบ 1') done.text = 'นับครบทุกโลแล้ว ปิดรับนับรอบ 1 ได้ในแท็บวิเคราะห์';
+  }
+  const tg = targetOf();
+  if (tg && m.eta) {
+    const [h, mi] = tg.split(':').map(Number);
+    const t = new Date(m.now);
+    t.setHours(h, mi, 0, 0);
+    const late = Math.round((m.eta - t.getTime()) / 60000);
+    if (late > 0) out.push({ level: 'warn', code: 'late', text: `คาดว่าเสร็จ ${etaText(m.eta, m.now)} ช้ากว่าเป้า ${tg} อยู่ ${f(late)} นาที` });
+  }
+  const rank = { warn: 0, info: 1, ok: 2 };
+  return out.sort((x, y) => rank[x.level] - rank[y.level]);
+}
+
+/** ความเร็วต่ำมากเวลาเสร็จจะข้ามวัน บอกเป็นคำแทนเวลาที่ดูเหมือนวันนี้ */
+function etaText(eta, now) { return eta - now > 12 * 3600000 ? 'เกิน 12 ชม.' : hm(eta); }
+
+const CT_STATE = { todo: 'ยังไม่นับ', ok: 'นับแล้ว', bad: 'นับแล้ว ต่างกับสมุด', again: 'ต้องนับใหม่', wait: 'รอวันที่ 2' };
+
+/** สีที่ช่องแสดงจริง จอทีวีไม่แสดงว่าต่างกับสมุด */
+function ctShown(s) { return CT.tv && s === 'bad' ? 'ok' : s; }
+
+function ctCell(loc, c, style) {
+  const shown = ctShown(c.s);
+  const text = `${loc} · ${CT_STATE[shown]}${c.who.length ? ' · ' + c.who.join(', ') : ''}${c.at ? ' ' + hm(c.at) : ''}${c.here.length ? ' · ตอนนี้ ' + c.here.join(', ') + ' อยู่ที่นี่' : ''}`;
+  const cls = `ct-c ${shown}${c.here.length ? ' here' : ''}${!CT.tv && CT.sel === loc ? ' sel' : ''}` +
+    `${CT.prev && CT.prev[loc] && CT.prev[loc] !== shown ? ' flip' : ''}${CT.team && c.team !== CT.team ? ' off' : ''}`;
+  /* จอทีวีกับช่องที่รอวันที่ 2 กดไม่ได้ ไม่มีรายละเอียดให้ดู */
+  return CT.tv || c.s === 'wait'
+    ? `<i class="${cls}" style="${style}" title="${esc(text)}"></i>`
+    : `<button type="button" class="${cls}" style="${style}" data-cell="${esc(loc)}" title="${esc(text)}" aria-label="${esc(text)}"></button>`;
+}
+
+/**
+ * ผังของหนึ่งแถว · แร็ค = ช่อง × ชั้น ชั้น 1 อยู่ล่างเหมือนของจริง · แถวพื้น = เรียงตามตำแหน่ง
+ * ชื่อที่ตำแหน่งซ้ำกัน หรือแถวที่ยาวมาก วาดเป็นตารางไม่ได้ เรียงต่อกันแล้วขึ้นบรรทัดใหม่
+ */
+function ctGroup(g, cells) {
+  const pos = g.locs.map(l => ST.cellPos(l));
+  const cols = [...new Set(pos.map(p => p.col))].sort((a, b) => a - b);
+  const rows = [...new Set(pos.map(p => p.row))].sort((a, b) => b - a);
+  const uniq = new Set(pos.map(p => p.col + '|' + p.row)).size === pos.length;
+  if (!uniq || cols.length > 60 || (rows.length === 1 && cols.length > CT_FLOW)) {
+    return `<div class="ct-cells" style="grid-template-columns:repeat(${Math.min(g.locs.length, CT_FLOW)},var(--c))">${g.locs.map(l => ctCell(l, cells[l], '')).join('')}</div>`;
+  }
+  const ci = new Map(cols.map((c, i) => [c, i + 1])), ri = new Map(rows.map((r, i) => [r, i + 1]));
+  return `<div class="ct-cells" style="grid-template-columns:repeat(${cols.length},var(--c))">` +
+    g.locs.map((l, i) => ctCell(l, cells[l], `grid-column:${ci.get(pos[i].col)};grid-row:${ri.get(pos[i].row)}`)).join('') + '</div>';
+}
+
+function ctMap(m) {
+  const zones = [];
+  m.groups.forEach(g => {
+    let z = zones[zones.length - 1];
+    if (!z || z.zone !== g.zone) { z = { zone: g.zone, groups: [], total: 0, done: 0, wait: 0 }; zones.push(z); }
+    z.groups.push(g); z.total += g.total; z.done += g.done; z.wait += g.wait;
+  });
+  const n = Object.keys(m.cells).length;
+  const size = (n <= 400 ? 18 : n <= 1000 ? 14 : n <= 2600 ? 12 : 10) + (CT.tv ? 3 : 0);
+  const states = new Set(Object.keys(m.cells).map(l => m.cells[l].s));
+  const body = zones.map(z => `<div class="ct-zone">
+      <div class="zh">โซน <b>${esc(z.zone)}</b> · ${z.total ? `${f(z.done)}/${f(z.total)} โล` : ''}${z.wait ? `${z.total ? ' · ' : ''}รอวันที่ 2 ${f(z.wait)} โล` : ''}</div>
+      <div class="ct-rows">${z.groups.map(g => {
+        const mine = !CT.team || g.locs.some(l => m.cells[l].team === CT.team);
+        return `<div class="ct-g ${g.total && g.done === g.total ? 'full' : ''} ${mine ? '' : 'dim'}">
+          <div class="gh"><b>${esc(g.group)}</b> ${g.total ? `${f(g.done)}/${f(g.total)}${g.done === g.total ? ' ✓' : ''}` : 'รอวันที่ 2'}</div>${ctGroup(g, m.cells)}</div>`;
+      }).join('')}</div></div>`).join('');
+  const key = (cls, label) => `<span><i class="ct-c ${cls}"></i>${label}</span>`;
+  return `<div class="ct-map" style="--c:${size}px"><div class="ct-zones">${body}</div>
+    <div class="ct-legend">${key('todo', 'ยังไม่นับ')}${key('ok', 'นับแล้ว')}${CT.tv ? '' : key('bad', 'ต่างกับสมุด')}${key('todo here', 'มีคนนับอยู่')}
+      ${states.has('again') ? key('again', 'ต้องนับใหม่') : ''}${states.has('wait') ? key('wait', 'รอวันที่ 2') : ''}</div></div>`;
+}
+
+/** รายละเอียดของโลที่กดในผัง (หน้าหัวหน้าเท่านั้น): ใครนับ เมื่อไร และแต่ละกองเทียบกับสมุด */
+function ctSel(cm) {
+  const l = CT.sel, c = l && cm.m.cells[l];
+  if (!c || CT.tv) return '';
+  const tn = (id) => { const t = cm.m.teams.find(x => x.id === id); return t ? t.name : id; };
+  const rows = cm.lines.filter(x => x.loc === l && (x.sku || x.long)).map(x => `<tr><td><span class="st-g ${GCLS[x.group] || ''}">${esc(x.group)}</span></td>
+    <td>${esc(x.sku || '—')}</td><td class="mu">${esc(x.name)}</td><td>${esc(x.lot)}</td><td>${esc(x.po)}</td><td class="num">${f(x.book)}</td>
+    <td class="num">${x.inv === null || x.inv === undefined ? '—' : f(x.inv)}</td><td class="num ${x.diff < 0 ? 'neg' : x.diff > 0 ? 'pos' : ''}">${x.diff ? signed(x.diff) : ''}</td></tr>`).join('');
+  return `<div class="ct-sel"><div class="hd"><b>${esc(l)}</b><span>${CT_STATE[c.s]}${c.team ? ' · ' + esc(tn(c.team)) : ''}${c.who.length ? ' · ' + esc(c.who.join(', ')) : ''}${c.at ? ' · ' + hm(c.at) : ''}</span>
+      <span class="sp"></span>${cm.pass === 1 ? '<button class="st-btn" data-act="ct-analyze">ดูในวิเคราะห์</button>' : ''}<button class="st-btn" data-act="ct-clear">ปิด</button></div>
+    ${rows ? `<div class="st-wrap" style="margin-top:8px"><table class="st-xl"><thead><tr><th>กลุ่ม</th><th>SKU</th><th>ชื่อ</th><th>LOT</th><th>PO</th>
+        <th class="num">สมุด</th><th class="num">นับ</th><th class="num">ต่าง</th></tr></thead><tbody>${rows}</tbody></table></div>`
+      : `<div class="st-note">${c.s === 'ok' ? 'โลนี้ว่างทั้งในสมุดและที่นับได้' : 'ยังไม่มีผลนับ และในสมุดไม่มีของ'}</div>`}</div>`;
+}
+
+function controlView() {
+  const r = R();
+  const cm = controlModel();
+  const m = cm.m, tv = CT.tv;
+  /* เปลี่ยนรอบ หรือรอบ 1 → รอบ 2: ผังเป็นคนละชุด ไม่เทียบกับสีเดิม */
+  if (CT.rid !== S.rid + '|' + cm.pass) { CT.rid = S.rid + '|' + cm.pass; CT.prev = null; CT.zones = null; CT.sel = ''; CT.team = ''; }
+  CT.cm = cm;
+  if (!m.total && !Object.keys(m.cells).length) {
+    return `<div class="st-empty">ยังไม่มีรายการ Location ของรอบนี้<br>ดึงยอดตั้งต้นและแบ่งทีมก่อน แล้วผังคลังจะขึ้นที่นี่<br><button class="st-btn" data-go="setup">ไปหน้าตั้งรอบ</button></div>`;
+  }
+  const started = m.first > 0;
+  const live = counting();
+  const kpi = (lb, v, sub, extra) => `<div class="ct-kpi"><div class="lb">${lb}</div><div class="v">${v}</div><div class="sub">${sub}</div>${extra || ''}</div>`;
+  const slow = m.teams.find(t => t.id === m.etaTeam);
+  const etaSub = !started ? 'ยังไม่เริ่มนับ' : !m.left || !m.eta ? ''
+    : `${esc(slow ? slow.name : '')} ช้าสุด${m.etaGuess ? ' (ประมาณ)' : ''}${m.paused ? ' · ถ้าเริ่มนับต่อตอนนี้' : ''}`;
+  const kpis = kpi(`คืบหน้า${cm.label ? ' ' + cm.label : ''}`, `${m.pct}%`, `${f(m.done)} / ${f(m.total)} โล`, `<div class="bar"><i style="width:${m.pct}%"></i></div>`) +
+    kpi('คาดว่าเสร็จ', !m.total ? '—' : !m.left ? 'ครบแล้ว' : m.eta ? etaText(m.eta, m.now) : '—', etaSub,
+      tv ? '' : `<label class="tg">เป้า <input type="time" id="ctTarget" value="${esc(targetOf())}" aria-label="เวลาที่อยากให้นับเสร็จ"></label>`) +
+    kpi('กำลังนับ', `${f(m.active)} คน`, m.paused ? `ไม่มีใครนับมา ${ST.spanText(m.paused)}` : m.pace ? `ความเร็วรวม ${f(m.pace)} โล/ชม.` : '') +
+    (tv ? kpi('เหลือ', `${f(m.left)} โล`, started ? `เริ่มนับ ${hm(m.first)}` : '')
+      : kpi('ตรงกับสมุด', m.acc.pct === null ? '—' : `${m.acc.pct}%`, m.acc.checked ? `${f(m.acc.ok)} / ${f(m.acc.checked)} โลที่นับแล้ว` : ''));
+
+  const icon = { warn: '⚠', info: 'ⓘ', ok: '✓' };
+  const alerts = controlAlerts(cm).filter(a => !(tv && a.blind));
+  const alertsHtml = alerts.length ? `<div class="ct-alerts">${alerts.map(a => `<div class="ct-al ${a.level}"><span aria-hidden="true">${icon[a.level]}</span><span>${esc(a.text)}</span></div>`).join('')}</div>` : '';
+
+  const side = m.teams.map(t => {
+    const idle = live && t.started && t.left > 0 && t.idle >= ST.CTRL.idle;
+    const etaT = !t.total ? '' : !t.left ? 'ครบแล้ว ✓' : t.eta ? `เสร็จ ~${etaText(t.eta, m.now)}${t.guess ? ' (ประมาณ)' : ''}` : '';
+    const last = t.last ? `ล่าสุด <b>${esc(t.last.loc)}</b> · ${esc(t.last.who)} · ${t.idle < 1 ? 'เมื่อกี้' : ST.spanText(t.idle) + 'ก่อน'}` : 'ยังไม่เริ่มนับ';
+    return `<button type="button" class="ct-team ${CT.team === t.id ? 'on' : ''} ${t.total && !t.left ? 'done' : ''}" data-ct-team="${esc(t.id)}" aria-pressed="${CT.team === t.id}" title="กดเพื่อดูเฉพาะแถวของทีมนี้ในผัง">
+      <div class="tn"><i class="dot ${t.here ? 'live' : idle ? 'idle' : ''}"></i>${esc(t.name)}<span class="pc">${t.pct}%</span></div>
+      <div class="bar"><i style="width:${t.pct}%"></i></div>
+      <div class="ln"><b>${f(t.done)}/${f(t.total)}</b> โล${t.pace ? ` · ${f(t.pace)} โล/ชม.` : ''}${etaT ? ' · ' + etaT : ''}</div>
+      <div class="ln">${last}</div></button>`;
+  }).join('');
+  const au = cm.pass === 1 ? prog().audit : null;
+  const audit = au && au.n ? `<div class="ct-aud">Audit สุ่มแล้ว <b>${au.pct}%</b> ของ ${f(au.n)} โล (ขั้นต่ำ ${au.min}%)</div>` : '';
+
+  const head = tv
+    ? `<div class="ct-tvhead"><img src="../icons/mascot-walk.png" alt="" width="48" height="48"><div class="nm"><b>${esc(r.name)}</b><span>${esc(r.status)}${cm.label ? ' · ' + cm.label : ''}</span></div>
+        <span class="sp"></span><span class="clock" id="ctClock">${hm(Date.now())}</span>
+        <button class="st-btn" data-act="tv-full">เต็มจอ</button><button class="st-btn" data-act="tv-exit">ออกจากจอทีวี</button></div>`
+    : `<div class="st-bar" style="margin-bottom:8px"><span class="st-pill ${live ? 'go' : ''}">${live ? '● ' : ''}${esc(r.status)}${cm.label ? ' · ' + cm.label : ''}</span>
+        <span class="sp"></span><span>${S.at ? 'อัปเดต ' + new Date(S.at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : ''}</span>
+        <button class="st-btn" data-act="tv" title="เปิดบนจอในคลัง ไม่แสดงว่าโลไหนต่างกับสมุด">จอทีวี</button></div>`;
+
+  return `${head}<div class="ct-kpis">${kpis}</div>${alertsHtml}
+    <div class="ct-grid"><div>${ctMap(m)}${ctSel(cm)}</div><div class="ct-side">${side || '<div class="ct-aud">ยังไม่มีทีม แบ่งทีมในแท็บทีม/โซน</div>'}${audit}</div></div>
+    ${tv ? '' : '<div class="st-note">กดช่องในผังเพื่อดูผลนับของโลนั้น · กดทีมเพื่อดูเฉพาะแถวของทีม · เวลาคาดว่าเสร็จคิดจากความเร็วครึ่งชั่วโมงล่าสุดของแต่ละทีม · อัปเดตเองทุก 20 วินาที</div>'}`;
+}
+
+/** หลังวาด: จำสีของแต่ละช่องไว้เทียบรอบหน้า และฉลองโซนที่เพิ่งครบ (เปิดแท็บครั้งแรกไม่ฉลองของที่ครบไปก่อนแล้ว) */
+function controlAfter() {
+  const cm = CT.cm;
+  if (!cm) return;
+  const m = cm.m;
+  const shown = {};
+  Object.keys(m.cells).forEach(l => { shown[l] = ctShown(m.cells[l].s); });
+  const zs = {};
+  m.groups.forEach(g => { const z = zs[g.zone] = zs[g.zone] || { t: 0, d: 0 }; z.t += g.total; z.d += g.done; });
+  const full = Object.keys(zs).filter(z => zs[z].t && zs[z].d === zs[z].t);
+  if (CT.zones && window.WmsMotion && window.WmsMotion.cheer) {
+    const fresh = full.filter(z => !CT.zones.includes(z));
+    if (m.total && !m.left && CT.wasLeft) window.WmsMotion.cheer(cm.label ? `นับ${cm.label}ครบแล้ว` : 'นับครบทุกโลแล้ว', `${f(m.total)} โล`);
+    else if (fresh.length) window.WmsMotion.cheer(`โซน ${fresh.join(', ')} ครบแล้ว`, `นับแล้ว ${f(m.done)} จาก ${f(m.total)} โล`);
+  }
+  CT.zones = full;
+  CT.wasLeft = m.left > 0;
+  CT.prev = shown;
+}
+
+/** จอไม่ดับระหว่างเปิดจอทีวี (เบราว์เซอร์ที่ไม่มีก็แค่ต้องตั้งเครื่องไม่ให้พักจอเอง) */
+async function wake() {
+  try {
+    if (!navigator.wakeLock || WAKE) return;
+    WAKE = await navigator.wakeLock.request('screen');
+    WAKE.addEventListener('release', () => { WAKE = null; });
+  } catch (e) { WAKE = null; }
+}
+
+function setTv(on) {
+  CT.tv = on;
+  const u = new URL(location.href);
+  u.searchParams.set('tab', 'control');
+  if (on) u.searchParams.set('tv', '1'); else u.searchParams.delete('tv');
+  history.replaceState(null, '', u.pathname + u.search);
+  if (on) {
+    try { const p = document.documentElement.requestFullscreen && document.documentElement.requestFullscreen(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* เต็มจอไม่ได้ก็ยังใช้จอทีวีได้ */ }
+    wake();
+  } else {
+    try { if (document.fullscreenElement) document.exitFullscreen(); } catch (e) { /* ไม่ได้อยู่ในเต็มจอ */ }
+    if (WAKE) { WAKE.release().catch(() => {}); WAKE = null; }
+  }
+  CT.prev = null;      // สีของช่องเปลี่ยนตามโหมด (จอทีวีไม่มีสีต่างกับสมุด) ไม่ถือว่าช่องเปลี่ยน
+  paint();
+}
+
+/* นาฬิกาบนจอทีวีเดินเองระหว่างรอข้อมูลรอบถัดไป */
+setInterval(() => { const el = $('ctClock'); if (el) el.textContent = hm(Date.now()); }, 10000);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && CT.tv && TAB === 'control' && !document.fullscreenElement) setTv(false); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && CT.tv && TAB === 'control') wake(); });
 
 /* ── แท็บความคืบหน้า ─────────────────────────────────────────────────── */
 
@@ -1289,7 +1635,7 @@ document.addEventListener('click', (e) => {
     TAB = d.tab; FILTER = ''; TOAST = ''; AQ = '';
     history.replaceState(null, '', '?tab=' + TAB);
     paint();
-    if (TAB === 'progress' && S.head && !MOVES) checkMoves(false);
+    if ((TAB === 'progress' || TAB === 'control') && S.head && !MOVES) checkMoves(false);
     return;
   }
   if (d.go) { TAB = d.go; FILTER = ''; AQ = ''; history.replaceState(null, '', '?tab=' + TAB); paint(); return; }
@@ -1337,6 +1683,8 @@ document.addEventListener('click', (e) => {
     touch();
     return;
   }
+  if (d.cell) { CT.sel = CT.sel === d.cell ? '' : d.cell; paintBody(); return; }
+  if (d.ctTeam) { CT.team = CT.team === d.ctTeam ? '' : d.ctTeam; paintBody(); return; }
   const act = d.act;
   if (act === 'reload') loadRounds();
   else if (act === 'copy') copyLink();
@@ -1356,6 +1704,17 @@ document.addEventListener('click', (e) => {
     if (confirm('ปิดรับนับรอบ 1?\nเครื่องที่ยังค้างส่งจะยังส่งเข้ามาได้ ย้อนกลับไปนับต่อได้')) setStatus('วิเคราะห์');
   }
   else if (act === 'day2-open') openDay2();
+  else if (act === 'tv') setTv(true);
+  else if (act === 'tv-exit') setTv(false);
+  else if (act === 'tv-full') { try { const p = document.documentElement.requestFullscreen(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* เบราว์เซอร์นี้เต็มจอไม่ได้ */ } wake(); }
+  else if (act === 'ct-clear') { CT.sel = ''; paintBody(); }
+  else if (act === 'ct-analyze') {
+    /* แท็บวิเคราะห์ขึ้นเฉพาะรายการที่มีปัญหา โลที่ตรงทั้งโลต้องกดชิป "ตรง" ให้ด้วย ไม่งั้นค้นแล้วไม่เจอ */
+    const bad = CT.cm && CT.cm.lines.some(x => x.loc === CT.sel && x.group !== ST.G.OK);
+    AQ = CT.sel; FILTER = bad ? '' : 'ok'; TAB = 'analyze';
+    history.replaceState(null, '', '?tab=analyze');
+    paint();
+  }
   else if (act === 'reopen') setStatus('นับรอบ 1');
   else if (act === 'plan-save') savePlan();
   else if (act === 'r2-undo') { R2D = null; paintBody(); }
@@ -1380,6 +1739,7 @@ document.addEventListener('change', (e) => {
     job('กำลังโหลดรอบ…', loadHead);
     return;
   }
+  if (t.id === 'ctTarget') { setTarget(t.value); paintBody(); return; }
   if (d.day2open !== undefined) {
     const dd = D();
     if (dd.day2 && !dd.day2.on) { dd.day2.open = t.checked; touch(); }
@@ -1477,17 +1837,20 @@ document.addEventListener('paste', (e) => {
 /* ความคืบหน้าสด: ขอเฉพาะแถวใหม่ทุกนาทีตอนเปิดแท็บนี้อยู่ */
 /* ไม่วาดใหม่ตอนกำลังพิมพ์ในช่องของตาราง (ยอดสุดท้าย / ค่าตั้งรอบ 2) ตัวที่พิมพ์จะได้ไม่หาย */
 function typing() { const a = document.activeElement; return !!a && a.tagName === 'INPUT' && a.closest('#body') && a.id !== 'anQ'; }
+let POLL_N = 0;
 setInterval(async () => {
+  /* ห้องควบคุมถามทุก 20 วินาที ผังกับจุดคนนับจะได้ขยับทัน แท็บอื่นทุกนาทีเหมือนเดิม */
+  if (++POLL_N % 3 && TAB !== 'control') return;
   if (!LIVE_TABS.includes(TAB) || document.hidden || S.busy || !S.head || S.rid === 'new' || R().status === 'ปิดแล้ว') return;
   try { await loadLog(true); if (!typing()) paintBody(); paintTabs(); } catch (e) { /* รอบหน้าค่อยลองใหม่ */ }
-}, POLL_MS);
+}, POLL_MS / 3);
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && LIVE_TABS.includes(TAB) && S.head && R().status !== 'ปิดแล้ว' && Date.now() - S.at > POLL_MS) loadLog(true).then(() => { paintBody(); paintTabs(); }).catch(() => {});
 });
 window.addEventListener('beforeunload', (e) => { if (DRAFT && DRAFT.dirty) { e.preventDefault(); e.returnValue = ''; } });
 
 paint();
-loadRounds().then(() => { if (TAB === 'progress' && S.head) checkMoves(false); });
+loadRounds().then(() => { if ((TAB === 'progress' || TAB === 'control') && S.head) checkMoves(false); });
 </script>
 </body>
 </html>
