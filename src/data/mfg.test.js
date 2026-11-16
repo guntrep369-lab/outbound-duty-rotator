@@ -124,6 +124,37 @@ describe('LOT ตัดและสถานะ (เดือนนี้ลบ 
   });
 });
 
+describe('สมุดที่ใช้ตั้งรอบ', () => {
+  const ok = { app: 'transaction', at: 1000, rows: [[2, 0, 4, 0, -1, 0, 5, 0, -1, 10]], skus: [SKUS[0]], sheet: { url: 'https://docs.example/d/x/edit', gid: 7 } };
+
+  it('สมุดว่าง (สคริปต์เห็นแท็บสมุดแค่หัวตาราง) ใช้ไม่ได้ และบอกว่าเป็นเพราะอะไร', () => {
+    expect(M.ledgerProblem(ok)).toBe('');
+    expect(M.ledgerProblem({ ...ok, rows: [], skus: [] })).toMatch(/0 แถว/);
+    expect(M.ledgerProblem({ error: 'ไม่พบชีต Transaction' })).toMatch(/ไม่พบชีต Transaction/);
+    expect(M.ledgerProblem({ app: 'transaction' })).toMatch(/ไม่ได้ตอบสมุด/);
+    expect(M.ledgerProblem({ app: 'stocktake', rows: [] })).toMatch(/ไม่ได้ตอบสมุด/);
+    expect(M.ledgerProblem(null)).toBeTruthy();
+  });
+
+  it('เวลาของสมุด: ชุดกลางใช้เวลาที่เก็บ อ่านสดใช้เวลาที่คิด · ลิงก์ไปแท็บสมุด', () => {
+    expect(M.ledgerTime(ok)).toBe(1000);
+    expect(M.ledgerTime({ ...ok, shared: { at: 2000 } })).toBe(2000);
+    expect(M.ledgerLink(ok)).toBe('https://docs.example/d/x/edit#gid=7');
+    expect(M.ledgerLink({ sheet: { url: 'javascript:alert(1)' } })).toBe('');
+    expect(M.ledgerLink({})).toBe('');
+  });
+});
+
+describe('ลิงก์คนนับของรอบ MFG', () => {
+  it('ใช้หน้ากรอกของนับสต๊อกใหญ่ แต่ลิงก์บอกว่าเป็นรอบ MFG (หน้ากรอกเปลี่ยนชื่อหัวตาม) ลิงก์นับสต๊อกใหญ่ไม่มีป้ายนี้', () => {
+    const link = ST.countLink('https://x.github.io/app/stocktake/count.html', 'https://script.google.com/macros/s/ABC/exec', 'nab', 'ST261116-1', 'mfg');
+    expect(ST.parseLink(link.split('#')[1])).toEqual({ url: 'https://script.google.com/macros/s/ABC/exec', key: 'nab', round: 'ST261116-1', kind: 'mfg' });
+    const big = ST.countLink('p', 'u', 'nab', 'r');
+    expect(big).not.toContain('m=');
+    expect(ST.parseLink(big.split('#')[1])).not.toHaveProperty('kind');
+  });
+});
+
 describe('ของที่ต้องนับ', () => {
   const LIST = [['AAA0000000001', 'Mattress'], ['BBB001', 'Topper'], ['CCC0000000001', 'Pillow & Bolster'], ['XYZ0000000001', 'Mattress']];
 

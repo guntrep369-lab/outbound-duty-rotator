@@ -490,6 +490,7 @@ async function loadRound() {
     if (res.error) throw new Error(res.error);
     RD = { ...res, at: Date.now() };
     save(K.rd, { id: CFG.round, ...RD });
+    brand();
     NET.err = '';
     NET.old = ST.oldScript(res);
   } catch (e) {
@@ -1657,6 +1658,17 @@ window.addEventListener('beforeunload', (e) => { if (BOX.out.length) { e.prevent
   setTimeout(close, 6000);
 })();
 
+/* รอบเช็คความเสี่ยง MFG (หน้า mfg/) ใช้หน้ากรอกนี้ร่วมกัน ชื่อหัวเปลี่ยนตามรอบ: ลิงก์มี m=mfg หรือชื่อรอบขึ้นต้นด้วย MFG */
+function brand() {
+  const r = (RD && RD.round) || (load(K.rd, null) || {}).round;
+  const name = r && CFG && r.id === CFG.round ? String(r.name || '') : '';
+  const title = (CFG && CFG.kind === 'mfg') || /^MFG\s/.test(name) ? 'เช็คความเสี่ยง MFG' : 'นับสต๊อกใหญ่';
+  document.title = `กรอกผลนับ — ${title}`;
+  const b = document.querySelector('#intro b');
+  if (b) b.textContent = title;
+}
+
+brand();
 paint();
 if (CFG) loadRound();
 </script>

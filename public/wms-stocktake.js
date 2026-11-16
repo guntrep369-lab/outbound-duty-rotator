@@ -969,15 +969,20 @@
     };
   }
 
-  function countLink(pageUrl, scriptUrl, key, roundId) {
+  /** kind = ชนิดรอบที่ใช้หน้ากรอกนี้ร่วมกัน เช่น 'mfg' (หน้าเช็คความเสี่ยง MFG) หน้ากรอกเปลี่ยนชื่อหัวตาม ไม่ใส่ = นับสต๊อกใหญ่ */
+  function countLink(pageUrl, scriptUrl, key, roundId, kind) {
     return String(pageUrl).split('#')[0] + '#u=' + encodeURIComponent(scriptUrl || '') +
-      (key ? '&k=' + encodeURIComponent(key) : '') + '&r=' + encodeURIComponent(roundId || '');
+      (key ? '&k=' + encodeURIComponent(key) : '') + '&r=' + encodeURIComponent(roundId || '') +
+      (kind ? '&m=' + encodeURIComponent(kind) : '');
   }
 
   function parseLink(hash) {
     var p = new URLSearchParams(String(hash || '').replace(/^#/, ''));
     var u = p.get('u');
-    return u ? { url: u, key: p.get('k') || '', round: p.get('r') || '' } : null;
+    if (!u) return null;
+    var o = { url: u, key: p.get('k') || '', round: p.get('r') || '' };
+    if (p.get('m')) o.kind = p.get('m');
+    return o;
   }
 
   /* ── วิเคราะห์ผลนับ (ขั้นที่ 2) ───────────────────────────────────────── */

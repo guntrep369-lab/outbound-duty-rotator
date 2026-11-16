@@ -220,6 +220,33 @@
     return by;
   }
 
+  /* ── สมุดที่ใช้ตั้งรอบ ─────────────────────────────────────────────── */
+
+  /**
+   * คำตอบ tx-fifo ใช้ตั้งรอบได้ไหม ใช้ได้คืน '' ไม่ได้คืนข้อความที่หัวหน้าอ่านรู้เรื่อง
+   * สมุด 0 แถว = สคริปต์เปิดแท็บสมุดเจอแค่หัวตาราง (เช่นสูตรดึงข้อมูลในไฟล์สำเนา error)
+   * ต้องหยุดตรงนี้ ไม่งั้นหน้าจะขึ้น 0 SKU เฉย ๆ และยอดตั้งต้นจะเป็นศูนย์ทั้งรอบ
+   */
+  function ledgerProblem(data) {
+    if (!data) return 'ไม่ได้คำตอบจากสคริปต์ Transaction';
+    if (data.error) return 'สมุด Transaction: ' + data.error;
+    if (data.app !== 'transaction' || !data.rows) return 'URL Transaction ไม่ได้ตอบสมุดมา ตรวจในหน้าตั้งค่า';
+    if (!data.rows.length) return 'สคริปต์อ่านแท็บสมุดได้ 0 แถว — แท็บ Transaction ในไฟล์ที่สคริปต์อ่านว่าง หรือสูตรดึงข้อมูลในไฟล์นั้น error อยู่';
+    return '';
+  }
+
+  /** เวลาของสมุดชุดนี้ ชุดกลางใช้เวลาที่เก็บไว้ อ่านสดใช้เวลาที่สคริปต์คิด */
+  function ledgerTime(data) {
+    return (data && ((data.shared && data.shared.at) || data.at)) || 0;
+  }
+
+  /** ลิงก์ไปแท็บสมุดที่สคริปต์อ่าน ไม่รู้คืน '' */
+  function ledgerLink(data) {
+    var s = data && data.sheet;
+    if (!s || !/^https:\/\//.test(String(s.url || ''))) return '';
+    return s.url + (s.gid != null ? '#gid=' + s.gid : '');
+  }
+
   /** รายชื่อ → { SKU เต็ม: ประเภท } ใช้ SKU เต็มของสมุดเมื่อคนวางรหัสสั้นมา */
   function listMap(list, skus) {
     var idx = skuIndex(skus), m = {};
@@ -579,6 +606,7 @@
     guessList: guessList, parseList: parseList, packList: packList, unpackList: unpackList, listMap: listMap,
     rule: rule, roundName: roundName, ymText: ymText, monthText: monthText, months: months,
     noLot: noLot, statusOf: statusOf, ageDays: ageDays,
+    ledgerProblem: ledgerProblem, ledgerTime: ledgerTime, ledgerLink: ledgerLink,
     scope: scope, teams: teams, report: report, filter: filter, sheet: sheet, lineText: lineText,
   };
 })(window);

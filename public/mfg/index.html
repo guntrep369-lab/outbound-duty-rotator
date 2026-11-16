@@ -171,6 +171,7 @@
 <script type="module" src="../wms-shell.js"></script>
 <script src="../wms-settings.js"></script>
 <script src="../wms-gas.js"></script>
+<script src="../wms-shared.js"></script>
 <script src="../wms-sup.js"></script>
 <script src="../wms-fifo.js"></script>
 <script src="../wms-stocktake.js"></script>
@@ -195,8 +196,9 @@ const Q = new URLSearchParams(location.search);
 let TAB = TABS.some(t => t[0] === Q.get('tab')) ? Q.get('tab') : '';
 
 const S = { rounds: null, rid: load(KEY_ROUND), head: null, raw: [], since: 0, at: 0, busy: '', err: '', ok: '', old: null };
-let FIFO = null;        // สมุดที่อ่านสดไว้ตั้งรอบใหม่ {data, base, at}
+let FIFO = null;        // สมุดที่ใช้ตั้งรอบใหม่ {data, base, at = เวลาของสมุดชุดนั้น, src = 'shared'|'live', note = อ่านสดไม่ได้ {msg, link}}
 let FIFO_BUSY = false;
+let FIFO_ERR = null;    // อ่านสมุดไม่ได้เลย {msg, link} ไม่อ่านซ้ำเองจนกว่าจะกดลองใหม่ (เดิมวนอ่านไม่หยุด)
 let DRAFT = null;       // รอบใหม่ที่กำลังตั้ง {ym, list, src, teams, type, q}
 let RF = { st: '', type: '', q: '', mode: '' };   // ตัวกรองรายงาน
 let CF = 'left';        // ชิปของแท็บนับ
@@ -290,7 +292,7 @@ function listOf() { return M.unpackList(R() ? R().settings.list : []); }
 function locList() { return S.head ? S.head.locs.map(l => ({ loc: l[0], zone: l[1], group: l[2], src: l[3] })) : []; }
 function counting() { return R() && R().status === 'นับรอบ 1'; }
 function link() {
-  return ST.countLink(new URL('../stocktake/count.html', location.href).href, new URL(cfg().url, location.href).href, S.head.countKey, S.rid);
+  return ST.countLink(new URL('../stocktake/count.html', location.href).href, new URL(cfg().url, location.href).href, S.head.countKey, S.rid, 'mfg');
 }
 function rep(mode) {
   return M.report({ ym: ymOf(), today: today(), list: listOf(), skus: S.head.skus, book: S.head.piles, entries: S.raw, mode, locs: locList() });
@@ -326,8 +328,21 @@ function paintTabs() {
     `<span class="lb">${label}</span>${n[id] ? ` <span class="n">${n[id]}</span>` : ''}</button>`).join('');
 }
 
+/* วาดซ้ำหน้าเดิม (กด ✕ เปลี่ยน Type กาง ⓘ) ตารางต้องค้างตำแหน่งเลื่อนเดิม เดิมเด้งกลับแถวแรกทุกครั้ง */
+let PAINTED = '';
 function paintBody() {
   const box = $('body');
+  const view = TAB + '|' + S.rid;
+  const keep = view === PAINTED ? [...box.querySelectorAll('.tx-wrap')].map(w => [w.scrollTop, w.scrollLeft]) : null;
+  const y = window.scrollY;
+  drawBody(box);
+  PAINTED = view;
+  if (!keep) return;
+  box.querySelectorAll('.tx-wrap').forEach((w, i) => { if (keep[i]) { w.scrollTop = keep[i][0]; w.scrollLeft = keep[i][1]; } });
+  window.scrollTo(window.scrollX, y);
+}
+
+function drawBody(box) {
   if (!cfg().url || !cfg().t) { box.innerHTML = cfgBox(); return; }
   if (!S.rounds) { box.innerHTML = S.busy ? '<div class="tx-empty">⏳ กำลังโหลด…</div>' : '<div class="tx-empty">โหลดรอบไม่ได้<br><button class="tx-opt" data-act="reload">ลองใหม่</button></div>'; return; }
   if (S.rid === 'new' || !S.head) {
@@ -368,7 +383,9 @@ function startDraft() {
 function setupNew() {
   if (!WmsSettings.txUrl()) return '<div class="tx-warn">ยังไม่มี URL Transaction ในหน้าตั้งค่า — ต้องมีก่อนถึงจะอ่านสมุดได้</div>';
   if (!FIFO) {
-    if (!FIFO_BUSY) setTimeout(readFifo, 0);
+    if (FIFO_ERR) return `<div class="tx-warn">อ่านสมุดไม่ได้: ${esc(FIFO_ERR.msg)}${sheetLink(FIFO_ERR.link)}
+      <button class="tx-opt" data-act="refifo">ลองใหม่</button></div>`;
+    if (!FIFO_BUSY) setTimeout(() => readFifo(['shared', 'live']), 0);
     return '<div class="tx-empty">⏳ กำลังอ่านสมุด Transaction…</div>';
   }
   if (!DRAFT) startDraft();
@@ -407,7 +424,8 @@ function setupNew() {
     <div class="mf-row" style="margin-bottom:8px"><span>ต้องนับ</span> <b>${f(sc.totals.locs)}</b> โล · <b>${f(sc.totals.skus)}</b> SKU · ในสมุด <b>${f(sc.totals.qty)}</b> ชิ้น
       <span class="mf-tag risk">เสี่ยงมาก ${f((by.risk || {}).qty)}</span> <span class="mf-tag watch">เฝ้าระวัง ${f((by.watch || {}).qty)}</span>
       <span class="mf-tag ok">ปกติ ${f((by.ok || {}).qty)}</span> <span class="mf-tag nolot">NO LOT ${f((by.nolot || {}).qty)}</span>
-      <span class="sp"></span><span>สมุดอ่านเมื่อ ${new Date(FIFO.at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}${old ? ' (จะอ่านใหม่ตอนสร้างรอบ)' : ''}</span></div>
+      <span class="sp"></span><span title="${FIFO.src === 'shared' ? 'ชุดกลางที่สคริปต์เก็บไว้ ทุกหน้าใช้ชุดเดียวกัน' : 'สคริปต์อ่านทั้งชีตตอนนี้'}">สมุด${FIFO.src === 'shared' ? 'ชุดกลาง' : 'อ่านสด'} ${esc(stamp(FIFO.at))}${old ? ' (จะอ่านสดอีกครั้งตอนสร้างรอบ)' : ''}</span></div>
+    ${FIFO.note ? `<div class="tx-sub" style="margin-top:6px">⚠ อ่านสมุดสดไม่ได้: ${esc(FIFO.note.msg)}${sheetLink(FIFO.note.link)}</div>` : ''}
     <div class="mf-row"><label for="fTeams">ทีมนับ</label>
       <select class="mf-sel" id="fTeams">${[1, 2, 3, 4, 5, 6].map(n => `<option ${n === DRAFT.teams ? 'selected' : ''}>${n}</option>`).join('')}</select>
       <span>แบ่งแถวให้ทีมเองตามทางเดิน</span><span class="sp"></span>
@@ -426,17 +444,55 @@ function setupNew() {
     <tbody>${table || '<tr><td colspan="5" class="tx-sub">ไม่มี SKU ในรายชื่อ</td></tr>'}</tbody></table></div>`;
 }
 
-async function readFifo() {
+/** เวลาของสมุด วันนี้บอกแค่เวลา วันอื่นบอกวันที่ด้วย */
+function stamp(ms) {
+  const d = new Date(ms);
+  const t = d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+  return d.toDateString() === new Date().toDateString() ? t : `${d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })} ${t}`;
+}
+
+function sheetLink(url) {
+  return url ? ` <a href="${esc(url)}" target="_blank" rel="noopener">เปิดแท็บสมุด</a>` : '';
+}
+
+/**
+ * อ่านสมุดจากที่เดียว · shared = ชุดกลางที่สคริปต์เก็บไว้ (เร็ว ทุกหน้าใช้ชุดเดียวกัน อาจช้ากว่าสมุดไม่กี่ชั่วโมง)
+ * live = ให้สคริปต์อ่านทั้งชีตตอนนี้ (ช้า ได้ยอดล่าสุด) · ได้สมุดว่างหรือคำตอบผิดถือว่าอ่านไม่ได้
+ */
+async function ledgerFrom(src) {
+  const tx = WmsSettings.txUrl();
+  const say = (sec) => { S.busy = `${src === 'live' ? 'กำลังอ่านสมุด Transaction ทั้งชีต' : 'กำลังโหลดสมุดชุดกลาง'}… ${sec} วิ`; paintSrc(); };
+  const opts = { retries: 0, timeoutMs: 240000, onProgress: say };
+  const data = src === 'live' ? await WmsGas.json(tx, 'tx-fifo', opts) : await WmsShared.read(tx, 'tx-fifo', opts);
+  const bad = M.ledgerProblem(data);
+  if (bad) { const e = new Error(bad); e.link = M.ledgerLink(data); throw e; }
+  return data;
+}
+
+function useLedger(data, src, note) {
+  const sm = WmsSup.map(data.sup);
+  FIFO = { data, base: ST.baseline(data, (po) => WmsSup.of(sm, po)), at: M.ledgerTime(data) || Date.now(), src, note: note || null };
+}
+
+/** ลองอ่านตามลำดับ ที่แรกไม่ได้ลองที่ถัดไป ใช้ชุดกลางเพราะอ่านสดไม่ได้ ขึ้นบอกไว้ ไม่ได้สักที่ เก็บข้อความไว้รอกดลองใหม่ */
+async function readFifo(order) {
   if (FIFO_BUSY) return;
   FIFO_BUSY = true;
-  try {
-    const tx = WmsSettings.txUrl();
-    const data = await WmsGas.json(tx, 'tx-fifo', { onProgress: (sec) => { S.busy = `กำลังอ่านสมุด Transaction… ${sec} วิ`; paintSrc(); } });
-    if (data.error) throw new Error('สมุด Transaction: ' + data.error);
-    if (!data.rows) throw new Error('URL Transaction ไม่ได้ตอบสมุดมา ตรวจในหน้าตั้งค่า');
-    const sm = WmsSup.map(data.sup);
-    FIFO = { data, base: ST.baseline(data, (po) => WmsSup.of(sm, po)), at: Date.now() };
-  } catch (e) { S.err = e.message; }
+  FIFO_ERR = null;
+  const errs = [];
+  let got = false;
+  for (const src of order) {
+    try {
+      const data = await ledgerFrom(src);
+      useLedger(data, src, src === 'shared' ? errs.find(e => e.src === 'live') : null);
+      got = true;
+      break;
+    } catch (e) { errs.push({ src, msg: e.message, link: e.link || '' }); }
+  }
+  if (!got) {
+    const msgs = [...new Set(errs.map(e => e.msg))];
+    FIFO_ERR = { msg: msgs.join(' · '), link: (errs.find(e => e.link) || {}).link || '' };
+  }
   FIFO_BUSY = false;
   S.busy = '';
   paint();
@@ -448,7 +504,22 @@ async function createRound() {
   const noType = d.list.filter(x => !x[1]).length;
   if (noType && !confirm(`มี ${noType} SKU ที่ยังไม่ได้เลือก Type\nสร้างรอบต่อเลยไหม? (ในรายงานช่อง Type จะว่าง)`)) return;
   await job('กำลังสร้างรอบ…', async () => {
-    if (Date.now() - FIFO.at > FIFO_MAX_MS) { FIFO = null; await readFifo(); if (!FIFO) throw new Error(S.err || 'อ่านสมุดไม่ได้'); S.busy = 'กำลังสร้างรอบ…'; }
+    /* ยอดตั้งต้นควรเป็นของตอนเริ่มนับ สมุดที่ถืออยู่เก่าไปให้อ่านสด อ่านสดไม่ได้ให้หัวหน้าเลือกว่าจะใช้ชุดที่มีไหม */
+    if (Date.now() - FIFO.at > FIFO_MAX_MS) {
+      try { useLedger(await ledgerFrom('live'), 'live'); }
+      catch (e) {
+        if (!confirm(`อ่านสมุดสดไม่ได้
+${e.message}
+
+ใช้ยอดสมุดชุด ${stamp(FIFO.at)} เป็นยอดตั้งต้นของรอบนี้แทนไหม?
+(ของที่รับ-จ่ายหลังเวลานั้นจะไม่อยู่ในยอดสมุด ส่วนผลนับจริงไม่เกี่ยว)`)) {
+          throw new Error('ยังไม่ได้สร้างรอบ — อ่านสมุดสดไม่ได้: ' + e.message);
+        }
+        FIFO.note = { msg: e.message, link: e.link || '' };
+      }
+      S.busy = 'กำลังสร้างรอบ…'; paintSrc();
+    }
+    const baseAt = Date.now() - FIFO.at > FIFO_MAX_MS ? ` · ยอดสมุดตั้งต้นเป็นชุด ${stamp(FIFO.at)}` : '';
     const sc = M.scope(FIFO.base, d.list, d.ym);
     if (!sc.piles.length) throw new Error('ไม่มีของที่ต้องนับในเดือนนี้');
     const res = await post({ op: 'st-round-save', round: { name: M.roundName(d.ym), date: today(), cutoff: nowCut(),
@@ -464,7 +535,7 @@ async function createRound() {
     await loadHead();
     DRAFT = null;
     TAB = 'count';
-    S.ok = `✓ สร้างรอบ ${M.ymText(d.ym)} แล้ว ${f(sc.totals.locs)} โล · กด "คัดลอกลิงก์คนนับ" แล้วส่งใน LINE`;
+    S.ok = `✓ สร้างรอบ ${M.ymText(d.ym)} แล้ว ${f(sc.totals.locs)} โล${baseAt} · กด "คัดลอกลิงก์คนนับ" แล้วส่งใน LINE`;
   });
 }
 
@@ -754,9 +825,11 @@ document.addEventListener('click', (e) => {
   if (d.del !== undefined) { DRAFT.list.splice(+d.del, 1); DRAFT.guessed = false; paintBody(); return; }
   switch (d.act) {
     case 'reload':
-      FIFO = FIFO && S.rid === 'new' ? null : FIFO;
+      /* ดึงใหม่ตอนตั้งรอบ = อ่านสมุดสด อ่านไม่ได้ค่อยใช้ชุดกลาง */
+      if (S.rid === 'new' && !FIFO_BUSY) { FIFO = null; readFifo(['live', 'shared']); }
       loadRounds();
       break;
+    case 'refifo': readFifo(['live', 'shared']); paintBody(); break;
     case 'copy': copyLink(); break;
     case 'create': createRound(); break;
     case 'guess':

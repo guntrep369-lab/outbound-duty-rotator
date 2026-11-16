@@ -30,6 +30,7 @@ function folderIndex() {
  * Apps Script ปลอมสำหรับลองหน้านับสต๊อกใหญ่ใน dev server เท่านั้น (ไม่อยู่ในไฟล์ที่ build)
  *   /__fake/tx         ตอบ tx-fifo จากสมุดสมมติ ?api=fake-move เพิ่มแถวขายหลังตัดยอดไว้ลองคำเตือน (&from=0 = ขายจากโลแร็ค)
  *                      ?api=fake-old เพิ่มของบีบสูญญากาศ LOT เก่าไว้ลองหน้าเช็คความเสี่ยง MFG (mfg/)
+ *                      ?api=fake-empty อ่านสดได้สมุดว่าง แต่ชุดกลาง (&shared=1) ยังมีของ แบบที่เจอจริง 16 พ.ย. 69 (&on=0 = เลิก)
  *   /__fake/stocktake  รัน apps-script/stocktake-api.gs ตัวจริงกับชีตในหน่วยความจำ
  *                      รหัสหัวหน้า demo-head รหัสคนนับ demo-count ข้อมูลหายเมื่อปิด dev server
  * ตั้งในหน้านับสต๊อกใหญ่: URL = http://localhost:5173/__fake/stocktake รหัส = demo-head
@@ -39,6 +40,7 @@ function fakeGas() {
   let st = null;
   let stAt = 0;
   const moves = [];
+  let emptyLive = false;
   return {
     name: 'fake-gas',
     apply: 'serve',
@@ -60,7 +62,16 @@ function fakeGas() {
               [18, 0, 3, -1, 3, 5, 0, 0, 10], [2, 0.12, 4, -1, 4, 3, 0, 0, 10]].forEach((m) => moves.push(m));
             return send({ ok: 1, moves: moves.length });
           }
-          if (params.api === 'tx-fifo') return send(fakeFifo({ extraRows: moves }));
+          if (params.api === 'fake-empty') { emptyLive = params.on !== '0'; return send({ ok: 1, emptyLive }); }
+          if (params.api === 'tx-fifo') {
+            const d = fakeFifo({ extraRows: moves });
+            /* ชุดกลางมีป้ายเวลาเหมือนสคริปต์จริง ตั้งไว้ว่าเก็บตั้งแต่ 4 ชั่วโมงก่อน */
+            const at = Date.now() - 4 * 3600e3;
+            if (params.shared) return send({ ...d, at, shared: { at, by: '', auto: true } });
+            /* สคริปต์เห็นแท็บสมุดแค่หัวตาราง (สูตรดึงข้อมูลในไฟล์สำเนา error) */
+            if (emptyLive) return send({ ...d, last: '', skus: [], pos: [], locs: [], days: [], rows: [] });
+            return send(d);
+          }
           return send({ app: 'transaction' });
         }
         if (pathname === '/__fake/stocktake') {
