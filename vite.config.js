@@ -29,6 +29,7 @@ function folderIndex() {
 /**
  * Apps Script ปลอมสำหรับลองหน้านับสต๊อกใหญ่ใน dev server เท่านั้น (ไม่อยู่ในไฟล์ที่ build)
  *   /__fake/tx         ตอบ tx-fifo จากสมุดสมมติ ?api=fake-move เพิ่มแถวขายหลังตัดยอดไว้ลองคำเตือน (&from=0 = ขายจากโลแร็ค)
+ *                      ?api=fake-old เพิ่มของบีบสูญญากาศ LOT เก่าไว้ลองหน้าเช็คความเสี่ยง MFG (mfg/)
  *   /__fake/stocktake  รัน apps-script/stocktake-api.gs ตัวจริงกับชีตในหน่วยความจำ
  *                      รหัสหัวหน้า demo-head รหัสคนนับ demo-count ข้อมูลหายเมื่อปิด dev server
  * ตั้งในหน้านับสต๊อกใหญ่: URL = http://localhost:5173/__fake/stocktake รหัส = demo-head
@@ -51,6 +52,12 @@ function fakeGas() {
           if (params.api === 'fake-move') {
             /* from = ลำดับโลในสมุดสมมติ (0 = R1-01-01 โลแร็ค, ไม่ใส่ = 66 โลเปิดฝั่ง B) ไว้ลองนับ 2 วัน: ขายจากโลเปิดไม่เตือน เบิกจากแร็คเตือน */
             moves.push([0, 9, 0, +params.from >= 0 ? +params.from : 66, -1, 1, 2, -1, 0]);
+            return send({ ok: 1, moves: moves.length });
+          }
+          if (params.api === 'fake-old') {
+            /* ของบีบสูญญากาศ LOT เก่า (4, 5, 6, 0.12) กับ LOT 0 ไว้ลองหน้าเช็คความเสี่ยง MFG — สมุดสมมติมีแค่ LOT 8–10 */
+            [[0, 4, 0, -1, 0, 12, 0, 0, 10], [1, 5, 1, -1, 1, 6, 0, 0, 10], [10, 6, 2, -1, 2, 9, 0, 0, 10],
+              [18, 0, 3, -1, 3, 5, 0, 0, 10], [2, 0.12, 4, -1, 4, 3, 0, 0, 10]].forEach((m) => moves.push(m));
             return send({ ok: 1, moves: moves.length });
           }
           if (params.api === 'tx-fifo') return send(fakeFifo({ extraRows: moves }));

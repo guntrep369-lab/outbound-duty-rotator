@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>เช็คความเสี่ยง MFG — WMS</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../wms-icon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="../wms-logo.png">
+<link rel="apple-touch-icon" href="../wms-icon-180.png">
+<link rel="stylesheet" href="../wms-theme.css">
+<link rel="stylesheet" href="../wms-gate.css">
+<script src="../wms-gate.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+
+/* ── แถบรอบนับ ── */
+.tx-src{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 20px;
+  background:var(--wms-surface2);border-bottom:1px solid var(--wms-border);font-size:12px}
+.tx-src select{padding:5px 10px;border-radius:10px;border:1.5px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:14px;font-weight:600;color:var(--wms-text)}
+.tx-src .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;
+  background:var(--wms-surface);border:1px solid var(--wms-border);color:var(--wms-muted)}
+.tx-src .pill.go{background:#ECFDF5;border-color:#A7F3D0;color:#065F46;font-weight:600}
+.tx-src .pill.warn{background:#FEF3C7;border-color:#FDE68A;color:#92400E}
+.tx-src .sp{flex:1}
+.tx-src button{padding:4px 12px;border-radius:999px;border:1px solid var(--wms-border2);
+  background:var(--wms-surface);font-family:var(--wms-font);font-size:13px;color:#334155;cursor:pointer}
+.tx-src button:hover:not(:disabled){background:var(--wms-primary-light);border-color:var(--wms-primary);color:var(--wms-primary-dark)}
+.tx-src button:disabled{opacity:.6;cursor:default}
+.mf-msg{width:100%;font-size:13px;line-height:1.5}
+.mf-msg.err{color:#B91C1C;font-weight:600}
+.mf-msg.ok{color:#047857;font-weight:600}
+.mf-msg.busy{color:var(--wms-primary-dark);font-weight:600}
+
+/* ── เนื้อหา ── */
+.tx-body{padding:14px 20px 60px}
+.tx-empty{padding:44px 20px;text-align:center;color:var(--wms-muted);font-size:14px;line-height:1.7}
+.tx-empty b{color:var(--wms-text)}
+.tx-note{margin-bottom:12px;font-size:13px;color:var(--wms-muted);line-height:1.6}
+.tx-note b{color:var(--wms-text)}
+.tx-warn{margin-bottom:12px;padding:10px 13px;border-radius:var(--wms-radius-sm);background:#FEF3C7;
+  border:1px solid #FDE68A;color:#92400E;font-size:13px;line-height:1.6}
+.tx-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px;font-size:13px;color:var(--wms-muted)}
+.tx-bar .sp{flex:1}
+.tx-opt{padding:5px 13px;border-radius:999px;border:1px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:13px;color:#334155;cursor:pointer;white-space:nowrap}
+.tx-opt:hover:not(:disabled){border-color:var(--wms-primary);color:var(--wms-primary-dark)}
+.tx-opt.on{background:var(--wms-primary-light);border-color:var(--wms-primary);color:var(--wms-primary-dark);font-weight:600}
+.tx-opt.p{background:var(--wms-primary);border-color:var(--wms-primary);color:#fff;font-weight:600}
+.tx-opt.p:hover:not(:disabled){filter:brightness(1.08);color:#fff}
+.tx-opt.rp{border-color:#FECACA;color:#B91C1C}
+.tx-opt:disabled{opacity:.55;cursor:default}
+.tx-opt.big{padding:9px 20px;font-size:15px}
+.tx-input{flex:1;min-width:160px;max-width:300px;padding:7px 12px;border-radius:10px;border:1.5px solid var(--wms-border2);
+  background:var(--wms-surface);font-family:var(--wms-font);font-size:14px;color:var(--wms-text);outline:none}
+.tx-input:focus{border-color:var(--wms-primary)}
+.mf-sel{padding:6px 10px;border-radius:10px;border:1.5px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:14px;font-weight:600;color:var(--wms-text)}
+.mf-h{margin:4px 0 10px;font-size:15px;font-weight:700;color:var(--wms-text)}
+.mf-h small{font-size:12px;font-weight:500;color:var(--wms-muted);margin-left:6px}
+.mf-card{margin-bottom:14px;padding:12px 14px;background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:var(--wms-radius)}
+.mf-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;font-size:13px;color:var(--wms-muted)}
+.mf-row b{color:var(--wms-text)}
+.mf-row label{font-size:14px;font-weight:700;color:var(--wms-text)}
+
+/* ชิปสถานะ สีเดียวกับรายงานของทีม: แดง = เสี่ยงมาก / NO LOT, เหลือง = เฝ้าระวัง, เขียว = ปกติ */
+.mf-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;border:1.5px solid transparent;
+  font-family:var(--wms-font);font-size:13px;cursor:pointer;background:var(--wms-surface2);color:#334155;white-space:nowrap}
+.mf-chip b{font-variant-numeric:tabular-nums}
+.mf-chip.on{border-color:var(--wms-text)}
+.mf-chip.risk{background:#F4C7C3;color:#7F1D1D}
+.mf-chip.watch{background:#FCE8B2;color:#78350F}
+.mf-chip.ok{background:#B7D7A8;color:#14532D}
+.mf-chip.nolot{background:#FDE2E1;color:#7F1D1D}
+.mf-chip.none,.mf-chip.wait{background:#E2E8F0;color:#334155}
+.mf-tag{display:inline-block;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.mf-tag.risk{background:#CC0000;color:#fff}
+.mf-tag.watch{background:#F1C232;color:#3B2F00}
+.mf-tag.ok{background:#34A853;color:#fff}
+.mf-tag.nolot{background:#E06666;color:#fff}
+.mf-tag.none,.mf-tag.wait{background:#E2E8F0;color:#334155}
+
+/* ── ตาราง ── */
+.tx-wrap{overflow:auto;max-height:72vh;background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:var(--wms-radius)}
+.tx-tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tx-tbl th{text-align:left;padding:7px 9px;background:var(--wms-surface2);font-size:12px;font-weight:600;color:var(--wms-muted);
+  border-bottom:1px solid var(--wms-border);white-space:nowrap;position:sticky;top:0;z-index:2}
+.tx-tbl td{padding:6px 9px;border-bottom:1px solid #F1F5F9;vertical-align:top;line-height:1.4}
+.tx-tbl .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tx-tbl th.num{text-align:right}
+.tx-tbl .nw{white-space:nowrap}
+.tx-sub{display:block;font-size:11.5px;color:var(--wms-muted)}
+.mf-del{border:0;background:none;color:#94A3B8;font-size:16px;cursor:pointer;padding:0 4px}
+.mf-del:hover{color:#B91C1C}
+.mf-type{padding:3px 6px;border-radius:8px;border:1px solid var(--wms-border2);background:var(--wms-surface);font-family:var(--wms-font);font-size:12.5px}
+.mf-type.none{border-color:#FCA5A5;background:#FEF2F2}
+
+/* รายงานแบบชีตของทีม: หัวสองแถว (ปี / Lot) สีหัวตามสถานะ ช่องตัวเลขสีอ่อนตามคอลัมน์ */
+.mf-rep th{text-align:center;color:#fff;background:#434343;border:1px solid #fff}
+.mf-rep thead tr:nth-child(2) th{top:31px}
+.mf-rep th.year{background:#1F3FD8}
+.mf-rep th.risk,.mf-rep th.nolot{background:#CC0000}
+.mf-rep th.watch{background:#F1C232;color:#3B2F00}
+.mf-rep th.ok{background:#34A853}
+.mf-rep th.total{background:#E06666}
+.mf-rep th small{display:block;font-size:10.5px;font-weight:500;opacity:.9}
+.mf-rep td{border-right:1px solid #EEF2F7}
+.mf-rep td.c-risk,.mf-rep td.c-nolot{background:#FBE3E1}
+.mf-rep td.c-watch{background:#FEF5D9}
+.mf-rep td.c-ok{background:#E3F0DC}
+.mf-rep td.tot{font-weight:700}
+.mf-rep td.k-sku{min-width:130px}
+.mf-rep td.k-name{min-width:240px}
+.mf-rep .diff{display:block;font-size:10.5px;font-weight:600;color:#B91C1C}
+.mf-rep .diff.up{color:#047857}
+.mf-rep tr.foot td{background:var(--wms-surface2);font-weight:700;position:sticky;bottom:0}
+.mf-rep tr.det td{background:#F8FAFC;font-size:12.5px;color:var(--wms-text)}
+.mf-i{width:24px;height:24px;border-radius:50%;border:1px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:12px;font-weight:700;color:var(--wms-muted);cursor:pointer}
+.mf-i.on{background:var(--wms-primary-light);border-color:var(--wms-primary);color:var(--wms-primary-dark)}
+.mf-det{display:flex;flex-direction:column;gap:4px;line-height:1.5}
+.mf-det b{font-weight:700}
+.mf-loc{display:inline-block;margin:1px 3px 1px 0;padding:0 6px;border-radius:6px;background:var(--wms-surface);
+  border:1px solid var(--wms-border);font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.mf-loc.bad{background:#FEE2E2;border-color:#FECACA;color:#991B1B}
+
+/* ความคืบหน้า */
+.mf-prog{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.mf-big{font-size:26px;font-weight:800;color:var(--wms-text);font-variant-numeric:tabular-nums}
+.mf-barbox{flex:1;min-width:180px;height:12px;border-radius:999px;background:var(--wms-surface2);overflow:hidden}
+.mf-barbox i{display:block;height:100%;background:var(--wms-primary);border-radius:999px}
+.mf-yes{color:#047857;font-weight:600}
+.mf-no{color:var(--wms-muted)}
+.mf-link{display:block;margin-top:6px;padding:6px 10px;border-radius:8px;background:var(--wms-surface2);font-size:12px;
+  color:var(--wms-muted);word-break:break-all}
+.mf-cfg{display:grid;gap:8px;max-width:520px}
+
+@media (max-width:640px){
+  .tx-src,.tx-body{padding-left:16px;padding-right:16px}
+  .tx-src button,.tx-opt{min-height:44px;padding:0 15px}
+  .tx-input{flex-basis:100%;min-height:44px;font-size:16px;max-width:none}
+  .mf-chip{min-height:40px}
+}
+</style>
+</head>
+<body data-wms-module="mfg">
+
+<div class="wms-shell">
+<div data-wms-shell="mfg" data-root="../"></div>
+<div class="wms-main">
+
+  <div class="mod-head">
+    <div class="mod-title">
+      <div class="ic"><img src="../icons/package.png" alt="" width="38" height="38"></div>
+      <div>
+        <h2>เช็คความเสี่ยง MFG</h2>
+        <button type="button" class="mod-info" aria-expanded="false" aria-label="คำอธิบายหน้านี้">i</button>
+        <p>นับของบีบสูญญากาศ (ที่นอน ท็อปเปอร์ หมอน) ที่ LOT เก่าตั้งแต่เดือนนี้ลบ 3 ลงไป ทุกเดือน แล้วทำรายงานให้เจ้านายตัดสินใจแกะกาง —
+          ใช้ชีตกับหน้ามือถือของนับสต๊อกใหญ่ ส่งลิงก์ให้คนนับทาง LINE ได้เลย ไม่แก้สมุด Transaction</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="tx-src" id="src"></div>
+  <div class="tx-tabs" id="tabs" role="tablist"></div>
+  <div class="tx-body" id="body"></div>
+
+</div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+
+<script type="module" src="../wms-shell.js"></script>
+<script src="../wms-settings.js"></script>
+<script src="../wms-gas.js"></script>
+<script src="../wms-sup.js"></script>
+<script src="../wms-fifo.js"></script>
+<script src="../wms-stocktake.js"></script>
+<script src="../wms-mfg.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+/* ค่าทุกตัวมาจากชีตที่คนกรอก บางตัวไปอยู่ใน data-* จึงต้องหนีเครื่องหมายคำพูดด้วย */
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const f = n => Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 3 });
+const ST = window.WmsStocktake;
+const M = window.WmsMfg;
+const KEY_ROUND = 'wms:mfg:round';
+const POLL_MS = 60000;
+const FIFO_MAX_MS = 10 * 60000;   // สมุดที่อ่านไว้เก่ากว่านี้ อ่านใหม่ก่อนสร้างรอบ ยอดตั้งต้นต้องเป็นของตอนเริ่มนับ
+/* xlsx-js-style = SheetJS ที่ใส่สีช่องได้ รายงานต้องมีสีแบบที่ทีมทำ (SheetJS ธรรมดาไม่เขียนสี) */
+const XLSX_URL = 'https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js';
+function load(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+function save(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+const TABS = [['setup', 'ตั้งรอบ', '../icons/settings.png'], ['count', 'นับ', '../icons/tab-count.png'], ['report', 'รายงาน', '../icons/sys-sheet.png']];
+const Q = new URLSearchParams(location.search);
+let TAB = TABS.some(t => t[0] === Q.get('tab')) ? Q.get('tab') : '';
+
+const S = { rounds: null, rid: load(KEY_ROUND), head: null, raw: [], since: 0, at: 0, busy: '', err: '', ok: '', old: null };
+let FIFO = null;        // สมุดที่อ่านสดไว้ตั้งรอบใหม่ {data, base, at}
+let FIFO_BUSY = false;
+let DRAFT = null;       // รอบใหม่ที่กำลังตั้ง {ym, list, src, teams, type, q}
+let RF = { st: '', type: '', q: '', mode: '' };   // ตัวกรองรายงาน
+let CF = 'left';        // ชิปของแท็บนับ
+const OPEN = new Set(); // แถวรายงานที่กาง ⓘ
+let XLSX_LOAD = null;
+
+function cfg() { return { url: WmsSettings.stUrl(), t: WmsSettings.stToken() }; }
+function who() {
+  try { return JSON.parse(localStorage.getItem('wms:session') || '{}').name || WmsSettings.me() || 'หัวหน้า'; }
+  catch (e) { return WmsSettings.me() || 'หัวหน้า'; }
+}
+function pad(n) { return String(n).padStart(2, '0'); }
+function today() { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+function nowCut() { const d = new Date(); return `${today()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+function isMfg(r) { return !!(r && r.settings && r.settings.kind === 'mfg'); }
+
+/* ── คุยกับสคริปต์นับสต๊อก ───────────────────────────────────────────── */
+
+function urlOf(api, params) {
+  const c = cfg();
+  const q = new URLSearchParams({ api, t: c.t, ...(params || {}) });
+  return c.url + (c.url.includes('?') ? '&' : '?') + q.toString();
+}
+
+async function get(api, params, quiet) {
+  const res = await WmsGas.json(urlOf(api, params), api, quiet ? { retries: 1 } : {
+    onProgress: (sec) => { if (sec > 3) { S.busy = S.busy.replace(/ \d+ วิ$/, '') + ` ${sec} วิ`; paintSrc(); } },
+  });
+  if (res && res.error) throw new Error(res.error);
+  if (api === 'st-rounds' || api === 'st-head') S.old = ST.oldScript(res);
+  return res;
+}
+
+async function post(body) {
+  const c = cfg();
+  const res = await WmsGas.post(c.url, { t: c.t, by: who(), ...body }, { timeoutMs: 120000, busy: true });
+  if (res && res.error) throw new Error(res.error);
+  return res;
+}
+
+async function job(label, fn) {
+  S.busy = label; S.err = ''; S.ok = ''; paint();
+  try { await fn(); }
+  catch (e) { S.err = e.message; }
+  S.busy = ''; paint();
+}
+
+async function fetchRounds() {
+  S.rounds = (await get('st-rounds')).rounds.filter(isMfg);
+}
+
+function loadRounds() {
+  if (!cfg().url || !cfg().t) { paint(); return Promise.resolve(); }
+  return job('กำลังโหลดรอบ MFG…', async () => {
+    await fetchRounds();
+    if (S.rid !== 'new' && !S.rounds.some(r => r.id === S.rid)) S.rid = S.rounds[0] ? S.rounds[0].id : 'new';
+    if (S.rid !== 'new') await loadHead();
+    else S.head = null;
+    if (!TAB) TAB = defaultTab();
+  });
+}
+
+async function loadHead() {
+  S.head = await get('st-head', { round: S.rid });
+  save(KEY_ROUND, S.rid);
+  S.raw = []; S.since = 0; OPEN.clear();
+  await loadLog();
+}
+
+async function loadLog(quiet) {
+  const r = await get('st-log', { round: S.rid, since: S.since }, quiet);
+  const before = S.raw.length;
+  S.raw = ST.merge(S.raw, r.rows.map(ST.fromRow));
+  S.since = r.last;
+  S.at = Date.now();
+  if (r.round && S.head) Object.assign(S.head.round, r.round);
+  return S.raw.length !== before;
+}
+
+function defaultTab() {
+  const r = R();
+  if (!r || S.rid === 'new') return 'setup';
+  return r.status === 'นับรอบ 1' ? 'count' : 'report';
+}
+
+/* ── ค่าที่คิดจากรอบ ─────────────────────────────────────────────────── */
+
+function R() { return S.head && S.rid !== 'new' ? S.head.round : null; }
+function ymOf() { return (R() && R().settings.ym) || today().slice(0, 7); }
+function listOf() { return M.unpackList(R() ? R().settings.list : []); }
+function locList() { return S.head ? S.head.locs.map(l => ({ loc: l[0], zone: l[1], group: l[2], src: l[3] })) : []; }
+function counting() { return R() && R().status === 'นับรอบ 1'; }
+function link() {
+  return ST.countLink(new URL('../stocktake/count.html', location.href).href, new URL(cfg().url, location.href).href, S.head.countKey, S.rid);
+}
+function rep(mode) {
+  return M.report({ ym: ymOf(), today: today(), list: listOf(), skus: S.head.skus, book: S.head.piles, entries: S.raw, mode, locs: locList() });
+}
+function repMode() { return RF.mode || (ST.effective(S.raw).length ? 'count' : 'book'); }
+
+/* ── วาดหน้า ─────────────────────────────────────────────────────────── */
+
+function paint() { paintSrc(); paintTabs(); paintBody(); }
+
+function paintSrc() {
+  const box = $('src');
+  const msg = S.busy ? `<div class="mf-msg busy">⏳ ${esc(S.busy)}</div>` : S.err ? `<div class="mf-msg err">${esc(S.err)}</div>` : S.ok ? `<div class="mf-msg ok">${esc(S.ok)}</div>` : '';
+  if (!cfg().url || !cfg().t) { box.innerHTML = `<span class="pill warn">ยังไม่ได้เชื่อมชีตนับสต๊อก</span>${msg}`; return; }
+  const opts = (S.rounds || []).map(r => `<option value="${esc(r.id)}" ${r.id === S.rid ? 'selected' : ''}>${esc(M.ymText(r.settings.ym || r.date.slice(0, 7)))} · ${esc(r.date)}</option>`).join('');
+  const r = R();
+  const pill = !r ? '' : counting() ? `<span class="pill go">● กำลังนับ</span>` : `<span class="pill">${esc(r.status === 'วิเคราะห์' ? 'ปิดรับผลนับแล้ว' : r.status)}</span>`;
+  box.innerHTML = `<select id="rsel" aria-label="รอบ MFG">${opts}<option value="new" ${S.rid === 'new' ? 'selected' : ''}>+ รอบใหม่</option></select>` +
+    pill + (r ? `<span>${esc(r.name)}</span>` : '') + '<span class="sp"></span>' +
+    (r ? `<button data-act="copy">คัดลอกลิงก์คนนับ</button>` : '') +
+    `<button data-act="reload" ${S.busy ? 'disabled' : ''}>ดึงใหม่</button>` + msg +
+    (S.old ? `<div class="mf-msg err">สคริปต์นับสต๊อกยังเป็นรุ่นเก่า (รุ่น ${esc(S.old.have || '-')} ต้องรุ่น ${esc(S.old.need)}) · วาง stocktake-api.gs ล่าสุดแล้ว Deploy เป็น New version</div>` : '');
+}
+
+function paintTabs() {
+  const n = {};
+  if (R()) {
+    const p = ST.progress(locList(), S.head.teams, S.raw, { pass: 1, auditMin: 0 });
+    n.count = `${p.pct}%`;
+  }
+  $('tabs').innerHTML = TABS.map(([id, label, icon]) =>
+    `<button class="tx-tab ${id === TAB ? 'on' : ''}" role="tab" aria-selected="${id === TAB}" data-tab="${id}"><img src="${icon}" alt="" width="18" height="18">` +
+    `<span class="lb">${label}</span>${n[id] ? ` <span class="n">${n[id]}</span>` : ''}</button>`).join('');
+}
+
+function paintBody() {
+  const box = $('body');
+  if (!cfg().url || !cfg().t) { box.innerHTML = cfgBox(); return; }
+  if (!S.rounds) { box.innerHTML = S.busy ? '<div class="tx-empty">⏳ กำลังโหลด…</div>' : '<div class="tx-empty">โหลดรอบไม่ได้<br><button class="tx-opt" data-act="reload">ลองใหม่</button></div>'; return; }
+  if (S.rid === 'new' || !S.head) {
+    if (S.rid !== 'new') { box.innerHTML = '<div class="tx-empty">⏳ กำลังโหลด…</div>'; return; }
+    box.innerHTML = TAB === 'setup' ? setupNew() : '<div class="tx-empty">ยังไม่มีรอบ — ตั้งรอบใหม่ในแท็บ <b>ตั้งรอบ</b></div>';
+    return;
+  }
+  if (TAB === 'setup') box.innerHTML = setupView();
+  else if (TAB === 'count') box.innerHTML = countView();
+  else box.innerHTML = reportView();
+}
+
+function cfgBox() {
+  return `<div class="mf-card"><div class="mf-h">เชื่อมชีตนับสต๊อก <small>ชีตเดียวกับนับสต๊อกใหญ่ ตั้งที่หน้านั้นแล้วก็ใช้ได้เลย</small></div>
+    <div class="mf-cfg">
+      <input class="tx-input" id="cfgUrl" placeholder="URL สคริปต์ stocktake-api.gs (…/exec)" value="${esc(cfg().url)}">
+      <input class="tx-input" id="cfgTok" placeholder="รหัสหัวหน้า" value="${esc(cfg().t)}">
+      <div><button class="tx-opt p" data-act="cfg">บันทึกและทดสอบ</button> <a class="tx-opt" href="../stocktake/">ไปหน้านับสต๊อกใหญ่</a></div>
+    </div></div>`;
+}
+
+/* ── ตั้งรอบใหม่ ─────────────────────────────────────────────────────── */
+
+function ruleChips(ym) {
+  const r = M.rule(ym);
+  return `<span class="mf-tag ok">ปกติ ${esc(r.okText)}</span> <span class="mf-tag watch">เฝ้าระวัง ${esc(r.watchText)}</span>
+    <span class="mf-tag risk">เสี่ยงมาก ${esc(r.riskText)}</span> <span class="mf-tag nolot">NO LOT ต้องตรวจสอบ</span>`;
+}
+
+/** รายชื่อตั้งต้นของรอบใหม่: รายชื่อของรอบ MFG ล่าสุด ไม่มีก็เดาจากชื่อสินค้าในสมุด */
+function startDraft() {
+  const last = (S.rounds || []).find(r => r.settings && r.settings.list && r.settings.list.length);
+  const list = last ? M.unpackList(last.settings.list) : FIFO ? M.guessList(FIFO.data.skus) : [];
+  DRAFT = { ym: today().slice(0, 7), list, src: last ? `ใช้รายชื่อจากรอบ ${M.ymText(last.settings.ym || last.date.slice(0, 7))}` : FIFO ? 'เดาจากชื่อสินค้า' : '',
+    teams: 1, type: '', q: '', guessed: !last };
+}
+
+function setupNew() {
+  if (!WmsSettings.txUrl()) return '<div class="tx-warn">ยังไม่มี URL Transaction ในหน้าตั้งค่า — ต้องมีก่อนถึงจะอ่านสมุดได้</div>';
+  if (!FIFO) {
+    if (!FIFO_BUSY) setTimeout(readFifo, 0);
+    return '<div class="tx-empty">⏳ กำลังอ่านสมุด Transaction…</div>';
+  }
+  if (!DRAFT) startDraft();
+  if (DRAFT.guessed && !DRAFT.list.length) { DRAFT.list = M.guessList(FIFO.data.skus); DRAFT.src = 'เดาจากชื่อสินค้า'; }
+  const sc = M.scope(FIFO.base, DRAFT.list, DRAFT.ym);
+  const by = sc.totals.by;
+  const names = {};
+  FIFO.data.skus.forEach(s => { if (s && s[1]) names[ST.up(s[1])] = s; });
+  const inScope = {};
+  sc.piles.forEach(p => { inScope[ST.up(p[2])] = (inScope[ST.up(p[2])] || 0) + p[6]; });
+  const months = M.months(today());
+  const types = {};
+  DRAFT.list.forEach(x => { const t = x[1] || 'ไม่รู้ประเภท'; types[t] = (types[t] || 0) + 1; });
+  const q = ST.up(DRAFT.q);
+  const rows = DRAFT.list.map((x, i) => ({ x, i, s: names[ST.up(x[0])] }))
+    .filter(o => (!DRAFT.type || (o.x[1] || 'ไม่รู้ประเภท') === DRAFT.type) &&
+      (!q || ST.up(o.x[0]).includes(q) || ST.up(o.s ? o.s[0] + ' ' + o.s[2] : '').includes(q)))
+    .sort((a, c) => (inScope[ST.up(c.x[0])] ? 1 : 0) - (inScope[ST.up(a.x[0])] ? 1 : 0) || ST.natCmp(a.x[0], c.x[0]));
+  const typeOpts = (t) => ['', ...M.TYPES].concat(t && !M.TYPES.includes(t) ? [t] : [])
+    .map(v => `<option value="${esc(v)}" ${v === (t || '') ? 'selected' : ''}>${esc(v || '— เลือก —')}</option>`).join('');
+  const table = rows.map(o => {
+    const qty = inScope[ST.up(o.x[0])] || 0;
+    return `<tr><td class="nw">${esc(o.x[0])}${o.s && o.s[0] ? `<span class="tx-sub">${esc(o.s[0])}</span>` : ''}</td>
+      <td>${o.s ? esc(o.s[2]) : '<span class="tx-sub">ไม่มีในสมุด</span>'}</td>
+      <td><select class="mf-type ${o.x[1] ? '' : 'none'}" data-type="${o.i}">${typeOpts(o.x[1])}</select></td>
+      <td class="num">${qty ? f(qty) : '<span class="tx-sub">-</span>'}</td>
+      <td><button class="mf-del" data-del="${o.i}" title="เอาออกจากรายชื่อ">✕</button></td></tr>`;
+  }).join('');
+  const old = Date.now() - FIFO.at > FIFO_MAX_MS;
+  return `<div class="mf-card">
+    <div class="mf-row"><label for="fYm">รอบเดือน</label>
+      <select class="mf-sel" id="fYm">${months.map(m => `<option value="${m}" ${m === DRAFT.ym ? 'selected' : ''}>${esc(M.ymText(m))}</option>`).join('')}</select>
+      <b>${esc(M.rule(DRAFT.ym).text)}</b> ${ruleChips(DRAFT.ym)}</div>
+  </div>
+  <div class="mf-card">
+    <div class="mf-row" style="margin-bottom:8px"><span>ต้องนับ</span> <b>${f(sc.totals.locs)}</b> โล · <b>${f(sc.totals.skus)}</b> SKU · ในสมุด <b>${f(sc.totals.qty)}</b> ชิ้น
+      <span class="mf-tag risk">เสี่ยงมาก ${f((by.risk || {}).qty)}</span> <span class="mf-tag watch">เฝ้าระวัง ${f((by.watch || {}).qty)}</span>
+      <span class="mf-tag ok">ปกติ ${f((by.ok || {}).qty)}</span> <span class="mf-tag nolot">NO LOT ${f((by.nolot || {}).qty)}</span>
+      <span class="sp"></span><span>สมุดอ่านเมื่อ ${new Date(FIFO.at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}${old ? ' (จะอ่านใหม่ตอนสร้างรอบ)' : ''}</span></div>
+    <div class="mf-row"><label for="fTeams">ทีมนับ</label>
+      <select class="mf-sel" id="fTeams">${[1, 2, 3, 4, 5, 6].map(n => `<option ${n === DRAFT.teams ? 'selected' : ''}>${n}</option>`).join('')}</select>
+      <span>แบ่งแถวให้ทีมเองตามทางเดิน</span><span class="sp"></span>
+      <button class="tx-opt p big" data-act="create" ${sc.piles.length && !S.busy ? '' : 'disabled'}>สร้างรอบ เริ่มนับ</button></div>
+  </div>
+  ${sc.missing.length ? `<div class="tx-warn">รหัสในรายชื่อที่สมุดไม่มี ${sc.missing.length} ตัว: ${esc(sc.missing.slice(0, 8).join(', '))}${sc.missing.length > 8 ? ' …' : ''}</div>` : ''}
+  <div class="mf-h">SKU บีบสูญญากาศ <small>${f(DRAFT.list.length)} SKU · ${esc(DRAFT.src)} · วางรายชื่อจากชีตของทีมได้ด้วย Ctrl+V (คอลัมน์ SKU กับ Type)</small></div>
+  <div class="tx-bar">
+    ${Object.keys(types).sort().map(t => `<button class="tx-opt ${DRAFT.type === t ? 'on' : ''}" data-ltype="${esc(t)}">${esc(t)} ${types[t]}</button>`).join('')}
+    <input class="tx-input" id="lq" placeholder="ค้น SKU / ชื่อ" value="${esc(DRAFT.q)}">
+    <span class="sp"></span>
+    <input class="tx-input" id="addSku" placeholder="+ เพิ่ม SKU" style="max-width:180px">
+    <button class="tx-opt" data-act="guess">เดาจากชื่อใหม่</button>
+  </div>
+  <div class="tx-wrap"><table class="tx-tbl"><thead><tr><th>SKU</th><th>ชื่อสินค้า</th><th>Type</th><th class="num">ต้องนับ (สมุด)</th><th></th></tr></thead>
+    <tbody>${table || '<tr><td colspan="5" class="tx-sub">ไม่มี SKU ในรายชื่อ</td></tr>'}</tbody></table></div>`;
+}
+
+async function readFifo() {
+  if (FIFO_BUSY) return;
+  FIFO_BUSY = true;
+  try {
+    const tx = WmsSettings.txUrl();
+    const data = await WmsGas.json(tx, 'tx-fifo', { onProgress: (sec) => { S.busy = `กำลังอ่านสมุด Transaction… ${sec} วิ`; paintSrc(); } });
+    if (data.error) throw new Error('สมุด Transaction: ' + data.error);
+    if (!data.rows) throw new Error('URL Transaction ไม่ได้ตอบสมุดมา ตรวจในหน้าตั้งค่า');
+    const sm = WmsSup.map(data.sup);
+    FIFO = { data, base: ST.baseline(data, (po) => WmsSup.of(sm, po)), at: Date.now() };
+  } catch (e) { S.err = e.message; }
+  FIFO_BUSY = false;
+  S.busy = '';
+  paint();
+}
+
+async function createRound() {
+  const d = DRAFT;
+  if (!d || !d.list.length) return;
+  const noType = d.list.filter(x => !x[1]).length;
+  if (noType && !confirm(`มี ${noType} SKU ที่ยังไม่ได้เลือก Type\nสร้างรอบต่อเลยไหม? (ในรายงานช่อง Type จะว่าง)`)) return;
+  await job('กำลังสร้างรอบ…', async () => {
+    if (Date.now() - FIFO.at > FIFO_MAX_MS) { FIFO = null; await readFifo(); if (!FIFO) throw new Error(S.err || 'อ่านสมุดไม่ได้'); S.busy = 'กำลังสร้างรอบ…'; }
+    const sc = M.scope(FIFO.base, d.list, d.ym);
+    if (!sc.piles.length) throw new Error('ไม่มีของที่ต้องนับในเดือนนี้');
+    const res = await post({ op: 'st-round-save', round: { name: M.roundName(d.ym), date: today(), cutoff: nowCut(),
+      settings: { kind: 'mfg', ym: d.ym, list: M.packList(d.list) } } });
+    const id = res.round.id;
+    S.busy = 'กำลังบันทึกยอดตั้งต้น…'; paintSrc();
+    await post({ op: 'st-baseline', round: id, piles: sc.piles, skus: sc.skus, pos: sc.pos, lastRow: FIFO.base.lastRow, lastDate: FIFO.base.lastDate });
+    S.busy = 'กำลังแบ่งทีม…'; paintSrc();
+    await post({ op: 'st-teams', round: id, pass: 1, teams: M.teams(sc.locs, d.teams), locs: sc.locs.map(l => [l.loc, l.zone, l.group, l.src]) });
+    await post({ op: 'st-status', round: id, status: 'นับรอบ 1' });
+    S.rid = id;
+    await fetchRounds();
+    await loadHead();
+    DRAFT = null;
+    TAB = 'count';
+    S.ok = `✓ สร้างรอบ ${M.ymText(d.ym)} แล้ว ${f(sc.totals.locs)} โล · กด "คัดลอกลิงก์คนนับ" แล้วส่งใน LINE`;
+  });
+}
+
+/* ── รอบที่มีอยู่ ─────────────────────────────────────────────────────── */
+
+function setupView() {
+  const r = R();
+  const list = listOf();
+  const types = {};
+  list.forEach(x => { const t = x[1] || 'ไม่รู้ประเภท'; types[t] = (types[t] || 0) + 1; });
+  const book = rep('book');
+  return `<div class="mf-card">
+    <div class="mf-row" style="margin-bottom:6px"><b>${esc(r.name)}</b> · ${esc(r.id)} · สร้างโดย ${esc(r.by || '-')} ${esc(r.at || '')}</div>
+    <div class="mf-row" style="margin-bottom:6px">${ruleChips(ymOf())}</div>
+    <div class="mf-row">ยอดตั้งต้นจากสมุด <b>${f(S.head.piles.length)}</b> กอง · <b>${f(S.head.locs.length)}</b> โล · <b>${f(book.totals.book)}</b> ชิ้น · ดึงเมื่อ ${esc(r.pulledAt || '-')}
+      · ทีม ${ST.teamsOf(S.head.teams, 1).map(t => `<b>${esc(t.name)}</b> (${t.zones.length} แถว)`).join(', ')}</div>
+  </div>
+  <div class="mf-card"><div class="mf-row">SKU บีบสูญญากาศ <b>${f(list.length)}</b> · ${Object.keys(types).sort().map(t => `${esc(t)} <b>${types[t]}</b>`).join(' · ')}
+    <span class="sp"></span><button class="tx-opt" data-act="new">+ รอบใหม่</button>
+    <button class="tx-opt rp" data-act="del">ลบรอบนี้…</button></div></div>`;
+}
+
+/* ── แท็บนับ ─────────────────────────────────────────────────────────── */
+
+function countView() {
+  const r = R();
+  const locs = locList();
+  const p = ST.progress(locs, S.head.teams, S.raw, { pass: 1, auditMin: 0 });
+  const eff = ST.effective(S.raw);
+  const at = {};
+  eff.forEach(e => {
+    const u = ST.up(e.loc);
+    const a = at[u] || (at[u] = { who: {}, qty: 0, piles: 0, empty: false });
+    a.who[e.who || '?'] = 1;
+    if (e.type === 'ว่าง') a.empty = true; else { a.qty += +e.qty || 0; a.piles++; }
+  });
+  const teamOf = {};
+  ST.teamsOf(S.head.teams, 1).forEach(t => t.zones.forEach(z => { teamOf[ST.up(z)] = t.name; }));
+  const done = locs.filter(l => at[l.loc]).length;
+  const list = locs.filter(l => CF === 'all' || (CF === 'done' ? at[l.loc] : !at[l.loc]));
+  const rp = rep('count');
+  const ign = rp.ignored;
+  const act = r.status === 'นับรอบ 1' ? `<button class="tx-opt" data-act="stop">ปิดรับผลนับ</button>`
+    : r.status === 'วิเคราะห์' ? `<button class="tx-opt" data-act="resume">เปิดนับต่อ</button>`
+    : r.status === 'ตั้งค่า' ? `<button class="tx-opt p" data-act="resume">เริ่มนับ</button>` : '';
+  return `<div class="mf-card">
+    <div class="mf-prog"><span class="mf-big">${f(p.done)}/${f(p.total)} โล</span>
+      <div class="mf-barbox"><i style="width:${p.pct}%"></i></div><b>${p.pct}%</b>
+      ${p.teams.length > 1 ? p.teams.map(t => `<span>${esc(t.name)} <b>${t.pct}%</b></span>`).join(' ') : ''}</div>
+    <div class="tx-bar" style="margin:10px 0 0"><button class="tx-opt p" data-act="copy">คัดลอกลิงก์คนนับ</button>${act}
+      <span>คนนับเห็นชื่อรอบ <b>${esc(r.name)}</b> กับรายชื่อ SKU บีบสูญญากาศเท่านั้น ไม่เห็นยอดในสมุด · ไม่มีป้าย LOT ให้ใส่ 0</span></div>
+    <span class="mf-link">${esc(link())}</span>
+  </div>
+  ${ign.newer.length ? `<div class="tx-warn">นับ LOT ใหม่กว่าที่กำหนดมา ${ign.newer.length} กอง (${f(ign.newer.reduce((a, x) => a + x.qty, 0))} ชิ้น) ไม่ใช้ในรายงาน:
+    ${ign.newer.slice(0, 6).map(x => `${esc(x.loc)} ${esc(x.sku)} LOT ${esc(x.lot)} (${f(x.qty)})`).join(' · ')}${ign.newer.length > 6 ? ' …' : ''}</div>` : ''}
+  ${ign.other.length ? `<div class="tx-warn">นับ SKU ที่ไม่อยู่ในรายชื่อบีบสูญญากาศมา ${ign.other.length} กอง ไม่ใช้ในรายงาน:
+    ${ign.other.slice(0, 6).map(x => `${esc(x.loc)} ${esc(x.sku)} (${f(x.qty)})`).join(' · ')}${ign.other.length > 6 ? ' …' : ''}</div>` : ''}
+  ${p.extra.length ? `<div class="tx-note">โลนอกรายการที่คนนับเพิ่มเอง: ${p.extra.map(x => `<span class="mf-loc">${esc(x.loc)}</span>`).join('')}</div>` : ''}
+  <div class="tx-bar">
+    <button class="tx-opt ${CF === 'left' ? 'on' : ''}" data-cf="left">ยังไม่นับ ${f(locs.length - done)}</button>
+    <button class="tx-opt ${CF === 'done' ? 'on' : ''}" data-cf="done">นับแล้ว ${f(done)}</button>
+    <button class="tx-opt ${CF === 'all' ? 'on' : ''}" data-cf="all">ทั้งหมด ${f(locs.length)}</button>
+    <span class="sp"></span><span>อัปเดต ${S.at ? new Date(S.at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : '-'}</span>
+  </div>
+  <div class="tx-wrap"><table class="tx-tbl"><thead><tr><th>Location</th><th>แถว</th><th>ทีม</th><th>สถานะ</th><th>คนนับ</th><th class="num">กอง</th><th class="num">ชิ้น</th></tr></thead><tbody>
+    ${list.map(l => {
+      const a = at[l.loc];
+      return `<tr><td class="nw"><b>${esc(l.loc)}</b></td><td>${esc(l.group)}</td><td>${esc(teamOf[ST.up(l.group)] || '-')}</td>
+        <td>${a ? `<span class="mf-yes">✓ ${a.piles ? 'นับแล้ว' : 'ว่าง'}</span>` : '<span class="mf-no">ยังไม่นับ</span>'}</td>
+        <td>${a ? esc(Object.keys(a.who).join(', ')) : ''}</td><td class="num">${a && a.piles ? f(a.piles) : ''}</td><td class="num">${a && a.qty ? f(a.qty) : ''}</td></tr>`;
+    }).join('') || '<tr><td colspan="7" class="tx-sub">ไม่มีโลในกลุ่มนี้</td></tr>'}
+  </tbody></table></div>`;
+}
+
+/* ── แท็บรายงาน ──────────────────────────────────────────────────────── */
+
+function reportView() {
+  const mode = repMode();
+  const rp = rep(mode);
+  const rows = M.filter(rp, RF);
+  const by = rp.by;
+  const rl = rp.rule;
+  const chip = (k, label) => `<button class="mf-chip ${k} ${RF.st === k ? 'on' : ''}" data-st="${k}">${label} <b>${f(by[k].qty)}</b> ชิ้น · ${by[k].skus} SKU</button>`;
+  const types = {};
+  rp.rows.forEach(r => { if (r.type) types[r.type] = (types[r.type] || 0) + 1; });
+  /* หัวสองแถว: ปีของ LOT รวมช่องเดียวกัน · NO LOT ไม่มีปี สูงสองแถว */
+  const years = [];
+  rp.cols.forEach(c => { if (c.key === M.NOLOT) return; const y = years[years.length - 1]; if (y && y.y === c.y) y.n++; else years.push({ y: c.y, n: 1 }); });
+  const nol = rp.cols.some(c => c.key === M.NOLOT);
+  const head1 = `<tr><th rowspan="2">SKU</th><th rowspan="2">Product Name</th><th rowspan="2">Type</th>${nol ? '<th rowspan="2" class="nolot">NO LOT</th>' : ''}` +
+    years.map(y => `<th class="year" colspan="${y.n}">${y.y}</th>`).join('') +
+    `<th class="total">Total MFG</th><th rowspan="2">สถานะ</th><th rowspan="2"></th></tr>`;
+  const head2 = '<tr>' + rp.cols.filter(c => c.key !== M.NOLOT).map(c => `<th class="${c.st}">${esc(c.label)}<small>${c.age === null ? '' : c.age + ' วัน'}</small></th>`).join('') +
+    `<th class="total">${f(rp.totals[mode])}</th></tr>`;
+  const ncol = 6 + rp.cols.length;
+  const body = rows.map(r => {
+    const key = r.sku;
+    const cells = rp.cols.map(c => {
+      const x = r.cells[c.key];
+      const v = x ? x[mode] : 0;
+      const d = x && mode === 'count' && !r.left.length ? Math.round((x.count - x.book) * 1000) / 1000 : 0;
+      return `<td class="num c-${c.st}" ${x ? `title="นับ ${f(x.count)} · สมุด ${f(x.book)}"` : ''}>${v ? f(v) : ''}${d ? `<span class="diff ${d > 0 ? 'up' : ''}">${d > 0 ? '+' : ''}${f(d)}</span>` : ''}</td>`;
+    }).join('');
+    const open = OPEN.has(key);
+    const st = M.STATUS[r.st];
+    let html = `<tr><td class="k-sku nw">${esc(r.sku)}${r.short ? `<span class="tx-sub">${esc(r.short)}</span>` : ''}</td><td class="k-name">${esc(r.name)}</td>
+      <td class="nw">${esc(r.type)}</td>${cells}<td class="num tot">${f(r.total[mode])}</td>
+      <td><span class="mf-tag ${r.st}">${esc(st.label)}</span></td>
+      <td><button class="mf-i ${open ? 'on' : ''}" data-open="${esc(key)}" aria-expanded="${open}" title="ดูราย Location">i</button></td></tr>`;
+    if (open) html += `<tr class="det"><td colspan="${ncol}">${detail(r, rp)}</td></tr>`;
+    return html;
+  }).join('');
+  const foot = `<tr class="foot"><td colspan="3">รวม ${f(rows.length)} SKU</td>` +
+    rp.cols.map(c => { const v = rows.reduce((a, r) => a + (r.cells[c.key] ? r.cells[c.key][mode] : 0), 0); return `<td class="num">${v ? f(v) : ''}</td>`; }).join('') +
+    `<td class="num">${f(rows.reduce((a, r) => a + r.total[mode], 0))}</td><td colspan="2"></td></tr>`;
+  return `<div class="tx-bar">
+      <button class="tx-opt ${mode === 'count' ? 'on' : ''}" data-mode="count">นับจริง</button>
+      <button class="tx-opt ${mode === 'book' ? 'on' : ''}" data-mode="book">สมุด</button>
+      <span>${mode === 'count' ? `นับแล้ว <b>${f(rp.done)}/${f(rp.total)}</b> โล${rp.done < rp.total ? ' ตัวเลขยังไม่ครบ' : ''}` : 'ยอดในสมุดตอนสร้างรอบ'}</span>
+      <span class="sp"></span>
+      <button class="tx-opt p" data-act="xlsx">⬇️ Excel</button>
+      <button class="tx-opt" data-act="line">คัดลอกไปวาง LINE</button>
+    </div>
+    <div class="tx-bar">
+      ${chip('risk', `เสี่ยงมาก ${esc(rl.riskText)}`)}${chip('watch', `เฝ้าระวัง ${esc(rl.watchText)}`)}${chip('ok', `ปกติ ${esc(rl.okText)}`)}
+      ${by.nolot.qty ? chip('nolot', 'NO LOT ต้องตรวจสอบ') : ''}
+      ${mode === 'count' && by.none.skus ? `<button class="mf-chip none ${RF.st === 'none' ? 'on' : ''}" data-st="none">ไม่พบของ <b>${by.none.skus}</b> SKU</button>` : ''}
+      ${mode === 'count' && by.wait.skus ? `<button class="mf-chip wait ${RF.st === 'wait' ? 'on' : ''}" data-st="wait">ยังไม่นับ <b>${by.wait.skus}</b> SKU</button>` : ''}
+    </div>
+    <div class="tx-bar">
+      ${Object.keys(types).sort().map(t => `<button class="tx-opt ${RF.type === t ? 'on' : ''}" data-rtype="${esc(t)}">${esc(t)} ${types[t]}</button>`).join('')}
+      <input class="tx-input" id="q" placeholder="ค้น SKU / ชื่อ / Location" value="${esc(RF.q)}">
+    </div>
+    <div class="tx-wrap"><table class="tx-tbl mf-rep"><thead>${head1}${head2}</thead>
+      <tbody>${body || `<tr><td colspan="${ncol}" class="tx-sub">ไม่มีรายการ</td></tr>`}${rows.length ? foot : ''}</tbody></table></div>`;
+}
+
+/** ⓘ ราย LOT: Location ที่นับได้เทียบสมุด และโลที่ยังไม่ได้นับ */
+function detail(r, rp) {
+  const parts = rp.cols.filter(c => r.cells[c.key]).map(c => {
+    const x = r.cells[c.key];
+    const locs = Object.keys(x.locs).sort(ST.locCmp).map(l => {
+      const a = x.locs[l];
+      const bad = a.count !== a.book && !r.left.includes(l);
+      return `<span class="mf-loc ${bad ? 'bad' : ''}">${esc(l)} นับ ${f(a.count)} / สมุด ${f(a.book)}</span>`;
+    }).join('');
+    const raw = Object.keys(x.raw || {});
+    return `<div><b>${esc(c.label)}</b>${c.month ? ` (${esc(c.month)})` : ''} <span class="mf-tag ${c.st}">${esc(M.STATUS[c.st].label)}</span> ${locs}${raw.length ? ` <span class="tx-sub">LOT ที่กรอกอ่านไม่ออก: ${esc(raw.join(', '))}</span>` : ''}</div>`;
+  });
+  if (r.left.length) parts.push(`<div>ยังไม่ได้นับ: ${r.left.map(l => `<span class="mf-loc">${esc(l)}</span>`).join('')}</div>`);
+  return `<div class="mf-det">${parts.join('')}</div>`;
+}
+
+/* ── Excel ───────────────────────────────────────────────────────────── */
+
+function xlsxLib() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  if (!XLSX_LOAD) {
+    XLSX_LOAD = new Promise((ok, bad) => {
+      const s = document.createElement('script');
+      s.src = XLSX_URL;
+      s.onload = () => ok(window.XLSX);
+      s.onerror = () => { XLSX_LOAD = null; bad(new Error('โหลดตัวสร้างไฟล์ Excel ไม่ได้ ลองใหม่อีกครั้ง')); };
+      document.head.appendChild(s);
+    });
+  }
+  return XLSX_LOAD;
+}
+
+/* สีของแต่ละกลุ่ม ตามรายงานที่ทีมทำ */
+const XS = {
+  title: { font: { bold: true, sz: 13 } },
+  head: { fill: '434343', color: 'FFFFFF' }, year: { fill: '1F3FD8', color: 'FFFFFF' }, total: { fill: 'E06666', color: 'FFFFFF' },
+  'st-risk': { fill: 'CC0000', color: 'FFFFFF' }, 'st-nolot': { fill: 'CC0000', color: 'FFFFFF' },
+  'st-watch': { fill: 'F1C232', color: '000000' }, 'st-ok': { fill: '34A853', color: 'FFFFFF' },
+  'c-risk': { fill: 'F4C7C3', num: true }, 'c-nolot': { fill: 'F4C7C3', num: true }, 'c-watch': { fill: 'FCE8B2', num: true }, 'c-ok': { fill: 'B7D7A8', num: true },
+  sum: { bold: true, num: true }, age: { fill: 'F3F3F3', color: '555555', small: true }, foot: { fill: 'EFEFEF', bold: true },
+};
+function xStyle(k) {
+  const x = XS[k] || {};
+  if (x.font) return { font: x.font };
+  const line = { style: 'thin', color: { rgb: 'BFBFBF' } };
+  const s = { border: { top: line, bottom: line, left: line, right: line }, alignment: { vertical: 'center', horizontal: x.num ? 'right' : 'center', wrapText: true } };
+  if (x.fill) s.fill = { patternType: 'solid', fgColor: { rgb: x.fill } };
+  s.font = { bold: !!(x.color && x.color !== '555555') || !!x.bold, color: { rgb: x.color || '000000' }, sz: x.small ? 9 : 11 };
+  return s;
+}
+
+async function downloadXlsx() {
+  const mode = repMode();
+  const rp = rep(mode);
+  const sh = M.sheet({ ...rp, rows: M.filter(rp, RF) }, { ym: ymOf(), at: new Date().toLocaleString('th-TH') });
+  await job('กำลังสร้างไฟล์ Excel…', async () => {
+    const X = await xlsxLib();
+    const ws = X.utils.aoa_to_sheet(sh.aoa);
+    const line = { style: 'thin', color: { rgb: 'D9D9D9' } };
+    for (let r = 4; r < sh.aoa.length; r++) for (let c = 0; c < sh.aoa[r].length; c++) {
+      const a = X.utils.encode_cell({ r, c });
+      if (!ws[a]) ws[a] = { t: 's', v: '' };
+      ws[a].s = { border: { top: line, bottom: line, left: line, right: line }, alignment: { vertical: 'center' } };
+    }
+    sh.styles.forEach(([r, c, k]) => {
+      const a = X.utils.encode_cell({ r, c });
+      if (!ws[a]) ws[a] = { t: 's', v: '' };
+      ws[a].s = xStyle(k);
+    });
+    ws['!merges'] = sh.merges;
+    ws['!cols'] = sh.cols.map(w => ({ wch: w }));
+    const wb = X.utils.book_new();
+    X.utils.book_append_sheet(wb, ws, 'MFG ' + ymOf());
+    X.writeFile(wb, `MFG-${ymOf()}-${mode === 'count' ? 'นับจริง' : 'สมุด'}.xlsx`);
+    S.ok = '✓ โหลด Excel แล้ว' + (RF.st || RF.type || RF.q ? ' (เฉพาะที่กรองอยู่)' : '');
+  });
+}
+
+async function copyLine() {
+  const text = M.lineText(rep(repMode()), { ym: ymOf() });
+  try { await navigator.clipboard.writeText(text); S.ok = '✓ คัดลอกสรุปแล้ว วางใน LINE ได้เลย'; }
+  catch (e) { prompt('คัดลอกข้อความนี้', text); }
+  S.err = ''; paintSrc();
+}
+
+async function copyLink() {
+  const text = link();
+  try { await navigator.clipboard.writeText(text); S.ok = '✓ คัดลอกลิงก์คนนับแล้ว ส่งใน LINE ได้เลย'; }
+  catch (e) { prompt('คัดลอกลิงก์นี้', text); }
+  S.err = ''; paintSrc();
+}
+
+async function setStatus(status) {
+  await job('กำลังเปลี่ยนสถานะ…', async () => {
+    await post({ op: 'st-status', round: S.rid, status });
+    S.head = await get('st-head', { round: S.rid });
+    await fetchRounds();
+    S.ok = status === 'วิเคราะห์' ? '✓ ปิดรับผลนับแล้ว ดูผลในแท็บรายงาน' : '✓ เปิดรับผลนับแล้ว';
+    if (status === 'วิเคราะห์') TAB = 'report';
+  });
+}
+
+async function delRound() {
+  const r = R();
+  const typed = prompt(`ลบรอบนี้ถาวร (ผลนับของรอบนี้หายจากชีตด้วย)\nพิมพ์ชื่อรอบให้ตรงเพื่อยืนยัน:\n${r.name}`);
+  if (typed === null) return;
+  if (typed.trim() !== r.name) { S.err = 'ชื่อรอบไม่ตรง ยังไม่ได้ลบ'; paintSrc(); return; }
+  await job('กำลังลบรอบ…', async () => {
+    await post({ op: 'st-round-del', round: r.id, confirm: typed.trim() });
+    await fetchRounds();
+    S.rid = S.rounds[0] ? S.rounds[0].id : 'new';
+    S.head = null;
+    if (S.rid !== 'new') await loadHead(); else save(KEY_ROUND, 'new');
+    TAB = 'setup';
+    S.ok = `✓ ลบรอบ ${r.name} แล้ว`;
+  });
+}
+
+async function saveCfg() {
+  const url = $('cfgUrl').value.trim(), tok = $('cfgTok').value.trim();
+  if (!url || !tok) { S.err = 'ใส่ทั้ง URL และรหัสหัวหน้า'; paint(); return; }
+  WmsSettings.setStUrl(url); WmsSettings.setStToken(tok);
+  await job('กำลังทดสอบ…', async () => {
+    const hi = await WmsGas.json(url, 'x', { retries: 0 });
+    if (!hi || hi.app !== 'stocktake') throw new Error('URL นี้ไม่ใช่สคริปต์นับสต๊อก (stocktake-api.gs)');
+    S.rounds = null;
+  });
+  await loadRounds();
+}
+
+/* ── ปุ่มและช่อง ─────────────────────────────────────────────────────── */
+
+function setTab(t) {
+  TAB = t;
+  history.replaceState(null, '', '?tab=' + t);
+  paint();
+}
+
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  const d = b.dataset;
+  if (d.tab) { setTab(d.tab); return; }
+  if (d.cf) { CF = d.cf; paintBody(); return; }
+  if (d.st !== undefined) { RF.st = RF.st === d.st ? '' : d.st; paintBody(); return; }
+  if (d.rtype !== undefined) { RF.type = RF.type === d.rtype ? '' : d.rtype; paintBody(); return; }
+  if (d.mode) { RF.mode = d.mode; OPEN.clear(); paintBody(); return; }
+  if (d.open !== undefined) { OPEN.has(d.open) ? OPEN.delete(d.open) : OPEN.add(d.open); paintBody(); return; }
+  if (d.ltype !== undefined) { DRAFT.type = DRAFT.type === d.ltype ? '' : d.ltype; paintBody(); return; }
+  if (d.del !== undefined) { DRAFT.list.splice(+d.del, 1); DRAFT.guessed = false; paintBody(); return; }
+  switch (d.act) {
+    case 'reload':
+      FIFO = FIFO && S.rid === 'new' ? null : FIFO;
+      loadRounds();
+      break;
+    case 'copy': copyLink(); break;
+    case 'create': createRound(); break;
+    case 'guess':
+      if (FIFO && confirm('แทนรายชื่อทั้งหมดด้วยที่เดาจากชื่อสินค้า?')) { DRAFT.list = M.guessList(FIFO.data.skus); DRAFT.src = 'เดาจากชื่อสินค้า'; paintBody(); }
+      break;
+    case 'new': S.rid = 'new'; S.head = null; DRAFT = null; setTab('setup'); break;
+    case 'del': delRound(); break;
+    case 'stop':
+      if (confirm('ปิดรับผลนับ? คนนับจะส่งผลใหม่ไม่ได้ (เปิดนับต่อได้ทีหลัง)')) setStatus('วิเคราะห์');
+      break;
+    case 'resume': setStatus('นับรอบ 1'); break;
+    case 'xlsx': downloadXlsx(); break;
+    case 'line': copyLine(); break;
+    case 'cfg': saveCfg(); break;
+  }
+});
+
+document.addEventListener('change', (e) => {
+  const t = e.target;
+  if (t.id === 'rsel') {
+    S.rid = t.value;
+    if (S.rid === 'new') { S.head = null; DRAFT = null; setTab('setup'); return; }
+    job('กำลังโหลดรอบ…', async () => { await loadHead(); TAB = defaultTab(); });
+    return;
+  }
+  if (t.id === 'fYm') { DRAFT.ym = t.value; paintBody(); return; }
+  if (t.id === 'fTeams') { DRAFT.teams = +t.value || 1; return; }
+  if (t.dataset.type !== undefined) { DRAFT.list[+t.dataset.type][1] = t.value; DRAFT.guessed = false; paintBody(); return; }
+  if (t.id === 'addSku') addSku(t.value);
+});
+
+/** เพิ่ม SKU เองทีละตัว ต้องเป็นรหัสที่สมุดมี (สั้นหรือเต็มก็ได้) ประเภทเดาจากชื่อ */
+function addSku(v) {
+  const code = ST.up(v);
+  if (!code || !FIFO) return;
+  const s = FIFO.data.skus.find(k => k && (ST.up(k[1]) === code || ST.up(k[0]) === code));
+  if (!s) { S.err = `ไม่พบ ${code} ในสมุด`; paintSrc(); return; }
+  const long = ST.up(s[1] || s[0]);
+  if (DRAFT.list.some(x => ST.up(x[0]) === long)) { S.err = `${long} อยู่ในรายชื่อแล้ว`; paintSrc(); return; }
+  DRAFT.list.push([long, M.typeOf(s[2], s[0])]);
+  DRAFT.guessed = false;
+  S.err = ''; S.ok = `✓ เพิ่ม ${long} แล้ว`;
+  paint();
+}
+
+/* ช่องค้นหา: วาดใหม่ทั้งแท็บแล้วคืนเคอร์เซอร์ให้ช่องเดิม */
+let QT = null;
+document.addEventListener('input', (e) => {
+  const t = e.target;
+  if (t.id !== 'q' && t.id !== 'lq') return;
+  clearTimeout(QT);
+  QT = setTimeout(() => {
+    if (t.id === 'q') RF.q = t.value; else DRAFT.q = t.value;
+    const pos = t.selectionStart;
+    paintBody();
+    const n = $(t.id);
+    if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (err) {} }
+  }, 200);
+});
+
+/* วางรายชื่อ SKU จากชีตของทีม (Ctrl+V ที่ไหนก็ได้บนแท็บตั้งรอบใหม่ ยกเว้นในช่องพิมพ์) */
+document.addEventListener('paste', (e) => {
+  if (TAB !== 'setup' || S.rid !== 'new' || !DRAFT) return;
+  if (e.target.closest && e.target.closest('input,textarea,select')) return;
+  const raw = (e.clipboardData || window.clipboardData).getData('text');
+  const res = M.parseList(raw);
+  if (!res.rows.length) { S.err = 'ที่วางมาไม่มีรหัส SKU'; paintSrc(); return; }
+  e.preventDefault();
+  if (DRAFT.list.length && !confirm(`แทนรายชื่อเดิม ${DRAFT.list.length} SKU ด้วยที่วาง ${res.rows.length} SKU?`)) return;
+  DRAFT.list = res.rows;
+  DRAFT.src = `วางเอง ${res.rows.length} SKU${res.skip ? ` (ข้าม ${res.skip} แถว)` : ''}`;
+  DRAFT.guessed = false;
+  S.err = ''; S.ok = `✓ ใช้รายชื่อที่วาง ${res.rows.length} SKU`;
+  paint();
+});
+
+/* ดึงผลนับใหม่ทุกนาทีระหว่างนับ ไม่วาดใหม่ตอนกำลังพิมพ์ในช่อง */
+setInterval(async () => {
+  if (!counting() || S.busy || document.hidden || (TAB !== 'count' && TAB !== 'report')) return;
+  try {
+    const changed = await loadLog(true);
+    const typing = document.activeElement && /^(INPUT|SELECT)$/.test(document.activeElement.tagName);
+    if (changed && !typing) paint();
+  } catch (e) {}
+}, POLL_MS);
+
+paint();
+loadRounds();
+</script>
+</body>
+</html>

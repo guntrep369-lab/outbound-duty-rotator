@@ -365,6 +365,8 @@ async function get(api, params, quiet) {
   });
   if (res && res.error) throw new Error(res.error);
   if (api === 'st-rounds' || api === 'st-head') S.old = ST.oldScript(res);
+  /* รอบเช็คความเสี่ยง MFG (หน้า mfg/) อยู่ในชีตเดียวกัน แต่เปิดดูที่หน้านั้น ไม่ขึ้นในรายการรอบนับใหญ่ */
+  if (api === 'st-rounds' && res.rounds) res.rounds = res.rounds.filter(r => !(r.settings && r.settings.kind === 'mfg'));
   return res;
 }
 

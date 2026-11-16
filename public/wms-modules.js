@@ -68,6 +68,8 @@ export const MODULES = [
   { id: 'invmatch', label: 'จับคู่ Invoice', labelEn: 'Invoice Match', path: 'invoice-match/', icon: 'receipt', group: 'inventory' },
   { id: 'fifo', label: 'FIFO สต๊อก', labelEn: 'FIFO Stock', path: 'fifo/', icon: 'layers', group: 'inventory' },
   { id: 'balance', label: 'คงเหลือ ณ วันที่', labelEn: 'Stock as of Date', path: 'balance/', icon: 'archive', group: 'inventory' },
+  /* นับของบีบสูญญากาศ LOT เก่าทุกเดือน ใช้เครื่องนับของนับสต๊อกใหญ่ (ผู้ใช้ขอ 2026-11-16) */
+  { id: 'mfg', label: 'ความเสี่ยง MFG', labelEn: 'MFG Risk Count', path: 'mfg/', icon: 'package', group: 'inventory' },
   /* ประเภทงานรถกับผังงานรถวันนี้ยังไม่ได้ใช้ในงานจริง ซ่อนไว้เหมือนสรุปเช้า */
   { id: 'jobs', label: 'ประเภทงานรถ', labelEn: 'Job Types', path: 'jobs/', icon: 'compass', group: 'transport', hidden: true },
   { id: 'loadplan', label: 'ผังงานรถวันนี้', labelEn: 'Load Plan', path: 'loadplan/', icon: 'map', group: 'transport', hidden: true },
