@@ -316,8 +316,8 @@ describe('เทียบกับรอบเดือนก่อน', () => {
     expect(c.bySku.CCC0000000001).toMatchObject({ tag: 'new', riskNow: 6, riskPrev: 0, out: 0, prevSt: 'watch' });
     expect(c.bySku.BBB0000000001).toMatchObject({ tag: 'gone', riskNow: 0, riskPrev: 8, out: 8 });
     expect(c.bySku.EEE0000000001.tag).toBe('');
-    expect(c.gone).toEqual([{ sku: 'BBB0000000001', short: 'BBB001', name: SKUS[1][2], type: 'Topper', riskPrev: 8, left: 0, out: 8 }]);
-    expect(c.totals).toEqual({ new: { skus: 1, qty: 6 }, still: { skus: 1, qty: 12 }, gone: { skus: 1, qty: 8 }, out: 16 });
+    expect(c.gone).toEqual([{ sku: 'BBB0000000001', short: 'BBB001', name: SKUS[1][2], type: 'Topper', riskPrev: 8, left: 0, out: 8, dPrev: null }]);
+    expect(c.totals).toEqual({ new: { skus: 1, qty: 6 }, still: { skus: 1, qty: 12 }, gone: { skus: 1, qty: 8 }, out: 16, todo: { skus: 0, qty: 0 } });
     expect(M.cmpText(c.bySku.AAA0000000001)).toBe('ค้าง · ลด 8');
     expect(M.cmpText(c.bySku.EEE0000000001)).toBe('');
   });
@@ -354,6 +354,72 @@ describe('เทียบกับรอบเดือนก่อน', () => {
     expect(text).toContain('หลุดเสี่ยงแล้ว 1 SKU');
     expect(text).toContain('ลดไป 16 ชิ้น');
     expect(M.lineText(cur, { ym: '2026-11' })).not.toContain('เทียบ');
+  });
+
+  it('คำตัดสิน: เก็บแบบย่อ ใส่แต่หมายเหตุ = อื่นๆ เลือกว่าง = ลบ', () => {
+    const raw = M.applyDecide({ aaa0000000001: ['wait', 'ดูเดือนหน้า', 'สมชาย', '2026-11-16 10:00'], X: ['bogus', ''] }, {
+      BBB0000000001: ['', '  โอนไป   สาขา  ', 'สมศรี', '2026-11-16 11:00'],
+      CCC0000000001: ['open', 'x'.repeat(80), 'สมศรี', '2026-11-16 11:00'],
+    });
+    expect(Object.keys(raw).sort()).toEqual(['AAA0000000001', 'BBB0000000001', 'CCC0000000001']);
+    expect(raw.BBB0000000001.slice(0, 2)).toEqual(['other', 'โอนไป สาขา']);
+    expect(raw.CCC0000000001[1].length).toBe(M.NOTE_MAX);
+    expect(Object.keys(M.applyDecide(raw, { AAA0000000001: null, BBB0000000001: ['', '', 'ก', ''] }))).toEqual(['CCC0000000001']);
+    const map = M.decideOf(raw);
+    expect(map.AAA0000000001).toEqual({ code: 'wait', note: 'ดูเดือนหน้า', by: 'สมชาย', at: '2026-11-16 10:00' });
+    expect(M.decideText(map.AAA0000000001)).toBe('รอเดือนหน้า · ดูเดือนหน้า');
+    expect(M.decideText(map.BBB0000000001)).toBe('โอนไป สาขา');
+    expect(M.decideText(null)).toBe('');
+    expect(M.decideOf('เสีย')).toEqual({});
+  });
+
+  it('สรุปคำตัดสิน กับชิปกรอง: SKU เสี่ยงมากที่ยังไม่ตัดสิน', () => {
+    const cur = rep('2026-11', NOV);
+    const map = M.decideOf({ AAA0000000001: ['open', 'แกะขายหน้าร้าน', 'ก', ''], EEE0000000001: ['wait', '', 'ก', ''] });
+    const s = M.decideSum(cur, map);
+    expect(s.any).toBe(true);
+    expect([s.open.skus, s.open.qty, s.wait.skus, s.wait.qty, s.none.skus]).toEqual([1, 17, 1, 3, 1]);
+    expect(s.none.list.map((x) => x.short)).toEqual(['CCC001']);
+    expect(M.byDecide(cur.rows, map, 'none').map((r) => r.short)).toEqual(['CCC001']);
+    expect(M.byDecide(cur.rows, map, 'open').map((r) => r.short)).toEqual(['AAA001']);
+    expect(M.byDecide(cur.rows, map, '').length).toBe(cur.rows.length);
+    expect(M.decideSum(cur, {}).any).toBe(false);
+  });
+
+  it('เดือนถัดไป: สั่งแกะแล้วแต่ LOT เดิมยังเหลือ = ยังค้าง · ลงช่อง Excel ชีตเทียบ และข้อความ LINE', () => {
+    const prevDec = M.decideOf({ AAA0000000001: ['open', '', 'ก', ''], BBB0000000001: ['sell', '', 'ก', ''], CCC0000000001: ['wait', '', 'ก', ''] });
+    const cur = rep('2026-11', NOV);
+    const c = M.compare(cur, rep('2026-10', OCT), null, prevDec);
+    expect(c.bySku.AAA0000000001).toMatchObject({ held: 12, todo: true });
+    expect(c.bySku.BBB0000000001).toMatchObject({ held: 0, todo: false });
+    expect(c.bySku.CCC0000000001).toMatchObject({ todo: false });
+    expect(c.bySku.CCC0000000001.dPrev.code).toBe('wait');
+    expect(c.totals.todo).toEqual({ skus: 1, qty: 12 });
+    expect(c.gone[0].dPrev.code).toBe('sell');
+    expect(M.prevDecText(c.bySku.AAA0000000001)).toBe('แกะ · ยังค้าง 12');
+
+    const map = M.decideOf({ AAA0000000001: ['open', 'รอบสอง', 'ก', ''] });
+    const sh = M.sheet(cur, { ym: '2026-11', cmp: c, decide: map });
+    const n = 3 + cur.cols.length;
+    const aaa = sh.aoa.find((r) => r[0] === 'AAA0000000001');
+    expect(aaa[n + 2]).toBe('ค้าง · ลด 8 · เดือนก่อน: แกะ · ยังค้าง 12');
+    expect(aaa[n + 3]).toBe('แกะ · รอบสอง');
+    expect(sh.styles).toContainEqual([sh.aoa.indexOf(aaa), n + 2, 'c-todo']);
+    expect(M.sheet(cur, { ym: '2026-11' }).aoa.find((r) => r[0] === 'AAA0000000001').pop()).toBe('');
+
+    const cs = M.compareSheet(c, cur);
+    expect(cs.aoa[1][7]).toBe('เดือนก่อนสั่ง');
+    expect(cs.aoa.find((r) => r[1] === 'AAA0000000001')[7]).toBe('แกะ · ยังค้าง 12');
+    expect(cs.aoa.find((r) => r[1] === 'BBB0000000001')[7]).toBe('ขายด่วน');
+    expect(cs.aoa[cs.aoa.length - 1][7]).toBe('สั่งแล้วยังค้าง 1 SKU');
+    expect(cs.cols.length).toBe(cs.aoa[1].length);
+
+    const text = M.lineText(cur, { ym: '2026-11', cmp: c, decide: map });
+    expect(text).toContain('⚠️ เดือนก่อนสั่งแกะ/ขายด่วน แต่ยังค้าง 1 SKU (12 ชิ้น): AAA001 12');
+    expect(text).toContain('คำตัดสิน:');
+    expect(text).toContain('✂️ แกะ 1 SKU (17 ชิ้น): AAA001 (รอบสอง)');
+    expect(text).toContain('❓ เสี่ยงมากที่ยังไม่ตัดสิน 1 SKU');
+    expect(M.lineText(cur, { ym: '2026-11', decide: {} })).not.toContain('คำตัดสิน');
   });
 });
 
@@ -392,5 +458,28 @@ describe('รอบ MFG บนสคริปต์นับสต๊อกต�
     expect(a.total).toEqual({ book: 15, count: 14 });
     expect(rep.done).toBe(2);
     expect(rep.total).toBe(4);
+  });
+
+  it('คำตัดสินบันทึกในค่าตั้งของรอบได้หลังปิดรับผลนับ ไม่ต้องแก้สคริปต์ ค่าตั้งเดิมอยู่ครบ', () => {
+    const api = loadStocktake({ head: HEAD, count: 'nab' });
+    const s = M.scope(BASE, LIST, '2026-11');
+    const settings = { kind: 'mfg', ym: '2026-11', list: M.packList(LIST) };
+    const id = api.post({ op: 'st-round-save', t: HEAD, round: { name: M.roundName('2026-11'), date: '2026-11-16', cutoff: '2026-11-16 08:00', settings } }).round.id;
+    api.post({ op: 'st-baseline', t: HEAD, round: id, piles: s.piles, skus: s.skus, pos: s.pos, lastRow: 99, lastDate: '2026-11-15' });
+    api.post({ op: 'st-teams', t: HEAD, round: id, pass: 1, teams: M.teams(s.locs, 1), locs: s.locs.map((l) => [l.loc, l.zone, l.group, l.src]) });
+    api.post({ op: 'st-status', t: HEAD, round: id, status: 'นับรอบ 1' });
+    expect(api.post({ op: 'st-status', t: HEAD, round: id, status: 'วิเคราะห์' }).round.status).toBe('วิเคราะห์');
+
+    /* แบบที่หน้าเว็บทำ: อ่านค่าตั้งล่าสุด ใส่คำตัดสินทับ แล้วบันทึกรอบเดิม */
+    const fresh = api.get({ api: 'st-rounds', t: HEAD }).rounds.find((x) => x.id === id);
+    const decide = M.applyDecide(fresh.settings.decide, { AAA0000000001: ['open', 'แกะ 5 ชิ้นก่อน', 'หัวหน้า', '2026-11-20 10:00'] });
+    const saved = api.post({ op: 'st-round-save', t: HEAD, by: 'หัวหน้า', round: { id, name: fresh.name, date: fresh.date, cutoff: fresh.cutoff, settings: { ...fresh.settings, decide } } });
+    expect(saved.error).toBeUndefined();
+
+    const head = api.get({ api: 'st-head', round: id, t: HEAD });
+    expect(head.round.status).toBe('วิเคราะห์');
+    expect(head.round.settings).toMatchObject({ kind: 'mfg', ym: '2026-11' });
+    expect(M.unpackList(head.round.settings.list)).toEqual(LIST);
+    expect(M.decideOf(head.round.settings.decide).AAA0000000001).toMatchObject({ code: 'open', note: 'แกะ 5 ชิ้นก่อน' });
   });
 });

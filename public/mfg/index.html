@@ -87,6 +87,24 @@
 .mf-cmp.new{background:#CC0000;color:#fff}
 .mf-cmp.still{background:#7F1D1D;color:#fff}
 .mf-cmp.gone{background:#D1FAE5;color:#065F46}
+.mf-chip.cmp-todo{background:#FEE2E2;color:#991B1B;border-color:#CC0000}
+.mf-todo{color:#B91C1C !important;font-weight:700}
+/* คำตัดสินของเจ้านาย */
+.mf-chip.dec-open{background:#FEE2E2;color:#991B1B}
+.mf-chip.dec-sell{background:#FEF3C7;color:#92400E}
+.mf-chip.dec-wait{background:#E0F2FE;color:#075985}
+.mf-chip.dec-other{background:#F1F5F9;color:#334155}
+.mf-chip.dec-none{background:var(--wms-surface);border-color:#FCA5A5;color:#B91C1C}
+.mf-chip.dec-none.on{border-color:#B91C1C}
+.mf-dsel{padding:2px 4px;border-radius:6px;border:1px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:12.5px;color:var(--wms-text);vertical-align:middle}
+.mf-dsel.open{background:#FEE2E2;border-color:#FCA5A5;color:#991B1B;font-weight:600}
+.mf-dsel.sell{background:#FEF3C7;border-color:#FDE68A;color:#92400E;font-weight:600}
+.mf-dsel.wait{background:#E0F2FE;border-color:#BAE6FD;color:#075985;font-weight:600}
+.mf-dsel.other{background:#F1F5F9;font-weight:600}
+.mf-note{width:130px;margin-left:4px;padding:2px 6px;border-radius:6px;border:1px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:12.5px;color:var(--wms-text);vertical-align:middle}
+.mf-note:focus,.mf-dsel:focus{outline:none;border-color:var(--wms-primary)}
 
 /* ── ตาราง ── */
 .tx-wrap{overflow:auto;max-height:72vh;background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:var(--wms-radius)}
@@ -208,9 +226,10 @@ let FIFO = null;        // สมุดที่ใช้ตั้งรอบ�
 let FIFO_BUSY = false;
 let FIFO_ERR = null;    // อ่านสมุดไม่ได้เลย {msg, link} ไม่อ่านซ้ำเองจนกว่าจะกดลองใหม่ (เดิมวนอ่านไม่หยุด)
 let DRAFT = null;       // รอบใหม่ที่กำลังตั้ง {ym, list, src, teams, type, q}
-let RF = { st: '', type: '', q: '', mode: '', cmp: '' };   // ตัวกรองรายงาน (cmp = กลุ่มเทียบเดือนก่อน)
+let RF = { st: '', type: '', q: '', mode: '', cmp: '', dec: '' };   // ตัวกรองรายงาน (cmp = กลุ่มเทียบเดือนก่อน · dec = คำตัดสิน)
 let PREV = null;        // รอบเดือนก่อนที่โหลดมาเทียบ {id, rep} หรือ {id, err}
 let PREV_BUSY = false;
+const DECS = {};        // คำตัดสินที่ยังไม่ได้บันทึก รายรอบ { pend: {SKU: [code, หมายเหตุ, ใคร, เมื่อไหร่] | null}, busy, err, at, t }
 let CF = 'left';        // ชิปของแท็บนับ
 const OPEN = new Set(); // แถวรายงานที่กาง ⓘ
 let XLSX_LOAD = null;
@@ -649,14 +668,89 @@ function cmpOf(rp) {
   if (!p) return null;
   if (!PREV || PREV.id !== p.id) { if (!PREV_BUSY) setTimeout(() => loadPrev(p), 0); return { p, busy: true }; }
   if (PREV.err) return { p, err: PREV.err };
-  return { p, c: M.compare(rp, PREV.rep, M.listMap(listOf(), S.head.skus)) };
+  return { p, c: M.compare(rp, PREV.rep, M.listMap(listOf(), S.head.skus), M.decideOf(p.settings && p.settings.decide)) };
 }
 
 /** แถวที่โชว์ตามตัวกรองทั้งหมด ใช้ทั้งบนจอและ Excel */
-function shownRows(rp, cm) {
-  const rows = M.filter(rp, RF);
+function shownRows(rp, cm, map) {
+  const rows = M.byDecide(M.filter(rp, RF), map, RF.dec);
   if (!RF.cmp || !cm || !cm.c) return rows;
-  return rows.filter(r => (cm.c.bySku[ST.up(r.sku)] || {}).tag === RF.cmp);
+  return rows.filter(r => { const o = cm.c.bySku[ST.up(r.sku)] || {}; return RF.cmp === 'todo' ? o.todo : o.tag === RF.cmp; });
+}
+
+/* ── คำตัดสินของเจ้านาย: หัวหน้าเลือกตามที่เจ้านายตอบ บันทึกในค่าตั้งของรอบ (st-round-save เดิม ไม่ต้องแก้สคริปต์) ── */
+
+function decSt(rid) { return DECS[rid] || (DECS[rid] = { pend: {}, busy: false, err: '', at: 0, t: null }); }
+function decMap() { const r = R(); return r ? M.decideOf(M.applyDecide(r.settings.decide, decSt(S.rid).pend)) : {}; }
+function decWaiting() { return Object.values(DECS).some(d => d.busy || Object.keys(d.pend).length); }
+
+function setDec(sku, patch) {
+  const rid = S.rid;
+  const d = decSt(rid);
+  const cur = decMap()[sku] || { code: '', note: '' };
+  const code = patch.code !== undefined ? patch.code : cur.code;
+  const note = patch.note !== undefined ? patch.note : cur.note;
+  d.pend[sku] = code || String(note).trim() ? [code, note, who(), nowCut()] : null;
+  d.err = '';
+  clearTimeout(d.t);
+  d.t = setTimeout(() => saveDec(rid), 800);
+}
+
+async function saveDec(rid) {
+  const d = decSt(rid);
+  clearTimeout(d.t);
+  if (d.busy || !Object.keys(d.pend).length) return;
+  const sent = { ...d.pend };
+  d.busy = true; d.err = ''; paintDec();
+  try {
+    /* อ่านค่าตั้งล่าสุดก่อน หัวหน้าอีกเครื่องอาจบันทึกคำตัดสิน SKU อื่นไว้ จะได้ไม่ทับกัน */
+    const fresh = ((await get('st-rounds', null, true)).rounds || []).find(x => x.id === rid);
+    if (!fresh) throw new Error('ไม่พบรอบนี้ในชีตแล้ว');
+    const settings = { ...fresh.settings, decide: M.applyDecide(fresh.settings.decide, sent) };
+    if (JSON.stringify(settings).length > M.SETTINGS_MAX) throw new Error('คำตัดสินกับหมายเหตุยาวเกินที่ชีตเก็บได้ ลดหมายเหตุลง');
+    const res = await post({ op: 'st-round-save', round: { id: rid, name: fresh.name, date: fresh.date, cutoff: fresh.cutoff, settings } });
+    Object.keys(sent).forEach(k => { if (d.pend[k] === sent[k]) delete d.pend[k]; });
+    if (S.head && S.head.round.id === rid) Object.assign(S.head.round, res.round);
+    if (S.rounds) S.rounds = S.rounds.map(x => x.id === rid ? res.round : x);
+    d.at = Date.now();
+  } catch (e) { d.err = e.message; }
+  d.busy = false;
+  if (!d.err && Object.keys(d.pend).length) { saveDec(rid); return; }
+  /* กำลังพิมพ์หมายเหตุช่องอื่นอยู่ อย่าวาดทั้งตารางใหม่ (ตัวที่พิมพ์ค้างจะหาย) */
+  const a = document.activeElement;
+  if (a && a.classList && a.classList.contains('mf-note')) paintDec(); else paintBody();
+}
+
+function decStateHtml() {
+  const d = decSt(S.rid);
+  const n = Object.keys(d.pend).length;
+  if (d.busy) return '⏳ กำลังบันทึก…';
+  if (d.err) return `<span class="mf-todo">บันทึกไม่ได้: ${esc(d.err)}</span> <button class="tx-opt" data-act="decsave">ลองใหม่</button>`;
+  if (n) return `ยังไม่บันทึก ${n} SKU`;
+  if (d.at) return `✓ บันทึกแล้ว ${new Date(d.at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`;
+  return '';
+}
+/** วาดแค่แถบคำตัดสินกับช่องเลือก (ไม่วาดตารางใหม่ ช่องหมายเหตุที่กำลังพิมพ์ไม่หาย) */
+function paintDec() {
+  const bar = $('decBar');
+  if (!bar || !R()) return;
+  const map = decMap();
+  bar.outerHTML = decBar(rep(repMode()), map);
+  document.querySelectorAll('select[data-dec]').forEach(s => {
+    if (s === document.activeElement) return;
+    const c = (map[s.dataset.dec] || {}).code || '';
+    s.value = c; s.className = 'mf-dsel ' + c;
+  });
+}
+
+function decBar(rp, map) {
+  const s = M.decideSum(rp, map);
+  const chip = (k, body) => `<button class="mf-chip dec-${k} ${RF.dec === k ? 'on' : ''}" data-df="${k}">${body}</button>`;
+  const chips = M.DECIDE_ORDER.filter(k => s[k].skus || RF.dec === k)
+    .map(k => chip(k, `${M.DECIDE[k].icon} ${esc(M.DECIDE[k].label)} <b>${s[k].skus}</b> SKU · ${f(s[k].qty)} ชิ้น`)).join('');
+  const none = s.none.skus || RF.dec === 'none' ? chip('none', `เสี่ยงมากยังไม่ตัดสิน <b>${s.none.skus}</b> SKU`) : '';
+  return `<div class="tx-bar" id="decBar"><span>คำตัดสิน</span>${chips}${none}${chips || none ? '' : '<span>เลือกในช่อง "ตัดสินใจ" ท้ายแถว ระบบบันทึกเอง</span>'}
+    <span class="sp"></span><span id="decState">${decStateHtml()}</span></div>`;
 }
 
 function cmpBar(cm) {
@@ -668,6 +762,7 @@ function cmpBar(cm) {
   const chip = (k, body) => `<button class="mf-chip cmp-${k} ${RF.cmp === k ? 'on' : ''}" data-cmp="${k}">${esc(M.CMP[k].label)} ${body}</button>`;
   return `<div class="tx-bar"><span>เทียบ <b>${pm}</b></span>
     ${chip('new', `<b>${t.new.skus}</b> SKU · ${f(t.new.qty)} ชิ้น`)}${chip('still', `<b>${t.still.skus}</b> SKU · ${f(t.still.qty)} ชิ้น`)}${chip('gone', `<b>${t.gone.skus}</b> SKU`)}
+    ${t.todo.skus || RF.cmp === 'todo' ? `<button class="mf-chip cmp-todo ${RF.cmp === 'todo' ? 'on' : ''}" data-cmp="todo" title="เดือนก่อนเจ้านายสั่งแกะหรือขายด่วน แต่ LOT เสี่ยงมากชุดนั้นยังเหลืออยู่">⚠️ สั่งแกะ/ขายแล้วยังค้าง <b>${t.todo.skus}</b> SKU · ${f(t.todo.qty)} ชิ้น</button>` : ''}
     <span class="tx-sub" title="LOT ที่เดือนก่อนเป็นเสี่ยงมาก เทียบชิ้นที่เหลือเดือนนี้ (ขาย แกะ หรือย้ายออกไป)">LOT เสี่ยงมากเดือนก่อน ลดไป <b>${f(t.out)}</b> ชิ้น</span>
     <span class="tx-sub">· เดือนก่อนใช้ยอด${cm.c.prevMode === 'count' ? 'นับจริง' : 'สมุด'}</span></div>`;
 }
@@ -678,9 +773,10 @@ function goneTable(cm) {
   const list = cm.c.gone.filter(g => (!RF.type || g.type === RF.type) && (!q || ST.up(g.sku + ' ' + g.short + ' ' + g.name).includes(q)));
   const pm = esc(M.ymText(cm.c.prevYm));
   const body = list.map(g => `<tr><td class="k-sku nw">${esc(g.sku)}${g.short ? `<span class="tx-sub">${esc(g.short)}</span>` : ''}</td><td class="k-name">${esc(g.name)}</td>
-    <td class="nw">${esc(g.type)}</td><td class="num">${f(g.riskPrev)}</td><td class="num">${g.left ? f(g.left) : '<span class="tx-sub">-</span>'}</td><td class="num">${f(g.out)}</td></tr>`).join('');
-  return `<div class="tx-wrap"><table class="tx-tbl"><thead><tr><th>SKU</th><th>Product Name</th><th>Type</th><th class="num">เสี่ยงมาก ${pm}</th><th class="num">เดือนนี้เหลือ</th><th class="num">LOT เดิมลดไป</th></tr></thead>
-    <tbody>${body || '<tr><td colspan="6" class="tx-sub">ไม่มีรายการ</td></tr>'}</tbody></table></div>`;
+    <td class="nw">${esc(g.type)}</td><td class="num">${f(g.riskPrev)}</td><td class="num">${g.left ? f(g.left) : '<span class="tx-sub">-</span>'}</td><td class="num">${f(g.out)}</td>
+    <td>${esc(M.decideText(g.dPrev))}</td></tr>`).join('');
+  return `<div class="tx-wrap"><table class="tx-tbl"><thead><tr><th>SKU</th><th>Product Name</th><th>Type</th><th class="num">เสี่ยงมาก ${pm}</th><th class="num">เดือนนี้เหลือ</th><th class="num">LOT เดิมลดไป</th><th>เดือนก่อนสั่ง</th></tr></thead>
+    <tbody>${body || '<tr><td colspan="7" class="tx-sub">ไม่มีรายการ</td></tr>'}</tbody></table></div>`;
 }
 
 function reportView() {
@@ -688,7 +784,8 @@ function reportView() {
   const rp = rep(mode);
   const cm = cmpOf(rp);
   const cc = cm && cm.c;
-  const rows = shownRows(rp, cm);
+  const map = decMap();
+  const rows = shownRows(rp, cm, map);
   const by = rp.by;
   const rl = rp.rule;
   const chip = (k, label) => `<button class="mf-chip ${k} ${RF.st === k ? 'on' : ''}" data-st="${k}">${label} <b>${f(by[k].qty)}</b> ชิ้น · ${by[k].skus} SKU</button>`;
@@ -700,14 +797,25 @@ function reportView() {
   const nol = rp.cols.some(c => c.key === M.NOLOT);
   const head1 = `<tr><th rowspan="2">SKU</th><th rowspan="2">Product Name</th><th rowspan="2">Type</th>${nol ? '<th rowspan="2" class="nolot">NO LOT</th>' : ''}` +
     years.map(y => `<th class="year" colspan="${y.n}">${y.y}</th>`).join('') +
-    `<th class="total">Total MFG</th><th rowspan="2">สถานะ</th>${cc ? `<th rowspan="2">เทียบ ${esc(M.ymText(cc.prevYm))}</th>` : ''}<th rowspan="2"></th></tr>`;
+    `<th class="total">Total MFG</th><th rowspan="2">สถานะ</th>${cc ? `<th rowspan="2">เทียบ ${esc(M.ymText(cc.prevYm))}</th>` : ''}<th rowspan="2" title="เลือกตามที่เจ้านายตอบ ลงช่อง Remark ใน Excel">ตัดสินใจ</th><th rowspan="2"></th></tr>`;
   const head2 = '<tr>' + rp.cols.filter(c => c.key !== M.NOLOT).map(c => `<th class="${c.st}">${esc(c.label)}<small>${c.age === null ? '' : c.age + ' วัน'}</small></th>`).join('') +
     `<th class="total">${f(rp.totals[mode])}</th></tr>`;
-  const ncol = 6 + rp.cols.length + (cc ? 1 : 0);
+  const ncol = 7 + rp.cols.length + (cc ? 1 : 0);
   const cmpCell = (r) => {
     const o = cc.bySku[ST.up(r.sku)];
-    if (!o || !o.tag) return '<td></td>';
-    return `<td class="nw" title="เสี่ยงมาก ${esc(M.ymText(cc.prevYm))} ${f(o.riskPrev)} ชิ้น → ${esc(M.ymText(cc.ym))} ${f(o.riskNow)} ชิ้น"><span class="mf-cmp ${o.tag}">${esc(M.CMP[o.tag].short)}</span>${o.out > 0 ? ` <small class="tx-sub">ลด ${f(o.out)}</small>` : ''}</td>`;
+    if (!o || (!o.tag && !o.dPrev)) return '<td></td>';
+    const tag = o.tag ? `<span class="mf-cmp ${o.tag}">${esc(M.CMP[o.tag].short)}</span>${o.out > 0 ? ` <small class="tx-sub">ลด ${f(o.out)}</small>` : ''}` : '';
+    const dp = o.dPrev ? `<small class="tx-sub ${o.todo ? 'mf-todo' : ''}">เดือนก่อน: ${esc(M.decideText(o.dPrev))}${o.todo ? ` · ยังค้าง ${f(o.held)}` : ''}</small>` : '';
+    return `<td class="nw" title="เสี่ยงมาก ${esc(M.ymText(cc.prevYm))} ${f(o.riskPrev)} ชิ้น → ${esc(M.ymText(cc.ym))} ${f(o.riskNow)} ชิ้น">${tag}${dp}</td>`;
+  };
+  const decCell = (r) => {
+    const k = ST.up(r.sku);
+    const d = map[k];
+    const code = d ? d.code : '';
+    return `<td class="nw"><select class="mf-dsel ${code}" data-dec="${esc(k)}" aria-label="ตัดสินใจ ${esc(r.sku)}"><option value="">—</option>` +
+      M.DECIDE_ORDER.map(c => `<option value="${c}" ${c === code ? 'selected' : ''}>${M.DECIDE[c].icon} ${esc(M.DECIDE[c].label)}</option>`).join('') +
+      `</select><input class="mf-note" data-note="${esc(k)}" maxlength="${M.NOTE_MAX}" placeholder="หมายเหตุ" value="${esc(d ? d.note : '')}"` +
+      `${d && d.by ? ` title="${esc(d.by)} ${esc(d.at)}"` : ''} aria-label="หมายเหตุ ${esc(r.sku)}"></td>`;
   };
   const body = rows.map(r => {
     const key = r.sku;
@@ -721,14 +829,14 @@ function reportView() {
     const st = M.STATUS[r.st];
     let html = `<tr><td class="k-sku nw">${esc(r.sku)}${r.short ? `<span class="tx-sub">${esc(r.short)}</span>` : ''}</td><td class="k-name">${esc(r.name)}</td>
       <td class="nw">${esc(r.type)}</td>${cells}<td class="num tot">${f(r.total[mode])}</td>
-      <td><span class="mf-tag ${r.st}">${esc(st.label)}</span></td>${cc ? cmpCell(r) : ''}
+      <td><span class="mf-tag ${r.st}">${esc(st.label)}</span></td>${cc ? cmpCell(r) : ''}${decCell(r)}
       <td><button class="mf-i ${open ? 'on' : ''}" data-open="${esc(key)}" aria-expanded="${open}" title="ดูราย Location">i</button></td></tr>`;
     if (open) html += `<tr class="det"><td colspan="${ncol}">${detail(r, rp)}</td></tr>`;
     return html;
   }).join('');
   const foot = `<tr class="foot"><td colspan="3">รวม ${f(rows.length)} SKU</td>` +
     rp.cols.map(c => { const v = rows.reduce((a, r) => a + (r.cells[c.key] ? r.cells[c.key][mode] : 0), 0); return `<td class="num">${v ? f(v) : ''}</td>`; }).join('') +
-    `<td class="num">${f(rows.reduce((a, r) => a + r.total[mode], 0))}</td><td colspan="${cc ? 3 : 2}"></td></tr>`;
+    `<td class="num">${f(rows.reduce((a, r) => a + r.total[mode], 0))}</td><td colspan="${cc ? 4 : 3}"></td></tr>`;
   return `<div class="tx-bar">
       <button class="tx-opt ${mode === 'count' ? 'on' : ''}" data-mode="count">นับจริง</button>
       <button class="tx-opt ${mode === 'book' ? 'on' : ''}" data-mode="book">สมุด</button>
@@ -748,6 +856,7 @@ function reportView() {
       <input class="tx-input" id="q" placeholder="ค้น SKU / ชื่อ / Location" value="${esc(RF.q)}">
     </div>
     ${cmpBar(cm)}
+    ${decBar(rp, map)}
     ${RF.cmp === 'gone' && cc ? goneTable(cm) : `<div class="tx-wrap"><table class="tx-tbl mf-rep"><thead>${head1}${head2}</thead>
       <tbody>${body || `<tr><td colspan="${ncol}" class="tx-sub">ไม่มีรายการ</td></tr>`}${rows.length ? foot : ''}</tbody></table></div>`}`;
 }
@@ -791,6 +900,7 @@ const XS = {
   'st-risk': { fill: 'CC0000', color: 'FFFFFF' }, 'st-nolot': { fill: 'CC0000', color: 'FFFFFF' },
   'st-watch': { fill: 'F1C232', color: '000000' }, 'st-ok': { fill: '34A853', color: 'FFFFFF' },
   'c-risk': { fill: 'F4C7C3', num: true }, 'c-nolot': { fill: 'F4C7C3', num: true }, 'c-watch': { fill: 'FCE8B2', num: true }, 'c-ok': { fill: 'B7D7A8', num: true },
+  'c-todo': { fill: 'F4C7C3', color: '9C0006' },
   sum: { bold: true, num: true }, age: { fill: 'F3F3F3', color: '555555', small: true }, foot: { fill: 'EFEFEF', bold: true },
 };
 function xStyle(k) {
@@ -827,7 +937,8 @@ async function downloadXlsx() {
   const rp = rep(mode);
   const cm = cmpOf(rp);
   const cc = cm && cm.c;
-  const sh = M.sheet({ ...rp, rows: shownRows(rp, cm) }, { ym: ymOf(), at: new Date().toLocaleString('th-TH'), cmp: cc });
+  const map = decMap();
+  const sh = M.sheet({ ...rp, rows: shownRows(rp, cm, map) }, { ym: ymOf(), at: new Date().toLocaleString('th-TH'), cmp: cc, decide: map });
   await job('กำลังสร้างไฟล์ Excel…', async () => {
     const X = await xlsxLib();
     const wb = X.utils.book_new();
@@ -835,14 +946,14 @@ async function downloadXlsx() {
     /* ชีตที่สอง: เทียบเดือนก่อนแยกกลุ่ม ทุก SKU ไม่สนตัวกรองบนจอ */
     if (cc) X.utils.book_append_sheet(wb, buildWs(X, M.compareSheet(cc, rp), 2), 'เทียบ ' + cc.prevYm);
     X.writeFile(wb, `MFG-${ymOf()}-${mode === 'count' ? 'นับจริง' : 'สมุด'}.xlsx`);
-    S.ok = '✓ โหลด Excel แล้ว' + (RF.st || RF.type || RF.q ? ' (เฉพาะที่กรองอยู่)' : '');
+    S.ok = '✓ โหลด Excel แล้ว' + (RF.st || RF.type || RF.q || RF.cmp || RF.dec ? ' (เฉพาะที่กรองอยู่)' : '');
   });
 }
 
 async function copyLine() {
   const rp = rep(repMode());
   const cm = cmpOf(rp);
-  const text = M.lineText(rp, { ym: ymOf(), cmp: cm && cm.c });
+  const text = M.lineText(rp, { ym: ymOf(), cmp: cm && cm.c, decide: decMap() });
   try { await navigator.clipboard.writeText(text); S.ok = '✓ คัดลอกสรุปแล้ว วางใน LINE ได้เลย'; }
   catch (e) { prompt('คัดลอกข้อความนี้', text); }
   S.err = ''; paintSrc();
@@ -909,6 +1020,7 @@ document.addEventListener('click', (e) => {
   if (d.cf) { CF = d.cf; paintBody(); return; }
   if (d.st !== undefined) { RF.st = RF.st === d.st ? '' : d.st; paintBody(); return; }
   if (d.cmp !== undefined) { RF.cmp = RF.cmp === d.cmp ? '' : d.cmp; OPEN.clear(); paintBody(); return; }
+  if (d.df !== undefined) { RF.dec = RF.dec === d.df ? '' : d.df; OPEN.clear(); paintBody(); return; }
   if (d.rtype !== undefined) { RF.type = RF.type === d.rtype ? '' : d.rtype; paintBody(); return; }
   if (d.mode) { RF.mode = d.mode; OPEN.clear(); paintBody(); return; }
   if (d.open !== undefined) { OPEN.has(d.open) ? OPEN.delete(d.open) : OPEN.add(d.open); paintBody(); return; }
@@ -934,6 +1046,7 @@ document.addEventListener('click', (e) => {
     case 'resume': setStatus('นับรอบ 1'); break;
     case 'xlsx': downloadXlsx(); break;
     case 'prev': PREV = null; paintBody(); break;
+    case 'decsave': saveDec(S.rid); break;
     case 'line': copyLine(); break;
     case 'cfg': saveCfg(); break;
   }
@@ -947,6 +1060,9 @@ document.addEventListener('change', (e) => {
     job('กำลังโหลดรอบ…', async () => { await loadHead(); TAB = defaultTab(); });
     return;
   }
+  /* คำตัดสิน: เลือก "—" = ล้างทั้งคำตัดสินและหมายเหตุ · หมายเหตุบันทึกตอนออกจากช่องหรือกด Enter */
+  if (t.dataset.dec !== undefined) { setDec(t.dataset.dec, t.value ? { code: t.value } : { code: '', note: '' }); paintBody(); return; }
+  if (t.dataset.note !== undefined) { setDec(t.dataset.note, { note: t.value }); paintDec(); return; }
   if (t.id === 'fYm') { DRAFT.ym = t.value; paintBody(); return; }
   if (t.id === 'fTeams') { DRAFT.teams = +t.value || 1; return; }
   if (t.dataset.type !== undefined) { DRAFT.list[+t.dataset.type][1] = t.value; DRAFT.guessed = false; paintBody(); return; }
@@ -1007,6 +1123,9 @@ setInterval(async () => {
     if (changed && !typing) paint();
   } catch (e) {}
 }, POLL_MS);
+
+/* คำตัดสินยังส่งไม่เสร็จ เตือนก่อนปิดหน้า */
+window.addEventListener('beforeunload', (e) => { if (decWaiting()) { e.preventDefault(); e.returnValue = ''; } });
 
 paint();
 loadRounds();

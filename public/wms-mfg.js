@@ -535,31 +535,36 @@
    * out = LOT ที่เดือนก่อนเสี่ยงมาก ลดลงไปกี่ชิ้น (นับเฉพาะที่ลด ที่นับเจอเพิ่มไม่หักกัน)
    * keep = SKU ในรายชื่อรอบนี้ (จาก listMap) SKU ที่เอาออกจากรายชื่อแล้วไม่ขึ้นว่าหลุด
    */
-  function compare(cur, prev, keep) {
+  function compare(cur, prev, keep, prevDec) {
     var a = riskMap(cur), b = riskMap(prev);
     var bySku = {}, gone = [];
-    var totals = { new: { skus: 0, qty: 0 }, still: { skus: 0, qty: 0 }, gone: { skus: 0, qty: 0 }, out: 0 };
+    var totals = { new: { skus: 0, qty: 0 }, still: { skus: 0, qty: 0 }, gone: { skus: 0, qty: 0 }, out: 0, todo: { skus: 0, qty: 0 } };
     var keys = {};
     Object.keys(a).forEach(function (k) { keys[k] = 1; });
     Object.keys(b).forEach(function (k) { if (!keep || keep[k] !== undefined) keys[k] = 1; });
     Object.keys(keys).forEach(function (k) {
       var now = a[k], was = b[k];
       var rn = now ? now.risk : 0, rp = was ? was.risk : 0;
-      var out = 0;
+      var out = 0, held = 0;
       if (was) Object.keys(was.riskLots).forEach(function (l) {
         var left = now && now.lots[l] ? now.lots[l] : 0;
         if (was.riskLots[l] > left) out = round3(out + was.riskLots[l] - left);
+        held = round3(held + Math.min(was.riskLots[l], left));
       });
       var tag = rn > 0 ? (rp > 0 ? 'still' : 'new') : rp > 0 ? 'gone' : '';
-      var o = { tag: tag, riskNow: rn, riskPrev: rp, out: out, prevSt: was ? was.row.st : '' };
+      /* เดือนก่อนเจ้านายสั่งแกะหรือขายด่วน แต่ LOT เสี่ยงมากชุดนั้นยังเหลืออยู่ = ยังไม่ได้ทำตามที่สั่ง */
+      var dPrev = (prevDec && prevDec[k]) || null;
+      var todo = !!(dPrev && ACT[dPrev.code] && held > 0);
+      var o = { tag: tag, riskNow: rn, riskPrev: rp, out: out, held: held, prevSt: was ? was.row.st : '', dPrev: dPrev, todo: todo };
       bySku[k] = o;
       totals.out = round3(totals.out + out);
+      if (todo) { totals.todo.skus++; totals.todo.qty = round3(totals.todo.qty + held); }
       if (!tag) return;
       totals[tag].skus++;
       totals[tag].qty = round3(totals[tag].qty + (tag === 'gone' ? rp : rn));
       if (tag === 'gone') {
         var r = (now || was).row;
-        gone.push({ sku: r.sku, short: r.short, name: r.name, type: r.type, riskPrev: rp, left: now ? qtyOf(now.row, cur.mode) : 0, out: out });
+        gone.push({ sku: r.sku, short: r.short, name: r.name, type: r.type, riskPrev: rp, left: now ? qtyOf(now.row, cur.mode) : 0, out: out, dPrev: dPrev });
       }
     });
     gone.sort(function (x, y) { return y.riskPrev - x.riskPrev || S().natCmp(x.sku, y.sku); });
@@ -578,12 +583,104 @@
     return CMP[o.tag].short + (o.out > 0 ? ' · ลด ' + Number(o.out).toLocaleString('en-US') : '');
   }
 
+  /** เดือนก่อนสั่งอะไร (ช่องเทียบ Excel / ชีตเทียบ) สั่งแกะหรือขายแล้วยังค้างบอกจำนวนด้วย */
+  function prevDecText(o) {
+    if (!o || !o.dPrev) return '';
+    return decideText(o.dPrev) + (o.todo ? ' · ยังค้าง ' + Number(o.held).toLocaleString('en-US') : '');
+  }
+
+  /* ── คำตัดสินของเจ้านาย ─────────────────────────────────────────────── */
+
+  /**
+   * หัวหน้าเลือกตามที่เจ้านายตอบ ราย SKU เก็บในค่าตั้งของรอบ settings.decide = { SKU เต็ม: [code, หมายเหตุ, ใคร, เมื่อไหร่] }
+   * ใช้ st-round-save เดิม ไม่ต้องแก้สคริปต์ · ใส่แต่หมายเหตุไม่เลือก = อื่นๆ
+   */
+  var DECIDE = {
+    open: { label: 'แกะ', icon: '✂️' },
+    sell: { label: 'ขายด่วน', icon: '🏷️' },
+    wait: { label: 'รอเดือนหน้า', icon: '⏸' },
+    other: { label: 'อื่นๆ', icon: '📝' },
+  };
+  var DECIDE_ORDER = ['open', 'sell', 'wait', 'other'];
+  var ACT = { open: 1, sell: 1 };   // คำสั่งที่ต้องมีของออกจาก LOT นั้น เดือนถัดไปเช็คว่าทำแล้วหรือยัง
+  var NOTE_MAX = 60;
+  var SETTINGS_MAX = 30000;         // เท่ากับ SETTINGS_MAX ใน stocktake-api.gs (ค่าตั้งทั้งก้อนของรอบ)
+
+  function cleanNote(v) { return text(v).replace(/\s+/g, ' ').slice(0, NOTE_MAX); }
+
+  /** settings.decide ดิบ → { SKU: {code, note, by, at} } ตัดค่าที่อ่านไม่ออกทิ้ง */
+  function decideOf(raw) {
+    var m = {};
+    if (!raw || typeof raw !== 'object') return m;
+    Object.keys(raw).forEach(function (k) {
+      var v = raw[k];
+      if (!Array.isArray(v)) return;
+      var note = cleanNote(v[1]);
+      var code = DECIDE[v[0]] ? v[0] : note ? 'other' : '';
+      if (!code) return;
+      m[up(k)] = { code: code, note: note, by: text(v[2]), at: text(v[3]) };
+    });
+    return m;
+  }
+
+  /** ใส่ที่แก้ทับของเดิม changes = { SKU: [code, หมายเหตุ, ใคร, เมื่อไหร่] | null (ลบ) } → settings.decide ชุดใหม่ */
+  function applyDecide(raw, changes) {
+    var out = {};
+    var cur = decideOf(raw);
+    Object.keys(cur).forEach(function (k) { var d = cur[k]; out[k] = [d.code, d.note, d.by, d.at]; });
+    Object.keys(changes || {}).forEach(function (k) {
+      var v = changes[k], key = up(k);
+      if (!key) return;
+      var note = v ? cleanNote(v[1]) : '';
+      var code = v && DECIDE[v[0]] ? v[0] : note ? 'other' : '';
+      if (!code) { delete out[key]; return; }
+      out[key] = [code, note, text(v[2]).slice(0, 40), text(v[3])];
+    });
+    return out;
+  }
+
+  /** ข้อความลงช่อง Remark: "แกะ · หมายเหตุ" */
+  function decideText(d) {
+    if (!d || !d.code) return '';
+    var label = DECIDE[d.code] ? DECIDE[d.code].label : '';
+    if (d.code === 'other' && d.note) return d.note;
+    return label + (d.note ? ' · ' + d.note : '');
+  }
+
+  /**
+   * สรุปคำตัดสินของรายงาน ราย code: SKU กี่ตัว ชิ้น (Total MFG) กี่ชิ้น รายชื่อ
+   * none = SKU เสี่ยงมากที่ยังไม่ได้ตัดสิน · any = มีคำตัดสินอย่างน้อยหนึ่งตัว
+   */
+  function decideSum(rep, map) {
+    var s = { none: { skus: 0, qty: 0, list: [] }, any: false };
+    DECIDE_ORDER.forEach(function (k) { s[k] = { skus: 0, qty: 0, list: [] }; });
+    rep.rows.forEach(function (r) {
+      var d = map && map[up(r.sku)];
+      var g = d ? s[d.code] : r.st === 'risk' ? s.none : null;
+      if (!g) return;
+      if (d) s.any = true;
+      g.skus++;
+      g.qty = round3(g.qty + qtyOf(r, rep.mode));
+      g.list.push({ sku: r.sku, short: r.short, note: d ? d.note : '' });
+    });
+    return s;
+  }
+
+  /** แถวตามชิปคำตัดสิน key = code | 'none' (เสี่ยงมากที่ยังไม่ตัดสิน) */
+  function byDecide(rows, map, key) {
+    if (!key) return rows;
+    return rows.filter(function (r) {
+      var d = map && map[up(r.sku)];
+      return key === 'none' ? !d && r.st === 'risk' : !!d && d.code === key;
+    });
+  }
+
   /**
    * ชีตเทียบเดือนก่อน แยกกลุ่ม: เพิ่งเข้าเสี่ยงมาก / ค้างเสี่ยงมาก / หลุดเสี่ยงแล้ว
    * rows ของรายงานรอบนี้ใช้หาชื่อกับประเภท SKU ที่หลุดแล้วใช้ข้อมูลจาก cmp.gone
    */
   function compareSheet(cmp, rep) {
-    var head = ['กลุ่ม', 'SKU', 'Product Name', 'Type', 'เสี่ยงมาก ' + ymText(cmp.prevYm), 'เสี่ยงมาก ' + ymText(cmp.ym), 'LOT เดิมลดไป'];
+    var head = ['กลุ่ม', 'SKU', 'Product Name', 'Type', 'เสี่ยงมาก ' + ymText(cmp.prevYm), 'เสี่ยงมาก ' + ymText(cmp.ym), 'LOT เดิมลดไป', 'เดือนก่อนสั่ง'];
     var aoa = [['เทียบ ' + ymText(cmp.ym) + ' กับ ' + ymText(cmp.prevYm) + ' · เดือนนี้ใช้' + (cmp.mode === 'count' ? 'ยอดนับจริง' : 'ยอดสมุด') +
       ' · เดือนก่อนใช้' + (cmp.prevMode === 'count' ? 'ยอดนับจริง' : 'ยอดสมุด')], head];
     var styles = [[0, 0, 'title']];
@@ -593,17 +690,18 @@
         var o = cmp.bySku[up(r.sku)];
         if (!o || o.tag !== tag) return;
         styles.push([aoa.length, 0, tag === 'new' ? 'c-risk' : 'c-watch']);
-        aoa.push([CMP[tag].label, r.sku, r.name, r.type, o.riskPrev || '', o.riskNow || '', o.out || '']);
+        if (o.todo) styles.push([aoa.length, 7, 'c-todo']);
+        aoa.push([CMP[tag].label, r.sku, r.name, r.type, o.riskPrev || '', o.riskNow || '', o.out || '', prevDecText(o)]);
       });
     });
     cmp.gone.forEach(function (g) {
       styles.push([aoa.length, 0, 'c-ok']);
-      aoa.push([CMP.gone.label, g.sku, g.name, g.type, g.riskPrev || '', '', g.out || '']);
+      aoa.push([CMP.gone.label, g.sku, g.name, g.type, g.riskPrev || '', '', g.out || '', decideText(g.dPrev)]);
     });
     var foot = aoa.length;
-    aoa.push(['รวม', '', '', '', '', '', cmp.totals.out || '']);
+    aoa.push(['รวม', '', '', '', '', '', cmp.totals.out || '', cmp.totals.todo.skus ? 'สั่งแล้วยังค้าง ' + cmp.totals.todo.skus + ' SKU' : '']);
     for (var c = 0; c < head.length; c++) styles.push([foot, c, 'foot']);
-    return { aoa: aoa, merges: [{ s: { r: 0, c: 0 }, e: { r: 0, c: head.length - 1 } }], styles: styles, cols: [18, 17, 46, 15, 14, 14, 13] };
+    return { aoa: aoa, merges: [{ s: { r: 0, c: 0 }, e: { r: 0, c: head.length - 1 } }], styles: styles, cols: [18, 17, 46, 15, 14, 14, 13, 26] };
   }
 
   /* ── Excel และข้อความวาง LINE ───────────────────────────────────────── */
@@ -612,12 +710,14 @@
    * ชีตรายงานแบบเดียวกับที่ทีมทำ (สีตามสถานะ) หน้าเว็บเอาไปใส่สีด้วย xlsx-js-style
    *   แถว 1 ชื่อรายงาน · แถว 2 หัวตาราง + ปี · แถว 3 Lot + ยอดรวมทั้งหมด · แถว 4 อายุ (วัน) · ต่อด้วยราย SKU · แถวท้ายรวม
    * @returns {{aoa, merges, styles: Array<[row, col, key]>, cols}}
-   *   key = head | year | total | st-risk | st-watch | st-ok | st-nolot (หัว) · c-risk | c-watch | c-ok | c-nolot (ช่อง) | sum | age | title
+   *   key = head | year | total | st-risk | st-watch | st-ok | st-nolot (หัว) · c-risk | c-watch | c-ok | c-nolot (ช่อง) | c-todo (สั่งแล้วยังค้าง) | sum | age | title
    * meta.cmp = ผลเทียบเดือนก่อน (compare) มีแล้วเพิ่มคอลัมน์ "เทียบ <เดือนก่อน>" หน้า Remark
+   * meta.decide = คำตัดสินของเจ้านาย (decideOf) ลงช่อง Remark
    */
   function sheet(rep, meta) {
     var m = meta || {};
     var cmp = m.cmp || null;
+    var dec = m.decide || {};
     var extra = cmp ? 1 : 0;
     var mode = rep.mode;
     var cols = rep.cols;
@@ -672,8 +772,12 @@
       row.push(round3(r.total[mode]));
       styles.push([ri, n, 'sum']);
       row.push(STATUS[r.st].label);
-      if (cmp) row.push(cmpText(cmp.bySku[up(r.sku)]));
-      row.push('');
+      if (cmp) {
+        var o = cmp.bySku[up(r.sku)];
+        row.push([cmpText(o), o && o.dPrev ? 'เดือนก่อน: ' + prevDecText(o) : ''].filter(Boolean).join(' · '));
+        if (o && o.todo) styles.push([ri, n + 2, 'c-todo']);
+      }
+      row.push(decideText(dec[up(r.sku)]));
       aoa.push(row);
     });
     var foot = ['รวม', '', ''];
@@ -686,12 +790,18 @@
     var widths = [17, 46, 15];
     cols.forEach(function () { widths.push(9); });
     widths.push(11, 12);
-    if (cmp) widths.push(15);
-    widths.push(24);
+    if (cmp) widths.push(22);
+    widths.push(30);
     return { aoa: aoa, merges: merges, styles: styles, cols: widths };
   }
 
-  /** สรุปสั้นวางใน LINE ให้เจ้านาย */
+  /** รายชื่อสั้นใน LINE ไม่เกิน 8 ตัว ที่เหลือบอกจำนวน */
+  function names(list, fmt) {
+    var max = 8;
+    return list.slice(0, max).map(fmt).join(', ') + (list.length > max ? ' …อีก ' + (list.length - max) : '');
+  }
+
+  /** สรุปสั้นวางใน LINE ให้เจ้านาย meta.decide มีคำตัดสินแล้วต่อท้ายด้วยรายชื่อตามคำสั่ง */
   function lineText(rep, meta) {
     var m = meta || {};
     var r = rep.rule;
@@ -713,6 +823,24 @@
       lines.push('⏳ ค้างเสี่ยงมากจากเดือนก่อน ' + t.still.skus + ' SKU (' + f(t.still.qty) + ' ชิ้น)');
       lines.push('✅ หลุดเสี่ยงแล้ว ' + t.gone.skus + ' SKU');
       if (t.out) lines.push('LOT ที่เสี่ยงมากเดือนก่อน ลดไป ' + f(t.out) + ' ชิ้น (ขาย/แกะ)');
+      if (t.todo && t.todo.skus) {
+        var late = Object.keys(cmp.bySku).filter(function (k) { return cmp.bySku[k].todo; });
+        var shortOf = {};
+        rep.rows.forEach(function (x) { shortOf[up(x.sku)] = x.short || x.sku; });
+        lines.push('⚠️ เดือนก่อนสั่งแกะ/ขายด่วน แต่ยังค้าง ' + t.todo.skus + ' SKU (' + f(t.todo.qty) + ' ชิ้น): ' +
+          names(late.map(function (k) { return { short: shortOf[k] || k, held: cmp.bySku[k].held }; }), function (x) { return x.short + ' ' + f(x.held); }));
+      }
+    }
+    var dsum = m.decide ? decideSum(rep, m.decide) : null;
+    if (dsum && dsum.any) {
+      lines.push('', 'คำตัดสิน:');
+      DECIDE_ORDER.forEach(function (k) {
+        var g = dsum[k];
+        if (!g.skus) return;
+        lines.push(DECIDE[k].icon + ' ' + DECIDE[k].label + ' ' + g.skus + ' SKU (' + f(g.qty) + ' ชิ้น): ' +
+          names(g.list, function (x) { return (x.short || x.sku) + (x.note ? ' (' + x.note + ')' : ''); }));
+      });
+      if (dsum.none.skus) lines.push('❓ เสี่ยงมากที่ยังไม่ตัดสิน ' + dsum.none.skus + ' SKU');
     }
     var top = rep.rows.filter(function (x) { return x.st === 'risk'; }).slice(0, 5);
     if (top.length) {
@@ -741,5 +869,7 @@
     ledgerProblem: ledgerProblem, ledgerTime: ledgerTime, ledgerLink: ledgerLink,
     scope: scope, teams: teams, report: report, filter: filter, sheet: sheet, lineText: lineText,
     CMP: CMP, prevRound: prevRound, compare: compare, cmpText: cmpText, compareSheet: compareSheet,
+    DECIDE: DECIDE, DECIDE_ORDER: DECIDE_ORDER, NOTE_MAX: NOTE_MAX, SETTINGS_MAX: SETTINGS_MAX,
+    decideOf: decideOf, applyDecide: applyDecide, decideText: decideText, decideSum: decideSum, byDecide: byDecide, prevDecText: prevDecText,
   };
 })(window);
