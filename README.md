@@ -174,6 +174,39 @@ first, so the page keeps working without a connection and sends the changes when
 > 🔒 The built-in team list is in the page source, and this repo is public. Anyone can read it
 > on GitHub.
 
+### HR view (`/roster/hr.html`)
+
+[`public/roster/hr.html`](public/roster/hr.html) is a read-only page for HR. It needs no WMS login
+and no copy of the app: HR opens a link.
+
+- **ตารางกะ**: every period, both shifts, with the shift names and hours set in the ⏰ กะ tab. Cells
+  show W / H, leave (ลป ลก ลพ), ขาด, edits, and the late / OT corner marks. There is a name search.
+- **ลา · ขาด · สาย · OT**: the same monthly table as the การลา tab, with the whole-year leave count.
+- 🖨 พิมพ์ prints the open tab. The page refreshes every 2 minutes.
+
+HR sees no KPI, no สมุดกะ, no minimums, and no OS เสริม numbers. The script removes these before
+sending. Each person comes with name, nick, group, day off and group-change dates only. Leave,
+late and OT come only for people still on the staff lists.
+
+The cell rules are in [`roster-calc.js`](public/roster/roster-calc.js) and the colours in
+[`roster-table.css`](public/roster/roster-table.css). The schedule page uses the same two files,
+so both pages show the same cells.
+
+**One-time setup:**
+
+1. Open the schedule sheet's Apps Script and paste in the current
+   [`roster-api.gs`](apps-script/roster-api.gs).
+2. Set `HR_TOKEN` to a passcode of its own. It must be different from `ROSTER_TOKEN` and
+   `VIEW_TOKEN`, or the HR page refuses to open. Leaving it empty turns the HR page off.
+3. Save, then Deploy → Manage deployments → edit → Version: **New version**. The URL stays the
+   same.
+4. In ตารางกะ, press **🔗 ลิงก์ HR** and enter the `HR_TOKEN`. The page copies a link to send to
+   HR. The URL and passcode are after `#`, which the browser doesn't send to any server. The HR
+   page saves them on that device and removes them from the address bar.
+
+To stop sharing, change `HR_TOKEN` and deploy a new version. Old links then ask for the new
+passcode.
+
 ---
 
 ## 📓 Shift log (`/shiftlog`)
@@ -1238,7 +1271,9 @@ public/
 ├─ wms-sup.js              # PO → Supplier from the PO. Truck tab (stock-location, fifo, balance, lot-po)
 ├─ wms-*.js                # shared helpers (dates, stock, picking, trucks, search…)
 ├─ roster/                 # ตารางกะ (+ roster-sync.js: sharing through the sheet,
-│                          #   roster-people.js: group / day off by date, leave counts)
+│                          #   roster-people.js: group / day off by date, leave counts,
+│                          #   roster-calc.js + roster-table.css: cell rules and colours,
+│                          #   hr.html: the read-only page for HR)
 ├─ stock-location/         # สต๊อกราย Location, from the Transaction sheet (+ wms-tx.js: grouping, refill list)
 ├─ cut-check/              # เช็ครายการตัดสต๊อก, cuts compared with the month-end order reports (+ wms-cut.js: per-day match with the ledger)
 ├─ lot-po/                 # LOT / PO ที่ขายออก, the daily SKU × LOT × PO report for accounting (+ wms-lotpo.js, wms-lot0.js)

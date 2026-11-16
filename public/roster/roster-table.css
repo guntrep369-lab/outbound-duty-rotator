@@ -1,0 +1,132 @@
+/**
+ * roster-table.css — สีและหน้าตาของตารางกะ ช่องแต่ละสถานะ ตารางการลา และกล่องตัวเลข
+ * ใช้ร่วมกันระหว่างหน้าตารางกะ (index.html) กับหน้า HR (hr.html) สองหน้าจะได้เห็นสีเดียวกัน
+ */
+:root{
+  --bg:var(--wms-bg); --surface:var(--wms-surface);
+  --border:var(--wms-border); --border2:var(--wms-border2);
+  --txt:var(--wms-text); --txt2:#475569; --txt3:var(--wms-faint);
+  --primary:var(--wms-primary); --primary-h:var(--wms-primary-dark); --primary-l:var(--wms-primary-light);
+
+  --morning:#b45309; --morning-bg:#fef3c7; --morning-border:#fcd34d;
+  --evening:#5b21b6; --evening-bg:#f5f3ff; --evening-border:#c4b5fd;
+  --os:#065f46; --os-bg:#ecfdf5; --os-border:#6ee7b7;
+  --hol:#dc2626; --hol-bg:#fef2f2; --hol-border:#fca5a5;
+  --pro:#c2410c; --pro-bg:#fff7ed; --pro-border:#fed7aa;
+  --last:#6d28d9; --last-bg:#f5f3ff; --last-border:#ddd6fe;
+
+  --radius:12px; --radius-sm:8px;
+  --shadow:var(--wms-shadow);
+  --shadow-md:0 4px 12px rgba(15,23,42,.08),0 2px 4px rgba(15,23,42,.05);
+}
+
+/* ═══ LEGEND ═══ */
+.legend{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;font-size:11px;align-items:center;color:var(--txt2)}
+.leg-item{display:flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:4px 10px}
+.leg-dot{width:12px;height:12px;border-radius:3px;flex-shrink:0}
+.leg-hint{font-size:11px;color:var(--txt3);padding:4px 0}
+
+/* ═══ SCHEDULE TABLE ═══ */
+.tbl-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;
+  margin-bottom:16px;box-shadow:var(--shadow-md)}
+.tbl-scroll{overflow-x:auto}
+.tbl-wrap table{border-collapse:collapse;font-size:12px;width:100%}
+.tbl-wrap th,.tbl-wrap td{border:1px solid var(--border);padding:6px 7px;text-align:center;white-space:nowrap}
+
+.sc0{position:sticky;left:0;z-index:3;min-width:140px;text-align:left!important}
+.sc1{position:sticky;left:140px;z-index:3;min-width:46px}
+.sc2{position:sticky;left:186px;z-index:3;min-width:38px}
+.sc3{position:sticky;left:224px;z-index:3;min-width:64px}
+.sc-hdr{position:sticky;left:0;z-index:4;min-width:288px;background:#0f172a}
+
+.sh-morning{background:linear-gradient(90deg,#78350f,#92400e);color:#fff;padding:10px 16px!important;text-align:left!important;
+  font-size:13px;font-weight:700;border-bottom:2px solid #b45309!important}
+.sh-evening{background:linear-gradient(90deg,#3b0764,#4c1d95);color:#fff;padding:10px 16px!important;text-align:left!important;
+  font-size:13px;font-weight:700;border-bottom:2px solid #6d28d9!important}
+
+.mh{font-size:11px;font-weight:700;padding:5px 6px;color:#fff;letter-spacing:.3px}
+th.mh-label{background:#0f172a;color:#64748b;font-size:10px;padding:4px 6px;letter-spacing:.3px;text-transform:uppercase;border:1px solid #1e293b}
+
+th.date-hdr{font-size:13px;font-weight:800;color:#e2e8f0;padding:5px 6px;background:#1e293b;border-color:#334155!important}
+th.date-hdr.wk-s{border-left:2px solid #475569!important}
+th.date-hdr.is-hol{background:#1a1f2e;color:#fca5a5}
+th.date-hdr.is-last{background:#1e1040;color:#c4b5fd}
+th.date-hdr.is-pro{background:#1a1500;color:#fbbf24}
+
+.dh-row th{background:#0f172a;color:#64748b;font-size:10px;padding:3px 5px;border-color:#1e293b!important}
+.dh-row th.wk-s{border-left:2px solid #334155!important}
+.dh-row .sc0,.dh-row .sc1,.dh-row .sc2,.dh-row .sc3{background:#0f172a}
+th.dow-we{color:#f87171!important}
+th.dow-mon{color:#60a5fa!important}
+
+td.sc0,td.sc1,td.sc2,td.sc3{background:#fff}
+td.sc0{font-weight:500;font-size:12px}
+
+.os-sep-row td{background:#f0fdf9;color:var(--os);font-size:11px;font-weight:700;border-top:2px solid #a7f3d0!important}
+.os-sep-row td.sc0,.os-sep-row td.sc1,.os-sep-row td.sc2,.os-sep-row td.sc3{background:#f0fdf9}
+.os-row td{background:#f7fffe}
+.os-row td.sc0,.os-row td.sc1,.os-row td.sc2,.os-row td.sc3{background:#f0fdf9}
+/* OS เสริม: ตัวเลขต่อวัน ไม่มีชื่อคน */
+.osx-row td{background:#f7fffe;cursor:pointer;font-variant-numeric:tabular-nums;font-weight:700;color:var(--os)}
+.osx-row td.sc0{background:#f0fdf9;font-size:11px;cursor:default}
+.osx-row td.sc0.ec{cursor:pointer}
+.osx-row td.ox-none{color:var(--txt3);font-weight:400}
+.osx-row td.ox-short{background:#fecaca;color:#991b1b}
+
+/* สถานะของแต่ละช่อง */
+.cW{background:#fff;color:#374151}
+.cH{background:#fef2f2;color:var(--hol);font-weight:700}
+.cP{background:#fffbeb;color:#92400e}
+.cL{background:#f5f3ff;color:var(--last);font-weight:700;font-size:10px}
+.cOH{background:#fee2e2;color:#991b1b;font-weight:700;box-shadow:inset 0 0 0 2px #f87171}
+.cOW{background:#f0fdf4;color:#166534;font-weight:700;box-shadow:inset 0 0 0 2px #4ade80}
+/* วันลา — แต่ละประเภทมีสีของตัวเอง มีกรอบเหมือนช่องที่แก้เอง เพราะคนเป็นคนบันทึก */
+.cSL{background:#ffedd5;color:#c2410c;font-weight:700;box-shadow:inset 0 0 0 2px #fb923c}
+.cPL{background:#dbeafe;color:#1d4ed8;font-weight:700;box-shadow:inset 0 0 0 2px #60a5fa}
+.cVL{background:#ccfbf1;color:#0f766e;font-weight:700;box-shadow:inset 0 0 0 2px #2dd4bf}
+.cAB{background:#fce7f3;color:#be185d;font-weight:700;box-shadow:inset 0 0 0 2px #ec4899}
+/* มาสาย / OT ของวันนั้น — มุมสามเหลี่ยมบนช่อง ไม่ทับตัวอักษร
+   td. นำหน้า ให้ชนะ .os-row td ที่ตั้ง background ทั้งก้อน (แถว OS ประจำ) */
+td.mLate,.leg-dot.mLate{background-image:linear-gradient(135deg,#f59e0b 0 7px,transparent 7px)}
+td.mOT,.leg-dot.mOT{background-image:linear-gradient(225deg,#2563eb 0 7px,transparent 7px)}
+td.mLate.mOT{background-image:linear-gradient(135deg,#f59e0b 0 7px,transparent 7px),linear-gradient(225deg,#2563eb 0 7px,transparent 7px)}
+.leg-dot.mLate,.leg-dot.mOT{background-color:#fff;border:1px solid #ccc}
+/* วันที่คนนี้อยู่อีกกลุ่ม — ย้ายกลุ่มกลางคาบ จึงมีชื่อทั้งสองกะ */
+.cOut{background:repeating-linear-gradient(135deg,#f8fafc 0 4px,#e2e8f0 4px 6px)}
+td.clickable{cursor:pointer;transition:filter .12s}
+td.clickable:hover{filter:brightness(.92)}
+.wk-s{border-left:2px solid var(--border2)!important}
+.ec{cursor:pointer;transition:background .12s}
+.ec:hover{background:#fef9e7!important;color:#92400e!important}
+.sep-row td{background:var(--bg)!important;height:8px;border:none!important;padding:0!important}
+.cnt-row td{background:#f8fafc;font-weight:700;color:var(--txt);border-top:2px solid var(--border2)!important;font-variant-numeric:tabular-nums}
+.cnt-row td.sc0{background:#f8fafc;font-size:12px}
+.cnt-min{font-weight:500;font-size:11px;color:var(--primary);margin-left:8px}
+.cnt-row td.cnt-ok{color:var(--txt2)}
+.cnt-row td.cnt-low{background:#fecaca;color:#991b1b}
+.cnt-row td.cnt-hol{color:var(--txt3);font-weight:400}
+
+/* ═══ BADGES ═══ */
+.bm{background:var(--morning-bg);color:var(--morning);border:1px solid var(--morning-border);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;display:inline-block}
+.be{background:var(--evening-bg);color:var(--evening);border:1px solid var(--evening-border);border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;display:inline-block}
+.bo{background:var(--os-bg);color:var(--os);border:1px solid var(--os-border);border-radius:20px;padding:2px 8px;font-size:10px;font-weight:700;display:inline-block}
+.ga{background:#fef9c3;color:#713f12;border:1px solid #fde047;border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;display:inline-block}
+.gb{background:#e0f2fe;color:#0c4a6e;border:1px solid #7dd3fc;border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700;display:inline-block}
+
+/* ═══ การลา ═══ */
+.lv-tbl td.lv-n{text-align:center;font-variant-numeric:tabular-nums;font-weight:700}
+.lv-tbl td.lv-0{color:var(--txt3);font-weight:400}
+.lv-tbl th.lv-n{text-align:center}
+.lv-tbl .lv-sum td{background:#f8fafc;font-weight:700;border-top:2px solid var(--border2)}
+.lv-yr small,.lv-tbl td.lv-n small{display:block;font-size:10.5px;color:var(--txt3);font-weight:400;white-space:nowrap}
+.lv-tbl td.lv-days{min-width:120px}
+.lv-day{display:inline-block;min-width:24px;padding:2px 5px;margin:1px 2px;border-radius:4px;font-size:11px;text-align:center}
+
+/* ═══ กล่องตัวเลขสรุป ═══ */
+.kpi-stat-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.kpi-stat-tile{flex:1;min-width:140px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:4px}
+.kpi-stat-label{font-size:11.5px;font-weight:600;color:var(--wms-muted)}
+.kpi-stat-val{font-size:26px;font-weight:700;line-height:1.1;color:var(--txt);font-variant-numeric:tabular-nums}
+.kpi-stat-sub{font-size:12px;color:var(--txt2)}
+.kpi-stat-tile.good .kpi-stat-val{color:#16a34a}
+.kpi-stat-tile.warn .kpi-stat-val{color:#b45309}

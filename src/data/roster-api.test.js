@@ -1,6 +1,8 @@
 /**
  * apps-script/roster-api.gs — หน้าดูของ Logis (op: 'view')
  *
+ * apps-script/roster-api.gs — หน้าดูของ HR (op: 'hr')
+ *
  * รันสคริปต์จริงกับชีตปลอม เพราะสิ่งที่ต้องแน่ใจคือรหัสดูไม่เคยได้ข้อมูลส่วนอื่นของตารางกะ
  */
 import { describe, it, expect } from 'vitest';
@@ -9,7 +11,7 @@ import path from 'node:path';
 
 const SRC = fs.readFileSync(path.resolve(__dirname, '../../apps-script/roster-api.gs'), 'utf8');
 
-function script({ view = 'see', roster = 'full', data } = {}) {
+function script({ view = 'see', roster = 'full', hr = 'staff', data } = {}) {
   const text = 'j' + JSON.stringify(data);
   const props = { rev: '3', at: '1000', by: 'กัน', col: '1', chunks: '1' };
   const sheet = { getRange: () => ({ getValues: () => [[text]] }) };
@@ -20,7 +22,8 @@ function script({ view = 'see', roster = 'full', data } = {}) {
     LockService: {},
   };
   const src = SRC.replace("var VIEW_TOKEN = '';", `var VIEW_TOKEN = '${view}';`)
-    .replace("var ROSTER_TOKEN = '';", `var ROSTER_TOKEN = '${roster}';`);
+    .replace("var ROSTER_TOKEN = '';", `var ROSTER_TOKEN = '${roster}';`)
+    .replace("var HR_TOKEN = '';", `var HR_TOKEN = '${hr}';`);
   const api = new Function(...Object.keys(env), src + '\nreturn { doPost: doPost };')(...Object.values(env));
   return (body) => api.doPost({ postData: { contents: JSON.stringify(body) } });
 }
@@ -84,5 +87,91 @@ describe('หน้าดูของ Logis', () => {
       evening: { name: 'กะสาย', start: '10:00', end: '19:00', ack: true } } }]);
     // ข้อมูลจากหน้าตารางกะรุ่นก่อนไม่มีค่าตั้งกะ — ได้รายการว่าง หน้า Logis ใช้ชื่อตั้งต้น
     expect(script({ data: DATA })({ op: 'view', token: 'see' }).shiftDefs).toEqual([]);
+  });
+});
+
+// ข้อมูลสมมติ — ไม่ใช่รายชื่อจริง
+const FULL = {
+  employees: [
+    { name: 'สมชาย ทดสอบ', nick: 'ชาย', group: 'A', dayOff: 0, salary: 1, changes: [{ from: '2026-12-13', group: 'B', note: 'x' }] },
+    { name: 'สมหญิง ทดสอบ', nick: 'หญิง', group: 'B', dayOff: 6 },
+  ],
+  outsource: [{ name: 'OS ทดสอบ', nick: 'โอ', group: 'A', dayOff: 3 }],
+  periods: [{ id: 'p1', start: '2026-11-15', groupA: 'morning', secret: 1 }],
+  holidays: [{ date: '2026-12-05', name: 'วันพ่อ' }],
+  extraPro: [{ date: '2026-11-20' }],
+  overrides: { '2026-11-16|สมชาย ทดสอบ': 'SL', '2026-11-17|คนที่ลาออกแล้ว': 'PL' },
+  late: { '2026-11-18|สมหญิง ทดสอบ': 15, '2026-11-18|คนที่ลาออกแล้ว': 5 },
+  ot: { '2026-11-19|OS ทดสอบ': 2 },
+  kpiData: { '2026-11': { 'สมชาย ทดสอบ': { pickRate: 30 } } },
+  minStaff: { morning: 6 },
+  osExtra: { '2026-11-16|morning': { req: 2 } },
+  shiftLog: DATA.shiftLog,
+  shiftDefs: [{ from: '2026-12-13', shifts: {
+    morning: { name: 'กะเช้า', start: '07:00', end: '16:00' },
+    evening: { name: 'กะสาย', start: '10:00', end: '19:00' } } }],
+};
+
+describe('หน้าดูของ HR', () => {
+  it('ได้ตารางกะกับวันลา — ไม่มี KPI สมุดกะ คนขั้นต่ำ หรือ OS เสริม', () => {
+    const r = script({ data: FULL })({ op: 'hr', token: 'staff' });
+    expect(r.hr).toBe(true);
+    expect(Object.keys(r.data).sort()).toEqual(['employees', 'extraPro', 'holidays', 'late', 'ot', 'outsource', 'overrides', 'periods', 'shiftDefs']);
+    const text = JSON.stringify(r);
+    expect(text).not.toContain('pickRate');
+    expect(text).not.toContain('CR-1');
+    expect(text).not.toContain('คนไม่พอ');
+    expect(r.data.shiftDefs[0].shifts.evening.name).toBe('กะสาย');
+  });
+
+  it('คนแต่ละคนได้แค่ชื่อ ชื่อเล่น กลุ่ม วันหยุด และวันที่ย้ายกลุ่ม', () => {
+    const r = script({ data: FULL })({ op: 'hr', token: 'staff' });
+    expect(r.data.employees[0]).toEqual({ name: 'สมชาย ทดสอบ', nick: 'ชาย', group: 'A', dayOff: 0,
+      changes: [{ from: '2026-12-13', group: 'B' }] });
+    expect(r.data.periods).toEqual([{ id: 'p1', start: '2026-11-15', groupA: 'morning' }]);
+    expect(r.data.outsource).toHaveLength(1);
+  });
+
+  it('วันลา สาย OT ส่งเฉพาะของคนที่ยังอยู่ในรายชื่อ', () => {
+    const r = script({ data: FULL })({ op: 'hr', token: 'staff' });
+    expect(r.data.overrides).toEqual({ '2026-11-16|สมชาย ทดสอบ': 'SL' });
+    expect(r.data.late).toEqual({ '2026-11-18|สมหญิง ทดสอบ': 15 });
+    expect(r.data.ot).toEqual({ '2026-11-19|OS ทดสอบ': 2 });
+    expect(JSON.stringify(r)).not.toContain('คนที่ลาออกแล้ว');
+  });
+
+  it('รหัส HR ใช้โหลด บันทึก หรือเปิดหน้า Logis ไม่ได้ — และรหัสอื่นเปิดหน้า HR ไม่ได้', () => {
+    const call = script({ data: FULL });
+    expect(call({ op: 'load', token: 'staff' }).error).toBeTruthy();
+    expect(call({ op: 'save', token: 'staff', data: { employees: [] } }).error).toBeTruthy();
+    expect(call({ op: 'view', token: 'staff' }).error).toBeTruthy();
+    expect(call({ op: 'hr', token: 'full' }).error).toBeTruthy();
+    expect(call({ op: 'hr', token: 'see' }).error).toBeTruthy();
+  });
+
+  it('ยังไม่ตั้ง HR_TOKEN = ปิดอยู่ แม้ส่งรหัสว่างมา', () => {
+    const r = script({ hr: '', data: FULL })({ op: 'hr', token: '' });
+    expect(r.error).toContain('HR_TOKEN');
+    expect(r.data).toBeUndefined();
+  });
+
+  it('ตั้ง HR_TOKEN ซ้ำกับรหัสตารางกะ = ไม่ยอมเปิด', () => {
+    const r = script({ hr: 'full', data: FULL })({ op: 'hr', token: 'full' });
+    expect(r.error).toContain('ไม่ซ้ำ');
+    expect(r.data).toBeUndefined();
+  });
+
+  it('ชีตยังว่าง ได้ข้อมูลว่าง', () => {
+    const r = script({ data: null })({ op: 'hr', token: 'staff' });
+    expect(r.data.employees).toEqual([]);
+    expect(r.data.overrides).toEqual({});
+  });
+
+  it('กติกาวันสุดท้ายของกะบ่ายรุ่นเดิมไปด้วย หน้า HR จะเห็นช่อง 10-19 เหมือนตารางกะ', () => {
+    const defs = [{ from: '2026-11-15', shifts: {
+      morning: { name: 'กะเช้า', start: '07:00', end: '16:00' },
+      evening: { name: 'กะบ่าย', start: '16:00', end: '24:00', last: { start: '10:00', end: '19:00', skipOff: 6, x: 1 } } } }];
+    const r = script({ data: { ...FULL, shiftDefs: defs } })({ op: 'hr', token: 'staff' });
+    expect(r.data.shiftDefs[0].shifts.evening.last).toEqual({ start: '10:00', end: '19:00', skipOff: 6 });
   });
 });

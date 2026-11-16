@@ -17,6 +17,11 @@ var ROSTER_TOKEN = '';
 // ว่างไว้ = ปิดหน้าดูของ Logis
 var VIEW_TOKEN = '';
 
+// รหัสของหน้าดูสำหรับ HR (public/roster/hr.html) — ต้องไม่ซ้ำกับสองรหัสข้างบน
+// รหัสนี้เห็นตารางกะทุกคาบ วันลา ขาด มาสาย OT แต่ไม่เห็น KPI กับสมุดกะ และแก้อะไรไม่ได้
+// ว่างไว้ = ปิดหน้า HR · เปลี่ยนรหัส = ลิงก์ที่เคยส่งให้ HR ใช้ไม่ได้ทันที
+var HR_TOKEN = '';
+
 var DATA_SHEET = 'roster';  // ข้อมูลล่าสุด แบ่งเป็นท่อน ท่อนละแถว
 var LOG_SHEET = 'log';      // ใครบันทึกเมื่อไหร่ ไว้ไล่ดูตอนข้อมูลแปลก
 var CHUNK = 40000;          // ช่องหนึ่งเก็บได้ 50,000 ตัวอักษร เผื่อไว้
@@ -32,11 +37,13 @@ function doGet() {
  *   load — ข้อมูลทั้งชุด
  *   save — บันทึก ถ้าเครื่องนั้นแก้จากฉบับล่าสุด
  *   view — ออเดอร์ติดปัญหาในสมุดกะ สำหรับหน้าดูของ Logis (ใช้ VIEW_TOKEN)
+ *   hr   — ตารางกะกับวันลา สำหรับหน้าดูของ HR (ใช้ HR_TOKEN)
  */
 function doPost(e) {
   var req;
   try { req = JSON.parse(e.postData.contents); } catch (err) { return out_({ error: 'คำขอไม่ใช่ JSON' }); }
   if (req.op === 'view') return out_(view_(req));
+  if (req.op === 'hr') return out_(hr_(req));
   if (!ROSTER_TOKEN) return out_({ error: 'ยังไม่ได้ตั้ง ROSTER_TOKEN ใน Apps Script' });
   if (req.token !== ROSTER_TOKEN) return out_({ error: 'รหัสไม่ตรงกับ ROSTER_TOKEN ใน Apps Script' });
   if (req.op === 'rev') return out_(pub_(meta_()));
@@ -127,10 +134,71 @@ function shiftDefs_(defs) {
       var s = x.shifts[id] || {};
       o.shifts[id] = { name: String(s.name || ''), start: String(s.start || ''), end: String(s.end || '') };
       if (typeof s.ack === 'boolean') o.shifts[id].ack = s.ack;
+      if (s.last && typeof s.last === 'object') {
+        o.shifts[id].last = { start: String(s.last.start || ''), end: String(s.last.end || '') };
+        if (typeof s.last.skipOff === 'number') o.shifts[id].last.skipOff = s.last.skipOff;
+      }
     });
     out.push(o);
   });
   return out;
+}
+
+/**
+ * ตารางกะสำหรับ HR — คัดในสคริปต์ก่อนส่ง รหัส HR จึงไม่เคยได้ KPI สมุดกะ จำนวนคนขั้นต่ำ หรือ OS เสริม
+ * คนแต่ละคนส่งแค่ชื่อ ชื่อเล่น กลุ่ม วันหยุด และวันที่ย้ายกลุ่ม · วันลา/สาย/OT ส่งเฉพาะของคนที่ยังอยู่ในรายชื่อ
+ */
+var HR_PERSON = ['name', 'nick', 'group', 'dayOff', 'shift'];
+
+function hr_(req) {
+  if (!HR_TOKEN) return { error: 'ยังไม่ได้เปิดหน้า HR — ตั้ง HR_TOKEN ใน Apps Script' };
+  if (HR_TOKEN === ROSTER_TOKEN || HR_TOKEN === VIEW_TOKEN) return { error: 'HR_TOKEN ต้องไม่ซ้ำกับรหัสอื่นใน Apps Script' };
+  if (req.token !== HR_TOKEN) return { error: 'รหัส HR ไม่ถูกต้อง' };
+  var m = meta_(), d = read_(m) || {}, names = {};
+  function people(list) {
+    return (Array.isArray(list) ? list : []).filter(function (p) { return p && typeof p.name === 'string'; }).map(function (p) {
+      var o = {};
+      HR_PERSON.forEach(function (k) { if (p[k] !== undefined) o[k] = p[k]; });
+      if (Array.isArray(p.changes)) {
+        o.changes = p.changes.filter(function (c) { return c && typeof c.from === 'string'; }).map(function (c) {
+          var x = { from: c.from };
+          if (c.group !== undefined) x.group = c.group;
+          if (c.dayOff !== undefined) x.dayOff = c.dayOff;
+          return x;
+        });
+      }
+      names[p.name] = true;
+      return o;
+    });
+  }
+  function pick(list, keys) {
+    return (Array.isArray(list) ? list : []).filter(function (x) { return x && typeof x === 'object'; }).map(function (x) {
+      var o = {};
+      keys.forEach(function (k) { if (x[k] !== undefined) o[k] = x[k]; });
+      return o;
+    });
+  }
+  // ช่องที่ key = "วันที่|ชื่อ" — เก็บเฉพาะของคนที่ยังอยู่ในรายชื่อ
+  function byName(map) {
+    var o = {};
+    for (var k in (map && typeof map === 'object' ? map : {})) {
+      var b = k.indexOf('|');
+      if (b > 0 && names[k.slice(b + 1)]) o[k] = map[k];
+    }
+    return o;
+  }
+  var employees = people(d.employees), outsource = people(d.outsource);
+  return {
+    app: 'roster', hr: true, at: m.at,
+    data: {
+      employees: employees, outsource: outsource,
+      periods: pick(d.periods, ['id', 'start', 'end', 'groupA']),
+      holidays: pick(d.holidays, ['date', 'name']),
+      extraPro: pick(d.extraPro, ['date', 'name']),
+      overrides: byName(d.overrides), late: byName(d.late), ot: byName(d.ot),
+      shiftDefs: shiftDefs_(d.shiftDefs),
+    },
+  };
 }
 
 function meta_() {
