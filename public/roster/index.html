@@ -289,6 +289,30 @@ td.clickable:hover{filter:brightness(.92)}
 .lv-day{display:inline-block;min-width:24px;padding:2px 5px;margin:1px 2px;border-radius:4px;font-size:11px;text-align:center}
 
 /* ═══ ประวัติย้ายกลุ่ม / เปลี่ยนวันหยุด ═══ */
+/* ตั้งค่ากะ — ตารางเดียวแบบ Excel ช่องพิมพ์แก้ได้ในตัว */
+.sh-title{display:flex;align-items:center;gap:10px}
+.sh-title .btn-add{margin-left:auto}
+.sh-i{width:22px;height:22px;min-height:0;padding:0;border-radius:50%;border:1px solid var(--border);background:#fff;color:var(--txt2);
+  font-family:inherit;font-size:12px;font-weight:700;font-style:italic;line-height:1;cursor:pointer}
+.sh-i[aria-expanded="true"]{background:var(--primary-l);border-color:#a5b4fc;color:var(--primary)}
+.sh-tbl{width:auto;min-width:540px}
+.sh-tbl th,.sh-tbl td{border:1px solid var(--border);padding:4px 8px;vertical-align:middle}
+.sh-tbl th{padding:7px 10px}
+.sh-tbl tr.sh-first td{border-top:2px solid var(--border)}
+.sh-tbl tr:hover td{background:none}
+.sh-tbl tr.sh-lock td{background:#f8fafc;color:var(--txt2)}
+.sh-from{white-space:nowrap;font-weight:600}
+.rs-main .sh-tbl input.sh-in{width:100%;min-height:0;border:1px solid var(--border);border-radius:4px;background:#fff;font:inherit;color:inherit;padding:5px 7px}
+.rs-main .sh-tbl input.sh-in:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-l)}
+/* แถวที่ล็อก (ใช้ไปแล้ว) แสดงเป็นตัวหนังสือ ไม่ให้ดูเหมือนช่องที่พิมพ์ได้ */
+.rs-main .sh-tbl input.sh-in:disabled{border-color:transparent;background:transparent;color:var(--txt2);cursor:default}
+.rs-main .sh-tbl input.sh-name{min-width:120px}
+.rs-main .sh-tbl input.sh-time{width:74px;font-variant-numeric:tabular-nums}
+.sh-ack{text-align:center}
+.sh-lk{min-height:0;border:none;background:none;padding:0;font-size:13px}
+button.sh-lk{cursor:pointer}
+.sh-sel{font:inherit;padding:5px 6px;border:1px solid var(--border);border-radius:4px;background:#fff}
+.sh-warn{color:var(--hol)}
 .chg-note{font-size:11px;color:var(--txt3);margin-top:2px}
 .chg-note.up{color:var(--primary)}
 .modal-check{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--txt2);margin:-6px 0 10px;cursor:pointer}
@@ -378,7 +402,7 @@ td.clickable:hover{filter:brightness(.92)}
         <div>
           <h2>ตารางกะ</h2>
           <button type="button" class="mod-info" aria-expanded="false" aria-label="คำอธิบายหน้านี้">i</button>
-          <p>กลุ่ม A/B สลับกะเช้า–บ่ายทุกคาบ · วันหยุด · วันโปรฯ · KPI รายเดือน</p>
+          <p>กลุ่ม A/B สลับกะทุกคาบ · ชื่อและเวลากะตั้งเองได้ · วันหยุด · วันโปรฯ · KPI รายเดือน</p>
         </div>
       </div>
       <div class="rs-actions">
@@ -394,6 +418,7 @@ td.clickable:hover{filter:brightness(.92)}
       <button type="button" class="mod-tab" data-page="employees" onclick="showPage('employees',this)">👥 พนักงาน</button>
       <button type="button" class="mod-tab" data-page="leave" onclick="showPage('leave',this)">📝 การลา</button>
       <button type="button" class="mod-tab" data-page="periods" onclick="showPage('periods',this)">🔄 คาบเปลี่ยนกะ</button>
+      <button type="button" class="mod-tab" data-page="shifts" onclick="showPage('shifts',this)">⏰ กะ</button>
       <button type="button" class="mod-tab" data-page="holidays" onclick="showPage('holidays',this)">🏖️ วันหยุด</button>
       <button type="button" class="mod-tab" data-page="kpi" onclick="showPage('kpi',this)">📊 KPI</button>
     </nav>
@@ -421,7 +446,7 @@ td.clickable:hover{filter:brightness(.92)}
     <span class="leg-item"><span class="leg-dot" style="background:#fff;border:1px solid #ccc"></span>W ทำงาน</span>
     <span class="leg-item"><span class="leg-dot" style="background:var(--hol-bg);border:1px solid var(--hol-border)"></span>H หยุด</span>
     <span class="leg-item"><span class="leg-dot" style="background:#fffbeb;border:1px solid #fcd34d"></span>วันโปรฯ</span>
-    <span class="leg-item"><span class="leg-dot" style="background:var(--last-bg);border:1px solid var(--last-border)"></span>วันสุดท้ายคาบ 10-19</span>
+    <span class="leg-item" id="leg-last"><span class="leg-dot" style="background:var(--last-bg);border:1px solid var(--last-border)"></span>วันสุดท้ายคาบ <span id="leg-last-t">10-19</span></span>
     <span class="leg-item"><span class="leg-dot" style="background:#fee2e2;box-shadow:inset 0 0 0 2px #f87171"></span>แก้ไขเป็น H</span>
     <span class="leg-item"><span class="leg-dot" style="background:#f0fdf4;box-shadow:inset 0 0 0 2px #4ade80"></span>แก้ไขเป็น W</span>
     <span class="leg-item"><span class="leg-dot cSL"></span>ลป ลาป่วย</span>
@@ -525,7 +550,7 @@ td.clickable:hover{filter:brightness(.92)}
       <div class="fg"><label for="pi-start">วันเริ่มคาบใหม่</label><input id="pi-start" type="date" onchange="onPerStart()"><span class="fg-hint">&nbsp;</span></div>
       <div class="fg"><label for="pi-end">วันสุดท้ายคาบ</label><input id="pi-end" type="date" onchange="this.dataset.auto='';showPerLen()"><span class="fg-hint" id="pi-days">&nbsp;</span></div>
       <div class="fg"><label for="pi-grpa">กลุ่ม A อยู่กะ</label>
-        <select id="pi-grpa"><option value="morning">กะเช้า (07:00-16:00)</option><option value="evening">กะบ่าย (16:00-24:00)</option></select>
+        <select id="pi-grpa"></select>
         <span class="fg-hint">&nbsp;</span>
       </div>
       <div class="fg"><button type="button" class="btn-add" onclick="addPeriod()">+ เพิ่มคาบ</button><span class="fg-hint">&nbsp;</span></div>
@@ -541,6 +566,29 @@ td.clickable:hover{filter:brightness(.92)}
       <div class="fg"><button type="button" class="btn-add" onclick="addExtraPro()">+ เพิ่ม</button></div>
     </div>
     <div id="xpro-list"></div>
+  </div>
+</div>
+
+<!-- ═══ SHIFTS ═══ -->
+<div id="page-shifts" class="page">
+  <div class="card">
+    <div class="card-title sh-title">
+      <span>กะ</span>
+      <button type="button" class="sh-i" aria-expanded="false" aria-controls="sh-help" aria-label="คำอธิบาย" onclick="shHelp(this)">i</button>
+      <button type="button" class="btn-add no-print" onclick="shAdd()">＋ เปลี่ยนกะตั้งแต่คาบ…</button>
+    </div>
+    <div class="info-box" id="sh-help" hidden>
+      แต่ละแถวใช้ตั้งแต่วันแรกของคาบที่เลือก ไปจนถึงแถวถัดไป · คาบก่อนหน้านั้นไม่เปลี่ยน<br>
+      คลิกช่องแล้วพิมพ์แก้ได้เลย · เวลาใส่เป็น 10:00 หรือ 10.00 ก็ได้ · เลิกเที่ยงคืนใส่ 24:00<br>
+      <b>รับงานต่อ</b> = กะนี้ต้องกด "รับทราบงานต่อ" ในสมุดกะ · กะที่เข้างานตอนอีกกะยังทำงานอยู่ ระบบไม่ติ๊กให้ (ติ๊กเองได้)<br>
+      สมุดกะลงรายการใหม่ให้กะที่เข้างานล่าสุด · 🔒 = ใช้ไปแล้ว คลิกเพื่อปลดล็อกแก้ · ทุกเครื่องที่ใช้ชีตตารางกะเดียวกันเห็นค่าเดียวกัน
+    </div>
+    <div class="tbl-x">
+      <table class="mtbl sh-tbl">
+        <thead><tr><th>มีผลตั้งแต่</th><th>กะ</th><th>ชื่อ</th><th>เข้า</th><th>ออก</th><th title="กะนี้ต้องกดรับทราบงานต่อในสมุดกะ">รับงานต่อ</th><th class="no-print"></th></tr></thead>
+        <tbody id="sh-body"></tbody>
+      </table>
+    </div>
   </div>
 </div>
 
@@ -722,6 +770,7 @@ td.clickable:hover{filter:brightness(.92)}
 <script type="module" src="../wms-shell.js"></script>
 <script src="../wms-settings.js"></script>
 <script src="../wms-gas.js"></script>
+<script src="../wms-shifts.js"></script>
 <script src="roster-sync.js"></script>
 <script src="roster-people.js"></script>
 <script>
@@ -780,7 +829,9 @@ var DEF_HOL=[
    ตั้งค่าพาตารางกะไปด้วย ย้ายเครื่องใช้ปุ่มส่งออก/นำเข้าไฟล์ */
 var STORE_KEY='wms:roster';
 var D={};try{D=JSON.parse(localStorage.getItem(STORE_KEY)||'null')||{};}catch(e){}
-var employees,outsource,periods,holidays,extraPro,overrides,kpiData,minStaff,osExtra,shiftLog,late,ot;
+var employees,outsource,periods,holidays,extraPro,overrides,kpiData,minStaff,osExtra,shiftLog,late,ot,shiftDefs;
+// ชื่อกับเวลาของกะ และใช้ตั้งแต่คาบไหน — ดู wms-shifts.js · แก้ได้ในแท็บ "กะ"
+var SH=window.WmsShifts;
 var curPer=0,curPage='schedule';
 
 function copy(v){return JSON.parse(JSON.stringify(v));}
@@ -794,7 +845,13 @@ function useData(d){
   late=obj(d.late);ot=obj(d.ot);
   // สมุดกะ (หน้า shiftlog/) เก็บอยู่ในข้อมูลชุดเดียวกัน หน้านี้ไม่ได้แสดง แต่ต้องพาไปด้วยทุกครั้งที่บันทึก
   shiftLog=obj(d.shiftLog);
-  return normOS();
+  /* ค่าตั้งกะ — หน้าตารางกะรุ่นก่อนที่เปิดค้างในเครื่องอื่นไม่รู้จักช่องนี้ บันทึกทีไรช่องนี้หายจากชีต
+     ชุดที่ไม่มีช่องนี้เลยจึงไม่ได้แปลว่ามีคนลบค่าตั้ง (ลบจริงจะได้รายการว่าง) — เก็บของเครื่องนี้ไว้
+     แล้วคืน true ให้ส่งกลับขึ้นชีต */
+  var keepSh=d.shiftDefs===undefined&&Array.isArray(shiftDefs)&&shiftDefs.length>0;
+  if(!keepSh)shiftDefs=arr(d.shiftDefs,[]).filter(function(x){return x&&/^\d{4}-\d\d-\d\d$/.test(x.from)&&!SH.check(x.shifts);});
+  var moved=normOS();
+  return moved||keepSh;
 }
 /* OS ที่มีชื่อในรายชื่อคือ OS ประจำ อยู่กลุ่ม A/B และสลับกะตามกลุ่มทุกคาบเหมือนพนักงาน
    OS เสริมไม่รู้ล่วงหน้าว่าใครมา จึงไม่เก็บเป็นรายคน — เก็บแค่จำนวนต่อวันต่อกะใน osExtra
@@ -818,7 +875,7 @@ function oxSet(d,sh,f,v,s){s=s||osExtra;var k=oxK(d,sh),e=s[k]||{};
   if(e.req===undefined&&e.got===undefined)delete s[k];else s[k]=e;}
 var _osMigrated=useData(D);
 
-function _data(){return {employees:employees,outsource:outsource,periods:periods,holidays:holidays,extraPro:extraPro,overrides:overrides,kpiData:kpiData,minStaff:minStaff,osExtra:osExtra,shiftLog:shiftLog,late:late,ot:ot,savedAt:Date.now()};}
+function _data(){return {employees:employees,outsource:outsource,periods:periods,holidays:holidays,extraPro:extraPro,overrides:overrides,kpiData:kpiData,minStaff:minStaff,osExtra:osExtra,shiftLog:shiftLog,late:late,ot:ot,shiftDefs:shiftDefs,savedAt:Date.now()};}
 function stamp(ts){return new Date(ts).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});}
 // done = เพิ่งบันทึกสำเร็จ เครื่องหมายถูกวาดตัวเอง · ผิดสั่นครั้งเดียวตอนเพิ่งพัง ลองใหม่แล้วพังซ้ำไม่สั่นอีก
 function setSaveState(cls,txt,done){var el=document.getElementById('save-state');var was=el.classList.contains('err');el.className='rs-saved'+(cls?' '+cls:'');el.textContent=txt;
@@ -985,6 +1042,7 @@ function showPage(id,btn){
   else if(id==='employees'){renderEmps();renderOS();}
   else if(id==='leave')renderLeave();
   else if(id==='periods')renderPeriods();
+  else if(id==='shifts'){if(btn)_shOpen={};renderShifts();}
   else if(id==='holidays')renderHols();
   else if(id==='kpi')renderKPI();
 }
@@ -1042,15 +1100,18 @@ function renderSchedule(){
     var bar=k.indexOf('|'),dk=k.slice(0,bar),ov=overrides[k];
     if(dk>=p.start&&dk<=endS&&ns.indexOf(k.slice(bar+1))!==-1){if(ov==='AB')abCnt++;else if(RP.isLeave(ov))lvCnt++;else ovCnt++;}
   }
-  var short={morning:[],evening:[]};
+  var short={morning:[],evening:[]},def=defOf(p),lastT=lastOf(def);
   var h='<div class="tbl-wrap"><div class="tbl-scroll"><table>';
-  h+=buildSection('กะเช้า 07:00-16:00 — กลุ่ม '+mN,'morning',mN,dates,endS,mG,mOS,short.morning);
+  h+=buildSection(def,'morning',mN,dates,endS,mG,mOS,short.morning);
   h+='<tr class="sep-row"><td colspan="'+(4+dates.length)+'"></td></tr>';
-  h+=buildSection('กะบ่าย 16:00-24:00 — กลุ่ม '+eN+' | วันสุดท้ายคาบ: 10:00-19:00 (ยกเว้นหยุดเสาร์)','evening',eN,dates,endS,eG,eOS,short.evening);
+  h+=buildSection(def,'evening',eN,dates,endS,eG,eOS,short.evening);
   h+='</table></div></div>';
+  // คำอธิบายสีวันสุดท้ายคาบ มีเฉพาะคาบที่ยังใช้กติกานั้น
+  document.getElementById('leg-last').style.display=lastT?'':'none';
+  document.getElementById('leg-last-t').textContent=lastT;
 
-  var shortTxt=[['morning','กะเช้า'],['evening','กะบ่าย']].filter(function(s){return short[s[0]].length;})
-    .map(function(s){return s[1]+' '+short[s[0]].length+' วัน';}).join(' · ');
+  var shortTxt=SH.IDS.filter(function(id){return short[id].length;})
+    .map(function(id){return esc(def.shifts[id].name)+' '+short[id].length+' วัน';}).join(' · ');
   document.getElementById('per-sub').innerHTML=dates.length+' วัน · วันโปรฯ '+proCnt+' วัน'+(ovCnt?' · <span style="color:var(--pro)">แก้ไขช่อง '+ovCnt+' ช่อง</span>':'')+(lvCnt?' · ลา '+lvCnt+' วัน':'')+(abCnt?' · ขาด '+abCnt+' วัน':'')+
     (shortTxt?' · <span style="color:var(--hol);font-weight:600">⚠ คนไม่ถึงขั้นต่ำ: '+shortTxt+'</span>':'');
 
@@ -1063,29 +1124,44 @@ function renderSchedule(){
   document.getElementById('schedule-out').innerHTML=h;
 }
 
+/* ค่าตั้งกะของคาบ (ชื่อ เวลา กติกาวันสุดท้าย) — ดูจากวันแรกของคาบ ทั้งคาบจึงใช้ชุดเดียว */
+function defOf(p){return SH.at(shiftDefs,p?p.start:today());}
+function viewDef(){return defOf(sorted()[curPer]);}
+/* กติกาวันสุดท้ายของคาบ: กะที่มี last เข้าเวลาพิเศษวันนั้น (ค่าเริ่มต้น: กะบ่าย 10-19 ยกเว้นคนหยุดเสาร์
+   เพราะวันรุ่งขึ้นสลับไปเข้ากะเช้า) กะที่ตั้งใหม่ในแท็บ "กะ" ไม่มีกติกานี้
+   lastOf = ค่าช่องของคาบนั้น เช่น "10-19" ('' = ไม่มี) · lastHrs = ช่องของคนนี้วันนี้ใช้เวลาพิเศษไหม */
+function lastOf(def){for(var i=0;i<SH.IDS.length;i++){var l=def.shifts[SH.IDS[i]].last;if(l)return SH.hoursLabel(l);}return '';}
+function lastHrs(v,d,shift,endS,def){
+  var l=def.shifts[shift].last;
+  return l&&isLD(d,endS)&&v.dayOff!==l.skipOff?SH.hoursLabel(l):'';
+}
+function secTitle(s,g){
+  return esc(s.name)+' '+SH.timeText(s)+' — กลุ่ม '+g+
+    (s.last?' | วันสุดท้ายคาบ: '+SH.timeText(s.last)+(s.last.skipOff===6?' (ยกเว้นหยุดเสาร์)':''):'');
+}
 /* ค่าช่องตามตาราง (ก่อนแก้เอง) — วันหยุดพิเศษ / วันหยุดประจำ = H
-   กะบ่ายวันสุดท้ายคาบ = 10-19 ยกเว้นคนหยุดเสาร์ · นอกนั้น W
-   v = กลุ่มกับวันหยุด ณ วันนั้น (RP.at) · endS = วันสุดท้ายของคาบ */
-function avOf(v,d,shift,endS){
+   วันสุดท้ายคาบของกะที่มีกติกาเวลาพิเศษ = เวลานั้น (10-19) · นอกนั้น W
+   v = กลุ่มกับวันหยุด ณ วันนั้น (RP.at) · endS = วันสุดท้ายของคาบ · def = ค่าตั้งกะของคาบ */
+function avOf(v,d,shift,endS,def){
   if(isHol(d)||(v.dayOff>=0&&pd(d).getDay()===v.dayOff))return 'H';
-  return shift==='evening'&&isLD(d,endS)&&v.dayOff!==6?'10-19':'W';
+  return lastHrs(v,d,shift,endS,def)||'W';
 }
 /* ค่าที่เห็นในตารางของ p ทุกวันใน from..to — [[วันที่, ค่าช่อง]] วันที่ไม่อยู่ในคาบไหนข้ามไป
    ใช้นับวันทำงาน / ขาด ให้ KPI โดยไม่ต้องวาดตาราง */
 function dayVals(p,from,to){
   var sp=sorted(),out=[];
   sp.forEach(function(per){
-    var e=perEnd(per,sp),c=per.start>from?per.start:from,last=e<to?e:to;
+    var e=perEnd(per,sp),c=per.start>from?per.start:from,last=e<to?e:to,def=defOf(per);
     for(;c<=last;c=addD(c,1)){
       var v=RP.at(p,c),sh=(v.group==='A')===(per.groupA==='morning')?'morning':'evening',ov=getOv(c,p.name);
-      out.push([c,ov!==null?ov:avOf(v,c,sh,e)]);
+      out.push([c,ov!==null?ov:avOf(v,c,sh,e,def)]);
     }
   });
   return out;
 }
 
-function buildSection(title,shift,g,dates,endS,group,osGroup,short){
-  var cols=4+dates.length;
+function buildSection(def,shift,g,dates,endS,group,osGroup,short){
+  var cols=4+dates.length,sh=def.shifts[shift],lastT=lastOf(def),title=secTitle(sh,g);
   var cnt=dates.map(function(){return {reg:0,osr:0,osx:0,oxReq:false};});
   /* ช่องของคนหนึ่งตลอดคาบ นับคนมาทำงานลง cnt[i][key] ไปด้วย
      กลุ่มกับวันหยุดดูทีละวัน วันที่อยู่อีกกลุ่มเป็นช่องลายว่าง ๆ ไม่นับคน
@@ -1096,9 +1172,9 @@ function buildSection(title,shift,g,dates,endS,group,osGroup,short){
       var d=dates[i],v=RP.at(p,d),wk=pd(d).getDay()===1?' wk-s':'';
       if(v.group!==g){out+='<td class="cOut'+wk+'" title="'+thd(d)+' อยู่กลุ่ม '+esc(v.group)+'"></td>';continue;}
       if(offs.indexOf(v.dayOff)===-1)offs.push(v.dayOff);
-      var hol=isHol(d),off=v.dayOff>=0&&pd(d).getDay()===v.dayOff,ld=isLD(d,endS);
-      var eveL=shift==='evening'&&ld&&v.dayOff!==6;
-      var av=avOf(v,d,shift,endS);
+      var hol=isHol(d),off=v.dayOff>=0&&pd(d).getDay()===v.dayOff;
+      var eveL=!!lastHrs(v,d,shift,endS,def);
+      var av=avOf(v,d,shift,endS,def);
       var ov=getOv(d,p.name),dv=ov!==null?ov:av,lv=RP.isLeave(dv),wkd=RP.isWork(dv);
       var lt=wkd?late[ovK(d,p.name)]:0,o=ot[ovK(d,p.name)];
       if(wkd)cnt[i][key]++;
@@ -1130,9 +1206,9 @@ function buildSection(title,shift,g,dates,endS,group,osGroup,short){
   // Date row
   h+='<tr><th colspan="4" class="mh-label sc-hdr">วันที่</th>';
   for(var i=0;i<dates.length;i++){
-    var d=dates[i],dd=pd(d),ld=isLD(d,endS),hol=isHol(d),pro=isPro(d)||isXP(d),wk=dd.getDay()===1;
+    var d=dates[i],dd=pd(d),ld=!!lastT&&isLD(d,endS),hol=isHol(d),pro=isPro(d)||isXP(d),wk=dd.getDay()===1;
     var cls='date-hdr'+(hol?' is-hol':ld?' is-last':pro?' is-pro':'')+(wk?' wk-s':'');
-    var tt=hol?holN(d):ld?'วันสุดท้าย 10-19':pro?'วันโปรฯ':'';
+    var tt=hol?holN(d):ld?'วันสุดท้าย '+lastT:pro?'วันโปรฯ':'';
     h+='<th class="'+cls+'"'+(tt?' title="'+esc(tt)+'"':'')+'>'+dd.getDate()+'</th>';
   }
   h+='</tr>';
@@ -1140,7 +1216,7 @@ function buildSection(title,shift,g,dates,endS,group,osGroup,short){
   // DOW row
   h+='<tr class="dh-row"><th class="sc0">ชื่อ-สกุล</th><th class="sc1">เล่น</th><th class="sc2">หยุด</th><th class="sc3">กะ</th>';
   for(var i=0;i<dates.length;i++){
-    var d=dates[i],dd=pd(d),ld=isLD(d,endS),hol=isHol(d),wk=dd.getDay()===1,we=dd.getDay()===0||dd.getDay()===6,mon=dd.getDay()===1;
+    var d=dates[i],dd=pd(d),ld=!!lastT&&isLD(d,endS),hol=isHol(d),wk=dd.getDay()===1,we=dd.getDay()===0||dd.getDay()===6,mon=dd.getDay()===1;
     var bg=hol?'background:#1a1f2e;':ld?'background:#1e1040;':'';
     var cls=(wk?'wk-s ':'')+(we?'dow-we':mon?'dow-mon':'');
     h+='<th class="'+cls+'" style="'+bg+'">'+DOW[dd.getDay()]+'</th>';
@@ -1151,7 +1227,7 @@ function buildSection(title,shift,g,dates,endS,group,osGroup,short){
   // Employee rows
   for(var ei=0;ei<group.length;ei++){
     var emp=group[ei],empIdx=employees.indexOf(emp),c=cells(emp,false,'reg');
-    var shB=shift==='morning'?'<span class="bm">เช้า</span>':'<span class="be">บ่าย</span>';
+    var shB='<span class="'+(shift==='morning'?'bm':'be')+'">'+esc(sh.short)+'</span>';
     h+='<tr>';
     h+='<td class="sc0 ec" onclick="iEdit(event,'+empIdx+',\'name\')" title="แก้ไขชื่อ">'+esc(emp.name)+'</td>';
     h+='<td class="sc1 ec" onclick="iEdit(event,'+empIdx+',\'nick\')" title="แก้ไขชื่อเล่น">'+esc(emp.nick)+'</td>';
@@ -1167,7 +1243,7 @@ function buildSection(title,shift,g,dates,endS,group,osGroup,short){
     h+='</tr>';
     for(var oi=0;oi<osGroup.length;oi++){
       var os=osGroup[oi],osIdx=outsource.indexOf(os),c=cells(os,true,'osr');
-      var shB=shift==='morning'?'<span class="bo">OS เช้า</span>':'<span class="bo">OS บ่าย</span>';
+      var shB='<span class="bo">OS '+esc(sh.short)+'</span>';
       h+='<tr class="os-row">';
       h+='<td class="sc0 ec" onclick="iEditOS(event,'+osIdx+',\'name\')" title="แก้ไข">'+esc(os.name)+'</td>';
       h+='<td class="sc1 ec" onclick="iEditOS(event,'+osIdx+',\'nick\')" title="แก้ไข">'+esc(os.nick)+'</td>';
@@ -1178,7 +1254,7 @@ function buildSection(title,shift,g,dates,endS,group,osGroup,short){
   }
   // OS เสริม ไม่มีชื่อ — แถวขอไว้กี่คน กับแถวมาจริงกี่คน คลิกช่องใส่ตัวเลข
   // แถวมาทำงานนับจากมาจริงถ้าใส่แล้ว ไม่งั้นนับตามที่ขอ
-  var shTh=shift==='morning'?'กะเช้า':'กะบ่าย',rq='',gt='';
+  var rq='',gt='';
   for(var i=0;i<dates.length;i++){
     var d=dates[i],q=oxGet(d,shift,'req'),g=oxGet(d,shift,'got'),wk=pd(d).getDay()===1?' wk-s':'';
     var dt=pd(d).getDate()+' '+MON[pd(d).getMonth()];
@@ -1236,12 +1312,12 @@ function iEditOS(e,idx,field){
 }
 function openMin(e,shift){
   e.stopPropagation();_iType='min';_iField=shift;
-  _showPop(e,'คนขั้นต่ำ'+(shift==='morning'?'กะเช้า':'กะบ่าย')+' · เว้นว่าง = ไม่เตือน',false,typeof minStaff[shift]==='number'?String(minStaff[shift]):'');
+  _showPop(e,'คนขั้นต่ำ'+viewDef().shifts[shift].name+' · เว้นว่าง = ไม่เตือน',false,typeof minStaff[shift]==='number'?String(minStaff[shift]):'');
 }
 function oxEdit(e,d,sh,f){
   e.stopPropagation();_iType='ox';_iField=f;_iDate=d;_iShift=sh;
   var dd=pd(d),v=oxGet(d,sh,f);
-  _showPop(e,'OS เสริม'+(sh==='morning'?'กะเช้า':'กะบ่าย')+' '+dd.getDate()+' '+MON[dd.getMonth()]+' · '+(f==='req'?'ขอกี่คน':'มาจริงกี่คน')+' · เว้นว่าง = ไม่มี',false,v===null?'':String(v));
+  _showPop(e,'OS เสริม'+SH.name(shiftDefs,d,sh)+' '+dd.getDate()+' '+MON[dd.getMonth()]+' · '+(f==='req'?'ขอกี่คน':'มาจริงกี่คน')+' · เว้นว่าง = ไม่มี',false,v===null?'':String(v));
 }
 function saveInline(){
   if(_iType==='ox'){
@@ -1284,7 +1360,15 @@ function toggleOS(e,idx){e.stopPropagation();closeInline();closeCell();moveGrp(o
 // ── วางแผน OS เสริม ทีละสัปดาห์ (จันทร์–อาทิตย์) ──
 // แก้ในชุดร่างก่อน เลื่อนสัปดาห์ไปมาได้ กดบันทึกถึงจะใช้จริง กดยกเลิกก็ทิ้งทั้งหมด
 var _oxDraft=null,_oxMon='';
-var OX_ROWS=[['morning','req','กะเช้า · ขอ'],['morning','got','กะเช้า · มาจริง'],['evening','req','กะบ่าย · ขอ'],['evening','got','กะบ่าย · มาจริง']];
+// แถวของสัปดาห์นั้น — สัปดาห์ที่คร่อมวันเปลี่ยนกะ กะเดียวกันมีสองชื่อ (กะบ่าย / กะสาย)
+function oxRows(days){
+  var a=SH.at(shiftDefs,days[0]),b=SH.at(shiftDefs,days[6]),out=[];
+  SH.IDS.forEach(function(id){
+    var x=a.shifts[id].name,y=b.shifts[id].name,nm=x===y?x:x+' / '+y;
+    out.push([id,'req',nm+' · ขอ'],[id,'got',nm+' · มาจริง']);
+  });
+  return out;
+}
 function monOf(s){return addD(s,-((pd(s).getDay()+6)%7));}
 function openOxPlan(e){
   if(e)e.stopPropagation();closeInline();closeCell();
@@ -1302,10 +1386,10 @@ function renderOxPlan(){
   days.forEach(function(d){var dd=pd(d),hol=isHol(d);
     h+='<th'+(hol?' class="ox-hol" title="'+esc(holN(d))+'"':'')+'>'+DOW[dd.getDay()]+'<br>'+dd.getDate()+'</th>';});
   h+='</tr></thead><tbody>';
-  OX_ROWS.forEach(function(r){
-    h+='<tr'+(r[1]==='got'?' class="ox-got"':'')+'><th>'+r[2]+'</th>';
+  oxRows(days).forEach(function(r){
+    h+='<tr'+(r[1]==='got'?' class="ox-got"':'')+'><th>'+esc(r[2])+'</th>';
     days.forEach(function(d){var v=oxGet(d,r[0],r[1],_oxDraft);
-      h+='<td><input type="number" min="0" step="1" inputmode="numeric" data-d="'+d+'" data-sh="'+r[0]+'" data-f="'+r[1]+'" value="'+(v===null?'':v)+'" aria-label="'+r[2]+' '+d+'"></td>';});
+      h+='<td><input type="number" min="0" step="1" inputmode="numeric" data-d="'+d+'" data-sh="'+r[0]+'" data-f="'+r[1]+'" value="'+(v===null?'':v)+'" aria-label="'+esc(r[2])+' '+d+'"></td>';});
     h+='</tr>';
   });
   document.getElementById('ox-tbl').innerHTML=h+'</tbody>';
@@ -1457,7 +1541,7 @@ function delOS(idx){if(!confirm('ลบ "'+outsource[idx].name+'"?'))return;outs
 function renderPeriods(){
   var sp=sorted(),h='<div>';
   for(var i=0;i<sp.length;i++){var p=sp[i],e=perEnd(p,sp),sd=pd(p.start),ed=pd(e),days=diff(p.start,e)+1;
-    var shA=p.groupA==='morning'?'กะเช้า':'กะบ่าย',shB=p.groupA==='morning'?'กะบ่าย':'กะเช้า';
+    var ds=defOf(p).shifts,shA=esc(ds[p.groupA==='morning'?'morning':'evening'].name),shB=esc(ds[p.groupA==='morning'?'evening':'morning'].name);
     h+='<div class="per-item"><div class="per-num">'+(i+1)+'</div>';
     h+='<div class="per-dates"><strong>'+sd.getDate()+' '+MON_F[sd.getMonth()]+' '+sd.getFullYear()+'</strong> — <strong>'+ed.getDate()+' '+MON_F[ed.getMonth()]+' '+ed.getFullYear()+'</strong>';
     h+='<div class="per-days">'+days+' วัน · <span class="ga">A = '+shA+'</span> <span class="gb">B = '+shB+'</span></div></div>';
@@ -1471,6 +1555,13 @@ function renderPeriods(){
   if(extraPro.length){for(var i=0;i<extraPro.length;i++){var d=pd(extraPro[i].date);xh+='<span class="xpro-tag">'+d.getDate()+' '+MON[d.getMonth()]+' '+d.getFullYear()+' <button type="button" class="xpro-x" onclick="delXP('+i+')" aria-label="ลบ">×</button></span>';}}
   else xh+='<span class="empty">ยังไม่มี</span>';
   xh+='</div>';document.getElementById('xpro-list').innerHTML=xh;
+  fillGrpA();
+}
+// ตัวเลือก "กลุ่ม A อยู่กะ" ใช้ชื่อกะของวันเริ่มที่ใส่ไว้ — ยังไม่ใส่ก็ใช้ชุดล่าสุด เพราะคาบใหม่มักต่อท้าย
+function fillGrpA(){
+  var sel=document.getElementById('pi-grpa'),v=sel.value||'morning',ds=SH.at(shiftDefs,document.getElementById('pi-start').value||'9999-12-31').shifts;
+  sel.innerHTML=SH.IDS.map(function(id){return '<option value="'+id+'">'+esc(ds[id].name)+' ('+SH.timeText(ds[id])+')</option>';}).join('');
+  sel.value=v;
 }
 /* วันจบเมื่อไม่ได้กำหนด — ใช้เติมช่องให้ก่อน และบอกว่าเว้นว่างไว้แล้วจะจบวันไหน */
 function autoEnd(start,selfId){
@@ -1506,7 +1597,7 @@ function showPerLen(){
 function onPerStart(){
   var s=document.getElementById('pi-start').value,e=document.getElementById('pi-end');
   if(s&&(!e.value||e.dataset.auto==='1')){e.value=autoEnd(s,null);e.dataset.auto='1';}
-  showPerLen();
+  showPerLen();fillGrpA();
 }
 function addPeriod(){
   var s=document.getElementById('pi-start').value,e=document.getElementById('pi-end').value;
@@ -1526,6 +1617,8 @@ function savePer(){
   var s=document.getElementById('pm-start').value,e=document.getElementById('pm-end').value;
   if(!s){alert('กรุณาเลือกวันเริ่ม');return;}
   var err=perCheck(s,e,id);if(err){alert(err);return;}
+  // ค่าตั้งกะที่เริ่มใช้ตั้งแต่คาบนี้ผูกกับวันเริ่มคาบ — เลื่อนวันเริ่มแล้วต้องเลื่อนตาม ไม่งั้นคาบนี้หลุดไปใช้กะชุดก่อน
+  if(p.start!==s&&!shDef(s))shiftDefs.forEach(function(x){if(x.from===p.start)x.from=s;});
   p.start=s;if(e)p.end=e;else delete p.end;
   changed();closeModal('per-modal');renderPeriods();
 }
@@ -1537,6 +1630,104 @@ function autoGen(){var sp=sorted();if(!sp.length){alert('กรุณาเพ�
 function addExtraPro(){var d=document.getElementById('xp-date').value;if(!d)return;
   if(extraPro.some(function(p){return p.date===d;})){alert('มีวันนี้แล้ว');return;}extraPro.push({date:d});changed();renderPeriods();}
 function delXP(i){extraPro.splice(i,1);changed();renderPeriods();}
+
+// ── ตั้งค่ากะ ──
+/* ตารางเดียว แถวละกะ พิมพ์แก้ในช่องได้เลย เก็บทันทีที่ออกจากช่อง (ค่าที่เก็บ: wms-shifts.js)
+   แถว "เริ่มต้น" คือค่าที่ใช้มาตั้งแต่แรก แก้ไม่ได้ — คาบที่ผ่านมาต้องแสดงเหมือนที่เกิดขึ้นจริง
+   แถวที่เริ่มใช้ไปแล้วล็อกไว้ ต้องกด 🔒 ปลดก่อน กันแก้ย้อนหลังโดยไม่ตั้งใจ (_shOpen = แถวที่ปลดไว้) */
+var _shOpen={};
+function shDef(from){return shiftDefs.find(function(x){return x.from===from;});}
+function perLabel(i,p){var d=pd(p.start);return 'คาบ '+(i+1)+' · '+d.getDate()+' '+MON[d.getMonth()]+' '+String(d.getFullYear()+543).slice(2);}
+function shHelp(btn){var b=document.getElementById('sh-help');b.hidden=!b.hidden;btn.setAttribute('aria-expanded',String(!b.hidden));}
+function shFromCell(def,base,used,lock,sp){
+  if(base)return '<span class="sh-lk" title="ค่าที่ใช้มาตั้งแต่แรก แก้ไม่ได้">🔒</span> เริ่มต้น';
+  var i=sp.findIndex(function(p){return p.start===def.from;}),t=today();
+  var label=i>=0?perLabel(i,sp[i]):'ตั้งแต่ '+thd(def.from);
+  // ลบคาบหรือพิมพ์วันเริ่มคาบใหม่เองจนไม่ตรงกัน — ตารางกะดูค่าตั้งจากวันเริ่มคาบ จึงต้องให้เลือกคาบใหม่
+  var warn=i<0?'<div class="chg-note sh-warn">⚠ ไม่ตรงกับวันเริ่มของคาบไหน</div>':'';
+  if(lock)return '<button type="button" class="sh-lk" onclick="shUnlock('+jsAttr(def.from)+')" title="ใช้ไปแล้ว — คลิกเพื่อปลดล็อกแก้ไข" aria-label="ปลดล็อกแก้ไข">🔒</button> '+esc(label)+warn;
+  // เลือกได้เฉพาะคาบที่ยังไม่จบ และยังไม่มีแถวอื่นใช้ — คาบที่จบไปแล้วไม่ให้ย้อนไปเปลี่ยน
+  var opts=i<0?'<option value="'+def.from+'" selected>'+esc(label)+'</option>':'';
+  sp.forEach(function(p,k){
+    var mine=p.start===def.from;
+    if(!mine&&(perEnd(p,sp)<t||shDef(p.start)))return;
+    opts+='<option value="'+p.start+'"'+(mine?' selected':'')+'>'+esc(perLabel(k,p))+'</option>';
+  });
+  return '<select class="sh-sel" onchange="shFrom(this,'+jsAttr(def.from)+')" aria-label="มีผลตั้งแต่คาบ">'+opts+'</select>'+
+    (used?'<div class="chg-note">ใช้อยู่แล้ว · ปลดล็อกไว้</div>':'')+warn;
+}
+function renderShifts(){
+  var L=SH.list(shiftDefs),sp=sorted(),t=today(),h='';
+  L.forEach(function(def,i){
+    var base=i===0,used=!base&&def.from<=t,lock=base||(used&&!_shOpen[def.from]);
+    SH.IDS.forEach(function(id,k){
+      var s=def.shifts[id],n=k+1,at=' data-from="'+def.from+'" data-id="'+id+'"'+(lock?' disabled':'');
+      var inp=function(f,cls,v,label,more){
+        return '<input type="text" class="sh-in '+cls+'" value="'+esc(v)+'"'+at+' data-f="'+f+'" '+more+' onchange="shEdit(this)" onkeydown="shKey(event)" aria-label="'+label+'กะที่ '+n+'">';};
+      h+='<tr class="'+(k?'':'sh-first')+(lock?' sh-lock':'')+'">';
+      if(!k)h+='<td rowspan="2" class="sh-from">'+shFromCell(def,base,used,lock,sp)+'</td>';
+      h+='<td class="num">'+n+'</td>';
+      h+='<td>'+inp('name','sh-name',s.name,'ชื่อ','maxlength="20"')+(s.last?'<div class="chg-note">วันสุดท้ายคาบ '+SH.timeText(s.last)+'</div>':'')+'</td>';
+      h+='<td>'+inp('start','sh-time',s.start,'เวลาเข้า','inputmode="decimal" maxlength="8"')+'</td>';
+      h+='<td>'+inp('end','sh-time',s.end,'เวลาออก','inputmode="decimal" maxlength="8"')+'</td>';
+      h+='<td class="sh-ack"><input type="checkbox"'+(s.ack?' checked':'')+at+' onchange="shAck(this)" aria-label="กะที่ '+n+' ต้องรับทราบงานต่อ"></td>';
+      if(!k)h+='<td rowspan="2" class="no-print acts">'+(lock?'':'<button type="button" class="btn-del" onclick="shDel('+jsAttr(def.from)+')">ลบ</button>')+'</td>';
+      h+='</tr>';
+    });
+  });
+  document.getElementById('sh-body').innerHTML=h;
+}
+/* ไม่วาดตารางใหม่หลังแก้ช่อง — ไม่งั้นกด Tab ไปช่องถัดไปแล้วช่องนั้นถูกแทนที่ พิมพ์ต่อไม่ได้ */
+function shEdit(inp){
+  var d=shDef(inp.dataset.from),id=inp.dataset.id,f=inp.dataset.f;if(!d)return;
+  var old=d.shifts[id][f],v=inp.value.trim();
+  if(f!=='name'){v=SH.parseTime(v,f==='end');if(!v)return shBad(inp,old,'ใส่เวลาเป็น ชั่วโมง:นาที เช่น 10:00');}
+  if(v===old){inp.value=old;return;}
+  var next=copy(d.shifts);next[id][f]=v;
+  var err=SH.check(next);if(err)return shBad(inp,old,err);
+  inp.value=v;d.shifts=next;changed();shAckSync(d.from);
+}
+function shBad(inp,old,msg){inp.value=old;if(window.WmsMotion)WmsMotion.shake(inp);alert(msg);}
+function shKey(e){if(e.key==='Enter'){e.preventDefault();e.target.blur();}}
+// แก้เวลาแล้ว "รับงานต่อ" ที่ระบบติ๊กให้อาจเปลี่ยน (กะที่เข้าตอนอีกกะยังอยู่ไม่ต้องรับ) — อัปเดตเฉพาะช่องติ๊กของแถวนั้น
+function shAckSync(from){
+  var def=SH.list(shiftDefs).find(function(x){return x.from===from;});if(!def)return;
+  document.querySelectorAll('#sh-body input[type=checkbox]').forEach(function(cb){if(cb.dataset.from===from)cb.checked=def.shifts[cb.dataset.id].ack;});
+}
+// ติ๊กเองแล้วใช้ตามที่ติ๊ก ไม่คิดจากเวลาอีก
+function shAck(cb){var d=shDef(cb.dataset.from);if(!d)return;d.shifts[cb.dataset.id].ack=cb.checked;changed();}
+function shFrom(sel,old){
+  var d=shDef(old),v=sel.value,t=today();if(!d||v===old)return;
+  if(v<=t&&!confirm('คาบนี้เริ่มไปแล้วตั้งแต่ '+thd(v)+'\nวันที่ผ่านมาในคาบนี้จะเปลี่ยนเป็นชื่อและเวลากะชุดนี้ด้วย ทั้งในตารางกะและสมุดกะ\n\nใช้ตั้งแต่คาบนี้?')){sel.value=old;return;}
+  d.from=v;delete _shOpen[old];
+  if(v<=t)_shOpen[v]=true;   // เพิ่งเลือกเอง ยังแก้ต่อได้ ไม่ล็อกใส่มือ
+  changed();renderShifts();
+}
+function shUnlock(from){
+  if(!confirm('แถวนี้ใช้ไปแล้วตั้งแต่ '+thd(from)+'\nแก้แล้วตารางกะและสมุดกะตั้งแต่วันนั้นจะเปลี่ยนตามทันที\n\nปลดล็อกเพื่อแก้ไข?'))return;
+  _shOpen[from]=true;renderShifts();
+}
+function shDel(from){
+  if(!confirm('ลบการเปลี่ยนกะที่เริ่ม '+thd(from)+'?\nตั้งแต่วันนั้นจะกลับไปใช้ชื่อและเวลากะของแถวก่อนหน้า'))return;
+  shiftDefs=shiftDefs.filter(function(x){return x.from!==from;});delete _shOpen[from];
+  changed();renderShifts();
+}
+/* แถวใหม่เริ่มที่คาบถัดไปที่ยังไม่มีแถว ค่าตั้งต้นเหมือนกะที่ใช้อยู่ตอนนั้น แล้วค่อยพิมพ์แก้
+   ยังไม่มีคาบถัดไปในรายการ ก็ใช้คาบที่กำลังเดินอยู่ได้ แต่ต้องยืนยัน เพราะวันที่ผ่านมาในคาบนั้นจะเปลี่ยนด้วย */
+function shAdd(){
+  var sp=sorted(),t=today(),free=function(p){return !shDef(p.start);};
+  var next=sp.filter(function(p){return p.start>t&&free(p);})[0];
+  var p=next||sp.filter(function(x){return x.start<=t&&perEnd(x,sp)>=t&&free(x);})[0];
+  if(!p){alert(sp.some(function(x){return perEnd(x,sp)>=t;})?
+    'คาบที่เหลือมีแถวตั้งค่ากะครบแล้ว — แก้ในแถวนั้น หรือเพิ่มคาบใหม่ในแท็บ "คาบเปลี่ยนกะ" ก่อน':
+    'ยังไม่มีคาบถัดไป — เพิ่มคาบใหม่ในแท็บ "คาบเปลี่ยนกะ" ก่อน แล้วค่อยกลับมาตั้งกะ');return;}
+  if(!next&&!confirm('ยังไม่มีคาบถัดไปในรายการ\nจะให้ใช้ตั้งแต่คาบที่กำลังเดินอยู่ (เริ่ม '+thd(p.start)+') — วันที่ผ่านมาในคาบนี้จะเปลี่ยนด้วย\n\nถ้าต้องการให้เริ่มคาบหน้า กดยกเลิก แล้วเพิ่มคาบใหม่ในแท็บ "คาบเปลี่ยนกะ" ก่อน'))return;
+  shiftDefs.push({from:p.start,shifts:SH.blank(SH.at(shiftDefs,p.start))});
+  if(p.start<=t)_shOpen[p.start]=true;
+  changed();renderShifts();
+  var inp=document.querySelector('#sh-body input.sh-name[data-from="'+p.start+'"]');
+  if(inp){inp.focus();inp.select();}
+}
 
 // ── Holidays ──
 function renderHols(){
@@ -1787,7 +1978,8 @@ var sync=window.RosterSync&&window.WmsSettings&&window.WmsGas?RosterSync.create(
   describe:describe,
   ask:function(m){return confirm(m);},
   // ดึงฉบับใหม่ลงมาตอนมีช่องแก้ไขเปิดค้าง ตัวเลขที่กำลังพิมพ์จะไปลงคนละแถวกับที่เห็น
-  canApply:function(){return document.getElementById('ipop').style.display!=='block'&&document.getElementById('cpop').style.display!=='block'&&!document.querySelector('.overlay.open');},
+  canApply:function(){return document.getElementById('ipop').style.display!=='block'&&document.getElementById('cpop').style.display!=='block'&&!document.querySelector('.overlay.open')&&
+    !document.getElementById('sh-body').contains(document.activeElement);},
   status:syncStatus
 }):null;
 function syncStatus(state,info){

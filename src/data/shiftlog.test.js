@@ -8,8 +8,15 @@ import path from 'node:path';
 const read = (f) => fs.readFileSync(path.resolve(__dirname, '../../public', f), 'utf8');
 const win = {};
 new Function('window', read('wms-pick.js'))(win);
+new Function('window', read('wms-shifts.js'))(win);
 new Function('window', read('shiftlog/shiftlog.js'))(win);
 const L = win.ShiftLog;
+
+// คาบที่เริ่ม 13 ธ.ค. กะที่ 2 เปลี่ยนจากกะบ่ายเป็นกะสาย 10:00-19:00 (ทำงานทับกับกะเช้า 10:00–16:00)
+const LATE = [{
+  from: '2026-12-13',
+  shifts: { morning: { name: 'กะเช้า', start: '07:00', end: '16:00' }, evening: { name: 'กะสาย', start: '10:00', end: '19:00' } },
+}];
 
 describe('กะของเวลาที่บันทึก', () => {
   const at = (h, m = 0) => L.shiftAt(new Date(2026, 9, 24, h, m));
@@ -218,6 +225,81 @@ describe('รับทราบงานต่อ', () => {
     const times = [now, new Date(2026, 9, 28, 16, 5), new Date(2026, 9, 29, 1), new Date(2026, 9, 28, 6, 59)];
     for (const log of cases) for (const t of times) {
       expect(needsAck(log, t)).toBe(L.handover(log, t).needs);
+    }
+  });
+});
+
+describe('เปลี่ยนกะที่ 2 เป็นกะสาย 10:00-19:00 (ค่าตั้งกะ)', () => {
+  const D = (d, h, m = 0) => new Date(2026, 11, d, h, m);
+  const T = (d, h, m = 0) => D(d, h, m).getTime();
+  // 12 ธ.ค. ยังเป็นคาบเก่า (กะบ่าย) · 13 ธ.ค. เป็นต้นไปกะสาย
+  const log = () => ({
+    old: { kind: 'order', date: '2026-12-12', shift: 'evening', open: true, at: T(12, 20) },
+    m14: { kind: 'order', date: '2026-12-14', shift: 'morning', open: true, at: T(14, 8) },
+    l14: { kind: 'order', date: '2026-12-14', shift: 'evening', open: true, at: T(14, 18) },
+  });
+
+  it('ชื่อกะของรายการคือชื่อที่ใช้ ณ วันนั้น — รายการก่อนเปลี่ยนยังเป็นกะบ่าย', () => {
+    const l = log();
+    expect(L.shiftName(l.old, LATE)).toBe('กะบ่าย');
+    expect(L.shiftName(l.l14, LATE)).toBe('กะสาย');
+    expect(L.shiftName(l.m14, LATE)).toBe('กะเช้า');
+    expect(L.shiftName(l.l14, [])).toBe('กะบ่าย');
+    expect(L.shiftsOn('2026-12-14', LATE).map((s) => s.name + ' ' + s.start)).toEqual(['กะเช้า 07:00', 'กะสาย 10:00']);
+    expect(L.shiftsOn('2026-12-12', LATE).map((s) => s.name + ' ' + s.start)).toEqual(['กะเช้า 07:00', 'กะบ่าย 16:00']);
+  });
+
+  it('รายการใหม่ลงกะที่เข้างานล่าสุด — 10:00 เป็นต้นไปเป็นกะสาย', () => {
+    expect(L.shiftAt(D(14, 9, 59), LATE)).toEqual({ date: '2026-12-14', shift: 'morning' });
+    expect(L.shiftAt(D(14, 10), LATE)).toEqual({ date: '2026-12-14', shift: 'evening' });
+    expect(L.shiftAt(D(15, 3), LATE)).toEqual({ date: '2026-12-14', shift: 'evening' });
+  });
+
+  it('กะสายไม่ต้องรับทราบงานต่อ — ทั้งวันเป็นกะเช้าที่ต้องกด และรับเฉพาะงานของวันก่อน ๆ', () => {
+    // 11:00 กะสายเข้ามาแล้ว แต่คนที่ต้องรับยังเป็นกะเช้าของวันนี้
+    const s = L.handover(log(), D(14, 11), LATE);
+    expect(s).toMatchObject({ date: '2026-12-14', shift: 'morning', ack: null, needs: true });
+    // งานที่บันทึกวันนี้ทั้งสองกะยังไม่ใช่งานส่งต่อ — สองกะทำงานอยู่ด้วยกัน
+    expect(s.items.map((e) => e.id)).toEqual(['old']);
+  });
+
+  it('กะเช้ากดแล้วเงียบทั้งวัน — เช้าวันรุ่งขึ้นงานที่กะสายฝากไว้ตอน 19:00 ถึงมาให้รับ', () => {
+    const l = log();
+    l[L.ackId('2026-12-14', 'morning')] = { kind: 'ack', date: '2026-12-14', shift: 'morning', by: 'สมชาย', at: T(14, 7, 5) };
+    expect(L.handover(l, D(14, 11), LATE).needs).toBe(false);
+    expect(L.handover(l, D(14, 20), LATE).needs).toBe(false);
+    expect(L.handover(l, D(15, 6), LATE)).toMatchObject({ date: '2026-12-14', needs: false });
+    const next = L.handover(l, D(15, 7), LATE);
+    expect(next).toMatchObject({ date: '2026-12-15', shift: 'morning', ack: null, needs: true });
+    expect(next.items.map((e) => e.id)).toEqual(['old', 'm14', 'l14']);
+  });
+
+  it('ยังไม่ตั้งค่ากะ — เหมือนเดิม กะบ่ายยังต้องรับงานของกะเช้า', () => {
+    const s = L.handover(log(), D(14, 16, 5), []);
+    expect(s).toMatchObject({ date: '2026-12-14', shift: 'evening', needs: true });
+    expect(s.items.map((e) => e.id)).toEqual(['old', 'm14']);
+  });
+
+  it('ตั้งไว้ว่าไม่มีกะไหนต้องรับ — ไม่มีอะไรให้กด', () => {
+    const none = [{ from: '2026-12-13', shifts: { morning: { ...LATE[0].shifts.morning, ack: false }, evening: LATE[0].shifts.evening } }];
+    expect(L.handover(log(), D(14, 11), none)).toMatchObject({ date: '2026-12-14', shift: 'evening', items: [], needs: false });
+  });
+
+  it('สรุปเดือนที่เปลี่ยนกะกลางเดือน — นับแยกตามชื่อกะ กะบ่ายกับกะสายไม่ปนกัน', () => {
+    const s = L.month(log(), '2026-12', LATE);
+    expect(s.byName).toEqual([{ name: 'กะเช้า', n: 1 }, { name: 'กะบ่าย', n: 1 }, { name: 'กะสาย', n: 1 }]);
+    expect(s.byShift).toEqual({ morning: 1, evening: 2 });
+    expect(L.month(log(), '2027-01', LATE).byName).toEqual([{ name: 'กะเช้า', n: 0 }, { name: 'กะสาย', n: 0 }]);
+    expect(L.month(LOG, '2026-10').byName).toEqual([{ name: 'กะเช้า', n: 1 }, { name: 'กะบ่าย', n: 3 }]);
+  });
+
+  it('เลขบนเมนูใช้กฎเดียวกับหน้าสมุดกะ ทั้งก่อนและหลังเปลี่ยนกะ', async () => {
+    const { needsAck } = await import('../../public/wms-badges.js');
+    const acked = log();
+    acked[L.ackId('2026-12-14', 'morning')] = { kind: 'ack', date: '2026-12-14', shift: 'morning', at: T(14, 7, 5) };
+    const times = [D(13, 3), D(14, 6, 59), D(14, 8), D(14, 11), D(14, 20), D(15, 6), D(15, 7)];
+    for (const l of [log(), acked, {}]) for (const t of times) for (const defs of [LATE, []]) {
+      expect(needsAck(l, t, defs)).toBe(L.handover(l, t, defs).needs);
     }
   });
 });

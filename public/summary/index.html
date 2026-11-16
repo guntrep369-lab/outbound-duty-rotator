@@ -93,6 +93,7 @@ a.sm-card:hover{border-color:var(--wms-primary);transform:translateY(-1px)}
 <script src="../wms-history.js"></script>
 <script src="../wms-stock.js"></script>
 <script src="../transport-docs/transport-file.js"></script>
+<script src="../wms-shifts.js"></script>
 <script src="../shiftlog/shiftlog.js"></script>
 <script>
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -184,7 +185,7 @@ function orderChurn(o) {
  * ของตารางกะแบบอ่านอย่างเดียว ไม่เก็บลงเครื่องและไม่ส่งอะไรขึ้นไป — การซิงก์จริงเป็นงาน
  * ของหน้าสมุดกะกับหน้าตารางกะ ยกเว้นเครื่องนี้มีของที่ยังไม่ได้ส่งขึ้นชีต ของในเครื่องใหม่กว่า
  */
-let SHIFT_LOG = null;
+let SHIFT_LOG = null, SHIFT_DEFS;   // SHIFT_DEFS = ค่าตั้งกะของชีตชุดเดียวกัน (ไม่มี = ของในเครื่อง)
 function localShiftLog() {
   try { const d = JSON.parse(localStorage.getItem('wms:roster') || 'null'); return (d && d.shiftLog) || {}; }
   catch (e) { return {}; }
@@ -196,11 +197,11 @@ async function pullShiftLog() {
   try { dirty = !!(JSON.parse(localStorage.getItem('wms:roster:sync') || 'null') || {}).dirty; } catch (e) {}
   if (dirty) return;
   const r = await WmsGas.post(url, { op: 'load', token: WmsSettings.rosterToken() }, { timeoutMs: 60000 });
-  if (r && r.app === 'roster' && r.data) { SHIFT_LOG = r.data.shiftLog || {}; render(); }
+  if (r && r.app === 'roster' && r.data) { SHIFT_LOG = r.data.shiftLog || {}; SHIFT_DEFS = r.data.shiftDefs || []; render(); }
 }
 function shiftCard() {
-  const list = ShiftLog.openItems(SHIFT_LOG || localShiftLog());
-  const today = ShiftLog.shiftAt(new Date()).date;
+  const list = ShiftLog.openItems(SHIFT_LOG || localShiftLog(), SHIFT_DEFS);
+  const today = ShiftLog.shiftAt(new Date(), SHIFT_DEFS).date;
   const logis = list.filter(e => e.kind === 'order' && e.logis).length;
   const orders = list.filter(e => e.kind === 'order').length;
   const oldest = list.length ? Math.max(...list.map(e => ShiftLog.age(e, today))) : 0;

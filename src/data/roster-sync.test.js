@@ -81,7 +81,7 @@ async function twoDevices() {
 }
 
 describe('merge3 — รวมสิ่งที่สองเครื่องแก้จากฉบับเดียวกัน', () => {
-  const { merge3 } = lib();
+  const { merge3, LABEL } = lib();
 
   it('แก้คนละช่องในส่วนที่เป็นช่อง ๆ — ได้ทั้งสองช่อง', () => {
     const r = merge3(START,
@@ -143,6 +143,21 @@ describe('merge3 — รวมสิ่งที่สองเครื่อ�
   it('แก้รายการเหมือนกันทั้งสองฝั่ง ไม่นับว่าชนกัน', () => {
     const same = { ...START, periods: [...START.periods, { id: 2, start: '2026-06-20', groupA: 'evening' }] };
     expect(merge3(START, same, clone(same)).clash).toEqual([]);
+  });
+
+  it('ค่าตั้งกะไปกับข้อมูลชุดเดียวกัน — หัวหน้าเปลี่ยนกะ อีกเครื่องบันทึกสมุดกะ ได้ทั้งคู่', () => {
+    const defs = [{ from: '2026-12-13', shifts: {
+      morning: { name: 'กะเช้า', start: '07:00', end: '16:00' }, evening: { name: 'กะสาย', start: '10:00', end: '19:00' } } }];
+    const base = { ...START, shiftDefs: [], shiftLog: {} };
+    const r = merge3(base, { ...base, shiftDefs: defs }, { ...base, shiftLog: { x: { kind: 'order', open: true } } });
+    expect(r.data.shiftDefs).toEqual(defs);
+    expect(r.data.shiftLog).toEqual({ x: { kind: 'order', open: true } });
+    expect(r.clash).toEqual([]);
+    // สองเครื่องตั้งกะไม่เหมือนกัน — ถามคนว่าเอาของใคร
+    const other = [{ ...defs[0], shifts: { ...defs[0].shifts, evening: { name: 'กะสาย', start: '11:00', end: '20:00' } } }];
+    const c = merge3(base, { ...base, shiftDefs: defs }, { ...base, shiftDefs: other });
+    expect(c.clash).toEqual(['shiftDefs']);
+    expect(LABEL.shiftDefs).toContain('กะ');
   });
 });
 

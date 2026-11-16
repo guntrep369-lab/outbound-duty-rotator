@@ -11,6 +11,11 @@
  * wms-shell.js เรียก mountBadges() หลังวาดเมนู
  */
 
+import './wms-shifts.js';
+
+// ไฟล์นั้นเป็น classic script ที่หน้าอื่นโหลดตรง ๆ ด้วย จึงไม่มี export — หยิบจากที่มันวางไว้
+const Shifts = (typeof window !== 'undefined' && window.WmsShifts) || globalThis.WmsShifts;
+
 const LOG_KEY = 'wms:roster';
 const SYNC_KEY = 'wms:roster:sync';
 const CACHE_KEY = 'wms:shiftlog:badge';
@@ -18,35 +23,34 @@ const FRESH_MS = 3 * 60 * 1000;
 // สองหน้านี้ดึงชีตเองทุกนาทีอยู่แล้ว ข้อมูลในเครื่องจึงใหม่สุด ไม่ต้องเช็คซ้ำ
 const SELF_SYNCED = ['shiftlog', 'roster'];
 
-const pad = (n) => (n < 10 ? '0' : '') + n;
-const ymd = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-const pd = (s) => { const p = String(s).split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); };
+const pd =(s) => { const p = String(s).split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); };
 
-/** กะตอนนี้ — 07:00–16:00 กะเช้า หลังจากนั้นกะบ่าย ก่อน 7 โมงยังเป็นกะบ่ายของเมื่อวาน (แบบเดียวกับ ShiftLog.shiftAt) */
-export function shiftNow(now) {
-  const h = now.getHours();
-  if (h < 7) return { date: ymd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)), shift: 'evening' };
-  return { date: ymd(now), shift: h < 16 ? 'morning' : 'evening' };
-}
-export function shiftDay(now) { return shiftNow(now).date; }
+/* กะไหนเข้ากี่โมง และกะไหนต้องรับทราบงานต่อ มาจากค่าตั้งกะ (wms-shifts.js) ที่หัวหน้าแก้ได้ในหน้าตารางกะ
+   defs = shiftDefs ของข้อมูลตารางกะชุดที่กำลังนับ ไม่มี = ค่าเริ่มต้น (กะเช้า 07:00 กะบ่าย 16:00) */
+
+/** กะตอนนี้ — กะที่เข้างานล่าสุด ก่อนกะแรกเข้ายังเป็นกะสุดท้ายของเมื่อวาน (แบบเดียวกับ ShiftLog.shiftAt) */
+export function shiftNow(now, defs) { return Shifts.now(defs, now); }
+export function shiftDay(now, defs) { return shiftNow(now, defs).date; }
 
 /**
- * กะนี้ยังไม่มีใครกดรับทราบงานที่กะก่อนส่งต่อมา — กฎเดียวกับ ShiftLog.handover() ในหน้าสมุดกะ
+ * กะที่ต้องรับยังไม่มีใครกดรับทราบงานที่กะก่อนส่งต่อมา — กฎเดียวกับ ShiftLog.handover() ในหน้าสมุดกะ
  * งานส่งต่อ = งานค้างที่บันทึกในกะก่อน ๆ · มีงานเข้ามาหลังกดรับทราบแล้ว นับว่ายังไม่ได้รับ
  */
-export function needsAck(log, now) {
-  const cur = shiftNow(now);
+export function needsAck(log, now, defs) {
+  const cur = Shifts.receiver(defs, now);
+  if (!cur) return false;
   const ack = (log || {})['ack-' + cur.date + '-' + cur.shift];
   const ackAt = ack && ack.kind === 'ack' ? ack.at || 0 : -1;
+  const cmp = Shifts.sorter(defs);
   for (const id in log || {}) {
     const e = log[id];
     if (!e || typeof e !== 'object' || !e.open || e.kind === 'ack') continue;
-    const before = e.date < cur.date || (e.date === cur.date && e.shift === 'morning' && cur.shift === 'evening');
-    if (before && (ackAt < 0 || (e.at || 0) > ackAt)) return true;
+    if (cmp(e, cur) < 0 && (ackAt < 0 || (e.at || 0) > ackAt)) return true;
   }
   return false;
 }
-const shiftKey = (now) => { const s = shiftNow(now); return s.date + '-' + s.shift; };
+/** กะที่ต้องรับงานต่อตอนนี้ — เลขที่เช็คไว้ใช้ได้เฉพาะกะนี้ เปลี่ยนกะแล้วต้องดูใหม่ */
+const shiftKey = (now, defs) => { const s = Shifts.receiver(defs, now) || Shifts.now(defs, now); return s.date + '-' + s.shift; };
 
 /** งานที่ยังเปิดอยู่กี่รายการ กับวันที่ของรายการที่เก่าสุด */
 export function countOpen(log) {
@@ -69,18 +73,19 @@ export function ageDays(oldest, today) {
 /**
  * เลขที่จะโชว์ — ข้อมูลในเครื่อง หรือตัวเลขจากชีต ถ้าชีตมีฉบับที่ใหม่กว่าที่เครื่องนี้มี
  * เครื่องนี้แก้ค้างไว้ยังไม่ได้ส่งขึ้นชีต (dirty) ใช้ของในเครื่อง — มีงานที่เพิ่งบันทึกอยู่ในนั้น
- * @param {{log:object, sync:object|null}} local
- * @param {{url, rev, n, oldest, shift, needs}|null} cache — needs ใช้ได้เฉพาะกะที่เช็คไว้ (shift)
+ * @param {{log:object, sync:object|null, defs?:Array}} local
+ * @param {{url, rev, n, oldest, shift, needs, defs?}|null} cache — needs ใช้ได้เฉพาะกะที่เช็คไว้ (shift)
+ *   defs = ค่าตั้งกะของชีตฉบับนั้น เครื่องนี้อาจยังไม่เคยได้ค่าตั้งใหม่ จึงใช้ชุดที่มากับเลข
  * @param {string} url ชีตตารางกะที่ตั้งไว้ตอนนี้
- * @returns {{n, oldest, needs}}
+ * @returns {{n, oldest, needs, defs}}
  */
 export function pickCount(local, cache, url, now = new Date()) {
   const s = local.sync || {};
   const localRev = s.url === url ? Number(s.rev) || 0 : 0;
   if (cache && url && cache.url === url && !s.dirty && Number(cache.rev) > localRev) {
-    return { n: Number(cache.n) || 0, oldest: cache.oldest || '', needs: cache.shift === shiftKey(now) && !!cache.needs };
+    return { n: Number(cache.n) || 0, oldest: cache.oldest || '', needs: cache.shift === shiftKey(now, cache.defs) && !!cache.needs, defs: cache.defs };
   }
-  return { ...countOpen(local.log), needs: needsAck(local.log, now) };
+  return { ...countOpen(local.log), needs: needsAck(local.log, now, local.defs), defs: local.defs };
 }
 
 function readJSON(key) {
@@ -91,7 +96,7 @@ function writeJSON(key, v) {
 }
 function readLocal() {
   const d = readJSON(LOG_KEY);
-  return { log: (d && d.shiftLog) || {}, sync: readJSON(SYNC_KEY) };
+  return { log: (d && d.shiftLog) || {}, sync: readJSON(SYNC_KEY), defs: (d && d.shiftDefs) || undefined };
 }
 function settings() {
   const S = window.WmsSettings;
@@ -111,8 +116,8 @@ export function renderBadge(doc = document, now = new Date()) {
   const cache = readJSON(CACHE_KEY);
   // หน้าที่ไม่ได้โหลด wms-settings.js (ย้อนหลัง, เอกสารขนส่ง) ไม่รู้ว่าตั้งชีตไหนไว้ — ใช้ชีตที่เช็คล่าสุด
   const url = window.WmsSettings ? settings().url : (cache && cache.url) || '';
-  const { n, oldest, needs } = pickCount(readLocal(), cache, url, now);
-  const age = ageDays(oldest, shiftDay(now));
+  const { n, oldest, needs, defs } = pickCount(readLocal(), cache, url, now);
+  const age = ageDays(oldest, shiftDay(now, defs));
   links.forEach((a) => {
     let b = a.querySelector('.sysmod-badge');
     if (!n) { if (b) b.remove(); a.removeAttribute('title'); return; }
@@ -140,18 +145,20 @@ export async function refreshFromSheet(force) {
   try {
     const r = await window.WmsGas.post(url, { op: 'rev', token }, { timeoutMs: 30000 });
     if (!r || r.app !== 'roster' || r.error) return;
-    const local = readLocal(), s = local.sync || {}, now = new Date(), key = shiftKey(now);
-    const count = (log) => ({ ...countOpen(log), needs: needsAck(log, now) });
+    const local = readLocal(), s = local.sync || {}, now = new Date();
+    // นับด้วยค่าตั้งกะของข้อมูลชุดเดียวกับสมุดกะที่นับ — ชีตอาจเพิ่งเปลี่ยนกะโดยเครื่องนี้ยังไม่รู้
+    const count = (log, defs) => ({ ...countOpen(log), needs: needsAck(log, now, defs), shift: shiftKey(now, defs), defs });
     let c;
-    if (s.url === url && Number(s.rev) === Number(r.rev) && !s.dirty) c = count(local.log);
+    if (s.url === url && Number(s.rev) === Number(r.rev) && !s.dirty) c = count(local.log, local.defs);
     // ฉบับเดิม กะเดิม — ใช้ที่นับไว้ · เปลี่ยนกะแล้วต้องโหลดมาดูใหม่ว่ากะนี้มีงานส่งต่อมาไหม
-    else if (cache && cache.url === url && Number(cache.rev) === Number(r.rev) && cache.shift === key) c = cache;
+    else if (cache && cache.url === url && Number(cache.rev) === Number(r.rev) && cache.shift === shiftKey(now, cache.defs)) c = cache;
     else {
       const full = await window.WmsGas.post(url, { op: 'load', token }, { timeoutMs: 60000 });
       if (!full || full.app !== 'roster' || full.error) return;
-      c = count((full.data && full.data.shiftLog) || {});
+      c = count((full.data && full.data.shiftLog) || {}, (full.data && full.data.shiftDefs) || undefined);
     }
-    writeJSON(CACHE_KEY, { url, rev: Number(r.rev) || 0, n: c.n, oldest: c.oldest, shift: key, needs: !!c.needs, at: Date.now() });
+    writeJSON(CACHE_KEY, { url, rev: Number(r.rev) || 0, n: c.n, oldest: c.oldest, shift: c.shift, needs: !!c.needs,
+      defs: c.defs && c.defs.length ? c.defs : undefined, at: Date.now() });
     renderBadge();
   } catch (e) {
     // เน็ตหลุดหรือชีตช้า — ใช้เลขเดิมไปก่อน รอบหน้าค่อยลองใหม่

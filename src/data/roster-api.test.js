@@ -71,5 +71,18 @@ describe('หน้าดูของ Logis', () => {
   it('ชีตยังว่าง ได้รายการว่าง', () => {
     const call = script({ data: null });
     expect(call({ op: 'view', token: 'see' }).items).toEqual([]);
+    expect(call({ op: 'view', token: 'see' }).shiftDefs).toEqual([]);
+  });
+
+  it('ส่งชื่อกับเวลากะไปด้วย — เฉพาะชื่อ เวลา และรับงานต่อ ช่องอื่นไม่ออกไป', () => {
+    const defs = [{ from: '2026-12-13', note: 'x', shifts: {
+      morning: { name: 'กะเช้า', start: '07:00', end: '16:00', secret: 1 },
+      evening: { name: 'กะสาย', start: '10:00', end: '19:00', ack: true } } }, null, { from: 5 }];
+    const r = script({ data: { ...DATA, shiftDefs: defs } })({ op: 'view', token: 'see' });
+    expect(r.shiftDefs).toEqual([{ from: '2026-12-13', shifts: {
+      morning: { name: 'กะเช้า', start: '07:00', end: '16:00' },
+      evening: { name: 'กะสาย', start: '10:00', end: '19:00', ack: true } } }]);
+    // ข้อมูลจากหน้าตารางกะรุ่นก่อนไม่มีค่าตั้งกะ — ได้รายการว่าง หน้า Logis ใช้ชื่อตั้งต้น
+    expect(script({ data: DATA })({ op: 'view', token: 'see' }).shiftDefs).toEqual([]);
   });
 });

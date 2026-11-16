@@ -111,7 +111,26 @@ function view_(req) {
     VIEW_FIELDS.forEach(function (k) { if (e[k] !== undefined) o[k] = e[k]; });
     items.push(o);
   }
-  return { app: 'roster', view: true, at: m.at, items: items };
+  return { app: 'roster', view: true, at: m.at, items: items, shiftDefs: shiftDefs_(d.shiftDefs) };
+}
+
+/**
+ * ชื่อกับเวลากะที่ทีมตั้งไว้ในหน้าตารางกะ — หน้าดูของ Logis ใช้บอกว่าออเดอร์ค้างมาจากกะไหน
+ * ส่งเฉพาะชื่อกับเวลา ไม่ใช่เรื่องภายในทีม · หน้าตารางกะรุ่นก่อนไม่มีช่องนี้ = รายการว่าง (ใช้ชื่อตั้งต้น)
+ */
+function shiftDefs_(defs) {
+  var out = [];
+  (Array.isArray(defs) ? defs : []).forEach(function (x) {
+    if (!x || typeof x.from !== 'string' || !x.shifts) return;
+    var o = { from: x.from, shifts: {} };
+    ['morning', 'evening'].forEach(function (id) {
+      var s = x.shifts[id] || {};
+      o.shifts[id] = { name: String(s.name || ''), start: String(s.start || ''), end: String(s.end || '') };
+      if (typeof s.ack === 'boolean') o.shifts[id].ack = s.ack;
+    });
+    out.push(o);
+  });
+  return out;
 }
 
 function meta_() {

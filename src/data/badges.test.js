@@ -121,6 +121,26 @@ describe('เช็คชีต', () => {
     expect(JSON.parse(store['wms:roster'])).toEqual({ shiftLog: {} });
   });
 
+  it('ชีตเปลี่ยนเป็นกะสายแล้วแต่เครื่องนี้ยังไม่รู้ — นับด้วยค่าตั้งกะที่มากับชีต และเก็บไว้กับเลข', async () => {
+    vi.setSystemTime(new Date(2026, 9, 28, 17));
+    const defs = [{ from: '2026-10-25', shifts: {
+      morning: { name: 'กะเช้า', start: '07:00', end: '16:00' }, evening: { name: 'กะสาย', start: '10:00', end: '19:00' } } }];
+    const log = { y: { date: '2026-10-28', shift: 'morning', open: true, at: 1 } };
+    store['wms:roster'] = JSON.stringify({ shiftLog: {} });
+    store['wms:roster:sync'] = JSON.stringify({ url: URL, rev: 7 });
+    window.WmsGas = { post: post({ rev: { app: 'roster', rev: 8 }, load: { app: 'roster', rev: 8, data: { shiftLog: log, shiftDefs: defs } } }) };
+    await refreshFromSheet();
+    // 17:00 กะเช้ากลับแล้ว แต่กะสายทำงานอยู่ด้วยกันมาทั้งวัน ไม่ต้องรับงานของกะเช้า — คนที่ต้องรับยังเป็นกะเช้าของวันนี้
+    expect(cached()).toMatchObject({ rev: 8, n: 1, shift: '2026-10-28-morning', needs: false, defs });
+    expect(pickCount({ log: {}, sync: { url: URL, rev: 7 } }, cached(), URL, new Date())).toMatchObject({ n: 1, needs: false, defs });
+
+    // ชีตที่ยังไม่ได้เปลี่ยนกะ งานเดียวกันนี้คืองานที่กะบ่ายต้องรับตอน 16:00
+    window.WmsGas = { post: post({ rev: { app: 'roster', rev: 9 }, load: { app: 'roster', rev: 9, data: { shiftLog: log } } }) };
+    await refreshFromSheet(true);
+    expect(cached()).toMatchObject({ rev: 9, n: 1, shift: '2026-10-28-evening', needs: true });
+    expect(cached().defs).toBeUndefined();
+  });
+
   it('เพิ่งเช็คไปไม่ถึง 3 นาที — ไม่ถามซ้ำ', async () => {
     store['wms:shiftlog:badge'] = JSON.stringify({ url: URL, rev: 9, n: 1, at: Date.now() - 60000 });
     window.WmsGas = { post: post({ rev: { app: 'roster', rev: 9 } }) };

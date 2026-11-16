@@ -402,7 +402,7 @@ body.sheet-open{overflow:hidden}
       <div class="f-row" id="f-when-edit" hidden>
         <div class="fg"><label for="f-date">วันที่</label><input id="f-date" type="date" onchange="whenText()"></div>
         <div class="fg"><label for="f-shift">กะ</label>
-          <select id="f-shift" onchange="whenText()"><option value="morning">กะเช้า 07–16</option><option value="evening">กะบ่าย 16–24</option></select>
+          <select id="f-shift" onchange="whenText()"></select>
         </div>
       </div>
       <datalist id="sup-list"></datalist>
@@ -425,6 +425,7 @@ body.sheet-open{overflow:hidden}
 <script src="../wms-pick.js"></script>
 <script src="../wms-stock.js"></script>
 <script src="../roster/roster-sync.js"></script>
+<script src="../wms-shifts.js"></script>
 <script src="shiftlog.js"></script>
 <script>
 var L=window.ShiftLog;
@@ -467,7 +468,12 @@ function changed(){
 function pd(s){var p=s.split('-');return new Date(+p[0],+p[1]-1,+p[2]);}
 function fd(d){var m=d.getMonth()+1,dd=d.getDate();return d.getFullYear()+'-'+(m<10?'0'+m:m)+'-'+(dd<10?'0'+dd:dd);}
 function addD(s,n){var d=pd(s);d.setDate(d.getDate()+n);return fd(d);}
-function nowShift(){return L.shiftAt(new Date());}
+/* ค่าตั้งกะ (ชื่อ เวลา กะไหนรับงานต่อ) อยู่ในข้อมูลตารางกะชุดเดียวกับสมุดกะ หัวหน้าแก้ได้ในหน้าตารางกะ แท็บ "กะ"
+   ไปกับชีตส่วนกลาง เครื่องนี้จึงได้ค่าใหม่พร้อมสมุดกะ */
+function defs(){return Array.isArray(data.shiftDefs)?data.shiftDefs:[];}
+function nowShift(){return L.shiftAt(new Date(),defs());}
+// ชื่อกะของรายการ ณ วันของรายการนั้น — รายการก่อนเปลี่ยนกะยังเป็นชื่อเดิม
+function shName(e){return esc(L.shiftName(e,defs()));}
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 function jsAttr(v){return JSON.stringify(v).replace(/&/g,'&amp;').replace(/"/g,'&quot;');}
 function flat(s){return String(s||'').replace(/\s*\n\s*/g,' ');}
@@ -523,7 +529,7 @@ function itemText(i){return flat(i.product||i.sku)+(i.qty>1?' ×'+i.qty:'');}
 function orderRow(e,today){
   var a=L.age(e,today);
   return '<tr'+(a>=2?' class="old"':'')+'>'+
-    '<td data-l="ค้าง" class="c-when"><div><b>'+(a?'ค้าง '+a+' วัน':'วันนี้')+'</b>'+shortDay(e.date)+'<span class="sub">'+L.SHIFTS[e.shift]+'</span></div></td>'+
+    '<td data-l="ค้าง" class="c-when"><div><b>'+(a?'ค้าง '+a+' วัน':'วันนี้')+'</b>'+shortDay(e.date)+'<span class="sub">'+shName(e)+'</span></div></td>'+
     '<td data-l="ออเดอร์"><div><span class="oid">'+esc(e.order)+'</span>'+(e.sup?'<span class="sup">'+esc(e.sup)+'</span>':'')+
       (e.consign?'<span class="sub mono">'+esc(e.consign)+'</span>':'')+'</div></td>'+
     '<td data-l="สินค้า"><div>'+itemsHtml(e)+'</div></td>'+
@@ -539,7 +545,7 @@ function entHtml(e,today,when){
   var isO=e.kind==='order',h='<div class="ent'+(e.open?' ent-open':'')+'"><div class="ent-head">';
   if(isO)h+='<span class="oid">'+esc(e.order)+'</span>'+(e.sup?'<span class="sup">'+esc(e.sup)+'</span>':'')+reasonHtml(e);
   else h+='<span class="kchip">เรื่องอื่น</span>';
-  if(when)h+='<span class="ent-when">'+L.dayText(e.date)+' · '+L.SHIFTS[e.shift]+'</span>';
+  if(when)h+='<span class="ent-when">'+L.dayText(e.date)+' · '+shName(e)+'</span>';
   h+=statusHtml(e,today)+'</div>';
   if(isO){
     var meta=L.itemsOf(e).map(function(i){return [i.product||i.sku,i.size,i.qty?'×'+i.qty:''].filter(Boolean).join(' ');});
@@ -553,7 +559,7 @@ function entHtml(e,today,when){
 /* งานค้างแบ่งเป็นสามกอง ตามว่าใครต้องขยับ — รอ Logis แก้บิล / รอของหรือกำลังตาม / เรื่องอื่น
    กะที่มารับงานจะได้รู้ทันทีว่าต้องโทรหาใคร ไม่ต้องไล่อ่านทั้งตาราง */
 function openGroups(){
-  var list=L.openItems(log());
+  var list=L.openItems(log(),defs());
   return {
     all:list,
     logis:list.filter(function(e){return e.kind==='order'&&e.logis;}),
@@ -575,7 +581,7 @@ function renderOpen(){
 /* รับทราบงานต่อ — กะก่อนส่งงานค้างมา คนเข้ากะอ่านแล้วกด หัวหน้าย้อนดูได้ว่ากะไหนใครรับ
    ยังไม่มีใครกด เลขบนเมนูข้างจะกะพริบ (wms-badges.js) */
 function renderAck(){
-  var s=L.handover(log(),new Date()),bar=el('ack-bar'),sh=L.SHIFTS[s.shift];
+  var s=L.handover(log(),new Date(),defs()),bar=el('ack-bar'),sh=shName(s);
   if(s.needs){
     var late=s.ack?s.items.filter(function(e){return (e.at||0)>(s.ack.at||0);}).length:0;
     bar.className='ack-bar ask no-print';
@@ -590,7 +596,7 @@ function renderAck(){
 function ackHandover(){
   var who=author();
   if(!who){who=prompt('ชื่อคนรับงานต่อ');if(who===null||!who.trim())return;who=who.trim();}
-  var s=L.handover(log(),new Date());
+  var s=L.handover(log(),new Date(),defs());
   log()[L.ackId(s.date,s.shift)]={kind:'ack',date:s.date,shift:s.shift,by:who,at:Date.now()};
   changed();
 }
@@ -598,10 +604,11 @@ function ackHandover(){
 function renderDay(){
   var inp=el('day'),d=inp.value||nowShift().date,today=nowShift().date,h='';inp.value=d;
   el('day-txt').textContent=L.dayText(d);
-  var g=L.day(log(),d);
-  ['morning','evening'].forEach(function(sh){
-    var list=g[sh],no=list.filter(function(e){return e.kind==='order';}).length,ack=L.ackOf(log(),d,sh);
-    h+='<div class="sh-block"><div class="sh-head sh-'+sh+'"><span>'+L.SHIFTS[sh]+'</span>'+
+  var g=L.day(log(),d,defs());
+  // กะของวันนั้น เรียงตามเวลาเข้า — วันก่อนเปลี่ยนกะยังเป็นกะบ่าย หลังเปลี่ยนเป็นกะสาย
+  L.shiftsOn(d,defs()).forEach(function(s){
+    var sh=s.id,list=g[sh],no=list.filter(function(e){return e.kind==='order';}).length,ack=L.ackOf(log(),d,sh);
+    h+='<div class="sh-block"><div class="sh-head sh-'+sh+'"><span>'+esc(s.name)+' <small>'+WmsShifts.timeShort(s)+'</small></span>'+
       '<span class="sh-sum">ออเดอร์ติดปัญหา '+no+' · เรื่องอื่น '+(list.length-no)+
       (ack?' · ✓ รับงานต่อโดย '+esc(ack.by||'—')+' '+hm(ack.at):'')+'</span></div>';
     h+=list.length?list.map(function(e){return entHtml(e,today,false);}).join(''):'<div class="empty">ยังไม่มีบันทึก</div>';
@@ -626,7 +633,7 @@ function openText(){
       (e.text?': '+flat(e.text):'')+(last?' [ล่าสุด: '+flat(last.text)+']':'');
   };
   var part=function(t,arr){return arr.length?'\n\n'+t+' ('+arr.length+'):\n'+arr.map(line).join('\n'):'';};
-  return '📓 งานค้าง '+L.dayText(now.date)+' · '+L.SHIFTS[now.shift]+
+  return '📓 งานค้าง '+L.dayText(now.date)+' · '+L.shiftName(now,defs())+
     (g.all.length?part('รอ Logis',g.logis)+part('รอของ / กำลังตาม',g.wait)+part('เรื่องอื่น',g.hand):'\n\nไม่มีงานค้าง 👍');
 }
 function copyOpen(){copyText(openText(),'📋 คัดลอกแล้ว — วางในแชทได้เลย');}
@@ -710,14 +717,21 @@ function showManual(on){
 }
 // วันที่กับกะ — ใช้กะตอนนี้ แทบไม่ต้องเปลี่ยน
 function whenText(){
-  var d=el('f-date').value;
-  el('f-when-txt').textContent=d?L.dayText(d)+' · '+L.SHIFTS[el('f-shift').value]:'—';
+  var d=el('f-date').value;fillShiftSel();
+  el('f-when-txt').textContent=d?L.dayText(d)+' · '+L.shiftName({date:d,shift:el('f-shift').value},defs()):'—';
+}
+// ตัวเลือกกะเป็นชื่อกับเวลาของวันที่เลือก — เลือกวันก่อนเปลี่ยนกะได้กะบ่าย หลังเปลี่ยนได้กะสาย
+function fillShiftSel(){
+  var sel=el('f-shift'),v=sel.value||'morning';
+  sel.innerHTML=L.shiftsOn(el('f-date').value||nowShift().date,defs()).map(function(s){
+    return '<option value="'+s.id+'">'+esc(s.name)+' '+WmsShifts.timeShort(s)+'</option>';}).join('');
+  sel.value=v;
 }
 function showWhen(){el('f-when-edit').hidden=false;el('f-when-btn').hidden=true;}
 function fillSups(){
   var seen={},o=window.OrderIndex&&OrderIndex.get();
   (o?o.rows:[]).forEach(function(r){if(r.sup)seen[r.sup]=1;});
-  L.openItems(log()).forEach(function(e){if(e.sup)seen[e.sup]=1;});
+  L.openItems(log(),defs()).forEach(function(e){if(e.sup)seen[e.sup]=1;});
   el('sup-list').innerHTML=Object.keys(seen).sort().map(function(s){return '<option value="'+esc(s)+'">';}).join('');
 }
 
@@ -830,7 +844,7 @@ function showStock(){
 function resetForm(){
   var now=nowShift();
   _editId=null;_lines=[];_linesFor='';_looked='';
-  el('f-date').value=now.date;el('f-shift').value=now.shift;
+  el('f-date').value=now.date;fillShiftSel();el('f-shift').value=now.shift;
   ['f-order','f-text'].concat(ORDER_FIELDS.concat(ITEM_FIELDS).map(function(k){return 'f-'+k;})).forEach(function(id){el(id).value='';});
   setReason('');el('f-logis').checked=false;
   el('f-order-note').textContent='';el('f-lines').innerHTML='';el('f-stock').textContent='';
@@ -857,7 +871,7 @@ function saveEntry(){
     if(!items.length&&_lines.length&&!confirm('ยังไม่ได้ติ๊กสินค้าที่ติด\n\nกด OK = บันทึกทั้งออเดอร์โดยไม่ระบุสินค้า (เช่น ไม่มีใบปะหน้า)\nกด ยกเลิก = กลับไปติ๊กก่อน'))return;
     // ออเดอร์เดียวกันค้างอยู่แล้ว — ส่วนใหญ่คือความคืบหน้าของเรื่องเดิม ไม่ใช่เรื่องใหม่
     if(!old){
-      var dup=L.openItems(log()).find(function(x){return x.kind==='order'&&String(x.order).toUpperCase()===order.toUpperCase();});
+      var dup=L.openItems(log(),defs()).find(function(x){return x.kind==='order'&&String(x.order).toUpperCase()===order.toUpperCase();});
       if(dup&&!confirm('ออเดอร์ '+order+' ค้างอยู่แล้ว ('+L.reasonLabel(dup.reason)+')\n\n'+
         'ถ้าจะบอกความคืบหน้า กด ยกเลิก แล้วใช้ 📝 อัปเดต ที่รายการเดิม (เพิ่มสินค้าได้ที่ แก้ไข)\nกด OK = บันทึกเป็นอีกรายการ (เช่น ติดอีกเรื่องหนึ่ง)'))return;
     }
@@ -880,7 +894,7 @@ function editEntry(id){
   resetForm();
   _editId=id;setKind(e.kind==='order'?'order':'handover');
   el('form-title').textContent=e.kind==='order'?'แก้ไข '+e.order:'แก้ไขเรื่องอื่น';
-  el('f-date').value=e.date;el('f-shift').value=e.shift;whenText();
+  el('f-date').value=e.date;fillShiftSel();el('f-shift').value=e.shift;whenText();
   el('f-text').value=e.text||'';el('f-order').value=e.order||'';
   el('form-card').classList.toggle('has-order',!!e.order);
   if(e.kind==='order')setReason(L.reasonOf(e.reason).id);
@@ -926,9 +940,9 @@ function delEntry(id){
 function renderMonth(){
   var inp=el('m-month');
   if(!inp.value)inp.value=nowShift().date.slice(0,7);
-  var ym=inp.value,s=L.month(log(),ym),y=+ym.slice(0,4),m=+ym.slice(5,7);
+  var ym=inp.value,s=L.month(log(),ym,defs()),y=+ym.slice(0,4),m=+ym.slice(5,7);
   el('m-tiles').innerHTML=
-    '<div class="tile"><div class="tile-l">ออเดอร์ติดปัญหา '+MON_F[m-1]+' '+(y+543)+'</div><div class="tile-v">'+s.orders+'</div><div class="tile-s">กะเช้า '+s.byShift.morning+' · กะบ่าย '+s.byShift.evening+'</div></div>'+
+    '<div class="tile"><div class="tile-l">ออเดอร์ติดปัญหา '+MON_F[m-1]+' '+(y+543)+'</div><div class="tile-v">'+s.orders+'</div><div class="tile-s">'+s.byName.map(function(x){return esc(x.name)+' '+x.n;}).join(' · ')+'</div></div>'+
     '<div class="tile"><div class="tile-l">ส่งออกได้แล้ว</div><div class="tile-v">'+s.shipped+'</div><div class="tile-s">ยกเลิกออเดอร์ '+s.cancelled+'</div></div>'+
     '<div class="tile'+(s.open?' warn':'')+'"><div class="tile-l">ยังไม่ได้ส่ง</div><div class="tile-v">'+s.open+'</div><div class="tile-s">ออเดอร์ของเดือนนี้ · เรื่องอื่นค้าง '+s.openOther+'</div></div>'+
     '<div class="tile"><div class="tile-l">ปิดงานได้ในเฉลี่ย</div><div class="tile-v">'+(!s.closeDays.n?'—':s.closeDays.avg?s.closeDays.avg+' วัน':'วันเดียว')+'</div>'+
@@ -948,7 +962,7 @@ function renderMonth(){
     '<tr><td colspan="2" class="empty">—</td></tr>';
   el('m-list').innerHTML=s.list.length?s.list.map(function(e){
     var res=e.open?'<span class="st st-open">ค้าง</span>':e.result==='cancelled'?'<span class="st st-void">ยกเลิก</span>':'<span class="st st-done">ส่งออกแล้ว</span>';
-    return '<tr><td class="nw">'+L.dayText(e.date)+'</td><td class="nw">'+L.SHIFTS[e.shift]+'</td><td class="nw">'+esc(e.sup||'')+'</td>'+
+    return '<tr><td class="nw">'+L.dayText(e.date)+'</td><td class="nw">'+shName(e)+'</td><td class="nw">'+esc(e.sup||'')+'</td>'+
       '<td class="nw">'+esc(e.order||'')+'</td><td>'+L.itemsOf(e).map(function(i){return esc(i.product||i.sku);}).join('<br>')+'</td><td class="nw">'+esc(L.reasonLabel(e.reason))+'</td>'+
       '<td class="nw">'+res+'</td><td class="txt">'+esc(e.text||'')+'</td></tr>';}).join(''):
     '<tr><td colspan="8" class="empty">—</td></tr>';
@@ -1022,12 +1036,12 @@ renderReasons();resetForm();fillSups();render();
 el('sheet').addEventListener('input',function(){_dirty=true;});
 el('sheet').addEventListener('change',function(){_dirty=true;});
 document.addEventListener('keydown',function(e){if(e.key==='Escape'&&!el('sheet').hidden)closeForm();});
-// เปิดค้างไว้ข้ามเวลาเปลี่ยนกะ (07:00 · 16:00) — แถบรับทราบต้องเปลี่ยนเป็นของกะใหม่เอง
+// เปิดค้างไว้ข้ามเวลาเข้ากะ (ตามค่าตั้งกะ) — แถบรับทราบต้องเปลี่ยนเป็นของกะใหม่เอง
 setInterval(function(){if(!document.hidden)renderAck();},60000);
 document.addEventListener('visibilitychange',function(){if(!document.hidden)renderAck();});
 if(sync)sync.start();
 // ช่องสต๊อกในตารางงานค้างใช้ยอดของวันนี้ — ยังไม่มีในเครื่องก็ดึงให้ครั้งเดียว
-if(window.WmsStock&&!WmsStock.read()&&WmsStock.savedUrl()&&L.openItems(log()).some(function(e){return L.itemsOf(e).some(function(i){return i.sku;});})&&WmsGas.firstTry('stock:shiftlog')){
+if(window.WmsStock&&!WmsStock.read()&&WmsStock.savedUrl()&&L.openItems(log(),defs()).some(function(e){return L.itemsOf(e).some(function(i){return i.sku;});})&&WmsGas.firstTry('stock:shiftlog')){
   WmsStock.pull(WmsStock.savedUrl()).then(render).catch(function(){});
 }
 </script>

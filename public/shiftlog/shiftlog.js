@@ -8,7 +8,7 @@
  * อยู่ชุดเดียวกับตารางกะ จึงใช้ชีตส่วนกลางตัวเดิมได้เลย และสองเครื่องเพิ่มรายการพร้อมกัน
  * รวมกันได้ทีละรายการโดยไม่ต้องถาม (roster-sync.js รวม shiftLog ทีละช่อง)
  *
- * รายการ: { date, shift: 'morning'|'evening', kind: 'order'|'handover', text?,
+ * รายการ: { date, shift: 'morning'|'evening' (กะที่ 1 / กะที่ 2), kind: 'order'|'handover', text?,
  *           — kind 'order': sup?, order, consign?, items?: [{product?, size?, qty?, sku?}],
  *           reason, logis,
  *           open, result?: 'shipped'|'cancelled', updates?: [{by, at, text}],
@@ -23,7 +23,11 @@
  * คนเข้ากะกดหลังอ่านงานที่กะก่อนส่งต่อมา อยู่ใน shiftLog ด้วยกัน จึงไปกับชีตส่วนกลางโดยไม่ต้อง
  * แก้หน้าตารางกะ — ไม่ใช่งาน จึงไม่ขึ้นในรายการค้าง รายวัน หรือสรุปเดือน (rows() ข้ามไว้)
  *
- * โหลดเป็น classic script เปิดเป็น window.ShiftLog
+ * ชื่อกะ เวลาเข้า-ออก และกะไหนต้องรับทราบงานต่อ มาจากค่าตั้งกะ (wms-shifts.js) ที่หัวหน้าแก้ได้
+ * ในหน้าตารางกะ — ที่นี่ไม่มีชื่อหรือเวลากะฝังไว้ ฟังก์ชันที่ต้องรู้เรื่องกะรับ defs (shiftDefs ของ
+ * ข้อมูลตารางกะ) ไม่ส่งมา = ใช้ของที่อยู่ในเครื่องนี้
+ *
+ * โหลดเป็น classic script ต่อจาก wms-shifts.js เปิดเป็น window.ShiftLog
  */
 (function () {
   'use strict';
@@ -56,7 +60,6 @@
     { id: 'carrier', label: 'ขนส่งแจ้งยกเลิก', group: 'logis', logis: true },
     { id: 'other', label: 'อื่น ๆ', group: 'other' },
   ];
-  var SHIFTS = { morning: 'กะเช้า', evening: 'กะบ่าย' };
   var RESULTS = { shipped: 'ส่งออกแล้ว', cancelled: 'ยกเลิกออเดอร์' };
 
   function reasonOf(id) {
@@ -69,17 +72,21 @@
   function ymd(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
   function pd(s) { var p = String(s).split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
 
+  function W() { return window.WmsShifts; }
+  function use(defs) { return defs === undefined ? W().local() : defs; }
+
   /**
-   * กะของเวลานี้ — กะเช้า 07:00–16:00 กะบ่าย 16:00–24:00
-   * หลังเที่ยงคืนก่อน 7 โมงยังเป็นคนกะบ่ายที่กำลังปิดงาน จึงนับเป็นกะบ่ายของเมื่อวาน
+   * กะของเวลานี้ — กะที่เข้างานล่าสุดตามค่าตั้งกะ (ค่าเริ่มต้น: กะเช้า 07:00 กะบ่าย 16:00)
+   * ก่อนกะแรกเข้ายังเป็นคนกะสุดท้ายของเมื่อวานที่กำลังปิดงาน จึงนับเป็นของเมื่อวาน
    */
-  function shiftAt(now) {
-    var h = now.getHours();
-    if (h < 7) {
-      var y = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-      return { date: ymd(y), shift: 'evening' };
-    }
-    return { date: ymd(now), shift: h < 16 ? 'morning' : 'evening' };
+  function shiftAt(now, defs) { return W().now(use(defs), now); }
+
+  /** ชื่อกะของรายการ — ชื่อที่ใช้ ณ วันของรายการนั้น รายการเก่าจึงยังเป็นชื่อเดิมหลังเปลี่ยนกะ */
+  function shiftName(e, defs) { return W().name(use(defs), e.date, e.shift); }
+  /** กะของวันนั้น เรียงตามเวลาเข้า — [{id, name, short, start, end}] */
+  function shiftsOn(date, defs) {
+    var d = W().at(use(defs), date);
+    return d.order.map(function (id) { return d.shifts[id]; });
   }
 
   var DOW = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
@@ -109,22 +116,21 @@
     }
     return out;
   }
-  /** เรียงตามวัน กะเช้าก่อนกะบ่าย แล้วตามเวลาที่บันทึก */
-  function byWhen(a, b) {
-    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
-    if (a.shift !== b.shift) return a.shift === 'morning' ? -1 : 1;
-    return (a.at || 0) - (b.at || 0);
+  /** เรียงตามวัน กะที่เข้าก่อนขึ้นก่อน แล้วตามเวลาที่บันทึก */
+  function byWhen(defs) {
+    var cmp = W().sorter(use(defs));
+    return function (a, b) { return cmp(a, b) || (a.at || 0) - (b.at || 0); };
   }
 
   /** เรื่องที่ยังค้าง ทุกวัน — เก่าสุดขึ้นก่อน ค้างนานต้องเห็นก่อน */
-  function openItems(log) {
-    return rows(log).filter(function (e) { return e.open; }).sort(byWhen);
+  function openItems(log, defs) {
+    return rows(log).filter(function (e) { return e.open; }).sort(byWhen(defs));
   }
 
-  /** รายการของวันหนึ่ง แยกตามกะ */
-  function day(log, date) {
+  /** รายการของวันหนึ่ง แยกตามรหัสกะ (ลำดับที่จะแสดงดูจาก shiftsOn) */
+  function day(log, date, defs) {
     var out = { morning: [], evening: [] };
-    rows(log).filter(function (e) { return e.date === date; }).sort(byWhen).forEach(function (e) {
+    rows(log).filter(function (e) { return e.date === date; }).sort(byWhen(defs)).forEach(function (e) {
       (out[e.shift] || out.evening).push(e);
     });
     return out;
@@ -135,19 +141,18 @@
     var a = log && log[ackId(date, shift)];
     return a && a.kind === 'ack' ? a : null;
   }
-  /** (date, shift) มาก่อนกะ cur ไหม */
-  function before(e, cur) {
-    return e.date < cur.date || (e.date === cur.date && e.shift === 'morning' && cur.shift === 'evening');
-  }
-
   /**
-   * งานที่ส่งต่อมาถึงกะตอนนี้ — งานค้างที่บันทึกไว้ในกะก่อน ๆ กับว่ามีคนรับทราบแล้วหรือยัง
+   * งานที่ส่งต่อมาถึงกะที่ต้องรับ — งานค้างที่บันทึกไว้ในกะก่อน ๆ กับว่ามีคนรับทราบแล้วหรือยัง
+   * กะที่ต้องรับคือกะล่าสุดที่เข้างานมาแล้วไม่เจอใคร (WmsShifts.receiver) — กะเช้า/กะบ่ายที่ต่อกัน
+   * ต้องรับทั้งคู่ · กะสายที่เข้ามาตอนกะเช้ายังอยู่ไม่ต้องรับ วันนั้นทั้งวันจึงเป็นกะเช้าที่ต้องกด
    * needs: มีงานส่งต่อมาแต่ยังไม่มีใครกดรับทราบ หรือมีงานเข้ามาหลังกดไปแล้ว (อีกเครื่องเพิ่งส่งขึ้นชีต)
    * กฎเดียวกับ wms-badges.js ที่ใช้วาดเลขบนเมนู
    */
-  function handover(log, now) {
-    var cur = shiftAt(now);
-    var items = openItems(log).filter(function (e) { return before(e, cur); });
+  function handover(log, now, defs) {
+    var D = use(defs), cur = W().receiver(D, now);
+    // ตั้งไว้ว่าไม่มีกะไหนต้องรับ — ไม่มีอะไรให้กด
+    if (!cur) { var n = W().now(D, now); return { date: n.date, shift: n.shift, items: [], ack: null, needs: false }; }
+    var items = openItems(log, D).filter(function (e) { return W().before(D, e, cur); });
     var ack = ackOf(log, cur.date, cur.shift);
     var needs = items.length > 0 && (!ack || items.some(function (e) { return (e.at || 0) > (ack.at || 0); }));
     return { date: cur.date, shift: cur.shift, items: items, ack: ack, needs: needs };
@@ -173,15 +178,19 @@
    * closeDays: ออเดอร์ที่ปิดแล้วใช้เวลากี่วันจนส่งออก/ยกเลิก (วันเดียวกัน = 0)
    * products: สินค้าที่ติดบ่อยสุดก่อน — ใช้ SKU ถ้ามี ไม่มีก็ใช้ชื่อสินค้า
    *   นับเป็นจำนวนออเดอร์ — ตัวเดียวกันซ้ำในออเดอร์เดียวนับครั้งเดียว
+   * byShift นับตามรหัสกะ · byName นับตามชื่อกะของวันนั้น [{name, n}] — เดือนที่เปลี่ยนกะกลางเดือน
+   *   กะบ่ายกับกะสายใช้รหัสเดียวกันแต่เป็นคนละกะ ต้องเห็นแยกกัน
    */
-  function month(log, ym) {
+  function month(log, ym, defs) {
+    var D = use(defs);
     var s = {
       orders: 0, handovers: 0, open: 0, openOther: 0, shipped: 0, cancelled: 0,
-      byReason: {}, byGroup: {}, bySup: {}, byShift: { morning: 0, evening: 0 },
+      byReason: {}, byGroup: {}, bySup: {}, byShift: { morning: 0, evening: 0 }, byName: [],
       products: [], closeDays: { n: 0, avg: 0 }, list: [],
     };
-    var prod = {}, days = 0;
-    rows(log).filter(function (e) { return String(e.date).slice(0, 7) === ym; }).sort(byWhen).forEach(function (e) {
+    var prod = {}, days = 0, named = {};
+    W().names(D, ym + '-01', ym + '-31').forEach(function (n) { named[n] = { name: n, n: 0 }; s.byName.push(named[n]); });
+    rows(log).filter(function (e) { return String(e.date).slice(0, 7) === ym; }).sort(byWhen(D)).forEach(function (e) {
       if (e.kind !== 'order') { s.handovers++; if (e.open) s.openOther++; return; }
       if (e.open) s.open++;
       var r = reasonOf(e.reason);
@@ -190,6 +199,8 @@
       bump(s.byGroup, r.group);
       bump(s.bySup, e.sup || '—');
       if (s.byShift[e.shift] !== undefined) s.byShift[e.shift]++;
+      var nm = shiftName(e, D);
+      if (named[nm]) named[nm].n++;
       if (e.result === 'shipped') s.shipped++;
       if (e.result === 'cancelled') s.cancelled++;
       var counted = {};
@@ -241,9 +252,10 @@
   }
 
   window.ShiftLog = {
-    GROUPS: GROUPS, REASONS: REASONS, SHIFTS: SHIFTS, RESULTS: RESULTS,
+    GROUPS: GROUPS, REASONS: REASONS, RESULTS: RESULTS,
     reasonOf: reasonOf, reasonLabel: reasonLabel,
-    shiftAt: shiftAt, age: age, dayText: dayText, newId: newId,
+    shiftAt: shiftAt, shiftName: shiftName, shiftsOn: shiftsOn, byWhen: byWhen,
+    age: age, dayText: dayText, newId: newId,
     ITEM_FIELDS: ITEM_FIELDS, itemsOf: itemsOf,
     openItems: openItems, day: day, month: month, orderLines: orderLines,
     ackId: ackId, ackOf: ackOf, handover: handover,

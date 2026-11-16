@@ -137,11 +137,14 @@ body{background:var(--wms-bg)}
 </main>
 
 <script src="../wms-gas.js"></script>
+<script src="../wms-shifts.js"></script>
 <script src="shiftlog.js"></script>
 <script>
 var L=window.ShiftLog;
 var CFG_KEY='wms:logisView';
 var ITEMS=null,LOADING=false;
+// ชื่อกับเวลากะที่ทีม Outbound ตั้งไว้ — สคริปต์รุ่นก่อนไม่ส่งมา ใช้ค่าเริ่มต้น (กะเช้า / กะบ่าย)
+var DEFS=[];
 
 function el(id){return document.getElementById(id);}
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
@@ -185,7 +188,7 @@ function load(quiet){
       throw new Error(r.error);
     }
     if(!r||r.app!=='roster'||!Array.isArray(r.items))throw new Error('URL นี้ไม่ใช่สคริปต์ของสมุดกะ');
-    ITEMS=r.items;
+    ITEMS=r.items;DEFS=Array.isArray(r.shiftDefs)?r.shiftDefs:[];
     el('setup').style.display='none';el('view').style.display='';
     setState('อัปเดต '+stamp(Date.now())+(r.at?' · ทีม Outbound แก้ล่าสุด '+stamp(r.at):''));
     render();
@@ -217,7 +220,7 @@ function row(e,today){
     (e.result==='cancelled'?'<span class="st st-void">✕ ยกเลิกออเดอร์</span>':'<span class="st st-done">✓ ส่งออกแล้ว</span>')+
     '<span class="sub">'+(e.closedAt?stamp(e.closedAt):'')+'</span>';
   return '<tr'+(e.open&&a>=2?' class="old"':'')+'>'+
-    '<td data-l="'+(e.open?'ค้าง':'ผล')+'" class="c-when"><div>'+when+'<span class="sub">'+L.dayText(e.date).replace(/ \d{4}$/,'')+' · '+L.SHIFTS[e.shift]+'</span></div></td>'+
+    '<td data-l="'+(e.open?'ค้าง':'ผล')+'" class="c-when"><div>'+when+'<span class="sub">'+L.dayText(e.date).replace(/ \d{4}$/,'')+' · '+esc(L.shiftName(e,DEFS))+'</span></div></td>'+
     '<td data-l="ออเดอร์"><div><span class="oid">'+esc(e.order)+'</span>'+(e.sup?'<span class="sup">'+esc(e.sup)+'</span>':'')+
       (e.consign?'<span class="sub mono">'+esc(e.consign)+'</span>':'')+'</div></td>'+
     '<td data-l="สินค้า"><div>'+itemsHtml(e)+'</div></td>'+
@@ -228,11 +231,10 @@ function table(list,today,first){
   return '<table class="otbl"><thead><tr><th>'+first+'</th><th>ออเดอร์</th><th>สินค้า</th><th>ติดเพราะ</th><th>หมายเหตุ / อัปเดตจาก Outbound</th></tr></thead><tbody>'+
     list.map(function(e){return row(e,today);}).join('')+'</tbody></table>';
 }
-function byWhen(a,b){return a.date<b.date?-1:a.date>b.date?1:(a.shift===b.shift?(a.at||0)-(b.at||0):a.shift==='morning'?-1:1);}
 
 function render(){
   if(!ITEMS)return;
-  var q=el('q').value.trim().toLowerCase(),today=L.shiftAt(new Date()).date;
+  var q=el('q').value.trim().toLowerCase(),today=L.shiftAt(new Date(),DEFS).date,byWhen=L.byWhen(DEFS);
   var list=ITEMS.filter(function(e){
     var words=[e.order,e.consign,e.sup];
     L.itemsOf(e).forEach(function(i){words.push(i.product,i.sku);});

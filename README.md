@@ -48,16 +48,27 @@ because replacing it cuts the transition off halfway.
 
 ## 📅 Shift schedule (`/roster`)
 
-[`public/roster/index.html`](public/roster/index.html) has six tabs: ตารางกะ, พนักงาน, การลา,
-คาบเปลี่ยนกะ, วันหยุด, KPI.
+[`public/roster/index.html`](public/roster/index.html) has seven tabs: ตารางกะ, พนักงาน, การลา,
+คาบเปลี่ยนกะ, กะ, วันหยุด, KPI.
 
 - **Two groups, two shifts.** Permanent staff are in group A or B. Each period (คาบ, normally
-  28 days) puts one group on กะเช้า 07:00–16:00 and the other on กะบ่าย 16:00–24:00; the next
-  period swaps them. A period ends on its end date (วันสุดท้ายคาบ) when one is set; otherwise it
-  ends the day before the next one starts, and a last period runs 28 days. Periods can't overlap,
-  and the period list warns about days that fall between two periods.
-- **Last day of a period:** the afternoon shift works 10:00–19:00 (shown as `10-19`), except
-  people whose day off is Saturday.
+  28 days) puts one group on shift 1 and the other on shift 2; the next period swaps them.
+  Out of the box shift 1 is กะเช้า 07:00–16:00 and shift 2 is กะบ่าย 16:00–24:00.
+  A period ends on its end date (วันสุดท้ายคาบ) when one is set; otherwise it ends the day before
+  the next one starts, and a last period runs 28 days. Periods can't overlap, and the period list
+  warns about days that fall between two periods.
+- **⏰ กะ (shift settings).** One table, a row per shift: name, start, end, and whether that shift
+  must press "รับทราบงานต่อ" in the shift log. **＋ เปลี่ยนกะตั้งแต่คาบ…** adds a set that applies
+  from the first day of a chosen period until the next set — earlier periods keep their old names
+  and times. Rows already in use are locked (🔒, click to unlock). The settings live in
+  `shiftDefs` of the roster data, so they travel through the shared sheet with everything else.
+  [`public/wms-shifts.js`](public/wms-shifts.js) is the only place that knows shift names and times;
+  the schedule, the shift log, the Logis viewer, สรุปเช้า, and the sidebar badge all ask it.
+  Internally the shifts keep the ids `morning` / `evening` (shift 1 / shift 2) because stored data
+  is keyed on them.
+- **Last day of a period (built-in settings only):** the afternoon shift works 10:00–19:00
+  (shown as `10-19`), except people whose day off is Saturday. Shift sets added in ⏰ กะ have no
+  last-day rule.
 - **Outsource ประจำ** are named people in group A or B. They rotate with their group, like
   permanent staff, and can have a weekly day off. Data from before groups existed (each outsource on
   a fixed shift) puts each person in the group that works their shift in the period running when
@@ -220,8 +231,13 @@ reads the list and presses it. The bar turns green and shows who took the handov
   แล้ว") without changing the entry. **✎ แก้ไข** opens it in the form, where **ยกเลิกออเดอร์**
   closes it as cancelled. **↺ ยังไม่เสร็จ** opens a closed entry again.
 - **📋 คัดลอกส่ง LINE** copies the open list as text for the team chat.
-- New entries start on the shift running now: กะเช้า 07:00–16:00, กะบ่าย 16:00 onwards. Between
-  midnight and 07:00 counts as the previous day's กะบ่าย.
+- New entries start on the shift that started most recently, using the times in ⏰ กะ (built-in:
+  กะเช้า from 07:00, กะบ่าย from 16:00). Before the first shift of the day starts counts as the
+  previous day's last shift.
+- **Who presses รับทราบงานต่อ:** a shift that starts while the other shift is still at work has
+  nobody handing over to it, so it doesn't need to. With กะเช้า 07–16 and กะบ่าย 16–24 both shifts
+  receive; with กะเช้า 07–16 and กะสาย 10–19 only กะเช้า receives (the work กะสาย leaves at 19:00),
+  and it stays กะเช้า's job until the next morning. The ⏰ กะ table can override this per shift.
 - Each entry records who wrote it and when (the name in ตั้งค่า, or the sign-in name). It also
   records who updated, edited, or closed it.
 
