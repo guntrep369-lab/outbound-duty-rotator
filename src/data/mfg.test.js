@@ -292,6 +292,71 @@ describe('รายงาน', () => {
   });
 });
 
+describe('เทียบกับรอบเดือนก่อน', () => {
+  const LIST = [['AAA0000000001', 'Mattress'], ['BBB0000000001', 'Topper'], ['CCC0000000001', 'Pillow & Bolster'], ['EEE0000000001', 'Pet Bed']];
+  const pile = (loc, i, lot, qty) => [loc, SKUS[i][0], SKUS[i][1], SKUS[i][2], lot, '9900000001', qty, 0];
+  /* ต.ค. 69: เสี่ยงมาก = LOT 4 ลงไป · พ.ย. 69: เสี่ยงมาก = LOT 5 ลงไป */
+  const OCT = [pile('R1-01-01', 0, '4', 20), pile('R1-01-02', 0, '6', 5), pile('R2-01-01', 1, '3', 8), pile('R3-01-01', 2, '5', 6)];
+  const NOV = [pile('R1-01-01', 0, '4', 12), pile('R1-01-02', 0, '6', 5), pile('R3-01-01', 2, '5', 6), pile('A-01-01', 5, '8', 3)];
+  const rep = (ym, book, list) => M.report({ ym, today: ym + '-16', list: list || LIST, skus: SKUS, book, entries: [], mode: 'book', locs: [] });
+
+  it('รอบที่ใช้เทียบ: เดือนเก่ากว่าที่ใกล้ที่สุด เดือนเดียวกันหลายรอบเอารอบหลัง', () => {
+    const rounds = [
+      { id: 'A', settings: { ym: '2026-09' } }, { id: 'B', settings: { ym: '2026-10' }, at: '2026-10-05 10:00:00' },
+      { id: 'C', settings: { ym: '2026-10' }, at: '2026-10-20 09:00:00' }, { id: 'D', settings: { ym: '2026-11' } }, { id: 'E', settings: { ym: '2026-12' } },
+    ];
+    expect(M.prevRound(rounds, rounds[3]).id).toBe('C');
+    expect(M.prevRound(rounds, rounds[0])).toBeNull();
+    expect(M.prevRound(rounds, { id: 'X', settings: {} })).toBeNull();
+  });
+
+  it('เพิ่งเข้าเสี่ยงมาก / ค้างเสี่ยงมาก / หลุดเสี่ยงแล้ว และ LOT เดิมลดไปกี่ชิ้น', () => {
+    const c = M.compare(rep('2026-11', NOV), rep('2026-10', OCT));
+    expect(c.bySku.AAA0000000001).toMatchObject({ tag: 'still', riskNow: 12, riskPrev: 20, out: 8 });
+    expect(c.bySku.CCC0000000001).toMatchObject({ tag: 'new', riskNow: 6, riskPrev: 0, out: 0, prevSt: 'watch' });
+    expect(c.bySku.BBB0000000001).toMatchObject({ tag: 'gone', riskNow: 0, riskPrev: 8, out: 8 });
+    expect(c.bySku.EEE0000000001.tag).toBe('');
+    expect(c.gone).toEqual([{ sku: 'BBB0000000001', short: 'BBB001', name: SKUS[1][2], type: 'Topper', riskPrev: 8, left: 0, out: 8 }]);
+    expect(c.totals).toEqual({ new: { skus: 1, qty: 6 }, still: { skus: 1, qty: 12 }, gone: { skus: 1, qty: 8 }, out: 16 });
+    expect(M.cmpText(c.bySku.AAA0000000001)).toBe('ค้าง · ลด 8');
+    expect(M.cmpText(c.bySku.EEE0000000001)).toBe('');
+  });
+
+  it('SKU ที่เอาออกจากรายชื่อเดือนนี้แล้ว ไม่ขึ้นว่าหลุดเสี่ยง', () => {
+    const list = LIST.filter((x) => x[0] !== 'BBB0000000001');
+    const c = M.compare(rep('2026-11', NOV, list), rep('2026-10', OCT), M.listMap(list, SKUS));
+    expect(c.bySku.BBB0000000001).toBeUndefined();
+    expect(c.totals.gone.skus).toBe(0);
+  });
+
+  it('Excel: ช่องเทียบเดือนก่อนอยู่หน้า Remark · มีชีตเทียบแยกกลุ่ม · ข้อความ LINE บอกสรุปเทียบ', () => {
+    const cur = rep('2026-11', NOV);
+    const c = M.compare(cur, rep('2026-10', OCT));
+    const sh = M.sheet(cur, { ym: '2026-11', cmp: c });
+    const n = 3 + cur.cols.length;
+    expect(sh.aoa[1].slice(n, n + 4)).toEqual(['Total MFG', 'สถานะ', 'เทียบ ' + M.ymText('2026-10'), 'Remark']);
+    const aaa = sh.aoa.find((r) => r[0] === 'AAA0000000001');
+    expect(aaa[n + 2]).toBe('ค้าง · ลด 8');
+    expect(sh.cols.length).toBe(sh.aoa[1].length);
+    const plain = M.sheet(cur, { ym: '2026-11' });
+    expect(plain.aoa[1].length).toBe(sh.aoa[1].length - 1);
+
+    const cs = M.compareSheet(c, cur);
+    expect(cs.aoa.slice(2).map((r) => [r[0], r[1], r[4], r[5], r[6]])).toEqual([
+      ['เพิ่งเข้าเสี่ยงมาก', 'CCC0000000001', '', 6, ''],
+      ['ค้างเสี่ยงมาก', 'AAA0000000001', 20, 12, 8],
+      ['หลุดเสี่ยงแล้ว', 'BBB0000000001', 8, '', 8],
+      ['รวม', '', '', '', 16],
+    ]);
+
+    const text = M.lineText(cur, { ym: '2026-11', cmp: c });
+    expect(text).toContain('เพิ่งเข้าเสี่ยงมาก 1 SKU (6 ชิ้น)');
+    expect(text).toContain('หลุดเสี่ยงแล้ว 1 SKU');
+    expect(text).toContain('ลดไป 16 ชิ้น');
+    expect(M.lineText(cur, { ym: '2026-11' })).not.toContain('เทียบ');
+  });
+});
+
 describe('รอบ MFG บนสคริปต์นับสต๊อกตัวจริง', () => {
   const HEAD = 'head-secret';
   const LIST = [['AAA0000000001', 'Mattress'], ['BBB0000000001', 'Topper'], ['CCC0000000001', 'Pillow & Bolster']];

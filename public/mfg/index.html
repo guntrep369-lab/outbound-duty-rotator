@@ -79,6 +79,14 @@
 .mf-tag.ok{background:#34A853;color:#fff}
 .mf-tag.nolot{background:#E06666;color:#fff}
 .mf-tag.none,.mf-tag.wait{background:#E2E8F0;color:#334155}
+/* เทียบเดือนก่อน */
+.mf-chip.cmp-new{background:#CC0000;color:#fff}
+.mf-chip.cmp-still{background:#7F1D1D;color:#fff}
+.mf-chip.cmp-gone{background:#D1FAE5;color:#065F46}
+.mf-cmp{display:inline-block;padding:1px 8px;border-radius:4px;font-size:12px;font-weight:700;white-space:nowrap}
+.mf-cmp.new{background:#CC0000;color:#fff}
+.mf-cmp.still{background:#7F1D1D;color:#fff}
+.mf-cmp.gone{background:#D1FAE5;color:#065F46}
 
 /* ── ตาราง ── */
 .tx-wrap{overflow:auto;max-height:72vh;background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:var(--wms-radius)}
@@ -200,7 +208,9 @@ let FIFO = null;        // สมุดที่ใช้ตั้งรอบ�
 let FIFO_BUSY = false;
 let FIFO_ERR = null;    // อ่านสมุดไม่ได้เลย {msg, link} ไม่อ่านซ้ำเองจนกว่าจะกดลองใหม่ (เดิมวนอ่านไม่หยุด)
 let DRAFT = null;       // รอบใหม่ที่กำลังตั้ง {ym, list, src, teams, type, q}
-let RF = { st: '', type: '', q: '', mode: '' };   // ตัวกรองรายงาน
+let RF = { st: '', type: '', q: '', mode: '', cmp: '' };   // ตัวกรองรายงาน (cmp = กลุ่มเทียบเดือนก่อน)
+let PREV = null;        // รอบเดือนก่อนที่โหลดมาเทียบ {id, rep} หรือ {id, err}
+let PREV_BUSY = false;
 let CF = 'left';        // ชิปของแท็บนับ
 const OPEN = new Set(); // แถวรายงานที่กาง ⓘ
 let XLSX_LOAD = null;
@@ -612,10 +622,73 @@ function countView() {
 
 /* ── แท็บรายงาน ──────────────────────────────────────────────────────── */
 
+/* ── เทียบเดือนก่อน: โหลดรอบ MFG เดือนก่อนจากชีตนับสต๊อกมาคิดรายงานแบบเดียวกัน ─────────── */
+
+function prevR() { return R() ? M.prevRound(S.rounds, R()) : null; }
+
+async function loadPrev(p) {
+  if (PREV_BUSY) return;
+  PREV_BUSY = true;
+  try {
+    const head = await get('st-head', { round: p.id }, true);
+    const log = await get('st-log', { round: p.id, since: 0 }, true);
+    const raw = ST.merge([], log.rows.map(ST.fromRow));
+    /* เดือนก่อนนับแล้วใช้ยอดนับจริง ยังไม่ได้นับใช้ยอดสมุดตอนสร้างรอบ */
+    const mode = ST.effective(raw).length ? 'count' : 'book';
+    const locs = head.locs.map(l => ({ loc: l[0], zone: l[1], group: l[2], src: l[3] }));
+    PREV = { id: p.id, rep: M.report({ ym: p.settings.ym, today: p.date || today(), list: M.unpackList(p.settings.list), skus: head.skus,
+      book: head.piles, entries: raw, mode, locs }) };
+  } catch (e) { PREV = { id: p.id, err: e.message }; }
+  PREV_BUSY = false;
+  paintBody();
+}
+
+/** ผลเทียบของรายงานนี้ null = ไม่มีรอบก่อน · {busy} กำลังโหลด · {err} โหลดไม่ได้ · {c} ผลเทียบ */
+function cmpOf(rp) {
+  const p = prevR();
+  if (!p) return null;
+  if (!PREV || PREV.id !== p.id) { if (!PREV_BUSY) setTimeout(() => loadPrev(p), 0); return { p, busy: true }; }
+  if (PREV.err) return { p, err: PREV.err };
+  return { p, c: M.compare(rp, PREV.rep, M.listMap(listOf(), S.head.skus)) };
+}
+
+/** แถวที่โชว์ตามตัวกรองทั้งหมด ใช้ทั้งบนจอและ Excel */
+function shownRows(rp, cm) {
+  const rows = M.filter(rp, RF);
+  if (!RF.cmp || !cm || !cm.c) return rows;
+  return rows.filter(r => (cm.c.bySku[ST.up(r.sku)] || {}).tag === RF.cmp);
+}
+
+function cmpBar(cm) {
+  if (!cm) return '';
+  const pm = esc(M.ymText(cm.p.settings.ym));
+  if (cm.busy) return `<div class="tx-bar"><span class="tx-sub">⏳ กำลังโหลดรอบ ${pm} มาเทียบ…</span></div>`;
+  if (cm.err) return `<div class="tx-bar"><span class="tx-sub">เทียบกับ ${pm} ไม่ได้: ${esc(cm.err)}</span> <button class="tx-opt" data-act="prev">ลองใหม่</button></div>`;
+  const t = cm.c.totals;
+  const chip = (k, body) => `<button class="mf-chip cmp-${k} ${RF.cmp === k ? 'on' : ''}" data-cmp="${k}">${esc(M.CMP[k].label)} ${body}</button>`;
+  return `<div class="tx-bar"><span>เทียบ <b>${pm}</b></span>
+    ${chip('new', `<b>${t.new.skus}</b> SKU · ${f(t.new.qty)} ชิ้น`)}${chip('still', `<b>${t.still.skus}</b> SKU · ${f(t.still.qty)} ชิ้น`)}${chip('gone', `<b>${t.gone.skus}</b> SKU`)}
+    <span class="tx-sub" title="LOT ที่เดือนก่อนเป็นเสี่ยงมาก เทียบชิ้นที่เหลือเดือนนี้ (ขาย แกะ หรือย้ายออกไป)">LOT เสี่ยงมากเดือนก่อน ลดไป <b>${f(t.out)}</b> ชิ้น</span>
+    <span class="tx-sub">· เดือนก่อนใช้ยอด${cm.c.prevMode === 'count' ? 'นับจริง' : 'สมุด'}</span></div>`;
+}
+
+/** กลุ่มหลุดเสี่ยงแล้ว: ส่วนใหญ่เดือนนี้ไม่มีของเหลือในตาราง จึงแยกเป็นตารางของมันเอง */
+function goneTable(cm) {
+  const q = ST.up(RF.q);
+  const list = cm.c.gone.filter(g => (!RF.type || g.type === RF.type) && (!q || ST.up(g.sku + ' ' + g.short + ' ' + g.name).includes(q)));
+  const pm = esc(M.ymText(cm.c.prevYm));
+  const body = list.map(g => `<tr><td class="k-sku nw">${esc(g.sku)}${g.short ? `<span class="tx-sub">${esc(g.short)}</span>` : ''}</td><td class="k-name">${esc(g.name)}</td>
+    <td class="nw">${esc(g.type)}</td><td class="num">${f(g.riskPrev)}</td><td class="num">${g.left ? f(g.left) : '<span class="tx-sub">-</span>'}</td><td class="num">${f(g.out)}</td></tr>`).join('');
+  return `<div class="tx-wrap"><table class="tx-tbl"><thead><tr><th>SKU</th><th>Product Name</th><th>Type</th><th class="num">เสี่ยงมาก ${pm}</th><th class="num">เดือนนี้เหลือ</th><th class="num">LOT เดิมลดไป</th></tr></thead>
+    <tbody>${body || '<tr><td colspan="6" class="tx-sub">ไม่มีรายการ</td></tr>'}</tbody></table></div>`;
+}
+
 function reportView() {
   const mode = repMode();
   const rp = rep(mode);
-  const rows = M.filter(rp, RF);
+  const cm = cmpOf(rp);
+  const cc = cm && cm.c;
+  const rows = shownRows(rp, cm);
   const by = rp.by;
   const rl = rp.rule;
   const chip = (k, label) => `<button class="mf-chip ${k} ${RF.st === k ? 'on' : ''}" data-st="${k}">${label} <b>${f(by[k].qty)}</b> ชิ้น · ${by[k].skus} SKU</button>`;
@@ -627,10 +700,15 @@ function reportView() {
   const nol = rp.cols.some(c => c.key === M.NOLOT);
   const head1 = `<tr><th rowspan="2">SKU</th><th rowspan="2">Product Name</th><th rowspan="2">Type</th>${nol ? '<th rowspan="2" class="nolot">NO LOT</th>' : ''}` +
     years.map(y => `<th class="year" colspan="${y.n}">${y.y}</th>`).join('') +
-    `<th class="total">Total MFG</th><th rowspan="2">สถานะ</th><th rowspan="2"></th></tr>`;
+    `<th class="total">Total MFG</th><th rowspan="2">สถานะ</th>${cc ? `<th rowspan="2">เทียบ ${esc(M.ymText(cc.prevYm))}</th>` : ''}<th rowspan="2"></th></tr>`;
   const head2 = '<tr>' + rp.cols.filter(c => c.key !== M.NOLOT).map(c => `<th class="${c.st}">${esc(c.label)}<small>${c.age === null ? '' : c.age + ' วัน'}</small></th>`).join('') +
     `<th class="total">${f(rp.totals[mode])}</th></tr>`;
-  const ncol = 6 + rp.cols.length;
+  const ncol = 6 + rp.cols.length + (cc ? 1 : 0);
+  const cmpCell = (r) => {
+    const o = cc.bySku[ST.up(r.sku)];
+    if (!o || !o.tag) return '<td></td>';
+    return `<td class="nw" title="เสี่ยงมาก ${esc(M.ymText(cc.prevYm))} ${f(o.riskPrev)} ชิ้น → ${esc(M.ymText(cc.ym))} ${f(o.riskNow)} ชิ้น"><span class="mf-cmp ${o.tag}">${esc(M.CMP[o.tag].short)}</span>${o.out > 0 ? ` <small class="tx-sub">ลด ${f(o.out)}</small>` : ''}</td>`;
+  };
   const body = rows.map(r => {
     const key = r.sku;
     const cells = rp.cols.map(c => {
@@ -643,14 +721,14 @@ function reportView() {
     const st = M.STATUS[r.st];
     let html = `<tr><td class="k-sku nw">${esc(r.sku)}${r.short ? `<span class="tx-sub">${esc(r.short)}</span>` : ''}</td><td class="k-name">${esc(r.name)}</td>
       <td class="nw">${esc(r.type)}</td>${cells}<td class="num tot">${f(r.total[mode])}</td>
-      <td><span class="mf-tag ${r.st}">${esc(st.label)}</span></td>
+      <td><span class="mf-tag ${r.st}">${esc(st.label)}</span></td>${cc ? cmpCell(r) : ''}
       <td><button class="mf-i ${open ? 'on' : ''}" data-open="${esc(key)}" aria-expanded="${open}" title="ดูราย Location">i</button></td></tr>`;
     if (open) html += `<tr class="det"><td colspan="${ncol}">${detail(r, rp)}</td></tr>`;
     return html;
   }).join('');
   const foot = `<tr class="foot"><td colspan="3">รวม ${f(rows.length)} SKU</td>` +
     rp.cols.map(c => { const v = rows.reduce((a, r) => a + (r.cells[c.key] ? r.cells[c.key][mode] : 0), 0); return `<td class="num">${v ? f(v) : ''}</td>`; }).join('') +
-    `<td class="num">${f(rows.reduce((a, r) => a + r.total[mode], 0))}</td><td colspan="2"></td></tr>`;
+    `<td class="num">${f(rows.reduce((a, r) => a + r.total[mode], 0))}</td><td colspan="${cc ? 3 : 2}"></td></tr>`;
   return `<div class="tx-bar">
       <button class="tx-opt ${mode === 'count' ? 'on' : ''}" data-mode="count">นับจริง</button>
       <button class="tx-opt ${mode === 'book' ? 'on' : ''}" data-mode="book">สมุด</button>
@@ -669,8 +747,9 @@ function reportView() {
       ${Object.keys(types).sort().map(t => `<button class="tx-opt ${RF.type === t ? 'on' : ''}" data-rtype="${esc(t)}">${esc(t)} ${types[t]}</button>`).join('')}
       <input class="tx-input" id="q" placeholder="ค้น SKU / ชื่อ / Location" value="${esc(RF.q)}">
     </div>
-    <div class="tx-wrap"><table class="tx-tbl mf-rep"><thead>${head1}${head2}</thead>
-      <tbody>${body || `<tr><td colspan="${ncol}" class="tx-sub">ไม่มีรายการ</td></tr>`}${rows.length ? foot : ''}</tbody></table></div>`;
+    ${cmpBar(cm)}
+    ${RF.cmp === 'gone' && cc ? goneTable(cm) : `<div class="tx-wrap"><table class="tx-tbl mf-rep"><thead>${head1}${head2}</thead>
+      <tbody>${body || `<tr><td colspan="${ncol}" class="tx-sub">ไม่มีรายการ</td></tr>`}${rows.length ? foot : ''}</tbody></table></div>`}`;
 }
 
 /** ⓘ ราย LOT: Location ที่นับได้เทียบสมุด และโลที่ยังไม่ได้นับ */
@@ -724,35 +803,46 @@ function xStyle(k) {
   return s;
 }
 
+/** ชีตพร้อมสี from = แถวแรกของข้อมูล (ใส่เส้นตาราง) */
+function buildWs(X, sh, from) {
+  const ws = X.utils.aoa_to_sheet(sh.aoa);
+  const line = { style: 'thin', color: { rgb: 'D9D9D9' } };
+  for (let r = from; r < sh.aoa.length; r++) for (let c = 0; c < sh.aoa[r].length; c++) {
+    const a = X.utils.encode_cell({ r, c });
+    if (!ws[a]) ws[a] = { t: 's', v: '' };
+    ws[a].s = { border: { top: line, bottom: line, left: line, right: line }, alignment: { vertical: 'center' } };
+  }
+  sh.styles.forEach(([r, c, k]) => {
+    const a = X.utils.encode_cell({ r, c });
+    if (!ws[a]) ws[a] = { t: 's', v: '' };
+    ws[a].s = xStyle(k);
+  });
+  ws['!merges'] = sh.merges;
+  ws['!cols'] = sh.cols.map(w => ({ wch: w }));
+  return ws;
+}
+
 async function downloadXlsx() {
   const mode = repMode();
   const rp = rep(mode);
-  const sh = M.sheet({ ...rp, rows: M.filter(rp, RF) }, { ym: ymOf(), at: new Date().toLocaleString('th-TH') });
+  const cm = cmpOf(rp);
+  const cc = cm && cm.c;
+  const sh = M.sheet({ ...rp, rows: shownRows(rp, cm) }, { ym: ymOf(), at: new Date().toLocaleString('th-TH'), cmp: cc });
   await job('กำลังสร้างไฟล์ Excel…', async () => {
     const X = await xlsxLib();
-    const ws = X.utils.aoa_to_sheet(sh.aoa);
-    const line = { style: 'thin', color: { rgb: 'D9D9D9' } };
-    for (let r = 4; r < sh.aoa.length; r++) for (let c = 0; c < sh.aoa[r].length; c++) {
-      const a = X.utils.encode_cell({ r, c });
-      if (!ws[a]) ws[a] = { t: 's', v: '' };
-      ws[a].s = { border: { top: line, bottom: line, left: line, right: line }, alignment: { vertical: 'center' } };
-    }
-    sh.styles.forEach(([r, c, k]) => {
-      const a = X.utils.encode_cell({ r, c });
-      if (!ws[a]) ws[a] = { t: 's', v: '' };
-      ws[a].s = xStyle(k);
-    });
-    ws['!merges'] = sh.merges;
-    ws['!cols'] = sh.cols.map(w => ({ wch: w }));
     const wb = X.utils.book_new();
-    X.utils.book_append_sheet(wb, ws, 'MFG ' + ymOf());
+    X.utils.book_append_sheet(wb, buildWs(X, sh, 4), 'MFG ' + ymOf());
+    /* ชีตที่สอง: เทียบเดือนก่อนแยกกลุ่ม ทุก SKU ไม่สนตัวกรองบนจอ */
+    if (cc) X.utils.book_append_sheet(wb, buildWs(X, M.compareSheet(cc, rp), 2), 'เทียบ ' + cc.prevYm);
     X.writeFile(wb, `MFG-${ymOf()}-${mode === 'count' ? 'นับจริง' : 'สมุด'}.xlsx`);
     S.ok = '✓ โหลด Excel แล้ว' + (RF.st || RF.type || RF.q ? ' (เฉพาะที่กรองอยู่)' : '');
   });
 }
 
 async function copyLine() {
-  const text = M.lineText(rep(repMode()), { ym: ymOf() });
+  const rp = rep(repMode());
+  const cm = cmpOf(rp);
+  const text = M.lineText(rp, { ym: ymOf(), cmp: cm && cm.c });
   try { await navigator.clipboard.writeText(text); S.ok = '✓ คัดลอกสรุปแล้ว วางใน LINE ได้เลย'; }
   catch (e) { prompt('คัดลอกข้อความนี้', text); }
   S.err = ''; paintSrc();
@@ -818,6 +908,7 @@ document.addEventListener('click', (e) => {
   if (d.tab) { setTab(d.tab); return; }
   if (d.cf) { CF = d.cf; paintBody(); return; }
   if (d.st !== undefined) { RF.st = RF.st === d.st ? '' : d.st; paintBody(); return; }
+  if (d.cmp !== undefined) { RF.cmp = RF.cmp === d.cmp ? '' : d.cmp; OPEN.clear(); paintBody(); return; }
   if (d.rtype !== undefined) { RF.type = RF.type === d.rtype ? '' : d.rtype; paintBody(); return; }
   if (d.mode) { RF.mode = d.mode; OPEN.clear(); paintBody(); return; }
   if (d.open !== undefined) { OPEN.has(d.open) ? OPEN.delete(d.open) : OPEN.add(d.open); paintBody(); return; }
@@ -842,6 +933,7 @@ document.addEventListener('click', (e) => {
       break;
     case 'resume': setStatus('นับรอบ 1'); break;
     case 'xlsx': downloadXlsx(); break;
+    case 'prev': PREV = null; paintBody(); break;
     case 'line': copyLine(); break;
     case 'cfg': saveCfg(); break;
   }

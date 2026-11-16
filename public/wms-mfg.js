@@ -491,6 +491,121 @@
     });
   }
 
+  /* ── เทียบกับรอบเดือนก่อน ───────────────────────────────────────────── */
+
+  /**
+   * รอบที่ใช้เทียบ: รอบ MFG เดือนเก่ากว่ารอบนี้ที่ใกล้ที่สุด เดือนเดียวกันมีหลายรอบเอารอบที่สร้างทีหลัง
+   * rounds = รายการรอบจาก st-rounds (มี settings.ym) → รอบ หรือ null
+   */
+  function prevRound(rounds, cur) {
+    var ym = cur && cur.settings && cur.settings.ym;
+    if (!ym) return null;
+    var best = null;
+    var later = function (a, b) { return String(a.at || a.date || a.id) > String(b.at || b.date || b.id); };
+    (rounds || []).forEach(function (r) {
+      var y = r && r.settings && r.settings.ym;
+      if (!y || r.id === cur.id || y >= ym) return;
+      if (!best || y > best.settings.ym || (y === best.settings.ym && later(r, best))) best = r;
+    });
+    return best;
+  }
+
+  /** ชิ้นราย LOT ของแต่ละ SKU ในรายงาน { SKU: { row, risk, lots: {คีย์ LOT: ชิ้น}, riskLots: {คีย์: ชิ้น} } } */
+  function riskMap(rep) {
+    var m = {};
+    rep.rows.forEach(function (r) {
+      var o = { row: r, risk: 0, lots: {}, riskLots: {} };
+      rep.cols.forEach(function (c) {
+        var x = r.cells[c.key];
+        var v = x ? x[rep.mode] : 0;
+        if (!(v > 0)) return;
+        o.lots[c.key] = v;
+        if (c.st === 'risk') { o.risk = round3(o.risk + v); o.riskLots[c.key] = v; }
+      });
+      m[up(r.sku)] = o;
+    });
+    return m;
+  }
+
+  /**
+   * เทียบรายงานรอบนี้กับรอบก่อน ราย SKU สถานะของแต่ละรอบคิดตามเดือนของรอบนั้นเอง
+   *   new   เพิ่งเข้าเสี่ยงมาก: เดือนนี้มีของเสี่ยงมาก เดือนก่อนไม่มี (ส่วนใหญ่คือของเฝ้าระวังที่อายุครบ)
+   *   still ค้างเสี่ยงมาก: มีทั้งสองเดือน
+   *   gone  หลุดเสี่ยงแล้ว: เดือนก่อนมี เดือนนี้ไม่มี (ขาย แกะ หรือย้ายออกไป)
+   * out = LOT ที่เดือนก่อนเสี่ยงมาก ลดลงไปกี่ชิ้น (นับเฉพาะที่ลด ที่นับเจอเพิ่มไม่หักกัน)
+   * keep = SKU ในรายชื่อรอบนี้ (จาก listMap) SKU ที่เอาออกจากรายชื่อแล้วไม่ขึ้นว่าหลุด
+   */
+  function compare(cur, prev, keep) {
+    var a = riskMap(cur), b = riskMap(prev);
+    var bySku = {}, gone = [];
+    var totals = { new: { skus: 0, qty: 0 }, still: { skus: 0, qty: 0 }, gone: { skus: 0, qty: 0 }, out: 0 };
+    var keys = {};
+    Object.keys(a).forEach(function (k) { keys[k] = 1; });
+    Object.keys(b).forEach(function (k) { if (!keep || keep[k] !== undefined) keys[k] = 1; });
+    Object.keys(keys).forEach(function (k) {
+      var now = a[k], was = b[k];
+      var rn = now ? now.risk : 0, rp = was ? was.risk : 0;
+      var out = 0;
+      if (was) Object.keys(was.riskLots).forEach(function (l) {
+        var left = now && now.lots[l] ? now.lots[l] : 0;
+        if (was.riskLots[l] > left) out = round3(out + was.riskLots[l] - left);
+      });
+      var tag = rn > 0 ? (rp > 0 ? 'still' : 'new') : rp > 0 ? 'gone' : '';
+      var o = { tag: tag, riskNow: rn, riskPrev: rp, out: out, prevSt: was ? was.row.st : '' };
+      bySku[k] = o;
+      totals.out = round3(totals.out + out);
+      if (!tag) return;
+      totals[tag].skus++;
+      totals[tag].qty = round3(totals[tag].qty + (tag === 'gone' ? rp : rn));
+      if (tag === 'gone') {
+        var r = (now || was).row;
+        gone.push({ sku: r.sku, short: r.short, name: r.name, type: r.type, riskPrev: rp, left: now ? qtyOf(now.row, cur.mode) : 0, out: out });
+      }
+    });
+    gone.sort(function (x, y) { return y.riskPrev - x.riskPrev || S().natCmp(x.sku, y.sku); });
+    return { mode: cur.mode, prevMode: prev.mode, ym: cur.rule.ym, prevYm: prev.rule.ym, bySku: bySku, gone: gone, totals: totals };
+  }
+
+  var CMP = {
+    new: { label: 'เพิ่งเข้าเสี่ยงมาก', short: 'ใหม่' },
+    still: { label: 'ค้างเสี่ยงมาก', short: 'ค้าง' },
+    gone: { label: 'หลุดเสี่ยงแล้ว', short: 'หลุดแล้ว' },
+  };
+
+  /** ข้อความสั้นของแถวในช่องเทียบ (Excel) */
+  function cmpText(o) {
+    if (!o || !o.tag) return '';
+    return CMP[o.tag].short + (o.out > 0 ? ' · ลด ' + Number(o.out).toLocaleString('en-US') : '');
+  }
+
+  /**
+   * ชีตเทียบเดือนก่อน แยกกลุ่ม: เพิ่งเข้าเสี่ยงมาก / ค้างเสี่ยงมาก / หลุดเสี่ยงแล้ว
+   * rows ของรายงานรอบนี้ใช้หาชื่อกับประเภท SKU ที่หลุดแล้วใช้ข้อมูลจาก cmp.gone
+   */
+  function compareSheet(cmp, rep) {
+    var head = ['กลุ่ม', 'SKU', 'Product Name', 'Type', 'เสี่ยงมาก ' + ymText(cmp.prevYm), 'เสี่ยงมาก ' + ymText(cmp.ym), 'LOT เดิมลดไป'];
+    var aoa = [['เทียบ ' + ymText(cmp.ym) + ' กับ ' + ymText(cmp.prevYm) + ' · เดือนนี้ใช้' + (cmp.mode === 'count' ? 'ยอดนับจริง' : 'ยอดสมุด') +
+      ' · เดือนก่อนใช้' + (cmp.prevMode === 'count' ? 'ยอดนับจริง' : 'ยอดสมุด')], head];
+    var styles = [[0, 0, 'title']];
+    head.forEach(function (h, c) { styles.push([1, c, 'head']); });
+    ['new', 'still'].forEach(function (tag) {
+      rep.rows.forEach(function (r) {
+        var o = cmp.bySku[up(r.sku)];
+        if (!o || o.tag !== tag) return;
+        styles.push([aoa.length, 0, tag === 'new' ? 'c-risk' : 'c-watch']);
+        aoa.push([CMP[tag].label, r.sku, r.name, r.type, o.riskPrev || '', o.riskNow || '', o.out || '']);
+      });
+    });
+    cmp.gone.forEach(function (g) {
+      styles.push([aoa.length, 0, 'c-ok']);
+      aoa.push([CMP.gone.label, g.sku, g.name, g.type, g.riskPrev || '', '', g.out || '']);
+    });
+    var foot = aoa.length;
+    aoa.push(['รวม', '', '', '', '', '', cmp.totals.out || '']);
+    for (var c = 0; c < head.length; c++) styles.push([foot, c, 'foot']);
+    return { aoa: aoa, merges: [{ s: { r: 0, c: 0 }, e: { r: 0, c: head.length - 1 } }], styles: styles, cols: [18, 17, 46, 15, 14, 14, 13] };
+  }
+
   /* ── Excel และข้อความวาง LINE ───────────────────────────────────────── */
 
   /**
@@ -498,16 +613,19 @@
    *   แถว 1 ชื่อรายงาน · แถว 2 หัวตาราง + ปี · แถว 3 Lot + ยอดรวมทั้งหมด · แถว 4 อายุ (วัน) · ต่อด้วยราย SKU · แถวท้ายรวม
    * @returns {{aoa, merges, styles: Array<[row, col, key]>, cols}}
    *   key = head | year | total | st-risk | st-watch | st-ok | st-nolot (หัว) · c-risk | c-watch | c-ok | c-nolot (ช่อง) | sum | age | title
+   * meta.cmp = ผลเทียบเดือนก่อน (compare) มีแล้วเพิ่มคอลัมน์ "เทียบ <เดือนก่อน>" หน้า Remark
    */
   function sheet(rep, meta) {
     var m = meta || {};
+    var cmp = m.cmp || null;
+    var extra = cmp ? 1 : 0;
     var mode = rep.mode;
     var cols = rep.cols;
     var n = 3 + cols.length;               // คอลัมน์ Total MFG
     var title = 'เช็คความเสี่ยง MFG ' + ymText(m.ym || rep.rule.ym) + ' · ' + rep.rule.text +
       ' · ' + (mode === 'count' ? 'นับจริง' + (rep.total ? ' ' + rep.done + '/' + rep.total + ' โล' : '') : 'ยอดในสมุด') +
       (m.at ? ' · ' + m.at : '');
-    var width = n + 3;
+    var width = n + 3 + extra;
     var blank = function () { var a = []; for (var i = 0; i < width; i++) a.push(''); return a; };
     var r0 = blank(), r1 = blank(), r2 = blank(), r3 = blank();
     r0[0] = title;
@@ -517,8 +635,9 @@
     var grand = round3(rep.totals[mode]);
     r1[n] = 'Total MFG'; r2[n] = grand; styles.push([1, n, 'total'], [2, n, 'total'], [3, n, 'total']);
     merges.push({ s: { r: 2, c: n }, e: { r: 3, c: n } });
-    r1[n + 1] = 'สถานะ'; r1[n + 2] = 'Remark';
-    [n + 1, n + 2].forEach(function (c) { merges.push({ s: { r: 1, c: c }, e: { r: 3, c: c } }); styles.push([1, c, 'head']); });
+    r1[n + 1] = 'สถานะ'; r1[n + 2 + extra] = 'Remark';
+    if (cmp) r1[n + 2] = 'เทียบ ' + ymText(cmp.prevYm);
+    (cmp ? [n + 1, n + 2, n + 3] : [n + 1, n + 2]).forEach(function (c) { merges.push({ s: { r: 1, c: c }, e: { r: 3, c: c } }); styles.push([1, c, 'head']); });
     /* แถวปี: คอลัมน์ LOT ปีเดียวกันรวมช่องเดียว NO LOT ไม่มีปี ใช้หัวสามแถวเต็ม */
     var c0 = -1, y0 = null;
     function closeYear(end) {
@@ -553,6 +672,7 @@
       row.push(round3(r.total[mode]));
       styles.push([ri, n, 'sum']);
       row.push(STATUS[r.st].label);
+      if (cmp) row.push(cmpText(cmp.bySku[up(r.sku)]));
       row.push('');
       aoa.push(row);
     });
@@ -560,11 +680,14 @@
     var fi = aoa.length;
     cols.forEach(function (col) { var q = round3(rep.totals.cols[col.key][mode]); foot.push(q ? q : ''); });
     foot.push(grand, '', '');
+    if (cmp) foot.push('');
     for (var c = 0; c < width; c++) styles.push([fi, c, 'foot']);
     aoa.push(foot);
     var widths = [17, 46, 15];
     cols.forEach(function () { widths.push(9); });
-    widths.push(11, 12, 24);
+    widths.push(11, 12);
+    if (cmp) widths.push(15);
+    widths.push(24);
     return { aoa: aoa, merges: merges, styles: styles, cols: widths };
   }
 
@@ -582,6 +705,15 @@
     lines.push('🟢 ปกติ (' + r.okText + '): ' + f(by.ok.qty) + ' ชิ้น ' + by.ok.skus + ' SKU');
     if (by.nolot.qty) lines.push('⚪ NO LOT ต้องตรวจสอบ: ' + f(by.nolot.qty) + ' ชิ้น ' + by.nolot.skus + ' SKU');
     lines.push('รวม ' + f(rep.totals[rep.mode]) + ' ชิ้น');
+    var cmp = m.cmp;
+    if (cmp) {
+      var t = cmp.totals;
+      lines.push('', 'เทียบ ' + ymText(cmp.prevYm) + ':');
+      lines.push('🆕 เพิ่งเข้าเสี่ยงมาก ' + t.new.skus + ' SKU (' + f(t.new.qty) + ' ชิ้น)');
+      lines.push('⏳ ค้างเสี่ยงมากจากเดือนก่อน ' + t.still.skus + ' SKU (' + f(t.still.qty) + ' ชิ้น)');
+      lines.push('✅ หลุดเสี่ยงแล้ว ' + t.gone.skus + ' SKU');
+      if (t.out) lines.push('LOT ที่เสี่ยงมากเดือนก่อน ลดไป ' + f(t.out) + ' ชิ้น (ขาย/แกะ)');
+    }
     var top = rep.rows.filter(function (x) { return x.st === 'risk'; }).slice(0, 5);
     if (top.length) {
       lines.push('', 'เสี่ยงมากสุด:');
@@ -608,5 +740,6 @@
     noLot: noLot, statusOf: statusOf, ageDays: ageDays,
     ledgerProblem: ledgerProblem, ledgerTime: ledgerTime, ledgerLink: ledgerLink,
     scope: scope, teams: teams, report: report, filter: filter, sheet: sheet, lineText: lineText,
+    CMP: CMP, prevRound: prevRound, compare: compare, cmpText: cmpText, compareSheet: compareSheet,
   };
 })(window);
