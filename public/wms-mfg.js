@@ -854,6 +854,114 @@
     return lines.join('\n');
   }
 
+  /* ── การ์ดรูปสรุปให้เจ้านาย (หน้าเว็บวาดลงภาพ ส่งใน LINE) ─────────────── */
+
+  /** คำตัดสินแบบสั้นลงช่องแคบ ๆ ของการ์ด: อื่นๆ ที่มีหมายเหตุใช้หมายเหตุแทน */
+  function decideShort(d) {
+    if (!d || !d.code) return '';
+    if (d.code === 'other') return d.note || DECIDE.other.label;
+    return DECIDE[d.code].label;
+  }
+
+  /**
+   * ตัวเลขทั้งหมดของการ์ดรูป คิดจากรายงานทั้งรอบ (ไม่สนตัวกรองบนจอ) หน้าเว็บแค่เอาไปวาด
+   * meta = { ym, at, cmp (compare), decide (decideOf), top = จำนวนแถวเสี่ยงมากที่โชว์ }
+   *   tiles  สามกล่องบน: เสี่ยงมาก (เทียบเดือนก่อนถ้ามี) · เฝ้าระวัง · ไม่มี LOT (ไม่มีของ NO LOT ใช้ ปกติ แทน)
+   *   types  ชิ้นแยกประเภท × สถานะ · top แถวเสี่ยงมากเรียง LOT เก่าสุดก่อน (ลำดับเดียวกับรายงาน)
+   *   decide สรุปคำตัดสิน (มีเมื่อตัดสินแล้วอย่างน้อยหนึ่งตัว) · cmp สรุปเทียบเดือนก่อน
+   */
+  function card(rep, meta) {
+    var m = meta || {};
+    var mode = rep.mode, r = rep.rule, by = rep.by;
+    var cmp = m.cmp || null;
+    var dec = m.decide || {};
+    var topN = m.top || 8;
+
+    var prevRisk = null;
+    if (cmp) {
+      prevRisk = 0;
+      Object.keys(cmp.bySku).forEach(function (k) { prevRisk = round3(prevRisk + (cmp.bySku[k].riskPrev || 0)); });
+    }
+    var tile = function (k, label, hint) { return { k: k, label: label, hint: hint, skus: by[k].skus, qty: by[k].qty }; };
+    var risk = tile('risk', STATUS.risk.label, r.riskText);
+    if (cmp) {
+      risk.prev = prevRisk;
+      risk.pct = prevRisk > 0 ? Math.round((by.risk.qty - prevRisk) / prevRisk * 100) : null;
+    }
+    var tiles = [risk, tile('watch', STATUS.watch.label, r.watchText),
+      by.nolot.qty ? tile('nolot', 'ไม่มี LOT', 'ต้องตรวจสอบ') : tile('ok', STATUS.ok.label, r.okText)];
+
+    /* ชิ้นแยกประเภท: ประเภทของทีมตามลำดับเดิม ประเภทอื่น (ถ้ามี) ต่อท้าย */
+    var tmap = {};
+    rep.rows.forEach(function (row) {
+      var t = row.type || 'ไม่ระบุ';
+      var o = tmap[t] || (tmap[t] = { type: t, risk: 0, watch: 0, ok: 0, nolot: 0, total: 0 });
+      rep.cols.forEach(function (col) {
+        var x = row.cells[col.key];
+        var q = x ? x[mode] : 0;
+        if (!(q > 0) || o[col.st] === undefined) return;
+        o[col.st] = round3(o[col.st] + q);
+        o.total = round3(o.total + q);
+      });
+    });
+    var torder = TYPES.concat(Object.keys(tmap).filter(function (t) { return TYPES.indexOf(t) < 0; }).sort());
+    var types = torder.filter(function (t) { return tmap[t] && tmap[t].total > 0; }).map(function (t) { return tmap[t]; });
+
+    var riskRows = rep.rows.filter(function (row) { return row.st === 'risk'; });
+    var top = riskRows.slice(0, topN).map(function (row) {
+      var q = 0, oldest = null;
+      rep.cols.forEach(function (col) {
+        var x = row.cells[col.key];
+        if (col.st !== 'risk' || !x || !(x[mode] > 0)) return;
+        q = round3(q + x[mode]);
+        if (!oldest) oldest = col;
+      });
+      var o = cmp ? cmp.bySku[up(row.sku)] : null;
+      return {
+        sku: row.short || row.sku, long: row.sku, name: row.name, type: row.type,
+        lot: oldest ? oldest.label : '', age: oldest ? oldest.age : null, month: oldest ? oldest.month : '',
+        qty: q, total: round3(row.total[mode]),
+        dec: decideShort(dec[up(row.sku)]), code: (dec[up(row.sku)] || {}).code || '',
+        tag: o ? o.tag : '', todo: !!(o && o.todo),
+      };
+    });
+
+    var decide = null;
+    var ds = decideSum(rep, dec);
+    if (ds.any) {
+      decide = {
+        list: DECIDE_ORDER.filter(function (k) { return ds[k].skus; })
+          .map(function (k) { return { k: k, label: DECIDE[k].label, skus: ds[k].skus, qty: ds[k].qty }; }),
+        none: ds.none.skus,
+      };
+    }
+
+    var cmpSum = null;
+    if (cmp) {
+      var t = cmp.totals;
+      var shortOf = {};
+      rep.rows.forEach(function (row) { shortOf[up(row.sku)] = row.short || row.sku; });
+      var late = Object.keys(cmp.bySku).filter(function (k) { return cmp.bySku[k].todo; })
+        .sort(function (a, b) { return cmp.bySku[b].held - cmp.bySku[a].held; });
+      cmpSum = {
+        prev: ymText(cmp.prevYm), new: t.new.skus, still: t.still.skus, gone: t.gone.skus, out: t.out,
+        todo: { skus: t.todo.skus, qty: t.todo.qty, list: late.map(function (k) { return shortOf[k] || k; }) },
+      };
+    }
+
+    var counted = mode === 'count';
+    return {
+      title: 'ความเสี่ยง MFG ' + ymText(m.ym || r.ym),
+      rule: r.text,
+      status: counted ? 'นับจริง ' + rep.done + '/' + rep.total + ' โล' : 'ยอดในสมุด (ยังไม่ได้นับ)',
+      partial: counted ? rep.done < rep.total : true,
+      at: text(m.at),
+      total: round3(rep.totals[mode]),
+      tiles: tiles, types: types, top: top, more: Math.max(0, riskRows.length - topN), riskSkus: riskRows.length,
+      decide: decide, cmp: cmpSum,
+    };
+  }
+
   /** เดือนที่เลือกเปิดรอบได้ (เดือนก่อน เดือนนี้ เดือนหน้า) today = yyyy-mm-dd */
   function months(today) {
     var k = refKey(today.slice(0, 7));
@@ -871,5 +979,6 @@
     CMP: CMP, prevRound: prevRound, compare: compare, cmpText: cmpText, compareSheet: compareSheet,
     DECIDE: DECIDE, DECIDE_ORDER: DECIDE_ORDER, NOTE_MAX: NOTE_MAX, SETTINGS_MAX: SETTINGS_MAX,
     decideOf: decideOf, applyDecide: applyDecide, decideText: decideText, decideSum: decideSum, byDecide: byDecide, prevDecText: prevDecText,
+    decideShort: decideShort, card: card,
   };
 })(window);

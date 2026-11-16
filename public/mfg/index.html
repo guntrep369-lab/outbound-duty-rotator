@@ -106,6 +106,17 @@
   font-family:var(--wms-font);font-size:12.5px;color:var(--wms-text);vertical-align:middle}
 .mf-note:focus,.mf-dsel:focus{outline:none;border-color:var(--wms-primary)}
 
+/* รูปสรุปให้เจ้านาย */
+.mf-shot{position:fixed;inset:0;z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;
+  background:rgba(15,23,42,.55);overflow:auto}
+.mf-shot-box{width:100%;max-width:600px;padding:12px;background:var(--wms-surface);border-radius:var(--wms-radius);box-shadow:0 12px 40px rgba(0,0,0,.25)}
+.mf-shot-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px;font-size:14px;color:var(--wms-text)}
+.mf-shot-bar .sp{flex:1}
+.mf-shot-msg{margin-bottom:10px;font-size:12.5px;color:var(--wms-muted);line-height:1.5}
+.mf-shot-msg.ok{color:#047857;font-weight:600}
+.mf-shot-msg.err{color:#B91C1C;font-weight:600}
+.mf-shot img{display:block;width:100%;max-width:540px;margin:0 auto;border:1px solid var(--wms-border);border-radius:10px}
+
 /* ── ตาราง ── */
 .tx-wrap{overflow:auto;max-height:72vh;background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:var(--wms-radius)}
 .tx-tbl{width:100%;border-collapse:collapse;font-size:13px}
@@ -843,6 +854,7 @@ function reportView() {
       <span>${mode === 'count' ? `นับแล้ว <b>${f(rp.done)}/${f(rp.total)}</b> โล${rp.done < rp.total ? ' ตัวเลขยังไม่ครบ' : ''}` : 'ยอดในสมุดตอนสร้างรอบ'}</span>
       <span class="sp"></span>
       <button class="tx-opt p" data-act="xlsx">⬇️ Excel</button>
+      <button class="tx-opt" data-act="shot" title="รูปสรุปขนาดจอมือถือ ส่งให้เจ้านายใน LINE">📷 รูปสรุป</button>
       <button class="tx-opt" data-act="line">คัดลอกไปวาง LINE</button>
     </div>
     <div class="tx-bar">
@@ -959,6 +971,264 @@ async function copyLine() {
   S.err = ''; paintSrc();
 }
 
+/* ── รูปสรุปให้เจ้านาย: วาดลง canvas เป็น PNG คัดลอกไปวาง LINE / แชร์จากมือถือ / โหลดเก็บ ── */
+
+const CARD_W = 540, CARD_PAD = 26, CARD_SCALE = 2;   // กว้าง 540 วาดสองเท่า = รูป 1080 px คมบนมือถือ
+const CARD_FONT = "'Inter','Noto Sans Thai',sans-serif";
+/* รูปพื้นขาวเสมอ (ไม่ตามโหมดมืด) สีสถานะเดียวกับรายงานของทีม */
+const CC = {
+  text: '#0F172A', muted: '#64748B', faint: '#94A3B8', line: '#E2E8F0', track: '#F1F5F9',
+  risk: ['#CC0000', '#FBE3E1', '#9C0006'], watch: ['#F1C232', '#FEF5D9', '#7A5300'],
+  ok: ['#34A853', '#E3F0DC', '#14532D'], nolot: ['#94A3B8', '#F1F5F9', '#334155'],
+};
+const DEC_COL = { open: ['#FEE2E2', '#991B1B'], sell: ['#FEF3C7', '#92400E'], wait: ['#E0F2FE', '#075985'], other: ['#F1F5F9', '#334155'] };
+const SEG = ['risk', 'watch', 'ok', 'nolot'];
+const SEG_LABEL = { risk: 'เสี่ยงมาก', watch: 'เฝ้าระวัง', ok: 'ปกติ', nolot: 'ไม่มี LOT' };
+let SHOT = null;   // รูปที่เปิดอยู่ {blob, url, name}
+
+function cardFont(px, w) { return `${w || 400} ${px}px ${CARD_FONT}`; }
+
+/** วาดการ์ดจาก WmsMfg.card → canvas ขนาดพอดีเนื้อหา */
+function drawCard(k) {
+  const W = CARD_W, P = CARD_PAD, IW = W - P * 2, H0 = 2400;
+  const big = document.createElement('canvas');
+  big.width = W * CARD_SCALE; big.height = H0 * CARD_SCALE;
+  const c = big.getContext('2d');
+  c.scale(CARD_SCALE, CARD_SCALE);
+  c.fillStyle = '#FFFFFF'; c.fillRect(0, 0, W, H0);
+  c.textBaseline = 'top';
+  const txt = (s, x, y, px, w, color, align) => {
+    c.font = cardFont(px, w); c.fillStyle = color || CC.text; c.textAlign = align || 'left'; c.fillText(String(s), x, y);
+    return c.measureText(String(s)).width;
+  };
+  const fit = (s, max, px, w) => {
+    c.font = cardFont(px, w);
+    let t = String(s || '');
+    if (c.measureText(t).width <= max) return t;
+    while (t.length > 1 && c.measureText(t + '…').width > max) t = t.slice(0, -1);
+    return t + '…';
+  };
+  const box = (x, y, w, h, r, fill, stroke) => {
+    c.beginPath();
+    if (c.roundRect) c.roundRect(x, y, w, h, r); else c.rect(x, y, w, h);
+    if (fill) { c.fillStyle = fill; c.fill(); }
+    if (stroke) { c.strokeStyle = stroke; c.lineWidth = 1; c.stroke(); }
+  };
+  const hr = (y) => { c.fillStyle = CC.line; c.fillRect(P, y, IW, 1); };
+  const pill = (s, xRight, y, bg, fg, px) => {
+    c.font = cardFont(px || 12, 600);
+    const w = c.measureText(s).width + 16;
+    box(xRight - w, y, w, 22, 11, bg);
+    txt(s, xRight - w / 2, y + 4, px || 12, 600, fg, 'center');
+    return w;
+  };
+
+  c.fillStyle = CC.risk[0]; c.fillRect(0, 0, W, 6);
+  let y = 24;
+  txt(k.title, P, y, 24, 700);
+  if (k.at) txt(k.at, W - P, y + 8, 12, 400, CC.muted, 'right');
+  y += 36;
+  const w1 = txt(k.rule + ' · ', P, y, 13, 400, CC.muted);
+  txt(k.status, P + w1, y, 13, 600, k.partial ? '#B45309' : '#047857');
+  y += 30;
+
+  /* สามกล่องบน */
+  const gap = 10, tw = (IW - gap * 2) / 3, th = 108;
+  k.tiles.forEach((t, i) => {
+    const x = P + i * (tw + gap);
+    const [, bg, fg] = CC[t.k];
+    box(x, y, tw, th, 12, bg);
+    txt(t.label, x + 12, y + 11, 14, 700, fg);
+    txt(fit(t.hint, tw - 24, 11), x + 12, y + 31, 11, 400, fg);
+    const nw = txt(f(t.skus), x + 12, y + 47, 30, 700, fg);
+    txt('SKU', x + 16 + nw, y + 63, 12, 600, fg);
+    const qw = txt(`${f(t.qty)} ชิ้น`, x + 12, y + 85, 13, 600, fg);
+    if (t.pct !== undefined && t.pct !== null && t.pct !== 0) {
+      /* เสี่ยงมากลดลง = ดี (เขียว) เพิ่มขึ้น = แดง */
+      txt(`${t.pct < 0 ? '▼' : '▲'} ${Math.abs(t.pct)}%`, x + 18 + qw, y + 86, 12, 700, t.pct < 0 ? '#047857' : CC.risk[0]);
+    } else if (t.prev !== undefined) {
+      txt(t.pct === 0 ? 'เท่าเดิม' : `เดือนก่อน ${f(t.prev)}`, x + 18 + qw, y + 86, 11, 400, fg);
+    }
+  });
+  y += th + 24;
+
+  /* แยกประเภท */
+  if (k.types.length) {
+    txt('แยกตามประเภท', P, y, 15, 700);
+    txt('ชิ้น', W - P, y + 3, 11, 400, CC.muted, 'right');
+    y += 28;
+    const max = Math.max(...k.types.map(t => t.total)) || 1;
+    const lw = 124, vw = 56, bx = P + lw, bw = IW - lw - vw;
+    const used = {};
+    k.types.forEach(t => {
+      txt(fit(t.type, lw - 8, 13), P, y, 13, 400, CC.text);
+      box(bx, y + 3, bw, 14, 4, CC.track);
+      let x = bx;
+      c.save(); box(bx, y + 3, bw * t.total / max, 14, 4); c.clip();
+      SEG.forEach(s => {
+        if (!t[s]) return;
+        used[s] = 1;
+        const w = bw * t[s] / max;
+        c.fillStyle = CC[s][0]; c.fillRect(x, y + 3, w, 14);
+        x += w;
+      });
+      c.restore();
+      txt(f(t.total), W - P, y, 13, 700, CC.text, 'right');
+      y += 26;
+    });
+    let lx = bx;
+    SEG.filter(s => used[s]).forEach(s => {
+      c.fillStyle = CC[s][0]; c.fillRect(lx, y + 3, 10, 10);
+      lx += 14 + txt(SEG_LABEL[s], lx + 14, y, 11, 400, CC.muted) + 14;
+    });
+    y += 30;
+  }
+
+  /* เสี่ยงมาก LOT เก่าสุดก่อน */
+  txt('เสี่ยงมาก · LOT เก่าสุดก่อน', P, y, 15, 700);
+  txt(`${f(k.riskSkus)} SKU`, W - P, y + 3, 11, 400, CC.muted, 'right');
+  y += 28;
+  if (!k.top.length) {
+    txt('ไม่มีของเสี่ยงมากในรอบนี้', P, y, 13, 600, '#047857');
+    y += 28;
+  } else {
+    const xLot = P + 240, xQty = P + 392;
+    txt('SKU', P, y, 11, 400, CC.muted);
+    txt('LOT เก่าสุด', xLot, y, 11, 400, CC.muted);
+    txt('ชิ้นเสี่ยง', xQty, y, 11, 400, CC.muted, 'right');
+    txt('ตัดสินใจ', W - P, y, 11, 400, CC.muted, 'right');
+    y += 20; hr(y);
+    k.top.forEach(t => {
+      txt(fit(t.sku, 228, 14, 700), P, y + 7, 14, 700);
+      if (t.todo) txt(fit('ค้างจากคำสั่งเดือนก่อน · ' + t.name, 228, 11, 600), P, y + 26, 11, 600, CC.risk[2]);
+      else txt(fit(t.name, 228, 11), P, y + 26, 11, 400, CC.muted);
+      txt(t.lot, xLot, y + 7, 13, 600, CC.risk[2]);
+      /* บอกเดือนปีของ LOT ด้วย "Lot 12" ของปีก่อนกับปีนี้ต่างกัน */
+      txt([t.month, t.age !== null ? `${f(t.age)} วัน` : ''].filter(Boolean).join(' · '), xLot, y + 26, 11, 400, CC.muted);
+      txt(f(t.qty), xQty, y + 7, 14, 700, CC.risk[2], 'right');
+      if (t.total > t.qty) txt(`จาก ${f(t.total)}`, xQty, y + 26, 11, 400, CC.muted, 'right');
+      if (t.dec) {
+        const [bg, fg] = DEC_COL[t.code] || DEC_COL.other;
+        c.font = cardFont(12, 600);
+        pill(fit(t.dec, 72, 12, 600), W - P, y + 11, bg, fg);
+      } else txt('—', W - P - 8, y + 12, 13, 400, CC.faint, 'right');
+      y += 46; hr(y);
+    });
+    y += 8;
+    if (k.more) { txt(`และเสี่ยงมากอีก ${f(k.more)} SKU · ดูครบใน Excel`, P, y, 12, 400, CC.muted); y += 22; }
+  }
+
+  /* คำตัดสิน */
+  if (k.decide) {
+    y += 8;
+    let x = P + 6 + txt('คำตัดสิน', P, y + 3, 13, 700);
+    const items = k.decide.list.map(d => ({ s: `${d.label} ${f(d.skus)} SKU · ${f(d.qty)} ชิ้น`, col: DEC_COL[d.k] }));
+    if (k.decide.none) items.push({ s: `ยังไม่ตัดสิน ${f(k.decide.none)} SKU`, col: ['#FFFFFF', CC.risk[2]], line: true });
+    items.forEach(it => {
+      c.font = cardFont(12, 600);
+      const w = c.measureText(it.s).width + 16;
+      if (x + 6 + w > W - P) { x = P; y += 28; } else x += 6;
+      box(x, y, w, 22, 11, it.col[0], it.line ? '#FCA5A5' : null);
+      txt(it.s, x + 8, y + 4, 12, 600, it.col[1]);
+      x += w;
+    });
+    y += 34;
+  }
+
+  /* เดือนก่อนสั่งแล้วยังค้าง */
+  if (k.cmp && k.cmp.todo.skus) {
+    y += 4;
+    box(P, y, IW, 50, 10, '#FEE2E2');
+    txt(`เดือนก่อนสั่งแกะ/ขายแล้ว ยังค้าง ${f(k.cmp.todo.skus)} SKU · ${f(k.cmp.todo.qty)} ชิ้น`, P + 12, y + 8, 13, 700, '#991B1B');
+    txt(fit(k.cmp.todo.list.join(', '), IW - 24, 11), P + 12, y + 28, 11, 400, '#991B1B');
+    y += 62;
+  }
+
+  /* เทียบเดือนก่อน */
+  if (k.cmp) {
+    const m = k.cmp;
+    txt(`เทียบ ${m.prev}: เพิ่งเข้าเสี่ยงมาก ${f(m.new)} · ค้าง ${f(m.still)} · หลุดแล้ว ${f(m.gone)} SKU`, P, y, 12, 400, CC.muted);
+    y += 19;
+    if (m.out) { txt(`LOT ที่เสี่ยงมากเดือนก่อน ลดไป ${f(m.out)} ชิ้น (ขาย/แกะ)`, P, y, 12, 400, CC.muted); y += 19; }
+    y += 6;
+  }
+
+  y += 6; hr(y); y += 10;
+  txt('WMS · เช็คความเสี่ยง MFG', P, y, 11, 400, CC.faint);
+  txt(`รวมทั้งหมด ${f(k.total)} ชิ้น`, W - P, y, 11, 600, CC.muted, 'right');
+  y += 26;
+
+  const out = document.createElement('canvas');
+  out.width = W * CARD_SCALE; out.height = Math.ceil(y * CARD_SCALE);
+  out.getContext('2d').drawImage(big, 0, 0);
+  return out;
+}
+
+async function openShot() {
+  const mode = repMode();
+  const rp = rep(mode);
+  const cm = cmpOf(rp);
+  if (cm && cm.busy) { S.err = 'กำลังโหลดรอบเดือนก่อนมาเทียบ รอสักครู่แล้วกดใหม่'; paintSrc(); return; }
+  const k = M.card(rp, { ym: ymOf(), at: new Date().toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }), cmp: cm && cm.c, decide: decMap() });
+  /* รอฟอนต์ไทยก่อนวาด ไม่งั้นรูปแรกได้ฟอนต์สำรอง */
+  try { await Promise.all([400, 600, 700].map(w => document.fonts.load(cardFont(16, w), 'กขค ABC 123'))); } catch (e) {}
+  const blob = await new Promise(ok => drawCard(k).toBlob(ok, 'image/png'));
+  if (!blob) { S.err = 'สร้างรูปไม่ได้ ลองใหม่อีกครั้ง'; paintSrc(); return; }
+  closeShot();
+  const name = `MFG-${ymOf()}-${mode === 'count' ? 'นับจริง' : 'สมุด'}.png`;
+  const file = new File([blob], name, { type: 'image/png' });
+  let share = false;
+  try { share = !!(navigator.canShare && navigator.canShare({ files: [file] })); } catch (e) {}
+  const phone = share && matchMedia('(pointer:coarse)').matches;   // มือถือ: แชร์ไป LINE ตรง ๆ เป็นปุ่มหลัก
+  SHOT = { blob, file, url: URL.createObjectURL(blob), name };
+  const el = document.createElement('div');
+  el.className = 'mf-shot'; el.id = 'shot';
+  el.innerHTML = `<div class="mf-shot-box" role="dialog" aria-modal="true" aria-label="รูปสรุปให้เจ้านาย">
+    <div class="mf-shot-bar"><b>รูปสรุปให้เจ้านาย</b><span class="sp"></span>
+      <button class="tx-opt ${phone ? '' : 'p'}" data-act="shotcopy">📋 คัดลอกรูป</button>
+      ${share ? `<button class="tx-opt ${phone ? 'p' : ''}" data-act="shotshare">📤 แชร์</button>` : ''}
+      <button class="tx-opt" data-act="shotsave">⬇️ โหลดรูป</button>
+      <button class="tx-opt" data-act="shotclose" aria-label="ปิด">✕</button></div>
+    <div class="mf-shot-msg" id="shotMsg">${phone ? 'กดแชร์แล้วเลือก LINE' : 'คัดลอกแล้วไปกด Ctrl+V ในแชท LINE'} · ใช้ตัวเลข${mode === 'count' ? 'นับจริง' : 'สมุด'} ทั้งรอบ ไม่สนตัวกรองบนจอ</div>
+    <img src="${SHOT.url}" alt="รูปสรุปความเสี่ยง MFG"></div>`;
+  el.addEventListener('click', (e) => { if (e.target === el) closeShot(); });
+  document.body.appendChild(el);
+  el.querySelector('[data-act="shotclose"]').focus();
+}
+
+function closeShot() {
+  const el = $('shot');
+  if (el) el.remove();
+  if (SHOT) URL.revokeObjectURL(SHOT.url);
+  SHOT = null;
+}
+
+function shotMsg(s, cls) { const m = $('shotMsg'); if (m) { m.textContent = s; m.className = 'mf-shot-msg ' + (cls || ''); } }
+
+async function shotCopy() {
+  if (!SHOT) return;
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': SHOT.blob })]);
+    shotMsg('✓ คัดลอกรูปแล้ว ไปกด Ctrl+V ในแชท LINE ได้เลย', 'ok');
+  } catch (e) { shotMsg('เบราว์เซอร์นี้คัดลอกรูปไม่ได้ กด "โหลดรูป" หรือ "แชร์" แทน', 'err'); }
+}
+
+async function shotShare() {
+  if (!SHOT) return;
+  try { await navigator.share({ files: [SHOT.file], title: SHOT.name }); shotMsg('✓ แชร์แล้ว', 'ok'); }
+  catch (e) { if (e.name !== 'AbortError') shotMsg('แชร์ไม่ได้ กด "โหลดรูป" แทน', 'err'); }
+}
+
+function shotSave() {
+  if (!SHOT) return;
+  const a = document.createElement('a');
+  a.href = SHOT.url; a.download = SHOT.name;
+  document.body.appendChild(a); a.click(); a.remove();
+  shotMsg('✓ โหลดรูปแล้ว', 'ok');
+}
+
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && SHOT) closeShot(); });
+
 async function copyLink() {
   const text = link();
   try { await navigator.clipboard.writeText(text); S.ok = '✓ คัดลอกลิงก์คนนับแล้ว ส่งใน LINE ได้เลย'; }
@@ -1048,6 +1318,11 @@ document.addEventListener('click', (e) => {
     case 'prev': PREV = null; paintBody(); break;
     case 'decsave': saveDec(S.rid); break;
     case 'line': copyLine(); break;
+    case 'shot': openShot(); break;
+    case 'shotcopy': shotCopy(); break;
+    case 'shotshare': shotShare(); break;
+    case 'shotsave': shotSave(); break;
+    case 'shotclose': closeShot(); break;
     case 'cfg': saveCfg(); break;
   }
 });

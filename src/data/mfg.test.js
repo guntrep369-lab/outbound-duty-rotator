@@ -421,6 +421,35 @@ describe('เทียบกับรอบเดือนก่อน', () => {
     expect(text).toContain('❓ เสี่ยงมากที่ยังไม่ตัดสิน 1 SKU');
     expect(M.lineText(cur, { ym: '2026-11', decide: {} })).not.toContain('คำตัดสิน');
   });
+
+  it('การ์ดรูปให้เจ้านาย: สามกล่องบน แยกประเภท เสี่ยงมาก LOT เก่าสุดก่อน คำตัดสิน และเทียบเดือนก่อน', () => {
+    const prevDec = M.decideOf({ AAA0000000001: ['open', '', 'ก', ''] });
+    const cur = rep('2026-11', NOV);
+    const c = M.compare(cur, rep('2026-10', OCT), null, prevDec);
+    const map = M.decideOf({ AAA0000000001: ['open', 'รอบสอง', 'ก', ''] });
+    const k = M.card(cur, { ym: '2026-11', at: '16/11/2569 10:00', cmp: c, decide: map });
+    expect(k.title).toBe('ความเสี่ยง MFG ' + M.ymText('2026-11'));
+    expect([k.status, k.partial, k.total]).toEqual(['ยอดในสมุด (ยังไม่ได้นับ)', true, 26]);
+    /* เสี่ยงมาก 18 ชิ้น เดือนก่อน 28 (AAA 20 + BBB 8) = ลด 36% · ไม่มี NO LOT กล่องที่สามเป็น ปกติ */
+    expect(k.tiles.map((t) => [t.k, t.skus, t.qty])).toEqual([['risk', 2, 18], ['watch', 1, 5], ['ok', 1, 3]]);
+    expect([k.tiles[0].prev, k.tiles[0].pct]).toEqual([28, -36]);
+    expect(k.types.map((t) => [t.type, t.risk, t.watch, t.ok, t.total])).toEqual([
+      ['Mattress', 12, 5, 0, 17], ['Pillow & Bolster', 6, 0, 0, 6], ['Pet Bed', 0, 0, 3, 3],
+    ]);
+    const lot4 = cur.cols.find((x) => x.label === 'Lot 4');
+    expect(k.top.map((t) => [t.sku, t.lot, t.qty, t.total, t.dec, t.todo])).toEqual([
+      ['AAA001', 'Lot 4', 12, 17, 'แกะ', true], ['CCC001', 'Lot 5', 6, 6, '', false],
+    ]);
+    expect(k.top[0].age).toBe(lot4.age);
+    expect([k.more, k.riskSkus]).toEqual([0, 2]);
+    expect(k.decide).toEqual({ list: [{ k: 'open', label: 'แกะ', skus: 1, qty: 17 }], none: 1 });
+    expect(k.cmp).toEqual({ prev: M.ymText('2026-10'), new: 1, still: 1, gone: 1, out: 16, todo: { skus: 1, qty: 12, list: ['AAA001'] } });
+
+    const plain = M.card(cur, { ym: '2026-11', top: 1 });
+    expect([plain.cmp, plain.decide, plain.tiles[0].pct, plain.more]).toEqual([null, null, undefined, 1]);
+    expect(M.decideShort({ code: 'other', note: 'โอนสาขา' })).toBe('โอนสาขา');
+    expect(M.decideShort({ code: 'other', note: '' })).toBe('อื่นๆ');
+  });
 });
 
 describe('รอบ MFG บนสคริปต์นับสต๊อกตัวจริง', () => {
