@@ -363,6 +363,9 @@ body.ov-on{overflow:hidden}
 
 <script src="../wms-gas.js"></script>
 <script src="../wms-stocktake.js"></script>
+<!-- รอบ MFG: เตือน LOT ที่ไม่ต้องนับ (WmsMfg อ่านเดือนของ LOT ด้วย WmsFifo.lotMonth) -->
+<script src="../wms-fifo.js"></script>
+<script src="../wms-mfg.js"></script>
 <!-- พลุ สั่น เครื่องหมายถูก ป้ายเด้ง ชุดเดียวกับทั้งระบบ · หน้านี้ไม่มีเมนู WMS จึงไม่ใช้สายพานรอโหลดมุมล่าง (ส่งผลนับเบื้องหลังบ่อย จะกะพริบตลอด) -->
 <script type="module">
 import { celebrate, shake, saved, bump } from '../wms-motion.js';
@@ -874,7 +877,7 @@ function locView() {
         <div><label class="ct-lb" for="fLot">LOT</label><input class="ct-in" id="fLot" value="${esc(FORM.lot)}" inputmode="${padMode('fLot')}" autocomplete="off" enterkeyhint="next"></div>
         <div><label class="ct-lb" for="fPo">PO</label><input class="ct-in" id="fPo" value="${esc(FORM.po)}" inputmode="${padMode('fPo')}" autocomplete="off" enterkeyhint="next"></div>
       </div>
-      <div id="poHint" class="ct-hint"></div><div id="poSug"></div>
+      <div id="lotHint" class="ct-hint"></div><div id="poHint" class="ct-hint"></div><div id="poSug"></div>
       <label class="ct-lb" for="fQty">จำนวน</label>
       <input class="ct-in qty" id="fQty" value="${esc(FORM.qty)}" inputmode="${padMode('fQty')}" autocomplete="off" enterkeyhint="done" placeholder="0">
       <div id="qtyHint" class="ct-hint ok">${qtyHint()}</div>
@@ -915,6 +918,20 @@ function hints() {
     ph.textContent = FORM.po.length >= 4 && !hits.length ? 'ไม่พบ PO นี้ — ตรวจเลขอีกครั้ง' : '';
     ps.innerHTML = hits.length ? `<div class="ct-sug">${hits.map(p => `<button data-po="${esc(p[0])}">${esc(p[0])}<small>${esc(p[1] || '')}</small></button>`).join('')}</div>` : '';
   }
+  lotHint();
+}
+
+/* รอบเช็คความเสี่ยง MFG: เดือนของรอบอ่านจากชื่อรอบ ใช้บอกว่า LOT ที่พิมพ์ต้องนับไหม (นับสต๊อกใหญ่ = '' ไม่เตือน) */
+function mfgYm() { return window.WmsMfg && RD && RD.round ? WmsMfg.ymFromName(RD.round.name) : ''; }
+
+/** ใต้ช่อง LOT: ต้องนับ (บอกเดือนให้เทียบป้าย) · ใหม่กว่าที่ต้องนับ · อ่านไม่ออก */
+function lotHint() {
+  const el = $('lotHint');
+  if (!el) return;
+  const ym = mfgYm();
+  const c = ym ? WmsMfg.lotCheck(FORM.lot, ym) : null;
+  el.className = 'ct-hint' + (!c ? '' : c.level === 'new' || c.level === 'bad' ? ' bad' : c.level === 'ok' ? ' ok' : '');
+  el.textContent = c ? c.hint : '';
 }
 
 function openLoc(loc) {
@@ -984,6 +1001,10 @@ function readForm() {
   if (!(qty > 0) || !isFinite(qty)) { alert('ใส่จำนวนที่นับได้ (มากกว่า 0)\nถ้าโลว่าง กด "โลนี้ว่าง"'); oops('fQty'); return null; }
   const ex = ST.skuExact(RD.skus, sku);
   if (!ex && !confirm(`ไม่พบ SKU "${sku}" ในคลัง\nแน่ใจว่าพิมพ์ถูก? (ถ้าใช่ กดตกลง)`)) { oops('fSku'); return null; }
+  /* รอบ MFG: LOT ใหม่กว่าที่ต้องนับ (รายงานไม่เอาไปคิด) หรืออ่านไม่ออก (ไปกอง NO LOT) ถามก่อนบันทึก */
+  const ym = mfgYm();
+  const lc = ym ? WmsMfg.lotCheck(lot, ym) : null;
+  if (lc && lc.ask && !confirm(lc.ask)) { oops('fLot'); return null; }
   const v = { sku: ex ? (ex[0] || ex[1]) : sku, long: ex ? ex[1] : '', lot, po, qty };
   /* PO / LOT ไม่เข้ากับ SKU ตามสมุด จับตั้งแต่ตรงนี้ หน้าวิเคราะห์จะได้ไม่มี "LOT/PO ผิด" ที่มาจากพิมพ์ผิด */
   const warn = ST.pileWarn(v, RD.pos, RD.skus);

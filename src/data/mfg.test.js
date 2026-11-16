@@ -145,6 +145,32 @@ describe('สมุดที่ใช้ตั้งรอบ', () => {
   });
 });
 
+describe('เตือน LOT ในหน้ากรอกมือถือ', () => {
+  it('อ่านเดือนของรอบจากชื่อรอบ (หน้ากรอกได้แค่ชื่อ) · ชื่อรอบนับสต๊อกใหญ่ไม่ใช่ MFG', () => {
+    ['2026-11', '2027-01', '2026-12'].forEach((ym) => expect(M.ymFromName(M.roundName(ym))).toBe(ym));
+    expect(M.ymFromName('นับสต๊อกใหญ่ Q4')).toBe('');
+    expect(M.ymFromName('MFG ทดลอง 69')).toBe('');
+    expect(M.ymFromName('')).toBe('');
+  });
+
+  it('รอบ พ.ย. 69: LOT 9–11 ใหม่กว่าที่ต้องนับ · LOT 12 = ธ.ค. 68 ต้องนับ · 0 = NO LOT · อ่านไม่ออกถามก่อน', () => {
+    const ym = '2026-11';
+    const at = (lot) => M.lotCheck(lot, ym);
+    expect(at('9')).toMatchObject({ level: 'new' });
+    expect(at('9').hint).toContain('นับ LOT 8 ลงไป');
+    expect(at('9').ask).toContain('ไม่ต้องนับ');
+    expect(at('11').level).toBe('new');
+    expect(at('8')).toEqual({ level: 'ok', hint: '✓ LOT 8 (' + M.monthText({ y: 2026, m: 8 }) + ') ต้องนับ', ask: '' });
+    expect(at('12').hint).toContain(M.monthText({ y: 2025, m: 12 }));
+    expect(at('12').level).toBe('ok');
+    expect(at('0')).toMatchObject({ level: 'none', ask: '' });
+    expect(at('ABC')).toMatchObject({ level: 'bad' });
+    expect(at('ABC').ask).toContain('NO LOT');
+    expect(at('13').level).toBe('bad');
+    expect(at(' ')).toEqual({ level: 'blank', hint: '', ask: '' });
+  });
+});
+
 describe('ลิงก์คนนับของรอบ MFG', () => {
   it('ใช้หน้ากรอกของนับสต๊อกใหญ่ แต่ลิงก์บอกว่าเป็นรอบ MFG (หน้ากรอกเปลี่ยนชื่อหัวตาม) ลิงก์นับสต๊อกใหญ่ไม่มีป้ายนี้', () => {
     const link = ST.countLink('https://x.github.io/app/stocktake/count.html', 'https://script.google.com/macros/s/ABC/exec', 'nab', 'ST261116-1', 'mfg');

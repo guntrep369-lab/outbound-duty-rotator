@@ -962,6 +962,45 @@
     };
   }
 
+  /* ── หน้ากรอกมือถือ (stocktake/count.html): เตือน LOT ตอนนับรอบ MFG ────── */
+
+  /**
+   * เดือนของรอบจากชื่อรอบ "MFG พ.ย. 69 · นับ LOT 8 ลงไป" (ชื่อจาก roundName)
+   * หน้ากรอกได้แค่ชื่อรอบ ไม่ได้ค่าตั้ง จึงอ่านจากชื่อ ไม่ต้องแก้สคริปต์ · ไม่ใช่รอบ MFG คืน ''
+   */
+  function ymFromName(name) {
+    var m = /^MFG\s+(\S+)\s+(\d{2})(?!\d)/.exec(text(name));
+    if (!m) return '';
+    var i = MONTHS.indexOf(m[1]);
+    if (i < 0) return '';
+    return (2500 + +m[2] - 543) + '-' + pad(i + 1);   // พ.ศ. สองหลัก → ค.ศ.
+  }
+
+  /**
+   * LOT ที่คนนับพิมพ์ ในรอบ MFG เดือน ym
+   *   level: ok = ต้องนับ (บอกเดือนให้เทียบกับป้าย) · new = ใหม่กว่าที่ต้องนับ · bad = อ่านไม่ออก · none = LOT 0 · blank = ยังไม่พิมพ์
+   *   hint = ข้อความใต้ช่อง LOT · ask = ถามยืนยันตอนกดเพิ่มกอง ('' = ไม่ต้องถาม · ช่องว่างหน้ากรอกเตือนเองอยู่แล้ว)
+   */
+  function lotCheck(lot, ym) {
+    var s = text(lot);
+    if (s === '') return { level: 'blank', hint: '', ask: '' };
+    var st = statusOf(s, ym);
+    if (st.st === 'nolot' && !st.bad) return { level: 'none', hint: 'LOT 0 = ป้ายไม่มี LOT · ไปอยู่กลุ่ม NO LOT ต้องตรวจสอบ', ask: '' };
+    if (st.bad) {
+      var b = 'อ่าน LOT "' + s + '" ไม่ออก · LOT คือเลขเดือน 1–12 (ป้ายไม่มี LOT ใส่ 0)';
+      return { level: 'bad', hint: '⚠ ' + b, ask: b + '\n\nป้ายเขียนแบบนี้จริง? (ถ้าใช่ กดตกลง จะไปอยู่กลุ่ม NO LOT)' };
+    }
+    var lab = 'LOT ' + s + ' (' + monthText(st.lm) + ')';
+    var r = rule(ym);
+    if (st.st === 'new') {
+      return {
+        level: 'new', hint: '⚠ ' + lab + ' ใหม่กว่าที่ต้องนับ · รอบนี้' + r.text + ' ไม่ต้องนับกองนี้',
+        ask: lab + ' ใหม่กว่าที่ต้องนับ\nรอบนี้' + r.text + ' กองนี้ไม่ต้องนับ รายงานไม่เอาไปคิด\n\nดูป้ายอีกครั้ง ถ้า LOT ถูกและยังจะบันทึก กดตกลง',
+      };
+    }
+    return { level: 'ok', hint: '✓ ' + lab + ' ต้องนับ', ask: '' };
+  }
+
   /** เดือนที่เลือกเปิดรอบได้ (เดือนก่อน เดือนนี้ เดือนหน้า) today = yyyy-mm-dd */
   function months(today) {
     var k = refKey(today.slice(0, 7));
@@ -979,6 +1018,6 @@
     CMP: CMP, prevRound: prevRound, compare: compare, cmpText: cmpText, compareSheet: compareSheet,
     DECIDE: DECIDE, DECIDE_ORDER: DECIDE_ORDER, NOTE_MAX: NOTE_MAX, SETTINGS_MAX: SETTINGS_MAX,
     decideOf: decideOf, applyDecide: applyDecide, decideText: decideText, decideSum: decideSum, byDecide: byDecide, prevDecText: prevDecText,
-    decideShort: decideShort, card: card,
+    decideShort: decideShort, card: card, ymFromName: ymFromName, lotCheck: lotCheck,
   };
 })(window);
