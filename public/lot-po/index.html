@@ -37,34 +37,29 @@
 .lp-tail{display:contents}
 .lp-pend{width:100%;font-size:13px;color:#92400E}
 
-/* ── แถบเลือกวัน เลื่อนข้างได้ เดือนหนึ่งมีสามสิบกว่าวัน ── */
-.lp-days{display:flex;gap:6px;padding:10px 20px;overflow-x:auto;background:var(--wms-surface);
-  border-bottom:1px solid var(--wms-border);scrollbar-width:thin}
-.lp-days:empty{display:none}
-.lp-day{flex-shrink:0;display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:999px;
-  border:1px solid var(--wms-border2);background:var(--wms-surface);font-family:var(--wms-font);font-size:13px;
-  color:#334155;cursor:pointer;font-variant-numeric:tabular-nums}
-.lp-day:hover{border-color:var(--wms-primary);color:var(--wms-primary-dark)}
-.lp-day.on{background:var(--wms-primary);border-color:var(--wms-primary);color:#fff;font-weight:700}
-/* ผลเทียบรายวันของวันนั้น บอกด้วยเครื่องหมายด้วย ไม่ใช่สีอย่างเดียว */
-.lp-day i{font-style:normal;font-size:12px;font-weight:700}
-.lp-day.d-ok i{color:#166534}
-.lp-day.d-warn i{color:#B45309}
-.lp-day.d-bad i{color:#B91C1C}
-.lp-day.on i{color:#fff}
-/* ปุ่มทั้งเดือนติดซ้ายตอนเลื่อนแถบ เงาสีพื้นบังวันที่เลื่อนลอดไปข้างหลัง */
-.lp-day.all{position:sticky;left:0;z-index:1;box-shadow:-20px 0 0 var(--wms-surface),10px 0 0 var(--wms-surface)}
+/* ── สองช่อง: ตารางรายวันด้านซ้าย ตารางรายการด้านขวา
+   ผู้ใช้เลือกแบบนี้ 2026-11-17 แทนแถบวัน การ์ดห้าใบ และกล่องข้อความยาวก่อนถึงตาราง ── */
+.lp-grid{display:flex;align-items:flex-start;gap:14px;padding:12px 20px 48px}
+.lp-main{flex:1;min-width:0}
 
-/* ── ยอดรวม ── */
-.tx-sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;padding:12px 20px;
-  background:var(--wms-surface);border-bottom:1px solid var(--wms-border)}
-.tx-sum:empty{display:none}
-.tx-stat{padding:8px 11px;border-radius:var(--wms-radius-sm);background:var(--wms-surface2)}
-.tx-stat small{display:block;font-size:12px;color:var(--wms-muted)}
-.tx-stat b{font-size:20px;font-weight:700;color:var(--wms-text);font-variant-numeric:tabular-nums}
-.tx-stat b.tx-mid{color:#B45309}
-.tx-stat b.tx-neg{color:#B91C1C}
-.tx-stat i{display:block;font-style:normal;font-size:12px;color:var(--wms-muted)}
+/* ตารางรายวัน กดแถวเลือกวัน ผลเทียบบอกด้วยเครื่องหมายด้วย ไม่ใช่สีอย่างเดียว */
+.lp-side{flex:0 0 172px;position:sticky;top:10px;max-height:calc(100vh - 150px);overflow:auto;
+  border:1px solid var(--wms-border2);border-radius:8px;background:var(--wms-surface);scrollbar-width:thin}
+.lp-side:empty{display:none}
+.lp-dt{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px}
+.lp-dt th{position:sticky;top:0;z-index:2;padding:5px 8px;background:#F1F5F9;text-align:left;font-size:11.5px;font-weight:600;
+  color:var(--wms-muted);border-bottom:1px solid var(--wms-border2);white-space:nowrap}
+.lp-dt td{height:27px;padding:0 8px;border-bottom:1px solid #EEF2F6;white-space:nowrap;cursor:pointer;font-variant-numeric:tabular-nums}
+.lp-dt .num{text-align:right}
+.lp-dt .lp-st{width:38px;text-align:center;font-weight:700}
+.lp-dt tr:hover td{background:var(--wms-surface2)}
+.lp-dt tr:focus-visible{outline:2px solid var(--wms-primary-dark);outline-offset:-2px}
+.lp-dt tr.all td{font-weight:700}
+.lp-dt tr.on td{background:var(--wms-primary-light);color:var(--wms-primary-dark);font-weight:700}
+.lp-dt i{font-style:normal}
+.d-ok{color:#166534}
+.d-warn{color:#B45309}
+.d-bad{color:#B91C1C}
 
 /* ── เนื้อหา ── */
 .tx-body{padding:14px 20px 60px}
@@ -107,16 +102,80 @@
   color:var(--wms-primary-dark);font-size:12px;font-weight:600;white-space:nowrap}
 .tx-row{font-weight:600;color:var(--wms-primary-dark)}
 
-/* SKU เดียวออกหลาย LOT/PO ในวันเดียว แถวต่อจากแถวแรกไม่ต้องเขียนชื่อซ้ำ มีเส้นซ้ายบอกว่าเป็นกลุ่มเดียวกัน */
-.lp-tbl .k-sku{min-width:200px}
-.lp-tbl tr.lp-grp td{border-bottom-color:transparent}
-.lp-tbl tr.lp-in td:first-child{box-shadow:inset 3px 0 0 var(--wms-primary-light)}
-.lp-tbl .k-src{min-width:150px}
-.lp-tbl .k-ord{min-width:120px}
-.lp-tbl .k-note{min-width:160px}
-.lp-sup{display:block;font-size:11.5px;font-weight:600;color:var(--wms-text)}
-/* สลับมุมมองอยู่บนสุดของเนื้อหา เส้นใต้แยกจากตัวกรองด้านล่าง */
-.lp-view{padding-bottom:12px;border-bottom:1px solid var(--wms-border)}
+/* ── แถบเครื่องมือบรรทัดเดียว: มุมมอง · ชิปกรอง (นับเป็นบรรทัด) · ค้นหา · คัดลอก · ⓘ ── */
+.lp-tool{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:6px;font-size:13px}
+.lp-tool .sp{flex:1}
+.lp-seg{display:inline-flex;border:1px solid var(--wms-border2);border-radius:8px;overflow:hidden;margin-right:6px}
+.lp-seg button{padding:4px 12px;border:0;background:var(--wms-surface);font-family:var(--wms-font);font-size:13px;color:#334155;cursor:pointer;white-space:nowrap}
+.lp-seg button + button{border-left:1px solid var(--wms-border2)}
+.lp-seg button:hover:not(.on){color:var(--wms-primary-dark)}
+.lp-seg button.on{background:var(--wms-primary);color:#fff;font-weight:600}
+.lp-qc{display:inline-flex;align-items:baseline;gap:5px;padding:3px 11px;border-radius:999px;border:1px solid var(--wms-border);
+  background:var(--wms-surface2);font-family:var(--wms-font);font-size:12.5px;color:var(--wms-muted);cursor:pointer;white-space:nowrap}
+.lp-qc b{font-size:14px;color:var(--wms-text);font-variant-numeric:tabular-nums}
+.lp-qc:hover{border-color:var(--wms-primary)}
+.lp-qc:focus-visible{outline:2px solid var(--wms-primary-dark);outline-offset:2px}
+.lp-qc.on{border-color:var(--wms-primary);background:var(--wms-primary-light);color:var(--wms-primary-dark)}
+.lp-qc.zero{opacity:.5}
+.lp-qc.q-warn b{color:#B45309}
+.lp-qc.q-red b{color:#B91C1C}
+.lp-in{width:200px;padding:5px 10px;border-radius:8px;border:1px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:13px;color:var(--wms-text);outline:none}
+.lp-in:focus{border-color:var(--wms-primary)}
+.lp-btn{padding:4px 11px;border-radius:8px;border:1px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:13px;color:#334155;cursor:pointer;white-space:nowrap}
+.lp-btn:hover:not(:disabled){border-color:var(--wms-primary);color:var(--wms-primary-dark)}
+.lp-btn:disabled{opacity:.6;cursor:default}
+.lp-i{width:26px;height:26px;flex-shrink:0;border-radius:50%;border:1px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:Georgia,serif;font-style:italic;font-weight:700;font-size:12px;color:var(--wms-muted);cursor:pointer}
+.lp-i:hover{border-color:var(--wms-primary);color:var(--wms-primary)}
+.lp-i.on{background:var(--wms-primary-light);border-color:#A5B4FC;color:var(--wms-primary-dark)}
+
+/* บรรทัดสถานะ: ส่งบัญชีได้หรือยัง · LOT 0 · คำเตือน ข้อความเต็มกับปุ่มต่าง ๆ อยู่ในกล่อง ⓘ */
+.lp-line{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-bottom:8px;font-size:12.5px;color:var(--wms-muted);line-height:1.5}
+.lp-line a{color:inherit;font-weight:600}
+.lp-s-pass{color:#166534;font-weight:600}
+.lp-s-warn{color:#92400E;font-weight:600}
+.lp-s-bad{padding:2px 9px;border-radius:6px;background:#FEE2E2;color:#991B1B;font-weight:600}
+.lp-pill{display:inline-flex;align-items:center;gap:4px;padding:2px 10px;border-radius:999px;border:1px solid var(--wms-border);
+  background:var(--wms-surface);font-family:var(--wms-font);font-size:12px;color:#475569;white-space:nowrap}
+button.lp-pill{cursor:pointer}
+button.lp-pill:hover{border-color:var(--wms-primary)}
+.lp-pill.warn{background:#FEF3C7;border-color:#FDE68A;color:#92400E}
+.lp-pill.bad{background:#FEE2E2;border-color:#FECACA;color:#991B1B}
+.lp-pill.act{background:var(--wms-primary);border-color:var(--wms-primary);color:#fff}
+.lp-help{margin-bottom:10px;padding:10px 12px 0;border-radius:8px;background:var(--wms-surface2);border:1px solid var(--wms-border)}
+
+/* ── ตารางแบบ Excel: หนึ่งบรรทัดต่อแถว หัวตารางกับแถวรวมติดอยู่ ช่องวันที่กับรหัสติดซ้ายตอนเลื่อนข้าง ── */
+.lp-wrap{overflow:auto;max-height:calc(100vh - 150px);min-height:260px;border:1px solid var(--wms-border2);border-radius:8px;background:var(--wms-surface)}
+/* กว้างตามเนื้อหา (ไม่บีบช่องจนชื่อขาด) แต่ไม่แคบกว่ากล่อง ช่องที่ยาวเกินตัดด้วย … ชี้ค้างเห็นเต็ม */
+.lp-xl{width:max-content;min-width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px}
+.lp-xl th{position:sticky;top:0;z-index:2;padding:6px;background:#F1F5F9;text-align:left;font-size:11.5px;font-weight:600;
+  color:var(--wms-muted);border-bottom:1px solid var(--wms-border2);border-right:1px solid #E2E8F0;white-space:nowrap}
+.lp-xl td{height:28px;padding:0 6px;border-bottom:1px solid #EEF2F6;border-right:1px solid #EEF2F6;white-space:nowrap;vertical-align:middle;
+  background:var(--wms-surface);color:var(--wms-text)}
+.lp-xl .num{text-align:right;font-variant-numeric:tabular-nums}
+.lp-xl .c-date{position:sticky;left:0;z-index:1;width:46px;min-width:46px;max-width:46px;font-variant-numeric:tabular-nums}
+.lp-xl .c-key{position:sticky;left:var(--kl,0px);z-index:1}
+.lp-xl th.c-date,.lp-xl th.c-key{z-index:3}
+.lp-xl .c-nm{max-width:200px;overflow:hidden;text-overflow:ellipsis;color:#475569}
+.lp-xl .c-sup{max-width:130px;overflow:hidden;text-overflow:ellipsis}
+.lp-xl .c-loc{max-width:140px;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:#475569}
+.lp-xl .c-row,.lp-xl .c-onl{font-size:12px;color:#475569}
+.lp-xl .c-note{max-width:240px;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:#475569}
+.lp-xl td.mute,.lp-xl .mute{color:var(--wms-faint)}
+.lp-xl .mid{color:#B45309;font-weight:600}
+.lp-xl .neg{color:#B91C1C;font-weight:600}
+.lp-xl tr.d1 td{border-top:1px solid #CBD5E1}
+.lp-xl tr.in td.c-key{box-shadow:inset 3px 0 0 #C7D2FE}
+.lp-xl tr.r-unk td{background:#FFFBEB}
+.lp-xl tr.r-bad td{background:#FEF2F2}
+.lp-xl tfoot td{position:sticky;bottom:0;z-index:2;background:#F1F5F9;font-weight:700;border-top:1px solid var(--wms-border2);border-bottom:0}
+.lp-xl tfoot td:first-child{left:0;z-index:3}
+.lp-n{display:inline-block;margin-left:5px;padding:0 6px;border-radius:999px;background:var(--wms-primary-light);color:var(--wms-primary-dark);
+  font-size:11px;font-weight:600;vertical-align:1px}
+.lp-nx{display:none}
+.lp-more{margin-top:8px;font-size:12.5px;color:var(--wms-muted)}
 
 /* ── ประมาณ LOT ให้ของ LOT 0 ── ป้ายเขียนคำว่า ประมาณ ไม่ได้บอกด้วยสีอย่างเดียว */
 .lp-guess{display:inline-block;margin-left:6px;padding:0 7px;border-radius:999px;background:#FEF3C7;color:#92400E;
@@ -136,41 +195,49 @@
 .lp-how li{margin-bottom:3px}
 .lp-how small{display:block;font-size:12px}
 
+/* จอแคบกว่านี้ ตารางรายวันกลายเป็นแถบวันเลื่อนข้างอยู่บนตาราง ตารางรายการได้ความกว้างเต็ม (โค้ดชุดเดียว CSS เปลี่ยนรูป) */
+@media (max-width:1099px){
+  .lp-grid{display:block}
+  .lp-side{position:static;max-height:none;margin-bottom:10px;padding-bottom:2px;border:0;border-radius:0;background:none;
+    overflow-x:auto;overflow-y:hidden}
+  .lp-dt,.lp-dt tbody{display:block}
+  .lp-dt thead{display:none}
+  .lp-dt tbody{display:flex;gap:6px;width:max-content}
+  .lp-dt tr{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:999px;border:1px solid var(--wms-border2);
+    background:var(--wms-surface);cursor:pointer}
+  .lp-dt td{height:auto;padding:0;border:0;background:none !important}
+  .lp-dt td.num{font-size:11.5px;font-weight:400;color:var(--wms-muted)}
+  .lp-dt .lp-st{width:auto}
+  .lp-dt .lp-st:empty{display:none}
+  .lp-dt tr:hover{border-color:var(--wms-primary)}
+  .lp-dt tr.on{background:var(--wms-primary);border-color:var(--wms-primary)}
+  .lp-dt tr.on td,.lp-dt tr.on td.num,.lp-dt tr.on i{color:#fff}
+  /* ปุ่มทั้งเดือนติดซ้ายตอนเลื่อนแถบ เงาสีพื้นบังวันที่เลื่อนลอดไปข้างหลัง */
+  .lp-dt tr.all{position:sticky;left:0;z-index:1;box-shadow:-20px 0 0 var(--wms-bg),8px 0 0 var(--wms-bg)}
+}
+
 @media (max-width:640px){
-  .tx-src,.lp-days,.tx-sum{padding-left:16px;padding-right:16px}
+  .tx-src{padding-left:16px;padding-right:16px}
   .tx-src button{min-height:44px;padding:0 16px}
   .tx-src select,.tx-src input[type=date]{min-height:44px;font-size:16px}
   .lp-range{flex-wrap:wrap}
-  .lp-day{min-height:44px;padding:0 14px}
-  .tx-sum{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .tx-body{padding-left:16px;padding-right:16px}
+  .lp-grid{padding:10px 16px 40px}
+  .lp-dt tr{min-height:40px}
+  .lp-seg{flex:1 1 100%;margin-right:0}
+  .lp-seg button{flex:1;min-height:40px}
+  .lp-qc{min-height:36px;align-items:center}
+  .lp-tool .sp{display:none}
+  .lp-in{flex:1 1 100%;width:auto;min-height:44px;font-size:16px}   /* ต่ำกว่า 16px iPhone จะซูมหน้าเองตอนแตะช่องค้น */
+  .lp-btn{flex:1;min-height:40px}
+  .lp-i{width:40px;height:40px;font-size:14px}
+  .lp-pill{min-height:32px;white-space:normal;text-align:left}
+  .lp-wrap{max-height:none}
+  .lp-xl{font-size:12px}
+  .lp-xl .c-nm{max-width:110px}
+  .lp-nx{display:inline}
+  .lp-nl{display:none}
   .tx-opt{display:inline-flex;align-items:center;min-height:44px;padding:0 15px}
-  .tx-input{flex-basis:100%;min-height:44px;font-size:16px;max-width:none}   /* ต่ำกว่า 16px iPhone จะซูมหน้าเองตอนแตะช่องค้น */
-  .lp-out .tx-opt{flex:1;justify-content:center}
-  .lp-out span{display:none}
   .tx-row{display:inline-block;padding:10px 6px;margin:-10px -6px}
-
-  /* แถวเป็นการ์ด: SKU บนสุด LOT PO จำนวนเรียงกันบรรทัดเดียว ที่มาอยู่ล่าง ไม่ต้องเลื่อนข้าง */
-  .lp-tbl,.lp-tbl tbody{display:block}
-  .lp-tbl thead{display:none}
-  .lp-tbl tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) auto;column-gap:10px;row-gap:4px;
-    padding:11px 12px;border-bottom:1px solid var(--wms-border)}
-  .lp-tbl tr.lp-grp{border-bottom:1px dashed var(--wms-border)}
-  .lp-tbl tr:last-child{border-bottom:0}
-  .lp-tbl td{display:block;min-width:0;padding:0;border:0;white-space:normal}
-  .lp-tbl .k-date{grid-column:1/-1;font-size:12px;color:var(--wms-muted)}
-  .lp-tbl .k-sku{grid-column:1/-1;min-width:0}
-  .lp-tbl:not(.lp-ord) tr.lp-in .k-sku{display:none}
-  .lp-tbl .k-ord,.lp-tbl .k-note{grid-column:1/-1;min-width:0}
-  .lp-ord tr.lp-in .k-ord{display:none}
-  .lp-tbl .k-note:empty{display:none}
-  .lp-view .tx-opt{flex:1;justify-content:center}
-  .lp-tbl .k-lot::before,.lp-tbl .k-po::before,.lp-tbl .k-qty::before{content:attr(data-label);display:block;
-    font-size:12px;font-weight:500;color:var(--wms-muted)}
-  .lp-tbl .k-qty{font-size:16px;font-weight:700}
-  .lp-tbl .k-src{grid-column:1/-1;min-width:0}
-  .lp-tbl tr.sum{display:flex;justify-content:space-between;background:var(--wms-surface2)}
-  .lp-tbl tr.sum .k-qty::before{display:none}
   .lp-est{padding:11px 12px}
   .lp-est .act .tx-opt{flex:1;justify-content:center}
 }
@@ -194,9 +261,10 @@
   </div>
 
   <div class="tx-src" id="src"></div>
-  <div class="lp-days" id="days"></div>
-  <div class="tx-sum" id="sum"></div>
-  <div class="tx-body" id="body"></div>
+  <div class="lp-grid">
+    <div class="lp-side" id="days"></div>
+    <div class="lp-main" id="body"></div>
+  </div>
 
 </div><!-- /.wms-main -->
 </div><!-- /.wms-shell -->
@@ -391,7 +459,7 @@ async function loadEst(fresh) {
   }
   EST_BUSY = '';
   rebuild();
-  renderSum();
+  renderDays();
   renderBody();
 }
 
@@ -579,20 +647,40 @@ function pick() {
   bindTail();
 }
 
+/**
+ * ตารางรายวันด้านซ้าย: ชิ้นของแต่ละวันในมุมที่กำลังดู กับผลเทียบรายวัน กดแถวเลือกวัน
+ * จอแคบ CSS เปลี่ยนตารางนี้เป็นแถบวันเลื่อนข้างแทน ใช้โค้ดชุดเดียว
+ */
 function renderDays() {
-  if (!LED || !LED.days.length || BUSY) { $('days').innerHTML = ''; return; }
+  const box = $('days');
+  if (!LED || !LED.days.length || BUSY) { box.innerHTML = ''; return; }
   const words = { ok: 'เทียบรายวันตรงแล้ว', warn: 'ลงตัดคนละวัน', bad: 'เทียบรายวันยังไม่ตรง' };
   const mark = { ok: '✓', warn: '!', bad: '✕' };
-  const chip = (d) => {
-    const s = CUT ? dayState(CUT.by[d]) : '';
-    return `<button class="lp-day${d === DAY ? ' on' : ''}${s ? ` d-${s}` : ''}" data-day="${d}"
-      ${s ? `title="${words[s]}"` : ''}>${dm(d)}${s ? `<i aria-label="${words[s]}">${mark[s]}</i>` : ''}</button>`;
-  };
-  $('days').innerHTML = `<button class="lp-day all${DAY ? '' : ' on'}" data-day="">${allName()}</button>` + LED.days.map(chip).join('');
-  /* เลื่อนแถบเองแทน scrollIntoView ที่จะพาทั้งหน้าเลื่อนตามไปด้วย รอเฟรมถัดไปให้ความกว้างปุ่มลงตัวก่อน */
+  const qty = {};
+  let total = 0;
+  (byOrder() ? OLINES : ROWS).forEach((r) => { qty[r.date] = (qty[r.date] || 0) + r.qty; total += r.qty; });
+  /* แถวทั้งเดือนบอกว่าตรงแล้วกี่วัน จากวันที่มีผลเทียบ */
+  let head = '';
+  if (CUT) {
+    const ds = LED.days.filter((d) => d >= CUT.from && d <= CUT.to);
+    const ok = ds.filter((d) => dayState(CUT.by[d]) === 'ok').length;
+    if (ds.length) head = `<i class="${ok === ds.length ? 'd-ok' : 'd-warn'}" title="เทียบรายวันตรงแล้ว ${ok} จาก ${ds.length} วัน">${ok}/${ds.length}</i>`;
+  }
+  const row = (d, label, n, st, on) => `<tr class="${d ? '' : 'all'}${on ? ' on' : ''}" data-day="${d}" tabindex="0" aria-pressed="${on}">
+    <td>${label}</td><td class="num">${f(n)}</td><td class="lp-st">${st}</td></tr>`;
+  box.innerHTML = `<table class="lp-dt" aria-label="เลือกวัน">
+    <thead><tr><th>วัน</th><th class="num">ชิ้น</th><th class="lp-st" title="ผลเทียบรายวันจากหน้าเช็ครายการตัดสต๊อก">เทียบ</th></tr></thead>
+    <tbody>${row('', allName(), total, head, !DAY)}${LED.days.map((d) => {
+      const s = CUT ? dayState(CUT.by[d]) : '';
+      return row(d, dm(d), qty[d] || 0, s ? `<i class="d-${s}" title="${words[s]}" aria-label="${words[s]}">${mark[s]}</i>` : '', d === DAY);
+    }).join('')}</tbody></table>`;
+  /* เลื่อนเฉพาะกล่องนี้ให้เห็นวันที่เลือก ไม่ใช้ scrollIntoView ที่จะพาทั้งหน้าเลื่อนตาม รอเฟรมถัดไปให้ขนาดลงตัวก่อน */
   requestAnimationFrame(() => {
-    const box = $('days'), on = box.querySelector('.lp-day.on:not(.all)');
-    if (on) box.scrollLeft = on.offsetLeft - box.clientWidth / 2 + on.offsetWidth / 2;
+    const on = box.querySelector('tr.on:not(.all)');
+    if (!on) return;
+    const b = box.getBoundingClientRect(), o = on.getBoundingClientRect();
+    if (box.scrollWidth > box.clientWidth) box.scrollLeft += o.left - b.left - box.clientWidth / 2 + o.width / 2;
+    if (box.scrollHeight > box.clientHeight) box.scrollTop += o.top - b.top - box.clientHeight / 2 + o.height / 2;
   });
 }
 
@@ -604,79 +692,83 @@ const byOrder = () => VIEW === 'order' && !!ORD;
 /** บรรทัดที่ตารางแสดงและปุ่มคัดลอกจะได้ */
 function chosen() { return WmsLotPo.filter(byOrder() ? OLINES : ROWS, { date: DAY, q: Q, only: ONLY }); }
 
-function renderSum() {
-  if (!LED || BUSY) { $('sum').innerHTML = ''; return; }
-  const stat = (label, n, sub, cls) => `<div class="tx-stat"><small>${esc(label)}</small><b class="${cls || ''}" data-count="${n}">${f(n)}</b><i>${esc(sub)}</i></div>`;
-  if (byOrder()) {
-    const o = WmsLotPo.totals(DAY ? OLINES.filter((r) => r.date === DAY) : OLINES);
-    $('sum').innerHTML =
-      stat('ชิ้นที่ออก', o.qty, DAY ? `วันที่ ${dm(DAY)}` : shownName()) +
-      stat('ออเดอร์', o.orders, `${f(o.lines)} บรรทัด ออเดอร์ × SKU × LOT/PO`) +
-      stat('ไม่รู้ LOT หรือ PO', o.unknown.qty, `${f(o.unknown.lines)} บรรทัด · LOT 0 หรือ PO 0`, o.unknown.qty ? 'tx-mid' : '') +
-      guessStat(o) +
-      stat('ยอดไม่ลงกัน', o.gap.qty, `${f(o.gap.lines)} บรรทัด · สมุดกับแท็บ Transaction`, o.gap.qty ? 'tx-neg' : '');
-    return;
-  }
-  const t = WmsLotPo.totals(picked());
-  $('sum').innerHTML =
-    stat('ชิ้นที่ขายออก', t.qty, DAY ? `วันที่ ${dm(DAY)}` : shownName()) +
-    stat('SKU', t.skus, `${f(t.lines)} บรรทัด SKU × LOT/PO`) +
-    stat('SKU ที่ออกหลาย LOT/PO', t.split, `${f(t.splitLines)} บรรทัด${DAY ? '' : ' · นับเป็น SKU ต่อวัน'}`) +
-    stat('ไม่รู้ LOT หรือ PO', t.unknown.qty, `${f(t.unknown.lines)} บรรทัด · LOT 0 หรือ PO 0`, t.unknown.qty ? 'tx-mid' : '') +
-    guessStat(t);
-}
-
-/** ช่องนี้ขึ้นเฉพาะตอนมีบรรทัดที่ประมาณ LOT ได้ */
-function guessStat(t) {
-  if (!t.guess.qty) return '';
-  return `<div class="tx-stat"><small>LOT/PO ประมาณ</small><b class="tx-mid" data-count="${t.guess.qty}">${f(t.guess.qty)}</b>
-    <i>${f(t.guess.lines)} บรรทัด · ไม่ใช่ที่สมุดบันทึก</i></div>`;
-}
-
 /* ── เนื้อหา ───────────────────────────────────────────────────────────── */
 
-/** ผลเทียบรายวันของช่วงที่เลือก บอกก่อนว่าส่งบัญชีได้หรือยัง */
-function statusHtml() {
+/**
+ * ผลเทียบรายวันของวันหรือช่วงที่เลือก บอกก่อนว่าส่งบัญชีได้หรือยัง
+ * short ขึ้นบนบรรทัดสถานะเหนือตาราง long เป็นข้อความเต็มในกล่อง ⓘ  cls: note | pass | warn | bad
+ */
+function statusInfo() {
   const goCut = '<a href="../cut-check/">หน้าเช็ครายการตัดสต๊อก</a>';
+  const go = '<a href="../cut-check/">เช็คตัดสต๊อก</a>';
   if (!CUT) {
-    return `<div class="tx-note">ยังไม่มีผลเทียบรายวันในเครื่องนี้ จึงยังบอกไม่ได้ว่าวันไหนตรงแล้ว — เปิด${goCut} กดตรวจและดึงยอดขาย แล้วกลับมาที่หน้านี้</div>`;
+    return { cls: 'note', short: `ยังไม่มีผลเทียบรายวันในเครื่องนี้ — ตรวจที่${go}`,
+      long: `<div class="tx-note">ยังไม่มีผลเทียบรายวันในเครื่องนี้ จึงยังบอกไม่ได้ว่าวันไหนตรงแล้ว — เปิด${goCut} กดตรวจและดึงยอดขาย แล้วกลับมาที่หน้านี้</div>` };
   }
   const when = new Date(CUT.at).toLocaleString('th-TH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   const at = `<small>ผลเทียบรายวันจาก${goCut} ดึงยอดขายเมื่อ ${esc(when)}</small>`;
   if (!DAY) {
     const days = LED.days.filter((d) => d >= CUT.from && d <= CUT.to);
-    if (!days.length) return `<div class="tx-note">ผลเทียบรายวันล่าสุดเป็นของ ${esc(dm(CUT.period.from))} ถึง ${esc(dm(CUT.period.to))} ไม่ครอบคลุมช่วงนี้ — ตรวจที่${goCut}</div>`;
+    if (!days.length) {
+      const msg = `ผลเทียบรายวันล่าสุดเป็นของ ${esc(dm(CUT.period.from))} ถึง ${esc(dm(CUT.period.to))} ไม่ครอบคลุมช่วงนี้`;
+      return { cls: 'note', short: `${msg} — ตรวจที่${go}`, long: `<div class="tx-note">${msg} — ตรวจที่${goCut}</div>` };
+    }
     const n = { ok: 0, warn: 0, bad: 0, '': 0 };
     days.forEach((d) => { n[dayState(CUT.by[d])]++; });
-    if (n.ok === days.length) return `<div class="tx-pass">✓ เทียบรายวันตรงครบทั้ง ${f(days.length)} วันที่มีขายแล้ว ส่งรายงาน${allName()}ให้บัญชีได้${at}</div>`;
-    return `<div class="tx-warn">เทียบรายวันตรงแล้ว <b>${f(n.ok)}</b> จาก ${f(days.length)} วันที่มีขาย
+    if (n.ok === days.length) {
+      return { cls: 'pass', short: `✓ เทียบรายวันตรงครบ ${f(days.length)} วัน ส่งรายงาน${allName()}ให้บัญชีได้`,
+        long: `<div class="tx-pass">✓ เทียบรายวันตรงครบทั้ง ${f(days.length)} วันที่มีขายแล้ว ส่งรายงาน${allName()}ให้บัญชีได้${at}</div>` };
+    }
+    return { cls: 'warn',
+      short: `ตรงแล้ว ${f(n.ok)}/${f(days.length)} วัน${n.bad ? ` · ✕ ยังไม่ตรง ${f(n.bad)} วัน` : ''}${n.warn ? ` · ! ลงตัดคนละวัน ${f(n.warn)} วัน` : ''} — วันที่มี ✓ ส่งบัญชีได้`,
+      long: `<div class="tx-warn">เทียบรายวันตรงแล้ว <b>${f(n.ok)}</b> จาก ${f(days.length)} วันที่มีขาย
       ${n.bad ? ` · ยังไม่ตรง <b>${f(n.bad)}</b> วัน` : ''}${n.warn ? ` · ลงตัดคนละวัน <b>${f(n.warn)}</b> วัน` : ''}
-      — วันที่มีเครื่องหมาย ✓ บนแถบวันส่งบัญชีได้แล้ว${at}</div>`;
+      — วันที่มีเครื่องหมาย ✓ ในตารางรายวันส่งบัญชีได้แล้ว${at}</div>` };
   }
   if (DAY < CUT.from || DAY > CUT.to) {
-    return `<div class="tx-note">วันที่ ${esc(dm(DAY))} อยู่นอกช่วงที่เทียบรายวันล่าสุด (${esc(dm(CUT.from))} ถึง ${esc(dm(CUT.to))}) — ตรวจที่${goCut}ก่อนส่งบัญชี</div>`;
+    return { cls: 'note', short: `${esc(dm(DAY))} อยู่นอกช่วงที่เทียบรายวันล่าสุด — ตรวจที่${go}ก่อนส่ง`,
+      long: `<div class="tx-note">วันที่ ${esc(dm(DAY))} อยู่นอกช่วงที่เทียบรายวันล่าสุด (${esc(dm(CUT.from))} ถึง ${esc(dm(CUT.to))}) — ตรวจที่${goCut}ก่อนส่งบัญชี</div>` };
   }
   const d = CUT.by[DAY];
-  if (!d) return `<div class="tx-note">วันที่ ${esc(dm(DAY))} ยังไม่มีผลเทียบรายวัน — ตรวจที่${goCut}ก่อนส่งบัญชี</div>`;
+  if (!d) {
+    return { cls: 'note', short: `${esc(dm(DAY))} ยังไม่มีผลเทียบรายวัน — ตรวจที่${go}ก่อนส่ง`,
+      long: `<div class="tx-note">วันที่ ${esc(dm(DAY))} ยังไม่มีผลเทียบรายวัน — ตรวจที่${goCut}ก่อนส่งบัญชี</div>` };
+  }
   /* สมุดถูกแก้หลังกดดึงยอดขายที่หน้าเช็ค ผลเทียบที่เห็นเป็นของสมุดฉบับก่อน */
   const qty = WmsLotPo.totals(picked()).qty;
   const stale = d.s !== qty ? `<small>ยอดขายวันนี้ในสมุดตอนนี้ ${f(qty)} ชิ้น ตอนเทียบเป็น ${f(d.s)} ชิ้น สมุดถูกแก้หลังเทียบ — กดดึงยอดขายใหม่ที่${goCut}</small>` : '';
   const s = dayState(d);
-  if (s === 'ok' && !stale) return `<div class="tx-pass">✓ วันที่ ${esc(dm(DAY))} เทียบรายวันตรงทั้งสามระบบและตรง Report แล้ว ส่งบัญชีได้${at}</div>`;
-  if (s === 'ok') return `<div class="tx-warn">วันที่ ${esc(dm(DAY))} เคยเทียบตรงแล้ว${stale}${at}</div>`;
+  if (s === 'ok' && !stale) {
+    return { cls: 'pass', short: `✓ ${esc(dm(DAY))} เทียบรายวันตรงแล้ว ส่งบัญชีได้`,
+      long: `<div class="tx-pass">✓ วันที่ ${esc(dm(DAY))} เทียบรายวันตรงทั้งสามระบบและตรง Report แล้ว ส่งบัญชีได้${at}</div>` };
+  }
+  if (s === 'ok') {
+    return { cls: 'warn', short: `! ${esc(dm(DAY))} สมุดถูกแก้หลังเทียบ — ดึงยอดขายใหม่ที่${go}`,
+      long: `<div class="tx-warn">วันที่ ${esc(dm(DAY))} เคยเทียบตรงแล้ว${stale}${at}</div>` };
+  }
   if (s === 'warn') {
-    return `<div class="tx-warn">วันที่ ${esc(dm(DAY))} มีบาง SKU ลงตัดคนละวันกับระบบอื่น ยอดของวันนี้อาจไปอยู่วันข้างเคียง — ดูที่${goCut}ก่อนส่งบัญชี${stale}${at}</div>`;
+    return { cls: 'warn', short: `! ${esc(dm(DAY))} มีบาง SKU ลงตัดคนละวัน — ดูที่${go}ก่อนส่ง`,
+      long: `<div class="tx-warn">วันที่ ${esc(dm(DAY))} มีบาง SKU ลงตัดคนละวันกับระบบอื่น ยอดของวันนี้อาจไปอยู่วันข้างเคียง — ดูที่${goCut}ก่อนส่งบัญชี${stale}${at}</div>` };
   }
   const n = d.bad || (d.rep ? d.rep.bad : 0);
-  return `<div class="tx-warn bad">วันที่ ${esc(dm(DAY))} เทียบรายวันยังไม่ตรง${n ? ` ${f(n)} SKU` : ''} — แก้ให้ตรงที่${goCut}ก่อนส่งบัญชี${stale}${at}</div>`;
+  return { cls: 'bad', short: `✕ ${esc(dm(DAY))} เทียบรายวันยังไม่ตรง${n ? ` ${f(n)} SKU` : ''} — แก้ที่${go}ก่อนส่ง`,
+    long: `<div class="tx-warn bad">วันที่ ${esc(dm(DAY))} เทียบรายวันยังไม่ตรง${n ? ` ${f(n)} SKU` : ''} — แก้ให้ตรงที่${goCut}ก่อนส่งบัญชี${stale}${at}</div>` };
 }
 
-/** SKU ตอนซื้อตัวหนา ใต้ชื่อบอก SKU ที่ขายถ้าแปลงคืนมา */
-function skuHtml(r, tag) {
-  const conv = r.sold ? `<span class="tx-sub">ขายเป็น ${esc(r.sold)}</span>`
-    : r.many ? '<span class="tx-sub tx-mid">MASTER มี SKU ตอนซื้อหลายตัว ยังไม่แปลงคืน</span>' : '';
-  return `<b>${esc(r.sku)}</b><span class="tx-sub">${esc(r.name)}</span>${conv}${tag}`;
+/** SKU ที่ขายก่อนแปลงคืนเป็น SKU ตอนซื้อ ช่องนี้ขึ้นเฉพาะตอนมีบรรทัดที่แปลงคืนหรือแปลงไม่ได้ */
+function soldCell(r) {
+  if (r.sold) return esc(r.sold);
+  return r.many ? `<span class="mid" title="MASTER แปลงสินค้ามี SKU ตอนซื้อหลายตัว (${esc(r.many.join(', '))}) ยังไม่แปลงคืน">หลายตัว ยังไม่แปลง</span>` : '';
 }
+
+/** ยอดไม่ลงกันพื้นแดง ไม่รู้ LOT หรือ PO (ที่ยังไม่ได้ประมาณ) พื้นส้ม */
+function rowTint(r) {
+  if (r.miss) return 'r-bad';
+  return (r.noLot || r.noPo) && !r.guess ? 'r-unk' : '';
+}
+
+/** แถวแรกของวันเขียนวันที่ชัด แถวถัดไปของวันเดียวกันวันที่จาง */
+const dayCell = (prev, r) => `<td class="c-date${prev && prev.date === r.date ? ' mute' : ''}">${esc(dm(r.date))}</td>`;
 
 /** SKU ในรายงานเป็น SKU ตอนซื้อหรือยัง บอกไว้ก่อนส่งบัญชี scope คือบรรทัดของวันหรือเดือนที่เลือก */
 function convNote(scope) {
@@ -705,15 +797,10 @@ function convNote(scope) {
   return out.join('');
 }
 
-function lotHtml(v, unknown, what) {
-  if (!unknown) return esc(v);
-  return `<span class="tx-mid">${esc(v === '' ? 'ว่าง' : v)}</span><span class="tx-sub">ไม่รู้ ${what}</span>`;
-}
-
-/** LOT ที่ประมาณได้มีป้ายติดไว้ ชี้ค้างเห็นว่าประมาณจากอะไร */
+/** LOT ที่ประมาณได้มีป้ายติดไว้ ชี้ค้างเห็นว่าประมาณจากอะไร LOT ที่ไม่รู้เป็นตัวสีส้ม */
 function lotCell(r) {
   if (r.guess) return `${esc(r.lot)}<span class="lp-guess" title="${esc(WmsLotPo.GUESS[r.guess] || '')}">ประมาณ</span>`;
-  return lotHtml(r.lot, r.noLot, 'LOT');
+  return r.noLot ? `<span class="mid" title="ไม่รู้ LOT">${esc(r.lot === '' ? 'ว่าง' : r.lot)}</span>` : esc(r.lot);
 }
 
 function rowLinks(rows) {
@@ -724,20 +811,27 @@ function rowLinks(rows) {
   return links + (rows.length > 3 ? ` +${rows.length - 3}` : '');
 }
 
-/** ประมาณจากแถวไหน หรือยังไม่รู้เพราะอะไร */
-function guessHtml(r) {
+/**
+ * ช่องหมายเหตุบนจอ: ยอดไม่ลงกัน ที่มาของ LOT ประมาณ (ลิงก์ไปแถวต้นทาง) เหตุที่ยังไม่รู้ LOT จำนวนที่พิมพ์ผิด
+ * ไม่รู้ LOT/PO บอกด้วยสีในช่องแล้ว ข้อความเต็มแบบเดียวกับไฟล์ส่งออกอยู่ใน title ของช่อง
+ */
+function noteCell(r) {
+  if (r.miss) return `<span class="neg">${esc(WmsLotPo.note(r))}</span>`;
   const from = (r.from || []).length ? ` · แถว ${rowLinks(r.from)}` : '';
-  if (r.guess) return `<span class="tx-sub">${esc(WmsLotPo.GUESS[r.guess] || '')}${from}</span>`;
+  const out = [];
+  if (r.guess) out.push(`${esc(WmsLotPo.GUESS[r.guess] || '')}${from}`);
   /* stale กับ none ไม่มีแถวต้นทางให้ดู (none ชี้กลับแถวขายเอง) */
-  if (r.why && r.noLot && r.noPo) return `<span class="tx-sub tx-mid">${esc(WmsLotPo.WHY[r.why] || '')}${r.why === 'stale' || r.why === 'none' ? '' : from}</span>`;
-  return '';
+  else if (r.why && r.noLot && r.noPo) out.push(`<span class="mid">${esc(WmsLotPo.WHY[r.why] || '')}</span>${r.why === 'stale' || r.why === 'none' ? '' : from}`);
+  if (r.bad && r.bad.length) out.push(`<span class="neg">จำนวนพิมพ์ไม่ใช่ตัวเลข ${f(r.bad.length)} แถว ไม่ได้นับ</span>`);
+  return out.join(' · ');
 }
 
-/** PO ที่ลง -01 -02 ต่อท้ายรวมเป็น PO เดียวกันแล้ว บอกว่ารวมรอบไหนไว้ */
-function poHtml(r) {
+/** PO ที่ลง -01 -02 ต่อท้ายรวมเป็น PO เดียวกันแล้ว ป้ายบอกว่ารวมกี่รอบ ชี้ค้างเห็นว่ารอบไหน */
+function poCell(r) {
   const p = r.parts || [];
-  return lotHtml(r.po, r.noPo, 'PO') + (r.maker ? `<span class="lp-sup">${esc(r.maker)}</span>` : '') + (p.length > 1
-    ? `<span class="tx-sub" title="PO เดียวกันที่รับคนละวัน ส่วนท้ายคือวันที่รับเข้า">รวมรอบ ${esc(p.join(' '))}</span>` : '');
+  const po = r.noPo ? `<span class="mid" title="ไม่รู้ PO">${esc(r.po === '' ? 'ว่าง' : r.po)}</span>` : esc(r.po);
+  return po + (p.length > 1
+    ? `<span class="lp-n" title="PO เดียวกันที่รับคนละวัน ส่วนท้ายคือวันที่รับเข้า: ${esc(p.join(' '))}">รวม ${p.length} รอบ</span>` : '');
 }
 
 /** บอกกติกาเมื่อช่วงที่ดูมีบรรทัดที่รวม PO -01 -02 ไว้ */
@@ -747,46 +841,81 @@ function poNote(scope) {
     · รวมไว้ ${f(n)} บรรทัด</div>` : '';
 }
 
-/** ที่มาของบรรทัด: หยิบจาก Location ไหน และลิงก์ไปแถวในชีต ไว้แก้ LOT/PO ที่ผิด */
-function srcHtml(r) {
-  const bad = r.bad.length ? `<span class="tx-sub tx-neg">จำนวนพิมพ์ไม่ใช่ตัวเลข ${f(r.bad.length)} แถว ไม่ได้นับ</span>` : '';
-  return `<span class="tx-sub">${esc(r.locs.join(', '))}</span><span class="tx-sub">แถว ${rowLinks(r.rows)}</span>${bad}${guessHtml(r)}`;
-}
-
 const cutNote = (rows) => rows.length > SHOW_MAX
-  ? `<div class="tx-note" style="margin-top:10px">แสดง ${f(SHOW_MAX)} จาก ${f(rows.length)} บรรทัด เลือกวันหรือค้นหาเพื่อดูส่วนที่เหลือ — ปุ่มคัดลอกและดาวน์โหลดได้ครบทุกบรรทัด</div>`
+  ? `<div class="lp-more">แสดง ${f(SHOW_MAX)} จาก ${f(rows.length)} บรรทัด เลือกวันหรือค้นหาเพื่อดูส่วนที่เหลือ — ปุ่มคัดลอกและ CSV ได้ครบทุกบรรทัด</div>`
   : '';
 
-/** รายออเดอร์: บรรทัดของออเดอร์เดียวกันอยู่ติดกัน แถวต่อจากแถวแรกไม่เขียนเลขออเดอร์ซ้ำ */
-function orderListHtml(rows) {
+/**
+ * ตารางแบบ Excel หนึ่งบรรทัดต่อแถว แถวรวมติดล่างเสมอ before/after = จำนวนช่องก่อนและหลังช่องจำนวน
+ * ช่องวันที่กว้าง 46px ช่องรหัส (c-key) จึงติดซ้ายต่อจากช่องวันที่เมื่อมีช่องวันที่
+ */
+function xlHtml(head, body, label, before, qty, after, date) {
+  return `<div class="lp-wrap"><table class="lp-xl" style="--kl:${date ? 46 : 0}px">
+    <thead><tr>${head}</tr></thead>
+    <tbody>${body}</tbody>
+    <tfoot><tr><td colspan="${before}">รวม ${label}</td><td class="num">${f(qty)}</td>${'<td></td>'.repeat(after)}</tr></tfoot>
+  </table></div>`;
+}
+
+/** ป้ายบอกว่าได้ของจากกี่ LOT/PO จอมือถือย่อเหลือ ×2 ช่องรหัสที่ติดซ้ายจะได้ไม่กินที่ */
+const splitTag = (n, title) => `<span class="lp-n" title="${esc(title)}"><span class="lp-nx">×</span>${n}<span class="lp-nl"> LOT/PO</span></span>`;
+
+/** ราย SKU: SKU เดียวออกหลาย LOT/PO ในวันเดียว แถวต่อจากแถวแรกรหัสจางและไม่เขียนชื่อซ้ำ */
+function skuListHtml(rows) {
   const show = rows.slice(0, SHOW_MAX);
+  const date = !DAY;
+  const sold = show.some((r) => r.sold || r.many);
   const body = show.map((r, i) => {
-    const prev = show[i - 1], next = show[i + 1];
-    const same = (a) => !!r.ref && a && a.date === r.date && a.ref === r.ref;
-    const cls = [same(prev) ? 'lp-in' : '', same(next) ? 'lp-grp' : ''].filter(Boolean).join(' ');
-    const ord = !r.ref
-      ? '<span class="tx-neg">ไม่มีออเดอร์</span>'
-      : same(prev) ? `<span class="tx-sub">${esc(r.ref)}</span>`
-        : `<b>${esc(r.ref)}</b><span class="tx-sub">${[r.src, r.online, r.sup].filter(Boolean).map(esc).join(' · ')}</span>`;
-    const none = r.miss === 'ledger' || r.miss === 'minus';
-    /* ไม่รู้ LOT/PO บอกอยู่ในช่องแล้ว ช่องหมายเหตุบนจอเหลือเรื่องยอดไม่ลงกันกับที่มาของ LOT ประมาณ ไฟล์ที่ส่งออกยังมีครบ */
-    const note = r.miss ? `<span class="tx-sub tx-neg">${esc(WmsLotPo.note(r))}</span>` : guessHtml(r);
-    return `<tr${cls ? ` class="${cls}"` : ''}>
-      ${DAY ? '' : `<td class="nw k-date">${esc(dm(r.date))}</td>`}
-      <td class="nw k-ord">${ord}</td>
-      <td class="k-sku">${skuHtml(r, r.split > 1 ? `<span class="tx-tag">ได้ ${r.split} LOT/PO</span>` : '')}</td>
-      <td class="nw k-lot" data-label="LOT">${none ? '—' : lotCell(r)}</td>
-      <td class="nw k-po" data-label="PO">${none ? '—' : poHtml(r)}</td>
-      <td class="num k-qty" data-label="จำนวน">${f(r.qty)}</td>
-      <td class="k-note">${note}</td>
-    </tr>`;
+    const prev = show[i - 1];
+    /* SKU ตอนซื้อเดียวกันแต่ขายเป็นคนละ SKU เป็นคนละกลุ่ม จำนวน LOT/PO บนป้ายนับตาม SKU ที่ขาย */
+    const cont = !!prev && prev.date === r.date && prev.sku === r.sku && (prev.sold || '') === (r.sold || '');
+    const cls = [cont ? 'in' : '', prev && prev.date !== r.date ? 'd1' : '', rowTint(r)].filter(Boolean).join(' ');
+    const key = cont ? `<span class="mute">${esc(r.sku)}</span>`
+      : `<b>${esc(r.sku)}</b>${r.split > 1 ? splitTag(r.split, `SKU นี้ออก ${r.split} LOT/PO ในวันเดียว`) : ''}`;
+    return `<tr${cls ? ` class="${cls}"` : ''}>${date ? dayCell(prev, r) : ''}
+      <td class="c-key">${key}</td>${sold ? `<td>${soldCell(r)}</td>` : ''}
+      <td class="c-nm"${cont ? '' : ` title="${esc(r.name)}"`}>${cont ? '' : esc(r.name)}</td>
+      <td>${lotCell(r)}</td><td>${poCell(r)}</td>
+      <td class="c-sup" title="${esc(r.maker || '')}">${esc(r.maker || '')}</td>
+      <td class="num"><b>${f(r.qty)}</b></td>
+      <td class="c-loc" title="${esc(r.locs.join(', '))}">${esc(r.locs.join(', '))}</td>
+      <td class="c-row">${rowLinks(r.rows)}</td>
+      <td class="c-note" title="${esc(WmsLotPo.note(r))}">${noteCell(r)}</td></tr>`;
   }).join('');
   const t = WmsLotPo.totals(rows);
-  return `<div class="tx-wrap"><table class="tx-tbl lp-tbl lp-ord">
-    <thead><tr>${DAY ? '' : '<th>วันที่</th>'}<th>ออเดอร์</th><th>SKU / ชื่อสินค้า</th><th>LOT</th><th>PO · Supplier</th><th class="num">จำนวน</th><th>หมายเหตุ</th></tr></thead>
-    <tbody>${body}
-      <tr class="sum">${DAY ? '' : '<td></td>'}<td class="k-ord">${f(t.orders)} ออเดอร์</td><td class="k-sku">${f(t.lines)} บรรทัด</td><td></td><td></td><td class="num k-qty">${f(t.qty)}</td><td></td></tr>
-    </tbody></table></div>${cutNote(rows)}`;
+  const head = `${date ? '<th class="c-date">วันที่</th>' : ''}<th class="c-key">SKU</th>${sold ? '<th>SKU ที่ขาย</th>' : ''}<th>ชื่อสินค้า</th>
+    <th>LOT</th><th>PO</th><th>Supplier</th><th class="num">จำนวน</th><th>Location</th><th>แถวในชีต</th><th>หมายเหตุ</th>`;
+  return xlHtml(head, body, `${f(t.lines)} บรรทัด · ${f(t.skus)} SKU`, (date ? 1 : 0) + (sold ? 1 : 0) + 5, t.qty, 3, date) + cutNote(rows);
+}
+
+/** รายออเดอร์: บรรทัดของออเดอร์เดียวกันอยู่ติดกัน แถวต่อจากแถวแรกเลขออเดอร์จาง ไม่เขียนระบบ เลขออนไลน์ ขนส่งซ้ำ */
+function orderListHtml(rows) {
+  const show = rows.slice(0, SHOW_MAX);
+  const date = !DAY;
+  const sold = show.some((r) => r.sold || r.many);
+  const body = show.map((r, i) => {
+    const prev = show[i - 1];
+    const cont = !!r.ref && !!prev && prev.date === r.date && prev.ref === r.ref;
+    const none = r.miss === 'ledger' || r.miss === 'minus';
+    const cls = [cont ? 'in' : '', prev && prev.date !== r.date ? 'd1' : '', rowTint(r)].filter(Boolean).join(' ');
+    const ord = !r.ref ? '<span class="neg">ไม่มีออเดอร์</span>' : cont ? `<span class="mute">${esc(r.ref)}</span>` : `<b>${esc(r.ref)}</b>`;
+    return `<tr${cls ? ` class="${cls}"` : ''}>${date ? dayCell(prev, r) : ''}
+      <td class="c-key">${ord}</td>
+      <td>${cont ? '' : esc(r.src)}</td>
+      <td>${esc(r.sku)}${r.split > 1 ? splitTag(r.split, `ออเดอร์นี้ได้ SKU นี้จาก ${r.split} LOT/PO`) : ''}</td>
+      ${sold ? `<td>${soldCell(r)}</td>` : ''}
+      <td class="c-nm" title="${esc(r.name)}">${esc(r.name)}</td>
+      <td>${none ? '—' : lotCell(r)}</td><td>${none ? '—' : poCell(r)}</td>
+      <td class="c-sup" title="${esc(r.maker || '')}">${esc(r.maker || '')}</td>
+      <td class="num"><b>${f(r.qty)}</b></td>
+      <td class="c-note" title="${esc(WmsLotPo.note(r))}">${noteCell(r)}</td>
+      <td class="c-onl">${cont ? '' : esc(r.online || '')}</td>
+      <td>${cont ? '' : esc(r.sup || '')}</td></tr>`;
+  }).join('');
+  const t = WmsLotPo.totals(rows);
+  const head = `${date ? '<th class="c-date">วันที่</th>' : ''}<th class="c-key">ออเดอร์</th><th>ระบบ</th><th>SKU</th>${sold ? '<th>SKU ที่ขาย</th>' : ''}
+    <th>ชื่อสินค้า</th><th>LOT</th><th>PO</th><th>Supplier</th><th class="num">จำนวน</th><th>หมายเหตุ</th><th>เลขคำสั่งซื้อออนไลน์</th><th>ขนส่ง</th>`;
+  return xlHtml(head, body, `${f(t.orders)} ออเดอร์ · ${f(t.lines)} บรรทัด`, (date ? 1 : 0) + (sold ? 1 : 0) + 7, t.qty, 3, date) + cutNote(rows);
 }
 
 function listHtml() {
@@ -796,32 +925,7 @@ function listHtml() {
       ? '<div class="tx-empty art-search">ไม่พบรายการที่ตรงกับที่เลือก</div>'
       : '<div class="tx-empty art-done">ไม่มีแถวขายในช่วงนี้</div>';
   }
-  if (byOrder()) return orderListHtml(rows);
-  const show = rows.slice(0, SHOW_MAX);
-  const body = show.map((r, i) => {
-    const prev = show[i - 1], next = show[i + 1];
-    /* SKU ตอนซื้อเดียวกันแต่ขายเป็นคนละ SKU เป็นคนละกลุ่ม จำนวน LOT/PO บนป้ายนับตาม SKU ที่ขาย */
-    const same = (a) => a && a.date === r.date && a.sku === r.sku && (a.sold || '') === (r.sold || '');
-    const cls = [same(prev) ? 'lp-in' : '', same(next) ? 'lp-grp' : ''].filter(Boolean).join(' ');
-    const sku = same(prev)
-      ? `<span class="tx-sub">${esc(r.sku)}</span>`
-      : skuHtml(r, r.split > 1 ? `<span class="tx-tag">ออก ${r.split} LOT/PO</span>` : '');
-    return `<tr${cls ? ` class="${cls}"` : ''}>
-      ${DAY ? '' : `<td class="nw k-date">${esc(dm(r.date))}</td>`}
-      <td class="k-sku">${sku}</td>
-      <td class="nw k-lot" data-label="LOT">${lotCell(r)}</td>
-      <td class="nw k-po" data-label="PO">${poHtml(r)}</td>
-      <td class="num k-qty" data-label="จำนวน">${f(r.qty)}</td>
-      <td class="k-src">${srcHtml(r)}</td>
-    </tr>`;
-  }).join('');
-  const t = WmsLotPo.totals(rows);
-  const cut = cutNote(rows);
-  return `<div class="tx-wrap"><table class="tx-tbl lp-tbl">
-    <thead><tr>${DAY ? '' : '<th>วันที่</th>'}<th>SKU / ชื่อสินค้า</th><th>LOT</th><th>PO · Supplier</th><th class="num">จำนวน</th><th>Location · แถวในชีต</th></tr></thead>
-    <tbody>${body}
-      <tr class="sum">${DAY ? '' : '<td></td>'}<td class="k-sku">รวม ${f(t.lines)} บรรทัด</td><td></td><td></td><td class="num k-qty">${f(t.qty)}</td><td></td></tr>
-    </tbody></table></div>${cut}`;
+  return byOrder() ? orderListHtml(rows) : skuListHtml(rows);
 }
 
 function renderList() {
@@ -829,10 +933,12 @@ function renderList() {
   if (box) box.innerHTML = listHtml();
   const n = chosen().length;
   const copy = $('copyBtn');
-  if (copy) { copy.textContent = `📋 คัดลอก ${f(n)} บรรทัด`; copy.disabled = !n; }
+  if (copy) { copy.textContent = `📋 คัดลอก ${f(n)}`; copy.disabled = !n; }
   const dl = $('dlBtn');
   if (dl) dl.disabled = !n;
 }
+
+let HELP = false;   // กล่อง ⓘ: ข้อความเต็มของผลเทียบ การประมาณ LOT 0 แปลงคืน รวมรอบ PO และที่มาของออเดอร์
 
 function renderBody() {
   if (!WmsSettings.txUrl()) {
@@ -849,38 +955,46 @@ function renderBody() {
     $('body').innerHTML = `<div class="tx-empty art-done">${esc(shownName())} ยังไม่มีแถวขายในสมุด</div>`;
     return;
   }
-  const views = `<div class="tx-bar lp-view">
-      <button class="tx-opt${VIEW === 'sku' ? ' on' : ''}" data-view="sku">รวมราย SKU</button>
-      <button class="tx-opt${VIEW === 'order' ? ' on' : ''}" data-view="order">รายออเดอร์</button>
-    </div>`;
+  const views = `<span class="lp-seg" role="group" aria-label="มุมมอง">${[['sku', 'ราย SKU'], ['order', 'รายออเดอร์']].map(([v, label]) =>
+    `<button class="${VIEW === v ? 'on' : ''}" data-view="${v}" aria-pressed="${VIEW === v}">${label}</button>`).join('')}</span>`;
   if (VIEW === 'order' && !ORD) {
-    $('body').innerHTML = views + (!WmsSettings.cutUrl()
+    $('body').innerHTML = `<div class="lp-tool">${views}</div>` + (!WmsSettings.cutUrl()
       ? `<div class="tx-empty art-link">เลขออเดอร์มาจากไฟล์ตัดสต๊อกของเดือน ยังไม่ได้ตั้ง Apps Script URL ของเช็ครายการตัดสต๊อก — <a href="../settings/">ตั้งที่หน้าตั้งค่า</a></div>`
       : `${ORD_ERR ? `<div class="tx-warn bad">ดึงออเดอร์ไม่สำเร็จ: ${esc(ORD_ERR)}</div>` : ''}
         <div class="tx-empty art-data">เลขออเดอร์มาจากแท็บตัดสต๊อกระบบ Transaction ในไฟล์ตัดสต๊อกของเดือน<br><br>
         <button class="tx-opt" data-orders>▶️ ดึงออเดอร์</button></div>`);
     return;
   }
-  const scope = (byOrder() ? OLINES : ROWS).filter((r) => !DAY || r.date === DAY);
-  const count = (only) => WmsLotPo.filter(scope, { only }).length;
-  /* ตัวเลขบนปุ่มนับเป็นบรรทัดทุกปุ่ม ตรงกับจำนวนที่ปุ่มคัดลอกจะได้ */
-  const opt = (v, label) => `<button class="tx-opt${ONLY === v ? ' on' : ''}" data-only="${v}">${label} ${f(count(v))} บรรทัด</button>`;
-  const conv = LED.convert && LED.convert.pairs.length ? opt('conv', 'แปลงคืน') : '';
-  const guess = count('guess') || ONLY === 'guess' ? opt('guess', 'LOT ประมาณ') : '';
-  const opts = byOrder()
-    ? opt('', 'ทั้งหมด') + opt('split', 'ได้หลาย LOT/PO') + opt('unknown', 'ไม่รู้ LOT/PO') + guess + opt('gap', 'ยอดไม่ลงกัน') + conv
-    : opt('', 'ทั้งหมด') + opt('split', 'ออกหลาย LOT/PO') + opt('unknown', 'ไม่รู้ LOT/PO') + guess + conv;
+  const scope = scopeRows();
+  /* ตัวเลขบนชิปนับเป็นบรรทัดทุกชิป ตรงกับจำนวนที่ปุ่มคัดลอกจะได้ ชี้ค้างเห็นจำนวนชิ้น */
+  const chip = (v, label, tone) => {
+    const got = WmsLotPo.filter(scope, { only: v });
+    const pcs = got.reduce((a, r) => a + r.qty, 0);
+    return `<button class="lp-qc${ONLY === v ? ' on' : ''}${got.length ? (tone ? ` ${tone}` : '') : ' zero'}" data-only="${v}"
+      aria-pressed="${ONLY === v}" title="${f(got.length)} บรรทัด ${f(pcs)} ชิ้น">${label} <b>${f(got.length)}</b></button>`;
+  };
+  const guess = WmsLotPo.filter(scope, { only: 'guess' }).length || ONLY === 'guess';
+  const chips = chip('', 'ทั้งหมด') + chip('split', 'หลาย LOT/PO') + chip('unknown', 'ไม่รู้ LOT/PO', 'q-warn')
+    + (guess ? chip('guess', 'LOT ประมาณ', 'q-warn') : '')
+    + (byOrder() ? chip('gap', 'ยอดไม่ลงกัน', 'q-red') : '')
+    + (LED.convert && LED.convert.pairs.length ? chip('conv', 'แปลงคืน') : '');
+  const info = statusInfo();
+  /* คำเตือนที่ต้องทำอะไรสักอย่าง (สคริปต์รุ่นเก่า หัวตาราง MASTER ไม่ชัด ฯลฯ) นับขึ้นบรรทัดสถานะ กดแล้วเปิดกล่อง ⓘ */
+  const notes = convNote(scope) + poNote(scope) + (byOrder() ? orderNote() : '');
+  const warnN = (notes.match(/class="tx-warn/g) || []).length;
   const cols = byOrder() ? WmsLotPo.ORDER_HEAD.join(' · ') : WmsLotPo.HEAD.join(' · ');
-  $('body').innerHTML = `${views}${statusHtml()}<div id="est">${estHtml(scope)}</div>${convNote(scope)}${poNote(scope)}${byOrder() ? orderNote() : ''}
-    <div class="tx-bar">
-      <input id="q" class="tx-input" type="search" placeholder="ค้นหา${byOrder() ? 'เลขออเดอร์ เลขออนไลน์' : ''} SKU ชื่อสินค้า LOT PO หรือ Supplier" value="${esc(Q)}" autocomplete="off">
-      ${opts}
+  const find = byOrder() ? 'ค้นหาเลขออเดอร์ เลขออนไลน์ SKU ชื่อสินค้า LOT PO หรือ Supplier' : 'ค้นหา SKU ชื่อสินค้า LOT PO หรือ Supplier';
+  $('body').innerHTML = `<div class="lp-tool">${views}${chips}<span class="sp"></span>
+      <input id="q" class="lp-in" type="search" placeholder="${byOrder() ? 'ค้นหาออเดอร์ SKU LOT PO' : 'ค้นหา SKU ชื่อ LOT PO'}"
+        title="${find}" aria-label="${find}" value="${esc(Q)}" autocomplete="off">
+      <button class="lp-btn" id="copyBtn" title="คัดลอกแล้ววางใน Excel ได้เลย">📋 คัดลอก</button>
+      <button class="lp-btn" id="dlBtn" title="ดาวน์โหลดไฟล์ CSV เปิดใน Excel ได้">⬇️ CSV</button>
+      <button class="lp-i${HELP ? ' on' : ''}" data-help="toggle" aria-expanded="${HELP}" aria-label="คำอธิบายและรายละเอียด" title="คำอธิบายและรายละเอียด">i</button>
     </div>
-    <div class="tx-bar lp-out">
-      <button class="tx-opt" id="copyBtn">📋 คัดลอก</button>
-      <button class="tx-opt" id="dlBtn">⬇️ ดาวน์โหลด CSV</button>
-      <span>คัดลอกแล้ววางใน Excel ได้เลย คอลัมน์ ${cols} ทุกบรรทัดมีข้อมูลครบ กรองหรือทำ Pivot ต่อได้</span>
-    </div>
+    <div class="lp-line"><span class="lp-s-${info.cls}">${info.short}</span><span id="estPill">${estPill(scope)}</span>${warnN
+      ? `<button class="lp-pill warn" data-help="open">⚠ คำเตือน ${f(warnN)} ข้อ</button>` : ''}</div>
+    ${HELP ? `<div class="lp-help">${info.long}<div id="est">${estHtml(scope)}</div>${notes}
+      <div class="tx-note">คัดลอกแล้ววางใน Excel ได้เลย คอลัมน์ ${cols} ทุกบรรทัดมีข้อมูลครบ กรองหรือทำ Pivot ต่อได้</div></div>` : ''}
     <div id="list"></div>`;
   renderList();
 }
@@ -888,10 +1002,26 @@ function renderBody() {
 /** บรรทัดของวันหรือเดือนที่เลือก ในมุมที่กำลังดู */
 const scopeRows = () => (byOrder() ? OLINES : ROWS).filter((r) => !DAY || r.date === DAY);
 
-/** ระหว่างอ่านสมุดทั้งชีต วาดแค่กล่องนี้ ไม่วาดทั้งหน้า ช่องค้นหาจะได้ไม่หลุดตอนพิมพ์ */
+/** ระหว่างอ่านสมุดทั้งชีต วาดแค่ป้าย LOT 0 กับกล่องนี้ ไม่วาดทั้งหน้า ช่องค้นหาจะได้ไม่หลุดตอนพิมพ์ */
 function renderEst() {
+  const scope = scopeRows();
+  const pill = $('estPill');
+  if (pill) pill.innerHTML = estPill(scope);
   const box = $('est');
-  if (box) box.innerHTML = estHtml(scopeRows());
+  if (box) box.innerHTML = estHtml(scope);
+}
+
+/** ป้าย LOT 0 บนบรรทัดสถานะ สรุปสั้น ๆ กดแล้วเปิดกล่อง ⓘ ที่มีรายละเอียดกับปุ่มทั้งหมด ยังไม่ได้ประมาณกดประมาณได้เลย */
+function estPill(scope) {
+  const t = WmsLotPo.totals(scope);
+  const left = Object.values(t.why).reduce((a, b) => a + b, 0);
+  if (!scope.some((r) => r.noLot && r.noPo) && !t.guess.qty) return '';
+  if (!GUESS) return '<button class="lp-pill" data-help="open">LOT 0 ตามที่สมุดลง · ปิดการประมาณอยู่</button>';
+  if (EST_BUSY) return `<span class="lp-pill">⏳ ${esc(EST_BUSY)}</span>`;
+  if (EST_ERR) return '<button class="lp-pill bad" data-help="open">ประมาณ LOT ให้ของ LOT 0 ไม่สำเร็จ</button>';
+  if (!EST) return '<button class="lp-pill act" data-est-load>▶️ ประมาณ LOT ให้ของ LOT 0</button>';
+  if (!EST.ok) return '<button class="lp-pill warn" data-help="open">ประมาณ LOT 0 ไม่ได้ สคริปต์ยังเป็นรุ่นเก่า</button>';
+  return `<button class="lp-pill${left ? ' warn' : ''}" data-help="open" title="กดดูว่าประมาณจากอะไร ที่เหลือรออะไร">LOT 0 ${f(t.guess.qty + left)} ชิ้น · ประมาณได้ ${f(t.guess.qty)} · ยังไม่รู้ ${f(left)}</button>`;
 }
 
 /**
@@ -1019,7 +1149,6 @@ function orderNote() {
 function render() {
   renderSrc();
   renderDays();
-  renderSum();
   renderBody();
 }
 
@@ -1058,9 +1187,20 @@ $('days').addEventListener('click', (e) => {
   const b = e.target.closest('[data-day]');
   if (!b) return;
   DAY = b.dataset.day;
+  /* กดด้วยแป้นพิมพ์ โฟกัสต้องอยู่ที่วันเดิมหลังวาดใหม่ */
+  const kb = $('days').contains(document.activeElement);
   renderDays();
-  renderSum();
   renderBody();
+  if (kb) $('days').querySelector(`[data-day="${DAY}"]`)?.focus({ preventScroll: true });
+});
+
+/* แถวในตารางรายวันกด Enter หรือเว้นวรรคได้เหมือนปุ่ม */
+$('days').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const b = e.target.closest('[data-day]');
+  if (!b) return;
+  e.preventDefault();
+  b.click();
 });
 
 $('body').addEventListener('click', (e) => {
@@ -1071,7 +1211,7 @@ $('body').addEventListener('click', (e) => {
     ONLY = '';
     /* ดึงออเดอร์ตอนเปิดดูรายออเดอร์ครั้งแรก คนที่ดูแค่ราย SKU ไม่ต้องรอ */
     if (VIEW === 'order' && !ORD && !ORD_ERR && WmsSettings.cutUrl()) { loadOrders(); return; }
-    renderSum();
+    renderDays();
     renderBody();
     return;
   }
@@ -1083,9 +1223,16 @@ $('body').addEventListener('click', (e) => {
     try { localStorage.setItem(GUESS_KEY, GUESS ? '1' : '0'); } catch (err) {}
     if (!GUESS && ONLY === 'guess') ONLY = '';
     rebuild();
-    renderSum();
+    renderDays();
     renderBody();
     if (GUESS && !EST) loadEst(false);
+    return;
+  }
+  /* ⓘ เปิดปิดกล่องรายละเอียด ป้ายบนบรรทัดสถานะเปิดอย่างเดียว */
+  const help = e.target.closest('[data-help]');
+  if (help) {
+    HELP = help.dataset.help === 'toggle' ? !HELP : true;
+    renderBody();
     return;
   }
   const only = e.target.closest('[data-only]');
