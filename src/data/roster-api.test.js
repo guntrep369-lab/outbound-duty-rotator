@@ -105,7 +105,7 @@ const FULL = {
   ot: { '2026-11-19|OS ทดสอบ': 2 },
   kpiData: { '2026-11': { 'สมชาย ทดสอบ': { pickRate: 30 } } },
   minStaff: { morning: 6 },
-  osExtra: { '2026-11-16|morning': { req: 2 } },
+  osExtra: { '2026-11-16|morning': { req: 2 }, '2026-11-16|evening': { req: 3, got: 2, note: 'x' }, bad: { req: 1 }, '2026-11-17|morning': { req: '4' } },
   shiftLog: DATA.shiftLog,
   shiftDefs: [{ from: '2026-12-13', shifts: {
     morning: { name: 'กะเช้า', start: '07:00', end: '16:00' },
@@ -113,15 +113,21 @@ const FULL = {
 };
 
 describe('หน้าดูของ HR', () => {
-  it('ได้ตารางกะกับวันลา — ไม่มี KPI สมุดกะ คนขั้นต่ำ หรือ OS เสริม', () => {
+  it('ได้ตารางกะ วันลา และแผน OS เสริม — ไม่มี KPI สมุดกะ หรือคนขั้นต่ำ', () => {
     const r = script({ data: FULL })({ op: 'hr', token: 'staff' });
     expect(r.hr).toBe(true);
-    expect(Object.keys(r.data).sort()).toEqual(['employees', 'extraPro', 'holidays', 'late', 'ot', 'outsource', 'overrides', 'periods', 'shiftDefs']);
+    expect(Object.keys(r.data).sort()).toEqual(['employees', 'extraPro', 'holidays', 'late', 'osExtra', 'ot', 'outsource', 'overrides', 'periods', 'shiftDefs']);
     const text = JSON.stringify(r);
     expect(text).not.toContain('pickRate');
     expect(text).not.toContain('CR-1');
     expect(text).not.toContain('คนไม่พอ');
     expect(r.data.shiftDefs[0].shifts.evening.name).toBe('กะสาย');
+    expect(r.data.minStaff).toBeUndefined();
+  });
+
+  it('แผน OS เสริม — HR เห็นจำนวนที่ขอกับที่มาจริง เฉพาะตัวเลข', () => {
+    const r = script({ data: FULL })({ op: 'hr', token: 'staff' });
+    expect(r.data.osExtra).toEqual({ '2026-11-16|morning': { req: 2 }, '2026-11-16|evening': { req: 3, got: 2 } });
   });
 
   it('คนแต่ละคนได้แค่ชื่อ ชื่อเล่น กลุ่ม วันหยุด และวันที่ย้ายกลุ่ม', () => {
@@ -165,6 +171,7 @@ describe('หน้าดูของ HR', () => {
     const r = script({ data: null })({ op: 'hr', token: 'staff' });
     expect(r.data.employees).toEqual([]);
     expect(r.data.overrides).toEqual({});
+    expect(r.data.osExtra).toEqual({});
   });
 
   it('กติกาวันสุดท้ายของกะบ่ายรุ่นเดิมไปด้วย หน้า HR จะเห็นช่อง 10-19 เหมือนตารางกะ', () => {

@@ -18,7 +18,7 @@ var ROSTER_TOKEN = '';
 var VIEW_TOKEN = '';
 
 // รหัสของหน้าดูสำหรับ HR (public/roster/hr.html) — ต้องไม่ซ้ำกับสองรหัสข้างบน
-// รหัสนี้เห็นตารางกะทุกคาบ วันลา ขาด มาสาย OT แต่ไม่เห็น KPI กับสมุดกะ และแก้อะไรไม่ได้
+// รหัสนี้เห็นตารางกะทุกคาบ วันลา ขาด มาสาย OT และแผน OS เสริม แต่ไม่เห็น KPI กับสมุดกะ และแก้อะไรไม่ได้
 // ว่างไว้ = ปิดหน้า HR · เปลี่ยนรหัส = ลิงก์ที่เคยส่งให้ HR ใช้ไม่ได้ทันที
 var HR_TOKEN = '';
 
@@ -145,8 +145,9 @@ function shiftDefs_(defs) {
 }
 
 /**
- * ตารางกะสำหรับ HR — คัดในสคริปต์ก่อนส่ง รหัส HR จึงไม่เคยได้ KPI สมุดกะ จำนวนคนขั้นต่ำ หรือ OS เสริม
+ * ตารางกะสำหรับ HR — คัดในสคริปต์ก่อนส่ง รหัส HR จึงไม่เคยได้ KPI สมุดกะ หรือจำนวนคนขั้นต่ำ
  * คนแต่ละคนส่งแค่ชื่อ ชื่อเล่น กลุ่ม วันหยุด และวันที่ย้ายกลุ่ม · วันลา/สาย/OT ส่งเฉพาะของคนที่ยังอยู่ในรายชื่อ
+ * แผน OS เสริม (ขอกี่คน / มาจริงกี่คน ต่อวันต่อกะ) ส่งไปด้วย — HR ใช้ตัวเลขที่ขอไปเรียกคนเสริมเข้ามา
  */
 var HR_PERSON = ['name', 'nick', 'group', 'dayOff', 'shift'];
 
@@ -196,9 +197,23 @@ function hr_(req) {
       holidays: pick(d.holidays, ['date', 'name']),
       extraPro: pick(d.extraPro, ['date', 'name']),
       overrides: byName(d.overrides), late: byName(d.late), ot: byName(d.ot),
+      osExtra: osExtra_(d.osExtra),
       shiftDefs: shiftDefs_(d.shiftDefs),
     },
   };
+}
+
+/** แผน OS เสริม — key "วันที่|กะ" ค่า {req: ขอกี่คน, got: มาจริงกี่คน} เอาเฉพาะตัวเลข */
+function osExtra_(map) {
+  var o = {};
+  for (var k in (map && typeof map === 'object' ? map : {})) {
+    if (!/^\d{4}-\d\d-\d\d\|(morning|evening)$/.test(k)) continue;
+    var e = map[k] || {}, x = {};
+    if (typeof e.req === 'number') x.req = e.req;
+    if (typeof e.got === 'number') x.got = e.got;
+    if (x.req !== undefined || x.got !== undefined) o[k] = x;
+  }
+  return o;
 }
 
 function meta_() {

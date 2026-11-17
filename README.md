@@ -181,12 +181,15 @@ and no copy of the app: HR opens a link.
 
 - **ตารางกะ**: every period, both shifts, with the shift names and hours set in the ⏰ กะ tab. Cells
   show W / H, leave (ลป ลก ลพ), ขาด, edits, and the late / OT corner marks. There is a name search.
+- **OS เสริม**: the OS เสริม plan for this week and next (Monday–Sunday), one row per shift for
+  ขอ and มาจริง, plus a day total. HR uses the ขอ numbers to call in extra workers. ‹ › moves a
+  week. The ตารางกะ tab also shows the two OS เสริม rows under each shift.
 - **ลา · ขาด · สาย · OT**: the same monthly table as the การลา tab, with the whole-year leave count.
 - 🖨 พิมพ์ prints the open tab. The page refreshes every 2 minutes.
 
-HR sees no KPI, no สมุดกะ, no minimums, and no OS เสริม numbers. The script removes these before
-sending. Each person comes with name, nick, group, day off and group-change dates only. Leave,
-late and OT come only for people still on the staff lists.
+HR sees no KPI, no สมุดกะ, and no minimums. The script removes these before sending. Each person
+comes with name, nick, group, day off and group-change dates only. Leave, late and OT come only
+for people still on the staff lists.
 
 The cell rules are in [`roster-calc.js`](public/roster/roster-calc.js) and the colours in
 [`roster-table.css`](public/roster/roster-table.css). The schedule page uses the same two files,

@@ -56,6 +56,26 @@ body{background:var(--wms-bg)}
 .hr-sub{font-size:12px;color:var(--txt2);margin-bottom:8px}
 .hr-sub b{color:var(--wms-text)}
 .hr-pg[hidden],.hr-nav[hidden]{display:none}
+.hr-wk{font-size:13px;font-weight:700;color:var(--wms-text);min-width:150px;text-align:center}
+
+/* แผน OS เสริม — ตารางสัปดาห์ละก้อน แถวละกะ ขอ / มาจริง */
+.osx-row td{cursor:default}
+.ox-wrap{margin-bottom:12px}
+.ox-tbl{border-collapse:collapse;width:100%;font-size:13px}
+.ox-tbl th,.ox-tbl td{border:1px solid var(--wms-border);padding:6px 8px;text-align:center;white-space:nowrap;font-variant-numeric:tabular-nums}
+.ox-tbl thead th{background:#f8fafc;color:var(--txt2);font-size:11.5px;font-weight:600}
+.ox-tbl thead th.ox-hol{color:var(--hol)}
+.ox-tbl thead th.ox-today{background:var(--wms-primary);color:#fff}
+.ox-tbl tbody th{text-align:left;font-weight:600;color:var(--txt2);font-size:12px;background:#fff}
+.ox-tbl .ox-nm{color:var(--os);font-weight:700}
+.ox-tbl td{font-weight:700;color:var(--os);background:#f7fffe;font-size:15px}
+.ox-tbl td.ox-none{color:var(--txt3);font-weight:400;background:#fff;font-size:13px}
+.ox-tbl tr.ox-got td{font-size:13px;color:var(--txt2)}
+.ox-tbl tr.ox-got td.ox-short{background:#fecaca;color:#991b1b}
+.ox-tbl tr.ox-sum th,.ox-tbl tr.ox-sum td{background:#f8fafc;border-top:2px solid var(--wms-border2);color:var(--wms-text)}
+.ox-tbl .ox-past{opacity:.5}
+/* ชื่อแถวตรึงไว้ซ้าย มือถือเลื่อนดูวันแล้วยังรู้ว่าเป็นกะไหน */
+.ox-tbl tr>th:first-child{position:sticky;left:0;z-index:1}
 
 /* ตารางการลา */
 .hr-wrap{overflow-x:auto;background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:var(--wms-radius-sm)}
@@ -115,6 +135,7 @@ body{background:var(--wms-bg)}
     <div class="hr-tools">
       <div class="hr-tabs" role="tablist">
         <button type="button" class="hr-tab on" role="tab" aria-selected="true" id="t-sch" onclick="showTab('sch')">ตารางกะ</button>
+        <button type="button" class="hr-tab" role="tab" aria-selected="false" id="t-ox" onclick="showTab('ox')">OS เสริม</button>
         <button type="button" class="hr-tab" role="tab" aria-selected="false" id="t-lv" onclick="showTab('lv')">ลา · ขาด · สาย · OT</button>
       </div>
       <span class="hr-sp"></span>
@@ -122,6 +143,12 @@ body{background:var(--wms-bg)}
         <button type="button" class="btn" onclick="stepPer(-1)" aria-label="คาบก่อนหน้า">‹</button>
         <select id="sel-per" onchange="CUR=+this.value;render()" aria-label="คาบ"></select>
         <button type="button" class="btn" onclick="stepPer(1)" aria-label="คาบถัดไป">›</button>
+      </div>
+      <div class="hr-nav" id="nav-ox" hidden>
+        <button type="button" class="btn" onclick="stepWeek(-1)" aria-label="สัปดาห์ก่อน">‹</button>
+        <span class="hr-wk" id="ox-range"></span>
+        <button type="button" class="btn" onclick="stepWeek(1)" aria-label="สัปดาห์ถัดไป">›</button>
+        <button type="button" class="btn" onclick="stepWeek(0)">สัปดาห์นี้</button>
       </div>
       <div class="hr-nav" id="nav-lv" hidden>
         <input id="lv-month" type="month" onchange="render()" aria-label="เดือน">
@@ -148,6 +175,11 @@ body{background:var(--wms-bg)}
       <div id="sch-out"></div>
     </section>
 
+    <section class="hr-pg" id="pg-ox" hidden>
+      <div class="hr-sub" id="ox-sub"></div>
+      <div id="ox-out"></div>
+    </section>
+
     <section class="hr-pg" id="pg-lv" hidden>
       <div class="hr-sub" id="lv-title"></div>
       <div id="lv-stat" class="kpi-stat-row"></div>
@@ -170,7 +202,7 @@ body{background:var(--wms-bg)}
 <script>
 var RP=window.RosterPeople,RC=window.RosterCalc,SH=window.WmsShifts;
 var CFG_KEY='wms:hrView';
-var D=null,LOADING=false,CUR=-1,TAB='sch';
+var D=null,LOADING=false,CUR=-1,TAB='sch',OX_MON=null;
 var DOW=['อา','จ','อ','พ','พฤ','ศ','ส'];
 var DOW_FULL=['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัส','ศุกร์','เสาร์'];
 var MON=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
@@ -213,7 +245,7 @@ function resetSetup(){writeCfg(null);D=null;showSetup('');}
 function norm(d){
   var a=function(v){return Array.isArray(v)?v:[];},o=function(v){return v&&typeof v==='object'&&!Array.isArray(v)?v:{};};
   var r={employees:a(d.employees),outsource:a(d.outsource),periods:a(d.periods),holidays:a(d.holidays),extraPro:a(d.extraPro),
-    overrides:o(d.overrides),late:o(d.late),ot:o(d.ot),shiftDefs:a(d.shiftDefs)};
+    overrides:o(d.overrides),late:o(d.late),ot:o(d.ot),osExtra:o(d.osExtra),shiftDefs:a(d.shiftDefs)};
   var sp=RC.sorted(r.periods),p=sp[RC.currentIdx(sp,today())],gA=p?p.groupA:'morning';
   r.outsource.forEach(function(x){if(x.group!=='A'&&x.group!=='B')x.group=(x.shift||'morning')===gA?'A':'B';});
   return r;
@@ -246,13 +278,16 @@ function load(quiet){
 
 function showTab(t){
   TAB=t;
-  ['sch','lv'].forEach(function(k){
+  ['sch','ox','lv'].forEach(function(k){
     el('t-'+k).classList.toggle('on',k===t);el('t-'+k).setAttribute('aria-selected',String(k===t));
     el('pg-'+k).hidden=k!==t;el('nav-'+k).hidden=k!==t;
   });
+  el('q').hidden=t==='ox';
   render();
 }
-function render(){if(!D)return;if(TAB==='lv')renderLeave();else renderSchedule();}
+function render(){if(!D)return;if(TAB==='lv')renderLeave();else if(TAB==='ox')renderOx();else renderSchedule();}
+/* แผน OS เสริม ของวัน d กะ sh — f = 'req' ขอกี่คน / 'got' มาจริงกี่คน · null = ไม่ได้ใส่ */
+function oxVal(d,sh,f){var e=D.osExtra[d+'|'+sh];return e&&typeof e[f]==='number'?e[f]:null;}
 /* ค้นหาชื่อ / ชื่อเล่น — ว่าง = ทุกคน */
 function match(p){var q=el('q').value.trim().toLowerCase();return !q||(p.name+' '+(p.nick||'')).toLowerCase().indexOf(q)>=0;}
 
@@ -322,8 +357,51 @@ function section(def,shift,g,dates,endS){
     h+='<tr class="os-sep-row"><td class="sc0">Outsource ประจำ ('+oss.length+' คน)</td><td class="sc1"></td><td class="sc2"></td><td class="sc3"></td><td colspan="'+dates.length+'"></td></tr>';
     oss.forEach(function(p){h+=row(p,true);});
   }
+  // OS เสริม — แถวขอกับแถวมาจริงแบบเดียวกับหน้าตารางกะ (ดูอย่างเดียว)
+  var rq='',gt='';
+  dates.forEach(function(d){
+    var q=oxVal(d,shift,'req'),got=oxVal(d,shift,'got'),wk=RC.pd(d).getDay()===1?' wk-s':'';
+    rq+='<td class="'+(q?'':'ox-none')+wk+'">'+(q===null?'·':q)+'</td>';
+    gt+='<td class="'+(got===null?'ox-none':q!==null&&got<q?'ox-short':'')+wk+'">'+(got===null?'·':got)+'</td>';
+  });
+  h+='<tr class="osx-row"><td colspan="4" class="sc0">OS เสริม · ขอ (คน)</td>'+rq+'</tr><tr class="osx-row"><td colspan="4" class="sc0">OS เสริม · มาจริง (คน)</td>'+gt+'</tr>';
   if(!emps.length&&!oss.length)h+='<tr><td colspan="4" class="sc0">'+(el('q').value.trim()?'ไม่เจอชื่อนี้ในกะนี้':'ไม่มีคน')+'</td><td colspan="'+dates.length+'"></td></tr>';
   return h+'</tbody>';
+}
+
+// ── แผน OS เสริม — สัปดาห์นี้กับสัปดาห์หน้า (จันทร์–อาทิตย์ เหมือนหน้าวางแผนของทีม) ──
+function monOf(s){return RC.addD(s,-((RC.pd(s).getDay()+6)%7));}
+function stepWeek(n){OX_MON=n?RC.addD(OX_MON||monOf(today()),7*n):monOf(today());render();}
+function renderOx(){
+  if(!OX_MON)OX_MON=monOf(today());
+  var a=RC.pd(OX_MON),b=RC.pd(RC.addD(OX_MON,13)),any=false,h='';
+  el('ox-range').textContent=a.getDate()+' '+MON[a.getMonth()]+' – '+b.getDate()+' '+MON[b.getMonth()]+' '+String(b.getFullYear()+543).slice(2);
+  [0,7].forEach(function(off){
+    var days=[];for(var i=0;i<7;i++)days.push(RC.addD(OX_MON,off+i));
+    var w=oxWeek(days);h+=w.h;if(w.any)any=true;
+  });
+  el('ox-sub').innerHTML='จำนวนคนเสริมที่ทีม Outbound ขอ ต่อวันต่อกะ · <b>มาจริง</b> ทีมใส่หลังวันนั้น'+(any?'':' · <b>2 สัปดาห์นี้ยังไม่มีแผน</b>');
+  el('ox-out').innerHTML=h;
+}
+function oxWeek(days){
+  var t=today(),a=SH.at(D.shiftDefs,days[0]),b=SH.at(D.shiftDefs,days[6]),any=false,sum=days.map(function(){return null;});
+  var cls=function(d,c){return (c||'')+(d<t?' ox-past':'');};
+  var h='<div class="hr-wrap ox-wrap"><table class="ox-tbl"><thead><tr><th></th>'+days.map(function(d){
+    var x=RC.pd(d),hol=RC.isHol(D.holidays,d);
+    return '<th class="'+cls(d,(d===t?'ox-today':'')+(hol?' ox-hol':''))+'"'+(hol?' title="'+esc(RC.holName(D.holidays,d))+'"':'')+'>'+DOW[x.getDay()]+' '+x.getDate()+' '+MON[x.getMonth()]+'</th>';}).join('')+'</tr></thead><tbody>';
+  SH.IDS.forEach(function(id){
+    var x=a.shifts[id],y=b.shifts[id],nm=x.name===y.name&&SH.timeText(x)===SH.timeText(y)?x.name+' '+SH.timeShort(x):x.name+' / '+y.name;
+    var rq='',gt='';
+    days.forEach(function(d,i){
+      var q=oxVal(d,id,'req'),got=oxVal(d,id,'got');
+      if(q!==null){any=true;sum[i]=(sum[i]||0)+q;}
+      rq+='<td class="'+cls(d,q?'':'ox-none')+'">'+(q===null?'·':q)+'</td>';
+      gt+='<td class="'+cls(d,got===null?'ox-none':q!==null&&got<q?'ox-short':'')+'">'+(got===null?'·':got)+'</td>';
+    });
+    h+='<tr><th><span class="ox-nm">'+esc(nm)+'</span> · ขอ</th>'+rq+'</tr><tr class="ox-got"><th>มาจริง</th>'+gt+'</tr>';
+  });
+  h+='<tr class="ox-sum"><th>รวมขอทั้งวัน</th>'+sum.map(function(v,i){return '<td class="'+cls(days[i],v===null?'ox-none':'')+'">'+(v===null?'·':v)+'</td>';}).join('')+'</tr>';
+  return {h:h+'</tbody></table></div>',any:any};
 }
 
 // ── ลา · ขาด · สาย · OT — นับแบบเดียวกับหน้าตารางกะ (RP.tally / RP.sum) ──
