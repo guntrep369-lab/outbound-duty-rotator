@@ -1207,7 +1207,9 @@ describe('count.html — เสร็จโลแล้วเลือกโล�
     expect(fn('toList'), 'กลับรายการเสมอ ไม่เปิดโลอื่น').not.toMatch(/openLoc\(/);
   });
   it('เสร็จโล / โลนี้ว่าง / ปุ่มกลับ ไปที่รายการแล้วเลื่อนมาที่โลที่เพิ่งออกมา', () => {
-    expect(fn('doneLoc')).toMatch(/if \(keepTyped\(\)\) \{ toList\(loc\); cheer\(loc, before\); \}/);
+    /* บันทึกกองที่พิมพ์ค้างก่อน (รอบ MFG ถาม SKU ที่ควรมีแต่ยังไม่กรอกตรงกลาง) แล้วกลับรายการ */
+    expect(fn('doneLoc')).toMatch(/if \(!keepTyped\(\)\) return;/);
+    expect(fn('doneLoc')).toMatch(/\n {2}toList\(loc\); cheer\(loc, before\);$/);
     expect(HTML).toMatch(/push\('ว่าง', \{\}\); toList\(loc\); cheer\(loc, before\);/);
     expect(HTML).toMatch(/case 'back': if \(VIEW !== 'loc' \|\| keepTyped\(\)\) toList\(LOC\); break;/);
     expect(fn('toList')).toMatch(/row\.scrollIntoView\(\{ block: 'center' \}\)/);

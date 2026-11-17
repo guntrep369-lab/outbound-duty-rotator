@@ -1027,6 +1027,70 @@
     return { level: 'ok', hint: '✓ ' + lab + ' ต้องนับ', ask: '' };
   }
 
+  /*
+   * คำใบ้ SKU ต่อโล (สคริปต์รุ่น 8 ส่ง hint = {Location: [SKU]} มาเฉพาะรอบ MFG ไม่มียอด ไม่มี LOT)
+   * คนนับรู้ว่าต้องหารุ่นไหน เดินตาม SKU ได้ครบทุกจุด · LOT กับจำนวนยังต้องอ่านจากป้ายและนับเอง
+   * รายการสินค้าของรอบ skus = [[SKU, SKU เต็ม, ชื่อ]] ใช้จับคู่รหัสย่อกับรหัสเต็ม (คนนับกรอกแบบไหนก็ได้)
+   */
+  function skuRow(code, skus) {
+    var c = up(code);
+    if (!c) return null;
+    for (var i = 0; i < (skus || []).length; i++) {
+      if (up(skus[i][0]) === c || up(skus[i][1]) === c) return skus[i];
+    }
+    return null;
+  }
+
+  function sameSku(code, pile, skus) {
+    var m = skuRow(code, skus);
+    var a = m ? [up(m[0]), up(m[1])] : [up(code)];
+    return (!!pile.sku && a.indexOf(up(pile.sku)) >= 0) || (!!pile.long && a.indexOf(up(pile.long)) >= 0);
+  }
+
+  /** SKU ที่ควรมีในโลนี้ rows = แถวที่มีผลของโล (นับ / ว่าง) → [{sku, name, found}] · ไม่มีคำใบ้ = [] */
+  function hintLoc(hint, loc, rows, skus) {
+    var want = (hint && hint[up(loc)]) || [];
+    var piles = (rows || []).filter(function (r) { return r.type === 'นับ'; });
+    return want.map(function (w) {
+      var m = skuRow(w, skus);
+      return { sku: m ? m[0] || m[1] : w, name: m ? m[2] : '', found: piles.some(function (p) { return sameSku(w, p, skus); }) };
+    });
+  }
+
+  /** SKU ที่กรอกอยู่ในคำใบ้ของโลไหม · โลที่ไม่มีคำใบ้ (นอกรายการ) หรือยังไม่กรอก = true ไม่เตือน */
+  function hintFits(hint, loc, sku, skus) {
+    var want = (hint && hint[up(loc)]) || [];
+    if (!want.length || !text(sku)) return true;
+    var m = skuRow(sku, skus);
+    var p = { sku: sku, long: m ? m[1] : '' };
+    return want.some(function (w) { return sameSku(w, p, skus); });
+  }
+
+  /**
+   * ดูตาม SKU: แต่ละ SKU อยู่โลไหนบ้างในรายการของทีม
+   *   locs = [{loc}] โลของทีม · rowsAt(loc) = แถวที่มีผลของโลนั้น
+   *   สถานะต่อโล: found = เจอแล้ว · miss = นับโลนี้แล้วไม่เจอ SKU นี้ · todo = ยังไม่นับโลนี้
+   *   คืน [{sku, name, locs: [{loc, st}], found, done, total}] SKU ที่ยังเหลือโลไม่นับขึ้นก่อน แล้วเรียงตามรหัส
+   */
+  function hintBySku(hint, locs, rowsAt, skus) {
+    var map = {}, out = [];
+    (locs || []).forEach(function (l) {
+      var rows = rowsAt(l.loc) || [];
+      hintLoc(hint, l.loc, rows, skus).forEach(function (h) {
+        var g = map[h.sku];
+        if (!g) { g = map[h.sku] = { sku: h.sku, name: h.name, locs: [], found: 0, done: 0, total: 0 }; out.push(g); }
+        var st = !rows.length ? 'todo' : h.found ? 'found' : 'miss';
+        g.locs.push({ loc: l.loc, st: st });
+        g.total++;
+        if (st !== 'todo') g.done++;
+        if (st === 'found') g.found++;
+      });
+    });
+    return out.sort(function (a, b) {
+      return (a.done === a.total) - (b.done === b.total) || (a.sku < b.sku ? -1 : a.sku > b.sku ? 1 : 0);
+    });
+  }
+
   /* ── ลิงก์เจ้านาย (mfg/boss.html) ─────────────────────────────────────── */
 
   /**
@@ -1094,6 +1158,7 @@
     DECIDE: DECIDE, DECIDE_ORDER: DECIDE_ORDER, NOTE_MAX: NOTE_MAX, SETTINGS_MAX: SETTINGS_MAX,
     decideOf: decideOf, applyDecide: applyDecide, decideText: decideText, decideSum: decideSum, byDecide: byDecide, prevDecText: prevDecText,
     decideShort: decideShort, card: card, ymFromName: ymFromName, lotCheck: lotCheck,
+    hintLoc: hintLoc, hintFits: hintFits, hintBySku: hintBySku,
     REMARK_MAX: REMARK_MAX, remarkOf: remarkOf,
     bossLink: bossLink, parseBossLink: parseBossLink, bossModel: bossModel,
   };

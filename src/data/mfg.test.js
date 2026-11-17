@@ -509,6 +509,14 @@ describe('รอบ MFG บนสคริปต์นับสต๊อกต�
     expect(view.locs.map((l) => l[0])).toEqual(['R1-01-01', 'R1-01-02', 'R2-01-01', 'A-01-02']);
     expect(view.skus.map((k) => k[0])).toEqual(['AAA001', 'BBB001', 'CCC001']);
     expect(JSON.stringify(view)).not.toMatch(/"piles"/);
+    /* คำใบ้: โลไหนควรมี SKU อะไร ไม่มียอด ไม่มี LOT */
+    expect(view.hint).toEqual({ 'R1-01-01': ['AAA001'], 'R1-01-02': ['AAA001'], 'R2-01-01': ['BBB001'], 'A-01-02': ['CCC001'] });
+    /* นับสต๊อกใหญ่ไม่มีคำใบ้ ยังนับแบบไม่รู้อะไรเลย */
+    const big = api.post({ op: 'st-round-save', t: HEAD, round: { name: 'นับใหญ่', date: '2026-11-16', cutoff: '2026-11-16 08:00', settings: {} } }).round.id;
+    api.post({ op: 'st-baseline', t: HEAD, round: big, piles: s.piles, skus: s.skus, pos: s.pos, lastRow: 99, lastDate: '2026-11-15' });
+    const bigView = api.get({ api: 'st-round', round: big, k: 'nab' });
+    expect(bigView.hint).toBeNull();
+    expect(JSON.stringify(bigView)).not.toMatch(/AAA001"\]/);
 
     const item = (x) => ({ pass: 1, team: 'MFG1', who: 'สมชาย', sku: 'AAA001', long: 'AAA0000000001', po: '9900000001', type: 'นับ', at: '2026-11-16T09:00:00', ...x });
     expect(api.post({ op: 'st-count', k: 'nab', round: id, device: 'd1', items: [
@@ -526,6 +534,38 @@ describe('รอบ MFG บนสคริปต์นับสต๊อกต�
     expect(a.total).toEqual({ book: 15, count: 14 });
     expect(rep.done).toBe(2);
     expect(rep.total).toBe(4);
+  });
+
+  it('หน้ากรอกรอบ MFG: คำใบ้ SKU ต่อโล เจอแล้วหรือยัง รุ่นที่ไม่ควรอยู่ และดูตาม SKU', () => {
+    const hint = { 'R1-01-01': ['AAA001'], 'R1-01-02': ['AAA001', 'BBB001'], 'R2-01-01': ['BBB001'] };
+    const skus = SKUS;
+    const rows = {
+      'R1-01-01': [{ type: 'นับ', sku: 'AAA0000000001', long: 'AAA0000000001', qty: 3 }],     // กรอกรหัสเต็มก็นับว่าเจอ
+      'R1-01-02': [{ type: 'นับ', sku: 'BBB001', long: 'BBB0000000001', qty: 2 }],
+      'R2-01-01': [],
+    };
+    expect(M.hintLoc(hint, 'r1-01-02', rows['R1-01-02'], skus)).toEqual([
+      { sku: 'AAA001', name: 'ที่นอน 5FT สมมติ Mattress', found: false },
+      { sku: 'BBB001', name: 'ท็อปเปอร์ 3.5FT สมมติ Topper', found: true },
+    ]);
+    expect(M.hintLoc(hint, 'R1-01-01', rows['R1-01-01'], skus)[0].found).toBe(true);
+    expect(M.hintLoc(hint, 'B-09-09', [], skus)).toEqual([]);
+    expect(M.hintLoc(null, 'R1-01-01', [], skus)).toEqual([]);
+    /* "ว่าง" ไม่นับว่าเจอ */
+    expect(M.hintLoc(hint, 'R2-01-01', [{ type: 'ว่าง' }], skus)[0].found).toBe(false);
+
+    expect(M.hintFits(hint, 'R1-01-01', 'AAA001', skus)).toBe(true);
+    expect(M.hintFits(hint, 'R1-01-01', 'aaa0000000001', skus)).toBe(true);
+    expect(M.hintFits(hint, 'R1-01-01', 'BBB001', skus)).toBe(false);
+    expect(M.hintFits(hint, 'B-09-09', 'BBB001', skus)).toBe(true);     // โลนอกรายการ ไม่เตือน
+    expect(M.hintFits(hint, 'R1-01-01', '', skus)).toBe(true);
+
+    const locs = [{ loc: 'R1-01-01' }, { loc: 'R1-01-02' }, { loc: 'R2-01-01' }];
+    const g = M.hintBySku(hint, locs, (l) => rows[l], skus);
+    /* BBB ยังเหลือ R2-01-01 ขึ้นก่อน · AAA นับครบทั้งสองโลแล้ว (เจอ 1 ไม่เจอ 1) */
+    expect(g.map((x) => [x.sku, x.done, x.total, x.found])).toEqual([['BBB001', 1, 2, 1], ['AAA001', 2, 2, 1]]);
+    expect(g[0].locs).toEqual([{ loc: 'R1-01-02', st: 'found' }, { loc: 'R2-01-01', st: 'todo' }]);
+    expect(g[1].locs).toEqual([{ loc: 'R1-01-01', st: 'found' }, { loc: 'R1-01-02', st: 'miss' }]);
   });
 
   it('คำตัดสินบันทึกในค่าตั้งของรอบได้หลังปิดรับผลนับ ไม่ต้องแก้สคริปต์ ค่าตั้งเดิมอยู่ครบ', () => {

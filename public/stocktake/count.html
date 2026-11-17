@@ -102,6 +102,30 @@ button,input{font-family:inherit}
 .ct-sug button small{display:block;font-size:12.5px;color:var(--wms-muted)}
 .ct-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 
+/* ── รอบ MFG: SKU ที่ควรมีในโล (แตะ = ใส่ SKU) · ดูตาม SKU ── */
+.ct-want{margin-bottom:10px;padding:9px 10px;border-radius:12px;background:#F5F3FF;border:1px solid #DDD6FE}
+.ct-want .h{margin-bottom:6px;font-size:12.5px;font-weight:700;color:#5B21B6}
+.ct-want .h small{font-weight:400;color:var(--wms-muted)}
+.ct-want .w{display:flex;flex-wrap:wrap;gap:6px}
+.ct-want button{display:flex;flex-direction:column;align-items:flex-start;min-height:44px;padding:5px 11px;border-radius:10px;border:1px solid #C4B5FD;
+  background:var(--wms-surface);font-size:15px;font-weight:700;color:var(--wms-text);text-align:left;cursor:pointer}
+.ct-want button small{font-size:12px;font-weight:400;color:var(--wms-muted)}
+.ct-want button.ok{background:#ECFDF5;border-color:#A7F3D0;color:#047857}
+.ct-seg{display:flex;margin-bottom:8px;border:1px solid var(--wms-border2);border-radius:10px;overflow:hidden;background:var(--wms-surface)}
+.ct-seg button{flex:1;min-height:38px;border:0;background:none;font-size:14px;font-weight:600;color:var(--wms-muted);cursor:pointer}
+.ct-seg button.on{background:var(--wms-primary);color:#fff}
+.ct-sku{padding:10px 14px;border-bottom:1px solid #EEF2F6}
+.ct-sku:last-child{border-bottom:0}
+.ct-sku .t{display:flex;align-items:baseline;gap:8px;font-size:16px;font-weight:700}
+.ct-sku .t small{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px;font-weight:400;color:var(--wms-muted)}
+.ct-sku .t span{flex:none;font-size:13px;font-weight:600;color:var(--wms-faint)}
+.ct-sku .t span.full{color:#047857}
+.ct-sku .ls{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
+.ct-sl{min-height:40px;padding:0 11px;border-radius:9px;border:1px solid var(--wms-border2);background:var(--wms-surface);font-size:14.5px;font-weight:700;
+  color:var(--wms-text);cursor:pointer}
+.ct-sl.found{background:#ECFDF5;border-color:#A7F3D0;color:#047857}
+.ct-sl.miss{background:#F8FAFC;color:var(--wms-faint);font-weight:600}
+
 /* ── รายการ Location ── */
 .ct-chips{display:flex;gap:6px;overflow-x:auto;margin-bottom:10px;padding-bottom:2px}
 .ct-chip{flex:none;min-height:36px;padding:0 14px;border-radius:999px;border:1px solid var(--wms-border);background:var(--wms-surface);
@@ -558,6 +582,8 @@ function bgPaint() {
   if (box._html !== h) { box.innerHTML = h; box._html = h; }
   const w = $('locWarn');
   if (w) w.innerHTML = locWarn();
+  const wt = $('locWant');
+  if (wt) { const x = wantHTML(); if (wt._html !== x) { wt.innerHTML = x; wt._html = x; } }
 }
 
 /** แถวของทีมที่ชีตรับแล้ว ขอเฉพาะแถวใหม่หลังแถวล่าสุดที่เคยได้ */
@@ -858,24 +884,37 @@ function listView() {
     const label = no && !s ? 'ให้คนอื่นนับ' : again ? 'นับใหม่' : !s ? '' : (l.loc === NEAR ? 'เพิ่งเสร็จ · ' : '') + (s.empty ? 'ว่าง ✓' : `✓ ${s.n} กอง`);
     rows += `<button class="ct-loc${l.loc === NEAR ? ' near' : ''}"${nth()} data-loc="${esc(l.loc)}">${esc(l.loc)}<span class="st ${s ? (s.wait ? 'wait' : 'done') : no || again ? 'wait' : ''}">${label}${s && s.wait ? ' · รอส่ง' : ''}</span><span class="go">›</span></button>`;
   });
-  const typed = q && !known.has(q) && q.length >= 2 && ME.pass < 2;
+  /* รอบ MFG ที่มีคำใบ้: สลับดูตาม SKU (SKU ละแถว โลที่มันอยู่เป็นปุ่ม) ชิปกรองนับเป็น SKU แทนโล */
+  const bySku = hintOn() && BY === 'sku';
+  const groups = bySku ? WmsMfg.hintBySku(RD.hint, locs, atLoc, RD.skus) : null;
+  const gLeft = bySku ? groups.filter(g => g.done < g.total).length : 0;
+  if (bySku) {
+    const gShow = groups.filter(g => (!q || ST.up(g.sku).includes(q) || ST.up(g.name).includes(q) || g.locs.some(l => l.loc.includes(q))) &&
+      (FILTER === 'all' || (FILTER === 'done' ? g.done === g.total : g.done < g.total)));
+    rows = skuListHTML(gShow);
+  }
+  const seg = hintOn() ? `<div class="ct-seg"><button type="button" class="${bySku ? '' : 'on'}" data-by="loc">ดูตามโล</button><button type="button" class="${bySku ? 'on' : ''}" data-by="sku">ดูตาม SKU</button></div>` : '';
+  const cnt = bySku ? [gLeft, groups.length - gLeft, groups.length] : [left, done, locs.length];
+  const typed = !bySku && q && !known.has(q) && q.length >= 2 && ME.pass < 2;
   /* นับ 2 วัน: วันแรกบอกว่ายังมีโลรอวันที่ 2 · วันที่ 2 บอกโลที่ต้องนับใหม่ */
   const waitN = RD.wait && RD.wait.length && ME.pass < 2 ? ST.teamLocs(team(), RD.wait).length : 0;
   const againN = day2On() ? locs.filter(l => !st[l.loc] && movedLoc(l.loc)).length : 0;
   const dayBand = waitN ? `<div class="ct-band info"><b>วันแรก</b> นับเฉพาะโลที่ไม่มีของขายออก · อีก <b>${f(waitN)}</b> โลของทีมจะขึ้นให้นับวันที่ 2</div>`
     : againN ? `<div class="ct-band warn"><b>${f(againN)} โลต้องนับใหม่</b> ของขยับหลังนับวันแรก (มีป้าย "นับใหม่")</div>` : '';
-  return hero(done, locs.length, audit, min) + `<div class="ct-chips">
-      <button class="ct-chip ${FILTER === 'left' ? 'on' : ''}" data-filter="left">${audit ? 'ยังไม่สุ่ม' : 'เหลือ'}<b>${f(left)}</b></button>
-      <button class="ct-chip ${FILTER === 'done' ? 'on' : ''}" data-filter="done">${audit ? 'สุ่มแล้ว' : 'นับแล้ว'}<b>${f(done)}</b></button>
-      <button class="ct-chip ${FILTER === 'all' ? 'on' : ''}" data-filter="all">ทั้งหมด<b>${f(locs.length)}</b></button>
+  const unit = bySku ? ' SKU' : '';
+  return hero(done, locs.length, audit, min) + seg + `<div class="ct-chips">
+      <button class="ct-chip ${FILTER === 'left' ? 'on' : ''}" data-filter="left">${audit ? 'ยังไม่สุ่ม' : 'เหลือ'}<b>${f(cnt[0])}${unit}</b></button>
+      <button class="ct-chip ${FILTER === 'done' ? 'on' : ''}" data-filter="done">${audit ? 'สุ่มแล้ว' : bySku ? 'นับครบ' : 'นับแล้ว'}<b>${f(cnt[1])}${unit}</b></button>
+      <button class="ct-chip ${FILTER === 'all' ? 'on' : ''}" data-filter="all">ทั้งหมด<b>${f(cnt[2])}${unit}</b></button>
     </div>
+    ${hintOld() ? '<div class="ct-band warn">ยังไม่มีคำใบ้ว่าแต่ละโลควรมี SKU อะไร · แจ้งหัวหน้าให้ Deploy สคริปต์นับสต๊อกรุ่นใหม่ · นับต่อได้ตามปกติ</div>' : ''}
     ${dayBand}
     ${audit ? `<div class="ct-band info">Audit เลือกโลสุ่มตรวจเอง อย่างน้อย ${min}% ของแต่ละแถว · ไม่เห็นตัวเลขของทีม Inventory</div>` : ''}
-    <div class="ct-qrow"><input class="ct-in" id="locQ" placeholder="ค้นหาโล" value="${esc(Q)}" autocapitalize="characters" autocomplete="off" spellcheck="false">${ME.pass < 2 ? '<button type="button" class="ct-btn" data-act="addloc">+ เพิ่มโล</button>' : ''}</div>
+    <div class="ct-qrow"><input class="ct-in" id="locQ" placeholder="${bySku ? 'ค้นหา SKU หรือโล' : 'ค้นหาโล'}" value="${esc(Q)}" autocapitalize="characters" autocomplete="off" spellcheck="false">${ME.pass < 2 ? '<button type="button" class="ct-btn" data-act="addloc">+ เพิ่มโล</button>' : ''}</div>
     ${typed ? `<button class="ct-btn w" style="margin-top:8px" data-act="addloc">+ เพิ่มโล ${esc(q)} (นอกรายการ)</button>` : ''}
     <div class="ct-list" style="margin-top:10px">${rows || `<div class="ct-msg">${FILTER === 'left' && !q
-      ? `${mas('cheer')}<b>${audit ? 'สุ่มครบทุกแถวแล้ว' : 'นับครบทุกโลแล้ว'}</b><br>เก่งมาก ขอบคุณที่ช่วยนับ`
-      : `${mas('look', 'sm')}ไม่มีโลตามที่ค้น`}</div>`}</div>
+      ? `${mas('cheer')}<b>${audit ? 'สุ่มครบทุกแถวแล้ว' : bySku ? 'นับครบทุก SKU แล้ว' : 'นับครบทุกโลแล้ว'}</b><br>เก่งมาก ขอบคุณที่ช่วยนับ`
+      : `${mas('look', 'sm')}${bySku ? 'ไม่มี SKU ตามที่ค้น' : 'ไม่มีโลตามที่ค้น'}`}</div>`}</div>
     ${extra.length ? `<div class="ct-h">โลนอกรายการที่นับไว้</div><div class="ct-list">${extra.map(l => `<button class="ct-loc" data-loc="${esc(l)}">${esc(l)}<span class="st done">✓</span><span class="go">›</span></button>`).join('')}</div>` : ''}
 `;
 }
@@ -913,6 +952,7 @@ function locView() {
   return `<div class="ct-lochead"><button class="ct-btn sm" data-act="back" aria-label="กลับไปรายการโล">‹ โล</button>
       <div class="nm">${esc(LOC)}${myLocs().some(l => ST.up(l.loc) === LOC) ? '' : '<span class="ct-tag">นอกรายการ</span>'}<small>แถว ${esc(p.group)}${piles.length ? ` · ${piles.length} กอง` : ''}</small></div></div>
     <div id="locWarn">${locWarn()}</div>
+    <div id="locWant">${wantHTML()}</div>
     <div class="ct-piles" id="piles">${pilesHTML()}</div>
     <div class="ct-form ${editing ? 'edit' : ''}">
       <div class="tt"><span>${editing ? 'แก้กองนี้' : piles.length ? 'เพิ่มกองถัดไป' : 'กองแรก'}</span><button type="button" class="ct-padsw" id="padSw" data-act="pad">${padSwText()}</button></div>
@@ -946,7 +986,10 @@ function hints() {
   const sh = $('skuHint'), ss = $('skuSug'), ph = $('poHint'), ps = $('poSug');
   if (!sh) return;
   const ex = ST.skuExact(RD.skus, FORM.sku);
-  if (ex) { FORM.long = ex[1]; sh.className = 'ct-hint ok'; sh.textContent = '✓ ' + ex[2]; ss.innerHTML = ''; }
+  if (ex && hintOn() && !WmsMfg.hintFits(RD.hint, LOC, FORM.sku, RD.skus)) {
+    /* รอบ MFG: รุ่นนี้ไม่อยู่ในที่ควรมีของโลนี้ (ของวางผิดที่ก็บันทึกได้ แต่ดูป้ายให้แน่ก่อน) */
+    FORM.long = ex[1]; sh.className = 'ct-hint bad'; sh.textContent = `⚠ ${ex[2]} · ไม่อยู่ในที่ควรมีของโลนี้ ดูป้ายอีกครั้ง`; ss.innerHTML = '';
+  } else if (ex) { FORM.long = ex[1]; sh.className = 'ct-hint ok'; sh.textContent = '✓ ' + ex[2]; ss.innerHTML = ''; }
   else {
     FORM.long = '';
     const hits = ST.skuSearch(RD.skus, FORM.sku, 6);
@@ -980,16 +1023,54 @@ function lotHint() {
   el.textContent = c ? c.hint : '';
 }
 
-function openLoc(loc) {
+/* ── รอบ MFG: คำใบ้ว่าโลไหนควรมี SKU อะไร ───────────────────────────────
+   สคริปต์รุ่น 8 ส่ง RD.hint = {Location: [SKU]} มาเฉพาะรอบ MFG (ไม่มียอด ไม่มี LOT)
+   นับสต๊อกใหญ่ได้ hint = null ทุกอย่างในส่วนนี้ไม่ทำงาน ยังนับแบบไม่รู้อะไรเลยเหมือนเดิม */
+let BY = 'loc';           // รายการโลของรอบ MFG: ดูตามโล / ตาม SKU
+function hintOn() { return !!(window.WmsMfg && RD && RD.hint && typeof RD.hint === 'object'); }
+/** รอบ MFG แต่สคริปต์ยังเป็นรุ่นเก่า (ไม่มีช่อง hint เลย) บอกให้หัวหน้า Deploy · นับต่อได้ */
+function hintOld() { return !!(RD && RD.hint === undefined && (mfgYm() || (CFG && CFG.kind === 'mfg'))); }
+function wantAt(loc) { return hintOn() ? WmsMfg.hintLoc(RD.hint, loc, atLoc(loc), RD.skus) : []; }
+const wantList = (a) => a.map(h => `• ${h.sku}${h.name ? ' ' + h.name : ''}`).join('\n');
+
+/** กล่องบนหน้าโล: SKU ที่ควรมี แตะแล้วใส่ช่อง SKU ให้ · เจอแล้วขึ้นสีเขียว (แตะซ้ำได้ ถ้ามีอีก LOT) */
+function wantHTML() {
+  const w = wantAt(LOC);
+  if (!w.length) return '';
+  return `<div class="ct-want"><div class="h">ควรมีในโลนี้ · แตะเพื่อใส่ SKU <small>LOT กับจำนวน อ่านจากป้ายเอง</small></div><div class="w">` +
+    w.map(h => `<button type="button" class="${h.found ? 'ok' : ''}" data-sku="${esc(h.sku)}">${esc(h.sku)}${h.found ? ' ✓' : ''}<small>${esc(h.name || '—')}</small></button>`).join('') +
+    '</div></div>';
+}
+
+/** ออกจากโล (กดเสร็จ / ตั้งว่าง): SKU ที่ควรมีแต่ยังไม่ได้กรอก ถามก่อนว่าไม่เจอจริงไหม · คืน true = ไปต่อได้ */
+function wantOk(empty) {
+  const miss = wantAt(LOC).filter(h => empty || !h.found);
+  if (!miss.length) return true;
+  return confirm(empty
+    ? `สมุดบอกว่าโลนี้ควรมี\n${wantList(miss)}\n\nไม่เจอเลยจริงไหม? (ไม่เจอ กดตกลง)`
+    : `ยังไม่ได้กรอก\n${wantList(miss)}\n\nดูในโลอีกรอบ ถ้าไม่เจอจริง กดตกลง`);
+}
+
+/** ดูตาม SKU: SKU ละแถว โลที่ SKU นั้นอยู่เป็นปุ่ม แตะ = เปิดโลพร้อมใส่ SKU ให้ */
+function skuListHTML(groups) {
+  const lab = { found: ' ✓', miss: ' ไม่เจอ', todo: '' };
+  return groups.map(g => `<div class="ct-sku"><div class="t">${esc(g.sku)}<small>${esc(g.name)}</small>` +
+    `<span class="${g.done === g.total ? 'full' : ''}">นับแล้ว ${g.done}/${g.total} โล</span></div><div class="ls">` +
+    g.locs.map(l => `<button type="button" class="ct-sl ${l.st}" data-loc="${esc(l.loc)}" data-want="${esc(g.sku)}">${esc(l.loc)}${lab[l.st]}</button>`).join('') +
+    '</div></div>').join('');
+}
+
+/** want = SKU ที่ใส่ให้เลย (แตะโลจากหน้า "ตาม SKU") เคอร์เซอร์ไปช่อง LOT */
+function openLoc(loc, want) {
   const from = VIEW;
-  LOC = ST.up(loc); VIEW = 'loc'; EDIT = ''; FORM = { sku: '', long: '', lot: '', po: '', qty: '' };
+  LOC = ST.up(loc); VIEW = 'loc'; EDIT = ''; FORM = { sku: want || '', long: '', lot: '', po: '', qty: '' };
   PRES = { loc: LOC, others: [] };
   GO = 'fwd';
   paint(); hints(); window.scrollTo(0, 0);
   /* มาจากรายการ: แถบปุ่มล่างเลื่อนขึ้นมา · โลต่อโล แถบอยู่ที่เดิม */
   const bar = document.querySelector('.ct-bottom');
   if (bar && from !== 'loc' && !STILL) bar.classList.add('ct-go');
-  setTimeout(() => { const el = $('fSku'); if (el && !atLoc(LOC).length) el.focus(); }, 50);
+  setTimeout(() => { const el = $(want ? 'fLot' : 'fSku'); if (el && (want || !atLoc(LOC).length)) el.focus(); }, 50);
   if (!banned(LOC)) announce(LOC);
 }
 
@@ -1051,6 +1132,9 @@ function readForm() {
   const ym = mfgYm();
   const lc = ym ? WmsMfg.lotCheck(lot, ym) : null;
   if (lc && lc.ask && !confirm(lc.ask)) { oops('fLot'); return null; }
+  /* รอบ MFG: รุ่นที่ไม่อยู่ในที่ควรมีของโลนี้ ถามก่อน (กันหยิบรุ่นหน้าตาคล้ายกัน) แต่ยังบันทึกได้ ของวางผิดที่ก็ต้องรู้ */
+  if (hintOn() && !WmsMfg.hintFits(RD.hint, LOC, sku, RD.skus) &&
+      !confirm(`${sku} ไม่อยู่ในที่ควรมีของโลนี้\nโลนี้ควรมี\n${wantList(wantAt(LOC))}\n\nดูป้ายอีกครั้ง ถ้าเจอรุ่นนี้จริง กดตกลง`)) { oops('fSku'); return null; }
   const v = { sku: ex ? (ex[0] || ex[1]) : sku, long: ex ? ex[1] : '', lot, po, qty };
   /* PO / LOT ไม่เข้ากับ SKU ตามสมุด จับตั้งแต่ตรงนี้ หน้าวิเคราะห์จะได้ไม่มี "LOT/PO ผิด" ที่มาจากพิมพ์ผิด */
   const warn = ST.pileWarn(v, RD.pos, RD.skus);
@@ -1154,7 +1238,10 @@ function doneLoc() {
   if (!banned(LOC) && !typed() && !atLoc(LOC).length &&
       !confirm('โลนี้ยังไม่ได้กรอกอะไร\nกลับไปเลือกโลอื่นก่อน? (ถ้าโลว่าง ให้กด "โลนี้ว่าง")')) return;
   const loc = LOC, before = doneN(myLocs());
-  if (keepTyped()) { toList(loc); cheer(loc, before); }
+  if (!keepTyped()) return;
+  /* รอบ MFG: ยังมี SKU ที่ควรมีแต่ไม่ได้กรอก ถามก่อนออก · ตอบว่าจะดูอีกรอบ = อยู่โลเดิม (กองที่พิมพ์ค้างบันทึกแล้ว) */
+  if (atLoc(loc).length && !wantOk(false)) { paint(); hints(); return; }
+  toList(loc); cheer(loc, before);
 }
 
 /** การ์ดน้องกล่องเด้งขึ้นเหนือปุ่มล่างแป๊บเดียว กดทะลุได้ ไม่บังปุ่ม */
@@ -1610,8 +1697,9 @@ document.addEventListener('click', (e) => {
   }
   if (d.name) { PICK.who = d.name; paintMain(); return; }
   if (d.filter) { FILTER = d.filter; paintMain(); return; }
+  if (d.by) { BY = d.by; paintMain(); return; }
   if (d.addsug) { const q = $('addQ'); q.value = d.addsug; addLocHint(); q.focus(); return; }
-  if (d.loc) { openLoc(d.loc); return; }
+  if (d.loc) { openLoc(d.loc, d.want); return; }
   if (d.pile) { EDIT === d.pile ? (EDIT = '', FORM = { sku: '', long: '', lot: '', po: '', qty: '' }, paint(), hints()) : editPile(d.pile); return; }
   if (d.sku) { FORM.sku = d.sku; $('fSku').value = d.sku; hints(); $('fLot').focus(); return; }
   if (d.po) { FORM.po = d.po; $('fPo').value = d.po; hints(); $('fQty').focus(); return; }
@@ -1644,7 +1732,8 @@ document.addEventListener('click', (e) => {
       break;
     case 'empty':
       if (typed() && !confirm('มีกองที่พิมพ์ไว้แต่ยังไม่ได้เพิ่ม\nทิ้งที่พิมพ์ แล้วตั้งโลนี้ว่าง?')) break;
-      FORM = { sku: '', long: '', lot: '', po: '', qty: '' };
+      if (!wantOk(true)) break;
+      FORM ={ sku: '', long: '', lot: '', po: '', qty: '' };
       { const loc = LOC, before = doneN(myLocs()); push('ว่าง', {}); toList(loc); cheer(loc, before); }
       break;
     case 'unempty': { const em = atLoc(LOC).find(r => r.type === 'ว่าง'); if (em && confirm('ยกเลิก "ว่าง" ของโลนี้?')) { push('ยกเลิก', { ref: em.uid }); paint(); hints(); } break; }
