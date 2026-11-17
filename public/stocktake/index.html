@@ -273,6 +273,74 @@ body.st-tv .ct-g .gh b{font-size:14px}
   .ct-grid,body.st-tv .ct-grid{grid-template-columns:minmax(0,1fr)}
 }
 
+/* ── รายงานปิดรอบ: หน้าเดียวให้เจ้านาย พิมพ์ A4 / PDF ได้ ── */
+.rp-tools{display:flex;flex-wrap:wrap;align-items:center;gap:6px;max-width:980px;margin:0 auto 10px;font-size:12px;color:var(--wms-muted)}
+.rp-tools .sp{flex:1}
+.rp-price{max-width:980px;margin:0 auto 10px;padding:10px 12px;border:1px solid var(--wms-border2);border-radius:var(--wms-radius-sm);
+  background:var(--wms-surface2);font-size:12.5px;line-height:1.6;color:var(--wms-muted)}
+.rp-price b{color:var(--wms-text)}
+.rp-price textarea{display:block;width:100%;height:96px;margin:6px 0;padding:6px 8px;border:1px solid var(--wms-border2);border-radius:6px;
+  background:var(--wms-surface);font-family:ui-monospace,Consolas,monospace;font-size:12.5px;color:var(--wms-text);resize:vertical}
+.rp-price textarea:focus{outline:none;border-color:var(--wms-primary)}
+.rp-page{max-width:980px;margin:0 auto;padding:20px 24px;background:var(--wms-surface);border:1px solid var(--wms-border);
+  border-radius:var(--wms-radius);color:var(--wms-text)}
+.rp-head{display:flex;flex-wrap:wrap;align-items:flex-start;gap:6px 14px;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid var(--wms-text)}
+.rp-head h1{font-size:19px;font-weight:700;line-height:1.35}
+.rp-head .sub{margin-top:2px;font-size:12.5px;color:var(--wms-muted)}
+.rp-head .sp{flex:1}
+.rp-stamp{padding:4px 12px;border-radius:999px;font-size:12px;font-weight:700;white-space:nowrap}
+.rp-stamp.ok{background:#ECFDF5;border:1px solid #A7F3D0;color:#047857}
+.rp-stamp.draft{background:#FEF3C7;border:1px solid #FDE68A;color:#92400E}
+.rp-kpi{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.rp-tile{padding:9px 12px;border:1px solid var(--wms-border);border-radius:10px;background:var(--wms-surface2)}
+.rp-tile .lb{font-size:12px;font-weight:600;color:var(--wms-muted)}
+.rp-tile .v{font-size:27px;font-weight:700;line-height:1.25;font-variant-numeric:tabular-nums}
+.rp-tile .s{font-size:11.5px;color:var(--wms-muted)}
+.rp-tile.good{background:#ECFDF5;border-color:#A7F3D0}.rp-tile.good .v{color:#047857}
+.rp-tile.mid{background:#FFFBEB;border-color:#FDE68A}.rp-tile.mid .v{color:#B45309}
+.rp-tile.bad{background:#FEF2F2;border-color:#FECACA}.rp-tile.bad .v{color:#B91C1C}
+.rp-sec{margin-top:14px;break-inside:avoid}
+.rp-sec h3{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;margin-bottom:6px;font-size:13.5px;font-weight:700}
+.rp-sec h3 small{font-size:11.5px;font-weight:400;color:var(--wms-muted)}
+.rp-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 16px}
+.rp-page .st-xl td{height:28px}
+.rp-page .st-xl .neg{color:#B91C1C}
+.rp-page .st-xl .pos{color:#1D4ED8}
+.rp-page .st-xl td.wrap{white-space:normal;line-height:1.4;padding-top:4px;padding-bottom:4px}
+.rp-page .rp-kv td{height:auto;padding-top:5px;padding-bottom:5px;white-space:normal;line-height:1.45}
+.rp-kv td:first-child{width:42%;color:var(--wms-muted)}
+.rp-foot{margin-top:16px;padding-top:9px;border-top:1px solid var(--wms-border);font-size:11px;line-height:1.7;color:var(--wms-muted)}
+/* รูปสรุปส่ง LINE */
+.st-shot{position:fixed;inset:0;z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;
+  background:rgba(15,23,42,.55);overflow:auto}
+.st-shot-box{width:100%;max-width:600px;padding:12px;background:var(--wms-surface);border-radius:var(--wms-radius);box-shadow:0 12px 40px rgba(0,0,0,.25)}
+.st-shot-bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px;font-size:14px;color:var(--wms-text)}
+.st-shot-bar .sp{flex:1}
+.st-shot-msg{margin-bottom:10px;font-size:12.5px;line-height:1.5;color:var(--wms-muted)}
+.st-shot-msg.ok{color:#047857;font-weight:600}
+.st-shot-msg.err{color:#B91C1C;font-weight:600}
+.st-shot img{display:block;width:100%;max-width:540px;margin:0 auto;border:1px solid var(--wms-border);border-radius:10px}
+@media (max-width:760px){
+  .rp-page{padding:14px}
+  .rp-kpi{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .rp-grid{grid-template-columns:minmax(0,1fr)}
+}
+@media print{
+  @page{size:A4;margin:10mm}
+  body{background:#fff !important}
+  .st-src,.tx-tabs,.rp-tools,.rp-price,.st-shot{display:none !important}
+  .st-body{padding:0 !important}
+  .rp-page{max-width:none;padding:0;border:0;border-radius:0}
+  .rp-kpi{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .rp-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .rp-page .st-wrap{overflow:visible;border-color:#CBD5E1}
+  .rp-page .st-xl{font-size:10.5px}
+  .rp-page .st-xl th{position:static;padding:3px 6px}
+  .rp-page .st-xl td{height:19px;padding:0 6px}
+  .rp-tile .v{font-size:22px}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+
 @media (max-width:640px){
   .st-src{padding:8px 12px}
   .st-body{padding:12px 12px 90px}
@@ -323,8 +391,9 @@ function save(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 /* ?tab= ไว้ส่งลิงก์ตรงไปหน้าความคืบหน้า */
 const TABS = [['setup', 'ตั้งรอบ', '../icons/settings.png'], ['teams', 'ทีม/โซน', '../icons/list-checks.png'], ['control', 'ห้องควบคุม', '../icons/boxes.png'],
   ['progress', 'ความคืบหน้า', '../icons/tab-count.png'],
-  ['analyze', 'วิเคราะห์', '../icons/tab-compare.png'], ['round2', 'รอบ 2', '../icons/tab-refill.png'], ['close', 'ปิดรอบ', '../icons/tab-fix.png']];
-const LIVE_TABS = ['control', 'progress', 'analyze', 'round2', 'close'];   // แท็บที่ดึงบันทึกนับใหม่เอง (ห้องควบคุมทุก 20 วินาที ที่เหลือทุกนาที)
+  ['analyze', 'วิเคราะห์', '../icons/tab-compare.png'], ['round2', 'รอบ 2', '../icons/tab-refill.png'], ['close', 'ปิดรอบ', '../icons/tab-fix.png'],
+  ['report', 'รายงาน', '../icons/clipboard-list.png']];
+const LIVE_TABS = ['control', 'progress', 'analyze', 'round2', 'close', 'report'];   // แท็บที่ดึงบันทึกนับใหม่เอง (ห้องควบคุมทุก 20 วินาที ที่เหลือทุกนาที)
 let TAB = TABS.some(t => t[0] === new URLSearchParams(location.search).get('tab')) ? new URLSearchParams(location.search).get('tab') : 'setup';
 
 const S = { rounds: null, rid: load(KEY_ROUND), head: null, log: [], raw: [], since: 0, at: 0, busy: '', err: '', ok: '', fresh: false };
@@ -481,6 +550,7 @@ function paintBody() {
   else if (TAB === 'analyze') box.innerHTML = analyzeView();
   else if (TAB === 'round2') box.innerHTML = round2View();
   else if (TAB === 'close') box.innerHTML = closeView();
+  else if (TAB === 'report') box.innerHTML = reportView();
   else box.innerHTML = setupView();
 }
 
@@ -1587,6 +1657,380 @@ async function downloadXlsx() {
   });
 }
 
+/* ── แท็บรายงาน: สรุปปิดรอบหน้าเดียวให้เจ้านาย พิมพ์ / PDF / รูปส่ง LINE ──
+   ปิดรอบแล้วใช้ยอดที่อนุมัติ ยังไม่ปิด = ร่างจากตัวเลขตอนนี้ (ตัวเลขเดียวกับแท็บปิดรอบ รวมที่หัวหน้าแก้)
+   ราคาต่อชิ้นไม่มีในสมุด หัวหน้าวางจาก Excel เอง เก็บในเครื่องนี้ ใช้ได้ทุกรอบ ไม่มีราคา = ไม่ขึ้นมูลค่า */
+
+const PRICE_KEY = 'wms:st:price';
+let PRICE_OPEN = false;
+let RP = null;   // รายงานที่คิดไว้ คิดใหม่เมื่อข้อมูลรอบ บันทึกนับ ตัวเลขที่แก้ หรือราคาเปลี่ยน
+
+function prices() {
+  try { const p = JSON.parse(load(PRICE_KEY) || '{}'); return p && p.map ? p : { map: {}, at: '' }; }
+  catch (e) { return { map: {}, at: '' }; }
+}
+function setPrices(map) { save(PRICE_KEY, JSON.stringify({ map, at: new Date().toISOString() })); RP = null; }
+/** วางราคาเพิ่ม: SKU เดิมใช้ราคาใหม่ SKU อื่นเก็บไว้เหมือนเดิม */
+function addPrices(text) {
+  const p = ST.parsePrices(text);
+  if (p.n) setPrices({ ...prices().map, ...p.map });
+  return p;
+}
+
+function report() {
+  const r = R(), closed = r.status === 'ปิดแล้ว', pm = prices();
+  const ed = closed ? '' : JSON.stringify(edits());
+  if (RP && RP.head === S.head && RP.n === S.log.length && RP.since === S.since && RP.closed === closed && RP.at === pm.at && RP.ed === ed) return RP.rep;
+  const fin = closed ? (S.head.sum || []).map(fromSum) : finals();
+  const rep = ST.closeReport({ lines: fin, entries: S.log, teams: S.head.teams, prices: pm.map, top: 10 });
+  RP = { head: S.head, n: S.log.length, since: S.since, closed, at: pm.at, ed, rep };
+  return rep;
+}
+
+const pctText = (v) => (v === null || v === undefined ? '—' : v + '%');
+const lvlOf = (v) => (v === null || v === undefined ? 'none' : v >= 98 ? 'good' : v >= 95 ? 'mid' : 'bad');
+const baht = (v) => (v < 0 ? '−' : v > 0 ? '+' : '') + '฿' + Math.abs(Math.round(v)).toLocaleString('en-US');
+const cutText = (s) => String(s || '').replace('T', ' ');
+function durText(min) { if (!min) return '—'; const h = Math.floor(min / 60), m = min % 60; return h ? `${h} ชม.${m ? ` ${m} นาที` : ''}` : `${m} นาที`; }
+function dt(ms) { return ms ? new Date(ms).toLocaleString('th-TH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : '—'; }
+function rangeText(a, b) { if (!a) return '—'; return new Date(a).toDateString() === new Date(b).toDateString() ? `${dt(a)}–${hm(b)}` : `${dt(a)} – ${dt(b)}`; }
+
+function reportView() {
+  const r = R();
+  if (!after1()) return `<div class="st-empty">รายงานขึ้นหลังปิดรับนับรอบ 1<br><button class="st-btn" data-go="analyze">ไปแท็บวิเคราะห์</button></div>`;
+  const closed = r.status === 'ปิดแล้ว';
+  const k = report(), V = k.value.has, np = Object.keys(prices().map).length;
+  const nc = (n) => (n < 0 ? 'neg' : n > 0 ? 'pos' : '');
+  const tile = (lb, v, s) => `<div class="rp-tile ${lvlOf(v)}"><div class="lb">${lb}</div><div class="v">${pctText(v)}</div><div class="s">${s}</div></div>`;
+  const th = (cells) => `<thead><tr>${cells.map(c => `<th${c[1] ? ' class="num"' : ''}>${c[0]}</th>`).join('')}</tr></thead>`;
+  const tools = `<div class="rp-tools">
+      <button class="st-btn p" data-act="rp-shot">📷 รูปสรุปส่ง LINE</button>
+      <button class="st-btn" data-act="rp-print">🖨 พิมพ์ / PDF</button>
+      <button class="st-btn" data-act="rp-price">💲 ราคาต่อชิ้น${np ? ` · ${f(np)} SKU` : ''}</button>
+      <span class="sp"></span><span>${closed ? 'ยอดที่อนุมัติแล้ว' : 'ร่างจากตัวเลขตอนนี้'} · ทั้งรอบ ไม่สนตัวกรอง</span></div>`;
+  const price = PRICE_OPEN ? `<div class="rp-price"><b>ราคาต่อชิ้น</b> — วาง SKU กับราคาจาก Excel (2 คอลัมน์) ลงช่องนี้ หรือกด Ctrl+V ที่ไหนก็ได้บนแท็บนี้ ·
+      เก็บในเครื่องนี้ ใช้ได้ทุกรอบ · SKU เดิมใช้ราคาใหม่${np ? ` · มีแล้ว <b>${f(np)}</b> SKU` : ''}
+      <textarea id="rpPrice" placeholder="AAA001&#9;1250&#10;BBB001&#9;890" aria-label="SKU กับราคาต่อชิ้น"></textarea>
+      <button class="st-btn p" data-act="rp-price-save">บันทึกราคา</button>
+      ${np ? '<button class="st-btn r" data-act="rp-price-clear">ล้างราคาทั้งหมด</button>' : ''}
+      <button class="st-btn" data-act="rp-price">ปิด</button></div>` : '';
+
+  const head = `<div class="rp-head"><div><h1>สรุปผลนับสต๊อก · ${esc(r.name)}</h1>
+      <div class="sub">นับ ${esc(r.date)} · ตัดยอด ${esc(cutText(r.cutoff))} · รหัสรอบ ${esc(r.id)}</div></div><span class="sp"></span>
+      ${closed ? `<span class="rp-stamp ok">อนุมัติแล้ว · ${esc(r.approvedBy)} · ${esc(r.approvedAt)}</span>` : '<span class="rp-stamp draft">ร่าง · ยังไม่อนุมัติ ตัวเลขยังเปลี่ยนได้</span>'}</div>`;
+  const kpi = `<div class="rp-kpi">
+      ${tile('ความแม่นยำ Location', k.acc.loc.pct, `ตรงทุกรายการ ${f(k.acc.loc.ok)} / ${f(k.acc.loc.n)} โล`)}
+      ${tile('ความแม่นยำ SKU', k.acc.sku.pct, `รวมทุกโลแล้วตรง ${f(k.acc.sku.ok)} / ${f(k.acc.sku.n)} SKU`)}
+      ${tile('ยอดตรง (ชิ้น)', k.acc.qty, `ต่าง ${f(k.acc.diff)} จาก ${f(k.acc.book)} ชิ้น`)}
+      ${k.first.checked ? tile('นับครั้งแรกถูก', k.first.pct, `แก้หลังนับ ${f(k.first.n - k.first.ok)} จาก ${f(k.first.n)} รายการ`)
+        : tile('Audit ตรงกับ Inventory', k.audit.pct, k.audit.n ? `ตรง ${f(k.audit.ok)} / ${f(k.audit.n)} รายการที่สุ่ม` : 'ยังไม่มีผล Audit')}</div>`;
+  const sum = `<div class="rp-sec"><h3>ยอดรวม <small>${f(k.tot.lines)} รายการ · ต้องปรับ ${f(k.tot.adjLines)}</small></h3>
+      <div class="st-wrap"><table class="st-xl">${th([['', 0], ['สมุด', 1], ['ยอดสุดท้าย', 1], ['ขาด', 1], ['เกิน', 1], ['สุทธิ', 1]])}<tbody>
+      <tr><td class="k">ชิ้น</td><td class="num">${f(k.tot.book)}</td><td class="num">${f(k.tot.final)}</td><td class="num neg">−${f(k.tot.minus)}</td>
+        <td class="num pos">+${f(k.tot.plus)}</td><td class="num k ${nc(k.tot.net)}">${signed(k.tot.net)}</td></tr>
+      ${V ? `<tr><td class="k">มูลค่า</td><td></td><td></td><td class="num neg">${baht(-k.value.minus)}</td><td class="num pos">${baht(k.value.plus)}</td>
+        <td class="num k ${nc(k.value.net)}">${baht(k.value.net)}</td></tr>` : ''}</tbody></table></div>
+      ${V && k.value.missing ? `<div class="st-note">ไม่มีราคา ${f(k.value.missing)} SKU ที่ต่าง — มูลค่ายังไม่รวม SKU เหล่านี้</div>` : ''}
+      ${V ? '' : '<div class="st-note">ยังไม่มีราคาต่อชิ้น มูลค่าจึงไม่ขึ้น · กด 💲 ราคาต่อชิ้น แล้ววางจาก Excel</div>'}</div>`;
+
+  const groups = k.groups.length ? `<div class="st-wrap"><table class="st-xl">${th([['กลุ่ม', 0], ['รายการ', 1], ['ชิ้น', 1]].concat(V ? [['มูลค่า', 1]] : []))}<tbody>
+      ${k.groups.map(g => `<tr><td><span class="st-g ${GCLS[g.group] || ''}">${esc(g.group)}</span></td><td class="num">${f(g.n)}</td><td class="num">${f(g.qty)}</td>${V ? `<td class="num ${nc(g.val)}">${g.val ? baht(g.val) : '—'}</td>` : ''}</tr>`).join('')}
+      </tbody></table></div><div class="st-note">วางผิดโล / LOT/PO ผิด ปรับเพิ่มที่หนึ่งลดอีกที่ ยอดรวมของคลังไม่เปลี่ยน</div>`
+    : '<div class="st-note">ไม่มีรายการต้องปรับ</div>';
+  const teamsN = k.teams.length;
+  const kv = [
+    ['โลที่นับ', `${f(k.counted.locs)} โล · ${f(k.counted.lines)} รายการ`],
+    ['ไม่ได้นับ (ใช้ยอดสมุด)', k.left ? `<b class="neg">${f(k.left)} รายการ</b>` : '0'],
+    ['นับซ้ำรอบ 2', `${f(k.recount.locs)} โล${k.recount.pct !== null ? ` (${k.recount.pct}% ของโลที่นับ)` : ''}`],
+    ['Audit ตรงกับ Inventory', k.audit.n ? `${pctText(k.audit.pct)} · สุ่ม ${f(k.audit.n)} รายการ` : '—'],
+    ['นับครั้งแรกถูก', k.first.checked ? `${pctText(k.first.pct)} · แก้หลังนับ ${f(k.first.n - k.first.ok)} รายการ` : '— ยังไม่มีรอบ 2 / หัวหน้าแก้ ให้เทียบ'],
+    ['คนนับ', `${f(k.span.people)} คน${teamsN ? ` · ${f(teamsN)} ทีม Inventory` : ''}`],
+    ['ช่วงเวลา', esc(rangeText(k.span.start, k.span.end))],
+    ['ใช้เวลานับจริง', `${durText(k.span.workMin)} <span class="mu">(หักช่วงพัก)</span>`],
+  ];
+  const overview = `<div class="st-wrap"><table class="st-xl rp-kv"><tbody>${kv.map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join('')}</tbody></table></div>`;
+
+  const zones = `<div class="rp-sec"><h3>แยกตามโซน <small>ตรง = รายการที่ตรงสมุด ÷ รายการที่นับ</small></h3>
+      <div class="st-wrap"><table class="st-xl">${th([['โซน', 0], ['โล', 1], ['รายการ', 1], ['ตรง', 1], ['ขาด', 1], ['เกิน', 1], ['สุทธิ', 1]].concat(V ? [['มูลค่า', 1]] : []).concat([['ไม่ได้นับ', 1]]))}<tbody>
+      ${k.zones.map(z => `<tr class="${lvlOf(z.pct) === 'bad' ? 'bad' : lvlOf(z.pct) === 'mid' ? 'low' : 'ok'}"><td class="k">${esc(z.zone)}</td><td class="num">${f(z.locs)}</td><td class="num">${f(z.lines)}</td>
+        <td class="num c">${pctText(z.pct)}</td><td class="num neg">${z.minus ? '−' + f(z.minus) : ''}</td><td class="num pos">${z.plus ? '+' + f(z.plus) : ''}</td>
+        <td class="num k ${nc(z.net)}">${z.net ? signed(z.net) : '0'}</td>${V ? `<td class="num ${nc(z.val)}">${z.val ? baht(z.val) : '—'}</td>` : ''}
+        <td class="num ${z.left ? 'neg' : 'mu'}">${z.left ? f(z.left) : ''}</td></tr>`).join('') || `<tr><td colspan="9" class="mu">ยังไม่มีผลนับ</td></tr>`}
+      </tbody></table></div></div>`;
+
+  const teams = teamsN ? `<div class="rp-sec"><h3>แยกตามทีม (รอบ 1) <small>ถูกครั้งแรก = รอบ 1 ตรงกับยอดสุดท้าย · ความเร็วคิดจากเวลาทำงานจริง</small></h3>
+      <div class="st-wrap"><table class="st-xl">${th([['ทีม', 0], ['คนนับ', 0], ['โล', 1], ['โล/ชม.', 1], ['ช่วงเวลา', 0], ['ถูกครั้งแรก', 1], ['แก้หลังนับ', 1], ['รอบ 2 นับให้', 1]])}<tbody>
+      ${k.teams.map(t => `<tr class="${lvlOf(t.first) === 'bad' ? 'bad' : lvlOf(t.first) === 'mid' ? 'low' : 'ok'}"><td class="k">${esc(t.name)}</td>
+        <td class="wrap mu">${esc(t.people.join(', ') || '—')}</td><td class="num">${f(t.locs)}</td><td class="num">${t.pace === null ? '—' : f(t.pace)}</td>
+        <td class="mu">${esc(rangeText(t.start, t.end))}</td><td class="num c">${pctText(t.first)}</td><td class="num">${t.wrong ? f(t.wrong) : ''}</td>
+        <td class="num mu">${t.r2 ? f(t.r2) + ' โล' : ''}</td></tr>`).join('')}
+      </tbody></table></div></div>` : '';
+
+  const top = k.top.length ? `<div class="rp-sec"><h3>SKU ที่ต่างมากสุด ${f(k.top.length)} อันดับ <small>${V ? 'เรียงตามมูลค่า' : 'เรียงตามจำนวน'} · สุทธิรวมทุกโล${k.topMore ? ` · ยังมีอีก ${f(k.topMore)} SKU ดูใน Excel ปรับยอด` : ''}</small></h3>
+      <div class="st-wrap"><table class="st-xl">${th([['#', 0], ['SKU', 0], ['ชื่อ', 0], ['ขาด', 1], ['เกิน', 1], ['สุทธิ', 1], ['โลที่ต่าง', 1]].concat(V ? [['ราคา', 1], ['มูลค่า', 1]] : []))}<tbody>
+      ${k.top.map((t, i) => `<tr><td class="mu">${i + 1}</td><td class="k">${esc(t.sku || t.long)}</td><td class="mu">${esc(t.name)}</td>
+        <td class="num neg">${t.minus ? '−' + f(t.minus) : ''}</td><td class="num pos">${t.plus ? '+' + f(t.plus) : ''}</td><td class="num k ${nc(t.net)}">${signed(t.net)}</td>
+        <td class="num">${f(t.locs)}</td>${V ? `<td class="num mu">${t.price === null ? 'ไม่มีราคา' : f(t.price)}</td><td class="num k ${nc(t.val)}">${t.price === null ? '—' : baht(t.val)}</td>` : ''}</tr>`).join('')}
+      </tbody></table></div></div>` : '';
+
+  const foot = `<div class="rp-foot">ความแม่นยำคิดเฉพาะรายการที่มีคนนับ ·
+      <b>Location</b> = โลที่ทุกรายการตรงสมุด · <b>SKU</b> = รวมทุกโลแล้วยอดตรง (ของวางผิดโลหักกันได้) ·
+      <b>ยอดตรง</b> = 1 − ชิ้นที่ต่าง (ไม่สนบวกลบ) ÷ ชิ้นในสมุด · <b>นับครั้งแรกถูก</b> = รอบ 1 ตรงกับยอดสุดท้าย ·
+      สี: เขียว ≥ 98% เหลือง 95–98% แดง &lt; 95% · แอปไม่ได้แก้สมุด ลงปรับยอดตามไฟล์ Excel ปรับยอด ·
+      ทำรายงานเมื่อ ${esc(new Date().toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }))}</div>`;
+
+  return `${tools}${price}<div class="rp-page" id="rpPage">${head}${kpi}${sum}
+    <div class="rp-grid"><div class="rp-sec"><h3>ปัญหาที่เจอ <small>รายการที่ต้องปรับ แยกตามสาเหตุ</small></h3>${groups}</div>
+      <div class="rp-sec"><h3>ภาพรวมการนับ</h3>${overview}</div></div>
+    ${zones}${teams}${top}${foot}</div>`;
+}
+
+function savePriceBox() {
+  const el = $('rpPrice');
+  const p = addPrices(el ? el.value : '');
+  if (!p.n) { S.err = 'ไม่เจอราคาในที่วาง ต้องเป็น SKU กับราคา บรรทัดละตัว (คัดลอกสองคอลัมน์จาก Excel)'; S.ok = ''; paintSrc(); return; }
+  PRICE_OPEN = false;
+  S.err = ''; S.ok = `✓ เก็บราคา ${f(p.n)} SKU แล้ว${p.bad ? ` · ข้าม ${f(p.bad)} บรรทัดที่ไม่มีราคา` : ''}`;
+  paint();
+}
+
+/* ── รูปสรุปส่ง LINE: วาดลง canvas เป็น PNG (แบบเดียวกับหน้า MFG) คัดลอกไปวาง / แชร์จากมือถือ / โหลดเก็บ ── */
+
+const CARD_W = 540, CARD_PAD = 26, CARD_SCALE = 2;   // กว้าง 540 วาดสองเท่า = รูป 1080 px คมบนมือถือ
+const CARD_FONT = "'Inter','Noto Sans Thai',sans-serif";
+/* รูปพื้นขาวเสมอ (ไม่ตามโหมดมืด) */
+const CC = {
+  text: '#0F172A', muted: '#64748B', faint: '#94A3B8', line: '#E2E8F0', pri: '#4F46E5', neg: '#B91C1C', pos: '#1D4ED8',
+  good: ['#ECFDF5', '#047857'], mid: ['#FFFBEB', '#B45309'], bad: ['#FEF2F2', '#B91C1C'], none: ['#F1F5F9', '#334155'],
+};
+const GCOL = { short: ['#FEF2F2', '#B91C1C'], over: ['#EFF6FF', '#1D4ED8'], moved: ['#F5F3FF', '#6D28D9'], lotpo: ['#FFF7ED', '#C2410C'],
+  typo: ['#FEF3C7', '#92400E'], left: ['#F1F5F9', '#475569'], audit: ['#ECFEFF', '#0E7490'], ok: ['#ECFDF5', '#047857'], edit: ['#FDF4FF', '#A21CAF'] };
+let SHOT = null;   // รูปที่เปิดอยู่ {blob, file, url, name}
+
+function cardFont(px, w) { return `${w || 400} ${px}px ${CARD_FONT}`; }
+
+/** วาดรายงานลง canvas ขนาดพอดีเนื้อหา  k = closeReport  m = {name, date, cutoff, closed, by} */
+function drawReport(k, m) {
+  const W = CARD_W, P = CARD_PAD, IW = W - P * 2, H0 = 2600;
+  const big = document.createElement('canvas');
+  big.width = W * CARD_SCALE; big.height = H0 * CARD_SCALE;
+  const c = big.getContext('2d');
+  c.scale(CARD_SCALE, CARD_SCALE);
+  c.fillStyle = '#FFFFFF'; c.fillRect(0, 0, W, H0);
+  c.textBaseline = 'top';
+  const txt = (s, x, y, px, w, color, align) => {
+    c.font = cardFont(px, w); c.fillStyle = color || CC.text; c.textAlign = align || 'left'; c.fillText(String(s), x, y);
+    return c.measureText(String(s)).width;
+  };
+  const fit = (s, max, px, w) => {
+    c.font = cardFont(px, w);
+    let t = String(s == null ? '' : s);
+    if (c.measureText(t).width <= max) return t;
+    while (t.length > 1 && c.measureText(t + '…').width > max) t = t.slice(0, -1);
+    return t + '…';
+  };
+  const box = (x, y, w, h, r, fill) => {
+    c.beginPath();
+    if (c.roundRect) c.roundRect(x, y, w, h, r); else c.rect(x, y, w, h);
+    c.fillStyle = fill; c.fill();
+  };
+  const hr = (y) => { c.fillStyle = CC.line; c.fillRect(P, y, IW, 1); };
+  const col = (n) => (n < 0 ? CC.neg : n > 0 ? CC.pos : CC.text);
+  const V = k.value.has;
+
+  c.fillStyle = CC.pri; c.fillRect(0, 0, W, 6);
+  let y = 22;
+  txt('สรุปนับสต๊อก', P, y, 22, 700);
+  const st = m.closed ? 'อนุมัติแล้ว' : 'ร่าง ยังไม่อนุมัติ', [sb, sf] = m.closed ? CC.good : CC.mid;
+  c.font = cardFont(12, 700);
+  const sw = c.measureText(st).width + 20;
+  box(W - P - sw, y + 4, sw, 24, 12, sb);
+  txt(st, W - P - sw / 2, y + 9, 12, 700, sf, 'center');
+  y += 34;
+  txt(fit(m.name, IW, 15, 600), P, y, 15, 600);
+  y += 23;
+  txt(fit(`นับ ${m.date} · ตัดยอด ${m.cutoff}${m.closed && m.by ? ` · อนุมัติโดย ${m.by}` : ''}`, IW, 12), P, y, 12, 400, CC.muted);
+  y += 28;
+
+  /* สี่กล่องความแม่นยำ */
+  const tiles = [
+    ['ความแม่นยำ Location', k.acc.loc.pct, `ตรง ${f(k.acc.loc.ok)} / ${f(k.acc.loc.n)} โล`],
+    ['ความแม่นยำ SKU', k.acc.sku.pct, `ตรง ${f(k.acc.sku.ok)} / ${f(k.acc.sku.n)} SKU`],
+    ['ยอดตรง (ชิ้น)', k.acc.qty, `ต่าง ${f(k.acc.diff)} จาก ${f(k.acc.book)} ชิ้น`],
+    k.first.checked ? ['นับครั้งแรกถูก', k.first.pct, `แก้หลังนับ ${f(k.first.n - k.first.ok)} รายการ`]
+      : ['Audit ตรงกับ Inventory', k.audit.pct, k.audit.n ? `ตรง ${f(k.audit.ok)} / ${f(k.audit.n)} รายการที่สุ่ม` : 'ยังไม่มีผล Audit'],
+  ];
+  const gap = 10, tw = (IW - gap) / 2, th = 78;
+  tiles.forEach(([lb, v, s], i) => {
+    const x = P + (i % 2) * (tw + gap), yy = y + Math.floor(i / 2) * (th + gap);
+    const [bg, fg] = CC[lvlOf(v)];
+    box(x, yy, tw, th, 12, bg);
+    txt(lb, x + 12, yy + 10, 12, 600, fg);
+    txt(pctText(v), x + 12, yy + 27, 27, 700, fg);
+    txt(fit(s, tw - 24, 11), x + 12, yy + 60, 11, 400, fg);
+  });
+  y += th * 2 + gap + 22;
+
+  /* ยอดรวม */
+  txt('ยอดรวม', P, y, 15, 700);
+  txt(`ต้องปรับ ${f(k.tot.adjLines)} จาก ${f(k.tot.lines)} รายการ`, W - P, y + 3, 11, 400, CC.muted, 'right');
+  y += 26;
+  const cols = [['สมุด', f(k.tot.book), CC.text], ['นับได้', f(k.tot.final), CC.text], ['ขาด', '−' + f(k.tot.minus), CC.neg],
+    ['เกิน', '+' + f(k.tot.plus), CC.pos], ['สุทธิ', signed(k.tot.net), col(k.tot.net)]];
+  const cw = IW / cols.length;
+  cols.forEach(([lb, v, cl], i) => { txt(lb, P + i * cw, y, 11, 400, CC.muted); txt(fit(v, cw - 6, 17, 700), P + i * cw, y + 15, 17, 700, cl); });
+  y += 42;
+  if (V) {
+    txt('มูลค่า', P, y + 1, 11, 400, CC.muted);
+    [[2, baht(-k.value.minus), CC.neg], [3, baht(k.value.plus), CC.pos], [4, baht(k.value.net), col(k.value.net)]]
+      .forEach(([i, v, cl]) => txt(fit(v, cw - 6, 13, 700), P + i * cw, y, 13, 700, cl));
+    y += 20;
+    if (k.value.missing) { txt(`ไม่มีราคา ${f(k.value.missing)} SKU ที่ต่าง (ยังไม่รวมในมูลค่า)`, P, y, 11, 400, CC.muted); y += 18; }
+  }
+  y += 12;
+
+  /* ปัญหาที่เจอ */
+  if (k.groups.length) {
+    txt('ปัญหาที่เจอ', P, y, 15, 700);
+    y += 26;
+    let x = P;
+    k.groups.forEach(g => {
+      const [bg, fg] = GCOL[GCLS[g.group]] || CC.none;
+      const s = `${g.group} ${f(g.n)} · ${f(g.qty)} ชิ้น`;
+      c.font = cardFont(12, 600);
+      const w = c.measureText(s).width + 16;
+      if (x > P && x + w > W - P) { x = P; y += 28; }
+      box(x, y, w, 22, 11, bg);
+      txt(s, x + 8, y + 4, 12, 600, fg);
+      x += w + 6;
+    });
+    y += 40;
+  }
+
+  /* ตารางเล็ก: xs = [[x, align, กว้างสุด]] */
+  const table = (title, note, head, rows, xs) => {
+    txt(title, P, y, 15, 700);
+    if (note) txt(note, W - P, y + 3, 11, 400, CC.muted, 'right');
+    y += 26;
+    head.forEach((h, i) => txt(h, xs[i][0], y, 11, 400, CC.muted, xs[i][1]));
+    y += 18; hr(y);
+    rows.forEach(r => {
+      r.forEach((v, i) => {
+        const cell = v && typeof v === 'object' ? v : { s: v };
+        const w = cell.w || (i ? 400 : 600);
+        txt(fit(cell.s, xs[i][2] || 120, 13, w), xs[i][0], y + 6, 13, w, cell.c || CC.text, xs[i][1]);
+      });
+      y += 26; hr(y);
+    });
+    y += 20;
+  };
+
+  if (k.zones.length) {
+    const zs = k.zones.slice(0, 12);
+    const xs = V
+      ? [[P, 'left', 80], [P + 120, 'right'], [P + 185, 'right'], [P + 255, 'right'], [P + 320, 'right'], [P + 385, 'right'], [W - P, 'right', 96]]
+      : [[P, 'left', 100], [P + 150, 'right'], [P + 230, 'right'], [P + 310, 'right'], [P + 390, 'right'], [W - P, 'right']];
+    table('แยกตามโซน', k.zones.length > zs.length ? `แสดง ${zs.length} จาก ${k.zones.length} โซน` : '', ['โซน', 'โล', 'ตรง', 'ขาด', 'เกิน', 'สุทธิ'].concat(V ? ['มูลค่า'] : []),
+      zs.map(z => [z.zone, f(z.locs), { s: pctText(z.pct), w: 700, c: CC[lvlOf(z.pct)][1] }, { s: z.minus ? '−' + f(z.minus) : '', c: CC.neg },
+        { s: z.plus ? '+' + f(z.plus) : '', c: CC.pos }, { s: z.net ? signed(z.net) : '0', w: 700, c: col(z.net) }]
+        .concat(V ? [{ s: z.val ? baht(z.val) : '—', c: col(z.val) }] : [])), xs);
+  }
+
+  if (k.teams.length) {
+    const ts = k.teams.slice(0, 10);
+    table('แยกตามทีม (รอบ 1)', k.first.checked ? 'ถูกครั้งแรก = รอบ 1 ตรงยอดสุดท้าย' : 'ยังไม่มีรอบ 2 ให้เทียบ', ['ทีม', 'คน', 'โล', 'โล/ชม.', 'ถูกครั้งแรก'],
+      ts.map(t => [t.name, f(t.people.length), f(t.locs), t.pace === null ? '—' : f(t.pace), { s: pctText(t.first), w: 700, c: CC[lvlOf(t.first)][1] }]),
+      [[P, 'left', 180], [P + 230, 'right'], [P + 290, 'right'], [P + 370, 'right'], [W - P, 'right']]);
+  }
+
+  if (k.top.length) {
+    const tp = k.top.slice(0, 5);
+    txt('SKU ที่ต่างมากสุด', P, y, 15, 700);
+    txt(V ? 'สุทธิรวมทุกโล · มูลค่า' : 'สุทธิรวมทุกโล', W - P, y + 3, 11, 400, CC.muted, 'right');
+    y += 26; hr(y);
+    tp.forEach(t => {
+      txt(fit(t.sku || t.long, 300, 14, 700), P, y + 7, 14, 700);
+      txt(fit(t.name, 330, 11), P, y + 26, 11, 400, CC.muted);
+      txt(signed(t.net), W - P, y + 7, 14, 700, col(t.net), 'right');
+      if (V) txt(t.price === null ? 'ไม่มีราคา' : baht(t.val), W - P, y + 26, 11, 600, t.price === null ? CC.faint : col(t.val), 'right');
+      else txt(`${f(t.locs)} โล`, W - P, y + 26, 11, 400, CC.muted, 'right');
+      y += 46; hr(y);
+    });
+    y += 10;
+  }
+
+  y += 6; hr(y); y += 10;
+  txt('WMS · นับสต๊อกใหญ่', P, y, 11, 400, CC.faint);
+  txt(`${f(k.counted.locs)} โล · ${f(k.span.people)} คน · ใช้เวลา ${durText(k.span.workMin)}`, W - P, y, 11, 600, CC.muted, 'right');
+  y += 26;
+
+  const out = document.createElement('canvas');
+  out.width = W * CARD_SCALE; out.height = Math.ceil(y * CARD_SCALE);
+  out.getContext('2d').drawImage(big, 0, 0);
+  return out;
+}
+
+async function openShot() {
+  const r = R(), closed = r.status === 'ปิดแล้ว', k = report();
+  /* รอฟอนต์ไทยก่อนวาด ไม่งั้นรูปแรกได้ฟอนต์สำรอง */
+  try { await Promise.all([400, 600, 700].map(w => document.fonts.load(cardFont(16, w), 'กขค ABC 123'))); } catch (e) {}
+  const blob = await new Promise(ok => drawReport(k, { name: r.name, date: r.date, cutoff: cutText(r.cutoff), closed, by: r.approvedBy }).toBlob(ok, 'image/png'));
+  if (!blob) { S.err = 'สร้างรูปไม่ได้ ลองใหม่อีกครั้ง'; paintSrc(); return; }
+  closeShot();
+  const name = `สรุปนับสต๊อก-${r.id}${closed ? '' : '-ร่าง'}.png`;
+  const file = new File([blob], name, { type: 'image/png' });
+  let share = false;
+  try { share = !!(navigator.canShare && navigator.canShare({ files: [file] })); } catch (e) {}
+  const phone = share && matchMedia('(pointer:coarse)').matches;   // มือถือ: แชร์ไป LINE ตรง ๆ เป็นปุ่มหลัก
+  SHOT = { blob, file, url: URL.createObjectURL(blob), name };
+  const el = document.createElement('div');
+  el.className = 'st-shot'; el.id = 'shot';
+  el.innerHTML = `<div class="st-shot-box" role="dialog" aria-modal="true" aria-label="รูปสรุปนับสต๊อก">
+    <div class="st-shot-bar"><b>รูปสรุปส่ง LINE</b><span class="sp"></span>
+      <button class="st-btn ${phone ? '' : 'p'}" data-act="shotcopy">📋 คัดลอกรูป</button>
+      ${share ? `<button class="st-btn ${phone ? 'p' : ''}" data-act="shotshare">📤 แชร์</button>` : ''}
+      <button class="st-btn" data-act="shotsave">⬇️ โหลดรูป</button>
+      <button class="st-btn" data-act="shotclose" aria-label="ปิด">✕</button></div>
+    <div class="st-shot-msg" id="shotMsg">${phone ? 'กดแชร์แล้วเลือก LINE' : 'คัดลอกแล้วไปกด Ctrl+V ในแชท LINE'}${closed ? '' : ' · ยังเป็นร่าง ตัวเลขยังเปลี่ยนได้'}</div>
+    <img src="${SHOT.url}" alt="รูปสรุปผลนับสต๊อก"></div>`;
+  el.addEventListener('click', (e) => { if (e.target === el) closeShot(); });
+  document.body.appendChild(el);
+  el.querySelector('[data-act="shotclose"]').focus();
+}
+
+function closeShot() {
+  const el = $('shot');
+  if (el) el.remove();
+  if (SHOT) URL.revokeObjectURL(SHOT.url);
+  SHOT = null;
+}
+
+function shotMsg(s, cls) { const m = $('shotMsg'); if (m) { m.textContent = s; m.className = 'st-shot-msg ' + (cls || ''); } }
+
+async function shotCopy() {
+  if (!SHOT) return;
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': SHOT.blob })]);
+    shotMsg('✓ คัดลอกรูปแล้ว ไปกด Ctrl+V ในแชท LINE ได้เลย', 'ok');
+  } catch (e) { shotMsg('เบราว์เซอร์นี้คัดลอกรูปไม่ได้ กด "โหลดรูป" หรือ "แชร์" แทน', 'err'); }
+}
+
+async function shotShare() {
+  if (!SHOT) return;
+  try { await navigator.share({ files: [SHOT.file], title: SHOT.name }); shotMsg('✓ แชร์แล้ว', 'ok'); }
+  catch (e) { if (e.name !== 'AbortError') shotMsg('แชร์ไม่ได้ กด "โหลดรูป" แทน', 'err'); }
+}
+
+function shotSave() {
+  if (!SHOT) return;
+  const a = document.createElement('a');
+  a.href = SHOT.url; a.download = SHOT.name;
+  document.body.appendChild(a); a.click(); a.remove();
+  shotMsg('✓ โหลดรูปแล้ว', 'ok');
+}
+
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && SHOT) closeShot(); });
+
 /* ── ปุ่มและช่อง ─────────────────────────────────────────────────────── */
 
 async function copyLink() {
@@ -1759,6 +2203,18 @@ document.addEventListener('click', (e) => {
   else if (act === 'del-open') { DEL = true; paintBody(); const el = $('delName'); if (el) el.focus(); }
   else if (act === 'del-cancel') { DEL = false; paintBody(); }
   else if (act === 'del-go') delRound();
+  else if (act === 'rp-print') window.print();
+  else if (act === 'rp-shot') openShot();
+  else if (act === 'rp-price') { PRICE_OPEN = !PRICE_OPEN; paintBody(); const el = $('rpPrice'); if (el) el.focus(); }
+  else if (act === 'rp-price-save') savePriceBox();
+  else if (act === 'rp-price-clear') {
+    if (!confirm(`ล้างราคาต่อชิ้นทั้งหมด ${f(Object.keys(prices().map).length)} SKU ในเครื่องนี้?`)) return;
+    setPrices({}); S.ok = '✓ ล้างราคาแล้ว'; S.err = ''; paint();
+  }
+  else if (act === 'shotcopy') shotCopy();
+  else if (act === 'shotshare') shotShare();
+  else if (act === 'shotsave') shotSave();
+  else if (act === 'shotclose') closeShot();
 });
 
 document.addEventListener('change', (e) => {
@@ -1864,9 +2320,21 @@ document.addEventListener('paste', (e) => {
   if (e.target.id === box) e.target.value = '';
 });
 
+/* แท็บรายงาน: วางราคาต่อชิ้น (SKU กับราคาจาก Excel) ที่ไหนก็ได้นอกช่องพิมพ์ */
+document.addEventListener('paste', (e) => {
+  if (TAB !== 'report' || !S.head) return;
+  const tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+  const p = addPrices((e.clipboardData || window.clipboardData).getData('text'));
+  if (!p.n) return;
+  e.preventDefault();
+  S.err = ''; S.ok = `✓ เก็บราคา ${f(p.n)} SKU แล้ว${p.bad ? ` · ข้าม ${f(p.bad)} บรรทัดที่ไม่มีราคา` : ''}`;
+  paint();
+});
+
 /* ความคืบหน้าสด: ขอเฉพาะแถวใหม่ทุกนาทีตอนเปิดแท็บนี้อยู่ */
 /* ไม่วาดใหม่ตอนกำลังพิมพ์ในช่องของตาราง (ยอดสุดท้าย / ค่าตั้งรอบ 2) ตัวที่พิมพ์จะได้ไม่หาย */
-function typing() { const a = document.activeElement; return !!a && a.tagName === 'INPUT' && a.closest('#body') && a.id !== 'anQ'; }
+function typing() { const a = document.activeElement; return !!a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA') && a.closest('#body') && a.id !== 'anQ'; }
 let POLL_N = 0;
 setInterval(async () => {
   /* ห้องควบคุมถามทุก 20 วินาที ผังกับจุดคนนับจะได้ขยับทัน แท็บอื่นทุกนาทีเหมือนเดิม */

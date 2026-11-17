@@ -1683,7 +1683,7 @@ describe('ห้องควบคุมการนับ — หน้าห�
 
   it('มีแท็บห้องควบคุม และดึงบันทึกนับเองทุก 20 วินาทีตอนเปิดแท็บนี้', () => {
     expect(IDX).toMatch(/\['control', 'ห้องควบคุม', '\.\.\/icons\/boxes\.png'\]/);
-    expect(IDX).toMatch(/const LIVE_TABS = \['control', 'progress', 'analyze', 'round2', 'close'\];/);
+    expect(IDX).toMatch(/const LIVE_TABS = \['control', 'progress', 'analyze', 'round2', 'close', 'report'];/);
     expect(IDX).toMatch(/if \(\+\+POLL_N % 3 && TAB !== 'control'\) return;/);
     expect(IDX).toMatch(/\}, POLL_MS \/ 3\);/);
     expect(fs.existsSync(path.resolve(__dirname, '../../public/icons/boxes.png'))).toBe(true);
@@ -1869,5 +1869,128 @@ describe('stocktake-api.gs — มือถือบอกว่ายังค�
     api.post({ op: 'st-open', round: b, device: 'd1', who: 'ก', pass: 1, kind: 'Inventory', loc: '', pend: 1 });
     expect(api.post({ op: 'st-round-del', t: HEAD, round: a, confirm: ROUND.name }).error).toBeUndefined();
     expect([...api.props.keys()]).toEqual([`stv|${b}|d1`]);
+  });
+});
+
+describe('รายงานปิดรอบ', () => {
+  const L = (loc, sku, book, r1, r2, final, src, group, aud = null) =>
+    ({ loc, sku, long: sku + '-LONG', name: 'สินค้าสมมติ ' + sku, lot: '8', po: '9900000001', book, r1, aud, r2, final, adj: final - book, src, group });
+  const LINES = [
+    L('R1-01-01', 'AAA001', 10, 10, null, 10, 'รอบ 1', 'ตรง', 10),
+    L('R1-01-02', 'AAA001', 4, 6, 2, 2, 'รอบ 2', 'ขาด'),
+    L('R1-02-01', 'BBB001', 0, 3, null, 3, 'รอบ 1', 'วางผิดโล'),
+    L('A-01-01', 'BBB001', 3, 0, 0, 0, 'รอบ 2', 'วางผิดโล', 1),
+    L('A-01-02', 'CCC001', 5, 5, null, 5, 'รอบ 1', 'ตรง'),
+    L('A-01-03', 'CCC001', 2, null, null, 2, 'สมุด', 'ยังไม่นับ'),
+    L('A-01-02', 'DDD001', 1, 1, null, 4, 'หัวหน้าแก้', 'หัวหน้าแก้'),
+  ];
+  const T0 = Date.UTC(2026, 10, 15, 1, 0), M = 60000;
+  let n = 0;
+  const E = (min, loc, team, who, x = {}) => ({ uid: 'r' + (++n), at: T0 + min * M, pass: 1, kind: 'Inventory', type: 'นับ', loc, team, who, sku: 'AAA001', qty: 1, ...x });
+  const ENTRIES = [
+    E(0, 'R1-01-01', 'INV1', 'สมชาย'), E(5, 'R1-01-02', 'INV1', 'สมหญิง'), E(10, 'R1-02-01', 'INV1', 'สมชาย'),
+    E(70, 'R1-02-01', 'INV1', 'สมชาย'),
+    E(2, 'A-01-01', 'INV2', 'มานะ'), E(8, 'A-01-02', 'INV2', 'มานะ'),
+    E(15, 'R1-01-01', 'AUD1', 'วิไล', { kind: 'Audit' }),
+    E(120, 'R1-01-02', 'INV2', 'มานะ', { pass: 2 }), E(125, 'A-01-01', 'INV1', 'สมหญิง', { pass: 2 }),
+  ];
+  /* ทีมรอบ 2 ต่อท้ายด้วยรหัสเดิม (แบบที่บันทึกแผนรอบ 2 แล้ว) ตารางทีมยังเรียงตามรอบ 1 */
+  const TEAMS = [
+    { id: 'INV1', kind: 'Inventory', name: 'ทีม 1', zones: ['R1'] },
+    { id: 'INV2', kind: 'Inventory', name: 'ทีม 2', zones: ['A-01'] },
+    { id: 'AUD1', kind: 'Audit', name: 'วิไล', zones: ['R1', 'A-01'] },
+    { id: 'INV2', kind: 'Inventory', pass: 2, name: 'ทีม 2', zones: [] },
+    { id: 'INV1', kind: 'Inventory', pass: 2, name: 'ทีม 1', zones: [] },
+  ];
+  const PRICES = { AAA001: 100, BBB001: 50 };
+
+  it('ความแม่นยำคิดเฉพาะรายการที่มีคนนับ: Location / SKU (ของวางผิดโลหักกัน) / ยอดชิ้น / นับครั้งแรก / Audit', () => {
+    const r = S.closeReport({ lines: LINES, entries: ENTRIES, teams: TEAMS });
+    expect(r.counted).toEqual({ lines: 6, locs: 5 });
+    expect(r.left).toBe(1);
+    expect(r.acc.line).toEqual({ n: 6, ok: 2, pct: 33.3 });
+    expect(r.acc.loc).toEqual({ n: 5, ok: 1, pct: 20 });
+    expect(r.acc.sku).toEqual({ n: 4, ok: 2, pct: 50 });
+    expect(r.acc).toMatchObject({ diff: 11, book: 23, qty: 52.2 });
+    expect(r.first).toEqual({ n: 6, ok: 4, checked: 3, pct: 66.7 });
+    expect(r.audit).toEqual({ n: 2, ok: 1, pct: 50 });
+    expect(r.recount).toMatchObject({ locs: 2, pct: 40, entered: 2 });
+    expect(r.tot).toMatchObject({ lines: 7, adjLines: 4, plus: 6, minus: 5, net: 1 });
+  });
+
+  it('กลุ่มปัญหาเรียงตามลำดับชิป โซนเรียงตามคลัง นับรายการที่ไม่ได้นับแยกไว้', () => {
+    const r = S.closeReport({ lines: LINES, entries: ENTRIES, teams: TEAMS });
+    expect(r.groups.map((g) => [g.group, g.n, g.qty])).toEqual([['ขาด', 1, 2], ['วางผิดโล', 2, 6], ['หัวหน้าแก้', 1, 3]]);
+    expect(r.zones).toEqual([
+      { zone: 'R', locs: 3, lines: 3, ok: 1, left: 0, plus: 3, minus: 2, net: 1, val: 0, pct: 33.3 },
+      { zone: 'A', locs: 2, lines: 3, ok: 1, left: 1, plus: 3, minus: 3, net: 0, val: 0, pct: 33.3 },
+    ]);
+  });
+
+  it('ทีม: โลที่นับรอบ 1 คนนับ นับครั้งแรกถูก ความเร็วจากเวลาทำงานจริง (หักช่วงพัก) โลรอบ 2 · Audit ไม่ขึ้นเป็นทีม', () => {
+    const r = S.closeReport({ lines: LINES, entries: ENTRIES, teams: TEAMS });
+    expect(r.teams).toEqual([
+      { id: 'INV1', name: 'ทีม 1', locs: 3, r2: 1, people: ['สมชาย', 'สมหญิง'], lines: 3, wrong: 1, adj: 2, first: 66.7,
+        start: T0, end: T0 + 70 * M, workMin: 10, pace: 18 },
+      { id: 'INV2', name: 'ทีม 2', locs: 2, r2: 1, people: ['มานะ'], lines: 3, wrong: 1, adj: 2, first: 66.7,
+        start: T0 + 2 * M, end: T0 + 8 * M, workMin: 6, pace: 20 },
+    ]);
+    expect(r.span).toEqual({ start: T0, end: T0 + 125 * M, workMin: 20, people: 4 });
+  });
+
+  it('มูลค่าคิดเมื่อมีราคา SKU ที่ไม่มีราคานับไว้ · SKU ต่างมากสุดเรียงตามมูลค่า ไม่มีราคาเรียงตามจำนวน', () => {
+    const r = S.closeReport({ lines: LINES, entries: ENTRIES, teams: TEAMS, prices: PRICES });
+    expect(r.value).toEqual({ has: true, plus: 150, minus: 350, net: -200, missing: 1, priced: 2 });
+    expect(r.groups.find((g) => g.group === 'วางผิดโล').val).toBe(0);
+    expect(r.zones.map((z) => z.val)).toEqual([-50, -150]);
+    expect(r.top.map((t) => [t.sku, t.net, t.val, t.locs])).toEqual([['AAA001', -2, -200, 1], ['DDD001', 3, 0, 1]]);
+    const r0 = S.closeReport({ lines: LINES, entries: ENTRIES, teams: TEAMS });
+    expect(r0.value.has).toBe(false);
+    expect(r0.top.map((t) => t.sku)).toEqual(['DDD001', 'AAA001']);
+    expect(S.closeReport({ lines: LINES, top: 1 })).toMatchObject({ topMore: 1, teams: [] });
+  });
+
+  it('ไม่มีบันทึกนับ (แถวสรุปที่ปิดแล้วอย่างเดียว) ยังได้ตัวเลขหลัก ไม่มีผลนับเลยขึ้น null ไม่หารศูนย์', () => {
+    const r = S.closeReport({ lines: LINES });
+    expect(r.acc.loc.pct).toBe(20);
+    expect(r.span).toEqual({ start: 0, end: 0, workMin: 0, people: 0 });
+    const e = S.closeReport({ lines: [L('A-01-03', 'CCC001', 2, null, null, 2, 'สมุด', 'ยังไม่นับ')] });
+    expect(e.acc.loc.pct).toBeNull();
+    expect(e.acc.qty).toBeNull();
+    expect(e.first.pct).toBeNull();
+  });
+
+  it('ยังไม่มีการตรวจซ้ำ (ไม่มีรอบ 2 ไม่มีหัวหน้าแก้) นับครั้งแรกถูกขึ้น null ไม่ใช่ 100%', () => {
+    const only1 = LINES.filter((l) => l.r2 === null && l.src !== 'หัวหน้าแก้');
+    const r = S.closeReport({ lines: only1, entries: ENTRIES, teams: TEAMS });
+    expect(r.first).toMatchObject({ n: 3, ok: 3, checked: 0, pct: null });
+    expect(r.teams.map((t) => t.first)).toEqual([null, null]);
+  });
+
+  it('วางราคาจาก Excel: แท็บ จุลภาค ช่องว่าง หลายคอลัมน์ ตัด ฿ กับจุลภาคหลักพัน ข้ามหัวตาราง', () => {
+    expect(S.parsePrices('SKU\tราคา\nAAA001\t1,250.50\nbbb001\t฿80\nCCC001\tไม่มี\n0012\t5\n\n')).toEqual({ map: { AAA001: 1250.5, BBB001: 80, 12: 5 }, n: 3, bad: 1 });
+    expect(S.parsePrices('AAA001,100\nBBB001 50\nCCC001\tที่นอนสมมติ\t120\tชิ้น').map).toEqual({ AAA001: 100, BBB001: 50, CCC001: 120 });
+    expect(S.workMs([3 * M, 0, M, 30 * M], 10)).toBe(2 * M);
+  });
+});
+
+describe('รายงานปิดรอบ — หน้าหัวหน้า', () => {
+  const IDX = fs.readFileSync(path.resolve(__dirname, '../../public/stocktake/index.html'), 'utf8');
+
+  it('แท็บรายงานต่อจากปิดรอบ ใช้ยอดที่อนุมัติเมื่อปิดแล้ว ไม่งั้นร่างจากตัวเลขเดียวกับแท็บปิดรอบ', () => {
+    expect(IDX).toMatch(/\['close', 'ปิดรอบ', '\.\.\/icons\/tab-fix\.png'\],\s*\['report', 'รายงาน'/);
+    expect(IDX).toContain("else if (TAB === 'report') box.innerHTML = reportView();");
+    expect(IDX).toContain("const fin = closed ? (S.head.sum || []).map(fromSum) : finals();\n  const rep = ST.closeReport(");
+  });
+
+  it('พิมพ์ได้หน้าเดียว (ซ่อนแถบรอบ แท็บ ปุ่ม) รูปสรุปคัดลอก / แชร์ / โหลด ราคาเก็บในเครื่อง วางที่ไหนก็ได้บนแท็บ', () => {
+    expect(IDX).toMatch(/@media print\{\s*@page\{size:A4/);
+    expect(IDX).toContain('.st-src,.tx-tabs,.rp-tools,.rp-price,.st-shot{display:none !important}');
+    expect(IDX).toContain("else if (act === 'rp-print') window.print();");
+    ['shotcopy', 'shotshare', 'shotsave', 'shotclose'].forEach((a) => expect(IDX).toContain(`act === '${a}'`));
+    expect(IDX).toContain("const PRICE_KEY = 'wms:st:price';");
+    expect(IDX).toContain("if (TAB !== 'report' || !S.head) return;");
+    /* กำลังพิมพ์ราคาในกล่อง ดึงบันทึกนับรอบใหม่ต้องไม่วาดทับ */
+    expect(IDX).toContain("(a.tagName === 'INPUT' || a.tagName === 'TEXTAREA')");
   });
 });

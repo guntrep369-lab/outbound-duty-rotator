@@ -1790,6 +1790,193 @@
     return t;
   }
 
+  /* ── รายงานปิดรอบให้เจ้านาย ──────────────────────────────────────────── */
+
+  /** % ทศนิยมหนึ่งตำแหน่ง · ไม่มีตัวหาร = null (หน้าเว็บขึ้น —) */
+  function pct1(n, d) { return d ? Math.round(n * 1000 / d) / 10 : null; }
+
+  /** เวลาทำงานจริง (ms) จากเวลาของแถวที่ส่งมา หักช่วงที่เงียบนานเกิน gap นาที (พัก กินข้าว ข้ามคืน) */
+  function workMs(times, gap) {
+    var T = (times || []).filter(function (t) { return t > 0; }).sort(function (a, b) { return a - b; });
+    var g = (gap || CTRL.gap) * MIN_MS, w = 0;
+    for (var i = 1; i < T.length; i++) { var d = T[i] - T[i - 1]; if (d <= g) w += d; }
+    return w;
+  }
+
+  /**
+   * ราคาต่อชิ้นที่วางจาก Excel: SKU (หรือ SKU เต็ม) กับราคา บรรทัดละตัว
+   * คั่นด้วยแท็บ (คัดลอกจาก Excel) หรือจุลภาค / ช่องว่าง · มีหลายคอลัมน์ใช้คอลัมน์แรกเป็น SKU คอลัมน์ตัวเลขสุดท้ายเป็นราคา
+   * บรรทัดหัวตาราง / ไม่มีตัวเลข = ข้าม (นับใน bad ถ้ามี SKU แต่ไม่มีราคา)
+   * @returns {{map: Object<string, number>, n: number, bad: number}} map ใช้ norm(SKU) เป็นคีย์
+   */
+  function parsePrices(text) {
+    var map = {}, n = 0, bad = 0;
+    String(text || '').split(/\r?\n/).forEach(function (line, i) {
+      if (!line.trim()) return;
+      var cells = line.indexOf('\t') !== -1 ? line.split('\t') : line.trim().split(/\s*[;,]\s*|\s+/);
+      cells = cells.map(function (c) { return c.trim(); });
+      var key = norm(cells[0]);
+      if (!key) return;
+      var price = null;
+      for (var j = cells.length - 1; j >= 1; j--) {
+        var v = cells[j].replace(/[฿,\s]/g, '').replace(/บาท$/, '');
+        if (v !== '' && isFinite(+v) && +v >= 0) { price = +v; break; }
+      }
+      if (price === null) { if (i > 0 || cells.length < 2) bad++; return; }
+      if (map[key] === undefined) n++;
+      map[key] = round3(price);
+    });
+    return { map: map, n: n, bad: bad };
+  }
+
+  /**
+   * รายงานปิดรอบหน้าเดียว: ความแม่นยำ ขาด/เกิน (จำนวน + มูลค่าถ้ามีราคา) แยกโซน ทีม กลุ่มปัญหา และ SKU ที่ต่างมากสุด
+   *   lines   = ยอดสุดท้าย (finalLines หรือแถวสรุปที่อนุมัติแล้ว) ใช้ loc sku long name book r1 aud r2 final adj group src (team ถ้ามี)
+   *   entries = บันทึกนับของรอบ ใช้หาทีมที่นับรอบ 1 ของแต่ละโล เวลา คนนับ ความเร็ว (ไม่มีก็ได้ ตารางทีมจะว่าง)
+   *   teams   = ทีมของรอบ (ชื่อทีม ลำดับ)   prices = parsePrices().map   top = จำนวน SKU ที่ต่างมากสุด (10)
+   *
+   * ความแม่นยำนับเฉพาะรายการที่มีคนนับ (รายการที่ใช้ยอดสมุดเพราะไม่มีใครนับ ไม่เอามาคิด จะได้ไม่ดูดีเกินจริง)
+   *   Location = โลที่ทุกรายการตรงสมุด / โลที่นับ        SKU = SKU ที่รวมทุกโลแล้วยอดตรง (ของวางผิดโลหักกันได้)
+   *   ยอดตรง   = 1 − ผลรวมที่ต่าง (ไม่สนเครื่องหมาย) / ยอดสมุด   นับครั้งแรกถูก = รอบ 1 ตรงกับยอดสุดท้าย
+   * นับครั้งแรกถูกมีความหมายเมื่อมีการตรวจซ้ำแล้ว (นับรอบ 2 หรือหัวหน้าแก้) ก่อนนั้นยอดสุดท้ายคือรอบ 1 เอง ได้ 100% เสมอ
+   * จึงคืน null (checked = 0) ทั้งรวมและรายทีม
+   */
+  function closeReport(o) {
+    o = o || {};
+    var lines = o.lines || [], prices = o.prices || {}, hasPrice = Object.keys(prices).length > 0;
+    var tName = {}, tOrder = {};
+    /* ทีมรอบ 2 ใช้รหัสเดียวกับรอบ 1 ต่อท้ายรายการ ลำดับกับชื่อเอาจากที่เจอครั้งแรก (รอบ 1) */
+    (o.teams || []).forEach(function (t, i) {
+      if (!(t.id in tOrder)) { tName[t.id] = t.name || t.id; tOrder[t.id] = i; }
+    });
+    function priceOf(l) {
+      var p = prices[norm(l.long)];
+      if (p === undefined) p = prices[norm(l.sku)];
+      return typeof p === 'number' && isFinite(p) ? p : null;
+    }
+    function money(v) { return Math.round(v * 100) / 100; }
+
+    /* ทีมที่นับรอบ 1 ของแต่ละโล = ทีม Inventory ที่ส่งแถวแรกของโลนั้น · เวลา คนนับ ต่อทีม */
+    var eff = effective(o.entries || []);
+    var locTeam = {}, locAt = {}, team = {}, allTimes = [], people = {}, r2Locs = {};
+    function T(id) {
+      if (!team[id]) team[id] = { id: id, name: tName[id] || id || 'ไม่รู้ทีม', locs: {}, r2: {}, who: {}, times: [], done: {}, lines: 0, wrong: 0, first: 0, adj: 0 };
+      return team[id];
+    }
+    eff.forEach(function (e) {
+      var at = countedAt(e), u = up(e.loc);
+      if (at) allTimes.push(at);
+      if (e.who) people[e.who] = 1;
+      if (e.kind === 'Audit') return;
+      if ((e.pass || 1) === 2) { r2Locs[u] = 1; if (e.team) T(e.team).r2[u] = 1; return; }
+      if (!e.team) return;
+      var t = T(e.team);
+      t.locs[u] = 1;
+      if (e.who) t.who[e.who] = 1;
+      if (at) t.times.push(at);
+      if (!locAt[u] || (at && at < locAt[u])) { locAt[u] = at || locAt[u] || 1; locTeam[u] = e.team; }
+      if (at && (!t.done[u] || at < t.done[u])) t.done[u] = at;
+    });
+
+    var tot = finalTotals(lines);
+    var counted = lines.filter(function (l) { return l.src !== SRC.BOOK; });
+    var acc = { line: { n: counted.length, ok: 0 }, loc: { n: 0, ok: 0 }, sku: { n: 0, ok: 0 }, qty: null, diff: 0, book: 0 };
+    var first = { n: 0, ok: 0, checked: 0 }, audit = { n: 0, ok: 0 };
+    var locBad = {}, skuNet = {}, zones = {}, groups = {}, top = {}, recount = {};
+    var value = { has: hasPrice, plus: 0, minus: 0, net: 0, missing: 0, priced: 0 };
+    var missing = {};
+
+    lines.forEach(function (l) {
+      var u = up(l.loc), z = parseLoc(u).zone, k = norm(l.long || l.sku);
+      var p = priceOf(l), val = p === null ? 0 : money(l.adj * p);
+      var zr = zones[z] = zones[z] || { zone: z, locs: {}, lines: 0, ok: 0, left: 0, plus: 0, minus: 0, net: 0, val: 0 };
+      if (l.adj) {
+        if (p === null) missing[k] = 1;
+        else {
+          if (val > 0) value.plus = money(value.plus + val); else value.minus = money(value.minus - val);
+          value.net = money(value.net + val);
+        }
+        var g = groups[l.group] = groups[l.group] || { group: l.group, n: 0, qty: 0, val: 0 };
+        g.n++; g.qty = round3(g.qty + Math.abs(l.adj)); g.val = money(g.val + val);
+        var tp = top[k] = top[k] || { sku: l.sku, long: l.long, name: l.name, plus: 0, minus: 0, net: 0, val: 0, locs: {}, price: p };
+        if (l.adj > 0) tp.plus = round3(tp.plus + l.adj); else tp.minus = round3(tp.minus - l.adj);
+        tp.net = round3(tp.net + l.adj); tp.val = money(tp.val + val); tp.locs[u] = 1;
+        if (!tp.name && l.name) tp.name = l.name;
+      }
+      if (l.src === SRC.BOOK) { zr.left++; return; }
+      /* นับแล้ว */
+      zr.locs[u] = 1; zr.lines++;
+      if (!l.adj) { acc.line.ok++; zr.ok++; if (!(u in locBad)) locBad[u] = 0; } else locBad[u] = 1;
+      if (l.adj > 0) zr.plus = round3(zr.plus + l.adj);
+      if (l.adj < 0) zr.minus = round3(zr.minus - l.adj);
+      zr.net = round3(zr.net + l.adj); zr.val = money(zr.val + val);
+      skuNet[k] = round3((skuNet[k] || 0) + l.adj);
+      acc.diff = round3(acc.diff + Math.abs(l.adj)); acc.book = round3(acc.book + l.book);
+      if (l.r2 !== null && l.r2 !== undefined) recount[u] = 1;
+      if ((l.r2 !== null && l.r2 !== undefined) || l.src === SRC.EDIT) first.checked++;
+      if (l.r1 !== null && l.r1 !== undefined) {
+        first.n++;
+        var right = l.r1 === l.final;
+        if (right) first.ok++;
+        var tid = locTeam[u] || l.team || '';
+        if (tid || o.entries) {
+          var tt = T(tid);
+          tt.lines++; if (right) tt.first++; else tt.wrong++;
+          if (l.adj) tt.adj++;
+        }
+      }
+      if (l.aud !== null && l.aud !== undefined && l.r1 !== null && l.r1 !== undefined) { audit.n++; if (l.aud === l.r1) audit.ok++; }
+    });
+
+    Object.keys(locBad).forEach(function (u) { acc.loc.n++; if (!locBad[u]) acc.loc.ok++; });
+    Object.keys(skuNet).forEach(function (k) { acc.sku.n++; if (!skuNet[k]) acc.sku.ok++; });
+    ['line', 'loc', 'sku'].forEach(function (x) { acc[x].pct = pct1(acc[x].ok, acc[x].n); });
+    acc.qty = acc.book > 0 ? Math.max(0, Math.round((1 - acc.diff / acc.book) * 1000) / 10) : null;
+    first.pct = first.checked ? pct1(first.ok, first.n) : null;
+    audit.pct = pct1(audit.ok, audit.n);
+    value.missing = Object.keys(missing).length;
+    value.priced = Object.keys(top).length - value.missing;
+
+    var gOrder = GROUPS.concat([SRC.EDIT]);
+    var gl = Object.keys(groups).map(function (g) { return groups[g]; }).sort(function (a, b) {
+      var x = gOrder.indexOf(a.group), y = gOrder.indexOf(b.group);
+      return (x === -1 ? 99 : x) - (y === -1 ? 99 : y) || b.qty - a.qty;
+    });
+    var zl = Object.keys(zones).map(function (z) {
+      var r = zones[z];
+      r.locs = Object.keys(r.locs).length;
+      r.pct = pct1(r.ok, r.lines);
+      return r;
+    }).sort(function (a, b) { return zoneRank(a.zone) - zoneRank(b.zone) || natCmp(a.zone, b.zone); });
+
+    var tl = Object.keys(team).map(function (id) {
+      var t = team[id], locs = Object.keys(t.locs).length, ms = workMs(t.times, CTRL.gap);
+      var times = t.times.slice().sort(function (a, b) { return a - b; });
+      return {
+        id: id, name: t.name, locs: locs, r2: Object.keys(t.r2).length, people: Object.keys(t.who).sort(), lines: t.lines, wrong: t.wrong, adj: t.adj,
+        first: first.checked ? pct1(t.first, t.lines) : null, start: times[0] || 0, end: times[times.length - 1] || 0, workMin: Math.round(ms / MIN_MS),
+        pace: ms >= 5 * MIN_MS && locs > 1 ? Math.round(locs * 36000000 / ms) / 10 : null,
+      };
+    }).filter(function (t) { return t.locs || t.lines || t.r2; }).sort(function (a, b) {
+      var x = a.id in tOrder ? tOrder[a.id] : 999, y = b.id in tOrder ? tOrder[b.id] : 999;
+      return x - y || natCmp(a.name, b.name);
+    });
+
+    var tops = Object.keys(top).map(function (k) { var t = top[k]; t.locs = Object.keys(t.locs).length; return t; })
+      .filter(function (t) { return t.net; })
+      .sort(function (a, b) { return (hasPrice ? Math.abs(b.val) - Math.abs(a.val) : 0) || Math.abs(b.net) - Math.abs(a.net) || natCmp(a.sku, b.sku); });
+    var times = allTimes.sort(function (a, b) { return a - b; });
+    var countedLocs = Object.keys(locBad).length;
+
+    return {
+      tot: tot, acc: acc, first: first, audit: audit, value: value,
+      counted: { lines: counted.length, locs: countedLocs }, left: lines.length - counted.length,
+      recount: { locs: Object.keys(recount).length, pct: pct1(Object.keys(recount).length, countedLocs), entered: Object.keys(r2Locs).length },
+      groups: gl, zones: zl, teams: tl, top: tops.slice(0, o.top || 10), topMore: Math.max(0, tops.length - (o.top || 10)),
+      span: { start: times[0] || 0, end: times[times.length - 1] || 0, workMin: Math.round(workMs(times, CTRL.gap) / MIN_MS), people: Object.keys(people).length },
+    };
+  }
+
   /**
    * แถวผลสรุปตอนปิดรอบ (16 ช่อง แบบเดียวกับ summaryRows ส่ง st-close)
    * [Location, SKU, SKU เต็ม, ชื่อ, LOT, PO, สมุด, Inventory, Audit, รอบ 2, ยอดสุดท้าย, ต่าง, กลุ่ม, เหตุผล, ทีม, คนนับ]
@@ -1884,7 +2071,7 @@
     analyze: analyze, suspects: suspects, summaryRows: summaryRows, qtyTypo: qtyTypo, similarCode: similarCode,
     R2: R2, R2_MULTI: R2_MULTI, SRC: SRC, FLAG: FLAG, r2Opts: r2Opts,
     API_V: API_V, oldScript: oldScript, pileWarn: pileWarn, plan2: plan2, planRows: planRows, progress2: progress2,
-    finalLines: finalLines, finalTotals: finalTotals, closeRows: closeRows, pairAdjust: pairAdjust, adjustBook: adjustBook,
+    finalLines: finalLines, finalTotals: finalTotals, closeReport: closeReport, parsePrices: parsePrices, workMs: workMs, closeRows: closeRows, pairAdjust: pairAdjust, adjustBook: adjustBook,
     up: up, norm: norm,
     parseLoc: parseLoc, isRealLoc: isRealLoc, natCmp: natCmp, locCmp: locCmp, groupCmp: groupCmp, zoneOfGroup: zoneOfGroup,
     baseline: baseline, ledgerCheck: ledgerCheck, LEDGER: LEDGER, deviceWatch: deviceWatch, locations: locations, parseLocList: parseLocList, groups: groups, autoSplit: autoSplit,
