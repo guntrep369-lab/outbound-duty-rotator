@@ -659,7 +659,7 @@
     return m;
   }
 
-  /** ข้อความลงช่อง Action by Tony: "แกะ · หมายเหตุ" */
+  /** ข้อความช่อง Action by Tony: เจ้านายพิมพ์เองอย่างเดียว (เก็บเป็น other) · ข้อมูลรุ่นปุ่มเลือกเดิมยังอ่านเป็น "แกะ · หมายเหตุ" */
   function decideText(d) {
     if (!d || !d.code) return '';
     var label = DECIDE[d.code] ? DECIDE[d.code].label : '';
@@ -672,7 +672,7 @@
    * none = SKU เสี่ยงที่ยังไม่ได้ตัดสิน · any = มีคำตัดสินอย่างน้อยหนึ่งตัว
    */
   function decideSum(rep, map) {
-    var s = { none: { skus: 0, qty: 0, list: [] }, any: false };
+    var s = { none: { skus: 0, qty: 0, list: [] }, done: { skus: 0, qty: 0, list: [] }, any: false };
     DECIDE_ORDER.forEach(function (k) { s[k] = { skus: 0, qty: 0, list: [] }; });
     rep.rows.forEach(function (r) {
       var d = map && map[up(r.sku)];
@@ -682,16 +682,21 @@
       g.skus++;
       g.qty = round3(g.qty + qtyOf(r, rep.mode));
       g.list.push({ sku: r.sku, short: r.short, note: d ? d.note : '' });
+      if (d) {
+        s.done.skus++;
+        s.done.qty = round3(s.done.qty + qtyOf(r, rep.mode));
+        s.done.list.push({ sku: r.sku, short: r.short, text: decideText(d) });
+      }
     });
     return s;
   }
 
-  /** แถวตามชิปคำตัดสิน key = code | 'none' (เสี่ยงที่ยังไม่ตัดสิน) */
+  /** แถวตามชิป key = 'done' (ตอบแล้ว) | 'none' (เสี่ยงที่ยังไม่ตอบ) | code (ข้อมูลรุ่นปุ่มเลือก) */
   function byDecide(rows, map, key) {
     if (!key) return rows;
     return rows.filter(function (r) {
       var d = map && map[up(r.sku)];
-      return key === 'none' ? !d && r.st === 'risk' : !!d && d.code === key;
+      return key === 'none' ? !d && r.st === 'risk' : key === 'done' ? !!d : !!d && d.code === key;
     });
   }
 
@@ -855,14 +860,10 @@
     }
     var dsum = m.decide ? decideSum(rep, m.decide) : null;
     if (dsum && dsum.any) {
-      lines.push('', 'คำตัดสิน:');
-      DECIDE_ORDER.forEach(function (k) {
-        var g = dsum[k];
-        if (!g.skus) return;
-        lines.push(DECIDE[k].icon + ' ' + DECIDE[k].label + ' ' + g.skus + ' SKU (' + f(g.qty) + ' ชิ้น): ' +
-          names(g.list, function (x) { return (x.short || x.sku) + (x.note ? ' (' + x.note + ')' : ''); }));
-      });
-      if (dsum.none.skus) lines.push('❓ เสี่ยงที่ยังไม่ตัดสิน ' + dsum.none.skus + ' SKU');
+      lines.push('', '✍️ Action by Tony (' + dsum.done.skus + ' SKU):');
+      dsum.done.list.slice(0, 8).forEach(function (x) { lines.push('• ' + (x.short || x.sku) + ' — ' + x.text); });
+      if (dsum.done.list.length > 8) lines.push('…อีก ' + (dsum.done.list.length - 8) + ' SKU');
+      if (dsum.none.skus) lines.push('❓ เสี่ยงที่ยังไม่ตอบ ' + dsum.none.skus + ' SKU');
     }
     var rmap = m.remark || {};
     var rk = rep.rows.filter(function (x) { return rmap[up(x.sku)]; });
@@ -897,7 +898,7 @@
    * meta = { ym, at, cmp (compare), decide (decideOf), top = จำนวนแถวเสี่ยงที่โชว์ }
    *   tiles  สามกล่องบน: เสี่ยง (เทียบเดือนก่อนถ้ามี) · เฝ้าระวัง · ไม่มี LOT (ไม่มีของ NO LOT ใช้ ปกติ แทน)
    *   types  ชิ้นแยกประเภท × สถานะ · top แถวเสี่ยงเรียง LOT เก่าสุดก่อน (ลำดับเดียวกับรายงาน)
-   *   decide สรุปคำตัดสิน (มีเมื่อตัดสินแล้วอย่างน้อยหนึ่งตัว) · cmp สรุปเทียบเดือนก่อน
+   *   decide = { done, qty, none } ตอบแล้วกี่ SKU / ชิ้น · เสี่ยงที่ยังไม่ตอบ (มีเมื่อตอบอย่างน้อยหนึ่งตัว) · cmp สรุปเทียบเดือนก่อน
    */
   function card(rep, meta) {
     var m = meta || {};
@@ -958,11 +959,7 @@
     var decide = null;
     var ds = decideSum(rep, dec);
     if (ds.any) {
-      decide = {
-        list: DECIDE_ORDER.filter(function (k) { return ds[k].skus; })
-          .map(function (k) { return { k: k, label: DECIDE[k].label, skus: ds[k].skus, qty: ds[k].qty }; }),
-        none: ds.none.skus,
-      };
+      decide = { done: ds.done.skus, qty: ds.done.qty, none: ds.none.skus };
     }
 
     var cmpSum = null;

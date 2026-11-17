@@ -90,23 +90,14 @@
 .mf-chip.cmp-todo{background:#FEE2E2;color:#991B1B;border-color:#CC0000}
 .mf-todo{color:#B91C1C !important;font-weight:700}
 /* คำตัดสินของเจ้านาย */
-.mf-chip.dec-open{background:#FEE2E2;color:#991B1B}
-.mf-chip.dec-sell{background:#FEF3C7;color:#92400E}
-.mf-chip.dec-wait{background:#E0F2FE;color:#075985}
-.mf-chip.dec-other{background:#F1F5F9;color:#334155}
+.mf-chip.dec-done{background:#DCFCE7;color:#166534}
 .mf-chip.dec-none{background:var(--wms-surface);border-color:#FCA5A5;color:#B91C1C}
 .mf-chip.dec-none.on{border-color:#B91C1C}
-.mf-dsel{padding:2px 4px;border-radius:6px;border:1px solid var(--wms-border2);background:var(--wms-surface);
-  font-family:var(--wms-font);font-size:12.5px;color:var(--wms-text);vertical-align:middle}
-.mf-dsel.open{background:#FEE2E2;border-color:#FCA5A5;color:#991B1B;font-weight:600}
-.mf-dsel.sell{background:#FEF3C7;border-color:#FDE68A;color:#92400E;font-weight:600}
-.mf-dsel.wait{background:#E0F2FE;border-color:#BAE6FD;color:#075985;font-weight:600}
-.mf-dsel.other{background:#F1F5F9;font-weight:600}
-.mf-note{width:130px;margin-left:4px;padding:2px 6px;border-radius:6px;border:1px solid var(--wms-border2);background:var(--wms-surface);
+.mf-note{width:210px;padding:2px 6px;border-radius:6px;border:1px solid var(--wms-border2);background:var(--wms-surface);
   font-family:var(--wms-font);font-size:12.5px;color:var(--wms-text);vertical-align:middle}
 .mf-rmk{width:190px;padding:2px 6px;border-radius:6px;border:1px solid var(--wms-border2);background:var(--wms-surface);
   font-family:var(--wms-font);font-size:12.5px;color:var(--wms-text);vertical-align:middle}
-.mf-note:focus,.mf-dsel:focus,.mf-rmk:focus{outline:none;border-color:var(--wms-primary)}
+.mf-note:focus,.mf-rmk:focus{outline:none;border-color:var(--wms-primary)}
 
 /* รูปสรุปให้เจ้านาย */
 .mf-shot{position:fixed;inset:0;z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;
@@ -801,10 +792,11 @@ function paintDec() {
   if (!bar || !R()) return;
   const map = decMap();
   bar.outerHTML = decBar(rep(repMode()), map);
-  document.querySelectorAll('select[data-dec]').forEach(s => {
-    if (s === document.activeElement) return;
-    const c = (map[s.dataset.dec] || {}).code || '';
-    s.value = c; s.className = 'mf-dsel ' + c;
+  document.querySelectorAll('input[data-note]').forEach(i => {
+    if (i === document.activeElement) return;
+    const d = map[i.dataset.note];
+    i.value = M.decideText(d);
+    i.title = d && d.by ? `${d.by} ${d.at}` : '';
   });
   const rm = remMap();
   document.querySelectorAll('input[data-rmk]').forEach(i => {
@@ -818,10 +810,9 @@ function paintDec() {
 function decBar(rp, map) {
   const s = M.decideSum(rp, map);
   const chip = (k, body) => `<button class="mf-chip dec-${k} ${RF.dec === k ? 'on' : ''}" data-df="${k}">${body}</button>`;
-  const chips = M.DECIDE_ORDER.filter(k => s[k].skus || RF.dec === k)
-    .map(k => chip(k, `${M.DECIDE[k].icon} ${esc(M.DECIDE[k].label)} <b>${s[k].skus}</b> SKU · ${f(s[k].qty)} ชิ้น`)).join('');
-  const none = s.none.skus || RF.dec === 'none' ? chip('none', `เสี่ยงยังไม่ตัดสิน <b>${s.none.skus}</b> SKU`) : '';
-  return `<div class="tx-bar" id="decBar"><span>คำตัดสิน</span>${chips}${none}${chips || none ? '' : '<span>เลือกในช่อง "Action by Tony" ระบบบันทึกเอง · ช่อง Remark ทีมเขียนให้เจ้านายอ่าน</span>'}
+  const chips = s.done.skus || RF.dec === 'done' ? chip('done', `✓ ตอบแล้ว <b>${s.done.skus}</b> SKU · ${f(s.done.qty)} ชิ้น`) : '';
+  const none = s.none.skus || RF.dec === 'none' ? chip('none', `เสี่ยงที่ยังไม่ตอบ <b>${s.none.skus}</b> SKU`) : '';
+  return `<div class="tx-bar" id="decBar"><span>Action by Tony</span>${chips}${none}${chips || none ? '' : '<span>พิมพ์ในช่อง "Action by Tony" ว่าจะทำหรือไม่ทำ ระบบบันทึกเอง · ช่อง Remark ทีมเขียนให้เจ้านายอ่าน</span>'}
     <span class="sp"></span><span id="decState">${decStateHtml()}</span></div>`;
 }
 
@@ -884,11 +875,8 @@ function reportView() {
   const decCell = (r) => {
     const k = ST.up(r.sku);
     const d = map[k];
-    const code = d ? d.code : '';
-    return `<td class="nw"><select class="mf-dsel ${code}" data-dec="${esc(k)}" aria-label="ตัดสินใจ ${esc(r.sku)}"><option value="">—</option>` +
-      M.DECIDE_ORDER.map(c => `<option value="${c}" ${c === code ? 'selected' : ''}>${M.DECIDE[c].icon} ${esc(M.DECIDE[c].label)}</option>`).join('') +
-      `</select><input class="mf-note" data-note="${esc(k)}" maxlength="${M.NOTE_MAX}" placeholder="หมายเหตุ" value="${esc(d ? d.note : '')}"` +
-      `${d && d.by ? ` title="${esc(d.by)} ${esc(d.at)}"` : ''} aria-label="หมายเหตุ ${esc(r.sku)}"></td>`;
+    return `<td class="nw"><input class="mf-note" data-note="${esc(k)}" maxlength="${M.NOTE_MAX}" placeholder="ทำ / ไม่ทำ อะไร" value="${esc(M.decideText(d))}"` +
+      `${d && d.by ? ` title="${esc(d.by)} ${esc(d.at)}"` : ''} aria-label="Action by Tony ${esc(r.sku)}"></td>`;
   };
   const rmkCell = (r) => {
     const k = ST.up(r.sku);
@@ -1187,12 +1175,12 @@ function drawCard(k) {
     if (k.more) { txt(`และเสี่ยงอีก ${f(k.more)} SKU · ดูครบใน Excel`, P, y, 12, 400, CC.muted); y += 22; }
   }
 
-  /* คำตัดสิน */
+  /* Action by Tony */
   if (k.decide) {
     y += 8;
-    let x = P + 6 + txt('คำตัดสิน', P, y + 3, 13, 700);
-    const items = k.decide.list.map(d => ({ s: `${d.label} ${f(d.skus)} SKU · ${f(d.qty)} ชิ้น`, col: DEC_COL[d.k] }));
-    if (k.decide.none) items.push({ s: `ยังไม่ตัดสิน ${f(k.decide.none)} SKU`, col: ['#FFFFFF', CC.risk[2]], line: true });
+    let x = P + 6 + txt('Action by Tony', P, y + 3, 13, 700);
+    const items = [{ s: `ตอบแล้ว ${f(k.decide.done)} SKU · ${f(k.decide.qty)} ชิ้น`, col: ['#DCFCE7', '#166534'] }];
+    if (k.decide.none) items.push({ s: `ยังไม่ตอบ ${f(k.decide.none)} SKU`, col: ['#FFFFFF', CC.risk[2]], line: true });
     items.forEach(it => {
       c.font = cardFont(12, 600);
       const w = c.measureText(it.s).width + 16;
@@ -1439,9 +1427,14 @@ document.addEventListener('change', (e) => {
     job('กำลังโหลดรอบ…', async () => { await loadHead(); TAB = defaultTab(); });
     return;
   }
-  /* คำตัดสิน: เลือก "—" = ล้างทั้งคำตัดสินและหมายเหตุ · หมายเหตุบันทึกตอนออกจากช่องหรือกด Enter */
-  if (t.dataset.dec !== undefined) { setDec(t.dataset.dec, t.value ? { code: t.value } : { code: '', note: '' }); paintBody(); return; }
-  if (t.dataset.note !== undefined) { setDec(t.dataset.note, { note: t.value }); paintDec(); return; }
+  /* Action by Tony: ข้อความอย่างเดียว บันทึกตอนออกจากช่องหรือกด Enter · ลบหมด = ล้าง */
+  if (t.dataset.note !== undefined) {
+    const v = t.value.replace(/\s+/g, ' ').trim();
+    if (v === M.decideText(decMap()[t.dataset.note])) return;
+    setDec(t.dataset.note, v ? { code: 'other', note: v } : { code: '', note: '' });
+    paintDec();
+    return;
+  }
   if (t.dataset.rmk !== undefined) { setRem(t.dataset.rmk, t.value); paintDec(); return; }
   if (t.id === 'fYm') { DRAFT.ym = t.value; paintBody(); return; }
   if (t.id === 'fTeams') { DRAFT.teams = +t.value || 1; return; }

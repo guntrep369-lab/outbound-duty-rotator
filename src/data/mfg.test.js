@@ -399,13 +399,16 @@ describe('เทียบกับรอบเดือนก่อน', () => {
     expect(M.decideOf('เสีย')).toEqual({});
   });
 
-  it('สรุปคำตัดสิน กับชิปกรอง: SKU เสี่ยงที่ยังไม่ตัดสิน', () => {
+  it('สรุป Action by Tony กับชิปกรอง: ตอบแล้ว · SKU เสี่ยงที่ยังไม่ตอบ', () => {
     const cur = rep('2026-11', NOV);
     const map = M.decideOf({ AAA0000000001: ['open', 'แกะขายหน้าร้าน', 'ก', ''], EEE0000000001: ['wait', '', 'ก', ''] });
     const s = M.decideSum(cur, map);
     expect(s.any).toBe(true);
     expect([s.open.skus, s.open.qty, s.wait.skus, s.wait.qty, s.none.skus]).toEqual([1, 17, 1, 3, 1]);
     expect(s.none.list.map((x) => x.short)).toEqual(['CCC001']);
+    expect([s.done.skus, s.done.qty]).toEqual([2, 20]);
+    expect(s.done.list.map((x) => [x.short, x.text])).toEqual([['AAA001', 'แกะ · แกะขายหน้าร้าน'], ['EEE001', 'รอเดือนหน้า']]);
+    expect(M.byDecide(cur.rows, map, 'done').map((r) => r.short)).toEqual(['AAA001', 'EEE001']);
     expect(M.byDecide(cur.rows, map, 'none').map((r) => r.short)).toEqual(['CCC001']);
     expect(M.byDecide(cur.rows, map, 'open').map((r) => r.short)).toEqual(['AAA001']);
     expect(M.byDecide(cur.rows, map, '').length).toBe(cur.rows.length);
@@ -450,10 +453,12 @@ describe('เทียบกับรอบเดือนก่อน', () => {
 
     const text = M.lineText(cur, { ym: '2026-11', cmp: c, decide: map });
     expect(text).toContain('⚠️ เดือนก่อนสั่งแกะ/ขายด่วน แต่ยังค้าง 1 SKU (12 ชิ้น): AAA001 12');
-    expect(text).toContain('คำตัดสิน:');
-    expect(text).toContain('✂️ แกะ 1 SKU (17 ชิ้น): AAA001 (รอบสอง)');
-    expect(text).toContain('❓ เสี่ยงที่ยังไม่ตัดสิน 1 SKU');
-    expect(M.lineText(cur, { ym: '2026-11', decide: {} })).not.toContain('คำตัดสิน');
+    expect(text).toContain('✍️ Action by Tony (1 SKU):\n• AAA001 — แกะ · รอบสอง');
+    expect(text).toContain('❓ เสี่ยงที่ยังไม่ตอบ 1 SKU');
+    expect(M.lineText(cur, { ym: '2026-11', decide: {} })).not.toContain('Action by Tony');
+    /* แบบใหม่: เจ้านายพิมพ์ข้อความอย่างเดียว */
+    const typed = M.decideOf(M.applyDecide({}, { CCC0000000001: ['other', 'ไม่ทำ รอขายปกติ', 'เจ้านาย', ''] }));
+    expect(M.lineText(cur, { ym: '2026-11', decide: typed })).toContain('• CCC001 — ไม่ทำ รอขายปกติ');
   });
 
   it('การ์ดรูปให้เจ้านาย: สามกล่องบน แยกประเภท เสี่ยง LOT เก่าสุดก่อน คำตัดสิน และเทียบเดือนก่อน', () => {
@@ -476,7 +481,7 @@ describe('เทียบกับรอบเดือนก่อน', () => {
     ]);
     expect(k.top[0].age).toBe(lot4.age);
     expect([k.more, k.riskSkus]).toEqual([0, 2]);
-    expect(k.decide).toEqual({ list: [{ k: 'open', label: 'แกะ', skus: 1, qty: 17 }], none: 1 });
+    expect(k.decide).toEqual({ done: 1, qty: 17, none: 1 });
     expect(k.cmp).toEqual({ prev: M.ymText('2026-10'), new: 1, still: 1, gone: 1, out: 16, todo: { skus: 1, qty: 12, list: ['AAA001'] } });
 
     const plain = M.card(cur, { ym: '2026-11', top: 1 });
