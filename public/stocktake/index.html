@@ -406,6 +406,7 @@ async function loadLog(quiet) {
   S.log = ST.voidMoved(S.raw, day2());   // นับ 2 วัน: โลวันแรกที่ขยับ ผลนับวันแรกไม่ใช้ รอนับใหม่วันที่ 2
   S.since = r.last;
   S.at = Date.now();
+  S.devices = r.devices || null;   // มือถือที่ติดต่อมา ยังค้างส่งกี่แถว (สคริปต์รุ่นเก่าไม่มี = ไม่รู้)
   if (r.round && S.head) Object.assign(S.head.round, r.round);
 }
 
@@ -618,6 +619,10 @@ async function pullCore(r) {
   const fifo = await WmsGas.json(tx, 'tx-fifo', { onProgress: (sec) => { S.busy = `กำลังอ่านสมุด Transaction… ${sec} วิ`; paintSrc(); } });
   if (fifo.error) throw new Error('สมุด Transaction: ' + fifo.error);
   if (!fifo.rows) throw new Error('URL Transaction ไม่ได้ตอบสมุดมา ตรวจในหน้าตั้งค่า');
+  /* สำเนาสมุดพังครึ่งเดียว = ยอดตั้งต้นขาดเป็นก้อน เกือบทุกโลจะดูเหมือนของเกิน · ไม่ผ่านไม่ดึง สงสัยถามก่อน */
+  const chk = ST.ledgerCheck(fifo, { cutoff: r.cutoff, prevRow: r.set ? r.lastRow : 0 });
+  if (chk.stop.length) throw new Error('ยังไม่ดึงยอด สมุดดูไม่ครบ: ' + chk.stop.join(' · ') + ' — แก้สูตรในไฟล์สำเนาแล้วกดดึงใหม่');
+  if (chk.ask.length && !confirm('สมุดอาจไม่ครบ\n\n• ' + chk.ask.join('\n• ') + '\n\nเช็คแล้วว่าสมุดถูกต้อง ดึงยอดต่อเลยไหม?')) throw new Error('ยกเลิกการดึงยอด: ' + chk.ask[0]);
   const sm = WmsSup.map(fifo.sup);
   const b = ST.baseline(fifo, (po) => WmsSup.of(sm, po));
   S.busy = 'กำลังบันทึกยอดตั้งต้น…'; paintSrc();
@@ -627,7 +632,7 @@ async function pullCore(r) {
   const locs = [...have.values()].sort((a, c) => ST.locCmp(a[0], c[0]));
   const teams = ST.teamsOf(S.head.teams, 1).map(t => ({ ...t, locs: t.locs }));
   await post({ op: 'st-teams', round: r.id, pass: 1, teams, locs });
-  return { fifo, b, locs };
+  return { fifo, b, locs, chk };
 }
 
 /**
@@ -660,12 +665,13 @@ async function pullBase() {
   if (r.set && !confirm(`มียอดตั้งต้นชุดที่ ${r.set} แล้ว ดึงใหม่เป็นชุดที่ ${r.set + 1}?\nชุดเดิมยังเก็บไว้ในชีต` +
     (d2 && !d2.on && r.status === 'นับรอบ 1' ? '\n\nถ้าจะเริ่มนับวันที่ 2 ให้กด "เปิดนับวันที่ 2" แทน (ดึงยอดให้เอง และเช็คโลวันแรกที่ขยับ)' : ''))) return;
   await job('กำลังอ่านสมุด Transaction…', async () => {
-    const { b, locs } = await pullCore(r);
+    const { b, locs, chk } = await pullCore(r);
     /* นับ 2 วัน: โลเปิดที่นับวันที่ 2 คิดจากยอดชุดล่าสุด อัปเดตให้เฉพาะตอนยังไม่เริ่มนับ (เริ่มแล้วห้ามเปลี่ยน คนนับวันแรกนับตามชุดเดิมอยู่) */
     const fresh = d2 && !d2.on && d2.openToo && r.status === 'ตั้งค่า' ? ST.day2Plan(b.piles, d2.zones, true) : null;
     if (fresh) await post({ op: 'st-day2', round: r.id, day2: fresh });
     await loadHead();
-    S.ok = `✓ ดึงยอดตั้งต้นชุดที่ ${R().set} แล้ว ${f(b.piles.length)} กอง · Location ${f(locs.length)} โล${fresh ? ` · โลเปิดที่นับวันที่ 2 ${f(fresh.locs.length)} โล` : ''}`;
+    S.ok = `✓ ดึงยอดตั้งต้นชุดที่ ${R().set} แล้ว ${f(b.piles.length)} กอง · Location ${f(locs.length)} โล${fresh ? ` · โลเปิดที่นับวันที่ 2 ${f(fresh.locs.length)} โล` : ''}` +
+      ` · สมุด ${f(chk.info.rows)} แถว ถึงแถว ${f(chk.info.lastRow)}${chk.info.lastDate ? ` · ขายล่าสุด ${chk.info.lastDate.slice(8, 10)}/${chk.info.lastDate.slice(5, 7)}` : ''}`;
   });
 }
 
@@ -884,6 +890,11 @@ function controlAlerts(cm) {
     if (done && cm.d && !cm.d.on) done.text = 'นับวันแรกครบแล้ว กดเปิดนับวันที่ 2 ได้ในแท็บตั้งรอบ';
     else if (done && R().status === 'นับรอบ 1') done.text = 'นับครบทุกโลแล้ว ปิดรับนับรอบ 1 ได้ในแท็บวิเคราะห์';
   }
+  /* มือถือที่ติดต่อมาล่าสุดยังค้างส่ง: แถวพวกนี้หัวหน้ายังไม่เห็น ไม่ขึ้นในผัง ไม่ใช่ผลต่าง จอทีวีขึ้นได้ */
+  ST.deviceWatch(S.devices, Date.now(), { pass: cm.pass }).stuck.forEach(d => out.push({
+    level: 'warn', code: 'unsent',
+    text: `มือถือของ ${d.who || d.device}${d.team ? ` (${teamLabel(d.team, cm.pass)})` : ''} ค้างส่ง ${f(d.pend)} แถว · ติดต่อล่าสุด ${d.at ? hm(d.at) : '-'} — ให้เปิดหน้ากรอกตรงที่มีสัญญาณ`,
+  }));
   const tg = targetOf();
   if (tg && m.eta) {
     const [h, mi] = tg.split(':').map(Number);
@@ -894,6 +905,23 @@ function controlAlerts(cm) {
   }
   const rank = { warn: 0, info: 1, ok: 2 };
   return out.sort((x, y) => rank[x.level] - rank[y.level]);
+}
+
+function teamLabel(id, pass) { const t = (S.head.teams || []).find(x => x.id === id && x.pass === pass); return t ? t.name : id; }
+
+/**
+ * ข้อความต่อท้ายตอนกดปิดรับนับ: มือถือที่ยังค้างส่ง กับมือถือที่เงียบไปนาน (ถ้านับต่อแบบไม่มีเน็ตหลังติดต่อครั้งสุดท้าย แถวจะค้างในเครื่อง)
+ * สคริปต์รุ่นเก่าไม่รายงานมือถือ ไม่ต่อท้ายอะไร
+ */
+function unsentText(pass) {
+  if (!S.devices) return '';
+  const w = ST.deviceWatch(S.devices, Date.now(), { pass });
+  const name = (d) => `${d.who || d.device}${d.team ? ` (${teamLabel(d.team, pass)})` : ''}`;
+  const list = (a, fn) => a.slice(0, 8).map(fn).join('\n') + (a.length > 8 ? `\n…อีก ${a.length - 8} เครื่อง` : '');
+  let t = '';
+  if (w.stuck.length) t += `\n\n⚠ มือถือที่ยังค้างส่ง ${w.stuck.length} เครื่อง — ปิดรับตอนนี้ โลพวกนั้นจะขึ้นว่ายังไม่นับ\n` + list(w.stuck, d => `• ${name(d)} ค้าง ${f(d.pend)} แถว · ติดต่อล่าสุด ${hm(d.at)}`);
+  if (w.quiet.length) t += `\n\nมือถือที่เงียบไปเกิน 15 นาที (ติดต่อล่าสุดส่งครบแล้ว) ถ้าหลังจากนั้นยังนับต่อ ให้เปิดหน้ากรอกจนขึ้น ✓ ส่งครบ ก่อน\n` + list(w.quiet, d => `• ${name(d)} ${hm(d.at)}`);
+  return t;
 }
 
 /** ความเร็วต่ำมากเวลาเสร็จจะข้ามวัน บอกเป็นคำแทนเวลาที่ดูเหมือนวันนี้ */
@@ -1703,7 +1731,7 @@ document.addEventListener('click', (e) => {
   else if (act === 'close1') {
     const d2 = day2();
     if (d2 && !d2.on) { alert('ยังไม่ได้เปิดนับวันที่ 2\nโลที่รอวันที่ 2 ยังไม่ได้นับ — กด "เปิดนับวันที่ 2" ในแท็บตั้งรอบก่อน'); return; }
-    if (confirm('ปิดรับนับรอบ 1?\nเครื่องที่ยังค้างส่งจะยังส่งเข้ามาได้ ย้อนกลับไปนับต่อได้')) setStatus('วิเคราะห์');
+    if (confirm('ปิดรับนับรอบ 1?\nเครื่องที่ยังค้างส่งจะยังส่งเข้ามาได้ ย้อนกลับไปนับต่อได้' + unsentText(1))) setStatus('วิเคราะห์');
   }
   else if (act === 'day2-open') openDay2();
   else if (act === 'tv') setTv(true);
@@ -1725,7 +1753,7 @@ document.addEventListener('click', (e) => {
     if (planDiff(planNow()) && !confirm('แผนที่แสดงอยู่ยังไม่ได้บันทึก คนนับจะเห็นแผนที่บันทึกล่าสุด เปิดนับต่อไหม?')) return;
     if (confirm(`เปิดนับรอบ 2 (${n} โล)?\nคนนับเปิดลิงก์เดิม เลือกทีมใหม่ ระบบห้ามคนที่นับโลนั้นในรอบ 1 นับซ้ำ\nเปิดแล้วกลับไปนับรอบ 1 ไม่ได้`)) setStatus('นับรอบ 2');
   }
-  else if (act === 'stop2') { if (confirm('ปิดรับนับรอบ 2?\nเครื่องที่ค้างส่งยังส่งเข้ามาได้ เปิดนับต่อได้')) setStatus('วิเคราะห์'); }
+  else if (act === 'stop2') { if (confirm('ปิดรับนับรอบ 2?\nเครื่องที่ค้างส่งยังส่งเข้ามาได้ เปิดนับต่อได้' + unsentText(2))) setStatus('วิเคราะห์'); }
   else if (act === 'xlsx') downloadXlsx();
   else if (act === 'close') closeRound();
   else if (act === 'del-open') { DEL = true; paintBody(); const el = $('delName'); if (el) el.focus(); }

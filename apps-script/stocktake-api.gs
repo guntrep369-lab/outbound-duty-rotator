@@ -126,12 +126,19 @@ function doGet(e) {
   try {
     if (p.api === 'st-rounds') { head_(p.t); return out_(rounds_()); }
     if (p.api === 'st-head') { head_(p.t); return out_(headView_(String(p.round || ''))); }
-    if (p.api === 'st-log') { head_(p.t); return out_(logView_(String(p.round || ''), +p.since || 0, '')); }
+    if (p.api === 'st-log') {
+      head_(p.t);
+      var lv = logView_(String(p.round || ''), +p.since || 0, '');
+      lv.devices = devices_(lv.round.id);   // มือถือที่ยังค้างส่ง (ห้องควบคุม / ก่อนปิดรับนับ)
+      return out_(lv);
+    }
     if (p.api === 'st-round') { counter_(p.k); return out_(countView_(String(p.round || ''))); }
     if (p.api === 'st-mine') {
       counter_(p.k);
       if (!p.team) return out_({ error: 'ไม่ได้บอกทีม' });
-      return out_(logView_(String(p.round || ''), +p.since || 0, String(p.team)));
+      var mv = logView_(String(p.round || ''), +p.since || 0, String(p.team));
+      seen_(p, 0);
+      return out_(mv);
     }
     if (p.api === 'st-boss') return out_(bossView_(String(p.round || ''), p.b));
   } catch (err) {
@@ -143,16 +150,21 @@ function doGet(e) {
 function doPost(e) {
   try {
     var req = JSON.parse(e.postData.contents);
-    if (req.op === 'st-count') { counter_(req.k); return out_(count_(req)); }
-    if (req.op === 'st-open') { counter_(req.k); return out_(open_(req)); }
+    if (req.op === 'st-count') {
+      counter_(req.k);
+      var cr = count_(req);
+      seen_(req, cr.error ? 0 : (req.items || []).length);   // แถวที่เพิ่งรับไม่ค้างในเครื่องแล้ว
+      return out_(cr);
+    }
+    if (req.op === 'st-open') { counter_(req.k); var op = open_(req); seen_(req, 0); return out_(op); }
     if (req.op === 'st-round-save') { head_(req.t); return out_(roundSave_(req)); }
     if (req.op === 'st-baseline') { head_(req.t); return out_(baseline_(req)); }
     if (req.op === 'st-teams') { head_(req.t); return out_(teams_(req)); }
     if (req.op === 'st-status') { head_(req.t); return out_(status_(req)); }
     if (req.op === 'st-summary') { head_(req.t); return out_(summary_(req)); }
     if (req.op === 'st-plan') { head_(req.t); return out_(plan_(req)); }
-    if (req.op === 'st-close') { head_(req.t); return out_(close_(req)); }
-    if (req.op === 'st-round-del') { head_(req.t); return out_(roundDel_(req)); }
+    if (req.op === 'st-close') { head_(req.t); var cl = close_(req); if (!cl.error) devicesClear_(text_(req.round)); return out_(cl); }
+    if (req.op === 'st-round-del') { head_(req.t); var rd = roundDel_(req); if (!rd.error) devicesClear_(text_(req.round)); return out_(rd); }
     if (req.op === 'st-day2') { head_(req.t); return out_(day2Set_(req)); }
     if (req.op === 'st-day2-open') { head_(req.t); return out_(day2Open_(req)); }
     if (req.op === 'st-boss-key') { head_(req.t); return out_(bossKey_(req)); }
@@ -1160,6 +1172,61 @@ var OPEN_MIN = 15;   // เปิดโลค้างไว้นานกว�
  * เก็บใน CacheService ไม่ลงชีต ไม่อ่านชีต ไม่ล็อก ตอบเร็ว · ชนกันพอดีแค่ทำให้เตือนพลาดหนึ่งครั้ง ไม่กระทบผลนับ
  * req = {round, pass, kind, who, device, loc}
  */
+/* ── มือถือที่ยังค้างส่ง ────────────────────────────────────────────────────
+   ผลนับที่ค้างในมือถือ หัวหน้ามองไม่เห็น ปิดรับนับไปแล้วโลนั้นขึ้นว่ายังไม่นับ
+   ทุกครั้งที่มือถือติดต่อ (ดึงแถว ส่งผลนับ เปิดโล) มันบอกว่ายังค้างส่งกี่แถว เก็บใน Script Properties ต่อเครื่อง
+   อยู่ข้ามคืน (นับ 2 วันก็ยังเห็น) ไม่ลงชีต ไม่ล็อก · ปิดรอบ / ลบรอบแล้วลบทิ้ง ── */
+
+var SEEN_PRE = 'stv|';
+var SEEN_MIN = 3;   // ค่าเดิมไม่เปลี่ยน เขียนซ้ำอย่างมากทุกกี่นาที (โควตาอ่านเขียน Properties ต่อวันจะได้ไม่หมด)
+
+/**
+ * บันทึกสถานะเครื่อง: pend = แถวในเครื่องก่อนคำขอนี้ ลบด้วย sent = แถวที่สคริปต์เพิ่งรับในคำขอนี้
+ * จำค่าที่เขียนล่าสุดไว้ใน Cache ค่าเหมือนเดิมและเพิ่งเขียนไม่ถึง SEEN_MIN นาที ไม่เขียนซ้ำ
+ * มือถือที่เปิดหน้ารุ่นเก่า (ไม่ส่ง pend) ไม่ถูกบันทึก · พังก็ไม่กระทบผลนับ
+ */
+function seen_(req, sent) {
+  try {
+    if (req.pend === undefined || req.pend === null || req.pend === '') return;
+    var round = code_(req.round, 40), dev = plain_(req.device, 40);
+    if (!round || !dev) return;
+    var key = SEEN_PRE + round + '|' + dev;
+    var cache = CacheService.getScriptCache();
+    var prev = {};
+    try { prev = JSON.parse(cache.get(key) || '{}') || {}; } catch (e) { prev = {}; }
+    var pend = Math.max(0, Math.floor(+req.pend || 0) - (sent || 0));
+    var v = {
+      device: dev, who: plain_(req.who, 40) || prev.who || '', team: code_(req.team, 20) || prev.team || '',
+      pass: +req.pass || prev.pass || 1, pend: pend, old: pend ? Math.max(0, Math.floor(+req.old || 0)) : 0, at: now_(),
+    };
+    if (prev.at && prev.who === v.who && prev.team === v.team && prev.pass === v.pass && prev.pend === v.pend &&
+        v.at - prev.at < SEEN_MIN * 60000) return;
+    PropertiesService.getScriptProperties().setProperty(key, JSON.stringify(v));
+    cache.put(key, JSON.stringify(v), 21600);
+  } catch (e) { /* ไม่กระทบผลนับ */ }
+}
+
+/** มือถือทุกเครื่องของรอบนี้ → [{device, who, team, pass, pend, old, at}] · อ่านไม่ได้ส่ง null (หน้าหัวหน้าถือว่าไม่รู้) */
+function devices_(round) {
+  try {
+    var all = PropertiesService.getScriptProperties().getProperties();
+    var pre = SEEN_PRE + code_(round, 40) + '|', out = [];
+    Object.keys(all).forEach(function (k) {
+      if (k.indexOf(pre) !== 0) return;
+      try { out.push(JSON.parse(all[k])); } catch (e) { /* ค่าเสีย ข้าม */ }
+    });
+    return out;
+  } catch (e) { return null; }
+}
+
+function devicesClear_(round) {
+  try {
+    var p = PropertiesService.getScriptProperties();
+    var pre = SEEN_PRE + code_(round, 40) + '|';
+    p.getKeys().forEach(function (k) { if (k.indexOf(pre) === 0) p.deleteProperty(k); });
+  } catch (e) { /* เหลือค่าเก่าไว้ก็ไม่เป็นไร */ }
+}
+
 function open_(req) {
   var round = code_(req.round, 40), dev = plain_(req.device, 40);
   if (!round || !dev) return { error: 'ไม่ได้บอกรอบหรือเครื่อง' };

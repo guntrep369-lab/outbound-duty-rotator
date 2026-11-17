@@ -706,9 +706,15 @@ describe('WmsStocktake — ช่องพิมพ์และลิงก์',
 
   it('ลิงก์คนนับ: URL สคริปต์และรหัสอยู่หลัง # อ่านกลับได้ครบ', () => {
     const link = S.countLink('https://x.github.io/app/stocktake/count.html#old', 'https://script.google.com/macros/s/ABC/exec', 'nab', 'ST261115-1');
-    expect(link.split('#')[0]).toBe('https://x.github.io/app/stocktake/count.html');
+    expect(link.split('#')[0]).toBe('https://x.github.io/app/stocktake/count.html?openExternalBrowser=1');
     expect(S.parseLink(link.split('#')[1])).toEqual({ url: 'https://script.google.com/macros/s/ABC/exec', key: 'nab', round: 'ST261115-1' });
     expect(S.countLink('p', 'u', '', 'r')).not.toContain('k=');
+  });
+
+  it('ลิงก์คนนับเปิดนอกแอป LINE: มี openExternalBrowser=1 ครั้งเดียว ต่อท้าย ? เดิมได้', () => {
+    expect(S.countLink('https://x/count.html?a=1', 'u', 'k', 'r').split('#')[0]).toBe('https://x/count.html?a=1&openExternalBrowser=1');
+    const twice = S.countLink(S.countLink('https://x/count.html', 'u', 'k', 'r'), 'u', 'k', 'r');
+    expect(twice.split('#')[0].match(/openExternalBrowser/g)).toHaveLength(1);
   });
 
   it('แถวสมุดหลังดึงยอด: แยกก่อนตัดยอด / วันตัดยอด / ระหว่างนับ', () => {
@@ -1183,6 +1189,35 @@ describe('count.html — ปุ่มเปลี่ยนทีม/โหลด
   it('ท้ายรายการโลไม่มีปุ่มซ้ำแล้ว · หน้าเลือกทีมมีปุ่มกลับไปนับต่อ', () => {
     expect(HTML).not.toMatch(/<div class="ct-foot"><button[^>]*data-act="who"/);
     expect(HTML).toContain("case 'who-cancel':");
+  });
+});
+
+/* หน้างานเดินไม่ตรงลำดับในรายการ: เสร็จโลแล้วกลับไปรายการให้เลือกโลต่อเอง ระบบไม่เปิดโลถัดไปให้ */
+describe('count.html — เสร็จโลแล้วเลือกโลต่อเอง', () => {
+  const HTML = fs.readFileSync(path.resolve(__dirname, '../../public/stocktake/count.html'), 'utf8');
+  const fn = (name) => {
+    const at = HTML.indexOf(`function ${name}(`);
+    expect(at, `ไม่มี ${name}()`).toBeGreaterThan(-1);
+    return HTML.slice(at, HTML.indexOf('\n}\n', at));
+  };
+  it('ปุ่มล่างเป็น "เสร็จโลนี้" ไม่มี "โลถัดไป" และไม่มีโค้ดเปิดโลถัดไปเองแล้ว', () => {
+    expect(fn('locBottom')).toContain('data-act="next">เสร็จโลนี้ ✓</button>');
+    expect(HTML).not.toMatch(/โลถัดไป<\/button>/);
+    expect(HTML).not.toMatch(/function nextLoc\(|nextLoc\(\)/);
+    expect(fn('toList'), 'กลับรายการเสมอ ไม่เปิดโลอื่น').not.toMatch(/openLoc\(/);
+  });
+  it('เสร็จโล / โลนี้ว่าง / ปุ่มกลับ ไปที่รายการแล้วเลื่อนมาที่โลที่เพิ่งออกมา', () => {
+    expect(fn('doneLoc')).toMatch(/if \(keepTyped\(\)\) \{ toList\(loc\); cheer\(loc, before\); \}/);
+    expect(HTML).toMatch(/push\('ว่าง', \{\}\); toList\(loc\); cheer\(loc, before\);/);
+    expect(HTML).toMatch(/case 'back': if \(VIEW !== 'loc' \|\| keepTyped\(\)\) toList\(LOC\); break;/);
+    expect(fn('toList')).toMatch(/row\.scrollIntoView\(\{ block: 'center' \}\)/);
+  });
+  it('โลที่เพิ่งเสร็จยังโชว์ในรายการ "เหลือ" พร้อมแถบ (ยกเว้นนับครบแล้ว ให้ขึ้นข้อความนับครบ)', () => {
+    const lv = fn('listView');
+    expect(lv).toMatch(/const keep = \(l\) => l\.loc === NEAR && left > 0;/);
+    expect(lv).toMatch(/!st\[l\.loc\] \|\| keep\(l\)/);
+    expect(lv).toMatch(/ct-loc\$\{l\.loc === NEAR \? ' near' : ''\}/);
+    expect(HTML).toMatch(/\.ct-loc\.near\{/);
   });
 });
 
@@ -1669,5 +1704,168 @@ describe('ห้องควบคุมการนับ — หน้าห�
     expect(IDX).toMatch(/classList\.toggle\('st-tv', CT\.tv && TAB === 'control' && !!S\.head && S\.rid !== 'new'/);
     expect(IDX).toMatch(/else if \(act === 'tv-exit'\) setTv\(false\);/);
     expect(IDX).toMatch(/e\.key === 'Escape' && CT\.tv && TAB === 'control' && !document\.fullscreenElement\) setTv\(false\)/);
+  });
+});
+
+/* สำเนาสมุดพังครึ่งเดียวตอบมาเหมือนปกติ ยอดตั้งต้นจะขาดเป็นก้อน (16/11 สูตร IMPORTRANGE เพิ่งพังจริง) และลิงก์ที่เปิดในแอป LINE อาจทำผลนับในเครื่องหาย */
+describe('กันยอดตั้งต้นผิดกับผลนับหาย', () => {
+  const row = (n) => [n, 0, '8', 0, -1, 0, 1, 0, -1, 8];
+  const rows = (from, to) => Array.from({ length: to - from + 1 }, (_, i) => row(from + i));
+  const fifo = (o) => ({ rows: rows(2, 900), last: '2026-11-14', sheet: { end: 30000 }, ...o });
+
+  it('สมุดครบ ไม่เตือนอะไร และบอกจำนวนแถวกับวันขายล่าสุด', () => {
+    const c = S.ledgerCheck(fifo(), { cutoff: '2026-11-14 18:00' });
+    expect(c.stop).toEqual([]);
+    expect(c.ask).toEqual([]);
+    expect(c.info).toMatchObject({ rows: 899, first: 2, lastRow: 900, lastDate: '2026-11-14' });
+  });
+
+  it('ไม่ดึง: ไม่มีแถว / แถวต้นสมุดหาย / แถวหายเป็นช่วงกลาง / สั้นลงจากชุดก่อนในรอบเดียวกัน', () => {
+    expect(S.ledgerCheck(fifo({ rows: [] }), {}).stop[0]).toMatch(/ไม่มีแถว/);
+    expect(S.ledgerCheck(fifo({ rows: rows(20001, 20500) }), {}).stop[0]).toMatch(/แถวต้นสมุดหาย.*20,001/);
+    const mid = S.ledgerCheck(fifo({ rows: rows(2, 400).concat(rows(1500, 1600)) }), {});
+    expect(mid.stop[0]).toMatch(/แถว 401–1,499 ว่างหมด \(1,099 แถว\)/);
+    expect(S.ledgerCheck(fifo(), { prevRow: 950 }).stop[0]).toMatch(/สมุดสั้นลง.*950.*900/);
+    expect(S.ledgerCheck(fifo(), { prevRow: 900 }).stop, 'ดึงซ้ำได้แถวเท่าเดิม = ปกติ').toEqual([]);
+  });
+
+  it('แถวว่างไม่กี่ร้อยแถวกลางสมุดยังดึงได้ (เกณฑ์ 500)', () => {
+    expect(S.ledgerCheck(fifo({ rows: rows(2, 400).concat(rows(800, 900)) }), {}).stop).toEqual([]);
+  });
+
+  it('ถามก่อน: ขายล่าสุดห่างวันตัดยอดเกิน 2 วัน / ไม่มีวันขาย / ใกล้ท้ายช่วงที่สำเนาดึง', () => {
+    expect(S.ledgerCheck(fifo(), { cutoff: '2026-11-16 18:00' }).ask).toEqual([]);
+    expect(S.ledgerCheck(fifo(), { cutoff: '2026-11-17 18:00' }).ask[0]).toMatch(/ขายล่าสุดในสมุดคือ 14\/11 แต่ตัดยอด 17\/11 \(ห่าง 3 วัน\)/);
+    expect(S.ledgerCheck(fifo({ last: '' }), { cutoff: '2026-11-14 18:00' }).ask[0]).toMatch(/ไม่เจอรายการขาย/);
+    expect(S.ledgerCheck(fifo({ sheet: { end: 1000 } }), {}).ask[0]).toMatch(/สำเนาดึงถึงแถว 1,000 ตอนนี้ใช้ถึงแถว 900/);
+    expect(S.ledgerCheck(fifo({ sheet: { end: 500 } }), {}).ask, 'แยกสูตรหลายช่วง แถวเกินช่วงแรก = มีช่วงต่อ').toEqual([]);
+  });
+
+  it('สมุดสมมติของ dev server ผ่านการเช็ค', () => {
+    const f = fakeFifo();
+    expect(S.ledgerCheck(f, {}).stop).toEqual([]);
+  });
+
+  it('หน้าหัวหน้าเช็คก่อนเก็บยอดตั้งต้น ทั้งดึงปกติและเปิดนับวันที่ 2', () => {
+    const IDX = fs.readFileSync(path.resolve(__dirname, '../../public/stocktake/index.html'), 'utf8');
+    const core = IDX.slice(IDX.indexOf('async function pullCore('), IDX.indexOf('\n}\n', IDX.indexOf('async function pullCore(')));
+    expect(core).toMatch(/ST\.ledgerCheck\(fifo, \{ cutoff: r\.cutoff, prevRow: r\.set \? r\.lastRow : 0 \}\)/);
+    expect(core.indexOf('ledgerCheck'), 'เช็คก่อนส่งยอดไปชีต').toBeLessThan(core.indexOf("op: 'st-baseline'"));
+    expect(core).toMatch(/if \(chk\.stop\.length\) throw new Error/);
+    expect(IDX).toMatch(/const \{ fifo, locs \} = await pullCore\(r\);/);   // เปิดวันที่ 2 ผ่าน pullCore เหมือนกัน
+  });
+
+  it('ลิงก์จากแอป LINE: หน้ากรอกรู้ว่าอยู่ใน LINE ไม่ลบรหัสออกจากลิงก์ (เมนูเปิดเบราว์เซอร์อื่นพาไปด้วย) และขึ้นแถบเตือน', () => {
+    const CNT = fs.readFileSync(path.resolve(__dirname, '../../public/stocktake/count.html'), 'utf8');
+    expect(CNT).toContain('const IN_LINE = / Line' + String.fromCharCode(92) + '//i.test');
+    expect(CNT).toMatch(/if \(!IN_LINE \|\| ext\) history\.replaceState/);
+    expect(CNT).toMatch(/qs\.delete\('openExternalBrowser'\)/);
+    expect(CNT).toMatch(/return \[bands\(\) \+ lineBand\(\) \+ listView\(\), ''\];/);
+    expect(CNT).toMatch(/navigator\.storage\.persist\(\)/);
+  });
+});
+
+/* ผลนับที่ค้างในมือถือ หัวหน้ามองไม่เห็น ปิดรับนับไปแล้วโลพวกนั้นขึ้นว่ายังไม่นับ */
+describe('มือถือที่ยังค้างส่ง', () => {
+  const NOW = Date.UTC(2026, 10, 17, 6, 0);
+  const min = (m) => NOW - m * 60000;
+  const dev = (o) => ({ device: 'D1', who: 'สมชาย', team: 'INV1', pass: 1, pend: 0, old: 0, at: min(1), ...o });
+
+  it('แยกเครื่องที่ยังค้างส่ง กับเครื่องที่ส่งครบแล้วแต่เงียบเกิน 15 นาที เรียงจากติดต่อนานสุด', () => {
+    const w = S.deviceWatch([
+      dev({ device: 'A', pend: 12, at: min(3) }),
+      dev({ device: 'B', pend: 2, at: min(40) }),
+      dev({ device: 'C', at: min(20) }),
+      dev({ device: 'D', at: min(5) }),
+      dev({ device: 'E', pass: 2, pend: 9 }),
+    ], NOW, { pass: 1 });
+    expect(w.stuck.map((d) => d.device)).toEqual(['B', 'A']);
+    expect(w.stuck[0]).toMatchObject({ pend: 2, min: 40, who: 'สมชาย' });
+    expect(w.quiet.map((d) => d.device)).toEqual(['C']);
+  });
+
+  it('ไม่มีข้อมูลเครื่อง (สคริปต์รุ่นเก่า) ได้รายการว่าง', () => {
+    expect(S.deviceWatch(null, NOW, {})).toEqual({ stuck: [], quiet: [] });
+  });
+
+  it('มือถือบอกสคริปต์ทุกครั้งที่ติดต่อ (ดึง ส่ง เปิดโล) ว่ายังค้างกี่แถว และส่งแบบ beacon ตอนสลับแอป/ปิดหน้า', () => {
+    const CNT = fs.readFileSync(path.resolve(__dirname, '../../public/stocktake/count.html'), 'utf8');
+    expect(CNT).toMatch(/function meta\(\) \{ return ME \? \{ device: DEV, who: ME\.who, pass: ME\.pass, pend: BOX\.out\.length, old: oldMin\(\) \}/);
+    expect(CNT).toMatch(/urlOf\('st-mine', \{ team: t, since, \.\.\.meta\(\) \}\)/);
+    expect(CNT).toMatch(/\{ op: 'st-count', k: CFG\.key, round: CFG\.round, \.\.\.meta\(\), team: t, since, items: sent\.map\(wire\) \}/);
+    expect(CNT).toMatch(/\{ op: 'st-open', k: CFG\.key, round: CFG\.round, \.\.\.meta\(\),/);
+    expect(CNT).toMatch(/if \(!document\.hidden\) \{ flush\(\); pull\(\); \} else beacon\(\);/);
+    expect(CNT).toMatch(/navigator\.sendBeacon\(CFG\.url, new Blob\(\[JSON\.stringify\(body\)\], \{ type: 'text\/plain;charset=utf-8' \}\)\)/);
+    expect(CNT, 'ค้างนาน 10 นาทีขึ้นแถบแดง').toMatch(/if \(BOX\.out\.length && om >= STUCK_MIN\)/);
+  });
+
+  it('หน้าหัวหน้า: ห้องควบคุมเตือนเครื่องที่ค้างส่ง และปุ่มปิดรับนับทั้งสองรอบบอกรายชื่อก่อนยืนยัน', () => {
+    const IDX = fs.readFileSync(path.resolve(__dirname, '../../public/stocktake/index.html'), 'utf8');
+    expect(IDX).toMatch(/S\.devices = r\.devices \|\| null;/);
+    expect(IDX).toMatch(/ST\.deviceWatch\(S\.devices, Date\.now\(\), \{ pass: cm\.pass \}\)\.stuck\.forEach/);
+    expect(IDX).toMatch(/ย้อนกลับไปนับต่อได้' \+ unsentText\(1\)\)\) setStatus\('วิเคราะห์'\)/);
+    expect(IDX).toMatch(/เปิดนับต่อได้' \+ unsentText\(2\)\)\) setStatus\('วิเคราะห์'\)/);
+  });
+});
+
+describe('stocktake-api.gs — มือถือบอกว่ายังค้างส่งกี่แถว', () => {
+  const devs = (api, id) => api.get({ api: 'st-log', t: HEAD, round: id, since: 0 }).devices;
+
+  it('ส่งผลนับ: แถวที่สคริปต์เพิ่งรับไม่นับเป็นค้าง · หน้าหัวหน้าได้รายชื่อเครื่องใน st-log', () => {
+    const api = loadStocktake();
+    const id = ready(api);
+    api.post({ op: 'st-count', round: id, device: 'd1', who: 'สมชาย', team: 'INV1', pass: 1, pend: 5, old: 12, items: [item({ uid: 'a1' }), item({ uid: 'a2', qty: 3 })] });
+    expect(devs(api, id)).toEqual([expect.objectContaining({ device: 'd1', who: 'สมชาย', team: 'INV1', pass: 1, pend: 3, old: 12 })]);
+    api.post({ op: 'st-count', round: id, device: 'd1', who: 'สมชาย', team: 'INV1', pass: 1, pend: 3, old: 2, items: [item({ uid: 'a3' }), item({ uid: 'a4' }), item({ uid: 'a5' })] });
+    expect(devs(api, id)[0]).toMatchObject({ pend: 0, old: 0 });
+  });
+
+  it('ดึงแถว (GET ค่าเป็นข้อความ) กับเปิดโลก็บันทึก · เปิดโลไม่ได้บอกทีม ใช้ทีมเดิม', () => {
+    const api = loadStocktake();
+    const id = ready(api);
+    api.get({ api: 'st-mine', round: id, team: 'INV1', since: '0', device: 'd2', who: 'มานะ', pass: '1', pend: '4', old: '15' });
+    expect(devs(api, id)[0]).toMatchObject({ device: 'd2', team: 'INV1', pend: 4, old: 15 });
+    api.post({ op: 'st-open', round: id, device: 'd2', who: 'มานะ', pass: 1, kind: 'Inventory', loc: 'R1-01-01', pend: 0, old: 0 });
+    expect(devs(api, id)[0]).toMatchObject({ team: 'INV1', pend: 0 });
+  });
+
+  it('หน้ากรอกรุ่นเก่า (ไม่ส่ง pend) ไม่ถูกบันทึก', () => {
+    const api = loadStocktake();
+    const id = ready(api);
+    api.post({ op: 'st-count', round: id, device: 'old', items: [item({ uid: 'o1' })] });
+    expect(devs(api, id)).toEqual([]);
+  });
+
+  it('ส่งไม่ผ่าน (รอบปิดแล้ว) แถวยังค้างในเครื่อง', () => {
+    const api = loadStocktake();
+    const id = ready(api, { start: false });
+    api.post({ op: 'st-count', round: id, device: 'd3', who: 'วิไล', team: 'INV2', pass: 1, pend: 7, items: [item({ uid: 'x1' })] });
+    expect(devs(api, id)[0].pend).toBe(7);
+  });
+
+  it('ค่าเดิมไม่เขียนซ้ำภายใน 3 นาที (โควตา Properties) ค่าเปลี่ยนเขียนทันที', () => {
+    const api = loadStocktake();
+    const id = ready(api);
+    let now = Date.UTC(2026, 10, 17, 3, 0);
+    api.ctx.now_ = () => now;
+    const ping = (pend) => api.get({ api: 'st-mine', round: id, team: 'INV1', since: '0', device: 'd1', who: 'สมชาย', pass: '1', pend: String(pend), old: '0' });
+    ping(0);
+    const at0 = devs(api, id)[0].at;
+    now += 60000; ping(0);
+    expect(devs(api, id)[0].at).toBe(at0);
+    now += 60000; ping(2);
+    expect(devs(api, id)[0]).toMatchObject({ pend: 2, at: now });
+    now += 3 * 60000; ping(2);
+    expect(devs(api, id)[0].at, 'ห่างเกิน 3 นาที อัปเดตเวลาติดต่อล่าสุด').toBe(now);
+  });
+
+  it('ลบรอบแล้วลบข้อมูลเครื่องของรอบนั้นทิ้ง รอบอื่นยังอยู่', () => {
+    const api = loadStocktake();
+    const a = ready(api);
+    const b = api.post({ op: 'st-round-save', t: HEAD, round: { ...ROUND, name: 'รอบสอง สมมติ' } }).round.id;
+    api.post({ op: 'st-open', round: a, device: 'd1', who: 'ก', pass: 1, kind: 'Inventory', loc: '', pend: 1 });
+    api.post({ op: 'st-open', round: b, device: 'd1', who: 'ก', pass: 1, kind: 'Inventory', loc: '', pend: 1 });
+    expect(api.post({ op: 'st-round-del', t: HEAD, round: a, confirm: ROUND.name }).error).toBeUndefined();
+    expect([...api.props.keys()]).toEqual([`stv|${b}|d1`]);
   });
 });

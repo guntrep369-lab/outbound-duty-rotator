@@ -119,6 +119,8 @@ button,input{font-family:inherit}
 .ct-loc .st.done{color:#047857}
 .ct-loc .st.wait{color:#4338CA}
 .ct-loc .go{color:var(--wms-faint);font-size:20px;font-weight:400}
+/* โลที่เพิ่งออกมา: รายการเลื่อนมาตรงนี้ ให้รู้ว่าตัวเองอยู่ตรงไหนของรายการ */
+.ct-loc.near{background:#F5F7FF;box-shadow:inset 4px 0 0 var(--wms-primary)}
 
 /* ── หน้า Location: กองที่นับแล้ว + ฟอร์ม ── */
 .ct-lochead{display:flex;align-items:center;gap:10px;margin-bottom:10px}
@@ -405,16 +407,34 @@ function save(k, v) {
   catch (e) { NET.err = 'เครื่องเต็ม เก็บผลนับไม่ได้ — ส่งให้ถึงชีตก่อนแล้วค่อยนับต่อ'; return false; }
 }
 
-/* ลิงก์จากหัวหน้า: เก็บไว้ในเครื่องแล้วลบออกจากช่องที่อยู่ คนอื่นมองจอจะไม่เห็นรหัส */
+/* เปิดอยู่ในเบราว์เซอร์ของแอป LINE (ลิงก์เก่าที่ไม่มี openExternalBrowser หรือคนส่งต่อลิงก์) ข้อมูลในเครื่องอาจหายตอนปิด LINE */
+const IN_LINE = / Line\//i.test(navigator.userAgent || '');
+
+/**
+ * ลิงก์จากหัวหน้า: เก็บไว้ในเครื่องแล้วลบออกจากช่องที่อยู่ คนอื่นมองจอจะไม่เห็นรหัส
+ * ใน LINE ไม่ลบ เมนู "เปิดในเบราว์เซอร์อื่น" ของ LINE จะได้พารหัสรอบไปด้วย · openExternalBrowser ใช้แค่ตอน LINE เปิดลิงก์ ลบทิ้ง
+ */
 let CFG = (() => {
   const fromLink = ST.parseLink(location.hash);
+  const qs = new URLSearchParams(location.search);
+  const ext = qs.has('openExternalBrowser');
+  qs.delete('openExternalBrowser');
+  const search = qs.toString() ? '?' + qs.toString() : '';
   if (fromLink) {
     try { localStorage.setItem(K.cfg, JSON.stringify(fromLink)); } catch (e) {}
-    history.replaceState(null, '', location.pathname + location.search);
+    if (!IN_LINE || ext) history.replaceState(null, '', location.pathname + search + (IN_LINE ? location.hash : ''));
     return fromLink;
   }
+  if (ext) history.replaceState(null, '', location.pathname + search + location.hash);
   return load(K.cfg, null);
 })();
+
+/* ขอให้เบราว์เซอร์เก็บข้อมูลหน้านี้ถาวร ไม่ลบเองตอนเครื่องที่เก็บใกล้เต็ม (Chrome / Safari ตัดสินใจเองเงียบ ๆ · Firefox จะถามคนใช้ จึงไม่ขอ) */
+try {
+  if (navigator.storage && navigator.storage.persist && !/Firefox\//.test(navigator.userAgent)) {
+    navigator.storage.persisted().then(p => { if (!p) navigator.storage.persist(); }).catch(() => {});
+  }
+} catch (e) {}
 
 let DEV = (() => {
   let d = ''; try { d = localStorage.getItem(K.dev) || ''; } catch (e) {}
@@ -427,6 +447,7 @@ let ME = load(K.me, null);           // {round, pass, team, who}
 let MINE = load(K.mine, null);       // แถวของทีมตัวเองจากชีต {round, team, since, rows}
 let BOX = { out: [], rej: [] };      // out = รอส่ง  rej = ชีตไม่รับ
 let VIEW = 'list', LOC = '', FILTER = 'left', EDIT = '', PICK = null, Q = '';
+let NEAR = '';            // โลที่เพิ่งออกมา รายการเลื่อนมาตรงนี้และทำแถบไว้ (โลนี้นับแล้วก็ยังโชว์ในรายการ "เหลือ")
 const NET = { sending: false, err: '', at: 0, fail: 0, timer: 0, loading: false };
 
 if (CFG) BOX = load(outKey(), BOX);
@@ -479,6 +500,16 @@ function locState(loc, pend) {
 }
 
 /* ── คุยกับสคริปต์ ───────────────────────────────────────────────────── */
+
+/**
+ * บอกสคริปต์ทุกครั้งที่ติดต่อว่าเครื่องนี้เป็นของใคร ยังค้างส่งกี่แถว ค้างนานสุดกี่นาที
+ * หัวหน้าเห็นในห้องควบคุม และถูกเตือนก่อนปิดรับนับ (ผลนับที่ค้างในเครื่อง หัวหน้ามองไม่เห็น) · สคริปต์รุ่นเก่าไม่สนช่องพวกนี้
+ */
+function oldMin() {
+  const t = BOX.out.length ? Date.parse(BOX.out[0].at) : 0;
+  return t ? Math.max(0, Math.floor((Date.now() - t) / 60000)) : 0;
+}
+function meta() { return ME ? { device: DEV, who: ME.who, pass: ME.pass, pend: BOX.out.length, old: oldMin() } : { device: DEV }; }
 
 function urlOf(api, params) {
   const q = new URLSearchParams({ api, k: CFG.key, round: CFG.round, ...(params || {}) });
@@ -535,7 +566,7 @@ async function pull() {
   const t = ME.team;
   const since = MINE && MINE.team === t ? MINE.since : 0;
   try {
-    const res = await WmsGas.json(urlOf('st-mine', { team: t, since }), 'st-mine', { retries: 0, timeoutMs: 45000 });
+    const res = await WmsGas.json(urlOf('st-mine', { team: t, since, ...meta() }), 'st-mine', { retries: 0, timeoutMs: 45000 });
     if (res.error) throw new Error(res.error);
     got(res, t, since);
     bgPaint();
@@ -577,7 +608,7 @@ async function flush() {
       const sent = ST.batch(BOX.out, 40);
       const t = ME.team;
       const since = MINE && MINE.team === t ? MINE.since : 0;
-      const res = await WmsGas.post(CFG.url, { op: 'st-count', k: CFG.key, round: CFG.round, device: DEV, team: t, since, items: sent.map(wire) }, { timeoutMs: 60000 });
+      const res = await WmsGas.post(CFG.url, { op: 'st-count', k: CFG.key, round: CFG.round, ...meta(), team: t, since, items: sent.map(wire) }, { timeoutMs: 60000 });
       if (res.error) throw new Error(res.error);
       const a = ST.ack(BOX.out, sent, res);
       BOX.out = a.outbox;
@@ -662,7 +693,7 @@ function drawMain() {
   if (RD.round.status === 'ปิดแล้ว') return [`<div class="ct-msg">${mas('cheer')}<b>รอบนี้ปิดแล้ว</b><br>ขอบคุณที่ช่วยนับ</div>`, ''];
   if (VIEW === 'who' || !team()) return [whoView(), ''];
   if (VIEW === 'loc' && LOC) return [bands() + locView(), locBottom()];
-  return [bands() + listView(), ''];
+  return [bands() + lineBand() + listView(), ''];
 }
 
 /** วาดหน้าหลัก ถ้าเหมือนเดิมทุกตัวอักษรไม่แตะ · GO = เพิ่งเปลี่ยนหน้า ให้เนื้อหาเลื่อนเข้ามา */
@@ -714,12 +745,25 @@ function oldBand() {
   return NET.old ? pic('oops', 'bad', `<b>ระบบนับยังไม่อัปเดต</b> แจ้งหัวหน้าให้ Deploy สคริปต์นับสต๊อกเวอร์ชันใหม่ · นับต่อได้ ผลนับเก็บครบ`) : '';
 }
 
+/** เปิดในแอป LINE: บอกให้ย้ายไป Chrome / Safari · ยังมีแถวรอส่งให้ส่งครบก่อน (ย้ายแล้วแถวในเครื่องนี้ไม่ตามไป) */
+function lineBand() {
+  if (!IN_LINE) return '';
+  const n = BOX.out.length;
+  return pic('oops', 'warn', `<b>กำลังเปิดในแอป LINE</b> ปิด LINE แล้วผลนับที่ยังไม่ส่งอาจหาย · แตะ ⋯ มุมขวาบน เลือก "เปิดในเบราว์เซอร์อื่น"` +
+    (n ? `<br>ตอนนี้ค้างส่ง ${f(n)} แถว รอให้ขึ้น ✓ ส่งครบ ก่อนย้าย` : ''));
+}
+
+const STUCK_MIN = 10;      // แถวค้างในเครื่องนานกี่นาทีถึงขึ้นแถบเตือนตัวแดง
+
 function bands() {
   let h = oldBand();
   if (!RD.round.pass) h += pic('look', 'warn', `<b>หัวหน้ายังไม่กดเริ่มนับ</b> กรอกไว้ได้ ผลนับเก็บในเครื่องและส่งให้เองเมื่อเปิดนับ<br><button class="ct-btn sm" data-act="reload">เช็คอีกครั้ง</button>`);
   else if (RD.round.status === 'ตั้งค่า') h += '<div class="ct-band warn">หัวหน้าพักการนับไว้ชั่วคราว ผลที่กรอกยังเก็บและส่งได้ตามปกติ</div>';
   else if (RD.round.status === 'วิเคราะห์') h += `<div class="ct-band info">หัวหน้าปิดรับนับรอบ ${RD.round.pass >= 2 ? 2 : 1} แล้ว ผลที่ค้างในเครื่องยังส่งได้ ถ้าจะนับเพิ่มถามหัวหน้าก่อน</div>`;
   else if (ME && ME.pass >= 2) h += '<div class="ct-band info"><b>รอบ 2 นับซ้ำ</b> นับทุกกองในโลเหมือนรอบ 1 · โลที่คุณนับในรอบ 1 ให้คนอื่นในทีมนับ</div>';
+  /* ค้างในเครื่องนาน (เน็ตหลุดในแร็ค / ส่งไม่ผ่าน): ปิดหน้า ปิด LINE หรือล้างเครื่องตอนนี้ ผลนับหาย */
+  const om = oldMin();
+  if (BOX.out.length && om >= STUCK_MIN) h += pic('oops', 'bad', `<b>ผลนับค้างในเครื่อง ${f(BOX.out.length)} แถว นาน ${om} นาทีแล้ว</b> อย่าปิดหน้านี้ เดินไปจุดที่มีสัญญาณ แล้วแตะป้ายสถานะมุมขวาบนเพื่อส่ง`);
   if (NET.err && BOX.out.length && navigator.onLine) h += pic('oops', 'bad', `<b>ส่งไม่ได้</b> ${esc(NET.err)} — ผลนับยังอยู่ในเครื่อง จะลองส่งใหม่เอง`);
   if (BOX.rej.length) {
     h += `<details class="ct-rej"><summary>ชีตไม่รับ ${BOX.rej.length} แถว — แตะดู</summary><ul>` +
@@ -747,7 +791,7 @@ function whoView() {
   const hi = pass >= 2 ? ['รอบ 2 มาช่วยนับซ้ำกัน', 'นับให้ละเอียดเหมือนรอบแรกนะ'] : ['สวัสดี มานับสต๊อกกัน', 'เลือกทีมกับชื่อ แล้วกดเริ่มนับ'];
   /* เข้ามาจากชื่อบนแถบบน (มีทีมอยู่แล้ว) กลับไปนับต่อได้โดยไม่ต้องเลือกใหม่ */
   const back = ME && team() ? '<button type="button" class="ct-btn sm" style="margin-bottom:10px" data-act="who-cancel">‹ กลับไปนับต่อ</button>' : '';
-  return oldBand() + back + `<div class="ct-hi"><img src="${MAS.walk}" alt="" width="58" height="58"><span><b>${hi[0]}</b>${hi[1]}</span></div>` +
+  return oldBand() + lineBand() + back + `<div class="ct-hi"><img src="${MAS.walk}" alt="" width="58" height="58"><span><b>${hi[0]}</b>${hi[1]}</span></div>` +
     `<div class="ct-h">เลือกทีมของคุณ</div><div class="ct-pick">${inv.map(card).join('')}</div>` +
     (aud.length ? `<div class="ct-h">Audit</div><div class="ct-pick">${aud.map(card).join('')}</div>` : '') +
     (t ? `<div class="ct-h">ชื่อคุณ</div>
@@ -788,7 +832,10 @@ function listView() {
   const audit = isAudit();
   const min = RD.round.auditMin || ST.AUDIT_MIN;
   const q = ST.up(Q);
-  const show = locs.filter(l => (!q || l.loc.includes(q)) && (FILTER === 'all' || (FILTER === 'done' ? st[l.loc] : !st[l.loc])));
+  const left = locs.length - done;
+  /* โลที่เพิ่งนับเสร็จยังอยู่ในรายการ "เหลือ" (ยกเว้นตอนนับครบแล้ว) โลข้าง ๆ ที่ยังไม่นับอยู่รอบมัน แตะเลือกต่อได้เลย */
+  const keep = (l) => l.loc === NEAR && left > 0;
+  const show = locs.filter(l => (!q || l.loc.includes(q)) && (FILTER === 'all' || (FILTER === 'done' ? st[l.loc] : !st[l.loc] || keep(l))));
   /* โลนอกรายการที่ทีมนี้นับไว้ หัวหน้าเห็นในหน้าความคืบหน้า */
   const known = new Set(locs.map(l => l.loc));
   const extra = [...new Set(ST.effective(entries()).filter(e => e.team === ME.team && e.pass === ME.pass && !known.has(ST.up(e.loc))).map(e => ST.up(e.loc)))];
@@ -808,11 +855,10 @@ function listView() {
     const s = st[l.loc];
     const no = banned(l.loc);
     const again = !s && movedLoc(l.loc);      // ของขยับหลังนับวันแรก นับใหม่
-    const label = no && !s ? 'ให้คนอื่นนับ' : again ? 'นับใหม่' : !s ? '' : s.empty ? 'ว่าง ✓' : `✓ ${s.n} กอง`;
-    rows += `<button class="ct-loc"${nth()} data-loc="${esc(l.loc)}">${esc(l.loc)}<span class="st ${s ? (s.wait ? 'wait' : 'done') : no || again ? 'wait' : ''}">${label}${s && s.wait ? ' · รอส่ง' : ''}</span><span class="go">›</span></button>`;
+    const label = no && !s ? 'ให้คนอื่นนับ' : again ? 'นับใหม่' : !s ? '' : (l.loc === NEAR ? 'เพิ่งเสร็จ · ' : '') + (s.empty ? 'ว่าง ✓' : `✓ ${s.n} กอง`);
+    rows += `<button class="ct-loc${l.loc === NEAR ? ' near' : ''}"${nth()} data-loc="${esc(l.loc)}">${esc(l.loc)}<span class="st ${s ? (s.wait ? 'wait' : 'done') : no || again ? 'wait' : ''}">${label}${s && s.wait ? ' · รอส่ง' : ''}</span><span class="go">›</span></button>`;
   });
   const typed = q && !known.has(q) && q.length >= 2 && ME.pass < 2;
-  const left = locs.length - done;
   /* นับ 2 วัน: วันแรกบอกว่ายังมีโลรอวันที่ 2 · วันที่ 2 บอกโลที่ต้องนับใหม่ */
   const waitN = RD.wait && RD.wait.length && ME.pass < 2 ? ST.teamLocs(team(), RD.wait).length : 0;
   const againN = day2On() ? locs.filter(l => !st[l.loc] && movedLoc(l.loc)).length : 0;
@@ -889,10 +935,10 @@ function locView() {
 }
 
 function locBottom() {
-  if (banned(LOC)) return `<div class="ct-bottom"><button class="ct-btn p" data-act="next">โลถัดไป</button></div>`;
+  if (banned(LOC)) return `<div class="ct-bottom"><button class="ct-btn p" data-act="next">‹ กลับไปเลือกโล</button></div>`;
   const rows = atLoc(LOC);
   const none = !rows.length;
-  return `<div class="ct-bottom">${none ? '<button class="ct-btn g" data-act="empty">โลนี้ว่าง</button>' : ''}<button class="ct-btn ${none ? '' : 'p'}" data-act="next">เสร็จ → โลถัดไป</button></div>`;
+  return `<div class="ct-bottom">${none ? '<button class="ct-btn g" data-act="empty">โลนี้ว่าง</button>' : ''}<button class="ct-btn ${none ? '' : 'p'}" data-act="next">เสร็จโลนี้ ✓</button></div>`;
 }
 
 /** คำใบ้ใต้ช่อง SKU / PO อัปเดตตอนพิมพ์โดยไม่วาดทั้งหน้า (คีย์บอร์ดไม่หุบ) */
@@ -958,7 +1004,7 @@ let PRES = { loc: '', others: [] };   // คนอื่นในงานเด
 function announce(loc) {
   if (!ME || !CFG || !navigator.onLine) return;
   const t = team();
-  WmsGas.post(CFG.url, { op: 'st-open', k: CFG.key, round: CFG.round, pass: ME.pass, kind: t ? t.kind : 'Inventory', who: ME.who, device: DEV, loc },
+  WmsGas.post(CFG.url, { op: 'st-open', k: CFG.key, round: CFG.round, ...meta(), kind: t ? t.kind : 'Inventory', loc },
     { timeoutMs: 15000, retries: 0 })
     .then((res) => {
       if (!res || res.error || !loc || LOC !== loc || VIEW !== 'loc') return;
@@ -1103,12 +1149,12 @@ function keepTyped() {
   return EDIT ? saveEdit(false) : addPile(false);
 }
 
-/** ปุ่ม "เสร็จ → โลถัดไป" */
+/** ปุ่ม "เสร็จโลนี้" กลับไปรายการ ให้คนนับเลือกโลต่อเอง */
 function doneLoc() {
   if (!banned(LOC) && !typed() && !atLoc(LOC).length &&
-      !confirm('โลนี้ยังไม่ได้กรอกอะไร\nข้ามไปก่อน? (ถ้าโลว่าง ให้กด "โลนี้ว่าง")')) return;
+      !confirm('โลนี้ยังไม่ได้กรอกอะไร\nกลับไปเลือกโลอื่นก่อน? (ถ้าโลว่าง ให้กด "โลนี้ว่าง")')) return;
   const loc = LOC, before = doneN(myLocs());
-  if (keepTyped()) { nextLoc(); cheer(loc, before); }
+  if (keepTyped()) { toList(loc); cheer(loc, before); }
 }
 
 /** การ์ดน้องกล่องเด้งขึ้นเหนือปุ่มล่างแป๊บเดียว กดทะลุได้ ไม่บังปุ่ม */
@@ -1167,16 +1213,15 @@ function rain() {
   setTimeout(() => box.remove(), 4600);
 }
 
-/** Inventory เดินต่อโลถัดไปที่ยังไม่นับตามทางเดิน · Audit กลับไปเลือกโลเอง */
-function nextLoc() {
-  const locs = myLocs();
-  const pend = pending();
-  const i = locs.findIndex(l => l.loc === LOC);
-  const after = locs.slice(i + 1).concat(locs.slice(0, Math.max(i, 0)));
-  const nx = isAudit() ? null : after.find(l => !locState(l.loc, pend) && !banned(l.loc));
-  if (nx) { openLoc(nx.loc); return; }
-  VIEW = 'list'; LOC = ''; EDIT = ''; GO = 'back'; paint(); window.scrollTo(0, 0);
-  announce('');
+/**
+ * ออกจากโลกลับไปรายการ คนนับเลือกโลต่อเอง (หน้างานเดินไม่ตรงลำดับในรายการ ระบบไม่เปิดโลถัดไปให้เอง)
+ * รายการเลื่อนมาที่โลที่เพิ่งออกมา มีแถบบอกว่าเพิ่งอยู่ตรงนี้ โลข้าง ๆ ที่ยังไม่นับอยู่ใกล้นิ้ว
+ */
+function toList(from) {
+  VIEW = 'list'; LOC = ''; EDIT = ''; GO = 'back'; NEAR = from ? ST.up(from) : '';
+  paint(); announce('');
+  const row = NEAR && [...document.querySelectorAll('#main .ct-loc[data-loc]')].find(b => b.dataset.loc === NEAR);
+  if (row) row.scrollIntoView({ block: 'center' }); else window.scrollTo(0, 0);
 }
 
 /* แตะปุ่ม: วงคลื่นแผ่ออกจากจุดที่นิ้วแตะ */
@@ -1590,7 +1635,7 @@ document.addEventListener('click', (e) => {
       buzz(15);
       break;
     }
-    case 'back': if (VIEW !== 'loc' || keepTyped()) { VIEW = 'list'; LOC = ''; EDIT = ''; GO = 'back'; paint(); announce(''); } break;
+    case 'back': if (VIEW !== 'loc' || keepTyped()) toList(LOC); break;
     case 'add': addPile(); break;
     case 'save-edit': saveEdit(); break;
     case 'cancel-edit': EDIT = ''; FORM = { sku: '', long: '', lot: '', po: '', qty: '' }; paint(); hints(); break;
@@ -1600,7 +1645,7 @@ document.addEventListener('click', (e) => {
     case 'empty':
       if (typed() && !confirm('มีกองที่พิมพ์ไว้แต่ยังไม่ได้เพิ่ม\nทิ้งที่พิมพ์ แล้วตั้งโลนี้ว่าง?')) break;
       FORM = { sku: '', long: '', lot: '', po: '', qty: '' };
-      { const loc = LOC, before = doneN(myLocs()); push('ว่าง', {}); nextLoc(); cheer(loc, before); }
+      { const loc = LOC, before = doneN(myLocs()); push('ว่าง', {}); toList(loc); cheer(loc, before); }
       break;
     case 'unempty': { const em = atLoc(LOC).find(r => r.type === 'ว่าง'); if (em && confirm('ยกเลิก "ว่าง" ของโลนี้?')) { push('ยกเลิก', { ref: em.uid }); paint(); hints(); } break; }
     case 'next': doneLoc(); break;
@@ -1645,7 +1690,19 @@ document.addEventListener('keydown', (e) => {
 
 window.addEventListener('online', () => { NET.fail = 0; paintTop(); flush(); pull(); });
 window.addEventListener('offline', () => paintTop());
-document.addEventListener('visibilitychange', () => { if (!document.hidden) { flush(); pull(); } });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { flush(); pull(); } else beacon(); });
+
+/**
+ * สลับแอป / ปิดจอ / ปิดหน้า ระหว่างมีแถวค้างส่ง: ส่งแบบ beacon (เบราว์เซอร์ส่งให้แม้หน้าถูกปิดไปแล้ว)
+ * ไม่รู้ผล แถวจึงยังอยู่ในเครื่อง รอบหน้าส่งซ้ำ สคริปต์ตัดแถวที่รับแล้วด้วยรหัสแถว
+ */
+function beacon() {
+  if (!BOX.out.length || !ME || !RD || !CFG || !navigator.onLine || !navigator.sendBeacon) return;
+  const t = ME.team;
+  const since = MINE && MINE.team === t ? MINE.since : 0;
+  const body = { op: 'st-count', k: CFG.key, round: CFG.round, ...meta(), team: t, since, items: ST.batch(BOX.out, 40).map(wire) };
+  try { navigator.sendBeacon(CFG.url, new Blob([JSON.stringify(body)], { type: 'text/plain;charset=utf-8' })); } catch (e) {}
+}
 /* ดึงแถวของเพื่อนร่วมทีมทุกนาที คนละเครื่องนับแถวเดียวกันจะได้เห็นว่าโลไหนนับแล้ว */
 setInterval(() => { if (!document.hidden && VIEW !== 'loc') pull(); }, 60000);
 setInterval(() => { if (BOX.out.length && !NET.sending) flush(); }, 30000);

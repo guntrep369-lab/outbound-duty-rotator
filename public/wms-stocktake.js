@@ -162,6 +162,75 @@
   }
 
   /**
+   * เช็คสมุดก่อนดึงยอดตั้งต้น: สำเนา IMPORTRANGE ที่พังครึ่งเดียวยังตอบมาเหมือนปกติ แต่แถวหายเป็นก้อน
+   * ยอดตั้งต้นจะขาด แล้วเกือบทุกโลขึ้นว่าของเกิน · ดูจากเลขแถวที่ tx-fifo ส่งมา ไม่ต้องแก้สคริปต์สมุด
+   * o = {cutoff: 'yyyy-MM-dd HH:mm', prevRow: แถวสุดท้ายของยอดชุดก่อนในรอบเดียวกัน (0 = ยังไม่เคยดึง)}
+   * คืน {stop, ask, info}  stop = ห้ามดึง  ask = ถามหัวหน้าก่อนดึง  (ข้อความภาษาไทย)
+   */
+  var LEDGER = { top: 100, gap: 500, staleDays: 2, nearEnd: 200 };
+  function ledgerCheck(fifo, o) {
+    o = o || {};
+    var f = fifo || {}, stop = [], ask = [];
+    var num = function (n) { return Number(n).toLocaleString('en-US'); };
+    var dm = function (s) { return String(s).slice(8, 10) + '/' + String(s).slice(5, 7); };
+    var nums = (f.rows || []).map(function (r) { return +r[0] || 0; }).filter(function (n) { return n > 0; })
+      .sort(function (a, b) { return a - b; });
+    var info = { rows: nums.length, first: nums[0] || 0, lastRow: nums.length ? nums[nums.length - 1] : 0,
+      lastDate: f.last || '', end: (f.sheet && f.sheet.end) || 0, gap: null };
+    if (!nums.length) {
+      stop.push('สมุดไม่มีแถวเลย — สำเนา IMPORTRANGE อาจพังทั้งแท็บ');
+      return { stop: stop, ask: ask, info: info };
+    }
+    if (info.first > LEDGER.top) stop.push('แถวต้นสมุดหาย: แถวแรกที่อ่านได้คือแถว ' + num(info.first) + ' — สูตร IMPORTRANGE ช่วงบนน่าจะพัง');
+    for (var i = 1; i < nums.length; i++) {
+      var g = nums[i] - nums[i - 1] - 1;
+      if (g >= LEDGER.gap && (!info.gap || g > info.gap.n)) info.gap = { from: nums[i - 1] + 1, to: nums[i] - 1, n: g };
+    }
+    if (info.gap) stop.push('แถว ' + num(info.gap.from) + '–' + num(info.gap.to) + ' ว่างหมด (' + num(info.gap.n) + ' แถว) — สูตร IMPORTRANGE ช่วงกลางน่าจะพัง');
+    if (o.prevRow && info.lastRow < o.prevRow) {
+      stop.push('สมุดสั้นลง: ยอดชุดก่อนอ่านถึงแถว ' + num(o.prevRow) + ' ครั้งนี้อ่านได้ถึงแถว ' + num(info.lastRow) + ' — แถวท้ายสมุดหาย');
+    }
+    var cut = String(o.cutoff || '').slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(cut)) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(info.lastDate)) ask.push('ไม่เจอรายการขายที่มีวันที่ในสมุดเลย — สำเนาอาจไม่อัปเดต');
+      else {
+        var day = function (s) { return Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)) / 86400000; };
+        var gapDays = day(cut) - day(info.lastDate);
+        if (gapDays > LEDGER.staleDays) {
+          ask.push('รายการขายล่าสุดในสมุดคือ ' + dm(info.lastDate) + ' แต่ตัดยอด ' + dm(cut) + ' (ห่าง ' + gapDays + ' วัน) — สำเนาอาจไม่อัปเดต หรือช่วงล่างของสูตร IMPORTRANGE พัง');
+        }
+      }
+    }
+    if (info.end && info.lastRow <= info.end && info.end - info.lastRow < LEDGER.nearEnd) {
+      ask.push('สำเนาดึงถึงแถว ' + num(info.end) + ' ตอนนี้ใช้ถึงแถว ' + num(info.lastRow) + ' แล้ว — แถวใหม่เกินแถว ' + num(info.end) + ' จะไม่เข้ามา ขยายช่วงในสูตรก่อน');
+    }
+    return { stop: stop, ask: ask, info: info };
+  }
+
+  /**
+   * มือถือคนนับที่หัวหน้าควรรู้ก่อนปิดรับนับ (ผลนับที่ค้างในเครื่องหัวหน้ามองไม่เห็น ปิดรับไปแล้วโลนั้นขึ้นว่ายังไม่นับ)
+   * devices = [{device, who, team, pass, pend, old, at}] จากสคริปต์ ทุกครั้งที่มือถือติดต่อมาบอกว่ายังค้างส่งกี่แถว
+   *   at = เวลาเซิร์ฟเวอร์ (ms) ที่ติดต่อล่าสุด  old = แถวที่ค้างนานสุดกี่นาที (ตอนติดต่อ)
+   * o = {pass, quiet: นาที}  คืน {stuck, quiet}
+   *   stuck = ติดต่อล่าสุดยังค้างส่ง (ส่งไม่ผ่าน หรือเน็ตหลุดก่อนส่งครบ)
+   *   quiet = ติดต่อล่าสุดส่งครบแล้ว แต่เงียบไปเกิน quiet นาที ถ้าหลังจากนั้นยังนับต่อแบบไม่มีเน็ต แถวจะค้างอยู่ในเครื่อง
+   */
+  function deviceWatch(devices, now, o) {
+    o = o || {};
+    var quietMin = o.quiet === undefined ? 15 : o.quiet;
+    var list = (devices || []).filter(function (d) { return d && d.device && (!o.pass || +d.pass === +o.pass); })
+      .map(function (d) {
+        return { device: d.device, who: d.who || '', team: d.team || '', pend: +d.pend || 0, old: +d.old || 0, at: +d.at || 0,
+          min: d.at ? Math.max(0, Math.floor((now - d.at) / MIN_MS)) : null };
+      });
+    var byAt = function (a, b) { return a.at - b.at; };
+    return {
+      stuck: list.filter(function (d) { return d.pend > 0; }).sort(byAt),
+      quiet: list.filter(function (d) { return !d.pend && d.min !== null && d.min >= quietMin; }).sort(byAt),
+    };
+  }
+
+  /**
    * รายการ Location ที่ต้องนับ
    *   - ทุกโลที่สมุดบอกว่ามีของ
    *   - โลที่เคยใช้ในสมุดแต่ตอนนี้ว่าง ถ้าชื่อเป็นที่เก็บจริง (ไปดูว่าว่างจริงไหม)
@@ -970,8 +1039,13 @@
   }
 
   /** kind = ชนิดรอบที่ใช้หน้ากรอกนี้ร่วมกัน เช่น 'mfg' (หน้าเช็คความเสี่ยง MFG) หน้ากรอกเปลี่ยนชื่อหัวตาม ไม่ใส่ = นับสต๊อกใหญ่ */
+  /* ลิงก์ที่ส่งใน LINE เปิดในเบราว์เซอร์ของแอป LINE ซึ่งอาจล้างข้อมูลในเครื่องตอนปิด ผลนับที่ยังไม่ส่งหายไปด้วย
+     openExternalBrowser=1 ให้ LINE เปิดใน Chrome / Safari แทน เบราว์เซอร์อื่นไม่สนพารามิเตอร์นี้ หน้ากรอกลบออกเองตอนเปิด */
+  var EXT_PARAM = 'openExternalBrowser';
   function countLink(pageUrl, scriptUrl, key, roundId, kind) {
-    return String(pageUrl).split('#')[0] + '#u=' + encodeURIComponent(scriptUrl || '') +
+    var page = String(pageUrl).split('#')[0];
+    if (!new RegExp('[?&]' + EXT_PARAM + '=').test(page)) page += (page.indexOf('?') < 0 ? '?' : '&') + EXT_PARAM + '=1';
+    return page + '#u=' + encodeURIComponent(scriptUrl || '') +
       (key ? '&k=' + encodeURIComponent(key) : '') + '&r=' + encodeURIComponent(roundId || '') +
       (kind ? '&m=' + encodeURIComponent(kind) : '');
   }
@@ -1813,7 +1887,7 @@
     finalLines: finalLines, finalTotals: finalTotals, closeRows: closeRows, pairAdjust: pairAdjust, adjustBook: adjustBook,
     up: up, norm: norm,
     parseLoc: parseLoc, isRealLoc: isRealLoc, natCmp: natCmp, locCmp: locCmp, groupCmp: groupCmp, zoneOfGroup: zoneOfGroup,
-    baseline: baseline, locations: locations, parseLocList: parseLocList, groups: groups, autoSplit: autoSplit,
+    baseline: baseline, ledgerCheck: ledgerCheck, LEDGER: LEDGER, deviceWatch: deviceWatch, locations: locations, parseLocList: parseLocList, groups: groups, autoSplit: autoSplit,
     fromRow: fromRow, effective: effective, atLoc: atLoc, uid: uid, deviceId: deviceId,
     batch: batch, ack: ack, merge: merge,
     teamsOf: teamsOf, teamLocs: teamLocs, locCheck: locCheck, scanSku: scanSku, progress: progress,

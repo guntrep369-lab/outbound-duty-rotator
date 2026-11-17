@@ -95,6 +95,7 @@ export function loadStocktake({ head = 'head-secret', count = '', ss = fakeSprea
   src = src.replace("var COUNT_TOKEN = '';", `var COUNT_TOKEN = ${JSON.stringify(count)};`);
   const lock = { held: false, waits: 0, flushes: 0 };
   const cache = new Map();
+  const props = new Map();
   const ctx = {
     SpreadsheetApp: { getActiveSpreadsheet: () => ss, flush: () => { lock.flushes++; } },
     LockService: {
@@ -112,6 +113,16 @@ export function loadStocktake({ head = 'head-secret', count = '', ss = fakeSprea
         remove: (k) => { cache.delete(k); },
       }),
     },
+    /* Script Properties แบบในหน่วยความจำ (เก็บค่าถาวร ไม่หมดอายุ) */
+    PropertiesService: {
+      getScriptProperties: () => ({
+        getProperty: (k) => (props.has(k) ? props.get(k) : null),
+        setProperty: (k, v) => { props.set(k, String(v)); },
+        deleteProperty: (k) => { props.delete(k); },
+        getProperties: () => Object.fromEntries(props),
+        getKeys: () => [...props.keys()],
+      }),
+    },
     ContentService: {
       MimeType: { JSON: 'json' },
       createTextOutput: (s) => ({ text: s, setMimeType() { return this; } }),
@@ -125,6 +136,7 @@ export function loadStocktake({ head = 'head-secret', count = '', ss = fakeSprea
     lock,
     ctx,
     cache,
+    props,
     get: (params) => parse(ctx.doGet({ parameter: params || {} })),
     post: (body) => parse(ctx.doPost({ postData: { contents: JSON.stringify(body) } })),
   };
