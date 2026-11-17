@@ -503,3 +503,28 @@ describe('ส่งออก — ชื่อ Supplier (แท็บ PO. Truck)'
     expect(st[1][st[0].indexOf('Supplier')]).toBe('');
   });
 });
+
+describe('ลิงก์ Supply chain', () => {
+  const URL_ = 'https://script.google.com/macros/s/AKfyตัวอย่าง/exec';
+
+  it('สร้างลิงก์ไป share.html โดย URL สคริปต์อยู่หลัง # และตัด # เดิมของหน้าทิ้ง', () => {
+    const link = F.shareLink('https://x.github.io/wms/fifo/share.html#old', URL_);
+    expect(link).toBe('https://x.github.io/wms/fifo/share.html#u=' + encodeURIComponent(URL_));
+    expect(link.split('#')[0]).not.toContain('script.google.com');
+  });
+
+  it('อ่านลิงก์กลับได้ URL เดิม', () => {
+    const link = F.shareLink('https://x.github.io/wms/fifo/share.html', URL_);
+    expect(F.parseShareLink(link.slice(link.indexOf('#')))).toBe(URL_);
+    expect(F.parseShareLink('u=' + encodeURIComponent(URL_) + '&x=1')).toBe(URL_);
+  });
+
+  it('ลิงก์ไม่ครบหรือไม่ใช่ http(s) ได้ค่าว่าง', () => {
+    expect(F.parseShareLink('')).toBe('');
+    expect(F.parseShareLink('#')).toBe('');
+    expect(F.parseShareLink('#u=')).toBe('');
+    expect(F.parseShareLink('#u=' + encodeURIComponent('javascript:alert(1)'))).toBe('');
+    expect(F.parseShareLink('#u=%E0%A4%A')).toBe('');
+    expect(F.parseShareLink('#k=' + encodeURIComponent(URL_))).toBe('');
+  });
+});

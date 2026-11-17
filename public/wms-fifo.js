@@ -597,12 +597,31 @@
   function cell(v) { return v === null || v === undefined ? '' : String(v).replace(/[\t\r\n]+/g, ' '); }
   function tsv(table) { return table.map(function (l) { return l.map(cell).join('\t'); }).join('\n'); }
 
+  /**
+   * ลิงก์ Supply chain (fifo/share.html) — URL สคริปต์ Transaction อยู่หลัง # ไม่ส่งไปกับการเปิดหน้า
+   * page = ที่อยู่ของ share.html ส่วนหลัง # ของ page ถูกตัดทิ้ง
+   */
+  function shareLink(page, url) {
+    return String(page).split('#')[0] + '#u=' + encodeURIComponent(url);
+  }
+
+  /** ส่วนหลัง # ของลิงก์ Supply chain → URL สคริปต์ ไม่ครบหรือไม่ใช่ http(s) ได้ '' */
+  function parseShareLink(hash) {
+    var u = '';
+    String(hash || '').replace(/^#/, '').split('&').forEach(function (kv) {
+      var i = kv.indexOf('=');
+      if (i > 0 && kv.slice(0, i) === 'u') { try { u = decodeURIComponent(kv.slice(i + 1)).trim(); } catch (e) { u = ''; } }
+    });
+    return /^https?:\/\/\S+$/.test(u) ? u : '';
+  }
+
   window.WmsFifo = {
     lotMonth: lotMonth, monthText: monthText, lastDay: lastDay, months: months, analyze: analyze, older: older, noPo: noPo, basePo: basePo,
     filterStock: filterStock, skipsBySku: skipsBySku, recvText: recvText, roundsText: roundsText,
     QUEUES: QUEUES, firstQueue: firstQueue, stockState: stockState, lotName: lotName, batchWords: batchWords, lotWords: lotWords,
     placeWords: placeWords, refillTask: refillTask, pickTask: pickTask, unknownTask: unknownTask,
     sup: supOf, stockTable: stockTable, skipTable: skipTable, agingTable: agingTable, summaryTable: summaryTable, tsv: tsv,
+    shareLink: shareLink, parseShareLink: parseShareLink,
     KIND: KIND, STATE: STATE, COUNT_DAY: COUNT_DAY,
     /* หน้าสินค้าคงเหลือ ณ วันที่ (wms-balance.js) ใช้เดินสมุดด้วยกติกาเดียวกัน ยอดจะได้ไม่ต่างจากหน้านี้ */
     parse: parse, newState: newState, apply: apply, rounds: rounds, refKey: refKey,
