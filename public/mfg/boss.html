@@ -124,8 +124,8 @@ body{background:var(--wms-bg);color:var(--wms-text);font-family:var(--wms-font);
 .rmk small{display:block;font-size:11px;color:#6366F1;margin-top:1px}
 
 /* ── จอคอม: ตารางหน้าตาเดียวกับแท็บรายงาน (หัวปี / Lot / อายุ สีตามสถานะ) เลือกในแถว ── */
-.rp-wrap{overflow:auto;max-height:calc(100vh - var(--ch,48px) - 62px);background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:10px}
-.rp{width:100%;border-collapse:collapse;font-size:13px}
+.rp-wrap{overflow:auto;width:fit-content;max-width:100%;max-height:calc(100vh - var(--ch,48px) - 62px);background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:10px}
+.rp{border-collapse:collapse;font-size:13px}
 .rp th{position:sticky;top:0;z-index:2;text-align:center;color:#fff;background:#434343;border:1px solid #fff;padding:7px 7px;
   font-size:12px;font-weight:600;white-space:nowrap}
 .rp thead tr:nth-child(2) th{top:var(--h1,31px)}
@@ -135,7 +135,7 @@ body{background:var(--wms-bg);color:var(--wms-text);font-family:var(--wms-font);
 .rp th.ok{background:#34A853}
 .rp th.total{background:#E06666}
 .rp th small{display:block;font-size:10.5px;font-weight:500;opacity:.9}
-.rp td{padding:6px 7px;border-bottom:1px solid #F1F5F9;border-right:1px solid #EEF2F7;vertical-align:top;line-height:1.4}
+.rp td{padding:5px 6px;border-bottom:1px solid #F1F5F9;border-right:1px solid #EEF2F7;vertical-align:middle;line-height:1.35}
 .rp tbody tr:hover td{background-color:#FAFBFF}
 .rp .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .rp .nw{white-space:nowrap}
@@ -144,15 +144,15 @@ body{background:var(--wms-bg);color:var(--wms-text);font-family:var(--wms-font);
 .rp td.c-watch,.rp tbody tr:hover td.c-watch{background:#FEF5D9}
 .rp td.c-ok,.rp tbody tr:hover td.c-ok{background:#E3F0DC}
 .rp td.tot{font-weight:700}
-.rp td.k-sku{min-width:122px;white-space:nowrap;position:sticky;left:0;z-index:1;background:var(--wms-surface)}
+.rp td.k-sku{min-width:112px;white-space:nowrap;position:sticky;left:0;z-index:1;background:var(--wms-surface)}
 .rp th.k-sku{left:0;z-index:3}
 .rp tr.risk td.k-sku{box-shadow:inset 4px 0 #CC0000}
 .rp tr.watch td.k-sku{box-shadow:inset 4px 0 #F1C232}
 .rp tr.nolot td.k-sku{box-shadow:inset 4px 0 #E06666}
 .rp tr.ok td.k-sku{box-shadow:inset 4px 0 #34A853}
-.rp td.k-name{min-width:160px}
+.rp td.k-name{min-width:140px}
 .rp td.ty{min-width:70px}
-.rp td.cm{min-width:110px;max-width:150px}
+.rp td.cm{min-width:110px;max-width:210px}
 .rp .diff{display:block;font-size:10.5px;font-weight:600;color:#B91C1C}
 .rp .diff.up{color:#047857}
 .rp .cmp{display:inline-block;padding:1px 8px;border-radius:4px;font-size:12px;font-weight:700;white-space:nowrap}
@@ -160,18 +160,18 @@ body{background:var(--wms-bg);color:var(--wms-text);font-family:var(--wms-font);
 .rp .cmp.still{background:#7F1D1D;color:#fff}
 .rp .cmp.gone{background:#D1FAE5;color:#065F46}
 .rp .sub.todo{color:#B91C1C;font-weight:700}
-.rp td.act{min-width:140px;width:150px}
+/* Action by Tony ติดขวา จอแคบที่ตารางล้นก็เห็นช่องเลือกเสมอ · แถวละบรรทัด ใครเลือกเมื่อไหร่อยู่ในป้ายตอนชี้ */
+.rp td.act{white-space:nowrap;position:sticky;right:0;z-index:1;background:var(--wms-surface);box-shadow:inset 1px 0 var(--wms-border)}
+.rp th.act{right:0;z-index:3}
 .rp .dsel{padding:3px 4px;border-radius:6px;border:1px solid var(--wms-border2);background:var(--wms-surface);font-family:var(--wms-font);
-  font-size:12.5px;color:var(--wms-text);vertical-align:middle;cursor:pointer;width:100%}
+  font-size:12.5px;color:var(--wms-text);vertical-align:middle;cursor:pointer}
 .rp .dsel.open{background:#FEE2E2;border-color:#FCA5A5;color:#991B1B;font-weight:600}
 .rp .dsel.sell{background:#FEF3C7;border-color:#FDE68A;color:#92400E;font-weight:600}
 .rp .dsel.wait{background:#E0F2FE;border-color:#BAE6FD;color:#075985;font-weight:600}
 .rp .dsel.other{background:#F1F5F9;font-weight:600}
-.rp .note{display:block;width:100%;margin:4px 0 0;padding:3px 6px;font-size:12.5px;border-width:1px;border-radius:6px;vertical-align:middle}
+.rp .note{display:inline-block;width:84px;margin:0 0 0 4px;padding:3px 6px;font-size:12.5px;border-width:1px;border-radius:6px;vertical-align:middle}
 .rp .dsel:focus,.rp .note:focus{outline:none;border-color:var(--wms-primary)}
-.rp .by{margin-top:3px}
-.rp td.rm{min-width:130px;max-width:260px}
-.rp td.rm small{display:block;font-size:11px;color:var(--wms-faint)}
+.rp td.rm{min-width:120px;max-width:240px;font-size:12.5px}
 .rp tr.tf td{background:var(--wms-surface2);font-weight:700;position:sticky;bottom:0;z-index:1}
 /* แท็บเล็ต / หน้าต่างแคบ: การ์ดสองแถว */
 @media (min-width:700px){
@@ -185,9 +185,10 @@ body{background:var(--wms-bg);color:var(--wms-text);font-family:var(--wms-font);
   .foot .in{max-width:1240px}
 }
 @media (min-width:1250px){
-  .bs{max-width:none;padding:0 16px 66px}
+  .bs{max-width:none;padding:0 10px 66px}
   .foot .in{max-width:none}
 }
+@media (min-width:1500px){ .rp .note{width:150px} }   /* จอใหญ่: ช่องหมายเหตุกว้างขึ้น ตารางยังไม่ยืดเต็มจอ */
 @media (min-width:900px){
   .sum{display:flex;gap:10px;align-items:stretch;margin-bottom:12px}
   .sum .tiles{flex:none;grid-template-columns:repeat(3,190px);margin:0}
@@ -338,8 +339,8 @@ function decBtns(d) {
     return `<button type="button" class="${c} ${d && d.code === c ? 'on' : ''}" data-dec="${c}" aria-pressed="${!!(d && d.code === c)}"><span class="i">${o.icon}</span>${esc(c === 'wait' ? 'รอ' : o.label)}</button>`;
   }).join('');
 }
-function noteHtml(d) {
-  return `<input class="note" type="text" maxlength="${M.NOTE_MAX}" placeholder="${d && d.code === 'other' ? 'ทำอะไร (พิมพ์ตรงนี้)' : 'หมายเหตุ (ไม่ใส่ก็ได้)'}" value="${esc(d ? d.note : '')}" enterkeyhint="done">`;
+function noteHtml(d, short) {
+  return `<input class="note" type="text" maxlength="${M.NOTE_MAX}" placeholder="${d && d.code === 'other' ? (short ? 'ทำอะไร' : 'ทำอะไร (พิมพ์ตรงนี้)') : short ? 'หมายเหตุ' : 'หมายเหตุ (ไม่ใส่ก็ได้)'}" value="${esc(d ? d.note : '')}" enterkeyhint="done">`;
 }
 
 function skuHtml(r, map) {
@@ -382,13 +383,13 @@ function rowHtml(r, d, cm) {
   }
   const code = d ? d.code : '';
   const sel = `<select class="dsel ${code}" aria-label="Action by Tony ${esc(r.sku)}"><option value="">—</option>` +
-    M.DECIDE_ORDER.map(c => `<option value="${c}" ${c === code ? 'selected' : ''}>${M.DECIDE[c].icon} ${esc(M.DECIDE[c].label)}</option>`).join('') + '</select>';
+    M.DECIDE_ORDER.map(c => `<option value="${c}" ${c === code ? 'selected' : ''} title="${esc(M.DECIDE[c].label)}">${M.DECIDE[c].icon} ${esc(c === 'wait' ? 'รอ' : M.DECIDE[c].label)}</option>`).join('') + '</select>';
   const x = (B.model.remark || {})[sku];
   return `<tr class="sku ${st}" data-sku="${esc(sku)}"><td class="k-sku">${esc(r.sku)}${r.short ? `<span class="sub">${esc(r.short)}</span>` : ''}</td>
     <td class="k-name">${esc(r.name || r.sku)}</td><td class="ty">${esc(r.type || '')}</td>${cells}
     <td class="num tot">${f(r.total[mode])}</td><td><span class="tag ${st}">${esc(st ? M.STATUS[r.st].label : '')}</span></td>${cmpTd}
-    <td class="rm">${x ? `${esc(x.text)}<small>${esc(x.by)}${x.at ? ' · ' + esc(x.at) : ''}</small>` : ''}</td>
-    <td class="act">${sel}${noteHtml(d)}${byHtml(sku, d)}</td></tr>`;
+    <td class="rm" ${x ? `title="${esc(x.by)}${x.at ? ' · ' + esc(x.at) : ''}"` : ''}>${x ? esc(x.text) : ''}</td>
+    <td class="act" ${d && d.by ? `title="${esc(d.by)}${d.at ? ' · ' + esc(d.at) : ''}"` : ''}>${sel}${noteHtml(d, 1)}</td></tr>`;
 }
 
 /** ตารางจอคอม หัวสองแถวแบบแท็บรายงาน: ปีของ LOT รวมช่องเดียวกัน NO LOT สูงสองแถว + แถวรวมท้าย */
@@ -400,7 +401,7 @@ function tableHtml(list, map) {
   const head1 = `<tr><th rowspan="2" class="k-sku">SKU</th><th rowspan="2">Product Name</th><th rowspan="2">Type</th>${nol ? '<th rowspan="2" class="nolot">NO LOT</th>' : ''}` +
     years.map(y => `<th class="year" colspan="${y.n}">${y.y}</th>`).join('') +
     `<th class="total">Total MFG</th><th rowspan="2">สถานะ</th>${cc ? `<th rowspan="2">เทียบ ${esc(M.ymText(cc.prevYm))}</th>` : ''}` +
-    '<th rowspan="2" title="ทีม Inventory เขียนไว้ให้อ่าน">Remark</th><th rowspan="2">Action by Tony</th></tr>';
+    '<th rowspan="2" title="ทีม Inventory เขียนไว้ให้อ่าน">Remark</th><th rowspan="2" class="act">Action by Tony</th></tr>';
   const head2 = '<tr>' + rep.cols.filter(c => c.key !== M.NOLOT).map(c => `<th class="${c.st}">${esc(c.label)}<small>${c.age === null ? '' : c.age + ' วัน'}</small></th>`).join('') +
     `<th class="total">${f(rep.totals[mode])}</th></tr>`;
   const body = list.map(r => skuHtml(r, map)).join('');
