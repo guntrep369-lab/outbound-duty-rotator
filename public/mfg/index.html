@@ -104,7 +104,9 @@
 .mf-dsel.other{background:#F1F5F9;font-weight:600}
 .mf-note{width:130px;margin-left:4px;padding:2px 6px;border-radius:6px;border:1px solid var(--wms-border2);background:var(--wms-surface);
   font-family:var(--wms-font);font-size:12.5px;color:var(--wms-text);vertical-align:middle}
-.mf-note:focus,.mf-dsel:focus{outline:none;border-color:var(--wms-primary)}
+.mf-rmk{width:190px;padding:2px 6px;border-radius:6px;border:1px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:12.5px;color:var(--wms-text);vertical-align:middle}
+.mf-note:focus,.mf-dsel:focus,.mf-rmk:focus{outline:none;border-color:var(--wms-primary)}
 
 /* รูปสรุปให้เจ้านาย */
 .mf-shot{position:fixed;inset:0;z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;
@@ -240,7 +242,8 @@ let DRAFT = null;       // รอบใหม่ที่กำลังตั�
 let RF = { st: '', type: '', q: '', mode: '', cmp: '', dec: '' };   // ตัวกรองรายงาน (cmp = กลุ่มเทียบเดือนก่อน · dec = คำตัดสิน)
 let PREV = null;        // รอบเดือนก่อนที่โหลดมาเทียบ {id, rep} หรือ {id, err}
 let PREV_BUSY = false;
-const DECS = {};        // คำตัดสินที่ยังไม่ได้บันทึก รายรอบ { pend: {SKU: [code, หมายเหตุ, ใคร, เมื่อไหร่] | null}, busy, err, at, t }
+const DECS = {};        // คำตัดสิน + Remark ที่ยังไม่ได้บันทึก รายรอบ { pend: {SKU: [code, หมายเหตุ, ใคร, เมื่อไหร่] | null}, rpend: {SKU: ข้อความ}, busy, err, at, t }
+const OLD_REMARK = 'ช่อง Remark ต้อง Deploy สคริปต์นับสต๊อก (stocktake-api.gs) ตัวใหม่ก่อน';
 let CF = 'left';        // ชิปของแท็บนับ
 const OPEN = new Set(); // แถวรายงานที่กาง ⓘ
 let XLSX_LOAD = null;
@@ -691,9 +694,21 @@ function shownRows(rp, cm, map) {
 
 /* ── คำตัดสินของเจ้านาย: หัวหน้าเลือกตามที่เจ้านายตอบ บันทึกในค่าตั้งของรอบ (st-round-save เดิม ไม่ต้องแก้สคริปต์) ── */
 
-function decSt(rid) { return DECS[rid] || (DECS[rid] = { pend: {}, busy: false, err: '', at: 0, t: null }); }
+function decSt(rid) { return DECS[rid] || (DECS[rid] = { pend: {}, rpend: {}, busy: false, err: '', at: 0, t: null }); }
 function decMap() { const r = R(); return r ? M.decideOf(M.applyDecide(r.settings.decide, decSt(S.rid).pend)) : {}; }
-function decWaiting() { return Object.values(DECS).some(d => d.busy || Object.keys(d.pend).length); }
+/** Remark ทีม (ของในชีต + ที่พิมพ์แล้วยังไม่ได้ส่ง) { SKU: {text, by, at} } */
+function remMap() {
+  const r = R();
+  if (!r) return {};
+  const m = M.remarkOf(r.settings.remark);
+  const p = decSt(S.rid).rpend;
+  Object.keys(p).forEach(k => { const t = String(p[k]).replace(/\s+/g, ' ').trim(); if (t) m[k] = { text: t, by: who(), at: '' }; else delete m[k]; });
+  return m;
+}
+function decCount(d) { return Object.keys(d.pend).length + Object.keys(d.rpend).length; }
+function decWaiting() { return Object.values(DECS).some(d => d.busy || decCount(d)); }
+/** กำลังพิมพ์หมายเหตุหรือ Remark อยู่ อย่าวาดทั้งตารางใหม่ (ตัวที่พิมพ์ค้างจะหาย) */
+function typingNote() { const a = document.activeElement; return !!(a && a.classList && (a.classList.contains('mf-note') || a.classList.contains('mf-rmk'))); }
 
 function setDec(sku, patch) {
   const rid = S.rid;
@@ -707,19 +722,37 @@ function setDec(sku, patch) {
   d.t = setTimeout(() => saveDec(rid), 800);
 }
 
+/** Remark ทีม Inventory ราย SKU ให้เจ้านายอ่าน · ว่าง = ลบ */
+function setRem(sku, text) {
+  const rid = S.rid;
+  const d = decSt(rid);
+  const was = (M.remarkOf(R().settings.remark)[sku] || {}).text || '';
+  const t = String(text).replace(/\s+/g, ' ').trim().slice(0, M.REMARK_MAX);
+  if (t === was) delete d.rpend[sku]; else d.rpend[sku] = t;
+  d.err = '';
+  clearTimeout(d.t);
+  d.t = setTimeout(() => saveDec(rid), 800);
+}
+
 async function saveDec(rid) {
   const d = decSt(rid);
   clearTimeout(d.t);
-  if (d.busy || !Object.keys(d.pend).length) return;
-  const sent = { ...d.pend };
+  if (d.busy || !decCount(d)) return;
+  const sent = { ...d.pend }, rsent = { ...d.rpend };
+  const nd = Object.keys(sent).length, nr = Object.keys(rsent).length;
   d.busy = true; d.err = ''; paintDec();
   try {
-    let decide;
+    let decide, remark;
     try {
       /* สคริปต์รวมกับของเดิมให้ใต้ล็อก เจ้านาย (ลิงก์เจ้านาย) หรือหัวหน้าอีกเครื่องบันทึก SKU อื่นพร้อมกันก็ไม่ทับกัน */
-      decide = (await post({ op: 'st-decide', round: rid, changes: sent })).decide;
+      const res = await post({ op: 'st-decide', round: rid, ...(nd ? { changes: sent } : {}), ...(nr ? { remarks: rsent } : {}) });
+      decide = nd ? res.decide : undefined;
+      remark = res.remark;
     } catch (e) {
+      /* สคริปต์รุ่น 7 ตัวแรกยังไม่รู้จัก Remark ส่งแต่ Remark มาจะได้ "ไม่มีคำตัดสินที่ส่งมา" */
+      if (nr && !nd && /ไม่มีคำตัดสินที่ส่งมา/.test(e.message)) throw new Error(OLD_REMARK);
       if (!/ไม่รู้จักคำสั่ง/.test(e.message)) throw e;
+      if (nr) throw new Error(OLD_REMARK);
       /* สคริปต์รุ่นเก่า (ยังไม่ Deploy รุ่น 7): อ่านค่าตั้งล่าสุดแล้วบันทึกทั้งก้อนแบบเดิม */
       const fresh = ((await get('st-rounds', null, true)).rounds || []).find(x => x.id === rid);
       if (!fresh) throw new Error('ไม่พบรอบนี้ในชีตแล้ว');
@@ -728,33 +761,41 @@ async function saveDec(rid) {
       decide = (await post({ op: 'st-round-save', round: { id: rid, name: fresh.name, date: fresh.date, cutoff: fresh.cutoff, settings } })).round.settings.decide;
     }
     Object.keys(sent).forEach(k => { if (d.pend[k] === sent[k]) delete d.pend[k]; });
-    setDecide(rid, decide);
+    if (nd) setDecide(rid, decide);
+    if (nr && !remark) throw new Error(OLD_REMARK);   // คำตัดสินบันทึกแล้ว แต่สคริปต์ไม่รู้จัก Remark
+    if (remark) {
+      Object.keys(rsent).forEach(k => { if (d.rpend[k] === rsent[k]) delete d.rpend[k]; });
+      setDecide(rid, undefined, remark);
+    }
     d.at = Date.now();
   } catch (e) { d.err = e.message; }
   d.busy = false;
-  if (!d.err && Object.keys(d.pend).length) { saveDec(rid); return; }
-  /* กำลังพิมพ์หมายเหตุช่องอื่นอยู่ อย่าวาดทั้งตารางใหม่ (ตัวที่พิมพ์ค้างจะหาย) */
-  const a = document.activeElement;
-  if (a && a.classList && a.classList.contains('mf-note')) paintDec(); else paintBody();
+  if (!d.err && decCount(d)) { saveDec(rid); return; }
+  if (typingNote()) paintDec(); else paintBody();
 }
 
-/** คำตัดสินชุดล่าสุดของรอบ (จากสคริปต์) ใส่กลับในรอบที่เปิดอยู่กับรายชื่อรอบ */
-function setDecide(rid, decide) {
-  const put = x => ({ ...x, settings: { ...x.settings, decide: decide || {} } });
+/** คำตัดสิน / Remark ชุดล่าสุดของรอบ (จากสคริปต์) ใส่กลับในรอบที่เปิดอยู่กับรายชื่อรอบ · undefined = ไม่เปลี่ยน */
+function setDecide(rid, decide, remark) {
+  const put = x => {
+    const st = { ...x.settings };
+    if (decide !== undefined) st.decide = decide || {};
+    if (remark !== undefined) { if (remark && Object.keys(remark).length) st.remark = remark; else delete st.remark; }
+    return { ...x, settings: st };
+  };
   if (S.head && S.head.round.id === rid) S.head.round = put(S.head.round);
   if (S.rounds) S.rounds = S.rounds.map(x => x.id === rid ? put(x) : x);
 }
 
 function decStateHtml() {
   const d = decSt(S.rid);
-  const n = Object.keys(d.pend).length;
+  const n = decCount(d);
   if (d.busy) return '⏳ กำลังบันทึก…';
   if (d.err) return `<span class="mf-todo">บันทึกไม่ได้: ${esc(d.err)}</span> <button class="tx-opt" data-act="decsave">ลองใหม่</button>`;
-  if (n) return `ยังไม่บันทึก ${n} SKU`;
+  if (n) return `ยังไม่บันทึก ${n} ช่อง`;
   if (d.at) return `✓ บันทึกแล้ว ${new Date(d.at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`;
   return '';
 }
-/** วาดแค่แถบคำตัดสินกับช่องเลือก (ไม่วาดตารางใหม่ ช่องหมายเหตุที่กำลังพิมพ์ไม่หาย) */
+/** วาดแค่แถบคำตัดสินกับช่องเลือก / Remark (ไม่วาดตารางใหม่ ช่องที่กำลังพิมพ์ไม่หาย) */
 function paintDec() {
   const bar = $('decBar');
   if (!bar || !R()) return;
@@ -765,6 +806,13 @@ function paintDec() {
     const c = (map[s.dataset.dec] || {}).code || '';
     s.value = c; s.className = 'mf-dsel ' + c;
   });
+  const rm = remMap();
+  document.querySelectorAll('input[data-rmk]').forEach(i => {
+    if (i === document.activeElement) return;
+    const x = rm[i.dataset.rmk];
+    i.value = x ? x.text : '';
+    i.title = x && x.at ? `${x.by} ${x.at}` : '';
+  });
 }
 
 function decBar(rp, map) {
@@ -773,7 +821,7 @@ function decBar(rp, map) {
   const chips = M.DECIDE_ORDER.filter(k => s[k].skus || RF.dec === k)
     .map(k => chip(k, `${M.DECIDE[k].icon} ${esc(M.DECIDE[k].label)} <b>${s[k].skus}</b> SKU · ${f(s[k].qty)} ชิ้น`)).join('');
   const none = s.none.skus || RF.dec === 'none' ? chip('none', `เสี่ยงมากยังไม่ตัดสิน <b>${s.none.skus}</b> SKU`) : '';
-  return `<div class="tx-bar" id="decBar"><span>คำตัดสิน</span>${chips}${none}${chips || none ? '' : '<span>เลือกในช่อง "ตัดสินใจ" ท้ายแถว ระบบบันทึกเอง</span>'}
+  return `<div class="tx-bar" id="decBar"><span>คำตัดสิน</span>${chips}${none}${chips || none ? '' : '<span>เลือกในช่อง "Action by Tony" ระบบบันทึกเอง · ช่อง Remark ทีมเขียนให้เจ้านายอ่าน</span>'}
     <span class="sp"></span><span id="decState">${decStateHtml()}</span></div>`;
 }
 
@@ -821,10 +869,11 @@ function reportView() {
   const nol = rp.cols.some(c => c.key === M.NOLOT);
   const head1 = `<tr><th rowspan="2">SKU</th><th rowspan="2">Product Name</th><th rowspan="2">Type</th>${nol ? '<th rowspan="2" class="nolot">NO LOT</th>' : ''}` +
     years.map(y => `<th class="year" colspan="${y.n}">${y.y}</th>`).join('') +
-    `<th class="total">Total MFG</th><th rowspan="2">สถานะ</th>${cc ? `<th rowspan="2">เทียบ ${esc(M.ymText(cc.prevYm))}</th>` : ''}<th rowspan="2" title="เลือกตามที่เจ้านายตอบ ลงช่อง Remark ใน Excel">ตัดสินใจ</th><th rowspan="2"></th></tr>`;
+    `<th class="total">Total MFG</th><th rowspan="2">สถานะ</th>${cc ? `<th rowspan="2">เทียบ ${esc(M.ymText(cc.prevYm))}</th>` : ''}<th rowspan="2" title="คำตัดสินของเจ้านาย (เลือกตามที่ตอบ หรือเจ้านายเลือกเองในลิงก์เจ้านาย)">Action by Tony</th><th rowspan="2" title="ทีม Inventory เขียนให้เจ้านายอ่าน ขึ้นในลิงก์เจ้านายกับ Excel">Remark</th><th rowspan="2"></th></tr>`;
   const head2 = '<tr>' + rp.cols.filter(c => c.key !== M.NOLOT).map(c => `<th class="${c.st}">${esc(c.label)}<small>${c.age === null ? '' : c.age + ' วัน'}</small></th>`).join('') +
     `<th class="total">${f(rp.totals[mode])}</th></tr>`;
-  const ncol = 7 + rp.cols.length + (cc ? 1 : 0);
+  const ncol = 8 + rp.cols.length + (cc ? 1 : 0);
+  const rmap = remMap();
   const cmpCell = (r) => {
     const o = cc.bySku[ST.up(r.sku)];
     if (!o || (!o.tag && !o.dPrev)) return '<td></td>';
@@ -841,6 +890,12 @@ function reportView() {
       `</select><input class="mf-note" data-note="${esc(k)}" maxlength="${M.NOTE_MAX}" placeholder="หมายเหตุ" value="${esc(d ? d.note : '')}"` +
       `${d && d.by ? ` title="${esc(d.by)} ${esc(d.at)}"` : ''} aria-label="หมายเหตุ ${esc(r.sku)}"></td>`;
   };
+  const rmkCell = (r) => {
+    const k = ST.up(r.sku);
+    const x = rmap[k];
+    return `<td class="nw"><input class="mf-rmk" data-rmk="${esc(k)}" maxlength="${M.REMARK_MAX}" placeholder="Remark ทีม" value="${esc(x ? x.text : '')}"` +
+      `${x && x.at ? ` title="${esc(x.by)} ${esc(x.at)}"` : ''} aria-label="Remark ${esc(r.sku)}"></td>`;
+  };
   const body = rows.map(r => {
     const key = r.sku;
     const cells = rp.cols.map(c => {
@@ -853,14 +908,14 @@ function reportView() {
     const st = M.STATUS[r.st];
     let html = `<tr><td class="k-sku nw">${esc(r.sku)}${r.short ? `<span class="tx-sub">${esc(r.short)}</span>` : ''}</td><td class="k-name">${esc(r.name)}</td>
       <td class="nw">${esc(r.type)}</td>${cells}<td class="num tot">${f(r.total[mode])}</td>
-      <td><span class="mf-tag ${r.st}">${esc(st.label)}</span></td>${cc ? cmpCell(r) : ''}${decCell(r)}
+      <td><span class="mf-tag ${r.st}">${esc(st.label)}</span></td>${cc ? cmpCell(r) : ''}${decCell(r)}${rmkCell(r)}
       <td><button class="mf-i ${open ? 'on' : ''}" data-open="${esc(key)}" aria-expanded="${open}" title="ดูราย Location">i</button></td></tr>`;
     if (open) html += `<tr class="det"><td colspan="${ncol}">${detail(r, rp)}</td></tr>`;
     return html;
   }).join('');
   const foot = `<tr class="foot"><td colspan="3">รวม ${f(rows.length)} SKU</td>` +
     rp.cols.map(c => { const v = rows.reduce((a, r) => a + (r.cells[c.key] ? r.cells[c.key][mode] : 0), 0); return `<td class="num">${v ? f(v) : ''}</td>`; }).join('') +
-    `<td class="num">${f(rows.reduce((a, r) => a + r.total[mode], 0))}</td><td colspan="${cc ? 4 : 3}"></td></tr>`;
+    `<td class="num">${f(rows.reduce((a, r) => a + r.total[mode], 0))}</td><td colspan="${cc ? 5 : 4}"></td></tr>`;
   return `<div class="tx-bar">
       <button class="tx-opt ${mode === 'count' ? 'on' : ''}" data-mode="count">นับจริง</button>
       <button class="tx-opt ${mode === 'book' ? 'on' : ''}" data-mode="book">สมุด</button>
@@ -964,7 +1019,7 @@ async function downloadXlsx() {
   const cm = cmpOf(rp);
   const cc = cm && cm.c;
   const map = decMap();
-  const sh = M.sheet({ ...rp, rows: shownRows(rp, cm, map) }, { ym: ymOf(), at: new Date().toLocaleString('th-TH'), cmp: cc, decide: map });
+  const sh = M.sheet({ ...rp, rows: shownRows(rp, cm, map) }, { ym: ymOf(), at: new Date().toLocaleString('th-TH'), cmp: cc, decide: map, remark: remMap() });
   await job('กำลังสร้างไฟล์ Excel…', async () => {
     const X = await xlsxLib();
     const wb = X.utils.book_new();
@@ -979,7 +1034,7 @@ async function downloadXlsx() {
 async function copyLine() {
   const rp = rep(repMode());
   const cm = cmpOf(rp);
-  const text = M.lineText(rp, { ym: ymOf(), cmp: cm && cm.c, decide: decMap() });
+  const text = M.lineText(rp, { ym: ymOf(), cmp: cm && cm.c, decide: decMap(), remark: remMap() });
   try { await navigator.clipboard.writeText(text); S.ok = '✓ คัดลอกสรุปแล้ว วางใน LINE ได้เลย'; }
   catch (e) { prompt('คัดลอกข้อความนี้', text); }
   S.err = ''; paintSrc();
@@ -1110,7 +1165,7 @@ function drawCard(k) {
     txt('SKU', P, y, 11, 400, CC.muted);
     txt('LOT เก่าสุด', xLot, y, 11, 400, CC.muted);
     txt('ชิ้นเสี่ยง', xQty, y, 11, 400, CC.muted, 'right');
-    txt('ตัดสินใจ', W - P, y, 11, 400, CC.muted, 'right');
+    txt('Action by Tony', W - P, y, 11, 400, CC.muted, 'right');
     y += 20; hr(y);
     k.top.forEach(t => {
       txt(fit(t.sku, 228, 14, 700), P, y + 7, 14, 700);
@@ -1387,6 +1442,7 @@ document.addEventListener('change', (e) => {
   /* คำตัดสิน: เลือก "—" = ล้างทั้งคำตัดสินและหมายเหตุ · หมายเหตุบันทึกตอนออกจากช่องหรือกด Enter */
   if (t.dataset.dec !== undefined) { setDec(t.dataset.dec, t.value ? { code: t.value } : { code: '', note: '' }); paintBody(); return; }
   if (t.dataset.note !== undefined) { setDec(t.dataset.note, { note: t.value }); paintDec(); return; }
+  if (t.dataset.rmk !== undefined) { setRem(t.dataset.rmk, t.value); paintDec(); return; }
   if (t.id === 'fYm') { DRAFT.ym = t.value; paintBody(); return; }
   if (t.id === 'fTeams') { DRAFT.teams = +t.value || 1; return; }
   if (t.dataset.type !== undefined) { DRAFT.list[+t.dataset.type][1] = t.value; DRAFT.guessed = false; paintBody(); return; }
@@ -1458,11 +1514,11 @@ setInterval(async () => {
     const cur = R();
     if (!fresh || !cur || cur.id !== fresh.id || decWaiting() || S.busy) return;
     const a = fresh.settings || {}, b = cur.settings;
-    if (JSON.stringify(a.decide || {}) === JSON.stringify(b.decide || {}) && (a.boss || '') === (b.boss || '')) return;
-    setDecide(cur.id, a.decide);
+    const same = (x, y) => JSON.stringify(x || {}) === JSON.stringify(y || {});
+    if (same(a.decide, b.decide) && same(a.remark, b.remark) && (a.boss || '') === (b.boss || '')) return;
+    setDecide(cur.id, a.decide, a.remark || {});
     setBoss(cur.id, a.boss || '');
-    const el = document.activeElement;
-    if (el && el.classList && el.classList.contains('mf-note')) paintDec(); else paintBody();
+    if (typingNote()) paintDec(); else paintBody();
   } catch (e) {}
 }, POLL_MS);
 

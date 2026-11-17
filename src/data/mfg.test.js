@@ -284,11 +284,11 @@ describe('รายงาน', () => {
     const sh = M.sheet(rep, { ym: '2026-11' });
     expect(sh.aoa[0][0]).toMatch(/^เช็คความเสี่ยง MFG พ\.ย\. 69 · นับ LOT 8 ลงไป · ยอดในสมุด/);
     expect(sh.aoa[1].slice(0, 7)).toEqual(['SKU', 'Product Name', 'Type', 'NO LOT', '2026', '', '']);
-    expect(sh.aoa[1].slice(7)).toEqual(['Total MFG', 'สถานะ', 'Remark']);
+    expect(sh.aoa[1].slice(7)).toEqual(['Total MFG', 'สถานะ', 'Action by Tony', 'Remark']);
     expect(sh.aoa[2].slice(4, 8)).toEqual(['Lot 4', 'Lot 6', 'Lot 8', 31]);
     expect(sh.aoa[3].slice(4, 7)).toEqual(['229 วัน', '168 วัน', '107 วัน']);
-    expect(sh.aoa[4]).toEqual(['AAA0000000001', 'ที่นอน 5FT สมมติ Mattress', 'Mattress', '', 10, 5, '', 15, 'เสี่ยงมาก', '']);
-    expect(sh.aoa[sh.aoa.length - 1]).toEqual(['รวม', '', '', 4, 10, 5, 12, 31, '', '']);
+    expect(sh.aoa[4]).toEqual(['AAA0000000001', 'ที่นอน 5FT สมมติ Mattress', 'Mattress', '', 10, 5, '', 15, 'เสี่ยงมาก', '', '']);
+    expect(sh.aoa[sh.aoa.length - 1]).toEqual(['รวม', '', '', 4, 10, 5, 12, 31, '', '', '']);
     expect(sh.merges).toContainEqual({ s: { r: 1, c: 4 }, e: { r: 1, c: 6 } });
     expect(sh.styles).toContainEqual([2, 4, 'st-risk']);
     expect(sh.styles).toContainEqual([4, 5, 'c-watch']);
@@ -355,12 +355,12 @@ describe('เทียบกับรอบเดือนก่อน', () => {
     expect(c.totals.gone.skus).toBe(0);
   });
 
-  it('Excel: ช่องเทียบเดือนก่อนอยู่หน้า Remark · มีชีตเทียบแยกกลุ่ม · ข้อความ LINE บอกสรุปเทียบ', () => {
+  it('Excel: ช่องเทียบเดือนก่อนอยู่หน้า Action by Tony · มีชีตเทียบแยกกลุ่ม · ข้อความ LINE บอกสรุปเทียบ', () => {
     const cur = rep('2026-11', NOV);
     const c = M.compare(cur, rep('2026-10', OCT));
     const sh = M.sheet(cur, { ym: '2026-11', cmp: c });
     const n = 3 + cur.cols.length;
-    expect(sh.aoa[1].slice(n, n + 4)).toEqual(['Total MFG', 'สถานะ', 'เทียบ ' + M.ymText('2026-10'), 'Remark']);
+    expect(sh.aoa[1].slice(n, n + 5)).toEqual(['Total MFG', 'สถานะ', 'เทียบ ' + M.ymText('2026-10'), 'Action by Tony', 'Remark']);
     const aaa = sh.aoa.find((r) => r[0] === 'AAA0000000001');
     expect(aaa[n + 2]).toBe('ค้าง · ลด 8');
     expect(sh.cols.length).toBe(sh.aoa[1].length);
@@ -430,6 +430,14 @@ describe('เทียบกับรอบเดือนก่อน', () => {
     const aaa = sh.aoa.find((r) => r[0] === 'AAA0000000001');
     expect(aaa[n + 2]).toBe('ค้าง · ลด 8 · เดือนก่อน: แกะ · ยังค้าง 12');
     expect(aaa[n + 3]).toBe('แกะ · รอบสอง');
+    expect(aaa[n + 4]).toBe('');
+    const rmk = M.remarkOf({ AAA0000000001: ['  ของอยู่   R01 ', 'ทีม', ''], BBB0000000001: [''], XX: 'ผิดแบบ' });
+    expect(Object.keys(rmk)).toEqual(['AAA0000000001']);
+    const withRm = M.sheet(cur, { ym: '2026-11', cmp: c, decide: map, remark: rmk });
+    expect(withRm.aoa.find((r) => r[0] === 'AAA0000000001')[n + 4]).toBe('ของอยู่ R01');
+    expect(withRm.cols.length).toBe(withRm.aoa[1].length);
+    expect(M.lineText(cur, { ym: '2026-11', remark: rmk })).toContain('Remark ทีม:\n• AAA001 — ของอยู่ R01');
+    expect(M.lineText(cur, { ym: '2026-11', remark: {} })).not.toContain('Remark');
     expect(sh.styles).toContainEqual([sh.aoa.indexOf(aaa), n + 2, 'c-todo']);
     expect(M.sheet(cur, { ym: '2026-11' }).aoa.find((r) => r[0] === 'AAA0000000001').pop()).toBe('');
 
@@ -586,7 +594,7 @@ describe('รอบ MFG บนสคริปต์นับสต๊อกต�
     const key = api.post({ op: 'st-boss-key', t: HEAD, round: nov }).key;
 
     const data = api.get({ api: 'st-boss', round: nov, b: key });
-    expect(data.round.settings).toEqual({ kind: 'mfg', ym: '2026-11', list: M.packList(LIST), decide: {} });
+    expect(data.round.settings).toEqual({ kind: 'mfg', ym: '2026-11', list: M.packList(LIST), decide: {}, remark: {} });
     expect(data.prev.round.id).toBe(oct);
     const text = JSON.stringify(data);
     expect(text).not.toContain(key);
@@ -626,6 +634,25 @@ describe('รอบ MFG บนสคริปต์นับสต๊อกต�
     const h = api.post({ op: 'st-decide', t: HEAD, by: 'หัวหน้า', round: nov, changes: { CCC0000000001: ['wait', ''] } });
     expect(M.decideOf(h.decide)).toMatchObject({ AAA0000000001: { code: 'sell', by: 'เจ้านาย' }, CCC0000000001: { code: 'wait', by: 'หัวหน้า' } });
     expect(api.post({ op: 'st-decide', t: 'nab', round: nov, changes: { CCC0000000001: null } }).error).toContain('ใช้ไม่ได้แล้ว');
+
+    /* Remark ทีม: รหัสหัวหน้าเท่านั้น รวมใต้ล็อกไม่ยุ่งกับคำตัดสิน · เจ้านายเห็นแต่แก้ไม่ได้ · บันทึกรอบส่งชุดเก่ามาไม่ทับ */
+    expect(api.post({ op: 'st-decide', round: nov, b: key, remarks: { AAA0000000001: 'x' } }).error).toContain('หน้ารายงาน MFG');
+    const r1 = api.post({ op: 'st-decide', t: HEAD, by: 'ทีมนับ', round: nov,
+      remarks: { aaa0000000001: '  ของอยู่ R01   ชั้นบน ', ZZZ9: 'x', BBB0000000001: 'ก'.repeat(100) } });
+    expect(r1.error).toBeUndefined();
+    expect(r1.skipped).toEqual(['ZZZ9']);
+    expect(M.decideOf(r1.decide).AAA0000000001.code).toBe('sell');
+    const rm = M.remarkOf(r1.remark);
+    expect(rm.AAA0000000001).toMatchObject({ text: 'ของอยู่ R01 ชั้นบน', by: 'ทีมนับ' });
+    expect(rm.BBB0000000001.text.length).toBe(M.REMARK_MAX);
+    api.post({ op: 'st-decide', t: HEAD, round: nov, remarks: { BBB0000000001: '' } });
+    const n2 = api.get({ api: 'st-rounds', t: HEAD }).rounds.find((x) => x.id === nov);
+    api.post({ op: 'st-round-save', t: HEAD, round: { id: nov, name: n2.name, date: n2.date, cutoff: n2.cutoff,
+      settings: { ...n2.settings, remark: { AAA0000000001: ['ทับ', 'x', ''] } } } });
+    const bm = M.bossModel(api.get({ api: 'st-boss', round: nov, b: key }), '2026-11-17');
+    expect(Object.keys(bm.remark)).toEqual(['AAA0000000001']);
+    expect(bm.remark.AAA0000000001.text).toBe('ของอยู่ R01 ชั้นบน');
+    expect(bm.decide.CCC0000000001.code).toBe('wait');
   });
 
   it('ลิงก์เจ้านาย: ข้อมูลอยู่หลัง # อ่านกลับได้ครบ · ลิงก์ไม่ครบใช้ไม่ได้', () => {

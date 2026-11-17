@@ -639,7 +639,27 @@
     return out;
   }
 
-  /** ข้อความลงช่อง Remark: "แกะ · หมายเหตุ" */
+  /**
+   * Remark ของทีม Inventory ให้เจ้านายอ่าน settings.remark = { SKU เต็ม: [ข้อความ, ใคร, เมื่อไหร่] }
+   * แก้ผ่าน st-decide (remarks) ด้วยรหัสหัวหน้าเท่านั้น หน้าเจ้านายอ่านอย่างเดียว
+   */
+  var REMARK_MAX = 80;              // เท่ากับ REMARK_MAX ใน stocktake-api.gs
+
+  function cleanRemark(v) { return text(v).replace(/\s+/g, ' ').slice(0, REMARK_MAX); }
+
+  /** settings.remark ดิบ → { SKU: {text, by, at} } ข้อความว่างตัดทิ้ง */
+  function remarkOf(raw) {
+    var m = {};
+    if (!raw || typeof raw !== 'object') return m;
+    Object.keys(raw).forEach(function (k) {
+      var v = raw[k];
+      var t = cleanRemark(Array.isArray(v) ? v[0] : '');
+      if (t) m[up(k)] = { text: t, by: text(v[1]), at: text(v[2]) };
+    });
+    return m;
+  }
+
+  /** ข้อความลงช่อง Action by Tony: "แกะ · หมายเหตุ" */
   function decideText(d) {
     if (!d || !d.code) return '';
     var label = DECIDE[d.code] ? DECIDE[d.code].label : '';
@@ -711,13 +731,14 @@
    *   แถว 1 ชื่อรายงาน · แถว 2 หัวตาราง + ปี · แถว 3 Lot + ยอดรวมทั้งหมด · แถว 4 อายุ (วัน) · ต่อด้วยราย SKU · แถวท้ายรวม
    * @returns {{aoa, merges, styles: Array<[row, col, key]>, cols}}
    *   key = head | year | total | st-risk | st-watch | st-ok | st-nolot (หัว) · c-risk | c-watch | c-ok | c-nolot (ช่อง) | c-todo (สั่งแล้วยังค้าง) | sum | age | title
-   * meta.cmp = ผลเทียบเดือนก่อน (compare) มีแล้วเพิ่มคอลัมน์ "เทียบ <เดือนก่อน>" หน้า Remark
-   * meta.decide = คำตัดสินของเจ้านาย (decideOf) ลงช่อง Remark
+   * meta.cmp = ผลเทียบเดือนก่อน (compare) มีแล้วเพิ่มคอลัมน์ "เทียบ <เดือนก่อน>" หน้า Action by Tony
+   * meta.decide = คำตัดสินของเจ้านาย (decideOf) ลงช่อง Action by Tony · meta.remark = Remark ทีม (remarkOf) ลงช่อง Remark
    */
   function sheet(rep, meta) {
     var m = meta || {};
     var cmp = m.cmp || null;
     var dec = m.decide || {};
+    var rem = m.remark || {};
     var extra = cmp ? 1 : 0;
     var mode = rep.mode;
     var cols = rep.cols;
@@ -725,7 +746,7 @@
     var title = 'เช็คความเสี่ยง MFG ' + ymText(m.ym || rep.rule.ym) + ' · ' + rep.rule.text +
       ' · ' + (mode === 'count' ? 'นับจริง' + (rep.total ? ' ' + rep.done + '/' + rep.total + ' โล' : '') : 'ยอดในสมุด') +
       (m.at ? ' · ' + m.at : '');
-    var width = n + 3 + extra;
+    var width = n + 4 + extra;
     var blank = function () { var a = []; for (var i = 0; i < width; i++) a.push(''); return a; };
     var r0 = blank(), r1 = blank(), r2 = blank(), r3 = blank();
     r0[0] = title;
@@ -735,9 +756,9 @@
     var grand = round3(rep.totals[mode]);
     r1[n] = 'Total MFG'; r2[n] = grand; styles.push([1, n, 'total'], [2, n, 'total'], [3, n, 'total']);
     merges.push({ s: { r: 2, c: n }, e: { r: 3, c: n } });
-    r1[n + 1] = 'สถานะ'; r1[n + 2 + extra] = 'Remark';
+    r1[n + 1] = 'สถานะ'; r1[n + 2 + extra] = 'Action by Tony'; r1[n + 3 + extra] = 'Remark';
     if (cmp) r1[n + 2] = 'เทียบ ' + ymText(cmp.prevYm);
-    (cmp ? [n + 1, n + 2, n + 3] : [n + 1, n + 2]).forEach(function (c) { merges.push({ s: { r: 1, c: c }, e: { r: 3, c: c } }); styles.push([1, c, 'head']); });
+    (cmp ? [n + 1, n + 2, n + 3, n + 4] : [n + 1, n + 2, n + 3]).forEach(function (c) { merges.push({ s: { r: 1, c: c }, e: { r: 3, c: c } }); styles.push([1, c, 'head']); });
     /* แถวปี: คอลัมน์ LOT ปีเดียวกันรวมช่องเดียว NO LOT ไม่มีปี ใช้หัวสามแถวเต็ม */
     var c0 = -1, y0 = null;
     function closeYear(end) {
@@ -778,12 +799,13 @@
         if (o && o.todo) styles.push([ri, n + 2, 'c-todo']);
       }
       row.push(decideText(dec[up(r.sku)]));
+      row.push(rem[up(r.sku)] ? rem[up(r.sku)].text : '');
       aoa.push(row);
     });
     var foot = ['รวม', '', ''];
     var fi = aoa.length;
     cols.forEach(function (col) { var q = round3(rep.totals.cols[col.key][mode]); foot.push(q ? q : ''); });
-    foot.push(grand, '', '');
+    foot.push(grand, '', '', '');
     if (cmp) foot.push('');
     for (var c = 0; c < width; c++) styles.push([fi, c, 'foot']);
     aoa.push(foot);
@@ -791,7 +813,7 @@
     cols.forEach(function () { widths.push(9); });
     widths.push(11, 12);
     if (cmp) widths.push(22);
-    widths.push(30);
+    widths.push(30, 34);
     return { aoa: aoa, merges: merges, styles: styles, cols: widths };
   }
 
@@ -841,6 +863,13 @@
           names(g.list, function (x) { return (x.short || x.sku) + (x.note ? ' (' + x.note + ')' : ''); }));
       });
       if (dsum.none.skus) lines.push('❓ เสี่ยงมากที่ยังไม่ตัดสิน ' + dsum.none.skus + ' SKU');
+    }
+    var rmap = m.remark || {};
+    var rk = rep.rows.filter(function (x) { return rmap[up(x.sku)]; });
+    if (rk.length) {
+      lines.push('', '💬 Remark ทีม:');
+      rk.slice(0, 8).forEach(function (x) { lines.push('• ' + (x.short || x.sku) + ' — ' + rmap[up(x.sku)].text); });
+      if (rk.length > 8) lines.push('…อีก ' + (rk.length - 8) + ' SKU');
     }
     var top = rep.rows.filter(function (x) { return x.st === 'risk'; }).slice(0, 5);
     if (top.length) {
@@ -1046,7 +1075,8 @@
       var prev = bossRep(data.prev, data.prev.round.date);
       cmp = compare(cur.rep, prev.rep, listMap(cur.list, data.skus), decideOf(data.prev.round.settings && data.prev.round.settings.decide));
     }
-    return { round: data.round, ym: data.round.settings.ym, rep: cur.rep, cmp: cmp, decide: decideOf(data.round.settings.decide) };
+    return { round: data.round, ym: data.round.settings.ym, rep: cur.rep, cmp: cmp, decide: decideOf(data.round.settings.decide),
+      remark: remarkOf(data.round.settings.remark) };
   }
 
   /** เดือนที่เลือกเปิดรอบได้ (เดือนก่อน เดือนนี้ เดือนหน้า) today = yyyy-mm-dd */
@@ -1067,6 +1097,7 @@
     DECIDE: DECIDE, DECIDE_ORDER: DECIDE_ORDER, NOTE_MAX: NOTE_MAX, SETTINGS_MAX: SETTINGS_MAX,
     decideOf: decideOf, applyDecide: applyDecide, decideText: decideText, decideSum: decideSum, byDecide: byDecide, prevDecText: prevDecText,
     decideShort: decideShort, card: card, ymFromName: ymFromName, lotCheck: lotCheck,
+    REMARK_MAX: REMARK_MAX, remarkOf: remarkOf,
     bossLink: bossLink, parseBossLink: parseBossLink, bossModel: bossModel,
   };
 })(window);

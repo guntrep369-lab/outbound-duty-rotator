@@ -42,7 +42,7 @@
  * POST {op:'st-count'}       ส่งผลนับเป็นชุด ส่งซ้ำได้ แถวที่เคยรับแล้วไม่ถูกเขียนซ้ำ (คนนับ)
  * POST {op:'st-open'}        เครื่องนี้เปิดโลไหนอยู่ ตอบว่ามีใครในงานเดียวกันเปิดโลนั้นอยู่ (คนนับ ไม่ลงชีต)
  * POST {op:'st-boss-key'}    ทำลิงก์เจ้านายของรอบ MFG รหัสใหม่ทุกครั้ง ลิงก์เก่าใช้ไม่ได้ (หัวหน้า)
- * POST {op:'st-decide'}      บันทึกคำตัดสินราย SKU ลงค่าตั้งของรอบ (ลิงก์เจ้านาย หรือรหัสหัวหน้า)
+ * POST {op:'st-decide'}      บันทึกคำตัดสินราย SKU ลงค่าตั้งของรอบ (ลิงก์เจ้านาย หรือรหัสหัวหน้า) + Remark ทีม (รหัสหัวหน้า)
  * ไม่ใส่ api                 บอกแค่ว่าเป็นสคริปต์นี้ ให้หน้าเว็บเช็คว่าใส่ URL ถูกตัว
  *
  * ทุกคำตอบมี v = รุ่นของสคริปต์ หน้าเว็บเทียบกับรุ่นที่ต้องใช้ ลืม Deploy เวอร์ชันใหม่จะขึ้นแถบแดงบอก
@@ -434,6 +434,9 @@ function roundSave_(req) {
       /* รหัสลิงก์เจ้านายเปลี่ยนผ่าน st-boss-key เท่านั้น หน้าเว็บส่งค่าตั้งชุดเก่ามาก็ไม่ทับ และตั้งรหัสเองไม่ได้ */
       var boss = r.settings && r.settings.boss;
       if (boss) settings.boss = boss; else delete settings.boss;
+      /* Remark ทีมแก้ผ่าน st-decide เท่านั้น (รวมใต้ล็อก) หน้าที่เปิดค้างส่งชุดเก่ามาก็ไม่ทับ */
+      var remark = r.settings && r.settings.remark;
+      if (remark) settings.remark = remark; else delete settings.remark;
       r.name = name; r.date = date; r.cutoff = cutoff; r.settings = settings;
       r.editBy = who; r.editAt = now;
       writeRound_(r);
@@ -970,6 +973,7 @@ function logRows_(id, since, team) {
 
 var DECIDE_CODES = { open: 1, sell: 1, wait: 1, other: 1 };   // แกะ ขายด่วน รอเดือนหน้า อื่นๆ (เหมือน WmsMfg.DECIDE)
 var DECIDE_MAX = 500;                                          // SKU ต่อครั้งที่ส่ง
+var REMARK_MAX = 80;                                           // Remark ทีม Inventory ต่อ SKU (เหมือน WmsMfg.REMARK_MAX)
 
 /** รหัสในลิงก์ต้องตรงกับของรอบ ไม่ตรง = ลิงก์เก่า (หัวหน้าทำลิงก์ใหม่แล้ว) หรือพิมพ์มาเอง */
 function boss_(r, b) {
@@ -995,7 +999,7 @@ function bossKey_(req) {
 function bossRound_(r) {
   var s = r.settings || {};
   return { id: r.id, name: r.name, date: r.date, status: r.status, at: r.at,
-    settings: { kind: s.kind, ym: s.ym, list: s.list || [], decide: s.decide || {} } };
+    settings: { kind: s.kind, ym: s.ym, list: s.list || [], decide: s.decide || {}, remark: s.remark || {} } };
 }
 
 function bossData_(r) {
@@ -1038,13 +1042,17 @@ function bossView_(id, b) {
  * เลือกคำตัดสิน changes = { SKU เต็ม: [code, หมายเหตุ] | null (ล้าง) } เจ้านายส่งรหัสลิงก์ (b) หัวหน้าส่งรหัสหัวหน้า (t)
  * รวมกับของเดิมในค่าตั้งของรอบใต้ล็อก สองคนบันทึก SKU อื่นพร้อมกันก็ไม่ทับกัน · รับเฉพาะ SKU ในรายชื่อของรอบ
  * กติกาเดียวกับ WmsMfg.applyDecide: ใส่แต่หมายเหตุ = อื่นๆ · ไม่มีทั้งคู่ = ลบ · หมายเหตุไม่เกิน 60 ตัว
+ * remarks = { SKU เต็ม: ข้อความ | '' (ลบ) } Remark ของทีม Inventory ให้เจ้านายอ่าน ส่งได้เฉพาะรหัสหัวหน้า
+ *   เก็บใน settings.remark = { SKU: [ข้อความ, ใคร, เมื่อไหร่] } ไม่เกิน 80 ตัว
  */
 function decide_(req) {
-  var ch = req.changes && typeof req.changes === 'object' && !Array.isArray(req.changes) ? req.changes : null;
-  if (!ch) return { error: 'ไม่มีคำตัดสินที่ส่งมา' };
-  var keys = Object.keys(ch);
-  if (keys.length > DECIDE_MAX) return { error: 'ส่งทีละไม่เกิน ' + DECIDE_MAX + ' SKU' };
+  var obj = function (v) { return v && typeof v === 'object' && !Array.isArray(v) ? v : null; };
+  var ch = obj(req.changes), rm = obj(req.remarks);
+  if (!ch && !rm) return { error: 'ไม่มีคำตัดสินที่ส่งมา' };
+  var keys = ch ? Object.keys(ch) : [], rkeys = rm ? Object.keys(rm) : [];
+  if (keys.length > DECIDE_MAX || rkeys.length > DECIDE_MAX) return { error: 'ส่งทีละไม่เกิน ' + DECIDE_MAX + ' SKU' };
   var head = !!(HEAD_TOKEN && String(req.t || '') === HEAD_TOKEN);
+  if (rm && !head) return { error: 'Remark ทีมแก้ได้จากหน้ารายงาน MFG เท่านั้น' };
   var who = plain_(req.by, 40) || (head ? 'หัวหน้า' : 'เจ้านาย');
   return withLock_(function () {
     var r = round_(text_(req.round));
@@ -1064,10 +1072,19 @@ function decide_(req) {
       if (!code) { delete dec[sku]; return; }
       dec[sku] = [code, note, who, at];
     });
+    var rem = r.settings.remark && typeof r.settings.remark === 'object' ? r.settings.remark : {};
+    rkeys.forEach(function (k) {
+      var sku = code_(k, 40);
+      if (!want[sku]) { skipped.push(sku); return; }
+      var t = String(rm[k] === null || rm[k] === undefined ? '' : rm[k]).replace(/\s+/g, ' ').trim().slice(0, REMARK_MAX);
+      if (!t) { delete rem[sku]; return; }
+      rem[sku] = [t, who, at];
+    });
     r.settings.decide = dec;
-    if (JSON.stringify(r.settings).length > SETTINGS_MAX) return { error: 'คำตัดสินกับหมายเหตุยาวเกินที่ชีตเก็บได้ ลดหมายเหตุลง' };
+    if (Object.keys(rem).length) r.settings.remark = rem; else delete r.settings.remark;
+    if (JSON.stringify(r.settings).length > SETTINGS_MAX) return { error: 'คำตัดสิน หมายเหตุ กับ Remark ยาวเกินที่ชีตเก็บได้ ลดข้อความลง' };
     writeRound_(r);
-    return { app: 'stocktake', decide: dec, skipped: skipped };
+    return { app: 'stocktake', decide: dec, remark: rem, skipped: skipped };
   });
 }
 

@@ -15,7 +15,9 @@
   ลิงก์มี URL สคริปต์นับสต๊อก รหัสลิงก์ของรอบ และรหัสรอบ อยู่หลัง # (ไม่ส่งไปกับการเปิดหน้า)
   ข้อมูลมาจาก ?api=st-boss ของ apps-script/stocktake-api.gs ซึ่งไม่มีรหัสหัวหน้าหรือคนนับ
   หน้านี้คิดรายงานเองด้วย WmsMfg ชุดเดียวกับหน้าหัวหน้า ตัวเลขจึงตรงกัน
-  เลือกคำตัดสินแล้วบันทึกเองผ่าน st-decide สคริปต์รวมกับของหัวหน้าใต้ล็อก หัวหน้าเห็นในแอปภายในนาที
+  จอคอมเป็นตารางหน้าตาเดียวกับแท็บรายงาน (ปี / Lot / อายุ, Total MFG, สถานะ, เทียบ, Action by Tony, Remark) มือถือเป็นการ์ด
+  เลือกคำตัดสิน (Action by Tony) แล้วบันทึกเองผ่าน st-decide สคริปต์รวมกับของหัวหน้าใต้ล็อก หัวหน้าเห็นในแอปภายในนาที
+  Remark มาจากทีม Inventory (แก้ในหน้ารายงาน) หน้านี้อ่านอย่างเดียว
   หัวหน้ากดทำลิงก์ใหม่ = รหัสเปลี่ยน ลิงก์นี้ใช้ไม่ได้อีก
 -->
 <style>
@@ -117,34 +119,60 @@ body{background:var(--wms-bg);color:var(--wms-text);font-family:var(--wms-font);
 .fatal p{font-size:13px;color:var(--wms-muted);line-height:1.6}
 .loading{padding:60px 10px;text-align:center;color:var(--wms-muted);font-size:14px}
 
-/* ── จอคอม: ตารางแถวละ SKU คลิกเลือกในแถว (มือถือเป็นการ์ด) ── */
-.tb{width:100%;border-collapse:separate;border-spacing:0;background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:10px;font-size:13px}
-.tb th{position:sticky;top:var(--ch,48px);z-index:1;background:#F8FAFC;color:var(--txt2);font-size:11.5px;font-weight:600;text-align:left;
-  padding:8px 10px;border-bottom:2px solid var(--wms-border);white-space:nowrap}
-.tb th:first-child{border-top-left-radius:10px}
-.tb th:last-child{border-top-right-radius:10px}
-.tb td{padding:7px 8px;border-bottom:1px solid var(--wms-border);vertical-align:middle}
-.tb tr:last-child td{border-bottom:none}
-.tb tbody tr:hover td{background:#FAFBFF}
-.tb tr.risk td:first-child{box-shadow:inset 4px 0 #CC0000}
-.tb tr.watch td:first-child{box-shadow:inset 4px 0 #F1C232}
-.tb tr.nolot td:first-child{box-shadow:inset 4px 0 #E06666}
-.tb tr.ok td:first-child{box-shadow:inset 4px 0 #34A853}
-.tb .r{text-align:right}
-.tb .c-sku{white-space:nowrap}
-.tb .c-sku b{display:block;font-size:14px;margin-bottom:2px}
-.tb .nm1{max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tb .nm2{font-size:11.5px;color:var(--wms-muted);margin-top:1px;white-space:nowrap}
-.tb .lots{margin:0;max-width:240px}
-.tb .tot{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
-.tb .prev{margin-top:2px;font-size:11.5px}
-.tb .c-note{width:24%}
-.tb .dec{display:flex;gap:4px;margin:0}
-.tb .dec button{flex-direction:row;min-height:32px;padding:4px 8px;font-size:12.5px;gap:4px;white-space:nowrap;border-radius:8px}
-.tb .dec button .i{font-size:13px}
-.tb .dec button:hover:not(.on){border-color:var(--wms-primary);color:var(--wms-primary-dark)}
-.tb .note{margin:0;width:100%;min-width:130px;padding:6px 8px;font-size:13px;border-radius:8px}
-.tb .by{margin-top:3px}
+.rmk{font-size:12.5px;margin-top:7px;padding:6px 9px;border-radius:8px;background:#EEF2FF;color:#3730A3;line-height:1.45}
+.rmk b{font-weight:700}
+.rmk small{display:block;font-size:11px;color:#6366F1;margin-top:1px}
+
+/* ── จอคอม: ตารางหน้าตาเดียวกับแท็บรายงาน (หัวปี / Lot / อายุ สีตามสถานะ) เลือกในแถว ── */
+.rp-wrap{overflow:auto;max-height:calc(100vh - var(--ch,48px) - 62px);background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:10px}
+.rp{width:100%;border-collapse:collapse;font-size:13px}
+.rp th{position:sticky;top:0;z-index:2;text-align:center;color:#fff;background:#434343;border:1px solid #fff;padding:7px 7px;
+  font-size:12px;font-weight:600;white-space:nowrap}
+.rp thead tr:nth-child(2) th{top:var(--h1,31px)}
+.rp th.year{background:#1F3FD8}
+.rp th.risk,.rp th.nolot{background:#CC0000}
+.rp th.watch{background:#F1C232;color:#3B2F00}
+.rp th.ok{background:#34A853}
+.rp th.total{background:#E06666}
+.rp th small{display:block;font-size:10.5px;font-weight:500;opacity:.9}
+.rp td{padding:6px 7px;border-bottom:1px solid #F1F5F9;border-right:1px solid #EEF2F7;vertical-align:top;line-height:1.4}
+.rp tbody tr:hover td{background-color:#FAFBFF}
+.rp .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.rp .nw{white-space:nowrap}
+.rp .sub{display:block;font-size:11.5px;color:var(--wms-muted)}
+.rp td.c-risk,.rp td.c-nolot,.rp tbody tr:hover td.c-risk,.rp tbody tr:hover td.c-nolot{background:#FBE3E1}
+.rp td.c-watch,.rp tbody tr:hover td.c-watch{background:#FEF5D9}
+.rp td.c-ok,.rp tbody tr:hover td.c-ok{background:#E3F0DC}
+.rp td.tot{font-weight:700}
+.rp td.k-sku{min-width:122px;white-space:nowrap;position:sticky;left:0;z-index:1;background:var(--wms-surface)}
+.rp th.k-sku{left:0;z-index:3}
+.rp tr.risk td.k-sku{box-shadow:inset 4px 0 #CC0000}
+.rp tr.watch td.k-sku{box-shadow:inset 4px 0 #F1C232}
+.rp tr.nolot td.k-sku{box-shadow:inset 4px 0 #E06666}
+.rp tr.ok td.k-sku{box-shadow:inset 4px 0 #34A853}
+.rp td.k-name{min-width:160px}
+.rp td.ty{min-width:70px}
+.rp td.cm{min-width:110px;max-width:150px}
+.rp .diff{display:block;font-size:10.5px;font-weight:600;color:#B91C1C}
+.rp .diff.up{color:#047857}
+.rp .cmp{display:inline-block;padding:1px 8px;border-radius:4px;font-size:12px;font-weight:700;white-space:nowrap}
+.rp .cmp.new{background:#CC0000;color:#fff}
+.rp .cmp.still{background:#7F1D1D;color:#fff}
+.rp .cmp.gone{background:#D1FAE5;color:#065F46}
+.rp .sub.todo{color:#B91C1C;font-weight:700}
+.rp td.act{min-width:140px;width:150px}
+.rp .dsel{padding:3px 4px;border-radius:6px;border:1px solid var(--wms-border2);background:var(--wms-surface);font-family:var(--wms-font);
+  font-size:12.5px;color:var(--wms-text);vertical-align:middle;cursor:pointer;width:100%}
+.rp .dsel.open{background:#FEE2E2;border-color:#FCA5A5;color:#991B1B;font-weight:600}
+.rp .dsel.sell{background:#FEF3C7;border-color:#FDE68A;color:#92400E;font-weight:600}
+.rp .dsel.wait{background:#E0F2FE;border-color:#BAE6FD;color:#075985;font-weight:600}
+.rp .dsel.other{background:#F1F5F9;font-weight:600}
+.rp .note{display:block;width:100%;margin:4px 0 0;padding:3px 6px;font-size:12.5px;border-width:1px;border-radius:6px;vertical-align:middle}
+.rp .dsel:focus,.rp .note:focus{outline:none;border-color:var(--wms-primary)}
+.rp .by{margin-top:3px}
+.rp td.rm{min-width:130px;max-width:260px}
+.rp td.rm small{display:block;font-size:11px;color:var(--wms-faint)}
+.rp tr.tf td{background:var(--wms-surface2);font-weight:700;position:sticky;bottom:0;z-index:1}
 /* แท็บเล็ต / หน้าต่างแคบ: การ์ดสองแถว */
 @media (min-width:700px){
   .bs{max-width:1280px;padding:0 20px 70px}
@@ -155,6 +183,10 @@ body{background:var(--wms-bg);color:var(--wms-text);font-family:var(--wms-font);
   #list.cards .card{margin:0}
   #list .empty{grid-column:1/-1}
   .foot .in{max-width:1240px}
+}
+@media (min-width:1250px){
+  .bs{max-width:none;padding:0 16px 66px}
+  .foot .in{max-width:none}
 }
 @media (min-width:900px){
   .sum{display:flex;gap:10px;align-items:stretch;margin-bottom:12px}
@@ -191,7 +223,7 @@ const NOTE_WAIT = 1200;   // หยุดพิมพ์หมายเหตุ
 const GONE = /ใช้ไม่ได้แล้ว|ยังไม่มีลิงก์|ไม่พบรอบ|ลิงก์ไม่ครบ/;   // ข้อความจากสคริปต์ (boss_ / round_) = ลิงก์นี้ใช้ต่อไม่ได้
 
 const L = M.parseBossLink(location.hash);
-const DESK = window.matchMedia('(min-width: 1100px)');  // จอคอม = ตาราง · แคบกว่านี้ = การ์ด (สองแถวตั้งแต่ 700)
+const DESK = window.matchMedia('(min-width: 1250px)');  // จอคอม = ตารางแบบแท็บรายงาน · แคบกว่านี้ = การ์ด (สองแถวตั้งแต่ 700)
 /* B.dec = คำตัดสินในชีต (ดิบ) · B.pend = ที่แตะแล้วยังไม่ได้บันทึก {SKU: [code, หมายเหตุ] | null} */
 const B = { data: null, model: null, dec: {}, pend: {}, busy: false, err: '', at: 0, t: null, view: '', loading: false };
 
@@ -318,26 +350,70 @@ function skuHtml(r, map) {
   const stLabel = M.STATUS[r.st] ? M.STATUS[r.st].label : '';
   const tag = cm && cm.tag === 'new' ? '<span class="tag new">เพิ่งเข้าเสี่ยงมาก</span>' : '';
   const prevTxt = cm && cm.dPrev ? M.prevDecText(cm) : '';
-  if (DESK.matches) {
-    return `<tr class="sku ${st}" data-sku="${esc(sku)}">
-      <td class="c-sku"><b>${esc(r.short || r.sku)}</b><span class="tag ${st}">${esc(stLabel)}</span></td>
-      <td><div class="nm1" title="${esc(r.name || r.sku)}">${esc(r.name || r.sku)}</div><div class="nm2">${esc(r.type || '')} ${tag}</div>
-        ${prevTxt ? `<div class="prev ${cm.todo ? 'todo' : ''}">เดือนก่อน: ${esc(prevTxt)}</div>` : ''}</td>
-      <td><div class="lots">${lotsHtml(r)}</div></td>
-      <td class="r tot">${f(r.total[B.model.rep.mode])}</td>
-      <td><div class="dec">${decBtns(d)}</div></td>
-      <td class="c-note">${noteHtml(d)}${byHtml(sku, d)}</td></tr>`;
-  }
+  if (DESK.matches) return rowHtml(r, d, cm);
   const prev = prevTxt ? `<div class="prev ${cm.todo ? 'todo' : ''}">เดือนก่อน: ${esc(prevTxt)}</div>` : '';
   const btn = decBtns(d);
   return `<div class="sku card ${st}" data-sku="${esc(sku)}">
     <div class="top"><span class="code">${esc(r.short || r.sku)}</span><span class="tag ${st}">${esc(stLabel)}</span>${tag}
       <span class="tot">รวม <b>${f(r.total[B.model.rep.mode])}</b></span></div>
     <div class="nm">${esc(r.type ? r.type + ' · ' : '')}${esc(r.name || r.sku)}</div>
-    <div class="lots">${lotsHtml(r)}</div>${prev}
+    <div class="lots">${lotsHtml(r)}</div>${prev}${rmkCard(sku)}
     <div class="dec">${btn}</div>
     ${d ? noteHtml(d) : ''}
     ${byHtml(sku, d)}</div>`;
+}
+
+/** แถวตารางจอคอม: SKU | Product Name | Type | LOT ราย คอลัมน์ | Total MFG | สถานะ | เทียบ | Action by Tony | Remark */
+function rowHtml(r, d, cm) {
+  const rep = B.model.rep, mode = rep.mode, cc = B.model.cmp;
+  const sku = up(r.sku);
+  const st = M.STATUS[r.st] ? r.st : '';
+  const cells = rep.cols.map(c => {
+    const x = r.cells[c.key];
+    const v = x ? x[mode] : 0;
+    const df = x && mode === 'count' && !(r.left && r.left.length) ? Math.round((x.count - x.book) * 1000) / 1000 : 0;
+    return `<td class="num c-${c.st}" ${x ? `title="นับ ${f(x.count)} · สมุด ${f(x.book)}"` : ''}>${v ? f(v) : ''}${df ? `<span class="diff ${df > 0 ? 'up' : ''}">${df > 0 ? '+' : ''}${f(df)}</span>` : ''}</td>`;
+  }).join('');
+  let cmpTd = '';
+  if (cc) {
+    const tag = cm && cm.tag ? `<span class="cmp ${cm.tag}">${esc(M.CMP[cm.tag].short)}</span>${cm.out > 0 ? ` <small class="sub" style="display:inline">ลด ${f(cm.out)}</small>` : ''}` : '';
+    const dp = cm && cm.dPrev ? `<span class="sub ${cm.todo ? 'todo' : ''}">เดือนก่อน: ${esc(M.prevDecText(cm))}</span>` : '';
+    cmpTd = `<td class="cm">${tag}${dp}</td>`;
+  }
+  const code = d ? d.code : '';
+  const sel = `<select class="dsel ${code}" aria-label="Action by Tony ${esc(r.sku)}"><option value="">—</option>` +
+    M.DECIDE_ORDER.map(c => `<option value="${c}" ${c === code ? 'selected' : ''}>${M.DECIDE[c].icon} ${esc(M.DECIDE[c].label)}</option>`).join('') + '</select>';
+  const x = (B.model.remark || {})[sku];
+  return `<tr class="sku ${st}" data-sku="${esc(sku)}"><td class="k-sku">${esc(r.sku)}${r.short ? `<span class="sub">${esc(r.short)}</span>` : ''}</td>
+    <td class="k-name">${esc(r.name || r.sku)}</td><td class="ty">${esc(r.type || '')}</td>${cells}
+    <td class="num tot">${f(r.total[mode])}</td><td><span class="tag ${st}">${esc(st ? M.STATUS[r.st].label : '')}</span></td>${cmpTd}
+    <td class="act">${sel}${noteHtml(d)}${byHtml(sku, d)}</td>
+    <td class="rm">${x ? `${esc(x.text)}<small>${esc(x.by)}${x.at ? ' · ' + esc(x.at) : ''}</small>` : ''}</td></tr>`;
+}
+
+/** ตารางจอคอม หัวสองแถวแบบแท็บรายงาน: ปีของ LOT รวมช่องเดียวกัน NO LOT สูงสองแถว + แถวรวมท้าย */
+function tableHtml(list, map) {
+  const rep = B.model.rep, mode = rep.mode, cc = B.model.cmp;
+  const years = [];
+  rep.cols.forEach(c => { if (c.key === M.NOLOT) return; const y = years[years.length - 1]; if (y && y.y === c.y) y.n++; else years.push({ y: c.y, n: 1 }); });
+  const nol = rep.cols.some(c => c.key === M.NOLOT);
+  const head1 = `<tr><th rowspan="2" class="k-sku">SKU</th><th rowspan="2">Product Name</th><th rowspan="2">Type</th>${nol ? '<th rowspan="2" class="nolot">NO LOT</th>' : ''}` +
+    years.map(y => `<th class="year" colspan="${y.n}">${y.y}</th>`).join('') +
+    `<th class="total">Total MFG</th><th rowspan="2">สถานะ</th>${cc ? `<th rowspan="2">เทียบ ${esc(M.ymText(cc.prevYm))}</th>` : ''}` +
+    '<th rowspan="2">Action by Tony</th><th rowspan="2" title="ทีม Inventory เขียนไว้ให้อ่าน">Remark</th></tr>';
+  const head2 = '<tr>' + rep.cols.filter(c => c.key !== M.NOLOT).map(c => `<th class="${c.st}">${esc(c.label)}<small>${c.age === null ? '' : c.age + ' วัน'}</small></th>`).join('') +
+    `<th class="total">${f(rep.totals[mode])}</th></tr>`;
+  const body = list.map(r => skuHtml(r, map)).join('');
+  const foot = `<tr class="tf"><td colspan="3">รวม ${f(list.length)} SKU</td>` +
+    rep.cols.map(c => { const v = list.reduce((a, r) => a + (r.cells[c.key] ? r.cells[c.key][mode] : 0), 0); return `<td class="num">${v ? f(v) : ''}</td>`; }).join('') +
+    `<td class="num">${f(list.reduce((a, r) => a + r.total[mode], 0))}</td><td colspan="${cc ? 4 : 3}"></td></tr>`;
+  return `<div class="rp-wrap"><table class="rp"><thead>${head1}${head2}</thead><tbody>${body}${foot}</tbody></table></div>`;
+}
+
+/** Remark ทีมบนการ์ดมือถือ */
+function rmkCard(sku) {
+  const x = (B.model.remark || {})[sku];
+  return x ? `<div class="rmk">💬 <b>Remark ทีม:</b> ${esc(x.text)}<small>${esc(x.by)}${x.at ? ' · ' + esc(x.at) : ''}</small></div>` : '';
 }
 
 /** บรรทัดใครเลือก เมื่อไหร่ (ยังไม่ส่ง = ยังไม่บันทึก) */
@@ -350,13 +426,13 @@ function paintList() {
   const map = decNow();
   $('chips').innerHTML = chipsHtml(map);
   const list = viewRows(map);
-  const body = list.map(r => skuHtml(r, map)).join('');
   $('list').className = DESK.matches ? 'tbl' : 'cards';
   $('list').innerHTML = !list.length ? `<div class="empty">${B.view === 'none' ? '✓ ตัดสินครบทุก SKU เสี่ยงมากแล้ว' : 'ไม่มี SKU ในกลุ่มนี้'}</div>`
-    : DESK.matches ? `<table class="tb"><thead><tr><th>SKU</th><th>สินค้า</th><th>LOT · ชิ้น</th><th class="r">รวม</th><th>ตัดสินใจ</th><th>หมายเหตุ</th></tr></thead><tbody>${body}</tbody></table>`
-    : body;
-  /* หัวตารางติดใต้แถบชิปตอนเลื่อน */
+    : DESK.matches ? tableHtml(list, map) : list.map(r => skuHtml(r, map)).join('');
+  /* ตารางสูงพอดีจอใต้แถบชิป · หัวแถวที่ 2 ติดใต้แถวแรก */
   document.documentElement.style.setProperty('--ch', $('chips').offsetHeight + 'px');
+  const h1 = $('list').querySelector('thead tr');
+  if (h1) document.documentElement.style.setProperty('--h1', h1.offsetHeight + 'px');
   paintFoot(map);
 }
 
@@ -454,6 +530,22 @@ document.addEventListener('click', (e) => {
   if (a.dataset.act === 'save') save();
 });
 
+/* ตารางจอคอม: เลือกจากช่อง Action by Tony เหมือนแท็บรายงาน · เลือก "—" = ล้างทั้งคำตัดสินและหมายเหตุ */
+document.addEventListener('change', (e) => {
+  const s = e.target;
+  if (!s.classList || !s.classList.contains('dsel')) return;
+  const sku = s.closest('.sku').dataset.sku;
+  const cur = decNow()[sku];
+  const code = s.value;
+  setDec(sku, code, code && cur ? cur.note : '');
+  paintSku(sku);
+  if (code === 'other' && !(cur && cur.code === code)) {
+    const n = document.querySelector(`.sku[data-sku="${CSS.escape(sku)}"] .note`);
+    if (n) n.focus();
+    later(NOTE_WAIT * 4);
+  } else later(400);
+});
+
 document.addEventListener('input', (e) => {
   if (!e.target.classList.contains('note')) return;
   const sku = e.target.closest('.sku').dataset.sku;
@@ -461,6 +553,7 @@ document.addEventListener('input', (e) => {
   const code = cur ? cur.code : 'other';
   setDec(sku, code, e.target.value);
   e.target.closest('.sku').querySelectorAll('[data-dec]').forEach(b => b.classList.toggle('on', b.dataset.dec === code));
+  e.target.closest('.sku').querySelectorAll('select.dsel').forEach(x => { x.value = code; x.className = 'dsel ' + code; });
   const by = e.target.parentElement.querySelector('.by');
   if (by) { by.className = 'by wait'; by.textContent = 'ยังไม่บันทึก…'; }
   paintFoot();
