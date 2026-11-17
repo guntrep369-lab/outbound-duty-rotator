@@ -528,3 +528,20 @@ describe('ลิงก์ Supply chain', () => {
     expect(F.parseShareLink('#k=' + encodeURIComponent(URL_))).toBe('');
   });
 });
+
+describe('สมุดที่ตั้งต้นใหม่หลังนับใหญ่ — แถวนับพ่วงวันรับของ PO', () => {
+  it('แถวนับที่มีวันรับ (cgr จาก tx-fifo) ใช้วันรับนั้นเรียง PO แถวนับแบบเดิมยังเป็นก่อนนับสต๊อก', () => {
+    const res = ledger([
+      { row: 2, count: true, own: false, to: 'R1-01-01', qty: 5, po: '9900000001' },
+      { row: 3, count: true, own: false, to: 'R1-01-02', qty: 5, po: '9900000002' },
+      { row: 4, count: true, own: false, to: 'R1-01-03', qty: 5, po: '9900000003' },
+    ]);
+    res.cgr = [[2, '2026-10-02'], [3, '2026-09-15']];
+    const st = F.newState();
+    F.parse(res).forEach((r) => F.apply(st, r));
+    expect(st.recv['0|8|9900000001']).toBe('2026-10-02');
+    expect(st.recv['0|8|9900000002']).toBe('2026-09-15');
+    expect(st.recv['0|8|9900000003']).toBe(F.COUNT_DAY);
+    expect(F.parse({ ...res, cgr: undefined })[0].cgr).toBe('');
+  });
+});

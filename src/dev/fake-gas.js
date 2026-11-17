@@ -202,3 +202,69 @@ export function fakeFifo({ extraRows = [] } = {}) {
     skus, pos, locs, days, rows, before: null, convert: null, cap: null, sup,
   };
 }
+
+/* ── ชีตสต๊อก TRcloud สมมติ (apps-script/stock-api.gs) ───────────────────── */
+
+const STOCK_GS = path.resolve(HERE, '../../apps-script/stock-api.gs');
+
+/** เวลาแก้ไฟล์ stock-api.gs ล่าสุด */
+export function stockMtime() {
+  try { return fs.statSync(STOCK_GS).mtimeMs; } catch (e) { return 0; }
+}
+
+/**
+ * รัน stock-api.gs ตัวจริงกับแท็บในหน่วยความจำ
+ * tabs = { ชื่อแท็บ: [[หัวตาราง...], [แถว...]] } ช่องว่างเป็น ''
+ */
+export function loadStockApi(tabs = fakeStockTabs()) {
+  const sheet = (name) => ({
+    getName: () => name,
+    getDataRange: () => ({ getValues: () => tabs[name].map((r) => r.slice()) }),
+  });
+  const ss = {
+    getSheetByName: (n) => (tabs[n] ? sheet(n) : null),
+    getSheets: () => Object.keys(tabs).map(sheet),
+  };
+  const ctx = {
+    SpreadsheetApp: { getActiveSpreadsheet: () => ss },
+    ContentService: {
+      MimeType: { JSON: 'json' },
+      createTextOutput: (text) => ({ setMimeType() { return this; }, getContent: () => text }),
+    },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(STOCK_GS, 'utf8'), ctx);
+  return { get: (params) => JSON.parse(ctx.doGet({ parameter: params || {} }).getContent()) };
+}
+
+/**
+ * ชีตสต๊อกสมมติที่เข้ากับสมุดสมมติ (fakeFifo): ยอดในสมุดราย SKU แยก QA กับคลังหลัก แล้วทำให้ต่างบ้าง
+ *   ทุก 5 SKU (เริ่ม 1) TRcloud น้อยกว่าสมุด 2 + เคยโอนเข้า WH-Loss ไว้ 2  → เจอของที่เคยหาย
+ *   ทุก 6 SKU (เริ่ม 2) TRcloud มากกว่าสมุด 3 + เคยเกิน (Loss −1)        → หายเพิ่ม หักกับที่เคยเกินก่อน
+ *   SKU 3 TRcloud อยู่ QA 2 ชิ้นที่สมุดอยู่คลังหลัก · SKU 7 ไม่มีใน TRcloud · ZZZ มีแต่ใน TRcloud
+ * แท็บ WH-Loss มีชื่อรายงานสองแถวบนแบบไฟล์ export ของ TRcloud
+ */
+export function fakeStockTabs() {
+  const f = fakeFifo();
+  const bal = f.skus.map(() => ({ qa: 0, main: 0 }));
+  f.rows.forEach((r) => {
+    const add = (loc, q) => { if (loc >= 0) bal[r[1]][/^I?QA$/.test(f.locs[loc]) ? 'qa' : 'main'] += q; };
+    add(r[5], r[6]);
+    if (r[7]) add(r[4], -r[6]);
+  });
+  const stock = [['SKU', 'Description', 'QA', 'NEW WH', 'Total']];
+  const loss = [['รายงานสินค้าคงเหลือ คลัง WH-Loss (สมมติ)'], [''], ['รหัสสินค้า', 'ชื่อสินค้า', 'คงเหลือ']];
+  const cost = [['SKU', 'ราคาทุน']];
+  f.skus.forEach((s, i) => {
+    let { qa, main } = bal[i];
+    if (i === 7) return;
+    if (i % 5 === 1) { main -= 2; loss.push([s[1], s[2], 2]); }
+    if (i % 6 === 2) { main += 3; loss.push([s[1], s[2], -1]); }
+    if (i === 3) { qa += 2; main -= 2; }
+    stock.push([s[1], s[2], qa, Math.max(0, main), qa + Math.max(0, main)]);
+    if (i % 4 !== 3) cost.push([s[1], 100 + i * 10]);
+  });
+  stock.push(['ZZZ0000000001', 'สินค้าที่มีแต่ใน TRcloud สมมติ', 0, 4, 4]);
+  loss.push(['YYY0000000001', 'ของค้างใน Loss สมมติ', 5]);
+  return { Stock: stock, 'WH Loss': loss, ราคาทุน: cost };
+}

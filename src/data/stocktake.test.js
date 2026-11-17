@@ -9,7 +9,7 @@ import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
-import { loadStocktake, fakeFifo } from '../dev/fake-gas.js';
+import { loadStocktake, fakeFifo, loadStockApi, fakeStockTabs } from '../dev/fake-gas.js';
 
 const JS = fs.readFileSync(path.resolve(__dirname, '../../public/wms-stocktake.js'), 'utf8');
 const TX = fs.readFileSync(path.resolve(__dirname, '../../apps-script/tx-api.gs'), 'utf8');
@@ -1992,5 +1992,327 @@ describe('รายงานปิดรอบ — หน้าหัวหน�
     expect(IDX).toContain("if (TAB !== 'report' || !S.head) return;");
     /* กำลังพิมพ์ราคาในกล่อง ดึงบันทึกนับรอบใหม่ต้องไม่วาดทับ */
     expect(IDX).toContain("(a.tagName === 'INPUT' || a.tagName === 'TEXTAREA')");
+  });
+});
+
+describe('ตั้งต้นสมุด Transaction ใหม่จากยอดนับ', () => {
+  /* สมุดเดิม: แถว GR สามรอบของ AAA หนึ่งรอบของ BBB กับแถวย้ายที่ไม่ใช่ GR (ต้องไม่ถูกนับเป็นของรับเข้า) */
+  const FIFO = {
+    skus: [['AAA001', 'AAA0000000001', 'ที่นอนสมมติ'], ['BBB001', 'BBB0000000001', 'ท็อปเปอร์สมมติ']],
+    pos: ['9900000001', '9900000002', '9900000003'],
+    locs: ['R1-01-01', 'A-01-01', 'R1-01-02'],
+    days: ['2026-09-01', '2026-10-02', '2026-11-03'],
+    rows: [
+      [2, 0, 8, 0, -1, 0, 20, 0, 0, 2 + 8],
+      [3, 0, 10, 1, -1, 0, 15, 0, 1, 2 + 8],
+      [4, 0, 11, 2, -1, 0, 6, 0, 2, 2 + 8],
+      [5, 1, 9, 1, -1, 2, 5, 0, 1, 2 + 8],
+      [6, 0, 8, 0, 0, 1, 3, 1, 1, 1],
+    ],
+  };
+  const PILES0 = [['A-01-01', 'AAA001', 'AAA0000000001', 'ที่นอนสมมติ', '8', '9900000001', 3, 1]];
+  const ln = (loc, sku, lot, po, final, src = 'รอบ 1') => ({
+    loc, sku: `${sku}001`, long: `${sku}0000000001`, name: sku === 'AAA' ? 'ที่นอนสมมติ' : 'ท็อปเปอร์สมมติ', lot, po, final, src,
+  });
+  const LINES0 = [
+    ln('A-01-01', 'AAA', '8', '9900000001', 5),
+    ln('R1-01-01', 'AAA', '11', '9900000003', 2),
+    ln('R1-01-01', 'AAA', '0', '0', 7),            // ไม่มีป้าย
+    ln('R1-01-02', 'AAA', '10', '0', 2),           // รู้ LOT ไม่รู้ PO
+    ln('R1-01-02', 'BBB', '', '', 8),              // GR มีแค่ 5
+    ln('A-01-01', 'BBB', '9', '9900000002', 0),    // ยอด 0 ไม่ลง
+    ln('R1-01-02', 'AAA', '8', '9900000001', 1, 'สมุด'),
+  ];
+  const NOTE = 'Stock Count Q4/26';
+  const run = () => S.openingRows({ lines: LINES0, fifo: FIFO, piles: PILES0, note: NOTE, name: 'หัวหน้าสมมติ' });
+  const find = (rows, loc, sku, lot, po) => rows.filter((r) => r[6] === loc && r[0] === sku && r[3] === lot && r[4] === po);
+
+  it('ชื่อรอบใน Note จากวันที่นับ วันรับแบบที่ทีมพิมพ์ และ LOT/PO ที่ไม่รู้', () => {
+    expect(S.countLabel('2026-12-19')).toBe('Stock Count Q4/26');
+    expect(S.countLabel('2026-08-02')).toBe('Stock Count Q3/26');
+    expect(S.countLabel('')).toBe('Stock Count');
+    expect(S.grText('2026-10-02')).toBe('02-10-26');
+    expect(['', '0', '00', '0.0', null, ' 0 '].every(S.unknownCode)).toBe(true);
+    expect(['0.11', '8', '9900000001'].some(S.unknownCode)).toBe(false);
+    expect(S.OPEN_HEAD).toEqual(['SKU', 'SKU', 'Product Name', 'LOT', 'PO', 'Location เบิก', 'Location รับ', 'QTY', 'รับ/เบิก', 'Note', 'Status', 'NAME']);
+  });
+
+  it('กองที่รู้ LOT/PO ลงตรงตัว พ่วงวันรับแรกของ PO ไว้ใน Note โลเปิดได้ Status เปิด', () => {
+    const { rows } = run();
+    expect(find(rows, 'A-01-01', 'AAA001', '8', '9900000001')).toEqual([
+      ['AAA001', 'AAA0000000001', 'ที่นอนสมมติ', '8', '9900000001', '', 'A-01-01', 5, 'รับ', 'Stock Count Q4/26 · GR 01-09-26', 'เปิด', 'หัวหน้าสมมติ'],
+    ]);
+    /* ยอดจากสมุด (ไม่มีใครนับ) ก็ลง เพราะสมุดใหม่ต้องมีของครบทุกกอง */
+    expect(find(rows, 'R1-01-02', 'AAA001', '8', '9900000001')[0].slice(7, 11)).toEqual([1, 'รับ', 'Stock Count Q4/26 · GR 01-09-26', '']);
+    expect(rows.some((r) => r[0] === 'BBB001' && r[6] === 'A-01-01')).toBe(false);
+    /* ไม่มีแถวไหนขึ้นต้นด้วย GR (จะกลายเป็นแถวรับเข้าวันนั้น) และไม่มีช่อง Location เบิก */
+    expect(rows.every((r) => !/^GR/i.test(r[9]) && /^Stock Count/.test(r[9]) && r[5] === '' && r[8] === 'รับ')).toBe(true);
+  });
+
+  it('ไม่รู้ LOT/PO เติมจาก GR ล่าสุดย้อนหลัง หักที่กองรู้ LOT/PO จองไว้ก่อน รู้ครึ่งเดียวได้ก่อนและเลือกได้แค่ที่ตรง', () => {
+    const { rows, est } = run();
+    /* AAA LOT 11 รับ 6 กองที่รู้จองไป 2 เหลือ 4 · LOT 10 รับ 15 กองที่รู้ LOT 10 ได้ไปก่อน 2 */
+    expect(find(rows, 'R1-01-02', 'AAA001', '10', '9900000002').map((r) => [r[7], r[9]])).toEqual([[2, 'Stock Count Q4/26 · GR 02-10-26 · ประมาณ LOT/PO จาก GR']]);
+    expect(find(rows, 'R1-01-01', 'AAA001', '11', '9900000003').map((r) => [r[7], r[9]])).toEqual([
+      [2, 'Stock Count Q4/26 · GR 03-11-26'],
+      [4, 'Stock Count Q4/26 · GR 03-11-26 · ประมาณ LOT/PO จาก GR'],
+    ]);
+    expect(find(rows, 'R1-01-01', 'AAA001', '10', '9900000002').map((r) => r[7])).toEqual([3]);
+    expect(find(rows, 'R1-01-01', 'AAA001', '0', '0')).toEqual([]);
+    /* BBB มี GR แค่ 5 ที่เหลือ 3 คง LOT/PO เดิม (ว่าง) ไม่มีวันรับ ไม่ขึ้นว่าประมาณ */
+    expect(find(rows, 'R1-01-02', 'BBB001', '9', '9900000002').map((r) => r[7])).toEqual([5]);
+    expect(find(rows, 'R1-01-02', 'BBB001', '', '').map((r) => [r[7], r[9]])).toEqual([[3, 'Stock Count Q4/26']]);
+    expect(est.map((e) => [e.loc, e.sku, e.qty, e.to.map((t) => `${t.lot}/${t.po}:${t.qty}`).join(' '), e.left])).toEqual([
+      ['R1-01-02', 'AAA001', 2, '10/9900000002:2', 0],
+      ['R1-01-01', 'AAA001', 7, '11/9900000003:4 10/9900000002:3', 0],
+      ['R1-01-02', 'BBB001', 8, '9/9900000002:5', 3],
+    ]);
+  });
+
+  it('ยอดรวมแถวตั้งต้นเท่ายอดนับสุดท้ายพอดี บอกจำนวนที่ประมาณ ที่ยังไม่รู้ ที่มาจากสมุด และโลเปิด', () => {
+    const { rows, tot } = run();
+    expect(tot).toMatchObject({ rows: rows.length, qty: 25, lines: 6, book: 1, open: 1, noGr: 0, est: { lines: 3, qty: 14, left: 3 } });
+    expect(rows.reduce((s, r) => s + r[7], 0)).toBe(LINES0.reduce((s, l) => s + l.final, 0));
+    /* เรียงตามทางเดิน แบบเดียวกับหน้าอื่น */
+    const locs = rows.map((r) => r[6]);
+    expect(locs).toEqual(locs.slice().sort(S.locCmp));
+  });
+
+  it('วางลงสมุดใหม่แล้ว tx-api.gs ตัวจริงอ่านกลับได้ยอดเท่าที่นับทุกกอง แถวขายหลังเปิดคลังไม่นับในการเช็ค', () => {
+    const { rows } = run();
+    /* Excel แปลงตัวเลขที่เป็นข้อความเป็นตัวเลข แบบเดียวกับที่ทีมพิมพ์ลงสมุด */
+    const num = (v) => (/^\d+(\.\d+)?$/.test(v) ? Number(v) : v);
+    const sheet = rows.map((r) => r.map((v, i) => (i === 3 || i === 4 ? num(v) : v)));
+    const tx = txApi([...sheet, L({ sku: 'AAA001', long: 'AAA0000000001', from: 'A-01-01', qty: 1, type: 'ขาย', note: '21/12/2026' })]);
+    const fifo = JSON.parse(JSON.stringify(tx.fifo_()));
+    const chk = S.openingCheck(fifo, rows);
+    expect(chk).toMatchObject({ ok: true, rows: rows.length, want: 25, got: 25, diff: [] });
+    /* วันรับที่พ่วงไว้ใน Note ส่งให้หน้า FIFO ด้วย แถวที่ไม่มีวันรับไม่ส่ง */
+    expect(fifo.cgr.length).toBe(rows.filter((r) => / GR \d/.test(r[9])).length);
+    expect(fifo.cgr[0]).toEqual([2, expect.stringMatching(/^2026-(09|10|11)-0[123]$/)]);
+    /* แถวนับไม่ใช่แถวรับเข้า (ธง GR) รายงานรับเข้ารายเดือนไม่เพี้ยน */
+    expect(fifo.rows.every((r) => !(r[9] & 2))).toBe(true);
+  });
+
+  it('เช็คสมุดใหม่เจอแถวที่วางขาด วางซ้ำ หรือยังไม่ได้วาง', () => {
+    const { rows } = run();
+    /* แถวแรกหาย แถวสุดท้ายวางซ้ำ */
+    const tx = txApi(rows.slice(1).concat([rows[rows.length - 1]]));
+    const chk = S.openingCheck(JSON.parse(JSON.stringify(tx.fifo_())), rows);
+    expect(chk.ok).toBe(false);
+    expect(chk.diff.map((d) => [d.loc, d.want - d.got])).toEqual(expect.arrayContaining([
+      [rows[0][6], rows[0][7]],
+      [rows[rows.length - 1][6], -rows[rows.length - 1][7]],
+    ]));
+    expect(S.openingCheck({ rows: [] }, rows)).toMatchObject({ ok: false, rows: 0, got: 0 });
+  });
+
+  it('ของเดิมยังลบไม่หมด (แถวโอนย้ายอยู่ก่อนแถวตั้งต้น) ไม่ผ่าน แม้ยอดแถวนับจะตรง', () => {
+    const { rows, info } = run();
+    const old = L({ sku: 'CCC001', long: 'CCC0000000001', to: 'QA', qty: 4, note: 'โอนย้าย' });
+    const chk = S.openingCheck(JSON.parse(JSON.stringify(txApi([old, ...rows]).fifo_())), rows);
+    expect(chk).toMatchObject({ ok: false, mixed: 1, first: 2, diff: [] });
+    /* info คู่กับแถว: บอกว่าแถวไหนประมาณ แถวไหนยังไม่รู้ มาจากสมุด และโลเปิด */
+    expect(info.length).toBe(rows.length);
+    expect(info.filter((x) => x.kind === 'est').length).toBe(4);
+    expect(info.filter((x) => x.kind === 'left').length).toBe(1);
+    expect(info.filter((x) => x.src === 'สมุด').length).toBe(1);
+    expect(info.filter((x) => x.open).length).toBe(1);
+  });
+
+  it('ไม่มีไฟล์ในเครื่อง เทียบแบบ Location × SKU กับยอดสุดท้ายได้ (ไม่สน LOT/PO ที่ประมาณ)', () => {
+    const { rows } = run();
+    const fifo = JSON.parse(JSON.stringify(txApi(rows).fifo_()));
+    const plain = LINES0.filter((l) => l.final > 0).map((l) => [l.sku, l.long, '', l.lot, l.po, '', l.loc, l.final]);
+    expect(S.openingCheck(fifo, plain).ok).toBe(false);   // LOT/PO ของกองที่ไม่รู้ถูกเติมแล้ว เทียบตรงตัวไม่ได้
+    expect(S.openingCheck(fifo, plain, true)).toMatchObject({ ok: true, want: 25, got: 25 });
+    const short = plain.map((r, i) => (i === 0 ? r.slice(0, 7).concat([r[7] + 1]) : r));
+    expect(S.openingCheck(fifo, short, true).diff).toEqual([{ loc: 'A-01-01', sku: 'AAA001', lot: '', po: '', want: 6, got: 5 }]);
+  });
+
+  it('ยอดติดลบของโลที่ไม่ได้นับไม่ลง บอกจำนวนไว้', () => {
+    const r = S.openingRows({ lines: [...LINES0, ln('R1-01-03', 'AAA', '8', '9900000001', -2, 'สมุด')], fifo: FIFO, note: NOTE });
+    expect(r.tot.neg).toEqual({ lines: 1, qty: -2 });
+    expect(r.rows.some((x) => x[6] === 'R1-01-03')).toBe(false);
+  });
+
+  it('Excel ตั้งต้นสมุด: ชีตแรกวางลงแท็บ Transaction ได้ทันที LOT/PO เป็นตัวเลข ร่างบอกห้ามวาง', () => {
+    const res = run();
+    const meta = { id: 'R-1', name: 'นับปลายปีสมมติ', date: '2026-12-19', note: NOTE, who: 'หัวหน้าสมมติ', final: 25, lastRow: 900,
+      moves: [{ row: 901 }, { row: 905 }] };
+    const book = S.openingBook(res, meta);
+    expect(book.map((b) => b.name)).toEqual(['ยอดตั้งต้น', 'ประมาณ LOT-PO', 'วิธีวาง', 'สรุป']);
+    const [a1, a2, a3, a4] = book.map((b) => b.aoa);
+    expect(a1[0]).toEqual(S.OPEN_HEAD);
+    expect(a1.length).toBe(res.rows.length + 1);
+    const first = a1.find((r) => r[6] === 'A-01-01');
+    expect(first.slice(3, 5)).toEqual([8, 9900000001]);
+    expect(a1.find((r) => r[0] === 'BBB001' && r[3] === '').slice(3, 5)).toEqual(['', '']);
+    expect(S.sheetNum('0.11')).toBe(0.11);
+    expect(S.sheetNum('08')).toBe('08');
+    expect(S.sheetNum('PO-1')).toBe('PO-1');
+    /* ประมาณ: หนึ่งแถวต่อ LOT/PO ที่ได้ + แถวที่ยังไม่รู้ */
+    expect(a2.length).toBe(1 + 4 + 1);
+    expect(a2.find((r) => r[7] === 'ยังไม่รู้')).toEqual(['R1-01-02', 'BBB001', 'BBB0000000001', 'ท็อปเปอร์สมมติ', '', '', 8, 'ยังไม่รู้', 'ยังไม่รู้', 3, 'GR ในสมุดเดิมไม่พอ']);
+    expect(a3[1][1]).toMatch(/ร่าง.*ห้ามวาง/);
+    expect(a3.some((r) => /แถว 901 ถึง 905/.test(r[1]))).toBe(true);
+    expect(a3.some((r) => new RegExp(`แถว 2 ถึง ${res.rows.length + 1}`).test(r[1]))).toBe(true);
+    expect(a4.find((r) => r[0] === 'ชิ้นรวม')[1]).toBe(25);
+    expect(a4.find((r) => r[0] === 'อนุมัติโดย')[1]).toMatch(/ร่าง/);
+    const ok = S.openingBook(res, { ...meta, approvedBy: 'หัวหน้าสมมติ', moves: [] }).map((b) => b.aoa);
+    expect(ok[2][1][1]).toMatch(/ก่อนเปิดคลัง/);
+    expect(ok[2].some((r) => /ไม่ต้องคัดลอกอะไรต่อ/.test(r[1]))).toBe(true);
+  });
+});
+
+describe('ตั้งต้นสมุด — หน้าหัวหน้า', () => {
+  const IDX = fs.readFileSync(path.resolve(__dirname, '../../public/stocktake/index.html'), 'utf8');
+
+  it('แท็บต่อจากรายงาน ไฟล์ Excel สี่ชีต เก็บแถวย่อไว้เช็คหลังวาง สมุดใหม่แล้วไม่คิดแถวซ้ำจากสมุดใหม่', () => {
+    expect(IDX).toMatch(/\['report', 'รายงาน', '\.\.\/icons\/clipboard-list\.png'\],\s*\['trc', 'กระทบ TRcloud', '[^']+'\], \['opening', 'ตั้งต้นสมุด'/);
+    expect(IDX).toContain("else if (TAB === 'trc') box.innerHTML = trcView();");
+    expect(IDX).toContain("const json = await WmsGas.json(url, 'stock-all', { retries: 1 });");
+    /* ราคาทุนจาก TRcloud ใช้ในรายงานด้วย ราคาที่วางเองทับ */
+    expect(IDX).toContain('prices: { ...trcCost(), ...pm.map }');
+    ['trc-xlsx', 'trc-load'].forEach((a) => expect(IDX).toContain(`act === '${a}'`));
+    expect(IDX).toContain("else if (TAB === 'opening') box.innerHTML = openingView();");
+    expect(IDX).toContain('ST.openingBook(o, {');
+    expect(IDX).toContain("const OP_KEY = 'wms:st:open:';");
+    expect(IDX).toContain('if (opReset(FIFO.data)) {');
+    expect(IDX).toContain('const res = ST.openingCheck(fifo, rows, mode === \'sku\');');
+    ['op-xlsx', 'op-check', 'op-fifo'].forEach((a) => expect(IDX).toContain(`act === '${a}'`));
+  });
+});
+
+describe('กระทบ TRcloud — WH-02 / WH-QA ให้เท่ายอดนับ ส่วนต่างไป-กลับ WH-Loss', () => {
+  const TABS = {
+    Stock: [
+      ['SKU', 'Description', 'QA', 'NEW WH', 'Total'],
+      ['AAA0000000001', 'ที่นอนสมมติ', 0, 10, 10],
+      ['BBB0000000001', 'ท็อปเปอร์สมมติ', 0, 10, 10],
+      ['CCC0000000001', 'หมอนสมมติ', 5, 0, 5],
+      ['DDD0000000001', 'ผ้าสมมติ', 2, 8, 10],
+      ['EEE0000000001', 'ของหายสมมติ', 0, 4, 4],
+      ['GGG0000000001', 'ของแปลงสมมติ', 0, 6, 6],
+      ['III0000000001', 'ของเกินสมมติ', 0, 5, 5],
+    ],
+    'WH-Loss': [['รายงานคงเหลือ คลัง WH-Loss สมมติ'], [''], ['รหัสสินค้า', 'ชื่อสินค้า', 'คงเหลือ'],
+      ['AAA0000000001', 'ที่นอนสมมติ', 2], ['BBB0000000001', 'ท็อปเปอร์สมมติ', -1], ['III0000000001', 'ของเกินสมมติ', 1], ['ZZZ0000000001', 'ค้างสมมติ', 5]],
+    ราคาทุน: [['SKU', 'ราคาทุน'], ['AAA0000000001', 100], ['BBB0000000001', '50'], ['EEE0000000001', 20]],
+  };
+  const ln = (loc, long, final, sku = long.slice(0, 3) + '001') => ({ loc, sku, long, name: '', final });
+  const LINES = [
+    ln('R1-01-01', 'AAA0000000001', 12),
+    ln('R1-01-02', 'BBB0000000001', 7),
+    ln('A-01-01', 'CCC0000000001', 5),
+    ln('RIB', 'DDD0000000001', 8),
+    ln('IQA', 'DDD0000000001', 2),
+    ln('R1-02-01', 'FFF0000000001', 3),
+    ln('R1-02-02', 'GGG0000000002', 6, 'GGG002'),
+    ln('S-01-01', 'ถุงมือ', 10, 'ถุงมือ'),
+    ln('R1-03-01', 'III0000000001', 8),
+    ln('R1-03-02', 'EEE0000000001', 0),
+  ];
+  const CONVERT = { pairs: [['GGG0000000002', 'GGG0000000001', 'ของแปลงสมมติ']] };
+  let trc, res;
+  beforeAll(() => {
+    trc = S.trcParse(loadStockApi(TABS).get({ api: 'stock-all' }));
+    res = S.trcRecon({ lines: LINES, trc, convert: CONVERT, date: '2026-12-19', ref: 'ST-1' });
+  });
+  const item = (sku) => res.items.find((x) => x.sku === sku);
+
+  it('คลังของ Location: QA, IQA = WH-QA · RIB และที่เหลือ = WH-02', () => {
+    expect(['QA', 'IQA', 'qa-01', 'IQA2'].map(S.whOf)).toEqual(['WH-QA', 'WH-QA', 'WH-QA', 'WH-QA']);
+    expect(['RIB', 'R1-01-01', 'AQA', 'QAX', 'A-01-01'].map(S.whOf)).toEqual(['WH-02', 'WH-02', 'WH-02', 'WH-02', 'WH-02']);
+  });
+
+  it('stock-api.gs รุ่น 3: ?api=stock-all ส่งแท็บ Stock / WH-Loss / ราคาทุน · เรียกแบบเดิมยังได้ array แท็บ Stock เหมือน v2', () => {
+    const api = loadStockApi(TABS);
+    const old = api.get({ api: 'stock' });
+    expect(Array.isArray(old)).toBe(true);
+    expect(old[0]).toEqual({ SKU: 'AAA0000000001', Description: 'ที่นอนสมมติ', QA: 0, 'NEW WH': 10, Total: 10 });
+    expect(api.get({})).toEqual(old);
+    /* หัวตาราง WH-Loss อยู่แถว 3 (ไฟล์ export มีชื่อรายงานข้างบน) ชื่อแท็บพิมพ์ต่างได้ */
+    const all = loadStockApi({ Stock: TABS.Stock, 'wh loss': TABS['WH-Loss'], ราคาทุน: TABS.ราคาทุน }).get({ api: 'stock-all' });
+    expect(all.tabs).toEqual({ stock: 'Stock', loss: 'wh loss', cost: 'ราคาทุน' });
+    expect(all.loss[0]).toEqual({ รหัสสินค้า: 'AAA0000000001', ชื่อสินค้า: 'ที่นอนสมมติ', คงเหลือ: 2 });
+    expect(loadStockApi({ Stock: TABS.Stock }).get({ api: 'stock-all' })).toMatchObject({ v: 3, loss: null, cost: null });
+    expect(loadStockApi({}).get({ api: 'stock-all' }).error).toMatch(/ไม่พบ Sheet/);
+  });
+
+  it('แปลงคำตอบ: NEW WH = WH-02, QA = WH-QA, WH-Loss บวก/ลบ, ราคาทุน · สคริปต์รุ่นเก่าไม่มี Loss', () => {
+    expect(trc).toMatchObject({ v: 3, n: 7, cols: { loss: 'คงเหลือ', cost: 'ราคาทุน' } });
+    expect(trc.stock['CCC0000000001']).toEqual({ sku: 'CCC0000000001', name: 'หมอนสมมติ', main: 0, qa: 5 });
+    expect(trc.loss).toEqual({ AAA0000000001: 2, BBB0000000001: -1, III0000000001: 1, ZZZ0000000001: 5 });
+    expect(trc.cost).toEqual({ AAA0000000001: 100, BBB0000000001: 50, EEE0000000001: 20 });
+    const old = S.trcParse(loadStockApi(TABS).get({}));
+    expect(old).toMatchObject({ v: 2, n: 7, loss: null, cost: null });
+    expect(() => S.trcParse({ error: 'ไม่พบ Sheet: Stock' })).toThrow(/stock-api: ไม่พบ Sheet/);
+    expect(() => S.trcParse([{ SKU: 'A', QA: 1 }])).toThrow(/NEW WH/);
+  });
+
+  it('แต่ละ SKU: เจอของที่เคยหาย / หายเพิ่มหักกับที่เคยเกิน / ย้าย QA ตรง / ไม่เจอในคลัง / ไม่มีใน TRcloud / แปลงรวมเข้า SKU ตอนซื้อ', () => {
+    const pick = (x) => [x.group, x.moves.map((m) => `${m.from}>${m.to}:${m.qty}`).join(' '), x.lossAfter];
+    expect(pick(item('AAA0000000001'))).toEqual(['เจอของที่เคยหาย', 'WH-Loss>WH-02:2', 0]);
+    expect(pick(item('BBB0000000001'))).toEqual(['หายเพิ่ม', 'WH-02>WH-Loss:3', 2]);
+    expect(item('BBB0000000001')).toMatchObject({ back: 1, lossNew: 2 });
+    expect(pick(item('CCC0000000001'))).toEqual(['ย้าย QA ↔ WH-02', 'WH-QA>WH-02:5', 0]);
+    expect(pick(item('DDD0000000001'))).toEqual(['ตรง', '', 0]);
+    expect(item('DDD0000000001')).toMatchObject({ c02: 8, cqa: 2 });
+    expect(pick(item('EEE0000000001'))).toEqual(['ไม่เจอในคลัง', 'WH-02>WH-Loss:4', 4]);
+    expect(pick(item('FFF0000000001'))).toEqual(['ไม่มีในไฟล์ TRcloud', 'WH-Loss>WH-02:3', -3]);
+    expect(pick(item('GGG0000000001'))).toEqual(['ตรง', '', 0]);
+    expect(item('GGG0000000001').conv).toEqual(['GGG0000000002']);
+    expect(pick(item('III0000000001'))).toEqual(['เจอของที่เคยหาย', 'WH-Loss>WH-02:3', -2]);
+    expect(item('III0000000001')).toMatchObject({ found: 1, overNew: 2 });
+    expect(res.internal).toEqual([{ sku: 'ถุงมือ', long: 'ถุงมือ', name: '', qty: 10, locs: [{ loc: 'S-01-01', qty: 10 }] }]);
+    expect(res.items.some((x) => x.sku === 'ZZZ0000000001')).toBe(false);   // ค้างใน Loss อย่างเดียว ไม่ต้องทำอะไร
+  });
+
+  it('แถวไฟล์ TRcloud: หนึ่งการโอน = ลดต้นทาง + เพิ่มปลายทาง วันตัดยอด รหัสรอบ แผนก IV', () => {
+    expect(res.rows.filter((r) => r[0] === 'AAA0000000001')).toEqual([
+      ['AAA0000000001', '2026-12-19', '', 2, '', '', 'ST-1', 'IV', 'WH-Loss', ''],
+      ['AAA0000000001', '2026-12-19', 2, '', '', '', 'ST-1', 'IV', 'WH-02', ''],
+    ]);
+    expect(res.rows.length).toBe(2 * 6);
+    /* ทุกคลังรวมเพิ่ม = รวมลด (โอนอย่างเดียว ไม่มีของหายไปจากบริษัท) */
+    const plus = res.rows.reduce((s, r) => s + (r[2] || 0), 0), minus = res.rows.reduce((s, r) => s + (r[3] || 0), 0);
+    expect(plus).toBe(minus);
+  });
+
+  it('ยอดรวม: Loss เดิม → หลังปรับ เจอ / หายเพิ่ม / เกินเพิ่ม / หักกับที่เคยเกิน และมูลค่าจากราคาทุน', () => {
+    expect(res.tot).toMatchObject({
+      skus: 8, adj: 6, move: 5, lossBefore: 7, lossAfter: 6, found: 3, lossNew: 6, overNew: 5, back: 1, toLoss: 7, fromLoss: 8, internal: 1, conv: 1,
+      wh: { 'WH-02': { plus: 13, minus: 7 }, 'WH-QA': { plus: 0, minus: 5 }, 'WH-Loss': { plus: 7, minus: 8 } },
+      count: { main: 49, qa: 2 }, trc: { main: 43, qa: 7 },
+    });
+    expect(res.tot.value).toEqual({ has: true, missing: 2, lossNew: 180, found: 200, overNew: 0, net: 30 });
+    /* ไม่มีราคาทุนใน TRcloud ใช้ราคาที่วางเองในแท็บรายงาน (SKU สั้นก็ได้) */
+    const r2 = S.trcRecon({ lines: LINES, trc: { ...trc, cost: null }, prices: { FFF001: 10 }, date: '2026-12-19' });
+    expect(r2.items.find((x) => x.sku === 'FFF0000000001').price).toBe(10);
+  });
+
+  it('Excel ลง TRcloud: ชีตแรกหัวตารางเดียวกับหน้าเช็คตัดสต๊อก ร่างบอกห้ามลง', () => {
+    const CUT = fs.readFileSync(path.resolve(__dirname, '../../public/wms-cut.js'), 'utf8');
+    const cutHead = /var TRC_HEAD = (\[[^\]]*\]);/.exec(CUT)[1];
+    expect(JSON.stringify(S.TRC_HEAD)).toBe(JSON.stringify(eval(cutHead)));
+    const book = S.trcBook(res, { id: 'ST-1', name: 'นับปลายปีสมมติ', date: '2026-12-19', tabs: trc.tabs });
+    expect(book.map((b) => b.name)).toEqual(['TRcloud', 'เทียบราย SKU', 'ของใช้ภายใน', 'สรุป']);
+    const [a1, a2, a3, a4] = book.map((b) => b.aoa);
+    expect(a1.length).toBe(res.rows.length + 1);
+    const b = a2.find((r) => r[0] === 'BBB0000000001');
+    expect(b.slice(2, 16)).toEqual([7, 10, -3, 0, 0, 0, -1, 3, 2, 0, 2, 0, 1, 'หายเพิ่ม']);
+    expect(b[17]).toBe(150);
+    expect(a2.find((r) => r[0] === 'GGG0000000001')[19]).toMatch(/GGG0000000002/);
+    expect(a2.find((r) => r[0] === 'FFF0000000001')[19]).toMatch(/ไม่มีในไฟล์ TRcloud/);
+    expect(a3[1].slice(0, 4)).toEqual(['ถุงมือ', 'ถุงมือ', '', 10]);
+    expect(a4.find((r) => r[0] === 'อนุมัติโดย')[1]).toMatch(/ร่าง/);
+    expect(a4.find((r) => r[0] === 'มูลค่าสุทธิเข้า Loss')[1]).toBe(30);
+  });
+
+  it('ชีตสต๊อกสมมติของ dev server เข้ากับสมุดสมมติ', () => {
+    const t = S.trcParse(loadStockApi(fakeStockTabs()).get({ api: 'stock-all' }));
+    expect(t.n).toBeGreaterThan(20);
+    expect(t.loss['YYY0000000001']).toBe(5);
   });
 });

@@ -1977,6 +1977,502 @@
     };
   }
 
+  /* ── ตั้งต้นสมุด Transaction ใหม่จากยอดนับ ──────────────────────────────
+     หลังนับใหญ่ สมุดเริ่มใหม่: สำรองของเดิมไว้ แล้ววางยอดที่นับได้เป็นแถวรับ (Note "Stock Count …") กองละแถว
+     สมุดไม่มีช่องวันที่ วันรับของ PO อยู่ใน Note แบบ "GR dd-mm-yy" แถวนับจึงพ่วง " · GR dd-mm-yy" ของวันรับแรกไว้
+     หน้า FIFO จะยังเรียง PO ตามวันรับได้ (ไม่ใส่ "GR" ขึ้นต้น เพราะจะกลายเป็นแถวรับเข้าวันนั้น รายงานรายเดือนเพี้ยน)
+     ของที่นับได้แต่ไม่รู้ LOT / PO (ไม่มีป้าย) เติมจากแถว GR ล่าสุดย้อนหลัง: ขายแบบ FIFO ของที่เหลือคือของที่รับเข้าล่าสุด */
+
+  var OPEN_HEAD = ['SKU', 'SKU', 'Product Name', 'LOT', 'PO', 'Location เบิก', 'Location รับ', 'QTY', 'รับ/เบิก', 'Note', 'Status', 'NAME'];
+  var EST_NOTE = 'ประมาณ LOT/PO จาก GR';
+
+  /** LOT / PO ที่ไม่รู้: ว่าง หรือ 0 ล้วน (LOT 0.11 = ล็อต 11 ปีก่อน รู้แล้ว) */
+  function unknownCode(v) { var s = up(v); return !s || /^0+(\.0+)?$/.test(s); }
+
+  /** 'yyyy-mm-dd' → 'dd-mm-yy' แบบที่ทีมพิมพ์ในสมุด (GR 02-10-26) */
+  function grText(d) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || ''); return m ? m[3] + '-' + m[2] + '-' + m[1].slice(2) : ''; }
+
+  /** ชื่อรอบนับใน Note: Stock Count Q4/26 จากวันที่นับ */
+  function countLabel(date) {
+    var m = /^(\d{4})-(\d{2})/.exec(date || '');
+    return m ? 'Stock Count Q' + Math.ceil(+m[2] / 3) + '/' + m[1].slice(2) : 'Stock Count';
+  }
+
+  /**
+   * แถว GR ในสมุด (รับเข้าที่มี GR dd-mm-yy) ราย SKU: [{lot, po, qty, d}] กับวันรับแรกของ SKU|LOT|PO และของ SKU|PO
+   * ใช้ทั้งเติม LOT/PO ที่ไม่รู้ และใส่วันรับใน Note ของแถวตั้งต้น
+   */
+  function grBook(fifo) {
+    var f = fifo || {}, skus = f.skus || [], pos = f.pos || [], days = f.days || [];
+    var rec = {}, first = {}, firstPo = {};
+    (f.rows || []).forEach(function (r) {
+      if (!((r[9] & 2) && (r[9] & 8)) || !(r[5] >= 0) || !(+r[6] > 0)) return;
+      var sk = skus[r[1]] || [], k = norm(sk[1] || sk[0]), d = r[8] >= 0 ? days[r[8]] || '' : '';
+      if (!k || !d) return;
+      var lot = r[2] === null || r[2] === undefined ? '' : String(r[2]).trim(), po = String(pos[r[3]] || '').trim();
+      (rec[k] = rec[k] || []).push({ lot: lot, po: po, qty: +r[6], d: d });
+      var a = k + '|' + up(lot) + '|' + up(po), b = k + '|' + up(po);
+      if (!first[a] || d < first[a]) first[a] = d;
+      if (!firstPo[b] || d < firstPo[b]) firstPo[b] = d;
+    });
+    return { rec: rec, first: first, firstPo: firstPo };
+  }
+
+  /**
+   * แถวตั้งต้นของสมุดใหม่
+   *   lines = ยอดสุดท้าย (finalLines หรือแถวสรุปที่อนุมัติ) ใช้ loc sku long name lot po final src
+   *   fifo  = คำตอบ tx-fifo ของสมุดเดิม (วันรับ PO กับแถว GR)   piles = ยอดตั้งต้นของรอบ ใช้หาโลที่ Status เปิด
+   *   note  = 'Stock Count Q4/26'   name = ชื่อคนลง (ช่อง NAME)
+   * เติม LOT/PO: กองที่รู้ LOT/PO ครบจองยอดของ LOT/PO นั้นก่อน ที่เหลือของแต่ละ LOT/PO ของ SKU นั้น (ยอดรับรวม − ที่จอง)
+   * แจกให้กองที่ไม่รู้ เริ่มจาก LOT/PO ที่รับล่าสุด กองที่รู้ครึ่งเดียว (รู้ LOT ไม่รู้ PO) ได้ก่อนและเลือกได้เฉพาะที่ตรงส่วนที่รู้
+   * แถว GR ไม่พอ = ส่วนที่เหลือคง LOT/PO เดิม (left)
+   * @returns {{rows: Array, info: Array, est: Array, tot: Object}}
+   *   rows = แถว A–L ตาม OPEN_HEAD (ยอด 0 ไม่ลง)   info = คู่กับ rows: {kind: '' | 'est' | 'left', src, open}
+   *   est = [{loc, sku, long, name, lot, po, qty, to: [{lot, po, qty, gr}], left}]
+   */
+  function openingRows(o) {
+    o = o || {};
+    var note = String(o.note || 'Stock Count').trim(), name = String(o.name || '').trim();
+    var g = grBook(o.fifo);
+    var openLoc = {};
+    (o.piles || []).forEach(function (p) { if (p[7]) openLoc[up(p[0])] = 1; });
+    var lines = (o.lines || []).filter(function (l) { return (l.sku || l.long) && l.final > 0; });
+    var key = function (l) { return norm(l.long || l.sku); };
+
+    var claim = {};
+    lines.forEach(function (l) {
+      if (unknownCode(l.lot) || unknownCode(l.po)) return;
+      var c = key(l) + '|' + up(l.lot) + '|' + up(l.po);
+      claim[c] = round3((claim[c] || 0) + l.final);
+    });
+    var pools = {};
+    function pool(k) {
+      if (pools[k]) return pools[k];
+      var by = {}, list = [];
+      (g.rec[k] || []).forEach(function (r) {
+        if (unknownCode(r.lot) || unknownCode(r.po)) return;
+        var id = up(r.lot) + '|' + up(r.po);
+        if (!by[id]) { by[id] = { lot: r.lot, po: r.po, qty: 0, d: r.d }; list.push(by[id]); }
+        by[id].qty = round3(by[id].qty + r.qty);
+        if (r.d > by[id].d) by[id].d = r.d;
+      });
+      list.forEach(function (x) { x.left = Math.max(0, round3(x.qty - (claim[k + '|' + up(x.lot) + '|' + up(x.po)] || 0))); });
+      list.sort(function (a, b) { return a.d < b.d ? 1 : a.d > b.d ? -1 : natCmp(b.po, a.po) || natCmp(b.lot, a.lot); });
+      return (pools[k] = list);
+    }
+    function gr(k, lot, po) { return g.first[k + '|' + up(lot) + '|' + up(po)] || g.firstPo[k + '|' + up(po)] || ''; }
+
+    var parts = [], est = [];
+    function part(l, lot, po, qty, kind) {
+      var k = key(l), d = kind === 'left' ? '' : gr(k, lot, po);
+      parts.push({ l: l, lot: lot, po: po, qty: round3(qty), kind: kind, gr: d });
+      return d;
+    }
+    var unknown = [];
+    lines.forEach(function (l) {
+      var uL = unknownCode(l.lot), uP = unknownCode(l.po);
+      if (!uL && !uP) part(l, l.lot, l.po, l.final, '');
+      else unknown.push({ l: l, uL: uL, uP: uP });
+    });
+    /* รู้ครึ่งเดียวก่อน (เลือกได้น้อยกว่า) แล้วค่อยไม่รู้ทั้งคู่ ในกลุ่มเดียวกันเรียงตามทางเดิน */
+    unknown.sort(function (a, b) { return (a.uL && a.uP) - (b.uL && b.uP) || locCmp(a.l.loc, b.l.loc) || natCmp(a.l.sku, b.l.sku); });
+    unknown.forEach(function (u) {
+      var l = u.l, need = l.final, to = [];
+      pool(key(l)).forEach(function (x) {
+        if (need <= 0 || x.left <= 0) return;
+        if (!u.uL && up(x.lot) !== up(l.lot)) return;
+        if (!u.uP && up(x.po) !== up(l.po)) return;
+        var take = round3(Math.min(x.left, need));
+        x.left = round3(x.left - take); need = round3(need - take);
+        to.push({ lot: x.lot, po: x.po, qty: take, gr: part(l, x.lot, x.po, take, 'est') });
+      });
+      if (need > 0) part(l, l.lot, l.po, need, 'left');
+      est.push({ loc: up(l.loc), sku: l.sku, long: l.long, name: l.name, lot: l.lot, po: l.po, qty: l.final, to: to, left: need > 0 ? need : 0 });
+    });
+
+    parts.sort(function (a, b) {
+      return locCmp(a.l.loc, b.l.loc) || natCmp(a.l.long || a.l.sku, b.l.long || b.l.sku) || natCmp(a.lot, b.lot) || natCmp(a.po, b.po);
+    });
+    var tot = { rows: 0, qty: 0, lines: lines.length, est: { lines: est.length, qty: 0, left: 0 }, book: 0, open: 0, noGr: 0, neg: { lines: 0, qty: 0 } };
+    /* ยอดติดลบ (โลที่ไม่มีใครนับ ใช้ยอดสมุดที่ติดลบ) ลงสมุดใหม่ไม่ได้ ถือเป็น 0 แล้วบอกไว้ */
+    (o.lines || []).forEach(function (l) { if ((l.sku || l.long) && l.final < 0) { tot.neg.lines++; tot.neg.qty = round3(tot.neg.qty + l.final); } });
+    var openSeen = {}, info = [];
+    var rows = parts.map(function (p) {
+      var l = p.l, loc = up(l.loc), st = openLoc[loc] ? 'เปิด' : '';
+      var n = note + (p.gr ? ' · GR ' + grText(p.gr) : '') + (p.kind === 'est' ? ' · ' + EST_NOTE : '');
+      tot.rows++; tot.qty = round3(tot.qty + p.qty);
+      if (p.kind === 'est') tot.est.qty = round3(tot.est.qty + p.qty);
+      if (p.kind === 'left') tot.est.left = round3(tot.est.left + p.qty);
+      if (!p.gr && p.kind !== 'left') tot.noGr++;
+      if (st && !openSeen[loc]) { openSeen[loc] = 1; tot.open++; }
+      info.push({ kind: p.kind, src: l.src || '', open: !!st });
+      return [l.sku || '', l.long || '', l.name || '', p.lot === null || p.lot === undefined ? '' : String(p.lot), p.po === null || p.po === undefined ? '' : String(p.po),
+        '', loc, p.qty, 'รับ', n, st, name];
+    });
+    lines.forEach(function (l) { if (l.src === SRC.BOOK) tot.book++; });
+    return { rows: rows, info: info, est: est, tot: tot };
+  }
+
+  /**
+   * เช็คสมุดใหม่หลังวาง: เอาแถวนับสต๊อก (Note มี Stock Count) จาก tx-fifo ของสมุดใหม่มาคิดยอดราย Location × SKU × LOT × PO
+   * เทียบกับแถวตั้งต้นที่ควรวาง แถวอื่นหลังตั้งต้น (เปิดคลังแล้ว) ไม่เอามาคิด
+   * rows ใช้แค่ช่อง SKU (0, 1) LOT (3) PO (4) Location รับ (6) QTY (7)
+   * mixed = แถวที่ไม่ใช่แถวนับแต่อยู่ก่อนแถวนับแถวสุดท้าย = ของเดิมยังลบไม่หมด หรือวางแทรกกลาง
+   * loose = เทียบแค่ Location × SKU (ไม่มีไฟล์ที่โหลดไว้ในเครื่อง ใช้ยอดสุดท้ายของรอบแทน LOT/PO ที่ประมาณจึงเทียบไม่ได้)
+   * @returns {{ok: boolean, rows: number, want: number, got: number, mixed: number, first: number, diff: Array<{loc, sku, lot, po, want, got}>}}
+   */
+  function openingCheck(fifo, rows, loose) {
+    var f = fifo || {}, skus = f.skus || [], pos = f.pos || [], locs = f.locs || [];
+    var want = {}, got = {}, info = {}, n = 0, last = 0;
+    function k(loc, sku, lot, po) { return up(loc) + '|' + norm(sku) + (loose ? '' : '|' + up(lot) + '|' + up(po)); }
+    (rows || []).forEach(function (r) {
+      var x = k(r[6], r[1] || r[0], r[3], r[4]);
+      want[x] = round3((want[x] || 0) + (+r[7] || 0));
+      info[x] = { loc: up(r[6]), sku: r[0] || r[1], lot: loose ? '' : r[3], po: loose ? '' : r[4] };
+    });
+    (f.rows || []).forEach(function (r) {
+      if (!(r[9] & 4) || !(r[5] >= 0)) return;
+      n++;
+      if (r[0] > last) last = r[0];
+      var sk = skus[r[1]] || [];
+      var x = k(locs[r[5]], sk[1] || sk[0], r[2] === null || r[2] === undefined ? '' : r[2], pos[r[3]] || '');
+      got[x] = round3((got[x] || 0) + (+r[6] || 0));
+      if (!info[x]) info[x] = { loc: up(locs[r[5]]), sku: sk[0] || sk[1], lot: loose ? '' : r[2], po: loose ? '' : pos[r[3]] || '' };
+    });
+    var diff = [], wantQ = 0, gotQ = 0;
+    Object.keys(info).forEach(function (x) {
+      var a = want[x] || 0, b = got[x] || 0;
+      wantQ = round3(wantQ + a); gotQ = round3(gotQ + b);
+      if (round3(a - b)) diff.push({ loc: info[x].loc, sku: info[x].sku, lot: info[x].lot, po: info[x].po, want: a, got: b });
+    });
+    diff.sort(function (a, b) { return locCmp(a.loc, b.loc) || natCmp(a.sku, b.sku); });
+    var mixed = 0, first = 0;
+    (f.rows || []).forEach(function (r) {
+      if (r[9] & 4 || !(r[0] < last)) return;
+      mixed++;
+      if (!first || r[0] < first) first = r[0];
+    });
+    return { ok: !diff.length && n > 0 && !mixed, rows: n, want: wantQ, got: gotQ, mixed: mixed, first: first, diff: diff };
+  }
+
+  /** LOT 8 / PO 9900000001 ที่เป็นข้อความ → ตัวเลขแบบที่ทีมพิมพ์ลงสมุด เลขที่มี 0 นำหน้า (08) หรือยาวเกินคงเป็นข้อความ */
+  function sheetNum(v) {
+    var s = String(v == null ? '' : v).trim();
+    return /^(0|[1-9]\d{0,14})(\.\d+)?$/.test(s) ? Number(s) : s;
+  }
+
+  /**
+   * ไฟล์ Excel ตั้งต้นสมุด สี่ชีต: ยอดตั้งต้น (A–L วางลงแท็บ Transaction ได้ทันที) · ประมาณ LOT-PO · วิธีวาง · สรุป
+   * res = openingRows   meta = {id, name, date, cutoff, approvedBy, approvedAt, note, who, final, lastRow, moves: movesAfter}
+   */
+  function openingBook(res, meta) {
+    var m = meta || {}, o = res || {}, t = o.tot || {}, rows = o.rows || [], mv = m.moves || [];
+    var est = t.est || { lines: 0, qty: 0, left: 0 }, neg = t.neg || { lines: 0, qty: 0 };
+    var a1 = [OPEN_HEAD.slice()].concat(rows.map(function (r) {
+      return r.map(function (v, i) { return i === 3 || i === 4 ? sheetNum(v) : v; });
+    }));
+    var a2 = [['Location', 'SKU', 'SKU เต็ม', 'ชื่อสินค้า', 'LOT ที่นับ', 'PO ที่นับ', 'จำนวนที่นับ', 'ลง LOT', 'ลง PO', 'จำนวน', 'วันรับ (GR)']];
+    (o.est || []).forEach(function (e) {
+      e.to.forEach(function (x) { a2.push([e.loc, e.sku, e.long, e.name, e.lot, e.po, e.qty, sheetNum(x.lot), sheetNum(x.po), x.qty, grText(x.gr)]); });
+      if (e.left) a2.push([e.loc, e.sku, e.long, e.name, e.lot, e.po, e.qty, 'ยังไม่รู้', 'ยังไม่รู้', e.left, 'GR ในสมุดเดิมไม่พอ']);
+    });
+    var draft = !m.approvedBy;
+    var rowsAfter = !mv.length ? '' : mv.length === 1 ? String(mv[0].row) : mv[0].row + ' ถึง ' + mv[mv.length - 1].row;
+    var steps = [
+      draft ? 'ไฟล์นี้เป็นร่าง (ยังไม่อนุมัติยอด) ใช้ดูอย่างเดียว ห้ามวางลงสมุดจริง — อนุมัติและปิดรอบก่อน แล้วโหลดไฟล์ใหม่'
+        : 'ทำหลังอนุมัติและปิดรอบแล้ว ก่อนเปิดคลัง ระหว่างนี้ห้ามใครลงสมุด',
+      'สำรองสมุดเดิม: เปิดไฟล์ Transaction › ไฟล์ › ทำสำเนา ตั้งชื่อ "Transaction ก่อน ' + (m.note || 'Stock Count') + '" เก็บถาวร ห้ามลบ',
+      'ไฟล์จริง แท็บ Transaction: เลือกแถว 2 ถึงแถวสุดท้าย › ลบแถว (หัวตารางแถว 1 และแท็บอื่นเก็บไว้เหมือนเดิม)',
+      'แท็บ ยอดก่อนนับ (ถ้ามี) เป็นของรอบนับก่อน ลบข้อมูลออกเหลือหัวตาราง ไม่งั้นหน้า LOT / PO จะเอายอดเก่ามาประมาณ LOT 0 ของรอบนี้',
+      'ชีต ยอดตั้งต้น ในไฟล์นี้: คัดลอกแถว 2 ถึง ' + (rows.length + 1) + ' (A ถึง L ไม่เอาหัวตาราง) › วางที่ A2 ของแท็บ Transaction แบบค่าอย่างเดียว (Ctrl+Shift+V)',
+      mv.length ? 'สมุดเดิมมีแถวหลังดึงยอดตั้งต้น ' + mv.length + ' แถว (แถว ' + rowsAfter + ') ของที่ขยับหลังนับเสร็จ คัดลอกจากไฟล์สำเนามาต่อท้าย · แถวที่เกิดระหว่างนับ ยอดนับรวมไว้แล้ว ไม่ต้องคัดลอก'
+        : 'สมุดเดิมไม่มีแถวหลังดึงยอดตั้งต้น ไม่ต้องคัดลอกอะไรต่อ',
+      'รอสำเนาที่หน้าเว็บอ่านอัปเดต 1–2 นาที › หน้านับสต๊อกใหญ่ แท็บตั้งต้นสมุด กด เช็คสมุดใหม่ ต้องขึ้น ✓ ตรงทุกกอง ก่อนเปิดคลัง',
+      'แถวที่ LOT/PO ประมาณจาก GR ล่าสุด มีคำว่า "' + EST_NOTE + '" ต่อท้าย Note ดูว่ามาจากกองไหนที่ชีต ประมาณ LOT-PO',
+    ];
+    var a3 = [['ขั้น', 'ทำอะไร']].concat(steps.map(function (x, i) { return [i + 1, x]; }));
+    var cell = function (v) { return v === null || v === undefined ? '' : v; };
+    var a4 = [['หัวข้อ', 'ค่า'],
+      ['รหัสรอบ', cell(m.id)], ['ชื่อรอบ', cell(m.name)], ['วันที่นับ', cell(m.date)], ['เวลาตัดยอด', cell(m.cutoff)],
+      ['อนุมัติโดย', draft ? 'ยังไม่อนุมัติ (ร่าง ห้ามวางลงสมุดจริง)' : m.approvedBy], ['อนุมัติเมื่อ', cell(m.approvedAt)],
+      ['Note', cell(m.note)], ['NAME', cell(m.who)],
+      ['แถวตั้งต้น', rows.length], ['ชิ้นรวม', cell(t.qty)], ['ยอดนับสุดท้ายรวม', cell(m.final)],
+      ['ยอดติดลบที่ไม่ลง (ถือเป็น 0)', neg.lines ? neg.lines + ' รายการ ' + neg.qty + ' ชิ้น' : 0],
+      ['รายการที่ไม่ได้นับ (ใช้ยอดสมุด)', cell(t.book)],
+      ['ประมาณ LOT/PO จาก GR', est.lines + ' รายการ ' + est.qty + ' ชิ้น'],
+      ['ยังไม่รู้ LOT/PO (GR ไม่พอ)', est.left + ' ชิ้น'],
+      ['โลเปิด (Status เปิด)', cell(t.open)],
+      ['สมุดเดิม แถวสุดท้ายตอนดึงยอดตั้งต้น', cell(m.lastRow)],
+      ['แถวหลังดึงยอดตั้งต้น', mv.length ? mv.length + ' แถว (แถว ' + rowsAfter + ')' : 0],
+      ['หมายเหตุ', 'แอปไม่ได้แก้สมุด Transaction — วางเองตามชีตวิธีวาง แล้วกดเช็คสมุดใหม่ในแท็บตั้งต้นสมุด']];
+    return [
+      { name: 'ยอดตั้งต้น', aoa: a1, cols: [10, 16, 32, 7, 13, 9, 12, 8, 8, 46, 7, 12] },
+      { name: 'ประมาณ LOT-PO', aoa: a2, cols: [12, 10, 16, 32, 9, 13, 10, 8, 13, 8, 18] },
+      { name: 'วิธีวาง', aoa: a3, cols: [6, 120] },
+      { name: 'สรุป', aoa: a4, cols: [32, 60] },
+    ];
+  }
+
+  /* ── กระทบ TRcloud: ปรับคลัง WH-02 กับ WH-QA ให้เท่ายอดนับ ส่วนต่างโอนไป-กลับคลัง WH-Loss ──────────
+     ยอดใน TRcloud มาจาก stock-api.gs (แท็บ Stock: NEW WH = WH-02, QA = WH-QA · แท็บ WH-Loss · แท็บ ราคาทุน)
+     Location QA กับ IQA = คลัง WH-QA ที่เหลือ (รวม RIB) = WH-02 (ผู้ใช้บอก 2026-11-18)
+     ไฟล์ที่ออกเป็นแบบเดียวกับแท็บ TRcloud เทียบ Report ในหน้าเช็คตัดสต๊อก (WmsCut.trcSheet) หนึ่งการโอน = ลดคลังต้นทาง + เพิ่มคลังปลายทาง */
+
+  var WH = { MAIN: 'WH-02', QA: 'WH-QA', LOSS: 'WH-Loss' };
+  var TRC_DEPT = 'IV';   // แผนกปรับยอดคลัง แบบเดียวกับ ADJUST_DEPT ใน cut-api.gs
+  var TRC_HEAD = ['SKU', 'วันที่', 'จำนวนที่เพิ่มขึ้น', 'จำนวนที่ลดลง', '', '', 'ออเดอร์', 'แผนก', 'คลังสินค้า', 'ขนส่ง'];
+  var G3 = {
+    OK: 'ตรง', MOVE: 'ย้าย QA ↔ WH-02', FOUND: 'เจอของที่เคยหาย', LOSS: 'หายเพิ่ม', OVER: 'เกินเพิ่ม', BACK: 'หักกับที่เคยเกิน',
+    NOTRC: 'ไม่มีในไฟล์ TRcloud', ONLY: 'ไม่เจอในคลัง',
+  };
+  var THAI = /[\u0E00-\u0E7F]/;
+
+  /** คลังของ Location: QA, IQA (QA-01, IQA2 ก็ได้) = WH-QA นอกนั้น = WH-02 */
+  function whOf(loc) { return /^I?QA(?![A-Z])/.test(up(loc)) ? WH.QA : WH.MAIN; }
+
+  function trcNum(v) {
+    if (typeof v === 'number') return isFinite(v) ? v : 0;
+    var n = parseFloat(String(v == null ? '' : v).replace(/[,\s฿]/g, ''));
+    return isFinite(n) ? n : 0;
+  }
+
+  /** คอลัมน์แรกที่ชื่อตรง re ไม่เจอ = คอลัมน์แรกที่ไม่ใช่ skip และค่าเป็นตัวเลข */
+  function colOf(keys, row, res, skip) {
+    for (var i = 0; i < res.length; i++) {
+      for (var j = 0; j < keys.length; j++) if (keys[j] !== skip && res[i].test(String(keys[j]).trim())) return keys[j];
+    }
+    for (var k = 0; k < keys.length; k++) {
+      var v = row[keys[k]];
+      if (keys[k] !== skip && v !== '' && v !== null && isFinite(typeof v === 'number' ? v : String(v).replace(/,/g, ''))) return keys[k];
+    }
+    return '';
+  }
+
+  /**
+   * คำตอบ stock-api.gs → {v, at, stock: {รหัส: {sku, name, main, qa}}, n, loss: {รหัส: จำนวน} | null, cost: {รหัส: ราคา} | null, tabs}
+   * รับทั้งรุ่น 3 (?api=stock-all) และรุ่นเก่าที่ตอบ array ของแท็บ Stock (v = 2, ไม่มี loss / cost)
+   * รหัส = norm(SKU) SKU ซ้ำหลายแถวบวกรวม
+   */
+  function trcParse(json) {
+    if (!json) throw new Error('stock-api ไม่ได้ตอบอะไรมา');
+    if (json.error) throw new Error('stock-api: ' + json.error);
+    var old = Array.isArray(json);
+    var rows = old ? json : json.stock;
+    if (!Array.isArray(rows)) throw new Error('stock-api ตอบมาไม่ใช่ยอดสต๊อก');
+    var out = { v: old ? 2 : +json.v || 0, at: old ? 0 : +json.at || 0, stock: {}, n: 0, loss: null, cost: null, tabs: (!old && json.tabs) || {}, cols: {} };
+    var skuRe = [/^sku$/i, /^รหัสสินค้า$/, /รหัส/];
+    rows.forEach(function (r) {
+      var keys = Object.keys(r || {});
+      var ks = colOf(keys, {}, skuRe), kq = colOf(keys, {}, [/^qa$/i, /\bqa\b/i]), kn = colOf(keys, {}, [/new.*wh/i, /^wh-?02$/i]);
+      var kd = colOf(keys, {}, [/desc|ชื่อสินค้า|ชื่อ|product\s*name/i], ks);
+      var code = ks ? String(r[ks] == null ? '' : r[ks]).trim() : '';
+      if (!code) return;
+      if (!kn) throw new Error('ชีต Stock ไม่มีคอลัมน์ NEW WH (คลัง WH-02)');
+      var k = norm(code), x = out.stock[k];
+      if (!x) { x = out.stock[k] = { sku: code, name: kd ? String(r[kd] || '') : '', main: 0, qa: 0 }; out.n++; }
+      x.main = round3(x.main + trcNum(r[kn]));
+      x.qa = round3(x.qa + (kq ? trcNum(r[kq]) : 0));
+    });
+    function side(list, res, label) {
+      if (!Array.isArray(list)) return null;
+      var m = {};
+      list.forEach(function (r) {
+        var keys = Object.keys(r || {});
+        var ks = colOf(keys, {}, skuRe);
+        var kv = ks ? colOf(keys, r, res, ks) : '';
+        var code = ks ? String(r[ks] == null ? '' : r[ks]).trim() : '';
+        if (!code || !kv) return;
+        out.cols[label] = kv;
+        var k = norm(code);
+        m[k] = round3((m[k] || 0) + trcNum(r[kv]));
+      });
+      return m;
+    }
+    if (!old) {
+      out.loss = side(json.loss, [/loss/i, /คงเหลือ|จำนวน|qty|total|ยอด/i], 'loss');
+      out.cost = side(json.cost, [/ราคาทุน|ทุน|cost/i, /ราคา|price/i], 'cost');
+    }
+    return out;
+  }
+
+  /**
+   * เทียบยอดนับกับ TRcloud ราย SKU แล้วคิดการโอน
+   *   o.lines   = ยอดสุดท้าย (loc sku long name final)   o.trc = trcParse   o.convert = tx-fifo convert (คู่ SKU แปลง)
+   *   o.prices  = ราคาที่วางเองในแท็บรายงาน (ใช้เมื่อ TRcloud ไม่มีราคาทุน)
+   *   o.date    = วันตัดยอด (yyyy-mm-dd)   o.ref = รหัสรอบ (ช่องออเดอร์)
+   * ต่อ SKU: ต่าง WH-02 = นับ − TRcloud, ต่าง QA เหมือนกัน
+   *   ขาดที่หนึ่ง เกินอีกที่ = ย้ายตรงระหว่าง WH-QA กับ WH-02 ก่อน (ไม่ผ่าน Loss)
+   *   ที่เหลือ ขาด = โอนเข้า WH-Loss · เกิน = โอนออกจาก WH-Loss
+   *   ยอด WH-Loss เดิมหักลบก่อน: โอนออกไม่เกินที่เคยหาย = เจอของที่เคยหาย ส่วนเกินนั้น = เกินเพิ่ม (Loss ติดลบ)
+   *   โอนเข้าไม่เกินที่เคยเกิน (Loss ติดลบ) = หักกับที่เคยเกิน ส่วนเกินนั้น = หายเพิ่ม
+   * SKU ที่นับได้แต่ TRcloud ไม่มีแถว ถ้าเป็น SKU แปลง (MASTER แปลงสินค้า) และ TRcloud มี SKU ตอนซื้อ นับรวมเข้า SKU ตอนซื้อ
+   * รหัสมีตัวอักษรไทยและ TRcloud ไม่มี = ของใช้ภายใน ไม่เทียบ
+   * @returns {{items: Array, rows: Array, internal: Array, tot: Object}} rows = แถวไฟล์ TRcloud (10 ช่องตาม TRC_HEAD)
+   */
+  function trcRecon(o) {
+    o = o || {};
+    var trc = o.trc || { stock: {}, loss: null, cost: null };
+    var T = trc.stock || {}, L = trc.loss || {}, C = trc.cost || {}, P = o.prices || {};
+    var buy = {};
+    ((o.convert && o.convert.pairs) || []).forEach(function (p) { if (p[0] && p[1]) buy[norm(p[0])] = norm(p[1]); });
+    var by = {}, order = [], internal = {}, intList = [];
+    function slot(k, code, name) {
+      if (!by[k]) { by[k] = { key: k, sku: T[k] ? T[k].sku : code, name: (T[k] && T[k].name) || name || '', c02: 0, cqa: 0, locs: {}, conv: {} }; order.push(k); }
+      if (!by[k].name && name) by[k].name = name;
+      return by[k];
+    }
+    (o.lines || []).forEach(function (l) {
+      if (!(l.sku || l.long)) return;
+      var q = l.final > 0 ? l.final : 0;
+      var a = norm(l.long), b = norm(l.sku), k = '', from = '';
+      if (a && T[a]) k = a;
+      else if (b && T[b]) k = b;
+      else if (a && buy[a] && T[buy[a]]) { k = buy[a]; from = l.long; }
+      else if (b && buy[b] && T[buy[b]]) { k = buy[b]; from = l.sku; }
+      else if (THAI.test(String(l.sku) + String(l.long))) {
+        var ik = a || b;
+        if (!internal[ik]) { internal[ik] = { sku: l.sku || l.long, long: l.long, name: l.name || '', qty: 0, locs: {} }; intList.push(internal[ik]); }
+        internal[ik].qty = round3(internal[ik].qty + q);
+        if (q) internal[ik].locs[up(l.loc)] = round3((internal[ik].locs[up(l.loc)] || 0) + q);
+        return;
+      } else k = a || b;
+      var x = slot(k, l.long || l.sku, l.name);
+      if (!x.short && b) x.short = b;
+      if (from) x.conv[from] = 1;
+      if (!q) return;
+      if (whOf(l.loc) === WH.QA) x.cqa = round3(x.cqa + q); else x.c02 = round3(x.c02 + q);
+      x.locs[up(l.loc)] = round3((x.locs[up(l.loc)] || 0) + q);
+    });
+    Object.keys(T).forEach(function (k) { if (!by[k] && (T[k].main || T[k].qa)) slot(k, T[k].sku, T[k].name); });
+
+    var lossBefore = 0;
+    Object.keys(L).forEach(function (k) { lossBefore = round3(lossBefore + L[k]); });
+    var tot = {
+      skus: 0, adj: 0, wh: {}, move: 0, toLoss: 0, fromLoss: 0, found: 0, lossNew: 0, overNew: 0, back: 0,
+      lossBefore: lossBefore, lossAfter: lossBefore, g: {}, value: { has: false, missing: 0, lossNew: 0, found: 0, overNew: 0, net: 0 },
+      count: { main: 0, qa: 0 }, trc: { main: 0, qa: 0 }, internal: intList.length, conv: 0,
+    };
+    [WH.MAIN, WH.QA, WH.LOSS].forEach(function (w) { tot.wh[w] = { plus: 0, minus: 0 }; });
+    var rows = [], date = o.date || '', ref = o.ref || '';
+    function moveRows(x, from, to, q) {
+      x.moves.push({ from: from, to: to, qty: q });
+      rows.push([x.sku, date, '', q, '', '', ref, TRC_DEPT, from, '']);
+      rows.push([x.sku, date, q, '', '', '', ref, TRC_DEPT, to, '']);
+      tot.wh[from].minus = round3(tot.wh[from].minus + q);
+      tot.wh[to].plus = round3(tot.wh[to].plus + q);
+    }
+    var items = order.map(function (k) { return by[k]; });
+    items.sort(function (a, b) { return natCmp(a.sku, b.sku); });
+    items.forEach(function (x) {
+      var t = T[x.key];
+      x.inTrc = !!t;
+      x.t02 = t ? t.main : 0; x.tqa = t ? t.qa : 0;
+      x.loss = L[x.key] || 0;
+      x.moves = [];
+      x.locs = Object.keys(x.locs).sort(locCmp).map(function (loc) { return { loc: loc, qty: x.locs[loc], wh: whOf(loc) }; });
+      x.conv = Object.keys(x.conv);
+      if (x.conv.length) tot.conv++;
+      var d02 = round3(x.c02 - x.t02), dqa = round3(x.cqa - x.tqa);
+      x.d02 = d02; x.dqa = dqa;
+      if (d02 > 0 && dqa < 0) { var m1 = Math.min(d02, -dqa); moveRows(x, WH.QA, WH.MAIN, m1); tot.move = round3(tot.move + m1); d02 = round3(d02 - m1); dqa = round3(dqa + m1); }
+      if (d02 < 0 && dqa > 0) { var m2 = Math.min(-d02, dqa); moveRows(x, WH.MAIN, WH.QA, m2); tot.move = round3(tot.move + m2); d02 = round3(d02 + m2); dqa = round3(dqa - m2); }
+      if (d02 < 0) moveRows(x, WH.MAIN, WH.LOSS, -d02);
+      if (dqa < 0) moveRows(x, WH.QA, WH.LOSS, -dqa);
+      if (d02 > 0) moveRows(x, WH.LOSS, WH.MAIN, d02);
+      if (dqa > 0) moveRows(x, WH.LOSS, WH.QA, dqa);
+      var net = round3(-d02 - dqa);   // บวก = เข้า Loss (หาย) ลบ = ออกจาก Loss (เจอ)
+      x.toLoss = net;
+      x.lossAfter = round3(x.loss + net);
+      x.found = net < 0 ? Math.min(-net, Math.max(0, x.loss)) : 0;
+      x.overNew = net < 0 ? round3(-net - x.found) : 0;
+      x.back = net > 0 ? Math.min(net, Math.max(0, -x.loss)) : 0;
+      x.lossNew = net > 0 ? round3(net - x.back) : 0;
+      x.group = !x.inTrc ? G3.NOTRC
+        : !x.c02 && !x.cqa && (x.t02 || x.tqa) ? G3.ONLY
+        : !x.moves.length ? G3.OK
+        : !net ? G3.MOVE
+        : net < 0 ? (x.found ? G3.FOUND : G3.OVER)
+        : x.lossNew ? G3.LOSS : G3.BACK;
+      var pr = C[x.key];
+      if (pr === undefined) pr = P[x.key];
+      if (pr === undefined && x.short) pr = P[x.short];
+      x.price = typeof pr === 'number' && isFinite(pr) ? pr : null;
+      tot.skus++;
+      if (x.moves.length) tot.adj++;
+      tot.g[x.group] = (tot.g[x.group] || 0) + 1;
+      tot.count.main = round3(tot.count.main + x.c02); tot.count.qa = round3(tot.count.qa + x.cqa);
+      tot.trc.main = round3(tot.trc.main + x.t02); tot.trc.qa = round3(tot.trc.qa + x.tqa);
+      if (net > 0) tot.toLoss = round3(tot.toLoss + net);
+      if (net < 0) tot.fromLoss = round3(tot.fromLoss - net);
+      tot.found = round3(tot.found + x.found); tot.overNew = round3(tot.overNew + x.overNew);
+      tot.back = round3(tot.back + x.back); tot.lossNew = round3(tot.lossNew + x.lossNew);
+      tot.lossAfter = round3(tot.lossAfter + net);
+      if (net) {
+        if (x.price === null) tot.value.missing++;
+        else {
+          tot.value.has = true;
+          var money = function (n) { return Math.round(n * x.price * 100) / 100; };
+          tot.value.lossNew = round3(tot.value.lossNew + money(x.lossNew));
+          tot.value.found = round3(tot.value.found + money(x.found));
+          tot.value.overNew = round3(tot.value.overNew + money(x.overNew));
+          tot.value.net = round3(tot.value.net + money(net));
+        }
+      }
+    });
+    intList.forEach(function (i) { i.locs = Object.keys(i.locs).sort(locCmp).map(function (loc) { return { loc: loc, qty: i.locs[loc] }; }); });
+    return { items: items, rows: rows, internal: intList, tot: tot };
+  }
+
+  /**
+   * ไฟล์ Excel ลง TRcloud สี่ชีต: TRcloud (แบบเดียวกับหน้าเช็คตัดสต๊อก ลงได้ทันที) · เทียบราย SKU · ของใช้ภายใน · สรุป
+   * res = trcRecon   meta = {id, name, date, cutoff, approvedBy, approvedAt, trcAt, tabs, noLoss}
+   */
+  function trcBook(res, meta) {
+    var m = meta || {}, r = res || { items: [], rows: [], internal: [], tot: {} }, t = r.tot || {};
+    var V = t.value && t.value.has;
+    var a1 = [TRC_HEAD.slice()].concat(r.rows);
+    var head2 = ['SKU', 'ชื่อสินค้า', 'นับ WH-02', 'TRcloud WH-02', 'ปรับ WH-02', 'นับ WH-QA', 'TRcloud WH-QA', 'ปรับ WH-QA',
+      'WH-Loss เดิม', 'เข้า(+)/ออก(−) WH-Loss', 'WH-Loss หลังปรับ', 'เจอของที่เคยหาย', 'หายเพิ่ม', 'เกินเพิ่ม', 'หักกับที่เคยเกิน', 'กลุ่ม', 'ราคาทุน', 'มูลค่าเข้า Loss', 'Location ที่นับ', 'หมายเหตุ'];
+    var a2 = [head2].concat(r.items.map(function (x) {
+      var adj = function (w) { return round3(x.moves.reduce(function (s, mv) { return s + (mv.to === w ? mv.qty : 0) - (mv.from === w ? mv.qty : 0); }, 0)); };
+      var note = [];
+      if (x.conv.length) note.push('นับเป็น ' + x.conv.join(', ') + ' (SKU แปลง) รวมเข้า SKU ตอนซื้อ');
+      if (!x.inTrc) note.push('ไม่มีในไฟล์ TRcloud เช็ครหัสก่อนลง');
+      return [x.sku, x.name, x.c02, x.t02, adj(WH.MAIN), x.cqa, x.tqa, adj(WH.QA), x.loss, x.toLoss, x.lossAfter,
+        x.found, x.lossNew, x.overNew, x.back, x.group, x.price === null ? '' : x.price,
+        x.price === null || !x.toLoss ? '' : Math.round(x.toLoss * x.price * 100) / 100,
+        x.locs.map(function (l) { return l.loc + ' ' + l.qty; }).join(', '), note.join(' · ')];
+    }));
+    var a3 = [['SKU', 'SKU เต็ม', 'ชื่อสินค้า', 'นับได้', 'Location']].concat(r.internal.map(function (i) {
+      return [i.sku, i.long, i.name, i.qty, i.locs.map(function (l) { return l.loc + ' ' + l.qty; }).join(', ')];
+    }));
+    var cell = function (v) { return v === null || v === undefined ? '' : v; };
+    var wh = t.wh || {};
+    var w = function (k) { var x = wh[k] || { plus: 0, minus: 0 }; return '+' + x.plus + ' / −' + x.minus; };
+    var a4 = [['หัวข้อ', 'ค่า'],
+      ['รหัสรอบ (ช่องออเดอร์)', cell(m.id)], ['ชื่อรอบ', cell(m.name)], ['วันที่ในไฟล์ (วันตัดยอด)', cell(m.date)], ['เวลาตัดยอด', cell(m.cutoff)],
+      ['อนุมัติโดย', m.approvedBy || 'ยังไม่อนุมัติ (ร่าง ห้ามลง TRcloud)'], ['อนุมัติเมื่อ', cell(m.approvedAt)],
+      ['สต๊อก TRcloud โหลดเมื่อ', cell(m.trcAt)], ['แท็บที่อ่าน', [m.tabs && m.tabs.stock, m.tabs && m.tabs.loss, m.tabs && m.tabs.cost].filter(Boolean).join(' · ')],
+      ['SKU ที่เทียบ', cell(t.skus)], ['SKU ที่ต้องปรับ', cell(t.adj)], ['แถวในไฟล์ TRcloud', r.rows.length],
+      ['นับได้ WH-02 / TRcloud WH-02', cell(t.count && t.count.main) + ' / ' + cell(t.trc && t.trc.main)],
+      ['นับได้ WH-QA / TRcloud WH-QA', cell(t.count && t.count.qa) + ' / ' + cell(t.trc && t.trc.qa)],
+      ['WH-02 เพิ่ม / ลด', w(WH.MAIN)], ['WH-QA เพิ่ม / ลด', w(WH.QA)], ['WH-Loss เพิ่ม / ลด', w(WH.LOSS)],
+      ['ย้ายตรง QA ↔ WH-02', cell(t.move)],
+      ['WH-Loss เดิม (ทุก SKU)', m.noLoss ? 'ไม่มีแท็บ WH-Loss (ถือเป็น 0)' : cell(t.lossBefore)], ['WH-Loss หลังปรับ', cell(t.lossAfter)],
+      ['เจอของที่เคยหาย (ออกจาก Loss)', cell(t.found)], ['หายเพิ่ม (เข้า Loss)', cell(t.lossNew)],
+      ['เกินเพิ่ม (Loss ติดลบ)', cell(t.overNew)], ['หักกับที่เคยเกิน', cell(t.back)]]
+      .concat(V ? [['มูลค่าหายเพิ่ม', t.value.lossNew], ['มูลค่าเจอของที่เคยหาย', t.value.found], ['มูลค่าเกินเพิ่ม', t.value.overNew],
+        ['มูลค่าสุทธิเข้า Loss', t.value.net], ['SKU ที่ต่างแต่ไม่มีราคาทุน', t.value.missing]] : [['มูลค่า', 'ไม่มีราคาทุน (แท็บ ราคาทุน ในชีตสต๊อก)']])
+      .concat([['ของใช้ภายใน (ไม่เทียบ)', cell(t.internal)],
+        ['หมายเหตุ', 'แอปไม่ได้แก้ TRcloud — ลงเองจากชีต TRcloud · Location QA, IQA = WH-QA ที่เหลือ (รวม RIB) = WH-02']]);
+    return [
+      { name: 'TRcloud', aoa: a1, cols: [16, 12, 16, 14, 6, 6, 14, 8, 12, 14] },
+      { name: 'เทียบราย SKU', aoa: a2, cols: [16, 30, 9, 11, 9, 9, 11, 9, 10, 12, 11, 11, 9, 9, 11, 16, 9, 11, 30, 40] },
+      { name: 'ของใช้ภายใน', aoa: a3, cols: [14, 16, 30, 8, 40] },
+      { name: 'สรุป', aoa: a4, cols: [30, 60] },
+    ];
+  }
+
   /**
    * แถวผลสรุปตอนปิดรอบ (16 ช่อง แบบเดียวกับ summaryRows ส่ง st-close)
    * [Location, SKU, SKU เต็ม, ชื่อ, LOT, PO, สมุด, Inventory, Audit, รอบ 2, ยอดสุดท้าย, ต่าง, กลุ่ม, เหตุผล, ทีม, คนนับ]
@@ -2072,6 +2568,8 @@
     R2: R2, R2_MULTI: R2_MULTI, SRC: SRC, FLAG: FLAG, r2Opts: r2Opts,
     API_V: API_V, oldScript: oldScript, pileWarn: pileWarn, plan2: plan2, planRows: planRows, progress2: progress2,
     finalLines: finalLines, finalTotals: finalTotals, closeReport: closeReport, parsePrices: parsePrices, workMs: workMs, closeRows: closeRows, pairAdjust: pairAdjust, adjustBook: adjustBook,
+    OPEN_HEAD: OPEN_HEAD, EST_NOTE: EST_NOTE, openingRows: openingRows, openingCheck: openingCheck, openingBook: openingBook, sheetNum: sheetNum,
+    WH: WH, G3: G3, TRC_HEAD: TRC_HEAD, whOf: whOf, trcParse: trcParse, trcRecon: trcRecon, trcBook: trcBook, grBook: grBook, countLabel: countLabel, grText: grText, unknownCode: unknownCode,
     up: up, norm: norm,
     parseLoc: parseLoc, isRealLoc: isRealLoc, natCmp: natCmp, locCmp: locCmp, groupCmp: groupCmp, zoneOfGroup: zoneOfGroup,
     baseline: baseline, ledgerCheck: ledgerCheck, LEDGER: LEDGER, deviceWatch: deviceWatch, locations: locations, parseLocList: parseLocList, groups: groups, autoSplit: autoSplit,

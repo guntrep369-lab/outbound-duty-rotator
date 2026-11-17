@@ -87,11 +87,13 @@
 
   /** แถวแบบย่อเป็นออบเจกต์ ชื่อ Location ยุบตัวพิมพ์เล็กใหญ่ไว้ที่สคริปต์แล้ว */
   function parse(res) {
+    var cg = {};   // แถวนับสต๊อกที่พ่วงวันรับของ PO ไว้ (สมุดที่ตั้งต้นใหม่หลังนับใหญ่)
+    (res.cgr || []).forEach(function (c) { cg[c[0]] = c[1]; });
     return res.rows.map(function (x) {
       return {
         row: x[0], sku: x[1], lot: up(x[2]), po: basePo(res.pos[x[3]]), from: x[4], to: x[5],
         qty: typeof x[6] === 'number' ? x[6] : 0, t: x[7], d: x[8] >= 0 ? res.days[x[8]] : '',
-        open: !!(x[9] & 1), gr: !!(x[9] & 2), count: !!(x[9] & 4), own: !!(x[9] & 8),
+        open: !!(x[9] & 1), gr: !!(x[9] & 2), count: !!(x[9] & 4), own: !!(x[9] & 8), cgr: cg[x[0]] || '',
       };
     });
   }
@@ -106,7 +108,7 @@
       st.bal[k] = (st.bal[k] || 0) + r.qty;
       st.open[k] = r.open;
       (st.keys[r.sku] = st.keys[r.sku] || {})[k] = 1;
-      var day = r.count ? COUNT_DAY : r.gr ? r.d : '';
+      var day = r.count ? r.cgr || COUNT_DAY : r.gr ? r.d : '';
       if (day && (!st.recv[b] || day < st.recv[b])) st.recv[b] = day;
       /* รอบรับเข้าของ PO เดียวกัน หนึ่งรอบต่อวันที่ GR */
       if (r.gr && r.d) { var rs = st.rounds[b] || (st.rounds[b] = {}); rs[r.d] = (rs[r.d] || 0) + r.qty; }

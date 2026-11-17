@@ -180,6 +180,14 @@ select.st-in{cursor:pointer;padding-right:2px}
 .st-ap{width:150px;height:30px;padding:0 9px;border:1px solid var(--wms-border2);border-radius:6px;background:var(--wms-surface);
   font-family:var(--wms-font);font-size:13px}
 .st-ap:focus{outline:none;border-color:var(--wms-primary)}
+/* แท็บตั้งต้นสมุด: ช่อง LOT/PO ที่ประมาณจาก GR สีเหลือง ที่ยังไม่รู้สีแดง */
+.op-in{width:170px;height:28px;padding:0 8px;border:1px solid var(--wms-border2);border-radius:6px;background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:12.5px}
+.op-in:focus{outline:none;border-color:var(--wms-primary)}
+.op-in.nm{width:110px}
+.st-xl td.est{background:#FEF3C7}
+.st-xl td.unk{color:#B91C1C;font-weight:600}
+.st-xl td.nt{max-width:340px;overflow:hidden;text-overflow:ellipsis}
 
 /* ── ห้องควบคุมการนับ: ตัวเลขสรุป ผังคลังสด ช่องทีม เรื่องที่ต้องดู ── */
 .ct-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:10px}
@@ -392,7 +400,8 @@ function save(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 const TABS = [['setup', 'ตั้งรอบ', '../icons/settings.png'], ['teams', 'ทีม/โซน', '../icons/list-checks.png'], ['control', 'ห้องควบคุม', '../icons/boxes.png'],
   ['progress', 'ความคืบหน้า', '../icons/tab-count.png'],
   ['analyze', 'วิเคราะห์', '../icons/tab-compare.png'], ['round2', 'รอบ 2', '../icons/tab-refill.png'], ['close', 'ปิดรอบ', '../icons/tab-fix.png'],
-  ['report', 'รายงาน', '../icons/clipboard-list.png']];
+  ['report', 'รายงาน', '../icons/clipboard-list.png'],
+  ['trc', 'กระทบ TRcloud', '../icons/sys-sheet.png'], ['opening', 'ตั้งต้นสมุด', '../icons/notebook.png']];
 const LIVE_TABS = ['control', 'progress', 'analyze', 'round2', 'close', 'report'];   // แท็บที่ดึงบันทึกนับใหม่เอง (ห้องควบคุมทุก 20 วินาที ที่เหลือทุกนาที)
 let TAB = TABS.some(t => t[0] === new URLSearchParams(location.search).get('tab')) ? new URLSearchParams(location.search).get('tab') : 'setup';
 
@@ -465,7 +474,7 @@ function loadRounds() {
 async function loadHead() {
   S.head = await get('st-head', { round: S.rid });
   save(KEY_ROUND, S.rid);
-  S.log = []; S.raw = []; S.since = 0; DRAFT = null; MOVES = null; OPEN.clear(); FILTER = ''; DEL = false;
+  S.log = []; S.raw = []; S.since = 0; DRAFT = null; MOVES = null; OPEN.clear(); FILTER = ''; DEL = false; OPCHK = null;
   await loadLog();
 }
 
@@ -531,6 +540,7 @@ function paintTabs() {
     if (R().pass) { const a = analysis(); n.analyze = a.lines.filter(l => l.group !== ST.G.OK).length + a.audit.length || ''; }
     n.round2 = (S.head.plan || []).length || '';
     n.close = R().status === 'ปิดแล้ว' ? '✓' : '';
+    n.opening = OPCHK && OPCHK.res.ok ? '✓' : '';
   }
   $('tabs').innerHTML = TABS.map(([id, label, icon]) =>
     `<button class="tx-tab ${id === TAB ? 'on' : ''}" role="tab" aria-selected="${id === TAB}" data-tab="${id}"><img src="${icon}" alt="" width="18" height="18">` +
@@ -551,6 +561,8 @@ function paintBody() {
   else if (TAB === 'round2') box.innerHTML = round2View();
   else if (TAB === 'close') box.innerHTML = closeView();
   else if (TAB === 'report') box.innerHTML = reportView();
+  else if (TAB === 'opening') box.innerHTML = openingView();
+  else if (TAB === 'trc') box.innerHTML = trcView();
   else box.innerHTML = setupView();
 }
 
@@ -1680,12 +1692,14 @@ function addPrices(text) {
 function report() {
   const r = R(), closed = r.status === 'ปิดแล้ว', pm = prices();
   const ed = closed ? '' : JSON.stringify(edits());
-  if (RP && RP.head === S.head && RP.n === S.log.length && RP.since === S.since && RP.closed === closed && RP.at === pm.at && RP.ed === ed) return RP.rep;
+  if (RP && RP.head === S.head && RP.n === S.log.length && RP.since === S.since && RP.closed === closed && RP.at === pm.at && RP.ed === ed && RP.trc === TRC) return RP.rep;
   const fin = closed ? (S.head.sum || []).map(fromSum) : finals();
-  const rep = ST.closeReport({ lines: fin, entries: S.log, teams: S.head.teams, prices: pm.map, top: 10 });
-  RP = { head: S.head, n: S.log.length, since: S.since, closed, at: pm.at, ed, rep };
+  const rep = ST.closeReport({ lines: fin, entries: S.log, teams: S.head.teams, prices: { ...trcCost(), ...pm.map }, top: 10 });
+  RP = { head: S.head, n: S.log.length, since: S.since, closed, at: pm.at, ed, rep, trc: TRC };
   return rep;
 }
+/** ราคาทุนจากแท็บ ราคาทุน ในชีตสต๊อก (stock-api) ถ้าโหลดแล้ว */
+function trcCost() { return (TRC && TRC.data && TRC.data.cost) || {}; }
 
 const pctText = (v) => (v === null || v === undefined ? '—' : v + '%');
 const lvlOf = (v) => (v === null || v === undefined ? 'none' : v >= 98 ? 'good' : v >= 95 ? 'mid' : 'bad');
@@ -1699,6 +1713,7 @@ function reportView() {
   const r = R();
   if (!after1()) return `<div class="st-empty">รายงานขึ้นหลังปิดรับนับรอบ 1<br><button class="st-btn" data-go="analyze">ไปแท็บวิเคราะห์</button></div>`;
   const closed = r.status === 'ปิดแล้ว';
+  trcNeed();
   const k = report(), V = k.value.has, np = Object.keys(prices().map).length;
   const nc = (n) => (n < 0 ? 'neg' : n > 0 ? 'pos' : '');
   const tile = (lb, v, s) => `<div class="rp-tile ${lvlOf(v)}"><div class="lb">${lb}</div><div class="v">${pctText(v)}</div><div class="s">${s}</div></div>`;
@@ -1707,6 +1722,7 @@ function reportView() {
       <button class="st-btn p" data-act="rp-shot">📷 รูปสรุปส่ง LINE</button>
       <button class="st-btn" data-act="rp-print">🖨 พิมพ์ / PDF</button>
       <button class="st-btn" data-act="rp-price">💲 ราคาต่อชิ้น${np ? ` · ${f(np)} SKU` : ''}</button>
+      ${Object.keys(trcCost()).length ? `<span>ราคาทุน TRcloud <b>${f(Object.keys(trcCost()).length)}</b> SKU</span>` : ''}
       <span class="sp"></span><span>${closed ? 'ยอดที่อนุมัติแล้ว' : 'ร่างจากตัวเลขตอนนี้'} · ทั้งรอบ ไม่สนตัวกรอง</span></div>`;
   const price = PRICE_OPEN ? `<div class="rp-price"><b>ราคาต่อชิ้น</b> — วาง SKU กับราคาจาก Excel (2 คอลัมน์) ลงช่องนี้ หรือกด Ctrl+V ที่ไหนก็ได้บนแท็บนี้ ·
       เก็บในเครื่องนี้ ใช้ได้ทุกรอบ · SKU เดิมใช้ราคาใหม่${np ? ` · มีแล้ว <b>${f(np)}</b> SKU` : ''}
@@ -1792,6 +1808,315 @@ function savePriceBox() {
   PRICE_OPEN = false;
   S.err = ''; S.ok = `✓ เก็บราคา ${f(p.n)} SKU แล้ว${p.bad ? ` · ข้าม ${f(p.bad)} บรรทัดที่ไม่มีราคา` : ''}`;
   paint();
+}
+
+/* ── แท็บกระทบ TRcloud: ปรับ WH-02 / WH-QA ให้เท่ายอดนับ ส่วนต่างโอนไป-กลับ WH-Loss ──
+   ยอด TRcloud จากชีตสต๊อก (stock-api.gs ?api=stock-all: แท็บ Stock, WH-Loss, ราคาทุน) แอปไม่แก้ TRcloud เอง
+   ไฟล์แบบเดียวกับ TRcloud เทียบ Report ในหน้าเช็คตัดสต๊อก ลงได้ทันที */
+
+let TRC = null;        // {data: trcParse, at, err}
+let TRC_BUSY = false;
+let TRR = null;        // ผลเทียบที่คิดไว้
+const T3CLS = { 'ตรง': 'ok', 'ย้าย QA ↔ WH-02': 'moved', 'เจอของที่เคยหาย': 'over', 'หายเพิ่ม': 'short', 'เกินเพิ่ม': 'typo',
+  'หักกับที่เคยเกิน': 'audit', 'ไม่มีในไฟล์ TRcloud': 'lotpo', 'ไม่เจอในคลัง': 'short' };
+
+async function loadTrc() {
+  const url = WmsSettings.stockUrl();
+  if (!url) throw new Error('ยังไม่มี URL สต๊อกในหน้าตั้งค่า');
+  const json = await WmsGas.json(url, 'stock-all', { retries: 1 });
+  TRC = { data: ST.trcParse(json), at: Date.now() };
+  return TRC;
+}
+/** โหลดสต๊อก TRcloud เบื้องหลังครั้งแรก (แท็บกระทบ TRcloud กับราคาทุนในแท็บรายงาน) */
+function trcNeed() {
+  if (TRC || TRC_BUSY || !WmsSettings.stockUrl()) return;
+  TRC_BUSY = true;
+  loadTrc().catch(e => { TRC = { data: null, at: Date.now(), err: e.message }; })
+    .finally(() => { TRC_BUSY = false; if (TAB === 'trc' || TAB === 'report') paintBody(); });
+}
+
+function trcRes() {
+  const r = R(), closed = r.status === 'ปิดแล้ว', ed = closed ? '' : JSON.stringify(edits()), pm = prices();
+  if (TRR && TRR.head === S.head && TRR.n === S.log.length && TRR.since === S.since && TRR.closed === closed && TRR.ed === ed
+    && TRR.trc === TRC && TRR.fifo === FIFO && TRR.pat === pm.at) return TRR.res;
+  const res = ST.trcRecon({ lines: opFinals(), trc: TRC.data, convert: FIFO && FIFO.data ? FIFO.data.convert : null, prices: pm.map,
+    date: String(r.cutoff || r.date || '').slice(0, 10), ref: r.id });
+  TRR = { head: S.head, n: S.log.length, since: S.since, closed, ed, trc: TRC, fifo: FIFO, pat: pm.at, res };
+  return res;
+}
+
+function trcView() {
+  const r = R();
+  if (!after1()) return `<div class="st-empty">กระทบ TRcloud ได้หลังปิดรับนับรอบ 1<br><button class="st-btn" data-go="analyze">ไปแท็บวิเคราะห์</button></div>`;
+  if (!WmsSettings.stockUrl()) return '<div class="st-empty">ต้องใช้ยอด TRcloud จากชีตสต๊อก (stock-api)<br>ใส่ <b>URL สต๊อก</b> ในหน้าตั้งค่าก่อน</div>';
+  if (!TRC) { trcNeed(); return '<div class="st-empty">⏳ กำลังโหลดสต๊อก TRcloud…</div>'; }
+  if (!TRC.data) return `<div class="st-empty">โหลดสต๊อก TRcloud ไม่ได้<br>${esc(TRC.err || '')}<br><button class="st-btn" data-act="trc-load">ลองใหม่</button></div>`;
+  /* คู่ SKU แปลง (MASTER แปลงสินค้า) มากับสมุด อ่านเบื้องหลัง ไม่มี URL Transaction ก็เทียบได้ แค่ไม่รวม SKU แปลง */
+  if (!FIFO && !FIFO_BUSY && WmsSettings.txUrl()) {
+    FIFO_BUSY = true;
+    loadFifo(false).catch(() => { FIFO = { data: null, at: Date.now() }; }).finally(() => { FIFO_BUSY = false; if (TAB === 'trc') paintBody(); });
+  }
+  const closed = r.status === 'ปิดแล้ว', d = TRC.data, k = trcRes(), t = k.tot, V = t.value.has;
+  const q = ST.up(AQ);
+  const chip = (key, label, val, cls) => `<button class="st-chip ${cls || ''} ${FILTER === key ? 'on' : ''}" data-filter="${esc(key)}">${esc(label)} <b>${val}</b></button>`;
+  const band = closed
+    ? `<div class="st-done">ยอดที่อนุมัติแล้ว · ${esc(r.approvedBy)} · ${esc(r.approvedAt)} — โหลด Excel แล้วลง TRcloud จากชีต <b>TRcloud</b> · แอปไม่แก้ TRcloud เอง</div>`
+    : '<div class="st-warn"><b>ร่าง</b> — ยังไม่อนุมัติยอด ตัวเลขยังเปลี่ยนได้ ห้ามลง TRcloud จนกว่าจะอนุมัติและปิดรอบ</div>';
+  const warn = d.v < 3 ? `<div class="st-warn"><b>stock-api.gs ยังเป็นรุ่นเก่า</b> อ่านแท็บ WH-Loss กับ ราคาทุน ไม่ได้ · เปิดชีตสต๊อก › ส่วนขยาย › Apps Script › วางไฟล์ stock-api.gs ล่าสุดทับ › ทำให้ใช้งานได้ › จัดการ › แก้ไข › เวอร์ชันใหม่</div>`
+    : !d.loss ? '<div class="st-warn"><b>ไม่เจอแท็บ WH-Loss ในชีตสต๊อก</b> — ยังหักลบกับของในคลัง Loss ไม่ได้ (ถือว่า Loss เป็น 0) · เพิ่มแท็บชื่อ WH-Loss (SKU กับยอดคงเหลือจาก TRcloud) แล้วกดโหลดใหม่</div>' : '';
+  const wh = (w) => { const x = t.wh[w]; return `<b>${x.plus ? '+' + f(x.plus) : '0'}</b>${x.minus ? ` <b class="neg">−${f(x.minus)}</b>` : ''}`; };
+  const money = (v) => '฿' + Math.round(v).toLocaleString('en-US');
+  const showInt = FILTER === 'int';
+  const list = showInt ? [] : k.items.filter(x => {
+    if (FILTER === '' && !x.moves.length) return false;
+    if (FILTER.startsWith('g:') && x.group !== FILTER.slice(2)) return false;
+    return !q || ST.up(x.sku).includes(q) || ST.up(x.name).includes(q) || x.locs.some(l => l.loc.includes(q)) || x.conv.some(c => ST.up(c).includes(q));
+  });
+  const adjOf = (x, w) => x.moves.reduce((s, m) => s + (m.to === w ? m.qty : 0) - (m.from === w ? m.qty : 0), 0);
+  const sg = (n) => (n ? `<span class="${n < 0 ? 'neg' : 'pos'}">${signed(n)}</span>` : '');
+  const rows = list.slice(0, AN_LIMIT).map(x => {
+    const open = OPEN.has('t:' + x.key);
+    const a02 = adjOf(x, ST.WH.MAIN), aqa = adjOf(x, ST.WH.QA);
+    const parts = [];
+    if (x.found) parts.push(`เจอของที่เคยหาย ${f(x.found)}`);
+    if (x.back) parts.push(`หักกับที่เคยเกิน ${f(x.back)}`);
+    if (x.lossNew) parts.push(`หายเพิ่ม ${f(x.lossNew)}`);
+    if (x.overNew) parts.push(`เกินเพิ่ม ${f(x.overNew)} (Loss ติดลบ)`);
+    return `<tr><td class="k">${esc(x.sku)}</td><td class="mu">${esc(x.name)}</td>
+      <td class="num">${f(x.c02)}</td><td class="num mu">${f(x.t02)}</td><td class="num">${x.cqa || x.tqa ? f(x.cqa) : ''}</td><td class="num mu">${x.cqa || x.tqa ? f(x.tqa) : ''}</td>
+      <td class="num mu">${x.loss ? f(x.loss) : ''}</td><td class="num">${sg(a02)}</td><td class="num">${sg(aqa)}</td>
+      <td class="num ${x.lossAfter < 0 ? 'neg' : ''}">${x.loss || x.lossAfter ? f(x.lossAfter) : ''}</td>
+      <td><span class="st-g ${T3CLS[x.group] || ''}">${esc(x.group)}</span>${x.conv.length ? '<span class="st-flag">แปลง</span>' : ''}</td>
+      <td><button class="st-i ${open ? 'on' : ''}" data-open="t:${esc(x.key)}" aria-label="รายละเอียด ${esc(x.sku)}">i</button></td></tr>` +
+      (open ? `<tr class="info"><td colspan="12">${x.moves.length ? '<b>ลง TRcloud:</b> ' + x.moves.map(m => `${esc(m.from)} → ${esc(m.to)} ${f(m.qty)}`).join(' · ') : 'ไม่ต้องลงอะไร'}
+        ${parts.length ? '<br><b>WH-Loss:</b> เดิม ' + f(x.loss) + ' · ' + parts.join(' · ') + ' · หลังปรับ ' + f(x.lossAfter) : ''}
+        <br><b>นับได้:</b> ${x.locs.map(l => `${esc(l.loc)} ${f(l.qty)}${l.wh === ST.WH.QA ? ' (QA)' : ''}`).join(', ') || 'ไม่เจอในคลัง'}
+        ${x.conv.length ? `<br>นับเป็น ${esc(x.conv.join(', '))} (SKU แปลง) รวมเข้า SKU ตอนซื้อตาม MASTER แปลงสินค้า` : ''}
+        ${!x.inTrc ? '<br><b>ไม่มีในไฟล์ TRcloud</b> — เช็ครหัสใน TRcloud ก่อนลง ถ้ารหัสไม่มีจริง ลงไม่ได้' : ''}
+        ${x.price !== null && x.toLoss ? `<br>ราคาทุน ${f(x.price)} · มูลค่าเข้า Loss ${money(x.toLoss * x.price)}` : ''}</td></tr>` : '');
+  }).join('');
+  const intRows = showInt ? k.internal.filter(i => !q || ST.up(i.sku).includes(q) || ST.up(i.name).includes(q)).map(i =>
+    `<tr><td class="k">${esc(i.sku)}</td><td class="mu">${esc(i.name)}</td><td class="num">${f(i.qty)}</td><td class="mu">${esc(i.locs.map(l => l.loc + ' ' + f(l.qty)).join(', '))}</td></tr>`).join('') : '';
+  const g = (x) => (t.g[x] ? chip('g:' + x, x, f(t.g[x]), T3CLS[x] === 'short' ? 'red' : T3CLS[x] === 'ok' ? 'green' : 'amber') : '');
+  const table = showInt
+    ? `<div class="st-wrap"><table class="st-xl"><thead><tr><th>SKU</th><th>ชื่อ</th><th class="num">นับได้</th><th>Location</th></tr></thead>
+        <tbody>${intRows || '<tr><td colspan="4" class="mu">ไม่มี</td></tr>'}</tbody></table></div>
+        <div class="st-note">รหัสที่มีตัวอักษรไทยและไม่มีใน TRcloud = ของใช้ภายใน ไม่เทียบ ไม่ลง TRcloud (ยังลงสมุดใหม่ตามยอดนับ)</div>`
+    : `<div class="st-wrap"><table class="st-xl"><thead><tr><th>SKU</th><th>ชื่อ</th><th class="num">นับ WH-02</th><th class="num">TRcloud</th>
+        <th class="num">นับ QA</th><th class="num">TRcloud</th><th class="num">Loss เดิม</th><th class="num">ปรับ WH-02</th><th class="num">ปรับ QA</th>
+        <th class="num">Loss หลัง</th><th>กลุ่ม</th><th></th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="12" class="mu">${k.items.length ? 'ไม่มีรายการตามที่กรอง' : 'ยังไม่มียอด'}</td></tr>`}</tbody></table></div>
+        ${list.length > AN_LIMIT ? `<div class="st-note">แสดง ${AN_LIMIT} จาก ${f(list.length)} SKU — กดชิปหรือค้นหาเพื่อกรอง (Excel มีครบ)</div>` : ''}`;
+  return `${band}${warn}
+    <div class="st-tot">
+      <span>TRcloud โหลดเมื่อ <b>${hm(TRC.at)}</b> · ${f(d.n)} SKU${d.loss ? ` · WH-Loss ${f(Object.keys(d.loss).length)}` : ''}${d.cost ? ` · ราคาทุน ${f(Object.keys(d.cost).length)}` : ''}</span>
+      <span class="sp"></span>
+      <button class="st-btn p" data-act="trc-xlsx" ${S.busy || !k.rows.length ? 'disabled' : ''}>Excel ลง TRcloud${closed ? '' : ' (ร่าง)'}</button>
+      <button class="st-btn" data-act="trc-load" ${S.busy || TRC_BUSY ? 'disabled' : ''}>โหลด TRcloud ใหม่</button>
+    </div>
+    <div class="st-tot">
+      <span>WH-02 ${wh(ST.WH.MAIN)}</span><span>WH-QA ${wh(ST.WH.QA)}</span><span>ย้าย QA↔WH-02 <b>${f(t.move)}</b></span>
+      <span>WH-Loss <b>${f(t.lossBefore)} → ${f(t.lossAfter)}</b></span>
+      <span>เจอของที่เคยหาย <b class="pos">${f(t.found)}</b>${V && t.value.found ? ` (${money(t.value.found)})` : ''}</span>
+      <span>หายเพิ่ม <b class="neg">${f(t.lossNew)}</b>${V && t.value.lossNew ? ` (${money(t.value.lossNew)})` : ''}</span>
+      ${t.overNew ? `<span>เกินเพิ่ม <b>${f(t.overNew)}</b></span>` : ''}
+    </div>
+    <div class="st-bar">
+      ${chip('', 'ต้องปรับ', f(t.adj), 'red')}${chip('all', 'ทั้งหมด', f(t.skus))}
+      ${Object.values(ST.G3).map(g).join('')}
+      ${k.internal.length ? chip('int', 'ของใช้ภายใน', f(k.internal.length)) : ''}
+      <span class="sp"></span><input class="st-q" id="anQ" placeholder="ค้นหา SKU / ชื่อ / โล" value="${esc(AQ)}" aria-label="ค้นหาในกระทบ TRcloud">
+    </div>
+    ${table}
+    <div class="st-note">นับ − TRcloud ราย SKU · Location QA, IQA = WH-QA ที่เหลือ (รวม RIB) = WH-02 · ขาดที่หนึ่งเกินอีกที่ ย้ายตรงระหว่าง WH-QA กับ WH-02 ก่อน ·
+      ที่เหลือ ขาด = โอนเข้า WH-Loss เกิน = โอนออกจาก WH-Loss หักกับยอด Loss เดิมก่อน (เจอของที่เคยหาย / หักกับที่เคยเกิน) ·
+      ไฟล์ใช้วันตัดยอด ${esc(String(r.cutoff || r.date || '').slice(0, 10))} ช่องออเดอร์ = ${esc(r.id)} แผนก IV ·
+      ยอด TRcloud ต้องเป็นยอด ณ ตัดยอด: ลงเอกสารที่ค้างให้ครบ แล้วอัปเดตชีต Stock กับ WH-Loss ก่อนกดโหลดใหม่${V ? '' : ' · ไม่มีราคาทุน มูลค่าจึงไม่ขึ้น (แท็บ ราคาทุน ในชีตสต๊อก)'}</div>`;
+}
+
+async function downloadTrc() {
+  const r = R(), closed = r.status === 'ปิดแล้ว';
+  if (!TRC || !TRC.data) return;
+  const d = TRC.data;
+  if (!d.loss && !confirm('ไม่มียอด WH-Loss (แท็บ WH-Loss ในชีตสต๊อก หรือสคริปต์รุ่นเก่า)\nไฟล์จะไม่ได้หักลบกับของในคลัง Loss — ถือว่า Loss เป็น 0\n\nโหลดไฟล์ต่อไหม?')) return;
+  const k = trcRes();
+  await job('กำลังสร้างไฟล์ Excel…', async () => {
+    const X = await xlsxLib();
+    const wb = X.utils.book_new();
+    ST.trcBook(k, {
+      id: r.id, name: r.name, date: String(r.cutoff || r.date || '').slice(0, 10), cutoff: r.cutoff,
+      approvedBy: closed ? r.approvedBy : '', approvedAt: closed ? r.approvedAt : '',
+      trcAt: new Date(TRC.at).toLocaleString('th-TH'), tabs: d.tabs, noLoss: !d.loss,
+    }).forEach(sh => {
+      const ws = X.utils.aoa_to_sheet(sh.aoa);
+      ws['!cols'] = sh.cols.map(w => ({ wch: w }));
+      if (sh.name !== 'TRcloud' && sh.aoa.length > 1 && sh.aoa[0].length > 2) ws['!autofilter'] = { ref: X.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: sh.aoa.length - 1, c: sh.aoa[0].length - 1 } }) };
+      X.utils.book_append_sheet(wb, ws, sh.name);
+    });
+    X.writeFile(wb, `ลงTRcloud-นับสต๊อก-${r.id}${closed ? '' : '-ร่าง'}.xlsx`);
+    S.ok = closed ? `✓ โหลด Excel ลง TRcloud แล้ว — ${f(k.rows.length)} แถว ลงจากชีต TRcloud` : '✓ โหลด Excel ร่างแล้ว (ยังไม่อนุมัติ ห้ามลง TRcloud)';
+  });
+}
+
+/* ── แท็บตั้งต้นสมุด: ยอดที่นับได้เป็นยอดตั้งต้นของสมุด Transaction ใหม่ ──
+   สำรองสมุดเดิม ลบแถวข้อมูล แล้ววางแถวจากไฟล์นี้ (Note "Stock Count Q4/26" กองละแถว) แอปไม่แตะสมุดเอง
+   LOT/PO ที่ไม่รู้เติมจาก GR ล่าสุดในสมุดเดิม วันรับแรกของ PO พ่วงใน Note ให้หน้า FIFO เรียงต่อได้
+   ตอนโหลด Excel เก็บแถวย่อไว้ในเครื่อง หลังวางสมุดใหม่ (แถว GR เดิมหายแล้ว คิดซ้ำไม่ได้) เช็คกับชุดนั้น */
+
+const OP_KEY = 'wms:st:open:';   // + รหัสรอบ → {note, name, at, closed, rows: [[SKU, SKU เต็ม, '', LOT, PO, '', Location, จำนวน]]}
+let OPR = null;     // แถวตั้งต้นที่คิดไว้
+let OPCHK = null;   // ผลเช็คสมุดใหม่ {at, res, mode: 'file' | 'sku', file: {at, closed}, reset}
+
+function opSaved() { try { return JSON.parse(load(OP_KEY + S.rid) || '{}') || {}; } catch (e) { return {}; } }
+function opSet(o) { try { localStorage.setItem(OP_KEY + S.rid, JSON.stringify({ ...opSaved(), ...o })); return true; } catch (e) { return false; } }
+function opNote() { return opSaved().note || ST.countLabel(R().date); }
+function opName() { return opSaved().name || who(); }
+/** สมุดที่อ่านมาตั้งต้นใหม่แล้วไหม: แถวสุดท้ายน้อยกว่าแถวตอนดึงยอดตั้งต้น = แถวเดิมถูกลบไปแล้ว */
+function opReset(fifo) {
+  const last = ((fifo && fifo.rows) || []).reduce((m, r) => Math.max(m, r[0]), 0);
+  return !!(R().lastRow && last < R().lastRow);
+}
+function opFinals() { return R().status === 'ปิดแล้ว' ? (S.head.sum || []).map(fromSum) : finals(); }
+
+function opening() {
+  const closed = R().status === 'ปิดแล้ว', ed = closed ? '' : JSON.stringify(edits());
+  const note = opNote(), name = opName();
+  if (OPR && OPR.head === S.head && OPR.n === S.log.length && OPR.since === S.since && OPR.closed === closed && OPR.ed === ed
+    && OPR.fifo === FIFO && OPR.note === note && OPR.name === name) return OPR.res;
+  const res = ST.openingRows({ lines: opFinals(), fifo: FIFO.data, piles: S.head.piles, note, name });
+  OPR = { head: S.head, n: S.log.length, since: S.since, closed, ed, fifo: FIFO, note, name, res };
+  return res;
+}
+
+function opCheckHtml() {
+  if (!OPCHK) return '';
+  const c = OPCHK.res, at = new Date(OPCHK.at).toLocaleTimeString('th-TH');
+  const by = OPCHK.mode === 'file' ? `เทียบกับไฟล์ที่โหลดเมื่อ ${dt(OPCHK.file.at)}${OPCHK.file.closed ? '' : ' <b>(ไฟล์ร่าง)</b>'}`
+    : 'เทียบ Location × SKU กับยอดสุดท้าย (เครื่องนี้ไม่มีไฟล์ที่โหลดไว้ LOT/PO จึงไม่ได้เทียบ)';
+  if (c.ok) return `<div class="st-done">✓ <b>สมุดใหม่ตรงกับยอดตั้งต้นทุกกอง</b> · ${f(c.rows)} แถวนับ · ${f(c.got)} ชิ้น · ${by} · เช็คเมื่อ ${at} — เปิดคลังได้</div>`;
+  if (!OPCHK.reset) return `<div class="st-warn">สมุดยังเป็นของเดิม (แถวสุดท้ายยังเกินแถวตอนดึงยอดตั้งต้น ${f(R().lastRow)}) — ยังไม่ได้วาง หรือสำเนาที่หน้าเว็บอ่านยังไม่อัปเดต รอ 1–2 นาทีแล้วเช็คใหม่ · เช็คเมื่อ ${at}</div>`;
+  const lim = 30;
+  const rows = c.diff.slice(0, lim).map(d => `<tr><td class="k">${esc(d.loc)}</td><td>${esc(d.sku)}</td><td>${esc(d.lot)}</td><td>${esc(d.po)}</td>
+    <td class="num">${f(d.want)}</td><td class="num">${f(d.got)}</td><td class="num ${d.got - d.want < 0 ? 'neg' : 'pos'}">${signed(d.got - d.want)}</td></tr>`).join('');
+  return `<div class="st-warn"><b>สมุดใหม่ยังไม่ตรง</b> · ควรได้ ${f(c.want)} ชิ้น สมุดมี ${f(c.got)} ชิ้น (${f(c.rows)} แถวนับ) · ${by} · เช็คเมื่อ ${at}
+      ${c.mixed ? `<br>มีแถวอื่น ${f(c.mixed)} แถวอยู่ก่อนแถวตั้งต้น (เริ่มแถว ${f(c.first)}) — ของเดิมยังลบไม่หมด หรือวางแทรกกลาง` : ''}
+      ${!c.rows ? '<br>สมุดไม่มีแถว Stock Count เลย — ยังไม่ได้วางแถวตั้งต้น' : ''}</div>
+    ${c.diff.length ? `<div class="st-wrap" style="margin-bottom:10px"><table class="st-xl"><thead><tr><th>Location</th><th>SKU</th><th>LOT</th><th>PO</th>
+      <th class="num">ควรได้</th><th class="num">สมุดใหม่</th><th class="num">ต่าง</th></tr></thead><tbody>${rows}</tbody></table></div>
+      ${c.diff.length > lim ? `<div class="st-note">แสดง ${lim} จาก ${f(c.diff.length)} กองที่ไม่ตรง</div>` : ''}` : ''}`;
+}
+
+function openingView() {
+  const r = R();
+  if (!after1()) return `<div class="st-empty">ตั้งต้นสมุดได้หลังปิดรับนับรอบ 1<br><button class="st-btn" data-go="analyze">ไปแท็บวิเคราะห์</button></div>`;
+  if (!WmsSettings.txUrl()) return '<div class="st-empty">ต้องอ่านสมุด Transaction เดิมเพื่อหาวันรับและ LOT/PO<br>ใส่ <b>URL Transaction</b> ในหน้าตั้งค่าก่อน</div>';
+  if (!FIFO) {
+    if (!FIFO_BUSY) {
+      FIFO_BUSY = true;
+      loadFifo(false).catch(() => { FIFO = { data: null, at: Date.now() }; }).finally(() => { FIFO_BUSY = false; if (TAB === 'opening') paintBody(); });
+    }
+    return '<div class="st-empty">⏳ กำลังอ่านสมุด Transaction…</div>';
+  }
+  if (!FIFO.data) return '<div class="st-empty">อ่านสมุดไม่ได้<br><button class="st-btn" data-act="op-fifo">ลองใหม่</button></div>';
+  const closed = r.status === 'ปิดแล้ว', sv = opSaved();
+  const checkBtn = `<button class="st-btn ${OPCHK && OPCHK.res.ok ? '' : 'p'}" data-act="op-check" ${S.busy ? 'disabled' : ''}>เช็คสมุดใหม่</button>`;
+
+  /* วางสมุดใหม่แล้ว: แถว GR เดิมหายไป คิดแถวตั้งต้นซ้ำไม่ได้ เหลือแค่เช็ค */
+  if (opReset(FIFO.data)) {
+    return `<div class="st-done">สมุดถูกตั้งต้นใหม่แล้ว (แถวสุดท้ายตอนนี้น้อยกว่าแถวตอนดึงยอดตั้งต้น ${f(r.lastRow)}) ·
+        ${sv.rows ? `เครื่องนี้มีไฟล์ที่โหลดเมื่อ ${dt(sv.at)} ${f(sv.rows.length)} แถว${sv.closed ? '' : ' (ร่าง)'}` : 'เครื่องนี้ไม่มีไฟล์ที่โหลดไว้ เช็คได้แค่ Location × SKU'}</div>
+      <div class="st-tot"><span>กดเช็คหลังวางแถวตั้งต้นครบ ต้องขึ้น ✓ ก่อนเปิดคลัง</span><span class="sp"></span>${checkBtn}</div>${opCheckHtml()}`;
+  }
+
+  const o = opening(), t = o.tot;
+  const fin = ST.finalTotals(opFinals());
+  const mv = r.lastRow ? ST.movesAfter(FIFO.data, r.lastRow, r.cutoff) : [];
+  const q = ST.up(AQ);
+  const ix = o.rows.map((_, i) => i).filter(i => {
+    const x = o.info[i], row = o.rows[i];
+    if (FILTER === 'est' && x.kind !== 'est') return false;
+    if (FILTER === 'left' && x.kind !== 'left') return false;
+    if (FILTER === 'book' && x.src !== ST.SRC.BOOK) return false;
+    if (FILTER === 'open' && !x.open) return false;
+    return !q || [row[0], row[1], row[2], row[3], row[4], row[6]].some(v => ST.up(v).includes(q));
+  });
+  const chip = (key, label, val, cls) => `<button class="st-chip ${cls || ''} ${FILTER === key ? 'on' : ''}" data-filter="${esc(key)}">${esc(label)} <b>${val}</b></button>`;
+  const cnt = (fn) => o.info.filter(fn).length;
+  const body = ix.slice(0, AN_LIMIT).map(i => {
+    const x = o.info[i], v = o.rows[i];
+    const lp = x.kind === 'est' ? 'est' : x.kind === 'left' ? 'unk' : '';
+    return `<tr><td class="mu num">${i + 2}</td><td class="k">${esc(v[0])}</td><td>${esc(v[1])}</td><td class="mu">${esc(v[2])}</td>
+      <td class="${lp}">${esc(v[3])}</td><td class="${lp}">${esc(v[4])}</td><td></td><td class="k">${esc(v[6])}</td><td class="num">${f(v[7])}</td>
+      <td>${esc(v[8])}</td><td class="nt" title="${esc(v[9])}">${esc(v[9])}</td><td>${esc(v[10])}</td><td class="mu">${esc(v[11])}</td></tr>`;
+  }).join('');
+  const sumOk = Math.abs(t.qty - (fin.final - t.neg.qty)) < 0.001;
+  const band = closed
+    ? `<div class="st-done">ยอดที่อนุมัติแล้ว · ${esc(r.approvedBy)} · ${esc(r.approvedAt)} — โหลด Excel แล้ววางตามชีต <b>วิธีวาง</b> ก่อนเปิดคลัง · แอปไม่แตะสมุดเอง</div>`
+    : '<div class="st-warn"><b>ร่าง</b> — ยังไม่อนุมัติยอด ตัวเลขยังเปลี่ยนได้ ห้ามวางลงสมุดจริงจนกว่าจะอนุมัติและปิดรอบ</div>';
+  const when = {};
+  mv.forEach(m => { when[m.when || 'ไม่มีวันที่'] = (when[m.when || 'ไม่มีวันที่'] || 0) + 1; });
+  const moves = mv.length ? `<div class="st-warn">สมุดเดิมมี <b>${f(mv.length)} แถวหลังดึงยอดตั้งต้น</b> (แถว ${f(mv[0].row)}${mv.length > 1 ? `–${f(mv[mv.length - 1].row)}` : ''} ·${Object.keys(when).map(k => `${esc(k)} ${f(when[k])}`).join(' · ')}) —
+      ของที่ขยับหลังนับเสร็จ คัดลอกจากไฟล์สำรองมาต่อท้ายสมุดใหม่ · ระหว่างนับ ยอดนับรวมไว้แล้ว ไม่ต้องคัดลอก</div>` : '';
+  return `${band}${moves}${opCheckHtml()}
+    <div class="st-tot">
+      <label>Note <input class="op-in" id="opNote" maxlength="60" value="${esc(opNote())}" aria-label="Note ของแถวตั้งต้น"></label>
+      <label>NAME <input class="op-in nm" id="opName" maxlength="40" value="${esc(opName())}" aria-label="ชื่อในช่อง NAME"></label>
+      <span>แถว <b>${f(t.rows)}</b></span><span>ชิ้น <b>${f(t.qty)}</b>${sumOk ? ' <span class="mu">= ยอดสุดท้าย ✓</span>' : ` <b class="neg">≠ ยอดสุดท้าย ${f(fin.final)}</b>`}</span>
+      <span class="sp"></span>
+      <button class="st-btn p" data-act="op-xlsx" ${S.busy || !t.rows ? 'disabled' : ''}>Excel ตั้งต้นสมุด${closed ? '' : ' (ร่าง)'}</button>${checkBtn}
+    </div>
+    ${t.neg.lines ? `<div class="st-note" style="margin:0 0 8px">ยอดติดลบ ${f(t.neg.lines)} รายการ (${f(t.neg.qty)} ชิ้น) ที่โลไม่ได้นับ ไม่ลงสมุดใหม่ = ถือเป็น 0</div>` : ''}
+    <div class="st-bar">
+      ${chip('', 'ทั้งหมด', f(t.rows))}
+      ${chip('est', 'ประมาณ LOT/PO', `${f(cnt(x => x.kind === 'est'))} · ${f(t.est.qty)} ชิ้น`, 'amber')}
+      ${t.est.left ? chip('left', 'ยังไม่รู้ LOT/PO', `${f(cnt(x => x.kind === 'left'))} · ${f(t.est.left)} ชิ้น`, 'red') : ''}
+      ${t.book ? chip('book', 'ไม่ได้นับ (ยอดสมุด)', f(cnt(x => x.src === ST.SRC.BOOK)), 'red') : ''}
+      ${chip('open', 'โลเปิด', `${f(t.open)} โล`)}
+      <span class="sp"></span><input class="st-q" id="anQ" placeholder="ค้นหา โล / SKU / LOT / PO" value="${esc(AQ)}" aria-label="ค้นหาในแถวตั้งต้น">
+    </div>
+    <div class="st-wrap"><table class="st-xl"><thead><tr><th class="num">แถว</th>${ST.OPEN_HEAD.map(h => `<th${h === 'QTY' ? ' class="num"' : ''}>${esc(h)}</th>`).join('')}</tr></thead>
+      <tbody>${body || `<tr><td colspan="13" class="mu">${t.rows ? 'ไม่มีแถวตามที่กรอง' : 'ยังไม่มียอดสุดท้าย'}</td></tr>`}</tbody></table></div>
+    ${ix.length > AN_LIMIT ? `<div class="st-note">แสดง ${AN_LIMIT} จาก ${f(ix.length)} แถว — กดชิปหรือค้นหาเพื่อกรอง (Excel มีครบทุกแถว)</div>` : ''}
+    <div class="st-note">กองละแถว เป็นแถว <b>รับ</b> เข้า Location รับ · ช่องเหลือง = LOT/PO ที่ไม่มีป้าย เติมจาก GR ล่าสุดในสมุดเดิม (ของที่เหลือหลังขายแบบ FIFO คือของที่รับเข้าล่าสุด) ·
+      ช่องแดง = GR ไม่พอ คง LOT/PO เดิม · วันรับแรกของ PO พ่วงใน Note (· GR dd-mm-yy) หน้า FIFO เรียง PO ต่อได้ · Status เปิด ตามโลเปิดตอนดึงยอดตั้งต้น</div>`;
+}
+
+async function downloadOpening() {
+  const r = R(), closed = r.status === 'ปิดแล้ว';
+  if (!FIFO || !FIFO.data || opReset(FIFO.data)) { S.err = 'สมุดถูกตั้งต้นใหม่แล้ว ทำไฟล์จากสมุดนี้ไม่ได้ (ไม่มีแถว GR เดิม) ใช้ไฟล์ที่โหลดไว้'; paintSrc(); return; }
+  const o = opening(), fin = ST.finalTotals(opFinals());
+  await job('กำลังสร้างไฟล์ Excel…', async () => {
+    const X = await xlsxLib();
+    const wb = X.utils.book_new();
+    ST.openingBook(o, {
+      id: r.id, name: r.name, date: r.date, cutoff: r.cutoff, approvedBy: closed ? r.approvedBy : '', approvedAt: closed ? r.approvedAt : '',
+      note: opNote(), who: opName(), final: fin.final, lastRow: r.lastRow, moves: r.lastRow ? ST.movesAfter(FIFO.data, r.lastRow, r.cutoff) : [],
+    }).forEach(sh => {
+      const ws = X.utils.aoa_to_sheet(sh.aoa);
+      ws['!cols'] = sh.cols.map(w => ({ wch: w }));
+      if (sh.aoa.length > 1 && sh.aoa[0].length > 2) ws['!autofilter'] = { ref: X.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: sh.aoa.length - 1, c: sh.aoa[0].length - 1 } }) };
+      X.utils.book_append_sheet(wb, ws, sh.name);
+    });
+    X.writeFile(wb, `ตั้งต้นสมุด-${r.id}${closed ? '' : '-ร่าง'}.xlsx`);
+    const kept = opSet({ at: Date.now(), closed, rows: o.rows.map(x => [x[0], x[1], '', x[3], x[4], '', x[6], x[7]]) });
+    S.ok = (closed ? '✓ โหลด Excel ตั้งต้นสมุดแล้ว — วางตามชีตวิธีวาง แล้วกดเช็คสมุดใหม่' : '✓ โหลด Excel ร่างแล้ว (ยังไม่อนุมัติ ห้ามวางลงสมุดจริง)')
+      + (kept ? '' : ' · เก็บแถวไว้เช็คในเครื่องนี้ไม่ได้ (พื้นที่เต็ม) จะเช็คได้แค่ Location × SKU');
+  });
+}
+
+/** อ่านสมุดสด แล้วเทียบแถวนับ (Stock Count) กับไฟล์ที่โหลดไว้ ไม่มีไฟล์ในเครื่อง = เทียบ Location × SKU กับยอดสุดท้าย */
+async function checkOpening() {
+  await job('กำลังอ่านสมุด Transaction…', async () => {
+    const fifo = await loadFifo(true);
+    const sv = opSaved(), reset = opReset(fifo);
+    let rows, mode;
+    if (sv.rows && sv.rows.length) { rows = sv.rows; mode = 'file'; }
+    else if (!reset) { rows = opening().rows; mode = 'file'; sv.at = Date.now(); sv.closed = R().status === 'ปิดแล้ว'; }
+    else { rows = opFinals().filter(l => l.final > 0).map(l => [l.sku, l.long, '', l.lot, l.po, '', l.loc, l.final]); mode = 'sku'; }
+    const res = ST.openingCheck(fifo, rows, mode === 'sku');
+    OPCHK = { at: Date.now(), res, mode, file: { at: sv.at, closed: sv.closed }, reset };
+    if (res.ok) S.ok = '✓ สมุดใหม่ตรงกับยอดตั้งต้นทุกกอง'; else S.err = reset ? 'สมุดใหม่ยังไม่ตรงกับยอดตั้งต้น ดูรายการในแท็บ' : 'สมุดยังเป็นของเดิม ยังไม่ได้วางแถวตั้งต้น';
+  });
 }
 
 /* ── รูปสรุปส่ง LINE: วาดลง canvas เป็น PNG (แบบเดียวกับหน้า MFG) คัดลอกไปวาง / แชร์จากมือถือ / โหลดเก็บ ── */
@@ -2204,6 +2529,14 @@ document.addEventListener('click', (e) => {
   else if (act === 'del-cancel') { DEL = false; paintBody(); }
   else if (act === 'del-go') delRound();
   else if (act === 'rp-print') window.print();
+  else if (act === 'op-xlsx') downloadOpening();
+  else if (act === 'trc-xlsx') downloadTrc();
+  else if (act === 'trc-load') {
+    TRC = null; S.err = ''; S.ok = '';
+    job('กำลังโหลดสต๊อก TRcloud…', async () => { try { await loadTrc(); } catch (e) { TRC = { data: null, at: Date.now(), err: e.message }; } RP = null; });
+  }
+  else if (act === 'op-check') checkOpening();
+  else if (act === 'op-fifo') { FIFO = null; paintBody(); }
   else if (act === 'rp-shot') openShot();
   else if (act === 'rp-price') { PRICE_OPEN = !PRICE_OPEN; paintBody(); const el = $('rpPrice'); if (el) el.focus(); }
   else if (act === 'rp-price-save') savePriceBox();
@@ -2226,6 +2559,12 @@ document.addEventListener('change', (e) => {
     return;
   }
   if (t.id === 'ctTarget') { setTarget(t.value); paintBody(); return; }
+  if (t.id === 'opNote' || t.id === 'opName') {
+    const v = t.value.trim();
+    opSet(t.id === 'opNote' ? { note: v } : { name: v });
+    paintBody();
+    return;
+  }
   if (d.day2open !== undefined) {
     const dd = D();
     if (dd.day2 && !dd.day2.on) { dd.day2.open = t.checked; touch(); }

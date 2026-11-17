@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { defineConfig } from 'vite';
-import { loadStocktake, fakeFifo, stocktakeMtime } from './src/dev/fake-gas.js';
+import { loadStocktake, fakeFifo, stocktakeMtime, loadStockApi, stockMtime } from './src/dev/fake-gas.js';
 
 /**
  * GitHub Pages serves public/summary/index.html at /summary/, but Vite's dev
@@ -33,12 +33,16 @@ function folderIndex() {
  *                      ?api=fake-empty อ่านสดได้สมุดว่าง แต่ชุดกลาง (&shared=1) ยังมีของ แบบที่เจอจริง 16 พ.ย. 69 (&on=0 = เลิก)
  *   /__fake/stocktake  รัน apps-script/stocktake-api.gs ตัวจริงกับชีตในหน่วยความจำ
  *                      รหัสหัวหน้า demo-head รหัสคนนับ demo-count ข้อมูลหายเมื่อปิด dev server
+ *   /__fake/stock      รัน apps-script/stock-api.gs ตัวจริงกับชีตสต๊อก TRcloud สมมติ (Stock, WH Loss, ราคาทุน) ที่เข้ากับสมุดสมมติ
+ *                      ตั้ง URL สต๊อกในหน้าตั้งค่า = http://localhost:5173/__fake/stock
  * ตั้งในหน้านับสต๊อกใหญ่: URL = http://localhost:5173/__fake/stocktake รหัส = demo-head
  * และ URL Transaction ในหน้าตั้งค่า = http://localhost:5173/__fake/tx
  */
 function fakeGas() {
   let st = null;
   let stAt = 0;
+  let sk = null;
+  let skAt = 0;
   const moves = [];
   let emptyLive = false;
   return {
@@ -73,6 +77,11 @@ function fakeGas() {
             return send(d);
           }
           return send({ app: 'transaction' });
+        }
+        if (pathname === '/__fake/stock') {
+          const mt = stockMtime();
+          if (!sk || mt !== skAt) { sk = loadStockApi(); skAt = mt; }
+          return send(sk.get(params));
         }
         if (pathname === '/__fake/stocktake') {
           /* แก้ .gs ระหว่างเปิด dev server = โหลดสคริปต์ใหม่กับชีตเดิม ไม่ต้องตั้งรอบใหม่ทุกครั้ง */

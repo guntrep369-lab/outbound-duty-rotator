@@ -755,6 +755,9 @@ function fifo_() {
     app: 'transaction', at: Date.now(), today: today, last: sales_(rows, today).last, conv: 1, lot0: 1,
     sheet: link_(ss, sheet),
     skus: [], pos: [], locs: [], days: [], rows: [],
+    /* แถวนับสต๊อกที่พ่วงวันรับของ PO ไว้ใน Note (Stock Count Q4/26 · GR 02-10-26 ตอนตั้งต้นสมุดใหม่) [เลขแถว, yyyy-mm-dd]
+       หน้า FIFO เรียง PO ตามวันรับนี้แทนคำว่าก่อนนับสต๊อก แถวนับไม่ได้เป็นแถวรับเข้าวันนั้น จึงไม่ใส่ในธง GR */
+    cgr: [],
   };
   var idx = { sku: {}, po: {}, loc: {}, day: {} };
   function no(kind, list, key, v) {
@@ -774,6 +777,9 @@ function fifo_() {
       r.to ? no('loc', out.locs, same_(r.to), r.to) : -1,
       r.qty, t, r.near ? no('day', out.days, r.near, r.near) : -1, flag,
     ]);
+    var cg = flag & 4 ? /\bGR\s*(\d{1,2})-(\d{1,2})-(\d{2})\b/i.exec(r.note) : null;
+    var cd = cg ? ymd_(cg[3], cg[2], cg[1]) : '';
+    if (cd) out.cgr.push([r.row, cd]);
   });
   out.before = before_(ss, tz);
   out.convert = convert_(ss, rows);
