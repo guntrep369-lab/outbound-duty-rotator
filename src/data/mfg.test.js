@@ -537,4 +537,103 @@ describe('รอบ MFG บนสคริปต์นับสต๊อกต�
     expect(M.unpackList(head.round.settings.list)).toEqual(LIST);
     expect(M.decideOf(head.round.settings.decide).AAA0000000001).toMatchObject({ code: 'open', note: 'แกะ 5 ชิ้นก่อน' });
   });
+
+  /* รอบ MFG พร้อมยอดตั้งต้น ทีม และสถานะนับรอบ 1 */
+  const mkRound = (api, ym, date) => {
+    const s = M.scope(BASE, LIST, ym);
+    const settings = { kind: 'mfg', ym, list: M.packList(LIST) };
+    const id = api.post({ op: 'st-round-save', t: HEAD, round: { name: M.roundName(ym), date, cutoff: date + ' 08:00', settings } }).round.id;
+    api.post({ op: 'st-baseline', t: HEAD, round: id, piles: s.piles, skus: s.skus, pos: s.pos, lastRow: 99, lastDate: date });
+    api.post({ op: 'st-teams', t: HEAD, round: id, pass: 1, teams: M.teams(s.locs, 1), locs: s.locs.map((l) => [l.loc, l.zone, l.group, l.src]) });
+    api.post({ op: 'st-status', t: HEAD, round: id, status: 'นับรอบ 1' });
+    return id;
+  };
+
+  it('ลิงก์เจ้านาย: หัวหน้าทำรหัสได้คนเดียว ทำใหม่แล้วรหัสเก่าใช้ไม่ได้ · บันทึกรอบส่งรหัสมาเองไม่ได้', () => {
+    const api = loadStocktake({ head: HEAD, count: 'nab' });
+    const id = mkRound(api, '2026-11', '2026-11-16');
+    expect(api.post({ op: 'st-boss-key', t: 'ผิด', round: id }).error).toBeTruthy();
+    expect(api.get({ api: 'st-boss', round: id, b: '' }).error).toContain('ยังไม่มีลิงก์เจ้านาย');
+    const k1 = api.post({ op: 'st-boss-key', t: HEAD, by: 'หัวหน้า', round: id }).key;
+    expect(k1).toMatch(/^[0-9a-f]{32}$/);
+    expect(api.get({ api: 'st-boss', round: id, b: k1 }).error).toBeUndefined();
+    const k2 = api.post({ op: 'st-boss-key', t: HEAD, round: id }).key;
+    expect(k2).not.toBe(k1);
+    expect(api.get({ api: 'st-boss', round: id, b: k1 }).error).toContain('ใช้ไม่ได้แล้ว');
+    expect(api.get({ api: 'st-boss', round: id, b: 'nab' }).error).toBeTruthy();
+
+    /* หน้า MFG บันทึกคำตัดสินด้วยค่าตั้งชุดเก่า (ไม่มีรหัส) หรือแอบใส่รหัสเอง รหัสของรอบต้องอยู่เหมือนเดิม */
+    const fresh = api.get({ api: 'st-rounds', t: HEAD }).rounds.find((x) => x.id === id);
+    const { boss, ...old } = fresh.settings;
+    expect(boss).toBe(k2);
+    api.post({ op: 'st-round-save', t: HEAD, round: { id, name: fresh.name, date: fresh.date, cutoff: fresh.cutoff, settings: old } });
+    api.post({ op: 'st-round-save', t: HEAD, round: { id, name: fresh.name, date: fresh.date, cutoff: fresh.cutoff, settings: { ...old, boss: 'ของปลอม' } } });
+    expect(api.get({ api: 'st-head', round: id, t: HEAD }).round.settings.boss).toBe(k2);
+
+    /* รอบนับสต๊อกใหญ่ไม่มีลิงก์เจ้านาย */
+    const big = api.post({ op: 'st-round-save', t: HEAD, round: { name: 'นับใหญ่', date: '2026-11-16', cutoff: '2026-11-16 08:00', settings: {} } }).round.id;
+    expect(api.post({ op: 'st-boss-key', t: HEAD, round: big }).error).toContain('MFG');
+  });
+
+  it('หน้าเจ้านาย: ได้รายงานรอบนี้กับรอบเดือนก่อน ไม่มีรหัสอื่น · เลือกคำตัดสินรวมกับที่หัวหน้าบันทึกไว้', () => {
+    const api = loadStocktake({ head: HEAD, count: 'nab' });
+    const oct = mkRound(api, '2026-10', '2026-10-16');
+    const nov = mkRound(api, '2026-11', '2026-11-16');
+    /* เดือนก่อนเจ้านายสั่งแกะ AAA (ผ่านหน้า MFG) */
+    const of = api.get({ api: 'st-rounds', t: HEAD }).rounds.find((x) => x.id === oct);
+    api.post({ op: 'st-round-save', t: HEAD, round: { id: oct, name: of.name, date: of.date, cutoff: of.cutoff,
+      settings: { ...of.settings, decide: M.applyDecide({}, { AAA0000000001: ['open', '', 'หัวหน้า', ''] }) } } });
+    const key = api.post({ op: 'st-boss-key', t: HEAD, round: nov }).key;
+
+    const data = api.get({ api: 'st-boss', round: nov, b: key });
+    expect(data.round.settings).toEqual({ kind: 'mfg', ym: '2026-11', list: M.packList(LIST), decide: {} });
+    expect(data.prev.round.id).toBe(oct);
+    const text = JSON.stringify(data);
+    expect(text).not.toContain(key);
+    expect(text).not.toContain(HEAD);
+    expect(text).not.toContain('countKey');
+
+    const m = M.bossModel(data, '2026-11-17');
+    expect(m.ym).toBe('2026-11');
+    expect(m.rep.mode).toBe('book');
+    expect(m.rep.rows.find((r) => r.short === 'AAA001').st).toBe('risk');
+    expect(m.cmp.bySku.AAA0000000001).toMatchObject({ todo: true });
+    expect(m.decide).toEqual({});
+
+    /* หัวหน้าบันทึก BBB ไว้ก่อน แล้วเจ้านายเลือก AAA กับใส่แต่หมายเหตุ CCC · SKU นอกรายชื่อไม่รับ */
+    const nf = api.get({ api: 'st-rounds', t: HEAD }).rounds.find((x) => x.id === nov);
+    api.post({ op: 'st-round-save', t: HEAD, round: { id: nov, name: nf.name, date: nf.date, cutoff: nf.cutoff,
+      settings: { ...nf.settings, decide: M.applyDecide(nf.settings.decide, { BBB0000000001: ['wait', '', 'หัวหน้า', ''] }) } } });
+    expect(api.post({ op: 'st-decide', round: nov, b: 'ผิด', changes: { AAA0000000001: ['open', ''] } }).error).toContain('ใช้ไม่ได้แล้ว');
+    const res = api.post({ op: 'st-decide', round: nov, b: key, by: 'เจ้านาย', changes: {
+      aaa0000000001: ['sell', '  ลด   30%  '], CCC0000000001: ['', 'โอนไปสาขา'], ZZZ9: ['open', ''],
+    } });
+    expect(res.error).toBeUndefined();
+    expect(res.skipped).toEqual(['ZZZ9']);
+    const d = M.decideOf(res.decide);
+    expect(d.AAA0000000001).toMatchObject({ code: 'sell', note: 'ลด 30%', by: 'เจ้านาย' });
+    expect(d.BBB0000000001).toMatchObject({ code: 'wait', by: 'หัวหน้า' });
+    expect(d.CCC0000000001).toMatchObject({ code: 'other', note: 'โอนไปสาขา' });
+
+    /* ล้างคำตัดสิน · หัวหน้าเห็นในค่าตั้งของรอบ · รหัสลิงก์ยังอยู่ */
+    api.post({ op: 'st-decide', round: nov, b: key, changes: { CCC0000000001: null } });
+    const head = api.get({ api: 'st-head', round: nov, t: HEAD });
+    expect(Object.keys(M.decideOf(head.round.settings.decide)).sort()).toEqual(['AAA0000000001', 'BBB0000000001']);
+    expect(head.round.settings.boss).toBe(key);
+    expect(M.bossModel(api.get({ api: 'st-boss', round: nov, b: key }), '2026-11-17').decide.AAA0000000001.code).toBe('sell');
+
+    /* หัวหน้าบันทึกผ่านคำสั่งเดียวกันด้วยรหัสหัวหน้า (ไม่ต้องมีรหัสลิงก์) รวมกับของเจ้านาย ไม่ทับ */
+    const h = api.post({ op: 'st-decide', t: HEAD, by: 'หัวหน้า', round: nov, changes: { CCC0000000001: ['wait', ''] } });
+    expect(M.decideOf(h.decide)).toMatchObject({ AAA0000000001: { code: 'sell', by: 'เจ้านาย' }, CCC0000000001: { code: 'wait', by: 'หัวหน้า' } });
+    expect(api.post({ op: 'st-decide', t: 'nab', round: nov, changes: { CCC0000000001: null } }).error).toContain('ใช้ไม่ได้แล้ว');
+  });
+
+  it('ลิงก์เจ้านาย: ข้อมูลอยู่หลัง # อ่านกลับได้ครบ · ลิงก์ไม่ครบใช้ไม่ได้', () => {
+    const link = M.bossLink('https://x.github.io/wms/mfg/boss.html', 'https://script.google.com/macros/s/ABC/exec', 'k123', 'ST261116-2');
+    expect(link).toBe('https://x.github.io/wms/mfg/boss.html#u=https%3A%2F%2Fscript.google.com%2Fmacros%2Fs%2FABC%2Fexec&b=k123&r=ST261116-2');
+    expect(M.parseBossLink(link.split('#')[1])).toEqual({ url: 'https://script.google.com/macros/s/ABC/exec', key: 'k123', round: 'ST261116-2' });
+    expect(M.parseBossLink('#u=https%3A%2F%2Fa&b=k')).toBeNull();
+    expect(M.parseBossLink('#u=javascript%3Aalert(1)&b=k&r=1')).toBeNull();
+    expect(M.parseBossLink('')).toBeNull();
+  });
 });

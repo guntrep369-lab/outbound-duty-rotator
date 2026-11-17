@@ -20,12 +20,15 @@
  *   COUNT_TOKEN คนนับ: อ่านรายการ Location / SKU กับส่งผลนับ — ว่างไว้ได้ (ใช้แค่ URL)
  *               หน้าหัวหน้าได้รหัสนี้จากสคริปต์เอง แล้วใส่ในลิงก์ที่ส่งให้คนนับ
  *   คนนับไม่เคยได้ยอดในสมุด ต่อให้เปิดดูคำตอบของสคริปต์เอง และแต่ละทีมได้แค่แถวของทีมตัวเอง
+ *   รหัสลิงก์เจ้านาย (รอบเช็คความเสี่ยง MFG) สคริปต์สุ่มให้ทีละรอบ เก็บในค่าตั้งของรอบ ไม่ต้องตั้งเอง
+ *               ทำได้แค่ดูรายงานของรอบนั้นกับเลือกคำตัดสิน · หัวหน้าทำลิงก์ใหม่ = ลิงก์เก่าใช้ไม่ได้
  *
  * ?api=st-rounds&t=…             รายการรอบนับทั้งหมด (หัวหน้า)
  * ?api=st-head&round=…&t=…       ทุกอย่างของรอบ รวมยอดตั้งต้น (หัวหน้า)
  * ?api=st-log&round=…&since=…&t=…   แถวบันทึกนับหลังแถวที่ since ทุกทีม (หัวหน้า)
  * ?api=st-round&round=…&k=…      รอบ ทีม Location SKU PO สำหรับหน้ากรอก ไม่มียอดในสมุด (คนนับ)
  * ?api=st-mine&round=…&team=…&since=…&k=…   แถวบันทึกนับของทีมเดียว (คนนับ)
+ * ?api=st-boss&round=…&b=…       รายงาน MFG ให้เจ้านาย: ยอดตั้งต้น ผลนับ คำตัดสิน + รอบเดือนก่อน (ลิงก์เจ้านาย)
  * POST {op:'st-round-save'}  สร้าง / แก้รอบ (หัวหน้า)
  * POST {op:'st-baseline'}    เก็บยอดตั้งต้นชุดใหม่ (หัวหน้า)
  * POST {op:'st-teams'}       บันทึกทีม / โซน / Location ของรอบ (หัวหน้า)
@@ -38,13 +41,15 @@
  * POST {op:'st-day2-open'}   เปิดนับวันที่ 2 พร้อมรายการโลวันแรกที่ขยับ ต้องนับใหม่ (หัวหน้า)
  * POST {op:'st-count'}       ส่งผลนับเป็นชุด ส่งซ้ำได้ แถวที่เคยรับแล้วไม่ถูกเขียนซ้ำ (คนนับ)
  * POST {op:'st-open'}        เครื่องนี้เปิดโลไหนอยู่ ตอบว่ามีใครในงานเดียวกันเปิดโลนั้นอยู่ (คนนับ ไม่ลงชีต)
+ * POST {op:'st-boss-key'}    ทำลิงก์เจ้านายของรอบ MFG รหัสใหม่ทุกครั้ง ลิงก์เก่าใช้ไม่ได้ (หัวหน้า)
+ * POST {op:'st-decide'}      บันทึกคำตัดสินราย SKU ลงค่าตั้งของรอบ (ลิงก์เจ้านาย หรือรหัสหัวหน้า)
  * ไม่ใส่ api                 บอกแค่ว่าเป็นสคริปต์นี้ ให้หน้าเว็บเช็คว่าใส่ URL ถูกตัว
  *
  * ทุกคำตอบมี v = รุ่นของสคริปต์ หน้าเว็บเทียบกับรุ่นที่ต้องใช้ ลืม Deploy เวอร์ชันใหม่จะขึ้นแถบแดงบอก
  */
 
 /* เพิ่มทีละ 1 ทุกครั้งที่หน้าเว็บต้องใช้ของใหม่จากสคริปต์ (ต้องตรงกับ API_V ใน public/wms-stocktake.js) */
-var VERSION = 6;
+var VERSION = 7;
 
 // รหัสหัวหน้า ตั้งเป็นคำที่เดายาก เช่น 'stock-หัวหน้า-2569' แล้วใส่คำเดียวกันในหน้านับสต๊อกใหญ่
 var HEAD_TOKEN = '';
@@ -128,6 +133,7 @@ function doGet(e) {
       if (!p.team) return out_({ error: 'ไม่ได้บอกทีม' });
       return out_(logView_(String(p.round || ''), +p.since || 0, String(p.team)));
     }
+    if (p.api === 'st-boss') return out_(bossView_(String(p.round || ''), p.b));
   } catch (err) {
     return out_({ error: String(err && err.message || err) });
   }
@@ -149,6 +155,8 @@ function doPost(e) {
     if (req.op === 'st-round-del') { head_(req.t); return out_(roundDel_(req)); }
     if (req.op === 'st-day2') { head_(req.t); return out_(day2Set_(req)); }
     if (req.op === 'st-day2-open') { head_(req.t); return out_(day2Open_(req)); }
+    if (req.op === 'st-boss-key') { head_(req.t); return out_(bossKey_(req)); }
+    if (req.op === 'st-decide') return out_(decide_(req));   // ตรวจรหัสหัวหน้าหรือรหัสลิงก์เจ้านายข้างใน (รหัสลิงก์อยู่ในค่าตั้งของรอบ)
     return out_({ error: 'ไม่รู้จักคำสั่งนี้' });
   } catch (err) {
     return out_({ error: String(err && err.message || err) });
@@ -411,6 +419,9 @@ function roundSave_(req) {
       /* การแบ่งนับ 2 วันแก้ผ่าน st-day2 เท่านั้น หน้าตั้งรอบที่เปิดค้างไว้ (ค่าตั้งชุดเก่า) ต้องไม่ทับ */
       var keep = r.settings && r.settings.day2;
       if (keep) settings.day2 = keep; else delete settings.day2;
+      /* รหัสลิงก์เจ้านายเปลี่ยนผ่าน st-boss-key เท่านั้น หน้าเว็บส่งค่าตั้งชุดเก่ามาก็ไม่ทับ และตั้งรหัสเองไม่ได้ */
+      var boss = r.settings && r.settings.boss;
+      if (boss) settings.boss = boss; else delete settings.boss;
       r.name = name; r.date = date; r.cutoff = cutoff; r.settings = settings;
       r.editBy = who; r.editAt = now;
       writeRound_(r);
@@ -940,6 +951,111 @@ function logRows_(id, since, team) {
     var c = x.c;
     return [x.row, ms_(c[0]), +c[2] || 1, text_(c[3]), text_(c[4]), text_(c[5]), text_(c[6]), text_(c[7]), text_(c[8]),
       text_(c[9]), text_(c[10]), num_(c[11]), text_(c[12]), text_(c[13]), text_(c[14]), text_(c[16])];
+  });
+}
+
+/* ── ลิงก์เจ้านาย (รอบเช็คความเสี่ยง MFG) ──────────────────────────────────── */
+
+var DECIDE_CODES = { open: 1, sell: 1, wait: 1, other: 1 };   // แกะ ขายด่วน รอเดือนหน้า อื่นๆ (เหมือน WmsMfg.DECIDE)
+var DECIDE_MAX = 500;                                          // SKU ต่อครั้งที่ส่ง
+
+/** รหัสในลิงก์ต้องตรงกับของรอบ ไม่ตรง = ลิงก์เก่า (หัวหน้าทำลิงก์ใหม่แล้ว) หรือพิมพ์มาเอง */
+function boss_(r, b) {
+  var key = r.settings && r.settings.boss;
+  if (!key) throw new Error('รอบนี้ยังไม่มีลิงก์เจ้านาย ขอลิงก์จากหัวหน้า');
+  if (String(b || '') !== key) throw new Error('ลิงก์นี้ใช้ไม่ได้แล้ว ขอลิงก์ใหม่จากหัวหน้า');
+}
+
+/** หัวหน้าทำลิงก์เจ้านาย: สุ่มรหัสใหม่ทุกครั้ง ลิงก์ที่เคยส่งไปใช้ไม่ได้อีก · ใช้กับรอบ MFG เท่านั้น */
+function bossKey_(req) {
+  var who = plain_(req.by, 60);
+  return withLock_(function () {
+    var r = round_(text_(req.round));
+    if (!r.settings || r.settings.kind !== 'mfg') return { error: 'ลิงก์เจ้านายใช้ได้กับรอบเช็คความเสี่ยง MFG เท่านั้น' };
+    r.settings.boss = Utilities.getUuid().replace(/-/g, '');
+    r.editBy = who; r.editAt = stamp_();
+    writeRound_(r);
+    return { app: 'stocktake', round: public_(r), key: r.settings.boss };
+  });
+}
+
+/** รอบที่ส่งให้หน้าเจ้านาย: ไม่มีรหัสลิงก์ ไม่มีค่าตั้งอื่น */
+function bossRound_(r) {
+  var s = r.settings || {};
+  return { id: r.id, name: r.name, date: r.date, status: r.status, at: r.at,
+    settings: { kind: s.kind, ym: s.ym, list: s.list || [], decide: s.decide || {} } };
+}
+
+function bossData_(r) {
+  var m = master_(r.id);
+  return { round: bossRound_(r), piles: baseRows_(r), skus: m.skus, locs: locsOf_(r.id), rows: logRows_(r.id, 0, '') };
+}
+
+/** รอบ MFG เดือนก่อนที่ใกล้ที่สุด เดือนเดียวกันหลายรอบเอารอบที่สร้างทีหลัง (เหมือน WmsMfg.prevRound) */
+function bossPrev_(r) {
+  var ym = r.settings && r.settings.ym;
+  if (!ym) return null;
+  var best = null;
+  var later = function (a, b) { return String(a.at || a.date || a.id) > String(b.at || b.date || b.id); };
+  allRounds_().forEach(function (o) {
+    var y = o.settings && o.settings.kind === 'mfg' ? o.settings.ym : '';
+    if (!y || o.id === r.id || o.status === STATUS_DELETED || y >= ym) return;
+    if (!best || y > best.settings.ym || (y === best.settings.ym && later(o, best))) best = o;
+  });
+  return best;
+}
+
+/**
+ * หน้าเจ้านาย: ของรอบนี้กับรอบเดือนก่อน (ยอดตั้งต้น ผลนับทุกแถว รายชื่อ SKU คำตัดสิน) หน้าเว็บคิดรายงานเองด้วย WmsMfg
+ * ไม่มีรหัสหัวหน้า / คนนับ / ลิงก์ ไม่มีทีมกับแผนรอบ 2
+ */
+function bossView_(id, b) {
+  setup_();
+  return withLock_(function () {
+    var r = round_(id);
+    boss_(r, b);
+    var p = bossPrev_(r);
+    var out = bossData_(r);
+    out.app = 'stocktake';
+    out.prev = p ? bossData_(p) : null;
+    return out;
+  });
+}
+
+/**
+ * เลือกคำตัดสิน changes = { SKU เต็ม: [code, หมายเหตุ] | null (ล้าง) } เจ้านายส่งรหัสลิงก์ (b) หัวหน้าส่งรหัสหัวหน้า (t)
+ * รวมกับของเดิมในค่าตั้งของรอบใต้ล็อก สองคนบันทึก SKU อื่นพร้อมกันก็ไม่ทับกัน · รับเฉพาะ SKU ในรายชื่อของรอบ
+ * กติกาเดียวกับ WmsMfg.applyDecide: ใส่แต่หมายเหตุ = อื่นๆ · ไม่มีทั้งคู่ = ลบ · หมายเหตุไม่เกิน 60 ตัว
+ */
+function decide_(req) {
+  var ch = req.changes && typeof req.changes === 'object' && !Array.isArray(req.changes) ? req.changes : null;
+  if (!ch) return { error: 'ไม่มีคำตัดสินที่ส่งมา' };
+  var keys = Object.keys(ch);
+  if (keys.length > DECIDE_MAX) return { error: 'ส่งทีละไม่เกิน ' + DECIDE_MAX + ' SKU' };
+  var head = !!(HEAD_TOKEN && String(req.t || '') === HEAD_TOKEN);
+  var who = plain_(req.by, 40) || (head ? 'หัวหน้า' : 'เจ้านาย');
+  return withLock_(function () {
+    var r = round_(text_(req.round));
+    if (!head) boss_(r, req.b);
+    var want = {};
+    (r.settings.list || []).forEach(function (x) { if (Array.isArray(x)) want[code_(x[0], 40)] = 1; });
+    var dec = r.settings.decide && typeof r.settings.decide === 'object' ? r.settings.decide : {};
+    var at = Utilities.formatDate(new Date(), ss_().getSpreadsheetTimeZone(), 'yyyy-MM-dd HH:mm');
+    var skipped = [];
+    keys.forEach(function (k) {
+      var sku = code_(k, 40);
+      if (!want[sku]) { skipped.push(sku); return; }
+      var v = Array.isArray(ch[k]) ? ch[k] : null;
+      /* อยู่ใน JSON ช่องเดียวที่ขึ้นต้นด้วย { ไม่กลายเป็นสูตร ตัดแค่ช่องว่างซ้ำกับความยาว */
+      var note = v ? String(v[1] === null || v[1] === undefined ? '' : v[1]).replace(/\s+/g, ' ').trim().slice(0, 60) : '';
+      var code = v && DECIDE_CODES[v[0]] ? String(v[0]) : note ? 'other' : '';
+      if (!code) { delete dec[sku]; return; }
+      dec[sku] = [code, note, who, at];
+    });
+    r.settings.decide = dec;
+    if (JSON.stringify(r.settings).length > SETTINGS_MAX) return { error: 'คำตัดสินกับหมายเหตุยาวเกินที่ชีตเก็บได้ ลดหมายเหตุลง' };
+    writeRound_(r);
+    return { app: 'stocktake', decide: dec, skipped: skipped };
   });
 }
 

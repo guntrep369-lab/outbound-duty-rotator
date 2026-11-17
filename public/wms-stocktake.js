@@ -545,7 +545,7 @@
   }
 
   /* รุ่นสคริปต์ที่หน้าเว็บนี้ต้องใช้ (ต้องตรงกับ VERSION ใน apps-script/stocktake-api.gs) */
-  var API_V = 6;
+  var API_V = 7;
   /** คำตอบจากสคริปต์รุ่นเก่ากว่าที่หน้าเว็บต้องใช้ไหม (ลืม Deploy เวอร์ชันใหม่) → {have, need} หรือ null */
   function oldScript(res) {
     if (!res || typeof res !== 'object') return null;

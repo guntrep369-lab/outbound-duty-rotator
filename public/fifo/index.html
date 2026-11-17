@@ -40,29 +40,23 @@
   font-family:var(--wms-font);font-size:13px;color:var(--wms-text)}
 .tx-err{width:100%;font-size:13px;color:#B91C1C;font-weight:600}
 
-/* ── ภาพรวมเดือน ── */
-.fi-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:14px 20px;
+/* ── สรุปเดือน: ตารางเล็กสองตาราง แบบชีตสรุป (ผู้ใช้เลือกแบบนี้ 2026-11-17 แทนการ์ดสี่ใบ) ── */
+.fi-sum{display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px 14px;padding:10px 20px;
   background:var(--wms-surface);border-bottom:1px solid var(--wms-border)}
-.fi-kpis:empty{display:none}
-.fi-kpi{display:flex;flex-direction:column;gap:2px;min-width:0;padding:12px 14px;border-radius:var(--wms-radius-sm);
-  background:var(--wms-surface2);border:1px solid transparent;text-align:left;font-family:var(--wms-font);color:var(--wms-text)}
-.fi-kpi.big{grid-column:span 1}
-.fi-kpi small{font-size:12px;color:var(--wms-muted);font-weight:500}
-.fi-kpi .v{font-size:28px;font-weight:700;line-height:1.15;letter-spacing:-.01em}
-.fi-kpi .v b{font-weight:700}
-.fi-kpi .v span{font-size:14px;font-weight:600;color:var(--wms-muted);margin-left:4px}
-.fi-kpi i{font-style:normal;font-size:12px;color:var(--wms-muted);line-height:1.5}
-.fi-kpi i b{color:var(--wms-text);font-weight:600}
-button.fi-kpi{cursor:pointer;border-color:var(--wms-border)}
-button.fi-kpi:hover{border-color:var(--wms-primary);background:var(--wms-primary-light)}
-button.fi-kpi .go{margin-top:auto;padding-top:6px;font-size:12px;font-weight:600;color:var(--wms-primary-dark)}
-
-/* แถบแบ่งส่วนเส้นบาง ไม่มีตัวเลขบนแถบ ตัวเลขอยู่ในคำอธิบายด้านล่าง */
-.fi-split{display:flex;gap:2px;height:8px;margin:8px 0 6px;border-radius:999px;overflow:hidden;background:var(--wms-border)}
-.fi-split span{display:block;height:100%;min-width:2px}
-.fi-key{display:flex;flex-wrap:wrap;gap:4px 12px;list-style:none;font-size:12px;color:var(--wms-muted)}
-.fi-key li{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
-.fi-key b{color:var(--wms-text);font-weight:600;font-variant-numeric:tabular-nums}
+.fi-sum:empty{display:none}
+.fi-mwrap{max-width:100%;overflow-x:auto}
+.fi-mini{border-collapse:separate;border-spacing:0;font-size:12.5px;border:1px solid var(--wms-border2);border-radius:8px;background:var(--wms-surface)}
+.fi-mini th,.fi-mini td{padding:4px 10px;text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.fi-mini thead th{background:#F1F5F9;font-size:11.5px;font-weight:600;color:var(--wms-muted);border-bottom:1px solid var(--wms-border2)}
+.fi-mini thead th:first-child{text-align:left;color:var(--wms-text);border-radius:8px 0 0 0}
+.fi-mini thead th:last-child{border-radius:0 8px 0 0}
+.fi-mini thead th .u{font-weight:500;color:var(--wms-muted)}
+.fi-mini tbody th{text-align:left;font-weight:600;color:var(--wms-text)}
+.fi-mini tbody tr + tr > *{border-top:1px solid #EEF2F6}
+.fi-mini td.pc{font-size:14px;font-weight:700}
+.fi-go{padding:0;border:0;background:none;font:inherit;font-weight:700;color:#B91C1C;cursor:pointer;text-decoration:underline dotted;text-underline-offset:3px}
+.fi-go:hover{text-decoration-style:solid}
+.fi-go.n{color:var(--wms-primary-dark)}
 .sw{display:inline-block;width:10px;height:10px;border-radius:3px;flex-shrink:0}
 .c-ok{background:var(--fi-ok)}
 .c-po{background:var(--fi-po)}
@@ -131,49 +125,57 @@ button.fi-kpi .go{margin-top:auto;padding-top:6px;font-size:12px;font-weight:600
 .fi-tag.t-mix{background:var(--wms-primary-light);border-color:#C7D2FE;color:var(--wms-primary-dark)}
 .fi-detail{padding:4px 14px 14px 28px}
 
-/* ── คิวงานของแท็บคงเหลือ: การ์ดสี่ใบเป็นตัวเลือก แถวบอกสิ่งที่ต้องทำเป็นประโยคเดียว ── */
-.fi-qs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px}
-.fi-q{display:flex;flex-direction:column;gap:1px;min-width:0;padding:10px 14px;border-radius:var(--wms-radius-sm);
-  border:1px solid var(--wms-border);background:var(--wms-surface);text-align:left;font-family:var(--wms-font);
-  color:var(--wms-text);cursor:pointer;transition:border-color .15s,background .15s}
-.fi-q:hover{border-color:var(--wms-primary)}
-.fi-q:focus-visible{outline:2px solid var(--wms-primary-dark);outline-offset:2px}
-.fi-q.on{border:2px solid var(--wms-primary);padding:9px 13px;background:var(--wms-primary-light)}
-.fi-q b{font-size:24px;font-weight:700;line-height:1.2;font-variant-numeric:tabular-nums}
-.fi-q span{font-size:14px;font-weight:600}
-.fi-q small{font-size:12px;color:var(--wms-muted)}
-.fi-q.q-refill b{color:#B91C1C}
-.fi-q.q-mixed b{color:#B45309}
-.fi-q.zero b{color:var(--wms-faint)}
-.fi-hint{margin-bottom:6px;font-size:13px;color:var(--wms-muted);line-height:1.6}
-.fi-read{margin-bottom:12px;font-size:12px;color:var(--wms-muted);line-height:1.6}
-.fi-read summary{display:inline;cursor:pointer;color:var(--wms-primary-dark);font-weight:600}
-.fi-read b{color:var(--wms-text)}
-.fi-supn{display:block;font-size:11.5px;font-weight:600;color:var(--wms-text)}
-.fi-task > summary{grid-template-columns:minmax(150px,220px) minmax(0,1fr);align-items:start}
-.fi-do{min-width:0}
-.fi-act{display:block;font-size:15px;font-weight:700;color:var(--wms-text);line-height:1.4}
-.fi-how{display:block;margin:2px 0 6px;font-size:13px;color:var(--wms-muted);line-height:1.55}
-.fi-how b{color:var(--wms-text);font-weight:600;white-space:nowrap}
-.fi-seq{display:flex;flex-wrap:wrap;align-items:center;gap:4px}
-.fi-chip{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:6px;border:1px solid var(--wms-border);
-  background:var(--wms-surface2);font-size:12px;color:#334155;white-space:nowrap;font-variant-numeric:tabular-nums}
-.fi-chip.go{background:#FEE2E2;border-color:#FECACA;color:#991B1B;font-weight:600}
-.fi-chip.pk{background:var(--wms-primary-light);border-color:#C7D2FE;color:var(--wms-primary-dark);font-weight:600}
-.fi-chip.unk{color:var(--wms-muted)}
-.fi-arr{font-size:12px;color:var(--wms-faint)}
+/* ── คงเหลือราย LOT: ชิปคิวงาน + ตารางเดียวแบบ Excel หนึ่งแถวต่อกอง (SKU + LOT + PO) ── */
+.fi-tool{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:8px;font-size:13px;color:var(--wms-muted)}
+.fi-tool .sp{flex:1}
+.fi-qc{display:inline-flex;align-items:baseline;gap:5px;padding:3px 11px;border-radius:999px;border:1px solid var(--wms-border);
+  background:var(--wms-surface2);font-family:var(--wms-font);font-size:12.5px;color:var(--wms-muted);cursor:pointer;white-space:nowrap}
+.fi-qc b{font-size:14px;color:var(--wms-text);font-variant-numeric:tabular-nums}
+.fi-qc:hover{border-color:var(--wms-primary)}
+.fi-qc:focus-visible{outline:2px solid var(--wms-primary-dark);outline-offset:2px}
+.fi-qc.on{border-color:var(--wms-primary);background:var(--wms-primary-light);color:var(--wms-primary-dark)}
+.fi-qc.zero{opacity:.5}
+.fi-qc.q-red b{color:#B91C1C}
+.fi-qc.q-warn b{color:#B45309}
+.fi-in{width:220px;padding:5px 10px;border-radius:8px;border:1px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:13px;color:var(--wms-text);outline:none}
+.fi-in:focus,.fi-sel:focus{border-color:var(--wms-primary)}
+.fi-sel{padding:5px 8px;border-radius:8px;border:1px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:13px;color:var(--wms-text)}
+.fi-i{width:24px;height:24px;flex-shrink:0;border-radius:50%;border:1px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:Georgia,serif;font-style:italic;font-weight:700;font-size:12px;color:var(--wms-muted);cursor:pointer}
+.fi-i:hover{border-color:var(--wms-primary);color:var(--wms-primary)}
+.fi-i.on{background:var(--wms-primary-light);border-color:#A5B4FC;color:var(--wms-primary-dark)}
+.fi-help{margin-bottom:8px;padding:7px 12px;border-radius:8px;background:var(--wms-surface2);border:1px solid var(--wms-border);
+  font-size:12.5px;line-height:1.7;color:var(--wms-muted)}
+.fi-help b{color:var(--wms-text)}
+.fi-help .lg{display:inline-flex;align-items:center;gap:5px;margin-right:12px;white-space:nowrap}
 .fi-dot{display:inline-block;width:8px;height:8px;border-radius:50%;flex-shrink:0}
-.fi-head,.fi-all > summary{grid-template-columns:minmax(180px,1.6fr) 90px 70px 110px minmax(130px,1fr)}
-.fi-head{display:grid;gap:6px 16px;padding:8px 14px 8px 28px;background:var(--wms-surface2);border-bottom:1px solid var(--wms-border);
-  font-size:12px;font-weight:600;color:var(--wms-muted)}
-.fi-head .num,.fi-all .num{text-align:right;font-variant-numeric:tabular-nums}
-.fi-all .k-qty b{font-weight:700}
-.fi-all .k-old{display:inline-flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap}
-.fi-st{font-size:13px;font-weight:600}
-.fi-st.s-refill{color:#B91C1C}
-.fi-st.s-mixed{color:#B45309}
-.fi-st.s-unknown{color:var(--wms-muted)}
-.fi-st.s-ok{color:#047857}
+.fi-wrap{overflow:auto;max-height:calc(100vh - 150px);border:1px solid var(--wms-border2);border-radius:8px;background:var(--wms-surface)}
+.fi-xl{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px}
+.fi-xl th{position:sticky;top:0;z-index:2;padding:6px 5px;background:#F1F5F9;text-align:left;font-size:11.5px;font-weight:600;
+  color:var(--wms-muted);border-bottom:1px solid var(--wms-border2);border-right:1px solid #E2E8F0;white-space:nowrap}
+.fi-xl td{height:30px;padding:0 5px;border-bottom:1px solid #EEF2F6;border-right:1px solid #EEF2F6;white-space:nowrap;vertical-align:middle;color:var(--wms-text)}
+.fi-xl .num{text-align:right;font-variant-numeric:tabular-nums}
+.fi-xl tbody tr{background:var(--wms-surface)}
+.fi-xl .c-sku{position:sticky;left:0;z-index:1;background:inherit;font-weight:700}
+.fi-xl th.c-sku{z-index:3;background:#F1F5F9}
+.fi-xl .c-nm{max-width:150px;overflow:hidden;text-overflow:ellipsis;color:#475569}
+.fi-xl .c-pon{font-size:12px;color:#475569}
+.fi-xl .c-sup{max-width:100px;overflow:hidden;text-overflow:ellipsis}
+.fi-xl .c-loc{max-width:140px;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:#475569}
+.fi-xl .sm{font-size:12px;color:var(--wms-muted)}
+.fi-xl .fi-dot{margin-right:5px;vertical-align:1px}
+.fi-xl tr.g1 td{border-top:1px solid #CBD5E1}
+.fi-xl tbody tr:first-child td{border-top:0}
+.fi-xl tr.r-hot td{background:#FEF2F2}
+.fi-xl tr.r-pick td{background:#FFFBEB}
+.fi-xl tr.r-unk td{background:var(--wms-surface2)}
+.fi-xl tr.r-unk .num b{color:var(--wms-muted)}
+.fi-tg{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:700;white-space:nowrap}
+.fi-tg.t-red{background:#FEE2E2;color:#991B1B}
+.fi-tg.t-warn{background:#FEF3C7;color:#92400E}
+.fi-tg.t-gray{background:#F1F5F9;color:#475569}
 .fi-more{padding:12px 14px;font-size:13px;color:var(--wms-muted);text-align:center;background:var(--wms-surface2)}
 
 /* ตารางในรายละเอียด */
@@ -186,16 +188,10 @@ button.fi-kpi .go{margin-top:auto;padding-top:6px;font-size:12px;font-weight:600
 .tx-tbl .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .tx-tbl th.num{text-align:right}
 .tx-tbl .nw{white-space:nowrap}
-.tx-tbl tr.fi-hot td{background:#FFF7ED}
-.fi-rank{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;padding:0 6px;border-radius:999px;
-  background:var(--wms-surface2);border:1px solid var(--wms-border);font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
-.fi-rank.first{background:var(--wms-text);border-color:var(--wms-text);color:#fff}
 .fi-locs{display:flex;flex-wrap:wrap;gap:4px}
 .fi-loc{display:inline-flex;align-items:center;gap:4px;padding:1px 7px;border-radius:6px;background:var(--wms-surface2);
   border:1px solid var(--wms-border);font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums}
 .fi-loc.open{background:#ECFDF5;border-color:#A7F3D0;color:#065F46}
-.fi-loc.sp{background:#F1F5F9;color:var(--wms-muted)}
-.fi-warn{color:#B91C1C;font-weight:600}
 
 /* ── อายุสต๊อก แท่งแนวนอน แกนเดียว ปลายแท่งมนด้านข้อมูล ── */
 .fi-age{background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:var(--wms-radius);padding:8px 16px}
@@ -210,18 +206,20 @@ button.fi-kpi .go{margin-top:auto;padding-top:6px;font-size:12px;font-weight:600
 .fi-aval b{font-weight:700}
 .fi-h{margin:22px 0 10px;font-size:14px;font-weight:700}
 
-@media (max-width:1100px){
-  .fi-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
-}
 @media (max-width:640px){
-  .tx-src,.fi-kpis{padding-left:16px;padding-right:16px}
+  .tx-src,.fi-sum{padding-left:16px;padding-right:16px}
   .tx-tabs{padding-left:12px;padding-right:12px}
   .tx-src button{min-height:44px;padding:0 16px}
   .tx-src select{min-height:44px;font-size:16px}
-  .fi-kpis{gap:8px}
-  .fi-kpi{padding:10px 12px}
-  .fi-kpi.big{grid-column:1/-1}
-  .fi-kpi .v{font-size:24px}
+  .fi-mini{font-size:12px}
+  .fi-mini th,.fi-mini td{padding:4px 7px}
+  .fi-qc{min-height:36px;align-items:center}
+  .fi-in{flex:1 1 100%;width:auto;min-height:44px;font-size:16px}   /* ต่ำกว่า 16px iPhone จะซูมหน้าเองตอนแตะช่องค้น */
+  .fi-sel{min-height:44px;font-size:16px}
+  .fi-i{width:36px;height:36px;font-size:14px}
+  .fi-wrap{max-height:none}
+  .fi-xl .c-sku{font-size:12px}
+  .fi-xl .c-nm{max-width:110px}
   .tx-body{padding-left:16px;padding-right:16px}
   .tx-opt{display:inline-flex;align-items:center;min-height:44px;padding:0 15px}
   .tx-input{flex-basis:100%;min-height:44px;font-size:16px;max-width:none}   /* ต่ำกว่า 16px iPhone จะซูมหน้าเองตอนแตะช่องค้น */
@@ -231,17 +229,6 @@ button.fi-kpi .go{margin-top:auto;padding-top:6px;font-size:12px;font-weight:600
   .fi-bar{grid-column:1/-1;grid-row:2}
   .fi-tot{grid-row:1;grid-column:2}
   .fi-detail{padding:4px 10px 12px}
-  .fi-qs{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-  .fi-q b{font-size:22px}
-  .fi-task > summary{grid-template-columns:minmax(0,1fr);gap:8px}
-  .fi-chip{white-space:normal}
-  .fi-head{display:none}
-  .fi-all > summary{grid-template-columns:auto auto minmax(0,1fr);gap:4px 12px}
-  .fi-all .fi-code{grid-column:1/3;grid-row:1}
-  .fi-all .k-qty{grid-column:3;grid-row:1}
-  .fi-all .k-lots{grid-column:1;grid-row:2;text-align:left}
-  .fi-all .k-old{grid-column:2;grid-row:2}
-  .fi-all .fi-st{grid-column:3;grid-row:2;text-align:right}
   .fi-arow{grid-template-columns:minmax(0,1fr) auto;gap:4px 10px}
   .fi-atrack{grid-column:1/-1;grid-row:2}
   .fi-aval{grid-row:1;grid-column:2;text-align:right}
@@ -252,19 +239,9 @@ button.fi-kpi .go{margin-top:auto;padding-top:6px;font-size:12px;font-weight:600
   .fi-dt thead{display:none}
   .fi-dt tr{display:grid;gap:4px 10px;padding:10px 12px;border-bottom:1px solid var(--wms-border)}
   .fi-dt tr:last-child{border-bottom:0}
-  .fi-dt td,.tx-tbl.fi-dt tr.fi-hot td{display:block;min-width:0;padding:0;border:0;white-space:normal;background:none}
-  .fi-dt tr.fi-hot{background:#FFF7ED}
+  .fi-dt td{display:block;min-width:0;padding:0;border:0;white-space:normal;background:none}
   .fi-tag{white-space:normal;max-width:100%}
   .fi-dt td[data-label]::before{content:attr(data-label);display:block;font-size:12px;font-weight:500;color:var(--wms-muted)}
-  .dt-stock tr{grid-template-columns:28px repeat(3,minmax(0,1fr))}
-  .dt-stock .k-rank{grid-row:1/3}
-  .dt-stock .k-lot{grid-column:2/4;grid-row:1}
-  .dt-stock .k-qty{grid-column:4;grid-row:1;font-size:16px}
-  .dt-stock .k-po{grid-column:2/-1;grid-row:2}
-  .dt-stock .k-open{grid-column:2;grid-row:3;text-align:left}
-  .dt-stock .k-floor{grid-column:3;grid-row:3;text-align:left}
-  .dt-stock .k-rack{grid-column:4;grid-row:3}
-  .dt-stock .k-loc{grid-column:1/-1;grid-row:4}
   .dt-skip tr{grid-template-columns:minmax(0,1fr) auto}
   .dt-skip .k-date{grid-column:1;grid-row:1;font-weight:600}
   .dt-skip .k-date .tx-sub{display:inline;margin-left:6px;font-weight:400}
@@ -295,7 +272,7 @@ button.fi-kpi .go{margin-top:auto;padding-top:6px;font-size:12px;font-weight:600
   </div>
 
   <div class="tx-src" id="src"></div>
-  <div class="fi-kpis" id="sum"></div>
+  <div class="fi-sum" id="sum"></div>
   <div class="tx-tabs" id="tabs" role="tablist"></div>
   <div class="tx-body" id="body"></div>
 
@@ -327,6 +304,7 @@ let MONTH = '';     // yyyy-mm
 let TAB = ['stock', 'skip', 'age'].includes(new URLSearchParams(location.search).get('tab')) ? new URLSearchParams(location.search).get('tab') : 'stock';
 let ONLY = null;    // คิวงานของแท็บคงเหลือ (id ใน WmsFifo.QUEUES) null = ยังไม่ได้เลือก เปิดคิวแรกที่มีงาน
 let SORT = 'need';  // need | code | old | qty
+let HELP = false;   // กล่อง ⓘ อ่านยังไง ของแท็บคงเหลือ
 let KIND = '';      // ตัวกรองแท็บข้าม FIFO: '' | sale | refill
 let Q = '';
 let BUSY = '';
@@ -348,13 +326,8 @@ function ageCls(age) {
   return age <= 3 ? 'c-a2' : age <= 6 ? 'c-a3' : 'c-a4';
 }
 const AGE_KEY = [['c-a4', '7 เดือนขึ้นไป'], ['c-a3', '4–6 เดือน'], ['c-a2', '0–3 เดือน'], ['c-u', 'ไม่รู้ LOT']];
-const ageLegend = (tail) => `<div class="tx-legend" aria-label="สีของอายุ">${AGE_KEY.map(([c, t]) => `<span><i class="sw ${c}"></i>${t}</span>`).join('')}
-  ${tail ? `<span>· ${tail}</span>` : ''}</div>`;
 
 const lotText = (x) => x.lm ? `LOT ${esc(x.lot)} · ${esc(WmsFifo.monthText(x.lm))}` : `<span class="tx-mid">LOT ${esc(x.lot || 'ว่าง')} · ไม่รู้ LOT</span>`;
-const poText = (po) => WmsFifo.noPo(po) ? '<span class="tx-sub">ไม่รู้ PO</span>' : esc(po);
-/* ชื่อ Supplier ของ PO (แท็บ PO. Truck) ไม่รู้ก็ไม่แสดง */
-const supText = (po) => { const s = WmsFifo.sup(RES, po); return s ? `<span class="fi-supn">${esc(s)}</span>` : ''; };
 
 /** วันรับเข้าของกอง PO ที่ลง -01 -02 รวมกันแล้ว บอกว่ารับกี่รอบ: รับ 3 รอบ 29/9 · 5/10 · 7/10 */
 function recvWords(x) {
@@ -465,43 +438,29 @@ function renderSrc() {
   };
 }
 
-/** แถบแบ่งส่วนของการเบิกที่ตรวจได้ กับคำอธิบายที่มีตัวเลขครบ สีบนแถบไม่ต้องอ่านเอง */
-function splitHtml(g, what) {
-  if (!g.judged) return `<i>${esc(monthName(MONTH))} ไม่มี${what}ที่ตรวจได้</i>`;
-  const parts = [['ok', 'ตาม FIFO', g.ok], ['po', 'ข้าม PO', g.po], ['lot', 'ข้าม LOT', g.lot]];
-  const label = parts.map(([, t, n]) => `${t} ${f(n)} ชิ้น`).join(', ');
-  return `<div class="fi-split" role="img" aria-label="${esc(`${what}: ${label}`)}">${parts.filter((p) => p[2] > 0)
-      .map(([c, t, n]) => `<span class="c-${c}" style="flex:${n}" title="${esc(`${t} ${f(n)} ชิ้น (${pct(n, g.judged)}%)`)}"></span>`).join('')}</div>
-    <ul class="fi-key">${parts.map(([c, t, n]) => `<li><i class="sw c-${c}"></i>${t} <b>${f(n)}</b></li>`).join('')}</ul>`;
-}
-
+/**
+ * สรุปเดือนเป็นตารางเล็กสองตาราง แบบชีตสรุปที่ส่ง Supply chain (ผู้ใช้เลือกแบบนี้ 2026-11-17 แทนการ์ดสี่ใบ)
+ * ช่องข้าม LOT / ข้าม PO กดไปแท็บเบิกข้าม FIFO ช่องไม่รู้ LOT ของสต๊อกกดไปคิวไม่รู้ LOT
+ */
 function renderSum() {
   if (!AN || BUSY) { $('sum').innerHTML = ''; return; }
   const t = AN.totals, s = AN.stock;
-  const kpi = (title, g, what) => `<div class="fi-kpi big">
-      <small>${title}</small>
-      <div class="v">${g.pct === null ? '—' : `${g.pct}%`}<span>ตาม FIFO</span></div>
-      <i>จาก <b>${f(g.judged)}</b> ชิ้นที่ตรวจได้${g.skipRows ? ` · ข้าม ${f(g.skipRows)} แถว` : ''}</i>
-      ${splitHtml(g, what)}
-      ${g.unknown ? `<i>ไม่รู้ LOT ตรวจไม่ได้ ${f(g.unknown)} ชิ้น</i>` : ''}
-    </div>`;
-  const refill = s.list.filter((e) => e.refill.length).length;
-  $('sum').innerHTML =
-    kpi('หยิบขาย', t.sale, 'หยิบขาย') +
-    kpi('เติมของเข้าโลขาย', t.refill, 'เติมของ') +
-    `<div class="fi-kpi">
-      <small>สต๊อกคงเหลือ</small>
-      <div class="v"><b data-count="${s.total}">${f(s.total)}</b><span>ชิ้น</span></div>
-      <i>${esc(asOf())} · <b>${f(s.list.length)}</b> SKU</i>
-      <i>ไม่รู้ LOT <b>${f(s.unknown)}</b> ชิ้น (${pct(s.unknown, s.total)}%)</i>
-      ${s.special ? `<i>อยู่ใน QA / IQA / RIB ${f(s.special)} ชิ้น</i>` : ''}
-    </div>
-    <button class="fi-kpi" data-go="refill">
-      <small>ควรเติม LOT เก่าก่อน</small>
-      <div class="v"><b data-count="${refill}">${f(refill)}</b><span>SKU</span></div>
-      <i>กองเก่ายังไม่ได้เติมเข้าโลขาย (อยู่บนแร็คหรือตั้งพื้น) ทั้งที่กองใหม่กว่าอยู่ในโลขายแล้ว</i>
-      <span class="go">ดูรายการ →</span>
-    </button>`;
+  const unkSku = s.list.filter((e) => e.unknown).length;
+  const go = (n, to, tip, cls) => n ? `<button class="fi-go${cls ? ` ${cls}` : ''}" data-go="${to}" title="${esc(tip)}">${f(n)}</button>` : '0';
+  const row = (label, g, kind) => `<tr><th scope="row">${label}</th><td class="pc">${g.pct === null ? '—' : `${g.pct}%`}</td><td>${f(g.judged)}</td><td>${f(g.ok)}</td>
+      <td>${go(g.lot, `skip:${kind}`, `${label}ข้าม LOT ${f(g.lot)} ชิ้น · ดูรายการ`)}</td>
+      <td>${go(g.po, `skip:${kind}`, `${label}ข้าม PO ${f(g.po)} ชิ้น · ดูรายการ`)}</td>
+      <td>${f(g.unknown)}</td></tr>`;
+  const head = isNow() ? `สต๊อกล่าสุด ${dm(RES.last)}` : `สต๊อก ณ ${dm(AN.to)}`;
+  $('sum').innerHTML = `<div class="fi-mwrap"><table class="fi-mini" aria-label="การเบิกตาม FIFO ${esc(monthName(MONTH))} หน่วยเป็นชิ้น">
+      <thead><tr><th>${esc(monthName(MONTH))} <span class="u">· ชิ้น</span></th><th>% ตาม FIFO</th><th>ตรวจได้</th><th>ตาม FIFO</th><th title="มี LOT เดือนเก่ากว่า">ข้าม LOT</th>
+        <th title="LOT เดียวกัน แต่มี PO อื่นที่รับเข้าก่อน (PO -01 -02 เป็น PO เดียวกัน ไม่นับ)">ข้าม PO</th><th title="แถวที่ LOT เป็น 0 หรือว่าง ตรวจไม่ได้">ไม่รู้ LOT</th></tr></thead>
+      <tbody>${row('หยิบขาย', t.sale, 'sale')}${row('เติมของ', t.refill, 'refill')}</tbody></table></div>
+    <div class="fi-mwrap"><table class="fi-mini" aria-label="${esc(head)}">
+      <thead><tr><th>${esc(head)}</th><th>ชิ้น</th><th>SKU</th></tr></thead>
+      <tbody><tr><th scope="row">คงเหลือ</th><td>${f(s.total)}</td><td>${f(s.list.length)}</td></tr>
+        <tr><th scope="row">ไม่รู้ LOT</th><td>${f(s.unknown)}</td><td>${go(unkSku, 'stock:unknown', 'ดูคิวไม่รู้ LOT', 'n')}</td></tr>
+        ${s.special ? `<tr><th scope="row">QA / IQA / RIB</th><td>${f(s.special)}</td><td></td></tr>` : ''}</tbody></table></div>`;
 }
 
 function renderTabs() {
@@ -518,7 +477,9 @@ function renderTabs() {
   ).join('');
 }
 
-/* ── คงเหลือราย LOT: คิวงาน ───────────────────────────────────────────── */
+/* ── คงเหลือราย LOT: ชิปคิวงาน + ตารางเดียวแบบชีต หนึ่งแถวต่อกอง (SKU + LOT + PO) ─────
+ * ผู้ใช้เลือกแบบนี้ 2026-11-17: เห็นทุกกองโดยไม่ต้องกดเปิดทีละ SKU หน้าตาเหมือนชีตคงเหลือราย LOT ใน Excel
+ * คิวงานยังเป็นตัวกรองเดิม (WmsFifo.QUEUES) แถวที่ต้องทำมีสีและป้ายในช่องต้องทำ คำอธิบายอยู่หลังปุ่ม ⓘ */
 
 const SORTS = { need: 'ต้องดูก่อน', code: 'SKU', old: 'ของเก่าสุด', qty: 'จำนวนมากสุด' };
 
@@ -534,143 +495,103 @@ function sortStock(list) {
 
 function stockRows() { return sortStock(WmsFifo.filterStock(AN.stock.list, { only: ONLY || '', q: Q })); }
 
-const QCLS = { refill: 'q-refill', mixed: 'q-mixed', unknown: 'q-unknown', '': 'q-all' };
-const STATE_WORD = { refill: 'ต้องเติมของเก่า', mixed: 'บอกคนหยิบ', unknown: 'ไม่รู้ LOT', ok: '✓ ตาม FIFO' };
-const CHIP_MAX = 6;   // ป้ายกองต่อแถว เกินนี้บอกจำนวนที่เหลือ กดแถวดูครบ
+const QCLS = { refill: 'q-red', mixed: 'q-warn', unknown: '', '': '' };
 
-/** กองนี้อยู่ตรงไหน: ● โลขาย + ตั้งพื้น */
-const placeText = (x) => WmsFifo.placeWords(x).map((w) => w === 'โลขาย' ? '● โลขาย' : w).join(' + ');
-/** โลขายของกองนี้: ● P-01-02 */
-const openAt = (x) => {
-  const at = [...new Set(x.locs.filter((l) => l.open && !l.special).map((l) => loc(l.loc)))];
-  return at.length ? `● ${at.join(', ')}` : '● โลขาย';
-};
-
-/** ป้ายหนึ่งกอง: LOT · อายุ · ชิ้น · อยู่ตรงไหน จุดสีบอกอายุ ตัวหนังสือบอกซ้ำ ไม่ต้องอ่านสีเอง */
-function chip(x, cls, qty, place) {
-  if (!x.lm) return `<span class="fi-chip unk"><i class="fi-dot c-u"></i>LOT ${esc(WmsFifo.lotName(x))} · ไม่รู้ LOT · ${f(x.qty)}</span>`;
-  const tip = `${WmsFifo.monthText(x.lm)}${WmsFifo.noPo(x.po) ? '' : ` · PO ${x.po}`} · ${recvWords(x)}`;
-  return `<span class="fi-chip ${cls || ''}" title="${esc(tip)}"><i class="fi-dot ${ageCls(x.age)}"></i>` +
-    `LOT ${esc(x.lot)} · ${f(x.age)} เดือน · ${f(qty ?? x.qty)} · ${esc(place ?? placeText(x))}</span>`;
+/** วันรับเข้าแบบสั้นในช่องตาราง ทุกรอบอยู่ใน title: 29/9 +2 รอบ */
+function recvShort(x) {
+  const r = x.rounds || [];
+  if (x.recv === WmsFifo.COUNT_DAY) return r.length ? `ก่อนนับสต๊อก +${r.length} รอบ` : 'ก่อนนับสต๊อก';
+  if (!x.recv) return '—';
+  return dm(x.recv) + (r.length > 1 ? ` +${r.length - 1} รอบ` : '');
 }
 
-/** ป้ายกองเรียงเก่าไปใหม่ mark บอกกองที่ต้องทำก่อน */
-function chips(list, mark, qty, place) {
-  const show = list.slice(0, CHIP_MAX).map((x) => chip(x, mark(x), qty && qty(x), place && place(x)));
-  const more = list.length > CHIP_MAX ? `<span class="fi-arr">+ อีก ${f(list.length - CHIP_MAX)} กอง</span>` : '';
-  return `<span class="fi-seq">${show.join('<span class="fi-arr" aria-hidden="true">›</span>')}${more}</span>`;
+/** Location ของกอง โลขายขึ้นก่อน: ● A-01-01 12, R1-06-01 3 */
+const locsText = (x) => x.locs.slice().sort((a, b) => (b.open - a.open) || b.qty - a.qty)
+  .map((l) => `${l.open && !l.special ? '● ' : ''}${loc(l.loc)} ${f(l.qty)}`).join(', ');
+const n0 = (v) => v ? f(v) : '';
+
+/**
+ * กองนี้ต้องทำอะไร ตามคิวที่เลือก (ดูทั้งหมด = ทุกงาน) ได้ { cls, html, tip } ไม่มีงานได้ null
+ * กองที่ต้องเติมไม่มีของในโลขาย กองที่ต้องหยิบอยู่ในโลขาย กองที่ไม่รู้ LOT ไม่ใช่ทั้งสองแบบ งานเลยไม่ซ้อนกัน
+ */
+function batchTask(e, x, hot, to) {
+  const want = (id) => !ONLY || ONLY === id;
+  if (hot.has(x) && want('refill')) return {
+    cls: 'r-hot', html: `<span class="fi-tg t-red">เติมก่อน</span>${to ? ` <span class="sm">→ ${esc(to)}</span>` : ''}`,
+    tip: 'กองนี้ยังอยู่บนแร็คหรือตั้งพื้น แต่โลขายมีแต่กองใหม่กว่า ให้เอากองนี้เข้าโลขายก่อน',
+  };
+  if (e.mixed && x === e.pick && want('mixed')) return {
+    cls: 'r-pick', html: '<span class="fi-tg t-warn">หยิบก่อน</span>',
+    tip: `โลขายมี ${f(e.batches.filter((y) => y.lm && y.open > 0).length)} กองปนกัน บอกคนหยิบให้หยิบกองนี้ก่อน`,
+  };
+  if (!x.lm && want('unknown')) return {
+    cls: 'r-unk', html: '<span class="fi-tg t-gray">แก้ LOT</span>',
+    tip: 'LOT เป็น 0 หรือว่าง เรียงอายุไม่ได้ ต้องแก้ LOT ในสมุดให้ตรงกับป้ายที่กอง',
+  };
+  return null;
 }
 
-/** Location กับจำนวน ไม่เกินสามที่: B-03-01 ตั้งพื้น 184 · R1-02-03 บนแร็ค 60 · +2 ที่ */
-function placesText(list, kind) {
-  const show = list.slice(0, 3).map((p) => `<b>${esc(p.loc)}</b>${kind ? (p.rack ? ' บนแร็ค' : ' ตั้งพื้น') : ''} ${f(p.qty)}`);
-  if (list.length > 3) show.push(`+${f(list.length - 3)} ที่`);
-  return show.join(' · ');
-}
-
-function refillDo(e) {
-  const t = WmsFifo.refillTask(RES, e);
-  const hot = new Set(t.batches);
-  const to = t.to.length
-    ? ` → โลขาย <b>${t.to.slice(0, 2).map(esc).join(', ')}</b>${t.to.length > 2 ? ` +${f(t.to.length - 2)}` : ''} ที่ตอนนี้มีแต่ ${esc(t.now)}` : '';
-  return `<b class="fi-act">เอา ${esc(t.what)} เข้าโลขายก่อน</b>
-    <span class="fi-how">จาก ${placesText(t.from, true)}${to}</span>
-    ${chips(e.batches, (x) => hot.has(x) ? 'go' : '')}`;
-}
-
-function pickDo(e) {
-  const t = WmsFifo.pickTask(RES, e);
-  const first = t.batches[0];
-  return `<b class="fi-act">หยิบ LOT ${esc(t.lot)}${t.po ? ` PO ${esc(t.po)}` : ''} ก่อน</b>
-    <span class="fi-how">${t.at.length ? `อยู่ที่ <b>${t.at.slice(0, 3).map(esc).join(', ')}</b> · ` : ''}โลขายมี ${f(t.batches.length)} กองปนกัน</span>
-    ${chips(t.batches, (x) => x === first ? 'pk' : '', (x) => x.open, openAt)}`;
-}
-
-function unknownDo(e) {
-  const t = WmsFifo.unknownTask(RES, e);
-  return `<b class="fi-act">${t.lots.map((l) => `LOT ${esc(l)}`).join(', ')} อยู่ ${f(t.qty)} ชิ้น</b>
-    <span class="fi-how">ที่ ${placesText(t.at, false)}</span>`;
-}
-
-const DO = { refill: refillDo, mixed: pickDo, unknown: unknownDo };
-
-/** แถวงานหนึ่ง SKU กดเปิดดูตารางกองกับ Location ได้เหมือนเดิม */
-function taskRow(e, body) {
-  return `<details class="fi-sku fi-task" data-sku="${e.sku}">
-      <summary>
-        <span class="fi-code"><b>${esc(e.code)}</b><span class="tx-sub">${esc(e.name)}</span>
-          <span class="tx-sub">${f(e.total)} ชิ้น · ${e.lots ? `${f(e.lots)} LOT` : 'ไม่รู้ LOT'}</span></span>
-        <span class="fi-do">${body}</span>
-      </summary>
-      <div class="fi-detail"></div>
-    </details>`;
-}
-
-/** แถวตารางดูทั้งหมด สถานะบอกงานที่ด่วนที่สุดของ SKU นั้น */
-function allRow(e) {
-  const st = WmsFifo.stockState(e);
-  return `<details class="fi-sku fi-all" data-sku="${e.sku}">
-      <summary>
-        <span class="fi-code"><b>${esc(e.code)}</b><span class="tx-sub">${esc(e.name)}</span></span>
-        <span class="num k-qty"><b>${f(e.total)}</b></span>
-        <span class="num k-lots">${e.lots ? `${f(e.lots)} LOT` : '—'}</span>
-        <span class="k-old">${e.oldest === null ? '<span class="tx-sub">ไม่รู้ LOT</span>' : `<i class="fi-dot ${ageCls(e.oldest)}"></i>${f(e.oldest)} เดือน`}</span>
-        <span class="fi-st s-${st}">${STATE_WORD[st]}</span>
-      </summary>
-      <div class="fi-detail"></div>
-    </details>`;
-}
-
-function stockDetail(e) {
+/** แถวของหนึ่ง SKU: แถวแรกมี SKU กับชื่อ แถวที่สองบอกยอดรวม ถ้ามีหลายกอง */
+function skuRows(e) {
   const hot = new Set(e.refill.map((r) => r.batch));
-  const rows = e.batches.map((x) => {
-    const locs = x.locs.slice().sort((a, b) => (b.open - a.open) || b.qty - a.qty).map((l) =>
-      `<span class="fi-loc${l.special ? ' sp' : l.open ? ' open' : ''}" title="${l.special ? 'QA / IQA / RIB' : l.open ? 'เปิดขาย' : l.rack ? 'บนแร็ค ยังไม่เปิดขาย' : 'ตั้งพื้น ยังไม่เปิดขาย'}">${l.open && !l.special ? '● ' : ''}${esc(loc(l.loc))} · ${f(l.qty)}</span>`).join('');
-    return `<tr class="${hot.has(x) ? 'fi-hot' : ''}">
-      <td class="nw k-rank">${x.rank ? `<span class="fi-rank${x.rank === 1 ? ' first' : ''}" title="ลำดับ FIFO">${x.rank}</span>` : '<span class="tx-sub">—</span>'}</td>
-      <td class="nw k-lot">${lotText(x)}${x.age !== null ? `<span class="tx-sub">อายุ ${f(x.age)} เดือน</span>` : ''}</td>
-      <td class="nw k-po"${recvTitle(x) ? ` title="${esc(recvTitle(x))}"` : ''}>${poText(x.po)}${supText(x.po)}<span class="tx-sub">${esc(recvWords(x))}</span></td>
-      <td class="num k-qty"><b>${f(x.qty)}</b></td>
-      <td class="num k-open" data-label="ในโลขาย">${x.open ? f(x.open) : '—'}</td>
-      <td class="num k-floor" data-label="ตั้งพื้น">${x.floor ? f(x.floor) : '—'}</td>
-      <td class="num k-rack" data-label="บนแร็ค">${x.rack ? f(x.rack) : '—'}${x.special ? `<span class="tx-sub">QA ${f(x.special)}</span>` : ''}</td>
-      <td class="k-loc"><div class="fi-locs">${locs}</div>${hot.has(x) ? '<span class="tx-sub fi-warn">กองนี้ยังไม่อยู่ในโลขาย ทุกกองในโลขายใหม่กว่า ควรเติมกองนี้ก่อน</span>' : ''}</td>
+  const rt = e.refill.length ? WmsFifo.refillTask(RES, e) : null;
+  const to = rt && rt.to.length ? rt.to[0] + (rt.to.length > 1 ? ` +${f(rt.to.length - 1)}` : '') : '';
+  return e.batches.map((x, i) => {
+    const t = batchTask(e, x, hot, to);
+    const s = WmsFifo.sup(RES, x.po);
+    const lt = locsText(x);
+    const rw = recvTitle(x) || recvWords(x);
+    const name = i === 0 ? `<td class="c-nm" title="${esc(e.name)}">${esc(e.name)}</td>`
+      : `<td class="c-nm">${i === 1 ? `<span class="sm">รวม ${f(e.total)} ชิ้น</span>` : ''}</td>`;
+    return `<tr class="${i ? '' : 'g1 '}${t ? t.cls : ''}">
+      <td class="c-sku"${i ? '' : ` title="${esc(`${e.short} · รวม ${f(e.total)} ชิ้น`)}"`}>${i ? '' : esc(e.code)}</td>${name}
+      <td class="num sm" title="ลำดับ FIFO">${x.rank || '—'}</td>
+      <td title="${esc(x.lm ? `LOT ${x.lot} · ${WmsFifo.monthText(x.lm)}` : 'LOT 0 หรือว่าง เรียงอายุไม่ได้')}"><i class="fi-dot ${ageCls(x.age)}"></i>${esc(WmsFifo.lotName(x))} <span class="sm">· ${x.lm ? `${f(x.age)} เดือน` : 'ไม่รู้ LOT'}</span></td>
+      <td class="c-pon">${WmsFifo.noPo(x.po) ? '<span class="sm">ไม่รู้ PO</span>' : esc(x.po)}</td>
+      <td class="c-pon c-sup" title="${esc(s)}">${esc(s)}</td>
+      <td class="sm" title="${esc(rw)}">${esc(recvShort(x))}</td>
+      <td class="num"><b>${f(x.qty)}</b></td>
+      <td class="num">${n0(x.open)}</td><td class="num">${n0(x.floor)}</td><td class="num">${n0(x.rack)}</td><td class="num">${n0(x.special)}</td>
+      <td class="c-loc" title="${esc(lt)}">${esc(lt)}</td>
+      <td${t ? ` title="${esc(t.cls === 'r-hot' && rt.to.length > 1 ? `${t.tip} · โลขาย ${rt.to.join(', ')}` : t.tip)}"` : ''}>${t ? t.html : ''}</td>
     </tr>`;
   }).join('');
-  return `<div class="tx-wrap"><table class="tx-tbl fi-dt dt-stock">
-    <thead><tr><th>ลำดับ</th><th>LOT · เดือน</th><th>PO · รับเข้า</th><th class="num">คงเหลือ</th><th class="num">ในโลขาย</th><th class="num" title="Location ตั้งพื้นที่ยังไม่เปิดขาย">ตั้งพื้น</th><th class="num" title="Location R">บนแร็ค</th><th>Location (● = เปิดขาย)</th></tr></thead>
-    <tbody>${rows}</tbody></table></div>`;
+}
+
+const STOCK_HEAD = `<thead><tr><th class="c-sku">SKU</th><th>ชื่อสินค้า</th><th class="num" title="ลำดับ FIFO เก่าไปใหม่">#</th><th>LOT · อายุ</th>
+  <th>PO</th><th>Supplier</th><th>รับเข้า</th><th class="num">คงเหลือ</th><th class="num" title="Location ที่ Status เปิด">โลขาย</th>
+  <th class="num" title="ตั้งพื้น ยังไม่เปิดขาย">พื้น</th><th class="num" title="Location R ยังไม่เปิดขาย">แร็ค</th><th class="num" title="QA / IQA / RIB">QA</th>
+  <th>Location</th><th>ต้องทำ</th></tr></thead>`;
+
+function helpHtml() {
+  const note = window.WmsSup && WmsSup.note(RES.sup);
+  return `<div class="fi-help" id="help"${HELP ? '' : ' hidden'}>
+      ${AGE_KEY.map(([c, t]) => `<span class="lg"><i class="sw ${c}"></i>${t}</span>`).join('')}· ● = อยู่ในโลขาย · # = ลำดับ FIFO<br>
+      สต๊อก${esc(asOf())} เรียงกองเก่าไปใหม่ตาม <b>เดือนของ LOT</b> แล้ว <b>วันรับเข้าของ PO</b> · PO ที่ลง <b>-01 -02</b> รวมเป็นกองเดียว ใช้รอบไหนก่อนก็ได้ · ไม่นับ QA / IQA / RIB<br>
+      <b>เติมก่อน</b> = กองเก่ายังอยู่บนแร็คหรือตั้งพื้น แต่โลขายมีแต่กองใหม่กว่า · <b>หยิบก่อน</b> = โลขายมีหลายกองปนกัน ให้หยิบกองนี้ก่อน · <b>แก้ LOT</b> = LOT 0 หรือว่าง<br>
+      Supplier จากแท็บ PO. Truck ห้ามเปิดขายคนละ Supplier พร้อมกัน${note ? ` (${esc(note)})` : ''} · ปุ่มคัดลอกได้ทุก SKU ในคิวนี้ หนึ่งแถวต่อ SKU + LOT + PO</div>`;
 }
 
 function renderStock() {
   const all = AN.stock.list;
   if (ONLY === null) ONLY = WmsFifo.firstQueue(all);
-  const q = WmsFifo.QUEUES.find((x) => x.id === ONLY) || WmsFifo.QUEUES[WmsFifo.QUEUES.length - 1];
-  const card = (x) => {
+  const chip = (x) => {
     const n = WmsFifo.filterStock(all, { only: x.id }).length;
     const on = x.id === ONLY;
-    return `<button class="fi-q ${QCLS[x.id]}${on ? ' on' : ''}${n ? '' : ' zero'}" data-only="${x.id}" aria-pressed="${on}">` +
-      `<b>${f(n)}</b><span>${x.label}</span><small>${x.sub}</small></button>`;
+    return `<button class="fi-qc ${QCLS[x.id]}${on ? ' on' : ''}${n ? '' : ' zero'}" data-only="${x.id}" aria-pressed="${on}" title="${esc(`${x.sub} — ${x.hint}`)}">${x.label} <b>${f(n)}</b></button>`;
   };
-  $('body').innerHTML = `<div class="fi-qs" role="group" aria-label="คิวงาน">${WmsFifo.QUEUES.map(card).join('')}</div>
-    <div class="tx-bar">
-      <input id="q" class="tx-input" type="search" placeholder="ค้นหา SKU ชื่อสินค้า หรือ PO" value="${esc(Q)}" autocomplete="off">
-      <select id="sort" class="tx-sel" aria-label="เรียงตาม">${Object.entries(SORTS).map(([k, t]) => `<option value="${k}" ${k === SORT ? 'selected' : ''}>เรียง: ${t}</option>`).join('')}</select>
+  $('body').innerHTML = `<div class="fi-tool">
+      <span role="group" aria-label="คิวงาน" style="display:contents">${WmsFifo.QUEUES.map(chip).join('')}</span>
+      <span class="sp"></span>
+      <input id="q" class="fi-in" type="search" placeholder="ค้นหา SKU ชื่อ หรือ PO" value="${esc(Q)}" autocomplete="off">
+      <select id="sort" class="fi-sel" aria-label="เรียงตาม">${Object.entries(SORTS).map(([k, t]) => `<option value="${k}" ${k === SORT ? 'selected' : ''}>เรียง: ${t}</option>`).join('')}</select>
       <button class="tx-opt" id="copyBtn" title="คัดลอกแล้ววางใน Excel ได้เลย หนึ่งแถวต่อ SKU + LOT + PO">📋 คัดลอก</button>
+      <button class="fi-i${HELP ? ' on' : ''}" id="helpBtn" aria-expanded="${HELP}" aria-controls="help" aria-label="อ่านยังไง">i</button>
     </div>
-    <div class="fi-hint">${esc(q.hint)}</div>
-    ${ONLY === 'unknown' ? '' : ageLegend(ONLY ? 'ซ้ายคือของเก่า ขวาคือของใหม่ · ● = อยู่ในโลขาย' : 'สีของอายุกองที่เก่าที่สุด')}
-    <details class="fi-read"><summary>อ่านยังไง</summary>
-      สต๊อก${esc(asOf())} แต่ละ SKU เรียงกองจากเก่าไปใหม่ ตาม<b>เดือนของ LOT</b> แล้ว<b>วันที่รับเข้าของ PO</b>
-      · PO ที่ลง <b>-01 -02</b> ต่อท้าย (วันที่รับเข้าคลัง) นับเป็น <b>PO เดียวกัน</b> รวมเป็นกองเดียว ใช้รอบไหนก่อนก็ได้
-      · SKU เดียวอยู่ได้หลายคิว เพราะเป็นงานของคนละคน · กดแถวเพื่อดูว่าแต่ละกองอยู่ Location ไหน
-      · ปุ่มคัดลอกได้ทุก SKU ในคิวนี้ หนึ่งแถวต่อ SKU + LOT + PO
-      · ชื่อใต้เลข PO คือ <b>Supplier</b> จากแท็บ PO. Truck ห้ามเปิดขายคนละ Supplier พร้อมกัน${window.WmsSup && WmsSup.note(RES.sup) ? ` (${esc(WmsSup.note(RES.sup))})` : ''}</details>
+    ${helpHtml()}
     <div id="list"></div>`;
   renderStockList();
 }
-
-const ALL_HEAD = `<div class="fi-head" aria-hidden="true"><span>SKU</span><span class="num">คงเหลือ</span><span class="num">LOT</span><span>เก่าสุด</span><span>สถานะ</span></div>`;
 
 function renderStockList() {
   const rows = stockRows();
@@ -683,8 +604,7 @@ function renderStockList() {
     return;
   }
   const show = rows.slice(0, SHOW_MAX);
-  const body = DO[ONLY];
-  $('list').innerHTML = `<div class="fi-list">${body ? '' : ALL_HEAD}${show.map((e) => body ? taskRow(e, body(e)) : allRow(e)).join('')}
+  $('list').innerHTML = `<div class="fi-wrap"><table class="fi-xl">${STOCK_HEAD}<tbody>${show.map(skuRows).join('')}</tbody></table>
     ${rows.length > SHOW_MAX ? `<div class="fi-more">แสดง ${f(SHOW_MAX)} จาก ${f(rows.length)} SKU — ค้นหาเพื่อดูส่วนที่เหลือ ปุ่มคัดลอกและดาวน์โหลดได้ครบ</div>` : ''}</div>`;
 }
 
@@ -914,10 +834,13 @@ $('tabs').addEventListener('click', (e) => {
   renderBody();
 });
 
+/* ตัวเลขในตารางสรุปที่กดได้: skip:sale / skip:refill ไปแท็บเบิกข้าม FIFO, stock:unknown ไปคิวไม่รู้ LOT */
 $('sum').addEventListener('click', (e) => {
-  if (!e.target.closest('[data-go="refill"]')) return;
-  TAB = 'stock';
-  ONLY = 'refill';
+  const g = e.target.closest('[data-go]');
+  if (!g) return;
+  const [tab, v] = g.dataset.go.split(':');
+  TAB = tab;
+  if (tab === 'skip') KIND = v; else ONLY = v;
   Q = '';
   renderTabs();
   renderBody();
@@ -929,6 +852,14 @@ $('body').addEventListener('click', (e) => {
   if (only) { ONLY = only.dataset.only; renderStock(); return; }
   const kind = e.target.closest('[data-kind]');
   if (kind) { KIND = kind.dataset.kind; renderSkip(); return; }
+  const help = e.target.closest('#helpBtn');
+  if (help) {
+    HELP = !HELP;
+    help.classList.toggle('on', HELP);
+    help.setAttribute('aria-expanded', HELP);
+    $('help').hidden = !HELP;
+    return;
+  }
   if (e.target.closest('#copyBtn')) {
     const btn = $('copyBtn');
     copyText(WmsFifo.tsv(tabTable())).then((ok) => {
@@ -938,19 +869,14 @@ $('body').addEventListener('click', (e) => {
   }
 });
 
-/* รายละเอียดวาดตอนเปิดครั้งแรก ห้าร้อย SKU วาดตารางรอไว้หมดหน้าจะหน่วง toggle ไม่ลอยขึ้นมา ต้องดักตอนขาลง */
+/* รายละเอียดของแท็บเบิกข้าม FIFO วาดตอนเปิดครั้งแรก toggle ไม่ลอยขึ้นมา ต้องดักตอนขาลง */
 $('body').addEventListener('toggle', (e) => {
   const d = e.target;
   if (!d.matches || !d.matches('details.fi-sku') || !d.open) return;
   const box = d.querySelector('.fi-detail');
-  if (!box || box.childElementCount) return;
-  if (d.dataset.sku !== undefined) {
-    const s = AN.stock.list.find((x) => String(x.sku) === d.dataset.sku);
-    if (s) box.innerHTML = stockDetail(s);
-  } else if (d.dataset.skip !== undefined) {
-    const s = skipRows().find((x) => String(x.sku) === d.dataset.skip);
-    if (s) box.innerHTML = skipDetail(s);
-  }
+  if (!box || box.childElementCount || d.dataset.skip === undefined) return;
+  const s = skipRows().find((x) => String(x.sku) === d.dataset.skip);
+  if (s) box.innerHTML = skipDetail(s);
 }, true);
 
 $('body').addEventListener('change', (e) => {

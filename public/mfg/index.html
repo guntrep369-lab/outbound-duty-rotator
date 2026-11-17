@@ -714,15 +714,21 @@ async function saveDec(rid) {
   const sent = { ...d.pend };
   d.busy = true; d.err = ''; paintDec();
   try {
-    /* อ่านค่าตั้งล่าสุดก่อน หัวหน้าอีกเครื่องอาจบันทึกคำตัดสิน SKU อื่นไว้ จะได้ไม่ทับกัน */
-    const fresh = ((await get('st-rounds', null, true)).rounds || []).find(x => x.id === rid);
-    if (!fresh) throw new Error('ไม่พบรอบนี้ในชีตแล้ว');
-    const settings = { ...fresh.settings, decide: M.applyDecide(fresh.settings.decide, sent) };
-    if (JSON.stringify(settings).length > M.SETTINGS_MAX) throw new Error('คำตัดสินกับหมายเหตุยาวเกินที่ชีตเก็บได้ ลดหมายเหตุลง');
-    const res = await post({ op: 'st-round-save', round: { id: rid, name: fresh.name, date: fresh.date, cutoff: fresh.cutoff, settings } });
+    let decide;
+    try {
+      /* สคริปต์รวมกับของเดิมให้ใต้ล็อก เจ้านาย (ลิงก์เจ้านาย) หรือหัวหน้าอีกเครื่องบันทึก SKU อื่นพร้อมกันก็ไม่ทับกัน */
+      decide = (await post({ op: 'st-decide', round: rid, changes: sent })).decide;
+    } catch (e) {
+      if (!/ไม่รู้จักคำสั่ง/.test(e.message)) throw e;
+      /* สคริปต์รุ่นเก่า (ยังไม่ Deploy รุ่น 7): อ่านค่าตั้งล่าสุดแล้วบันทึกทั้งก้อนแบบเดิม */
+      const fresh = ((await get('st-rounds', null, true)).rounds || []).find(x => x.id === rid);
+      if (!fresh) throw new Error('ไม่พบรอบนี้ในชีตแล้ว');
+      const settings = { ...fresh.settings, decide: M.applyDecide(fresh.settings.decide, sent) };
+      if (JSON.stringify(settings).length > M.SETTINGS_MAX) throw new Error('คำตัดสินกับหมายเหตุยาวเกินที่ชีตเก็บได้ ลดหมายเหตุลง');
+      decide = (await post({ op: 'st-round-save', round: { id: rid, name: fresh.name, date: fresh.date, cutoff: fresh.cutoff, settings } })).round.settings.decide;
+    }
     Object.keys(sent).forEach(k => { if (d.pend[k] === sent[k]) delete d.pend[k]; });
-    if (S.head && S.head.round.id === rid) Object.assign(S.head.round, res.round);
-    if (S.rounds) S.rounds = S.rounds.map(x => x.id === rid ? res.round : x);
+    setDecide(rid, decide);
     d.at = Date.now();
   } catch (e) { d.err = e.message; }
   d.busy = false;
@@ -730,6 +736,13 @@ async function saveDec(rid) {
   /* กำลังพิมพ์หมายเหตุช่องอื่นอยู่ อย่าวาดทั้งตารางใหม่ (ตัวที่พิมพ์ค้างจะหาย) */
   const a = document.activeElement;
   if (a && a.classList && a.classList.contains('mf-note')) paintDec(); else paintBody();
+}
+
+/** คำตัดสินชุดล่าสุดของรอบ (จากสคริปต์) ใส่กลับในรอบที่เปิดอยู่กับรายชื่อรอบ */
+function setDecide(rid, decide) {
+  const put = x => ({ ...x, settings: { ...x.settings, decide: decide || {} } });
+  if (S.head && S.head.round.id === rid) S.head.round = put(S.head.round);
+  if (S.rounds) S.rounds = S.rounds.map(x => x.id === rid ? put(x) : x);
 }
 
 function decStateHtml() {
@@ -855,6 +868,7 @@ function reportView() {
       <span class="sp"></span>
       <button class="tx-opt p" data-act="xlsx">⬇️ Excel</button>
       <button class="tx-opt" data-act="shot" title="รูปสรุปขนาดจอมือถือ ส่งให้เจ้านายใน LINE">📷 รูปสรุป</button>
+      <button class="tx-opt" data-act="boss" title="เจ้านายเปิดดูรายงานและเลือกคำตัดสินเองได้ ไม่ต้องเข้าแอป">🔗 ลิงก์เจ้านาย</button>${R().settings.boss ? `<button class="tx-opt" data-act="bossnew" title="ทำลิงก์เจ้านายใหม่ ลิงก์ที่ส่งไปแล้วจะเปิดไม่ได้">↻</button>` : ''}
       <button class="tx-opt" data-act="line">คัดลอกไปวาง LINE</button>
     </div>
     <div class="tx-bar">
@@ -1236,6 +1250,39 @@ async function copyLink() {
   S.err = ''; paintSrc();
 }
 
+/* ── ลิงก์เจ้านาย: เปิด mfg/boss.html ดูรายงานกับเลือกคำตัดสินเองได้ ไม่ต้องเข้าแอป ──
+   รหัสลิงก์สุ่มที่สคริปต์ (st-boss-key) เก็บในค่าตั้งของรอบ ทำใหม่แล้วลิงก์เดิมใช้ไม่ได้ */
+function bossUrl(key) {
+  return M.bossLink(new URL('boss.html', location.href).href, new URL(cfg().url, location.href).href, key, S.rid);
+}
+function setBoss(rid, key) {
+  const put = x => ({ ...x, settings: { ...x.settings, boss: key } });
+  if (S.head && S.head.round.id === rid) S.head.round = put(S.head.round);
+  if (S.rounds) S.rounds = S.rounds.map(x => x.id === rid ? put(x) : x);
+}
+async function copyBoss(renew) {
+  const r = R();
+  if (!r) return;
+  if (renew && !confirm('ทำลิงก์เจ้านายใหม่?\nลิงก์ที่ส่งไปแล้วจะเปิดไม่ได้อีก ต้องส่งลิงก์ใหม่ให้เจ้านาย')) return;
+  let key = renew ? '' : r.settings.boss;
+  if (!key) {
+    S.busy = 'กำลังทำลิงก์เจ้านาย…'; S.err = ''; S.ok = ''; paintSrc();
+    try {
+      key = (await post({ op: 'st-boss-key', round: r.id })).key;
+      setBoss(r.id, key);
+    } catch (e) {
+      S.busy = '';
+      S.err = /ไม่รู้จักคำสั่ง/.test(e.message) ? 'ลิงก์เจ้านายต้องใช้สคริปต์นับสต๊อกรุ่น 7 · วาง stocktake-api.gs ล่าสุดแล้ว Deploy เป็น New version' : e.message;
+      paintSrc(); return;
+    }
+    S.busy = '';
+  }
+  const text = bossUrl(key);
+  try { await navigator.clipboard.writeText(text); S.ok = '✓ คัดลอกลิงก์เจ้านายแล้ว ส่งใน LINE ได้เลย · เจ้านายกดเลือกคำตัดสินเอง ขึ้นในหน้านี้เอง'; }
+  catch (e) { prompt('คัดลอกลิงก์นี้ส่งให้เจ้านาย', text); S.ok = renew ? '✓ ทำลิงก์เจ้านายใหม่แล้ว' : ''; }
+  S.err = ''; paint();
+}
+
 async function setStatus(status) {
   await job('กำลังเปลี่ยนสถานะ…', async () => {
     await post({ op: 'st-status', round: S.rid, status });
@@ -1319,6 +1366,8 @@ document.addEventListener('click', (e) => {
     case 'decsave': saveDec(S.rid); break;
     case 'line': copyLine(); break;
     case 'shot': openShot(); break;
+    case 'boss': copyBoss(false); break;
+    case 'bossnew': copyBoss(true); break;
     case 'shotcopy': shotCopy(); break;
     case 'shotshare': shotShare(); break;
     case 'shotsave': shotSave(); break;
@@ -1396,6 +1445,24 @@ setInterval(async () => {
     const changed = await loadLog(true);
     const typing = document.activeElement && /^(INPUT|SELECT)$/.test(document.activeElement.tagName);
     if (changed && !typing) paint();
+  } catch (e) {}
+}, POLL_MS);
+
+/* คำตัดสินจากลิงก์เจ้านาย (หรือหัวหน้าอีกเครื่อง) ขึ้นเองทุกนาทีตอนเปิดแท็บรายงาน
+   ไม่ดึงตอนมีคำตัดสินของเครื่องนี้ค้างส่ง · กำลังพิมพ์หมายเหตุวาดแค่ช่องเลือก */
+setInterval(async () => {
+  const r = R();
+  if (!r || TAB !== 'report' || S.busy || document.hidden || decWaiting()) return;
+  try {
+    const fresh = ((await get('st-rounds', null, true)).rounds || []).find(x => x.id === r.id);
+    const cur = R();
+    if (!fresh || !cur || cur.id !== fresh.id || decWaiting() || S.busy) return;
+    const a = fresh.settings || {}, b = cur.settings;
+    if (JSON.stringify(a.decide || {}) === JSON.stringify(b.decide || {}) && (a.boss || '') === (b.boss || '')) return;
+    setDecide(cur.id, a.decide);
+    setBoss(cur.id, a.boss || '');
+    const el = document.activeElement;
+    if (el && el.classList && el.classList.contains('mf-note')) paintDec(); else paintBody();
   } catch (e) {}
 }, POLL_MS);
 

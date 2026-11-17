@@ -1001,6 +1001,54 @@
     return { level: 'ok', hint: '✓ ' + lab + ' ต้องนับ', ask: '' };
   }
 
+  /* ── ลิงก์เจ้านาย (mfg/boss.html) ─────────────────────────────────────── */
+
+  /**
+   * ลิงก์ให้เจ้านายเปิดดูรายงานและเลือกคำตัดสินเอง ไม่ต้องเข้าแอป
+   * ข้อมูลอยู่หลัง # เบราว์เซอร์ไม่ส่งไปกับการเปิดหน้า (เหมือนลิงก์คนนับ)
+   */
+  function bossLink(page, url, key, round) {
+    return page + '#u=' + encodeURIComponent(url) + '&b=' + encodeURIComponent(key) + '&r=' + encodeURIComponent(round);
+  }
+
+  /** ส่วนหลัง # ของลิงก์เจ้านาย → {url, key, round} หรือ null ถ้าไม่ครบ */
+  function parseBossLink(hash) {
+    var q = {};
+    String(hash || '').replace(/^#/, '').split('&').forEach(function (kv) {
+      var i = kv.indexOf('=');
+      if (i > 0) { try { q[kv.slice(0, i)] = decodeURIComponent(kv.slice(i + 1)); } catch (e) {} }
+    });
+    if (!q.u || !q.b || !q.r || !/^https?:\/\//.test(q.u)) return null;
+    return { url: q.u, key: q.b, round: q.r };
+  }
+
+  /** ข้อมูลรอบหนึ่งจาก st-boss → รายงาน (นับแล้วใช้ยอดนับ ยังไม่นับใช้ยอดสมุด เหมือนหน้า MFG) */
+  function bossRep(d, today) {
+    var st = S();
+    var entries = st.merge([], (d.rows || []).map(st.fromRow));
+    var set = d.round.settings || {};
+    var list = unpackList(set.list);
+    return {
+      list: list,
+      rep: report({ ym: set.ym, today: today || d.round.date, list: list, skus: d.skus, book: d.piles, entries: entries,
+        mode: st.effective(entries).length ? 'count' : 'book', locs: d.locs || [] }),
+    };
+  }
+
+  /**
+   * คำตอบ st-boss ทั้งก้อน → ที่หน้าเจ้านายต้องใช้
+   *   rep รายงานรอบนี้ · cmp เทียบรอบเดือนก่อน (มีรอบก่อน) · decide คำตัดสินที่บันทึกแล้ว (decideOf)
+   */
+  function bossModel(data, today) {
+    var cur = bossRep(data, today);
+    var cmp = null;
+    if (data.prev) {
+      var prev = bossRep(data.prev, data.prev.round.date);
+      cmp = compare(cur.rep, prev.rep, listMap(cur.list, data.skus), decideOf(data.prev.round.settings && data.prev.round.settings.decide));
+    }
+    return { round: data.round, ym: data.round.settings.ym, rep: cur.rep, cmp: cmp, decide: decideOf(data.round.settings.decide) };
+  }
+
   /** เดือนที่เลือกเปิดรอบได้ (เดือนก่อน เดือนนี้ เดือนหน้า) today = yyyy-mm-dd */
   function months(today) {
     var k = refKey(today.slice(0, 7));
@@ -1019,5 +1067,6 @@
     DECIDE: DECIDE, DECIDE_ORDER: DECIDE_ORDER, NOTE_MAX: NOTE_MAX, SETTINGS_MAX: SETTINGS_MAX,
     decideOf: decideOf, applyDecide: applyDecide, decideText: decideText, decideSum: decideSum, byDecide: byDecide, prevDecText: prevDecText,
     decideShort: decideShort, card: card, ymFromName: ymFromName, lotCheck: lotCheck,
+    bossLink: bossLink, parseBossLink: parseBossLink, bossModel: bossModel,
   };
 })(window);

@@ -103,7 +103,7 @@ export function loadStocktake({ head = 'head-secret', count = '', ss = fakeSprea
         releaseLock: () => { lock.held = false; },
       }),
     },
-    Utilities: { formatDate },
+    Utilities: { formatDate, getUuid: () => globalThis.crypto.randomUUID() },
     /* CacheService แบบในหน่วยความจำ หมดอายุตาม ttl (วินาที) เทียบกับ now_() ของสคริปต์ */
     CacheService: {
       getScriptCache: () => ({

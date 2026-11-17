@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>ความเสี่ยง MFG — สำหรับเจ้านาย</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../wms-icon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="../wms-logo.png">
+<link rel="apple-touch-icon" href="../wms-icon-180.png">
+<link rel="stylesheet" href="../wms-theme.css">
+<!--
+  หน้าเจ้านาย: เปิดจากลิงก์ที่หัวหน้าส่งใน LINE (ปุ่ม 🔗 ลิงก์เจ้านาย ในหน้าเช็คความเสี่ยง MFG)
+  ไม่มีหน้าเข้าระบบและเมนูของ WMS เพราะคนเปิดไม่ได้ใช้แอป
+  ลิงก์มี URL สคริปต์นับสต๊อก รหัสลิงก์ของรอบ และรหัสรอบ อยู่หลัง # (ไม่ส่งไปกับการเปิดหน้า)
+  ข้อมูลมาจาก ?api=st-boss ของ apps-script/stocktake-api.gs ซึ่งไม่มีรหัสหัวหน้าหรือคนนับ
+  หน้านี้คิดรายงานเองด้วย WmsMfg ชุดเดียวกับหน้าหัวหน้า ตัวเลขจึงตรงกัน
+  เลือกคำตัดสินแล้วบันทึกเองผ่าน st-decide สคริปต์รวมกับของหัวหน้าใต้ล็อก หัวหน้าเห็นในแอปภายในนาที
+  หัวหน้ากดทำลิงก์ใหม่ = รหัสเปลี่ยน ลิงก์นี้ใช้ไม่ได้อีก
+-->
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--wms-bg);color:var(--wms-text);font-family:var(--wms-font);-webkit-text-size-adjust:100%}
+.bs{max-width:620px;margin:0 auto;padding:0 12px 84px}
+.bs-head{display:flex;align-items:center;gap:10px;padding:14px 0 10px}
+.bs-head img{width:36px;height:36px;flex:none}
+.bs-head .tt{flex:1;min-width:0}
+.bs-head h1{font-size:17px;font-weight:700;line-height:1.3}
+.bs-head p{font-size:12px;color:var(--wms-muted);margin-top:2px}
+.bs-btn{flex:none;border:1px solid var(--wms-border2);background:var(--wms-surface);border-radius:999px;padding:7px 12px;
+  font:inherit;font-size:13px;color:var(--txt2);cursor:pointer}
+.bs-btn:disabled{opacity:.55;cursor:default}
+
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}
+.tile{border-radius:12px;padding:10px 10px 9px;min-width:0}
+.tile .l{font-size:12px;font-weight:600}
+.tile .n{font-size:24px;font-weight:700;line-height:1.2;font-variant-numeric:tabular-nums}
+.tile .n small{font-size:12px;font-weight:600;margin-left:2px}
+.tile .s{font-size:11px;opacity:.85;margin-top:1px}
+.tile.risk{background:#FBE3E1;color:#9C0006}
+.tile.watch{background:#FEF5D9;color:#7A5300}
+.tile.ok{background:#E3F0DC;color:#14532D}
+.tile.nolot{background:var(--wms-surface);color:#334155;border:1px solid var(--wms-border)}
+.alert{border-radius:10px;padding:9px 12px;font-size:13px;line-height:1.5;margin-bottom:10px}
+.alert.todo{background:#FEE2E2;color:#991B1B;border:1px solid #FCA5A5;font-weight:600}
+.alert.info{background:var(--wms-surface);color:var(--wms-muted);border:1px solid var(--wms-border)}
+.alert b{color:inherit}
+
+.chips{display:flex;gap:6px;overflow-x:auto;padding:4px 0 10px;position:sticky;top:0;background:var(--wms-bg);z-index:2;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;border:1.5px solid transparent;border-radius:999px;padding:6px 12px;font:inherit;font-size:13px;cursor:pointer;
+  background:#E2E8F0;color:#334155;white-space:nowrap}
+.chip b{font-variant-numeric:tabular-nums;margin-left:3px}
+.chip.on{border-color:var(--wms-text)}
+.chip.risk{background:#F4C7C3;color:#7F1D1D}
+.chip.watch{background:#FCE8B2;color:#78350F}
+.chip.nolot{background:#FDE2E1;color:#7F1D1D}
+.chip.none{background:#FFF;color:#B91C1C;border-color:#FCA5A5}
+.chip.none.on{border-color:var(--wms-text)}
+
+.sku{background:var(--wms-surface);border:1px solid var(--wms-border);border-left:4px solid var(--wms-border2);border-radius:12px;padding:11px 12px;margin-bottom:8px}
+.sku.risk{border-left-color:#CC0000}
+.sku.watch{border-left-color:#F1C232}
+.sku.nolot{border-left-color:#E06666}
+.sku.ok{border-left-color:#34A853}
+.sku .top{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.sku .code{font-weight:700;font-size:15px}
+.sku .tot{margin-left:auto;font-size:13px;color:var(--wms-muted);white-space:nowrap}
+.sku .tot b{color:var(--wms-text);font-size:15px;font-variant-numeric:tabular-nums}
+.sku .nm{font-size:12px;color:var(--wms-muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tag{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:600;white-space:nowrap;background:#E2E8F0;color:#334155}
+.tag.risk{background:#CC0000;color:#fff}
+.tag.watch{background:#F1C232;color:#3B2F00}
+.tag.nolot{background:#E06666;color:#fff}
+.tag.ok{background:#34A853;color:#fff}
+.tag.new{background:#FEE2E2;color:#991B1B}
+.lots{display:flex;flex-wrap:wrap;gap:4px;margin-top:7px}
+.lot{font-size:12px;padding:2px 8px;border-radius:6px;white-space:nowrap}
+.lot b{font-variant-numeric:tabular-nums;margin-left:4px}
+.lot.risk{background:#FBE3E1;color:#9C0006}
+.lot.watch{background:#FEF5D9;color:#7A5300}
+.lot.ok{background:#E3F0DC;color:#14532D}
+.lot.nolot{background:#F1F5F9;color:#334155}
+.prev{font-size:12px;margin-top:6px;color:var(--wms-muted)}
+.prev.todo{color:#B91C1C;font-weight:600}
+.dec{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:9px}
+.dec button{min-height:46px;border:1.5px solid var(--wms-border2);border-radius:10px;background:var(--wms-surface);font:inherit;
+  font-size:13px;font-weight:600;color:var(--txt2);cursor:pointer;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:1px;line-height:1.2;padding:4px 2px;-webkit-tap-highlight-color:transparent}
+.dec button .i{font-size:16px;line-height:1.1}
+.dec button.on.open{background:#FEE2E2;border-color:#991B1B;color:#991B1B}
+.dec button.on.sell{background:#FEF3C7;border-color:#92400E;color:#92400E}
+.dec button.on.wait{background:#E0F2FE;border-color:#075985;color:#075985}
+.dec button.on.other{background:#F1F5F9;border-color:#334155;color:#334155}
+.note{display:block;width:100%;margin-top:6px;padding:9px 10px;border:1.5px solid var(--wms-border2);border-radius:10px;
+  font:inherit;font-size:15px;background:var(--wms-surface);color:var(--wms-text)}
+.note:focus{outline:none;border-color:var(--wms-primary)}
+.by{font-size:11px;color:var(--wms-faint);margin-top:5px}
+.by:empty{display:none}
+.by.wait{color:var(--wms-primary-dark)}
+.empty{padding:28px 10px;text-align:center;color:var(--wms-muted);font-size:14px}
+
+.foot{position:fixed;left:0;right:0;bottom:0;background:var(--wms-surface);border-top:1px solid var(--wms-border);
+  padding:9px 12px calc(9px + env(safe-area-inset-bottom));font-size:13px;z-index:3}
+.foot .in{max-width:620px;margin:0 auto;display:flex;align-items:center;gap:8px}
+.foot .sp{flex:1;min-width:0}
+.foot .ok{color:#047857;font-weight:600}
+.foot .err{color:#B91C1C;font-weight:600}
+.foot .busy{color:var(--wms-primary-dark);font-weight:600}
+.foot .pg{color:var(--wms-muted);white-space:nowrap}
+.foot .pg b{color:var(--wms-text)}
+
+.fatal{margin:40px auto 0;max-width:420px;text-align:center;padding:24px 18px;background:var(--wms-surface);
+  border:1px solid var(--wms-border);border-radius:14px}
+.fatal img{width:120px;height:auto;margin-bottom:10px}
+.fatal h2{font-size:16px;margin-bottom:6px}
+.fatal p{font-size:13px;color:var(--wms-muted);line-height:1.6}
+.loading{padding:60px 10px;text-align:center;color:var(--wms-muted);font-size:14px}
+</style>
+</head>
+<body>
+<div class="bs">
+  <header class="bs-head">
+    <img src="../icons/package.png" alt="" width="36" height="36">
+    <div class="tt"><h1 id="title">ความเสี่ยง MFG</h1><p id="sub"></p></div>
+    <button type="button" class="bs-btn" id="reload" data-act="reload">🔄</button>
+  </header>
+  <main id="main"><div class="loading">⏳ กำลังโหลดรายงาน…</div></main>
+</div>
+<footer class="foot" id="foot" hidden><div class="in" id="footIn"></div></footer>
+
+<script src="../wms-gas.js"></script>
+<script src="../wms-fifo.js"></script>
+<script src="../wms-stocktake.js"></script>
+<script src="../wms-mfg.js"></script>
+<script>
+'use strict';
+const M = window.WmsMfg;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const f = n => Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 3 });
+const up = s => String(s || '').trim().toUpperCase();
+const BY = 'เจ้านาย';
+const NOTE_WAIT = 1200;   // หยุดพิมพ์หมายเหตุนานเท่านี้แล้วบันทึก
+const GONE = /ใช้ไม่ได้แล้ว|ยังไม่มีลิงก์|ไม่พบรอบ|ลิงก์ไม่ครบ/;   // ข้อความจากสคริปต์ (boss_ / round_) = ลิงก์นี้ใช้ต่อไม่ได้
+
+const L = M.parseBossLink(location.hash);
+/* B.dec = คำตัดสินในชีต (ดิบ) · B.pend = ที่แตะแล้วยังไม่ได้บันทึก {SKU: [code, หมายเหตุ] | null} */
+const B = { data: null, model: null, dec: {}, pend: {}, busy: false, err: '', at: 0, t: null, view: '', loading: false };
+
+function today() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+/* ── โหลด ─────────────────────────────────────────────────────────────── */
+
+async function load(quiet) {
+  if (B.loading) return;
+  B.loading = true; $('reload').disabled = true;
+  try {
+    const q = new URLSearchParams({ api: 'st-boss', round: L.round, b: L.key });
+    const d = await WmsGas.json(L.url + (L.url.includes('?') ? '&' : '?') + q.toString(), 'st-boss', { retries: 1 });
+    if (d && d.error) throw new Error(d.error);
+    if (!d || !d.round) throw new Error('OLD');
+    B.data = d;
+    B.dec = d.round.settings.decide || {};
+    B.model = M.bossModel(d, today());
+    if (!B.view) B.view = B.model.rep.rows.some(r => r.st === 'risk') ? 'risk' : 'all';
+    paint();
+  } catch (e) {
+    /* ดึงเงียบตอนกลับมาที่หน้า: เน็ตสะดุดไม่ต้องเด้ง แต่ลิงก์ถูกเปลี่ยนแล้วต้องบอก */
+    if (!quiet || !B.model || GONE.test(e.message)) fatal(e.message);
+  }
+  B.loading = false; $('reload').disabled = false;
+}
+
+function fatal(msg) {
+  const old = msg === 'OLD';
+  const gone = GONE.test(msg);
+  $('foot').hidden = true;
+  const img = gone ? '../icons/empty-link.png' : '../icons/mascot-oops.png';
+  $('main').innerHTML = `<div class="fatal"><img src="${img}" alt="">
+    <h2>${old ? 'ยังเปิดไม่ได้' : gone ? 'ลิงก์นี้ใช้ไม่ได้' : 'โหลดรายงานไม่ได้'}</h2>
+    <p>${old ? 'สคริปต์นับสต๊อกยังเป็นรุ่นเก่า บอกหัวหน้าให้ Deploy สคริปต์รุ่นใหม่ก่อน' : esc(msg)}</p>
+    ${gone ? '' : '<p style="margin-top:12px"><button class="bs-btn" data-act="reload">ลองใหม่</button></p>'}</div>`;
+}
+
+/* ── ค่าที่คิด ────────────────────────────────────────────────────────── */
+
+function decNow() { return M.decideOf(M.applyDecide(B.dec, B.pend)); }
+function rows() { return B.model.rep.rows.filter(r => r.total[B.model.rep.mode] > 0 || r.st === 'risk'); }
+function viewRows(map) {
+  const all = rows();
+  if (B.view === 'none') return all.filter(r => r.st === 'risk' && !map[up(r.sku)]);
+  if (B.view === 'done') return all.filter(r => map[up(r.sku)]);
+  if (B.view === 'all') return all;
+  return all.filter(r => r.st === B.view);
+}
+
+/* ── วาด ──────────────────────────────────────────────────────────────── */
+
+function paint() {
+  const m = B.model, rep = m.rep;
+  const map = decNow();
+  const k = M.card(rep, { ym: m.ym, cmp: m.cmp, decide: map, top: 1 });
+  $('title').textContent = k.title;
+  $('sub').textContent = `${k.rule} · ${k.status}`;
+  document.title = k.title + ' — สำหรับเจ้านาย';
+
+  const tiles = k.tiles.map(t => {
+    let s = `${f(t.skus)} SKU`;
+    if (t.k === 'risk' && t.prev != null) {
+      s += t.pct == null ? ' · เดือนก่อนไม่มี' : ` · ${t.pct > 0 ? '▲' : t.pct < 0 ? '▼' : ''}${Math.abs(t.pct)}% จากเดือนก่อน`;
+    }
+    return `<div class="tile ${t.k}"><div class="l">${esc(t.label)}</div><div class="n">${f(t.qty)}<small>ชิ้น</small></div><div class="s">${esc(s)}</div></div>`;
+  }).join('');
+
+  let alerts = '';
+  if (k.cmp && k.cmp.todo.skus) {
+    alerts += `<div class="alert todo">⚠️ เดือนก่อนสั่งแกะ/ขายแล้วยังค้าง ${f(k.cmp.todo.skus)} SKU · ${f(k.cmp.todo.qty)} ชิ้น<br>${esc(k.cmp.todo.list.slice(0, 6).join(', '))}${k.cmp.todo.list.length > 6 ? ' …' : ''}</div>`;
+  }
+  if (k.partial) {
+    alerts += `<div class="alert info">${rep.mode === 'count' ? `ทีมยังนับไม่ครบ (${f(rep.done)}/${f(rep.total)} โล) ตัวเลขยังขยับได้` : 'ยังไม่ได้นับจริง ตัวเลขนี้มาจากยอดในสมุด'}</div>`;
+  }
+
+  $('main').innerHTML = `<div class="tiles">${tiles}</div>${alerts}<div class="chips" id="chips"></div><div id="list"></div>`;
+  paintList();
+  $('foot').hidden = false;
+}
+
+function chipsHtml(map) {
+  const all = rows();
+  const n = st => all.filter(r => r.st === st).length;
+  const none = all.filter(r => r.st === 'risk' && !map[up(r.sku)]).length;
+  const done = all.filter(r => map[up(r.sku)]).length;
+  const c = (v, cls, label, cnt) => cnt || B.view === v
+    ? `<button class="chip ${cls} ${B.view === v ? 'on' : ''}" data-view="${v}">${label}<b>${f(cnt)}</b></button>` : '';
+  return c('risk', 'risk', 'เสี่ยงมาก', n('risk')) + c('none', 'none', 'ยังไม่ตัดสิน', none) +
+    c('watch', 'watch', 'เฝ้าระวัง', n('watch')) + c('nolot', 'nolot', 'ไม่มี LOT', n('nolot')) +
+    c('done', '', 'ตัดสินแล้ว', done) + c('all', '', 'ทั้งหมด', all.length);
+}
+
+function lotsHtml(r) {
+  const rep = B.model.rep;
+  return rep.cols.map(col => {
+    const x = r.cells[col.key];
+    const q = x ? x[rep.mode] : 0;
+    if (!(q > 0)) return '';
+    const lab = col.key === M.NOLOT ? 'NO LOT' : `${col.label} · ${col.month}`;
+    return `<span class="lot ${col.st}">${esc(lab)}<b>${f(q)}</b></span>`;
+  }).join('');
+}
+
+function skuHtml(r, map) {
+  const sku = up(r.sku);
+  const d = map[sku];
+  const cm = B.model.cmp ? B.model.cmp.bySku[sku] : null;
+  const st = M.STATUS[r.st] ? r.st : '';
+  let prev = '';
+  if (cm && cm.dPrev) prev = `<div class="prev ${cm.todo ? 'todo' : ''}">เดือนก่อน: ${esc(M.prevDecText(cm))}</div>`;
+  const tag = cm && cm.tag === 'new' ? '<span class="tag new">เพิ่งเข้าเสี่ยงมาก</span>' : '';
+  const btn = M.DECIDE_ORDER.map(c => {
+    const o = M.DECIDE[c];
+    return `<button type="button" class="${c} ${d && d.code === c ? 'on' : ''}" data-dec="${c}" aria-pressed="${!!(d && d.code === c)}"><span class="i">${o.icon}</span>${esc(c === 'wait' ? 'รอ' : o.label)}</button>`;
+  }).join('');
+  return `<div class="sku ${st}" data-sku="${esc(sku)}">
+    <div class="top"><span class="code">${esc(r.short || r.sku)}</span><span class="tag ${st}">${esc(M.STATUS[r.st] ? M.STATUS[r.st].label : '')}</span>${tag}
+      <span class="tot">รวม <b>${f(r.total[B.model.rep.mode])}</b></span></div>
+    <div class="nm">${esc(r.type ? r.type + ' · ' : '')}${esc(r.name || r.sku)}</div>
+    <div class="lots">${lotsHtml(r)}</div>${prev}
+    <div class="dec">${btn}</div>
+    ${d ? `<input class="note" type="text" maxlength="${M.NOTE_MAX}" placeholder="${d.code === 'other' ? 'ทำอะไร (พิมพ์ตรงนี้)' : 'หมายเหตุ (ไม่ใส่ก็ได้)'}" value="${esc(d.note)}" enterkeyhint="done">` : ''}
+    ${byHtml(sku, d)}</div>`;
+}
+
+/** บรรทัดใครเลือก เมื่อไหร่ (ยังไม่ส่ง = ยังไม่บันทึก) */
+function byHtml(sku, d) {
+  if (Object.prototype.hasOwnProperty.call(B.pend, sku)) return '<div class="by wait">ยังไม่บันทึก…</div>';
+  return `<div class="by">${d && d.by ? esc(d.by) + (d.at ? ' · ' + esc(d.at) : '') : ''}</div>`;
+}
+
+function paintList() {
+  const map = decNow();
+  $('chips').innerHTML = chipsHtml(map);
+  const list = viewRows(map);
+  $('list').innerHTML = list.length ? list.map(r => skuHtml(r, map)).join('')
+    : `<div class="empty">${B.view === 'none' ? '✓ ตัดสินครบทุก SKU เสี่ยงมากแล้ว' : 'ไม่มี SKU ในกลุ่มนี้'}</div>`;
+  paintFoot(map);
+}
+
+/** วาดใหม่แค่การ์ดเดียว (ช่องหมายเหตุการ์ดอื่นที่พิมพ์ค้างไม่หาย) */
+function paintSku(sku) {
+  const el = document.querySelector(`.sku[data-sku="${CSS.escape(sku)}"]`);
+  const r = B.model.rep.rows.find(x => up(x.sku) === sku);
+  const map = decNow();
+  if (el && r) el.outerHTML = skuHtml(r, map);
+  $('chips').innerHTML = chipsHtml(map);
+  paintFoot(map);
+}
+
+function paintFoot(map) {
+  const m = map || decNow();
+  const risk = rows().filter(r => r.st === 'risk');
+  const done = risk.filter(r => m[up(r.sku)]).length;
+  const n = Object.keys(B.pend).length;
+  let s;
+  if (B.busy) s = '<span class="busy">⏳ กำลังบันทึก…</span>';
+  else if (B.err) s = `<span class="err">บันทึกไม่ได้: ${esc(B.err)}</span>`;
+  else if (n) s = `<span class="busy">รอบันทึก ${n} SKU</span>`;
+  else if (B.at) s = `<span class="ok">✓ บันทึกแล้ว ${new Date(B.at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} · หัวหน้าเห็นแล้ว</span>`;
+  else s = 'แตะเลือกคำตัดสิน บันทึกให้เอง';
+  $('footIn').innerHTML = `<span class="sp">${s}</span>` +
+    (B.err ? '<button class="bs-btn" data-act="save">ลองใหม่</button>' : '') +
+    (risk.length ? `<span class="pg">ตัดสินแล้ว <b>${done}/${risk.length}</b></span>` : '');
+}
+
+/* ── เลือก + บันทึก ─────────────────────────────────────────────────────── */
+
+function setDec(sku, code, note) {
+  B.pend[sku] = code || String(note || '').trim() ? [code, note || ''] : null;
+  B.err = '';
+}
+
+async function save() {
+  clearTimeout(B.t);
+  if (B.busy || !Object.keys(B.pend).length) return;
+  const sent = { ...B.pend };
+  B.busy = true; B.err = ''; paintFoot();
+  try {
+    const res = await WmsGas.post(L.url, { op: 'st-decide', round: L.round, b: L.key, by: BY, changes: sent }, { timeoutMs: 60000 });
+    if (res && res.error) throw new Error(res.error);
+    if (!res || !res.decide) throw new Error('สคริปต์ยังไม่รับคำตัดสินจากลิงก์ บอกหัวหน้าให้ Deploy สคริปต์รุ่นใหม่');
+    B.dec = res.decide;
+    Object.keys(sent).forEach(k => { if (B.pend[k] === sent[k]) delete B.pend[k]; });
+    B.at = Date.now();
+  } catch (e) {
+    B.err = e.message;
+    if (GONE.test(e.message)) { B.busy = false; fatal(e.message); return; }
+  }
+  B.busy = false;
+  if (!B.err && Object.keys(B.pend).length) { save(); return; }
+  /* วาดการ์ดที่เห็นอยู่ทีละใบ ไม่กรองรายการใหม่ (การ์ดที่เพิ่งเลือกไม่หายไปก่อนใส่หมายเหตุ)
+     การ์ดที่กำลังพิมพ์หมายเหตุไม่วาด ตัวที่พิมพ์ค้างจะหาย */
+  const a = document.activeElement;
+  const map = decNow();
+  document.querySelectorAll('.sku').forEach(el => {
+    if (!el.contains(a)) { paintSku(el.dataset.sku); return; }
+    const by = el.querySelector('.by');
+    if (by) by.outerHTML = byHtml(el.dataset.sku, map[el.dataset.sku]);
+  });
+  paintFoot();
+}
+
+function later(ms) { clearTimeout(B.t); B.t = setTimeout(save, ms); }
+
+/* ── แตะ / พิมพ์ ──────────────────────────────────────────────────────── */
+
+document.addEventListener('click', (e) => {
+  const v = e.target.closest('[data-view]');
+  if (v) { B.view = v.dataset.view; paintList(); window.scrollTo({ top: Math.min(window.scrollY, $('chips').offsetTop), behavior: 'smooth' }); return; }
+  const b = e.target.closest('[data-dec]');
+  if (b) {
+    const sku = b.closest('.sku').dataset.sku;
+    const cur = decNow()[sku];
+    const code = b.dataset.dec;
+    if (cur && cur.code === code) setDec(sku, '', '');            // แตะปุ่มเดิมซ้ำ = ล้าง
+    else setDec(sku, code, cur ? cur.note : '');
+    paintSku(sku);
+    if (code === 'other' && !(cur && cur.code === code)) {
+      const n = document.querySelector(`.sku[data-sku="${CSS.escape(sku)}"] .note`);
+      if (n) n.focus();
+      later(NOTE_WAIT * 4);
+    } else later(400);
+    return;
+  }
+  const a = e.target.closest('[data-act]');
+  if (!a) return;
+  if (a.dataset.act === 'reload') {
+    if (Object.keys(B.pend).length) { save(); return; }
+    if (B.model) load(true); else { $('main').innerHTML = '<div class="loading">⏳ กำลังโหลดรายงาน…</div>'; load(); }
+  }
+  if (a.dataset.act === 'save') save();
+});
+
+document.addEventListener('input', (e) => {
+  if (!e.target.classList.contains('note')) return;
+  const sku = e.target.closest('.sku').dataset.sku;
+  const cur = decNow()[sku];
+  setDec(sku, cur ? cur.code : 'other', e.target.value);
+  const by = e.target.parentElement.querySelector('.by');
+  if (by) { by.className = 'by wait'; by.textContent = 'ยังไม่บันทึก…'; }
+  paintFoot();
+  later(NOTE_WAIT);
+});
+document.addEventListener('focusout', (e) => { if (e.target.classList && e.target.classList.contains('note')) later(50); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.classList && e.target.classList.contains('note')) e.target.blur(); });
+
+/* กลับมาที่หน้านี้ (สลับแอป LINE ไปมา) ดึงใหม่ จะได้เห็นผลนับกับคำตัดสินของหัวหน้าล่าสุด */
+let hiddenAt = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { hiddenAt = Date.now(); if (Object.keys(B.pend).length) save(); return; }
+  if (B.model && Date.now() - hiddenAt > 60000 && !Object.keys(B.pend).length && !B.busy) load(true);
+});
+window.addEventListener('beforeunload', (e) => { if (B.busy || Object.keys(B.pend).length) { e.preventDefault(); e.returnValue = ''; } });
+
+if (!L) fatal('ลิงก์ไม่ครบ ขอลิงก์ใหม่จากหัวหน้า (ปุ่ม 🔗 ลิงก์เจ้านาย ในหน้าเช็คความเสี่ยง MFG)');
+else load();
+</script>
+</body>
+</html>
