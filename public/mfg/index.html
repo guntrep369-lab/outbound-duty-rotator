@@ -63,7 +63,7 @@
 .mf-row b{color:var(--wms-text)}
 .mf-row label{font-size:14px;font-weight:700;color:var(--wms-text)}
 
-/* ชิปสถานะ สีเดียวกับรายงานของทีม: แดง = เสี่ยงมาก / NO LOT, เหลือง = เฝ้าระวัง, เขียว = ปกติ */
+/* ชิปสถานะ สีเดียวกับรายงานของทีม: แดง = เสี่ยง / NO LOT, เหลือง = เฝ้าระวัง, เขียว = ปกติ */
 .mf-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;border:1.5px solid transparent;
   font-family:var(--wms-font);font-size:13px;cursor:pointer;background:var(--wms-surface2);color:#334155;white-space:nowrap}
 .mf-chip b{font-variant-numeric:tabular-nums}
@@ -412,7 +412,7 @@ function cfgBox() {
 function ruleChips(ym) {
   const r = M.rule(ym);
   return `<span class="mf-tag ok">ปกติ ${esc(r.okText)}</span> <span class="mf-tag watch">เฝ้าระวัง ${esc(r.watchText)}</span>
-    <span class="mf-tag risk">เสี่ยงมาก ${esc(r.riskText)}</span> <span class="mf-tag nolot">NO LOT ต้องตรวจสอบ</span>`;
+    <span class="mf-tag risk">เสี่ยง ${esc(r.riskText)}</span> <span class="mf-tag nolot">NO LOT ต้องตรวจสอบ</span>`;
 }
 
 /** รายชื่อตั้งต้นของรอบใหม่: รายชื่อของรอบ MFG ล่าสุด ไม่มีก็เดาจากชื่อสินค้าในสมุด */
@@ -465,7 +465,7 @@ function setupNew() {
   </div>
   <div class="mf-card">
     <div class="mf-row" style="margin-bottom:8px"><span>ต้องนับ</span> <b>${f(sc.totals.locs)}</b> โล · <b>${f(sc.totals.skus)}</b> SKU · ในสมุด <b>${f(sc.totals.qty)}</b> ชิ้น
-      <span class="mf-tag risk">เสี่ยงมาก ${f((by.risk || {}).qty)}</span> <span class="mf-tag watch">เฝ้าระวัง ${f((by.watch || {}).qty)}</span>
+      <span class="mf-tag risk">เสี่ยง ${f((by.risk || {}).qty)}</span> <span class="mf-tag watch">เฝ้าระวัง ${f((by.watch || {}).qty)}</span>
       <span class="mf-tag ok">ปกติ ${f((by.ok || {}).qty)}</span> <span class="mf-tag nolot">NO LOT ${f((by.nolot || {}).qty)}</span>
       <span class="sp"></span><span title="${FIFO.src === 'shared' ? 'ชุดกลางที่สคริปต์เก็บไว้ ทุกหน้าใช้ชุดเดียวกัน' : 'สคริปต์อ่านทั้งชีตตอนนี้'}">สมุด${FIFO.src === 'shared' ? 'ชุดกลาง' : 'อ่านสด'} ${esc(stamp(FIFO.at))}${old ? ' (จะอ่านสดอีกครั้งตอนสร้างรอบ)' : ''}</span></div>
     ${FIFO.note ? `<div class="tx-sub" style="margin-top:6px">⚠ อ่านสมุดสดไม่ได้: ${esc(FIFO.note.msg)}${sheetLink(FIFO.note.link)}</div>` : ''}
@@ -820,7 +820,7 @@ function decBar(rp, map) {
   const chip = (k, body) => `<button class="mf-chip dec-${k} ${RF.dec === k ? 'on' : ''}" data-df="${k}">${body}</button>`;
   const chips = M.DECIDE_ORDER.filter(k => s[k].skus || RF.dec === k)
     .map(k => chip(k, `${M.DECIDE[k].icon} ${esc(M.DECIDE[k].label)} <b>${s[k].skus}</b> SKU · ${f(s[k].qty)} ชิ้น`)).join('');
-  const none = s.none.skus || RF.dec === 'none' ? chip('none', `เสี่ยงมากยังไม่ตัดสิน <b>${s.none.skus}</b> SKU`) : '';
+  const none = s.none.skus || RF.dec === 'none' ? chip('none', `เสี่ยงยังไม่ตัดสิน <b>${s.none.skus}</b> SKU`) : '';
   return `<div class="tx-bar" id="decBar"><span>คำตัดสิน</span>${chips}${none}${chips || none ? '' : '<span>เลือกในช่อง "Action by Tony" ระบบบันทึกเอง · ช่อง Remark ทีมเขียนให้เจ้านายอ่าน</span>'}
     <span class="sp"></span><span id="decState">${decStateHtml()}</span></div>`;
 }
@@ -834,8 +834,8 @@ function cmpBar(cm) {
   const chip = (k, body) => `<button class="mf-chip cmp-${k} ${RF.cmp === k ? 'on' : ''}" data-cmp="${k}">${esc(M.CMP[k].label)} ${body}</button>`;
   return `<div class="tx-bar"><span>เทียบ <b>${pm}</b></span>
     ${chip('new', `<b>${t.new.skus}</b> SKU · ${f(t.new.qty)} ชิ้น`)}${chip('still', `<b>${t.still.skus}</b> SKU · ${f(t.still.qty)} ชิ้น`)}${chip('gone', `<b>${t.gone.skus}</b> SKU`)}
-    ${t.todo.skus || RF.cmp === 'todo' ? `<button class="mf-chip cmp-todo ${RF.cmp === 'todo' ? 'on' : ''}" data-cmp="todo" title="เดือนก่อนเจ้านายสั่งแกะหรือขายด่วน แต่ LOT เสี่ยงมากชุดนั้นยังเหลืออยู่">⚠️ สั่งแกะ/ขายแล้วยังค้าง <b>${t.todo.skus}</b> SKU · ${f(t.todo.qty)} ชิ้น</button>` : ''}
-    <span class="tx-sub" title="LOT ที่เดือนก่อนเป็นเสี่ยงมาก เทียบชิ้นที่เหลือเดือนนี้ (ขาย แกะ หรือย้ายออกไป)">LOT เสี่ยงมากเดือนก่อน ลดไป <b>${f(t.out)}</b> ชิ้น</span>
+    ${t.todo.skus || RF.cmp === 'todo' ? `<button class="mf-chip cmp-todo ${RF.cmp === 'todo' ? 'on' : ''}" data-cmp="todo" title="เดือนก่อนเจ้านายสั่งแกะหรือขายด่วน แต่ LOT เสี่ยงชุดนั้นยังเหลืออยู่">⚠️ สั่งแกะ/ขายแล้วยังค้าง <b>${t.todo.skus}</b> SKU · ${f(t.todo.qty)} ชิ้น</button>` : ''}
+    <span class="tx-sub" title="LOT ที่เดือนก่อนเป็นเสี่ยง เทียบชิ้นที่เหลือเดือนนี้ (ขาย แกะ หรือย้ายออกไป)">LOT เสี่ยงเดือนก่อน ลดไป <b>${f(t.out)}</b> ชิ้น</span>
     <span class="tx-sub">· เดือนก่อนใช้ยอด${cm.c.prevMode === 'count' ? 'นับจริง' : 'สมุด'}</span></div>`;
 }
 
@@ -847,7 +847,7 @@ function goneTable(cm) {
   const body = list.map(g => `<tr><td class="k-sku nw">${esc(g.sku)}${g.short ? `<span class="tx-sub">${esc(g.short)}</span>` : ''}</td><td class="k-name">${esc(g.name)}</td>
     <td class="nw">${esc(g.type)}</td><td class="num">${f(g.riskPrev)}</td><td class="num">${g.left ? f(g.left) : '<span class="tx-sub">-</span>'}</td><td class="num">${f(g.out)}</td>
     <td>${esc(M.decideText(g.dPrev))}</td></tr>`).join('');
-  return `<div class="tx-wrap"><table class="tx-tbl"><thead><tr><th>SKU</th><th>Product Name</th><th>Type</th><th class="num">เสี่ยงมาก ${pm}</th><th class="num">เดือนนี้เหลือ</th><th class="num">LOT เดิมลดไป</th><th>เดือนก่อนสั่ง</th></tr></thead>
+  return `<div class="tx-wrap"><table class="tx-tbl"><thead><tr><th>SKU</th><th>Product Name</th><th>Type</th><th class="num">เสี่ยง ${pm}</th><th class="num">เดือนนี้เหลือ</th><th class="num">LOT เดิมลดไป</th><th>เดือนก่อนสั่ง</th></tr></thead>
     <tbody>${body || '<tr><td colspan="7" class="tx-sub">ไม่มีรายการ</td></tr>'}</tbody></table></div>`;
 }
 
@@ -879,7 +879,7 @@ function reportView() {
     if (!o || (!o.tag && !o.dPrev)) return '<td></td>';
     const tag = o.tag ? `<span class="mf-cmp ${o.tag}">${esc(M.CMP[o.tag].short)}</span>${o.out > 0 ? ` <small class="tx-sub">ลด ${f(o.out)}</small>` : ''}` : '';
     const dp = o.dPrev ? `<small class="tx-sub ${o.todo ? 'mf-todo' : ''}">เดือนก่อน: ${esc(M.decideText(o.dPrev))}${o.todo ? ` · ยังค้าง ${f(o.held)}` : ''}</small>` : '';
-    return `<td class="nw" title="เสี่ยงมาก ${esc(M.ymText(cc.prevYm))} ${f(o.riskPrev)} ชิ้น → ${esc(M.ymText(cc.ym))} ${f(o.riskNow)} ชิ้น">${tag}${dp}</td>`;
+    return `<td class="nw" title="เสี่ยง ${esc(M.ymText(cc.prevYm))} ${f(o.riskPrev)} ชิ้น → ${esc(M.ymText(cc.ym))} ${f(o.riskNow)} ชิ้น">${tag}${dp}</td>`;
   };
   const decCell = (r) => {
     const k = ST.up(r.sku);
@@ -927,7 +927,7 @@ function reportView() {
       <button class="tx-opt" data-act="line">คัดลอกไปวาง LINE</button>
     </div>
     <div class="tx-bar">
-      ${chip('risk', `เสี่ยงมาก ${esc(rl.riskText)}`)}${chip('watch', `เฝ้าระวัง ${esc(rl.watchText)}`)}${chip('ok', `ปกติ ${esc(rl.okText)}`)}
+      ${chip('risk', `เสี่ยง ${esc(rl.riskText)}`)}${chip('watch', `เฝ้าระวัง ${esc(rl.watchText)}`)}${chip('ok', `ปกติ ${esc(rl.okText)}`)}
       ${by.nolot.qty ? chip('nolot', 'NO LOT ต้องตรวจสอบ') : ''}
       ${mode === 'count' && by.none.skus ? `<button class="mf-chip none ${RF.st === 'none' ? 'on' : ''}" data-st="none">ไม่พบของ <b>${by.none.skus}</b> SKU</button>` : ''}
       ${mode === 'count' && by.wait.skus ? `<button class="mf-chip wait ${RF.st === 'wait' ? 'on' : ''}" data-st="wait">ยังไม่นับ <b>${by.wait.skus}</b> SKU</button>` : ''}
@@ -1052,7 +1052,7 @@ const CC = {
 };
 const DEC_COL = { open: ['#FEE2E2', '#991B1B'], sell: ['#FEF3C7', '#92400E'], wait: ['#E0F2FE', '#075985'], other: ['#F1F5F9', '#334155'] };
 const SEG = ['risk', 'watch', 'ok', 'nolot'];
-const SEG_LABEL = { risk: 'เสี่ยงมาก', watch: 'เฝ้าระวัง', ok: 'ปกติ', nolot: 'ไม่มี LOT' };
+const SEG_LABEL = { risk: 'เสี่ยง', watch: 'เฝ้าระวัง', ok: 'ปกติ', nolot: 'ไม่มี LOT' };
 let SHOT = null;   // รูปที่เปิดอยู่ {blob, url, name}
 
 function cardFont(px, w) { return `${w || 400} ${px}px ${CARD_FONT}`; }
@@ -1113,7 +1113,7 @@ function drawCard(k) {
     txt('SKU', x + 16 + nw, y + 63, 12, 600, fg);
     const qw = txt(`${f(t.qty)} ชิ้น`, x + 12, y + 85, 13, 600, fg);
     if (t.pct !== undefined && t.pct !== null && t.pct !== 0) {
-      /* เสี่ยงมากลดลง = ดี (เขียว) เพิ่มขึ้น = แดง */
+      /* เสี่ยงลดลง = ดี (เขียว) เพิ่มขึ้น = แดง */
       txt(`${t.pct < 0 ? '▼' : '▲'} ${Math.abs(t.pct)}%`, x + 18 + qw, y + 86, 12, 700, t.pct < 0 ? '#047857' : CC.risk[0]);
     } else if (t.prev !== undefined) {
       txt(t.pct === 0 ? 'เท่าเดิม' : `เดือนก่อน ${f(t.prev)}`, x + 18 + qw, y + 86, 11, 400, fg);
@@ -1153,12 +1153,12 @@ function drawCard(k) {
     y += 30;
   }
 
-  /* เสี่ยงมาก LOT เก่าสุดก่อน */
-  txt('เสี่ยงมาก · LOT เก่าสุดก่อน', P, y, 15, 700);
+  /* เสี่ยง LOT เก่าสุดก่อน */
+  txt('เสี่ยง · LOT เก่าสุดก่อน', P, y, 15, 700);
   txt(`${f(k.riskSkus)} SKU`, W - P, y + 3, 11, 400, CC.muted, 'right');
   y += 28;
   if (!k.top.length) {
-    txt('ไม่มีของเสี่ยงมากในรอบนี้', P, y, 13, 600, '#047857');
+    txt('ไม่มีของเสี่ยงในรอบนี้', P, y, 13, 600, '#047857');
     y += 28;
   } else {
     const xLot = P + 240, xQty = P + 392;
@@ -1184,7 +1184,7 @@ function drawCard(k) {
       y += 46; hr(y);
     });
     y += 8;
-    if (k.more) { txt(`และเสี่ยงมากอีก ${f(k.more)} SKU · ดูครบใน Excel`, P, y, 12, 400, CC.muted); y += 22; }
+    if (k.more) { txt(`และเสี่ยงอีก ${f(k.more)} SKU · ดูครบใน Excel`, P, y, 12, 400, CC.muted); y += 22; }
   }
 
   /* คำตัดสิน */
@@ -1216,9 +1216,9 @@ function drawCard(k) {
   /* เทียบเดือนก่อน */
   if (k.cmp) {
     const m = k.cmp;
-    txt(`เทียบ ${m.prev}: เพิ่งเข้าเสี่ยงมาก ${f(m.new)} · ค้าง ${f(m.still)} · หลุดแล้ว ${f(m.gone)} SKU`, P, y, 12, 400, CC.muted);
+    txt(`เทียบ ${m.prev}: เพิ่งเข้าเสี่ยง ${f(m.new)} · ค้าง ${f(m.still)} · หลุดแล้ว ${f(m.gone)} SKU`, P, y, 12, 400, CC.muted);
     y += 19;
-    if (m.out) { txt(`LOT ที่เสี่ยงมากเดือนก่อน ลดไป ${f(m.out)} ชิ้น (ขาย/แกะ)`, P, y, 12, 400, CC.muted); y += 19; }
+    if (m.out) { txt(`LOT ที่เสี่ยงเดือนก่อน ลดไป ${f(m.out)} ชิ้น (ขาย/แกะ)`, P, y, 12, 400, CC.muted); y += 19; }
     y += 6;
   }
 

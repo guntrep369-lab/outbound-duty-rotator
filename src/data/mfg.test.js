@@ -94,7 +94,7 @@ describe('ประเภทสินค้าบีบสูญญากาศ'
 });
 
 describe('LOT ตัดและสถานะ (เดือนนี้ลบ 3)', () => {
-  it('รอบ พ.ย. 69: นับ LOT 8 ลงไป · LOT 6 เฝ้าระวัง · LOT 5 ลงไปเสี่ยงมาก', () => {
+  it('รอบ พ.ย. 69: นับ LOT 8 ลงไป · LOT 6 เฝ้าระวัง · LOT 5 ลงไปเสี่ยง', () => {
     const r = M.rule('2026-11');
     expect(r.text).toBe('นับ LOT 8 ลงไป');
     expect([r.okText, r.watchText, r.riskText]).toEqual(['LOT 7–8', 'LOT 6', 'LOT 5 ลงไป']);
@@ -287,7 +287,7 @@ describe('รายงาน', () => {
     expect(sh.aoa[1].slice(7)).toEqual(['Total MFG', 'สถานะ', 'Remark', 'Action by Tony']);
     expect(sh.aoa[2].slice(4, 8)).toEqual(['Lot 4', 'Lot 6', 'Lot 8', 31]);
     expect(sh.aoa[3].slice(4, 7)).toEqual(['229 วัน', '168 วัน', '107 วัน']);
-    expect(sh.aoa[4]).toEqual(['AAA0000000001', 'ที่นอน 5FT สมมติ Mattress', 'Mattress', '', 10, 5, '', 15, 'เสี่ยงมาก', '', '']);
+    expect(sh.aoa[4]).toEqual(['AAA0000000001', 'ที่นอน 5FT สมมติ Mattress', 'Mattress', '', 10, 5, '', 15, 'เสี่ยง', '', '']);
     expect(sh.aoa[sh.aoa.length - 1]).toEqual(['รวม', '', '', 4, 10, 5, 12, 31, '', '', '']);
     expect(sh.merges).toContainEqual({ s: { r: 1, c: 4 }, e: { r: 1, c: 6 } });
     expect(sh.styles).toContainEqual([2, 4, 'st-risk']);
@@ -311,7 +311,7 @@ describe('รายงาน', () => {
     const rep = M.report({ ym: '2026-11', today: '2026-11-16', list: LIST, skus: SKUS, book: s.piles, entries: [], mode: 'book', locs: s.locs });
     const t = M.lineText(rep, { ym: '2026-11' });
     expect(t).toContain('เช็คความเสี่ยง MFG พ.ย. 69 (นับ LOT 8 ลงไป)');
-    expect(t).toContain('🔴 เสี่ยงมาก (LOT 5 ลงไป): 10 ชิ้น 1 SKU');
+    expect(t).toContain('🔴 เสี่ยง (LOT 5 ลงไป): 10 ชิ้น 1 SKU');
     expect(t).toContain('🟡 เฝ้าระวัง (LOT 6): 5 ชิ้น 1 SKU');
     expect(t).toContain('⚪ NO LOT ต้องตรวจสอบ: 4 ชิ้น 1 SKU');
     expect(t).toContain('• AAA001 ที่นอน 5FT สมมติ Mattress — Lot 4 10');
@@ -321,7 +321,7 @@ describe('รายงาน', () => {
 describe('เทียบกับรอบเดือนก่อน', () => {
   const LIST = [['AAA0000000001', 'Mattress'], ['BBB0000000001', 'Topper'], ['CCC0000000001', 'Pillow & Bolster'], ['EEE0000000001', 'Pet Bed']];
   const pile = (loc, i, lot, qty) => [loc, SKUS[i][0], SKUS[i][1], SKUS[i][2], lot, '9900000001', qty, 0];
-  /* ต.ค. 69: เสี่ยงมาก = LOT 4 ลงไป · พ.ย. 69: เสี่ยงมาก = LOT 5 ลงไป */
+  /* ต.ค. 69: เสี่ยง = LOT 4 ลงไป · พ.ย. 69: เสี่ยง = LOT 5 ลงไป */
   const OCT = [pile('R1-01-01', 0, '4', 20), pile('R1-01-02', 0, '6', 5), pile('R2-01-01', 1, '3', 8), pile('R3-01-01', 2, '5', 6)];
   const NOV = [pile('R1-01-01', 0, '4', 12), pile('R1-01-02', 0, '6', 5), pile('R3-01-01', 2, '5', 6), pile('A-01-01', 5, '8', 3)];
   const rep = (ym, book, list) => M.report({ ym, today: ym + '-16', list: list || LIST, skus: SKUS, book, entries: [], mode: 'book', locs: [] });
@@ -336,7 +336,7 @@ describe('เทียบกับรอบเดือนก่อน', () => {
     expect(M.prevRound(rounds, { id: 'X', settings: {} })).toBeNull();
   });
 
-  it('เพิ่งเข้าเสี่ยงมาก / ค้างเสี่ยงมาก / หลุดเสี่ยงแล้ว และ LOT เดิมลดไปกี่ชิ้น', () => {
+  it('เพิ่งเข้าเสี่ยง / ค้างเสี่ยง / หลุดเสี่ยงแล้ว และ LOT เดิมลดไปกี่ชิ้น', () => {
     const c = M.compare(rep('2026-11', NOV), rep('2026-10', OCT));
     expect(c.bySku.AAA0000000001).toMatchObject({ tag: 'still', riskNow: 12, riskPrev: 20, out: 8 });
     expect(c.bySku.CCC0000000001).toMatchObject({ tag: 'new', riskNow: 6, riskPrev: 0, out: 0, prevSt: 'watch' });
@@ -369,14 +369,14 @@ describe('เทียบกับรอบเดือนก่อน', () => {
 
     const cs = M.compareSheet(c, cur);
     expect(cs.aoa.slice(2).map((r) => [r[0], r[1], r[4], r[5], r[6]])).toEqual([
-      ['เพิ่งเข้าเสี่ยงมาก', 'CCC0000000001', '', 6, ''],
-      ['ค้างเสี่ยงมาก', 'AAA0000000001', 20, 12, 8],
+      ['เพิ่งเข้าเสี่ยง', 'CCC0000000001', '', 6, ''],
+      ['ค้างเสี่ยง', 'AAA0000000001', 20, 12, 8],
       ['หลุดเสี่ยงแล้ว', 'BBB0000000001', 8, '', 8],
       ['รวม', '', '', '', 16],
     ]);
 
     const text = M.lineText(cur, { ym: '2026-11', cmp: c });
-    expect(text).toContain('เพิ่งเข้าเสี่ยงมาก 1 SKU (6 ชิ้น)');
+    expect(text).toContain('เพิ่งเข้าเสี่ยง 1 SKU (6 ชิ้น)');
     expect(text).toContain('หลุดเสี่ยงแล้ว 1 SKU');
     expect(text).toContain('ลดไป 16 ชิ้น');
     expect(M.lineText(cur, { ym: '2026-11' })).not.toContain('เทียบ');
@@ -399,7 +399,7 @@ describe('เทียบกับรอบเดือนก่อน', () => {
     expect(M.decideOf('เสีย')).toEqual({});
   });
 
-  it('สรุปคำตัดสิน กับชิปกรอง: SKU เสี่ยงมากที่ยังไม่ตัดสิน', () => {
+  it('สรุปคำตัดสิน กับชิปกรอง: SKU เสี่ยงที่ยังไม่ตัดสิน', () => {
     const cur = rep('2026-11', NOV);
     const map = M.decideOf({ AAA0000000001: ['open', 'แกะขายหน้าร้าน', 'ก', ''], EEE0000000001: ['wait', '', 'ก', ''] });
     const s = M.decideSum(cur, map);
@@ -452,11 +452,11 @@ describe('เทียบกับรอบเดือนก่อน', () => {
     expect(text).toContain('⚠️ เดือนก่อนสั่งแกะ/ขายด่วน แต่ยังค้าง 1 SKU (12 ชิ้น): AAA001 12');
     expect(text).toContain('คำตัดสิน:');
     expect(text).toContain('✂️ แกะ 1 SKU (17 ชิ้น): AAA001 (รอบสอง)');
-    expect(text).toContain('❓ เสี่ยงมากที่ยังไม่ตัดสิน 1 SKU');
+    expect(text).toContain('❓ เสี่ยงที่ยังไม่ตัดสิน 1 SKU');
     expect(M.lineText(cur, { ym: '2026-11', decide: {} })).not.toContain('คำตัดสิน');
   });
 
-  it('การ์ดรูปให้เจ้านาย: สามกล่องบน แยกประเภท เสี่ยงมาก LOT เก่าสุดก่อน คำตัดสิน และเทียบเดือนก่อน', () => {
+  it('การ์ดรูปให้เจ้านาย: สามกล่องบน แยกประเภท เสี่ยง LOT เก่าสุดก่อน คำตัดสิน และเทียบเดือนก่อน', () => {
     const prevDec = M.decideOf({ AAA0000000001: ['open', '', 'ก', ''] });
     const cur = rep('2026-11', NOV);
     const c = M.compare(cur, rep('2026-10', OCT), null, prevDec);
@@ -464,7 +464,7 @@ describe('เทียบกับรอบเดือนก่อน', () => {
     const k = M.card(cur, { ym: '2026-11', at: '16/11/2569 10:00', cmp: c, decide: map });
     expect(k.title).toBe('ความเสี่ยง MFG ' + M.ymText('2026-11'));
     expect([k.status, k.partial, k.total]).toEqual(['ยอดในสมุด (ยังไม่ได้นับ)', true, 26]);
-    /* เสี่ยงมาก 18 ชิ้น เดือนก่อน 28 (AAA 20 + BBB 8) = ลด 36% · ไม่มี NO LOT กล่องที่สามเป็น ปกติ */
+    /* เสี่ยง 18 ชิ้น เดือนก่อน 28 (AAA 20 + BBB 8) = ลด 36% · ไม่มี NO LOT กล่องที่สามเป็น ปกติ */
     expect(k.tiles.map((t) => [t.k, t.skus, t.qty])).toEqual([['risk', 2, 18], ['watch', 1, 5], ['ok', 1, 3]]);
     expect([k.tiles[0].prev, k.tiles[0].pct]).toEqual([28, -36]);
     expect(k.types.map((t) => [t.type, t.risk, t.watch, t.ok, t.total])).toEqual([

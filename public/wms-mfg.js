@@ -4,7 +4,7 @@
  * ผู้ใช้ขอ 2026-11-16: ที่นอน ท็อปเปอร์ หมอน บีบสูญญากาศ ต้องเช็คทุกเดือน เป็นเมนูที่นับเองแบบนับสต๊อกใหญ่
  *   - นับเฉพาะ SKU บีบสูญญากาศ ไม่นับทุก SKU
  *   - นับเฉพาะ LOT ตั้งแต่เดือนนี้ลบ 3 ลงไป (พ.ย. นับ LOT 8 ลงไป) LOT ใหม่กว่านั้นไม่นับ ทุกประเภทใช้เกณฑ์เดียวกัน
- *   - รอบ พ.ย.: LOT 6 เฝ้าระวัง, LOT 4–5 เสี่ยงมาก → อายุ 5 เดือน = เฝ้าระวัง, 6 เดือนขึ้นไป = เสี่ยงมาก, 3–4 เดือน = ปกติ
+ *   - รอบ พ.ย.: LOT 6 เฝ้าระวัง, LOT 4–5 เสี่ยง → อายุ 5 เดือน = เฝ้าระวัง, 6 เดือนขึ้นไป = เสี่ยง, 3–4 เดือน = ปกติ
  *   - LOT 0 (ไม่รู้ LOT) ไปนับด้วย ดู LOT จากป้ายจริง ไม่มีป้ายกรอก 0 → กลุ่ม NO LOT ต้องตรวจสอบ
  *   - รายงานหน้าตาเดียวกับที่ทีมทำอยู่: SKU · Product Name · Type · NO LOT · Lot … · Total MFG (แถวหัวเป็นปี)
  *
@@ -23,11 +23,11 @@
 
   var CUT = 3;     // นับ LOT ที่อายุตั้งแต่ 3 เดือน (พ.ย. → LOT 8 ลงไป)
   var WATCH = 5;   // อายุ 5 เดือน = เฝ้าระวัง (พ.ย. → LOT 6)
-  var RISK = 6;    // อายุ 6 เดือนขึ้นไป = เสี่ยงมาก (พ.ย. → LOT 5 ลงไป)
+  var RISK = 6;    // อายุ 6 เดือนขึ้นไป = เสี่ยง (พ.ย. → LOT 5 ลงไป)
 
   /* ลำดับความเสี่ยง เรียงแถวและชิปตามนี้ */
   var STATUS = {
-    risk: { label: 'เสี่ยงมาก', rank: 0 },
+    risk: { label: 'เสี่ยง', rank: 0 },
     watch: { label: 'เฝ้าระวัง', rank: 1 },
     nolot: { label: 'ต้องตรวจสอบ', rank: 2 },
     ok: { label: 'ปกติ', rank: 3 },
@@ -164,7 +164,7 @@
    * เกณฑ์ของรอบเดือน ym
    *   cut   = เดือน LOT ที่ใหม่ที่สุดที่ยังต้องนับ (เดือนนี้ลบ 3)
    *   watch = เดือนที่เฝ้าระวัง (เดือนนี้ลบ 5)
-   *   risk  = เดือนที่เสี่ยงมาก (เดือนนี้ลบ 6 ลงไป)
+   *   risk  = เดือนที่เสี่ยง (เดือนนี้ลบ 6 ลงไป)
    */
   function rule(ym) {
     var r = refKey(ym);
@@ -529,10 +529,10 @@
 
   /**
    * เทียบรายงานรอบนี้กับรอบก่อน ราย SKU สถานะของแต่ละรอบคิดตามเดือนของรอบนั้นเอง
-   *   new   เพิ่งเข้าเสี่ยงมาก: เดือนนี้มีของเสี่ยงมาก เดือนก่อนไม่มี (ส่วนใหญ่คือของเฝ้าระวังที่อายุครบ)
-   *   still ค้างเสี่ยงมาก: มีทั้งสองเดือน
+   *   new   เพิ่งเข้าเสี่ยง: เดือนนี้มีของเสี่ยง เดือนก่อนไม่มี (ส่วนใหญ่คือของเฝ้าระวังที่อายุครบ)
+   *   still ค้างเสี่ยง: มีทั้งสองเดือน
    *   gone  หลุดเสี่ยงแล้ว: เดือนก่อนมี เดือนนี้ไม่มี (ขาย แกะ หรือย้ายออกไป)
-   * out = LOT ที่เดือนก่อนเสี่ยงมาก ลดลงไปกี่ชิ้น (นับเฉพาะที่ลด ที่นับเจอเพิ่มไม่หักกัน)
+   * out = LOT ที่เดือนก่อนเสี่ยง ลดลงไปกี่ชิ้น (นับเฉพาะที่ลด ที่นับเจอเพิ่มไม่หักกัน)
    * keep = SKU ในรายชื่อรอบนี้ (จาก listMap) SKU ที่เอาออกจากรายชื่อแล้วไม่ขึ้นว่าหลุด
    */
   function compare(cur, prev, keep, prevDec) {
@@ -552,7 +552,7 @@
         held = round3(held + Math.min(was.riskLots[l], left));
       });
       var tag = rn > 0 ? (rp > 0 ? 'still' : 'new') : rp > 0 ? 'gone' : '';
-      /* เดือนก่อนเจ้านายสั่งแกะหรือขายด่วน แต่ LOT เสี่ยงมากชุดนั้นยังเหลืออยู่ = ยังไม่ได้ทำตามที่สั่ง */
+      /* เดือนก่อนเจ้านายสั่งแกะหรือขายด่วน แต่ LOT เสี่ยงชุดนั้นยังเหลืออยู่ = ยังไม่ได้ทำตามที่สั่ง */
       var dPrev = (prevDec && prevDec[k]) || null;
       var todo = !!(dPrev && ACT[dPrev.code] && held > 0);
       var o = { tag: tag, riskNow: rn, riskPrev: rp, out: out, held: held, prevSt: was ? was.row.st : '', dPrev: dPrev, todo: todo };
@@ -572,8 +572,8 @@
   }
 
   var CMP = {
-    new: { label: 'เพิ่งเข้าเสี่ยงมาก', short: 'ใหม่' },
-    still: { label: 'ค้างเสี่ยงมาก', short: 'ค้าง' },
+    new: { label: 'เพิ่งเข้าเสี่ยง', short: 'ใหม่' },
+    still: { label: 'ค้างเสี่ยง', short: 'ค้าง' },
     gone: { label: 'หลุดเสี่ยงแล้ว', short: 'หลุดแล้ว' },
   };
 
@@ -669,7 +669,7 @@
 
   /**
    * สรุปคำตัดสินของรายงาน ราย code: SKU กี่ตัว ชิ้น (Total MFG) กี่ชิ้น รายชื่อ
-   * none = SKU เสี่ยงมากที่ยังไม่ได้ตัดสิน · any = มีคำตัดสินอย่างน้อยหนึ่งตัว
+   * none = SKU เสี่ยงที่ยังไม่ได้ตัดสิน · any = มีคำตัดสินอย่างน้อยหนึ่งตัว
    */
   function decideSum(rep, map) {
     var s = { none: { skus: 0, qty: 0, list: [] }, any: false };
@@ -686,7 +686,7 @@
     return s;
   }
 
-  /** แถวตามชิปคำตัดสิน key = code | 'none' (เสี่ยงมากที่ยังไม่ตัดสิน) */
+  /** แถวตามชิปคำตัดสิน key = code | 'none' (เสี่ยงที่ยังไม่ตัดสิน) */
   function byDecide(rows, map, key) {
     if (!key) return rows;
     return rows.filter(function (r) {
@@ -696,11 +696,11 @@
   }
 
   /**
-   * ชีตเทียบเดือนก่อน แยกกลุ่ม: เพิ่งเข้าเสี่ยงมาก / ค้างเสี่ยงมาก / หลุดเสี่ยงแล้ว
+   * ชีตเทียบเดือนก่อน แยกกลุ่ม: เพิ่งเข้าเสี่ยง / ค้างเสี่ยง / หลุดเสี่ยงแล้ว
    * rows ของรายงานรอบนี้ใช้หาชื่อกับประเภท SKU ที่หลุดแล้วใช้ข้อมูลจาก cmp.gone
    */
   function compareSheet(cmp, rep) {
-    var head = ['กลุ่ม', 'SKU', 'Product Name', 'Type', 'เสี่ยงมาก ' + ymText(cmp.prevYm), 'เสี่ยงมาก ' + ymText(cmp.ym), 'LOT เดิมลดไป', 'เดือนก่อนสั่ง'];
+    var head = ['กลุ่ม', 'SKU', 'Product Name', 'Type', 'เสี่ยง ' + ymText(cmp.prevYm), 'เสี่ยง ' + ymText(cmp.ym), 'LOT เดิมลดไป', 'เดือนก่อนสั่ง'];
     var aoa = [['เทียบ ' + ymText(cmp.ym) + ' กับ ' + ymText(cmp.prevYm) + ' · เดือนนี้ใช้' + (cmp.mode === 'count' ? 'ยอดนับจริง' : 'ยอดสมุด') +
       ' · เดือนก่อนใช้' + (cmp.prevMode === 'count' ? 'ยอดนับจริง' : 'ยอดสมุด')], head];
     var styles = [[0, 0, 'title']];
@@ -832,7 +832,7 @@
     var lines = ['📦 เช็คความเสี่ยง MFG ' + ymText(m.ym || r.ym) + ' (' + r.text + ')'];
     if (rep.mode === 'count') lines.push('นับจริง ' + rep.done + '/' + rep.total + ' โล' + (rep.done < rep.total ? ' (ยังนับไม่ครบ)' : ''));
     else lines.push('ตัวเลขจากสมุด (ยังไม่ได้นับ)');
-    lines.push('🔴 เสี่ยงมาก (' + r.riskText + '): ' + f(by.risk.qty) + ' ชิ้น ' + by.risk.skus + ' SKU');
+    lines.push('🔴 เสี่ยง (' + r.riskText + '): ' + f(by.risk.qty) + ' ชิ้น ' + by.risk.skus + ' SKU');
     lines.push('🟡 เฝ้าระวัง (' + r.watchText + '): ' + f(by.watch.qty) + ' ชิ้น ' + by.watch.skus + ' SKU');
     lines.push('🟢 ปกติ (' + r.okText + '): ' + f(by.ok.qty) + ' ชิ้น ' + by.ok.skus + ' SKU');
     if (by.nolot.qty) lines.push('⚪ NO LOT ต้องตรวจสอบ: ' + f(by.nolot.qty) + ' ชิ้น ' + by.nolot.skus + ' SKU');
@@ -841,10 +841,10 @@
     if (cmp) {
       var t = cmp.totals;
       lines.push('', 'เทียบ ' + ymText(cmp.prevYm) + ':');
-      lines.push('🆕 เพิ่งเข้าเสี่ยงมาก ' + t.new.skus + ' SKU (' + f(t.new.qty) + ' ชิ้น)');
-      lines.push('⏳ ค้างเสี่ยงมากจากเดือนก่อน ' + t.still.skus + ' SKU (' + f(t.still.qty) + ' ชิ้น)');
+      lines.push('🆕 เพิ่งเข้าเสี่ยง ' + t.new.skus + ' SKU (' + f(t.new.qty) + ' ชิ้น)');
+      lines.push('⏳ ค้างเสี่ยงจากเดือนก่อน ' + t.still.skus + ' SKU (' + f(t.still.qty) + ' ชิ้น)');
       lines.push('✅ หลุดเสี่ยงแล้ว ' + t.gone.skus + ' SKU');
-      if (t.out) lines.push('LOT ที่เสี่ยงมากเดือนก่อน ลดไป ' + f(t.out) + ' ชิ้น (ขาย/แกะ)');
+      if (t.out) lines.push('LOT ที่เสี่ยงเดือนก่อน ลดไป ' + f(t.out) + ' ชิ้น (ขาย/แกะ)');
       if (t.todo && t.todo.skus) {
         var late = Object.keys(cmp.bySku).filter(function (k) { return cmp.bySku[k].todo; });
         var shortOf = {};
@@ -862,7 +862,7 @@
         lines.push(DECIDE[k].icon + ' ' + DECIDE[k].label + ' ' + g.skus + ' SKU (' + f(g.qty) + ' ชิ้น): ' +
           names(g.list, function (x) { return (x.short || x.sku) + (x.note ? ' (' + x.note + ')' : ''); }));
       });
-      if (dsum.none.skus) lines.push('❓ เสี่ยงมากที่ยังไม่ตัดสิน ' + dsum.none.skus + ' SKU');
+      if (dsum.none.skus) lines.push('❓ เสี่ยงที่ยังไม่ตัดสิน ' + dsum.none.skus + ' SKU');
     }
     var rmap = m.remark || {};
     var rk = rep.rows.filter(function (x) { return rmap[up(x.sku)]; });
@@ -873,7 +873,7 @@
     }
     var top = rep.rows.filter(function (x) { return x.st === 'risk'; }).slice(0, 5);
     if (top.length) {
-      lines.push('', 'เสี่ยงมากสุด:');
+      lines.push('', 'เสี่ยง · LOT เก่าสุดก่อน:');
       top.forEach(function (x) {
         var parts = rep.cols.filter(function (col) { return col.st === 'risk' && x.cells[col.key] && x.cells[col.key][rep.mode] > 0; })
           .map(function (col) { return col.label + ' ' + f(x.cells[col.key][rep.mode]); });
@@ -894,9 +894,9 @@
 
   /**
    * ตัวเลขทั้งหมดของการ์ดรูป คิดจากรายงานทั้งรอบ (ไม่สนตัวกรองบนจอ) หน้าเว็บแค่เอาไปวาด
-   * meta = { ym, at, cmp (compare), decide (decideOf), top = จำนวนแถวเสี่ยงมากที่โชว์ }
-   *   tiles  สามกล่องบน: เสี่ยงมาก (เทียบเดือนก่อนถ้ามี) · เฝ้าระวัง · ไม่มี LOT (ไม่มีของ NO LOT ใช้ ปกติ แทน)
-   *   types  ชิ้นแยกประเภท × สถานะ · top แถวเสี่ยงมากเรียง LOT เก่าสุดก่อน (ลำดับเดียวกับรายงาน)
+   * meta = { ym, at, cmp (compare), decide (decideOf), top = จำนวนแถวเสี่ยงที่โชว์ }
+   *   tiles  สามกล่องบน: เสี่ยง (เทียบเดือนก่อนถ้ามี) · เฝ้าระวัง · ไม่มี LOT (ไม่มีของ NO LOT ใช้ ปกติ แทน)
+   *   types  ชิ้นแยกประเภท × สถานะ · top แถวเสี่ยงเรียง LOT เก่าสุดก่อน (ลำดับเดียวกับรายงาน)
    *   decide สรุปคำตัดสิน (มีเมื่อตัดสินแล้วอย่างน้อยหนึ่งตัว) · cmp สรุปเทียบเดือนก่อน
    */
   function card(rep, meta) {

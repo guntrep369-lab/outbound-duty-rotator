@@ -124,8 +124,8 @@ body{background:var(--wms-bg);color:var(--wms-text);font-family:var(--wms-font);
 .rmk small{display:block;font-size:11px;color:#6366F1;margin-top:1px}
 
 /* ── จอคอม: ตารางหน้าตาเดียวกับแท็บรายงาน (หัวปี / Lot / อายุ สีตามสถานะ) เลือกในแถว ── */
-.rp-wrap{overflow:auto;width:fit-content;max-width:100%;max-height:calc(100vh - var(--ch,48px) - 62px);background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:10px}
-.rp{border-collapse:collapse;font-size:13px}
+.rp-wrap{overflow:auto;max-height:calc(100vh - var(--ch,48px) - 62px);background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:10px}
+.rp{min-width:100%;border-collapse:collapse;font-size:13px}
 .rp th{position:sticky;top:0;z-index:2;text-align:center;color:#fff;background:#434343;border:1px solid #fff;padding:7px 7px;
   font-size:12px;font-weight:600;white-space:nowrap}
 .rp thead tr:nth-child(2) th{top:var(--h1,31px)}
@@ -185,10 +185,10 @@ body{background:var(--wms-bg);color:var(--wms-text);font-family:var(--wms-font);
   .foot .in{max-width:1240px}
 }
 @media (min-width:1250px){
-  .bs{max-width:none;padding:0 10px 66px}
-  .foot .in{max-width:none}
+  .bs{max-width:1440px;padding:0 10px 66px}
+  .foot .in{max-width:1420px}
 }
-@media (min-width:1500px){ .rp .note{width:150px} }   /* จอใหญ่: ช่องหมายเหตุกว้างขึ้น ตารางยังไม่ยืดเต็มจอ */
+@media (min-width:1500px){ .rp .note{width:150px} }   /* จอใหญ่: ช่องหมายเหตุกว้างขึ้น (หน้ากว้างไม่เกิน 1440 อยู่กลางจอ) */
 @media (min-width:900px){
   .sum{display:flex;gap:10px;align-items:stretch;margin-bottom:12px}
   .sum .tiles{flex:none;grid-template-columns:repeat(3,190px);margin:0}
@@ -317,7 +317,7 @@ function chipsHtml(map) {
   const done = all.filter(r => map[up(r.sku)]).length;
   const c = (v, cls, label, cnt) => cnt || B.view === v
     ? `<button class="chip ${cls} ${B.view === v ? 'on' : ''}" data-view="${v}">${label}<b>${f(cnt)}</b></button>` : '';
-  return c('risk', 'risk', 'เสี่ยงมาก', n('risk')) + c('none', 'none', 'ยังไม่ตัดสิน', none) +
+  return c('risk', 'risk', 'เสี่ยง', n('risk')) + c('none', 'none', 'ยังไม่ตัดสิน', none) +
     c('watch', 'watch', 'เฝ้าระวัง', n('watch')) + c('nolot', 'nolot', 'ไม่มี LOT', n('nolot')) +
     c('done', '', 'ตัดสินแล้ว', done) + c('all', '', 'ทั้งหมด', all.length);
 }
@@ -349,7 +349,7 @@ function skuHtml(r, map) {
   const cm = B.model.cmp ? B.model.cmp.bySku[sku] : null;
   const st = M.STATUS[r.st] ? r.st : '';
   const stLabel = M.STATUS[r.st] ? M.STATUS[r.st].label : '';
-  const tag = cm && cm.tag === 'new' ? '<span class="tag new">เพิ่งเข้าเสี่ยงมาก</span>' : '';
+  const tag = cm && cm.tag === 'new' ? '<span class="tag new">เพิ่งเข้าเสี่ยง</span>' : '';
   const prevTxt = cm && cm.dPrev ? M.prevDecText(cm) : '';
   if (DESK.matches) return rowHtml(r, d, cm);
   const prev = prevTxt ? `<div class="prev ${cm.todo ? 'todo' : ''}">เดือนก่อน: ${esc(prevTxt)}</div>` : '';
@@ -428,7 +428,7 @@ function paintList() {
   $('chips').innerHTML = chipsHtml(map);
   const list = viewRows(map);
   $('list').className = DESK.matches ? 'tbl' : 'cards';
-  $('list').innerHTML = !list.length ? `<div class="empty">${B.view === 'none' ? '✓ ตัดสินครบทุก SKU เสี่ยงมากแล้ว' : 'ไม่มี SKU ในกลุ่มนี้'}</div>`
+  $('list').innerHTML = !list.length ? `<div class="empty">${B.view === 'none' ? '✓ ตัดสินครบทุก SKU เสี่ยงแล้ว' : 'ไม่มี SKU ในกลุ่มนี้'}</div>`
     : DESK.matches ? tableHtml(list, map) : list.map(r => skuHtml(r, map)).join('');
   /* ตารางสูงพอดีจอใต้แถบชิป · หัวแถวที่ 2 ติดใต้แถวแรก */
   document.documentElement.style.setProperty('--ch', $('chips').offsetHeight + 'px');
