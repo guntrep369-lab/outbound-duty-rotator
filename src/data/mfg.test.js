@@ -284,7 +284,7 @@ describe('รายงาน', () => {
     const sh = M.sheet(rep, { ym: '2026-11' });
     expect(sh.aoa[0][0]).toMatch(/^เช็คความเสี่ยง MFG พ\.ย\. 69 · นับ LOT 8 ลงไป · ยอดในสมุด/);
     expect(sh.aoa[1].slice(0, 7)).toEqual(['SKU', 'Product Name', 'Type', 'NO LOT', '2026', '', '']);
-    expect(sh.aoa[1].slice(7)).toEqual(['Total MFG', 'สถานะ', 'Action by Tony', 'Remark']);
+    expect(sh.aoa[1].slice(7)).toEqual(['Total MFG', 'สถานะ', 'Remark', 'Action by Tony']);
     expect(sh.aoa[2].slice(4, 8)).toEqual(['Lot 4', 'Lot 6', 'Lot 8', 31]);
     expect(sh.aoa[3].slice(4, 7)).toEqual(['229 วัน', '168 วัน', '107 วัน']);
     expect(sh.aoa[4]).toEqual(['AAA0000000001', 'ที่นอน 5FT สมมติ Mattress', 'Mattress', '', 10, 5, '', 15, 'เสี่ยงมาก', '', '']);
@@ -355,12 +355,12 @@ describe('เทียบกับรอบเดือนก่อน', () => {
     expect(c.totals.gone.skus).toBe(0);
   });
 
-  it('Excel: ช่องเทียบเดือนก่อนอยู่หน้า Action by Tony · มีชีตเทียบแยกกลุ่ม · ข้อความ LINE บอกสรุปเทียบ', () => {
+  it('Excel: ช่องเทียบเดือนก่อนอยู่หน้า Remark · มีชีตเทียบแยกกลุ่ม · ข้อความ LINE บอกสรุปเทียบ', () => {
     const cur = rep('2026-11', NOV);
     const c = M.compare(cur, rep('2026-10', OCT));
     const sh = M.sheet(cur, { ym: '2026-11', cmp: c });
     const n = 3 + cur.cols.length;
-    expect(sh.aoa[1].slice(n, n + 5)).toEqual(['Total MFG', 'สถานะ', 'เทียบ ' + M.ymText('2026-10'), 'Action by Tony', 'Remark']);
+    expect(sh.aoa[1].slice(n, n + 5)).toEqual(['Total MFG', 'สถานะ', 'เทียบ ' + M.ymText('2026-10'), 'Remark', 'Action by Tony']);
     const aaa = sh.aoa.find((r) => r[0] === 'AAA0000000001');
     expect(aaa[n + 2]).toBe('ค้าง · ลด 8');
     expect(sh.cols.length).toBe(sh.aoa[1].length);
@@ -429,12 +429,12 @@ describe('เทียบกับรอบเดือนก่อน', () => {
     const n = 3 + cur.cols.length;
     const aaa = sh.aoa.find((r) => r[0] === 'AAA0000000001');
     expect(aaa[n + 2]).toBe('ค้าง · ลด 8 · เดือนก่อน: แกะ · ยังค้าง 12');
-    expect(aaa[n + 3]).toBe('แกะ · รอบสอง');
-    expect(aaa[n + 4]).toBe('');
+    expect(aaa[n + 3]).toBe('');
+    expect(aaa[n + 4]).toBe('แกะ · รอบสอง');
     const rmk = M.remarkOf({ AAA0000000001: ['  ของอยู่   R01 ', 'ทีม', ''], BBB0000000001: [''], XX: 'ผิดแบบ' });
     expect(Object.keys(rmk)).toEqual(['AAA0000000001']);
     const withRm = M.sheet(cur, { ym: '2026-11', cmp: c, decide: map, remark: rmk });
-    expect(withRm.aoa.find((r) => r[0] === 'AAA0000000001')[n + 4]).toBe('ของอยู่ R01');
+    expect(withRm.aoa.find((r) => r[0] === 'AAA0000000001')[n + 3]).toBe('ของอยู่ R01');
     expect(withRm.cols.length).toBe(withRm.aoa[1].length);
     expect(M.lineText(cur, { ym: '2026-11', remark: rmk })).toContain('Remark ทีม:\n• AAA001 — ของอยู่ R01');
     expect(M.lineText(cur, { ym: '2026-11', remark: {} })).not.toContain('Remark');

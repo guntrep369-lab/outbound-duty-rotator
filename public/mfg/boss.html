@@ -15,7 +15,7 @@
   ลิงก์มี URL สคริปต์นับสต๊อก รหัสลิงก์ของรอบ และรหัสรอบ อยู่หลัง # (ไม่ส่งไปกับการเปิดหน้า)
   ข้อมูลมาจาก ?api=st-boss ของ apps-script/stocktake-api.gs ซึ่งไม่มีรหัสหัวหน้าหรือคนนับ
   หน้านี้คิดรายงานเองด้วย WmsMfg ชุดเดียวกับหน้าหัวหน้า ตัวเลขจึงตรงกัน
-  จอคอมเป็นตารางหน้าตาเดียวกับแท็บรายงาน (ปี / Lot / อายุ, Total MFG, สถานะ, เทียบ, Action by Tony, Remark) มือถือเป็นการ์ด
+  จอคอมเป็นตารางหน้าตาเดียวกับแท็บรายงาน (ปี / Lot / อายุ, Total MFG, สถานะ, เทียบ, Remark, Action by Tony) มือถือเป็นการ์ด
   เลือกคำตัดสิน (Action by Tony) แล้วบันทึกเองผ่าน st-decide สคริปต์รวมกับของหัวหน้าใต้ล็อก หัวหน้าเห็นในแอปภายในนาที
   Remark มาจากทีม Inventory (แก้ในหน้ารายงาน) หน้านี้อ่านอย่างเดียว
   หัวหน้ากดทำลิงก์ใหม่ = รหัสเปลี่ยน ลิงก์นี้ใช้ไม่ได้อีก
@@ -363,7 +363,7 @@ function skuHtml(r, map) {
     ${byHtml(sku, d)}</div>`;
 }
 
-/** แถวตารางจอคอม: SKU | Product Name | Type | LOT ราย คอลัมน์ | Total MFG | สถานะ | เทียบ | Action by Tony | Remark */
+/** แถวตารางจอคอม: SKU | Product Name | Type | LOT ราย คอลัมน์ | Total MFG | สถานะ | เทียบ | Remark | Action by Tony */
 function rowHtml(r, d, cm) {
   const rep = B.model.rep, mode = rep.mode, cc = B.model.cmp;
   const sku = up(r.sku);
@@ -387,8 +387,8 @@ function rowHtml(r, d, cm) {
   return `<tr class="sku ${st}" data-sku="${esc(sku)}"><td class="k-sku">${esc(r.sku)}${r.short ? `<span class="sub">${esc(r.short)}</span>` : ''}</td>
     <td class="k-name">${esc(r.name || r.sku)}</td><td class="ty">${esc(r.type || '')}</td>${cells}
     <td class="num tot">${f(r.total[mode])}</td><td><span class="tag ${st}">${esc(st ? M.STATUS[r.st].label : '')}</span></td>${cmpTd}
-    <td class="act">${sel}${noteHtml(d)}${byHtml(sku, d)}</td>
-    <td class="rm">${x ? `${esc(x.text)}<small>${esc(x.by)}${x.at ? ' · ' + esc(x.at) : ''}</small>` : ''}</td></tr>`;
+    <td class="rm">${x ? `${esc(x.text)}<small>${esc(x.by)}${x.at ? ' · ' + esc(x.at) : ''}</small>` : ''}</td>
+    <td class="act">${sel}${noteHtml(d)}${byHtml(sku, d)}</td></tr>`;
 }
 
 /** ตารางจอคอม หัวสองแถวแบบแท็บรายงาน: ปีของ LOT รวมช่องเดียวกัน NO LOT สูงสองแถว + แถวรวมท้าย */
@@ -400,7 +400,7 @@ function tableHtml(list, map) {
   const head1 = `<tr><th rowspan="2" class="k-sku">SKU</th><th rowspan="2">Product Name</th><th rowspan="2">Type</th>${nol ? '<th rowspan="2" class="nolot">NO LOT</th>' : ''}` +
     years.map(y => `<th class="year" colspan="${y.n}">${y.y}</th>`).join('') +
     `<th class="total">Total MFG</th><th rowspan="2">สถานะ</th>${cc ? `<th rowspan="2">เทียบ ${esc(M.ymText(cc.prevYm))}</th>` : ''}` +
-    '<th rowspan="2">Action by Tony</th><th rowspan="2" title="ทีม Inventory เขียนไว้ให้อ่าน">Remark</th></tr>';
+    '<th rowspan="2" title="ทีม Inventory เขียนไว้ให้อ่าน">Remark</th><th rowspan="2">Action by Tony</th></tr>';
   const head2 = '<tr>' + rep.cols.filter(c => c.key !== M.NOLOT).map(c => `<th class="${c.st}">${esc(c.label)}<small>${c.age === null ? '' : c.age + ' วัน'}</small></th>`).join('') +
     `<th class="total">${f(rep.totals[mode])}</th></tr>`;
   const body = list.map(r => skuHtml(r, map)).join('');

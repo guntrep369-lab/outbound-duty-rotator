@@ -731,8 +731,8 @@
    *   แถว 1 ชื่อรายงาน · แถว 2 หัวตาราง + ปี · แถว 3 Lot + ยอดรวมทั้งหมด · แถว 4 อายุ (วัน) · ต่อด้วยราย SKU · แถวท้ายรวม
    * @returns {{aoa, merges, styles: Array<[row, col, key]>, cols}}
    *   key = head | year | total | st-risk | st-watch | st-ok | st-nolot (หัว) · c-risk | c-watch | c-ok | c-nolot (ช่อง) | c-todo (สั่งแล้วยังค้าง) | sum | age | title
-   * meta.cmp = ผลเทียบเดือนก่อน (compare) มีแล้วเพิ่มคอลัมน์ "เทียบ <เดือนก่อน>" หน้า Action by Tony
-   * meta.decide = คำตัดสินของเจ้านาย (decideOf) ลงช่อง Action by Tony · meta.remark = Remark ทีม (remarkOf) ลงช่อง Remark
+   * meta.cmp = ผลเทียบเดือนก่อน (compare) มีแล้วเพิ่มคอลัมน์ "เทียบ <เดือนก่อน>" หน้า Remark
+   * meta.remark = Remark ทีม (remarkOf) ลงช่อง Remark · meta.decide = คำตัดสินของเจ้านาย (decideOf) ลงช่อง Action by Tony (ท้ายสุด)
    */
   function sheet(rep, meta) {
     var m = meta || {};
@@ -756,7 +756,7 @@
     var grand = round3(rep.totals[mode]);
     r1[n] = 'Total MFG'; r2[n] = grand; styles.push([1, n, 'total'], [2, n, 'total'], [3, n, 'total']);
     merges.push({ s: { r: 2, c: n }, e: { r: 3, c: n } });
-    r1[n + 1] = 'สถานะ'; r1[n + 2 + extra] = 'Action by Tony'; r1[n + 3 + extra] = 'Remark';
+    r1[n + 1] = 'สถานะ'; r1[n + 2 + extra] = 'Remark'; r1[n + 3 + extra] = 'Action by Tony';
     if (cmp) r1[n + 2] = 'เทียบ ' + ymText(cmp.prevYm);
     (cmp ? [n + 1, n + 2, n + 3, n + 4] : [n + 1, n + 2, n + 3]).forEach(function (c) { merges.push({ s: { r: 1, c: c }, e: { r: 3, c: c } }); styles.push([1, c, 'head']); });
     /* แถวปี: คอลัมน์ LOT ปีเดียวกันรวมช่องเดียว NO LOT ไม่มีปี ใช้หัวสามแถวเต็ม */
@@ -798,8 +798,8 @@
         row.push([cmpText(o), o && o.dPrev ? 'เดือนก่อน: ' + prevDecText(o) : ''].filter(Boolean).join(' · '));
         if (o && o.todo) styles.push([ri, n + 2, 'c-todo']);
       }
-      row.push(decideText(dec[up(r.sku)]));
       row.push(rem[up(r.sku)] ? rem[up(r.sku)].text : '');
+      row.push(decideText(dec[up(r.sku)]));
       aoa.push(row);
     });
     var foot = ['รวม', '', ''];
@@ -813,7 +813,7 @@
     cols.forEach(function () { widths.push(9); });
     widths.push(11, 12);
     if (cmp) widths.push(22);
-    widths.push(30, 34);
+    widths.push(34, 30);
     return { aoa: aoa, merges: merges, styles: styles, cols: widths };
   }
 

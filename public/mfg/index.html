@@ -869,7 +869,7 @@ function reportView() {
   const nol = rp.cols.some(c => c.key === M.NOLOT);
   const head1 = `<tr><th rowspan="2">SKU</th><th rowspan="2">Product Name</th><th rowspan="2">Type</th>${nol ? '<th rowspan="2" class="nolot">NO LOT</th>' : ''}` +
     years.map(y => `<th class="year" colspan="${y.n}">${y.y}</th>`).join('') +
-    `<th class="total">Total MFG</th><th rowspan="2">สถานะ</th>${cc ? `<th rowspan="2">เทียบ ${esc(M.ymText(cc.prevYm))}</th>` : ''}<th rowspan="2" title="คำตัดสินของเจ้านาย (เลือกตามที่ตอบ หรือเจ้านายเลือกเองในลิงก์เจ้านาย)">Action by Tony</th><th rowspan="2" title="ทีม Inventory เขียนให้เจ้านายอ่าน ขึ้นในลิงก์เจ้านายกับ Excel">Remark</th><th rowspan="2"></th></tr>`;
+    `<th class="total">Total MFG</th><th rowspan="2">สถานะ</th>${cc ? `<th rowspan="2">เทียบ ${esc(M.ymText(cc.prevYm))}</th>` : ''}<th rowspan="2" title="ทีม Inventory เขียนให้เจ้านายอ่าน ขึ้นในลิงก์เจ้านายกับ Excel">Remark</th><th rowspan="2" title="คำตัดสินของเจ้านาย (เลือกตามที่ตอบ หรือเจ้านายเลือกเองในลิงก์เจ้านาย)">Action by Tony</th><th rowspan="2"></th></tr>`;
   const head2 = '<tr>' + rp.cols.filter(c => c.key !== M.NOLOT).map(c => `<th class="${c.st}">${esc(c.label)}<small>${c.age === null ? '' : c.age + ' วัน'}</small></th>`).join('') +
     `<th class="total">${f(rp.totals[mode])}</th></tr>`;
   const ncol = 8 + rp.cols.length + (cc ? 1 : 0);
@@ -908,7 +908,7 @@ function reportView() {
     const st = M.STATUS[r.st];
     let html = `<tr><td class="k-sku nw">${esc(r.sku)}${r.short ? `<span class="tx-sub">${esc(r.short)}</span>` : ''}</td><td class="k-name">${esc(r.name)}</td>
       <td class="nw">${esc(r.type)}</td>${cells}<td class="num tot">${f(r.total[mode])}</td>
-      <td><span class="mf-tag ${r.st}">${esc(st.label)}</span></td>${cc ? cmpCell(r) : ''}${decCell(r)}${rmkCell(r)}
+      <td><span class="mf-tag ${r.st}">${esc(st.label)}</span></td>${cc ? cmpCell(r) : ''}${rmkCell(r)}${decCell(r)}
       <td><button class="mf-i ${open ? 'on' : ''}" data-open="${esc(key)}" aria-expanded="${open}" title="ดูราย Location">i</button></td></tr>`;
     if (open) html += `<tr class="det"><td colspan="${ncol}">${detail(r, rp)}</td></tr>`;
     return html;
