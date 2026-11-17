@@ -449,6 +449,8 @@ function setupNew() {
       <td><button class="mf-del" data-del="${o.i}" title="เอาออกจากรายชื่อ">✕</button></td></tr>`;
   }).join('');
   const old = Date.now() - FIFO.at > FIFO_MAX_MS;
+  /* รายชื่อจากรอบก่อน: SKU ที่เดาได้แต่ยังไม่อยู่ (ประเภทใหม่อย่างโซฟาเบด สินค้าใหม่) เสนอให้เพิ่ม ไม่เพิ่มเอง */
+  const fresh = DRAFT.guessed ? [] : M.guessNew(DRAFT.list, FIFO.data.skus);
   return `<div class="mf-card">
     <div class="mf-row"><label for="fYm">รอบเดือน</label>
       <select class="mf-sel" id="fYm">${months.map(m => `<option value="${m}" ${m === DRAFT.ym ? 'selected' : ''}>${esc(M.ymText(m))}</option>`).join('')}</select>
@@ -465,6 +467,10 @@ function setupNew() {
       <span>แบ่งแถวให้ทีมเองตามทางเดิน</span><span class="sp"></span>
       <button class="tx-opt p big" data-act="create" ${sc.piles.length && !S.busy ? '' : 'disabled'}>สร้างรอบ เริ่มนับ</button></div>
   </div>
+  ${fresh.length ? `<div class="tx-warn">เดาจากชื่อสินค้าได้อีก <b>${f(fresh.length)}</b> SKU ที่ยังไม่อยู่ในรายชื่อ
+    (${Object.entries(fresh.reduce((a, g) => (a[g[1]] = (a[g[1]] || 0) + 1, a), {})).map(([t, n]) => `${esc(t)} ${n}`).join(' · ')}):
+    ${esc(fresh.slice(0, 6).map(g => (names[g[0]] && names[g[0]][0]) || g[0]).join(', '))}${fresh.length > 6 ? ' …' : ''}
+    <button class="tx-opt" data-act="addnew">+ เพิ่มเข้ารายชื่อ</button></div>` : ''}
   ${sc.missing.length ? `<div class="tx-warn">รหัสในรายชื่อที่สมุดไม่มี ${sc.missing.length} ตัว: ${esc(sc.missing.slice(0, 8).join(', '))}${sc.missing.length > 8 ? ' …' : ''}</div>` : ''}
   <div class="mf-h">SKU บีบสูญญากาศ <small>${f(DRAFT.list.length)} SKU · ${esc(DRAFT.src)} · วางรายชื่อจากชีตของทีมได้ด้วย Ctrl+V (คอลัมน์ SKU กับ Type)</small></div>
   <div class="tx-bar">
@@ -910,6 +916,7 @@ function reportView() {
       <span>${mode === 'count' ? `นับแล้ว <b>${f(rp.done)}/${f(rp.total)}</b> โล${rp.done < rp.total ? ' ตัวเลขยังไม่ครบ' : ''}` : 'ยอดในสมุดตอนสร้างรอบ'}</span>
       <span class="sp"></span>
       <button class="tx-opt p" data-act="xlsx">⬇️ Excel</button>
+      <button class="tx-opt" data-act="xlsxall" title="ทุกกองที่คนนับกรอก: โล SKU LOT PO จำนวน ใครนับ เมื่อไหร่ (ไม่สนตัวกรอง)">⬇️ ผลนับทั้งหมด</button>
       <button class="tx-opt" data-act="shot" title="รูปสรุปขนาดจอมือถือ ส่งให้เจ้านายใน LINE">📷 รูปสรุป</button>
       <button class="tx-opt" data-act="boss" title="เจ้านายเปิดดูรายงานและเลือกคำตัดสินเองได้ ไม่ต้องเข้าแอป">🔗 ลิงก์เจ้านาย</button>${R().settings.boss ? `<button class="tx-opt" data-act="bossnew" title="ทำลิงก์เจ้านายใหม่ ลิงก์ที่ส่งไปแล้วจะเปิดไม่ได้">↻</button>` : ''}
       <button class="tx-opt" data-act="line">คัดลอกไปวาง LINE</button>
@@ -1016,6 +1023,22 @@ async function downloadXlsx() {
     if (cc) X.utils.book_append_sheet(wb, buildWs(X, M.compareSheet(cc, rp), 2), 'เทียบ ' + cc.prevYm);
     X.writeFile(wb, `MFG-${ymOf()}-${mode === 'count' ? 'นับจริง' : 'สมุด'}.xlsx`);
     S.ok = '✓ โหลด Excel แล้ว' + (RF.st || RF.type || RF.q || RF.cmp || RF.dec ? ' (เฉพาะที่กรองอยู่)' : '');
+  });
+}
+
+/** Excel ผลนับทั้งหมด: ทุกกองที่คนนับกรอก (ไม่สนตัวกรองบนจอ) ใครนับ เมื่อไหร่ โลว่าง โลนอกรายการ */
+async function downloadCounts() {
+  if (!ST.effective(S.raw).length) { S.err = 'ยังไม่มีผลนับในรอบนี้'; paint(); return; }
+  const sh = M.countSheet(S.raw, { ym: ymOf(), at: new Date().toLocaleString('th-TH'), skus: S.head.skus, list: listOf(), locs: locList(),
+    teams: ST.teamsOf(S.head.teams, 1) });
+  await job('กำลังสร้างไฟล์ Excel…', async () => {
+    const X = await xlsxLib();
+    const wb = X.utils.book_new();
+    const ws = buildWs(X, sh, 3);
+    ws['!freeze'] = { xSplit: 1, ySplit: 3 };
+    X.utils.book_append_sheet(wb, ws, 'ผลนับ ' + ymOf());
+    X.writeFile(wb, `MFG-${ymOf()}-ผลนับทั้งหมด.xlsx`);
+    S.ok = `✓ โหลดผลนับทั้งหมดแล้ว ${f(sh.aoa.length - 4)} แถว`;
   });
 }
 
@@ -1398,6 +1421,14 @@ document.addEventListener('click', (e) => {
     case 'guess':
       if (FIFO && confirm('แทนรายชื่อทั้งหมดด้วยที่เดาจากชื่อสินค้า?')) { DRAFT.list = M.guessList(FIFO.data.skus); DRAFT.src = 'เดาจากชื่อสินค้า'; paintBody(); }
       break;
+    case 'addnew':
+      if (FIFO && DRAFT) {
+        const add = M.guessNew(DRAFT.list, FIFO.data.skus);
+        DRAFT.list = DRAFT.list.concat(add);
+        S.ok = `✓ เพิ่ม ${add.length} SKU เข้ารายชื่อแล้ว`;
+        paint();
+      }
+      break;
     case 'new': S.rid = 'new'; S.head = null; DRAFT = null; setTab('setup'); break;
     case 'del': delRound(); break;
     case 'stop':
@@ -1405,6 +1436,7 @@ document.addEventListener('click', (e) => {
       break;
     case 'resume': setStatus('นับรอบ 1'); break;
     case 'xlsx': downloadXlsx(); break;
+    case 'xlsxall': downloadCounts(); break;
     case 'prev': PREV = null; paintBody(); break;
     case 'decsave': saveDec(S.rid); break;
     case 'line': copyLine(); break;

@@ -37,8 +37,8 @@
   var ORDER = ['risk', 'watch', 'nolot', 'ok', 'none', 'wait'];
 
   /* ประเภทชื่อเดียวกับรายงานของทีม เก็บในค่าตั้งของรอบเป็นตัวอักษรเดียว (ค่าตั้งยาวได้ไม่เกิน 30,000 ตัว) */
-  var TYPES = ['Mattress', 'Topper', 'Pillow & Bolster', 'Pet Bed'];
-  var CODE = { M: 'Mattress', T: 'Topper', P: 'Pillow & Bolster', B: 'Pet Bed' };
+  var TYPES = ['Mattress', 'Topper', 'Pillow & Bolster', 'Sofa Bed', 'Pet Bed'];
+  var CODE = { M: 'Mattress', T: 'Topper', P: 'Pillow & Bolster', S: 'Sofa Bed', B: 'Pet Bed' };
   var NOLOT = 'N';   // คีย์คอลัมน์ NO LOT
 
   function F() { return window.WmsFifo; }
@@ -59,6 +59,7 @@
     var n = text(name), u = n.toUpperCase();
     if (/^แถม/.test(n) || /^FRE/.test(up(sku))) return '';
     if (/^(ผ้า|ชุด|ปลอก)/.test(n)) return '';
+    if (/โซฟา\s*เบด|SOFA\s*-?\s*BED/.test(u)) return 'Sofa Bed';     // ก่อนที่นอน: ชื่อโซฟาเบดบางตัวมีคำว่าที่นอน
     if (/ท็อปเปอร์|ท๊อปเปอร์|ทอปเปอร์|TOPPER/.test(u)) return 'Topper';
     if (/สัตว์เลี้ยง|PET\s*BED/.test(u)) return 'Pet Bed';
     if (/ที่นอน|MATTRESS/.test(u)) return 'Mattress';
@@ -71,6 +72,7 @@
     var s = text(t), u = s.toUpperCase();
     if (!s) return '';
     if (/TOPPER|ท็อปเปอร์|ท๊อปเปอร์/.test(u)) return 'Topper';
+    if (/SOFA|โซฟา/.test(u)) return 'Sofa Bed';
     if (/PET|สัตว์/.test(u)) return 'Pet Bed';
     if (/MATTRESS|ที่นอน/.test(u)) return 'Mattress';
     if (/PILLOW|BOLSTER|หมอน/.test(u)) return 'Pillow & Bolster';
@@ -97,6 +99,12 @@
       out.push([long, t]);
     });
     return out;
+  }
+
+  /** SKU ที่เดาจากชื่อได้แต่ยังไม่อยู่ในรายชื่อ list → [[SKU เต็ม, ประเภท]] (หน้าตั้งรอบเสนอให้เพิ่ม ไม่เพิ่มเอง) */
+  function guessNew(list, skus) {
+    var have = listMap(list, skus);
+    return guessList(skus).filter(function (g) { return have[g[0]] === undefined; });
   }
 
   /**
@@ -823,6 +831,76 @@
   }
 
   /** รายชื่อสั้นใน LINE ไม่เกิน 8 ตัว ที่เหลือบอกจำนวน */
+  /**
+   * Excel "ผลนับทั้งหมด": กองที่คนนับกรอกทุกกองที่ยังมีผล (แก้แล้วเอาแถวล่าสุด ลบแล้วไม่เอา) + โลที่ตั้งว่าง
+   * ไม่สนตัวกรองบนจอ เรียงตามโล แล้ว SKU แล้ว LOT
+   *   meta = { ym, at, skus, list, locs: [{loc, group}], teams: [{id, name}] }
+   *   หมายเหตุ: โลว่าง · โลนอกรายการ · SKU ไม่อยู่ในรายชื่อบีบสูญญากาศ
+   * @returns {{aoa, styles, merges, cols}} แถวข้อมูลเริ่มแถวที่ 3 (เลขเริ่ม 0)
+   */
+  function countSheet(entries, meta) {
+    var m = meta || {};
+    var st = S();
+    var idx = skuIndex(m.skus);
+    var want = listMap(m.list, m.skus);
+    var group = {}, team = {};
+    (m.locs || []).forEach(function (l) { group[up(l.loc)] = l.group || ''; });
+    (m.teams || []).forEach(function (t) { team[t.id] = t.name || t.id; });
+    var locCmp = st && st.locCmp ? st.locCmp : function (a, b) { return a < b ? -1 : a > b ? 1 : 0; };
+    var rows = st.effective(entries).slice().sort(function (a, b) {
+      return locCmp(up(a.loc), up(b.loc)) || (a.type === 'ว่าง') - (b.type === 'ว่าง') ||
+        (up(a.long || a.sku) < up(b.long || b.sku) ? -1 : up(a.long || a.sku) > up(b.long || b.sku) ? 1 : 0) ||
+        (text(a.lot) < text(b.lot) ? -1 : text(a.lot) > text(b.lot) ? 1 : 0);
+    });
+    var when = function (e) {
+      var c = text(e.clientAt);
+      if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(c)) return c.slice(0, 10) + ' ' + c.slice(11, 16);
+      var d = typeof e.at === 'number' ? new Date(e.at) : null;
+      return d && !isNaN(d) ? d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) : '';
+    };
+    var head = ['Location', 'แถว', 'SKU', 'SKU ย่อ', 'Product Name', 'Type', 'LOT', 'เดือน LOT', 'สถานะ', 'PO', 'จำนวน', 'คนนับ', 'ทีม', 'เวลานับ', 'หมายเหตุ'];
+    var W = head.length, QTY = 10, ST_C = 8;
+    var styles = [[0, 0, 'title']], merges = [{ s: { r: 0, c: 0 }, e: { r: 0, c: W - 1 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: W - 1 } }];
+    head.forEach(function (_, c) { styles.push([2, c, 'head']); });
+    var aoa = [], qty = 0, piles = 0, done = {};
+    rows.forEach(function (e) {
+      var loc = up(e.loc);
+      var inList = group[loc] !== undefined;
+      if (inList) done[loc] = 1;
+      var note = [];
+      if (!inList) note.push('โลนอกรายการ');
+      if (e.type === 'ว่าง') {
+        note.unshift('โลว่าง');
+        aoa.push([loc, group[loc] || '', '', '', '', '', '', '', '', '', '', text(e.who), team[e.team] || text(e.team), when(e), note.join(' · ')]);
+        return;
+      }
+      var s = idx[up(e.long)] || idx[up(e.sku)];
+      var long = s ? up(s[1] || s[0]) : up(e.long || e.sku);
+      if (want[long] === undefined) note.push('ไม่อยู่ในรายชื่อบีบสูญญากาศ');
+      var x = statusOf(e.lot, m.ym);
+      var label = x.st === 'new' ? 'ใหม่กว่าที่ต้องนับ' : x.st === 'nolot' ? (x.bad ? 'LOT อ่านไม่ออก' : 'NO LOT ต้องตรวจสอบ') : STATUS[x.st].label;
+      var n = Number(e.qty) || 0;
+      qty = round3(qty + n);
+      piles++;
+      aoa.push([loc, group[loc] || '', long, s ? text(s[0]) : text(e.sku), s ? text(s[2]) : '', want[long] || '', text(e.lot), monthText(x.lm), label,
+        text(e.po), n, text(e.who), team[e.team] || text(e.team), when(e), note.join(' · ')]);
+      if (x.st !== 'new') styles.push([2 + aoa.length, ST_C, 'st-' + x.st]);
+    });
+    var total = (m.locs || []).length;
+    var nDone = Object.keys(done).length;
+    var title = 'รายละเอียดผลนับ MFG ' + ymText(m.ym) + ' · ' + rule(m.ym).text + (m.at ? ' · ' + m.at : '');
+    var sum = 'นับแล้ว ' + nDone + (total ? '/' + total : '') + ' โล · ' + piles + ' กอง · ' + qty.toLocaleString('en-US') + ' ชิ้น';
+    var foot = head.map(function () { return ''; });
+    foot[0] = 'รวม ' + piles + ' กอง';
+    foot[QTY] = qty;
+    var r0 = head.map(function () { return ''; }), r1 = r0.slice();
+    r0[0] = title; r1[0] = sum;
+    var out = [r0, r1, head].concat(aoa, [foot]);
+    var fr = out.length - 1;
+    head.forEach(function (_, c) { styles.push([fr, c, c === QTY ? 'sum' : 'foot']); });
+    return { aoa: out, styles: styles, merges: merges, cols: [11, 7, 16, 10, 34, 14, 6, 9, 17, 12, 8, 12, 12, 16, 26] };
+  }
+
   function names(list, fmt) {
     var max = 8;
     return list.slice(0, max).map(fmt).join(', ') + (list.length > max ? ' …อีก ' + (list.length - max) : '');
@@ -1149,11 +1227,11 @@
   window.WmsMfg = {
     CUT: CUT, WATCH: WATCH, RISK: RISK, STATUS: STATUS, ORDER: ORDER, TYPES: TYPES, NOLOT: NOLOT,
     typeOf: typeOf, canonType: canonType, typeCode: typeCode, typeName: typeName,
-    guessList: guessList, parseList: parseList, packList: packList, unpackList: unpackList, listMap: listMap,
+    guessList: guessList, guessNew: guessNew, parseList: parseList, packList: packList, unpackList: unpackList, listMap: listMap,
     rule: rule, roundName: roundName, ymText: ymText, monthText: monthText, months: months,
     noLot: noLot, statusOf: statusOf, ageDays: ageDays,
     ledgerProblem: ledgerProblem, ledgerTime: ledgerTime, ledgerLink: ledgerLink,
-    scope: scope, teams: teams, report: report, filter: filter, sheet: sheet, lineText: lineText,
+    scope: scope, teams: teams, report: report, filter: filter, sheet: sheet, countSheet: countSheet, lineText: lineText,
     CMP: CMP, prevRound: prevRound, compare: compare, cmpText: cmpText, compareSheet: compareSheet,
     DECIDE: DECIDE, DECIDE_ORDER: DECIDE_ORDER, NOTE_MAX: NOTE_MAX, SETTINGS_MAX: SETTINGS_MAX,
     decideOf: decideOf, applyDecide: applyDecide, decideText: decideText, decideSum: decideSum, byDecide: byDecide, prevDecText: prevDecText,

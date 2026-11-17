@@ -58,6 +58,24 @@ describe('ประเภทสินค้าบีบสูญญากาศ'
     expect(M.typeOf('หมอนข้าง สมมติ Bolster', 'ZZZ002')).toBe('Pillow & Bolster');
   });
 
+  it('โซฟาเบดบีบสูญญากาศเหมือนกัน: เดาจากชื่อ วางจากชีต เก็บรหัส S · ปลอกโซฟาเบดไม่ใช่', () => {
+    expect(M.TYPES).toContain('Sofa Bed');
+    expect(M.typeOf('โซฟาเบด 3 ที่นั่ง สมมติ', 'SOF001')).toBe('Sofa Bed');
+    expect(M.typeOf('โซฟา เบด พับได้ มีที่นอน สมมติ', 'SOF002')).toBe('Sofa Bed');
+    expect(M.typeOf('Sofa-Bed Compact สมมติ', 'SOF003')).toBe('Sofa Bed');
+    expect(M.typeOf('ปลอกโซฟาเบด สมมติ', 'SOF004')).toBe('');
+    expect(M.canonType('sofa bed')).toBe('Sofa Bed');
+    expect(M.canonType('โซฟาเบด')).toBe('Sofa Bed');
+    expect(M.parseList('SOF0000000001\tโซฟาเบด สมมติ\tSofa Bed').rows).toEqual([['SOF0000000001', 'Sofa Bed']]);
+    expect(M.packList([['SOF0000000001', 'Sofa Bed']])).toEqual([['SOF0000000001', 'S']]);
+    expect(M.unpackList([['SOF0000000001', 'S']])).toEqual([['SOF0000000001', 'Sofa Bed']]);
+    /* รายชื่อจากรอบก่อนไม่มีโซฟาเบด: หน้าตั้งรอบเสนอเพิ่ม (ไม่เพิ่มเอง) */
+    const skus = SKUS.concat([['SOF001', 'SOF0000000001', 'โซฟาเบด สมมติ']]);
+    const last = [['AAA0000000001', 'Mattress'], ['BBB0000000001', 'Topper'], ['CCC0000000001', 'Pillow & Bolster']];
+    expect(M.guessNew(last, skus)).toEqual([['EEE0000000001', 'Pet Bed'], ['SOF0000000001', 'Sofa Bed']]);
+    expect(M.guessNew(M.guessList(skus), skus)).toEqual([]);
+  });
+
   it('รายชื่อเดาจากสมุดได้ SKU เต็มกับประเภท', () => {
     expect(M.guessList(SKUS)).toEqual([
       ['AAA0000000001', 'Mattress'], ['BBB0000000001', 'Topper'], ['CCC0000000001', 'Pillow & Bolster'], ['EEE0000000001', 'Pet Bed'],
@@ -265,6 +283,44 @@ describe('รายงาน', () => {
     expect(rep.ignored.other.map((x) => x.sku)).toEqual(['DDD001']);
     expect(rep.done).toBe(3);
     expect(rep.by.risk).toEqual({ qty: 10, skus: 1 });
+  });
+
+  it('Excel ผลนับทั้งหมด: ทุกกองที่ยังมีผล ใครนับ เมื่อไหร่ สถานะ LOT · โลว่าง โลนอกรายการ SKU นอกรายชื่อ', () => {
+    const s = book();
+    const first = e('R1-01-01', 'AAA001', '4', 9, { po: '9900000001', clientAt: '2026-11-16T09:05:00' });
+    const entries = [
+      first,
+      e('R1-01-01', 'AAA001', '4', 8, { ref: first.uid, po: '9900000001', clientAt: '2026-11-16T09:07:00' }),   // แก้ 9 → 8
+      e('R1-01-02', 'AAA001', '9', 7),                                       // LOT ใหม่กว่าที่ต้องนับ
+      e('A-01-02', 'DDD001', '4', 1),                                        // ไม่ใช่ของบีบสูญญากาศ
+      e('A-01-02', 'CCC0000000001', '0', 4, { sku: 'CCC0000000001', long: 'CCC0000000001' }),
+      e('R2-01-01', '', '', 0, { type: 'ว่าง', who: 'สมหญิง' }),
+      e('Z-09-09', 'BBB001', '5', 2),                                        // โลนอกรายการ
+      e('R1-01-02', 'AAA001', '6', 3, { type: 'นับ' }),
+    ];
+    entries.push(e('R1-01-02', '', '', 0, { type: 'ยกเลิก', ref: entries[7].uid }));   // ลบกองนี้ทิ้ง
+    const sh = M.countSheet(entries, { ym: '2026-11', at: '17/11/2569 10:00', skus: SKUS, list: LIST, locs: s.locs,
+      teams: [{ id: 'MFG1', name: 'ทีม MFG' }] });
+    expect(sh.aoa[0][0]).toBe('รายละเอียดผลนับ MFG พ.ย. 69 · นับ LOT 8 ลงไป · 17/11/2569 10:00');
+    expect(sh.aoa[1][0]).toBe('นับแล้ว 4/4 โล · 5 กอง · 22 ชิ้น');
+    expect(sh.aoa[2]).toEqual(['Location', 'แถว', 'SKU', 'SKU ย่อ', 'Product Name', 'Type', 'LOT', 'เดือน LOT', 'สถานะ', 'PO', 'จำนวน', 'คนนับ', 'ทีม', 'เวลานับ', 'หมายเหตุ']);
+    const data = sh.aoa.slice(3, -1);
+    expect(data.map((r) => [r[0], r[3], r[6], r[8], r[10], r[14]])).toEqual([
+      ['R1-01-01', 'AAA001', '4', 'เสี่ยง', 8, ''],
+      ['R1-01-02', 'AAA001', '9', 'ใหม่กว่าที่ต้องนับ', 7, ''],
+      ['R2-01-01', '', '', '', '', 'โลว่าง'],
+      ['A-01-02', 'CCC001', '0', 'NO LOT ต้องตรวจสอบ', 4, ''],
+      ['A-01-02', 'DDD001', '4', 'เสี่ยง', 1, 'ไม่อยู่ในรายชื่อบีบสูญญากาศ'],
+      ['Z-09-09', 'BBB001', '5', 'เสี่ยง', 2, 'โลนอกรายการ'],
+    ]);
+    expect(data[0]).toEqual(['R1-01-01', 'R1', 'AAA0000000001', 'AAA001', 'ที่นอน 5FT สมมติ Mattress', 'Mattress', '4', 'เม.ย. 69', 'เสี่ยง',
+      '9900000001', 8, 'สมชาย', 'ทีม MFG', '2026-11-16 09:07', '']);
+    expect(data[2][11]).toBe('สมหญิง');
+    expect(sh.aoa[sh.aoa.length - 1][0]).toBe('รวม 5 กอง');
+    expect(sh.aoa[sh.aoa.length - 1][10]).toBe(22);
+    expect(sh.styles).toContainEqual([3, 8, 'st-risk']);
+    expect(sh.styles).toContainEqual([6, 8, 'st-nolot']);
+    expect(sh.cols.length).toBe(sh.aoa[2].length);
   });
 
   it('นับโลครบแต่ไม่เจอของ = ไม่พบของ · ตัวกรองตามสถานะ ประเภท และคำค้น', () => {
