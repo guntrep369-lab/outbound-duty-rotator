@@ -58,16 +58,16 @@ body{background:var(--wms-bg);color:var(--wms-text);font-family:var(--wms-font);
 .chip.none{background:#FFF;color:#B91C1C;border-color:#FCA5A5}
 .chip.none.on{border-color:var(--wms-text)}
 
-.sku{background:var(--wms-surface);border:1px solid var(--wms-border);border-left:4px solid var(--wms-border2);border-radius:12px;padding:11px 12px;margin-bottom:8px}
-.sku.risk{border-left-color:#CC0000}
-.sku.watch{border-left-color:#F1C232}
-.sku.nolot{border-left-color:#E06666}
-.sku.ok{border-left-color:#34A853}
-.sku .top{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.sku .code{font-weight:700;font-size:15px}
-.sku .tot{margin-left:auto;font-size:13px;color:var(--wms-muted);white-space:nowrap}
-.sku .tot b{color:var(--wms-text);font-size:15px;font-variant-numeric:tabular-nums}
-.sku .nm{font-size:12px;color:var(--wms-muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card{background:var(--wms-surface);border:1px solid var(--wms-border);border-left:4px solid var(--wms-border2);border-radius:12px;padding:11px 12px;margin-bottom:8px}
+.card.risk{border-left-color:#CC0000}
+.card.watch{border-left-color:#F1C232}
+.card.nolot{border-left-color:#E06666}
+.card.ok{border-left-color:#34A853}
+.card .top{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.card .code{font-weight:700;font-size:15px}
+.card .tot{margin-left:auto;font-size:13px;color:var(--wms-muted);white-space:nowrap}
+.card .tot b{color:var(--wms-text);font-size:15px;font-variant-numeric:tabular-nums}
+.card .nm{font-size:12px;color:var(--wms-muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tag{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:600;white-space:nowrap;background:#E2E8F0;color:#334155}
 .tag.risk{background:#CC0000;color:#fff}
 .tag.watch{background:#F1C232;color:#3B2F00}
@@ -116,6 +116,52 @@ body{background:var(--wms-bg);color:var(--wms-text);font-family:var(--wms-font);
 .fatal h2{font-size:16px;margin-bottom:6px}
 .fatal p{font-size:13px;color:var(--wms-muted);line-height:1.6}
 .loading{padding:60px 10px;text-align:center;color:var(--wms-muted);font-size:14px}
+
+/* ── จอคอม: ตารางแถวละ SKU คลิกเลือกในแถว (มือถือเป็นการ์ด) ── */
+.tb{width:100%;border-collapse:separate;border-spacing:0;background:var(--wms-surface);border:1px solid var(--wms-border);border-radius:10px;font-size:13px}
+.tb th{position:sticky;top:var(--ch,48px);z-index:1;background:#F8FAFC;color:var(--txt2);font-size:11.5px;font-weight:600;text-align:left;
+  padding:8px 10px;border-bottom:2px solid var(--wms-border);white-space:nowrap}
+.tb th:first-child{border-top-left-radius:10px}
+.tb th:last-child{border-top-right-radius:10px}
+.tb td{padding:7px 8px;border-bottom:1px solid var(--wms-border);vertical-align:middle}
+.tb tr:last-child td{border-bottom:none}
+.tb tbody tr:hover td{background:#FAFBFF}
+.tb tr.risk td:first-child{box-shadow:inset 4px 0 #CC0000}
+.tb tr.watch td:first-child{box-shadow:inset 4px 0 #F1C232}
+.tb tr.nolot td:first-child{box-shadow:inset 4px 0 #E06666}
+.tb tr.ok td:first-child{box-shadow:inset 4px 0 #34A853}
+.tb .r{text-align:right}
+.tb .c-sku{white-space:nowrap}
+.tb .c-sku b{display:block;font-size:14px;margin-bottom:2px}
+.tb .nm1{max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tb .nm2{font-size:11.5px;color:var(--wms-muted);margin-top:1px;white-space:nowrap}
+.tb .lots{margin:0;max-width:240px}
+.tb .tot{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+.tb .prev{margin-top:2px;font-size:11.5px}
+.tb .c-note{width:24%}
+.tb .dec{display:flex;gap:4px;margin:0}
+.tb .dec button{flex-direction:row;min-height:32px;padding:4px 8px;font-size:12.5px;gap:4px;white-space:nowrap;border-radius:8px}
+.tb .dec button .i{font-size:13px}
+.tb .dec button:hover:not(.on){border-color:var(--wms-primary);color:var(--wms-primary-dark)}
+.tb .note{margin:0;width:100%;min-width:130px;padding:6px 8px;font-size:13px;border-radius:8px}
+.tb .by{margin-top:3px}
+/* แท็บเล็ต / หน้าต่างแคบ: การ์ดสองแถว */
+@media (min-width:700px){
+  .bs{max-width:1280px;padding:0 20px 70px}
+  .bs-head{padding:18px 0 14px}
+  .bs-head h1{font-size:20px}
+  .bs-head p{font-size:13px}
+  #list.cards{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start}
+  #list.cards .card{margin:0}
+  #list .empty{grid-column:1/-1}
+  .foot .in{max-width:1240px}
+}
+@media (min-width:900px){
+  .sum{display:flex;gap:10px;align-items:stretch;margin-bottom:12px}
+  .sum .tiles{flex:none;grid-template-columns:repeat(3,190px);margin:0}
+  .sum .alerts{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px}
+  .sum .alert{margin:0;flex:1;display:flex;align-items:center}
+}
 </style>
 </head>
 <body>
@@ -145,6 +191,7 @@ const NOTE_WAIT = 1200;   // หยุดพิมพ์หมายเหตุ
 const GONE = /ใช้ไม่ได้แล้ว|ยังไม่มีลิงก์|ไม่พบรอบ|ลิงก์ไม่ครบ/;   // ข้อความจากสคริปต์ (boss_ / round_) = ลิงก์นี้ใช้ต่อไม่ได้
 
 const L = M.parseBossLink(location.hash);
+const DESK = window.matchMedia('(min-width: 1100px)');  // จอคอม = ตาราง · แคบกว่านี้ = การ์ด (สองแถวตั้งแต่ 700)
 /* B.dec = คำตัดสินในชีต (ดิบ) · B.pend = ที่แตะแล้วยังไม่ได้บันทึก {SKU: [code, หมายเหตุ] | null} */
 const B = { data: null, model: null, dec: {}, pend: {}, busy: false, err: '', at: 0, t: null, view: '', loading: false };
 
@@ -224,7 +271,8 @@ function paint() {
     alerts += `<div class="alert info">${rep.mode === 'count' ? `ทีมยังนับไม่ครบ (${f(rep.done)}/${f(rep.total)} โล) ตัวเลขยังขยับได้` : 'ยังไม่ได้นับจริง ตัวเลขนี้มาจากยอดในสมุด'}</div>`;
   }
 
-  $('main').innerHTML = `<div class="tiles">${tiles}</div>${alerts}<div class="chips" id="chips"></div><div id="list"></div>`;
+  $('main').innerHTML = `<div class="sum"><div class="tiles">${tiles}</div>${alerts ? `<div class="alerts">${alerts}</div>` : ''}</div>` +
+    '<div class="chips" id="chips"></div><div id="list"></div>';
   paintList();
   $('foot').hidden = false;
 }
@@ -252,25 +300,43 @@ function lotsHtml(r) {
   }).join('');
 }
 
+function decBtns(d) {
+  return M.DECIDE_ORDER.map(c => {
+    const o = M.DECIDE[c];
+    return `<button type="button" class="${c} ${d && d.code === c ? 'on' : ''}" data-dec="${c}" aria-pressed="${!!(d && d.code === c)}"><span class="i">${o.icon}</span>${esc(c === 'wait' ? 'รอ' : o.label)}</button>`;
+  }).join('');
+}
+function noteHtml(d) {
+  return `<input class="note" type="text" maxlength="${M.NOTE_MAX}" placeholder="${d && d.code === 'other' ? 'ทำอะไร (พิมพ์ตรงนี้)' : 'หมายเหตุ (ไม่ใส่ก็ได้)'}" value="${esc(d ? d.note : '')}" enterkeyhint="done">`;
+}
+
 function skuHtml(r, map) {
   const sku = up(r.sku);
   const d = map[sku];
   const cm = B.model.cmp ? B.model.cmp.bySku[sku] : null;
   const st = M.STATUS[r.st] ? r.st : '';
-  let prev = '';
-  if (cm && cm.dPrev) prev = `<div class="prev ${cm.todo ? 'todo' : ''}">เดือนก่อน: ${esc(M.prevDecText(cm))}</div>`;
+  const stLabel = M.STATUS[r.st] ? M.STATUS[r.st].label : '';
   const tag = cm && cm.tag === 'new' ? '<span class="tag new">เพิ่งเข้าเสี่ยงมาก</span>' : '';
-  const btn = M.DECIDE_ORDER.map(c => {
-    const o = M.DECIDE[c];
-    return `<button type="button" class="${c} ${d && d.code === c ? 'on' : ''}" data-dec="${c}" aria-pressed="${!!(d && d.code === c)}"><span class="i">${o.icon}</span>${esc(c === 'wait' ? 'รอ' : o.label)}</button>`;
-  }).join('');
-  return `<div class="sku ${st}" data-sku="${esc(sku)}">
-    <div class="top"><span class="code">${esc(r.short || r.sku)}</span><span class="tag ${st}">${esc(M.STATUS[r.st] ? M.STATUS[r.st].label : '')}</span>${tag}
+  const prevTxt = cm && cm.dPrev ? M.prevDecText(cm) : '';
+  if (DESK.matches) {
+    return `<tr class="sku ${st}" data-sku="${esc(sku)}">
+      <td class="c-sku"><b>${esc(r.short || r.sku)}</b><span class="tag ${st}">${esc(stLabel)}</span></td>
+      <td><div class="nm1" title="${esc(r.name || r.sku)}">${esc(r.name || r.sku)}</div><div class="nm2">${esc(r.type || '')} ${tag}</div>
+        ${prevTxt ? `<div class="prev ${cm.todo ? 'todo' : ''}">เดือนก่อน: ${esc(prevTxt)}</div>` : ''}</td>
+      <td><div class="lots">${lotsHtml(r)}</div></td>
+      <td class="r tot">${f(r.total[B.model.rep.mode])}</td>
+      <td><div class="dec">${decBtns(d)}</div></td>
+      <td class="c-note">${noteHtml(d)}${byHtml(sku, d)}</td></tr>`;
+  }
+  const prev = prevTxt ? `<div class="prev ${cm.todo ? 'todo' : ''}">เดือนก่อน: ${esc(prevTxt)}</div>` : '';
+  const btn = decBtns(d);
+  return `<div class="sku card ${st}" data-sku="${esc(sku)}">
+    <div class="top"><span class="code">${esc(r.short || r.sku)}</span><span class="tag ${st}">${esc(stLabel)}</span>${tag}
       <span class="tot">รวม <b>${f(r.total[B.model.rep.mode])}</b></span></div>
     <div class="nm">${esc(r.type ? r.type + ' · ' : '')}${esc(r.name || r.sku)}</div>
     <div class="lots">${lotsHtml(r)}</div>${prev}
     <div class="dec">${btn}</div>
-    ${d ? `<input class="note" type="text" maxlength="${M.NOTE_MAX}" placeholder="${d.code === 'other' ? 'ทำอะไร (พิมพ์ตรงนี้)' : 'หมายเหตุ (ไม่ใส่ก็ได้)'}" value="${esc(d.note)}" enterkeyhint="done">` : ''}
+    ${d ? noteHtml(d) : ''}
     ${byHtml(sku, d)}</div>`;
 }
 
@@ -284,8 +350,13 @@ function paintList() {
   const map = decNow();
   $('chips').innerHTML = chipsHtml(map);
   const list = viewRows(map);
-  $('list').innerHTML = list.length ? list.map(r => skuHtml(r, map)).join('')
-    : `<div class="empty">${B.view === 'none' ? '✓ ตัดสินครบทุก SKU เสี่ยงมากแล้ว' : 'ไม่มี SKU ในกลุ่มนี้'}</div>`;
+  const body = list.map(r => skuHtml(r, map)).join('');
+  $('list').className = DESK.matches ? 'tbl' : 'cards';
+  $('list').innerHTML = !list.length ? `<div class="empty">${B.view === 'none' ? '✓ ตัดสินครบทุก SKU เสี่ยงมากแล้ว' : 'ไม่มี SKU ในกลุ่มนี้'}</div>`
+    : DESK.matches ? `<table class="tb"><thead><tr><th>SKU</th><th>สินค้า</th><th>LOT · ชิ้น</th><th class="r">รวม</th><th>ตัดสินใจ</th><th>หมายเหตุ</th></tr></thead><tbody>${body}</tbody></table>`
+    : body;
+  /* หัวตารางติดใต้แถบชิปตอนเลื่อน */
+  document.documentElement.style.setProperty('--ch', $('chips').offsetHeight + 'px');
   paintFoot(map);
 }
 
@@ -309,7 +380,7 @@ function paintFoot(map) {
   else if (B.err) s = `<span class="err">บันทึกไม่ได้: ${esc(B.err)}</span>`;
   else if (n) s = `<span class="busy">รอบันทึก ${n} SKU</span>`;
   else if (B.at) s = `<span class="ok">✓ บันทึกแล้ว ${new Date(B.at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} · หัวหน้าเห็นแล้ว</span>`;
-  else s = 'แตะเลือกคำตัดสิน บันทึกให้เอง';
+  else s = 'เลือกคำตัดสิน บันทึกให้เอง';
   $('footIn').innerHTML = `<span class="sp">${s}</span>` +
     (B.err ? '<button class="bs-btn" data-act="save">ลองใหม่</button>' : '') +
     (risk.length ? `<span class="pg">ตัดสินแล้ว <b>${done}/${risk.length}</b></span>` : '');
@@ -387,7 +458,9 @@ document.addEventListener('input', (e) => {
   if (!e.target.classList.contains('note')) return;
   const sku = e.target.closest('.sku').dataset.sku;
   const cur = decNow()[sku];
-  setDec(sku, cur ? cur.code : 'other', e.target.value);
+  const code = cur ? cur.code : 'other';
+  setDec(sku, code, e.target.value);
+  e.target.closest('.sku').querySelectorAll('[data-dec]').forEach(b => b.classList.toggle('on', b.dataset.dec === code));
   const by = e.target.parentElement.querySelector('.by');
   if (by) { by.className = 'by wait'; by.textContent = 'ยังไม่บันทึก…'; }
   paintFoot();
@@ -401,6 +474,11 @@ let hiddenAt = 0;
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { hiddenAt = Date.now(); if (Object.keys(B.pend).length) save(); return; }
   if (B.model && Date.now() - hiddenAt > 60000 && !Object.keys(B.pend).length && !B.busy) load(true);
+});
+/* ย่อ/ขยายหน้าต่างข้ามขนาด สลับตาราง ↔ การ์ด (ไม่วาดตอนกำลังพิมพ์หมายเหตุ) */
+DESK.addEventListener('change', () => {
+  const a = document.activeElement;
+  if (B.model && !(a && a.classList && a.classList.contains('note'))) paintList();
 });
 window.addEventListener('beforeunload', (e) => { if (B.busy || Object.keys(B.pend).length) { e.preventDefault(); e.returnValue = ''; } });
 
