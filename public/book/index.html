@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>สมุดสต๊อก — WMS</title>
+<link rel="icon" type="image/png" sizes="32x32" href="../wms-icon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="../wms-logo.png">
+<link rel="apple-touch-icon" href="../wms-icon-180.png">
+<link rel="stylesheet" href="../wms-theme.css">
+<link rel="stylesheet" href="../wms-gate.css">
+<script src="../wms-gate.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+
+/* ── แถบบน: สต๊อกที่ใช้คิด + คนที่เข้าสมุด ชุดเดียวกับหน้าจัดที่เก็บ ── */
+.tx-src{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 20px;
+  background:var(--wms-surface2);border-bottom:1px solid var(--wms-border);font-size:12px}
+.tx-src .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;
+  background:var(--wms-surface);border:1px solid var(--wms-border);color:var(--wms-muted)}
+.tx-src .pill b{color:var(--wms-text);font-weight:600}
+.tx-src .pill.warn{background:#FEF3C7;border-color:#FDE68A;color:#92400E}
+.tx-src .pill.ok{background:#ECFDF5;border-color:#A7F3D0;color:#065F46}
+.tx-src .sp{flex:1}
+.tx-src button{padding:4px 12px;border-radius:999px;border:1px solid var(--wms-border2);
+  background:var(--wms-surface);font-family:var(--wms-font);font-size:13px;color:#334155;cursor:pointer}
+.tx-src button:hover:not(:disabled){background:var(--wms-primary-light);border-color:var(--wms-primary);color:var(--wms-primary-dark)}
+.tx-src button.p{background:var(--wms-primary);border-color:var(--wms-primary);color:#fff}
+.tx-src button.p:hover:not(:disabled){filter:brightness(1.08);color:#fff}
+.tx-src button:disabled{opacity:.6;cursor:default}
+.tx-err{width:100%;font-size:13px;color:#B91C1C;font-weight:600}
+.bk-sep{width:1px;height:20px;background:var(--wms-border2)}
+.bk-field{height:28px;padding:0 9px;border-radius:999px;border:1px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:13px;color:var(--wms-text)}
+.bk-field:focus{outline:none;border-color:var(--wms-primary);box-shadow:0 0 0 3px var(--wms-primary-light)}
+.bk-url{width:320px;max-width:100%}
+.bk-pin{width:92px;letter-spacing:2px}
+
+/* ── ไฟล์ออเดอร์ ── */
+.bk-in{padding:12px 20px;background:var(--wms-surface);border-bottom:1px solid var(--wms-border)}
+.bk-top{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:13px;color:var(--wms-muted)}
+.bk-h{font-size:15px;font-weight:700;color:var(--wms-text);margin-right:4px}
+.bk-top .sp{flex:1}
+.bk-top label{display:inline-flex;align-items:center;gap:6px}
+.bk-date{height:30px;padding:0 8px;border-radius:8px;border:1px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:13px;font-weight:700;color:var(--wms-text)}
+.bk-date:focus{outline:none;border-color:var(--wms-primary)}
+.bk-file{display:none}
+.tx-opt{padding:5px 13px;border-radius:999px;border:1px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:13px;color:#334155;cursor:pointer}
+.tx-opt:hover{border-color:var(--wms-primary);color:var(--wms-primary-dark)}
+.tx-opt.p{background:var(--wms-primary);border-color:var(--wms-primary);color:#fff;font-weight:600}
+.tx-opt.p:hover{filter:brightness(1.08);color:#fff}
+.tx-opt:disabled{opacity:.6;cursor:default}
+.bk-files{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.bk-fc{display:inline-flex;align-items:center;gap:6px;padding:3px 4px 3px 11px;border-radius:999px;border:1px solid var(--wms-border);
+  background:var(--wms-surface2);font-size:12.5px;color:var(--wms-muted)}
+.bk-fc b{color:var(--wms-text)}
+.bk-sys{padding:0 7px;border-radius:999px;font-size:11px;font-weight:700;background:var(--wms-primary-light);color:var(--wms-primary-dark)}
+.bk-x{width:22px;height:22px;border-radius:999px;border:0;background:none;color:var(--wms-muted);font-size:13px;cursor:pointer}
+.bk-x:hover{background:#FEE2E2;color:#B91C1C}
+.bk-link{background:none;border:0;padding:0;font:inherit;font-size:12.5px;color:var(--wms-primary-dark);text-decoration:underline;cursor:pointer}
+.bk-drop{margin-top:8px;padding:22px 16px;border:2px dashed var(--wms-border2);border-radius:10px;text-align:center;font-size:13.5px;
+  line-height:1.7;color:var(--wms-muted)}
+.bk-drop b{color:var(--wms-text)}
+.bk-dragging .bk-drop,.bk-dragging .bk-files{outline:2px dashed var(--wms-primary);outline-offset:3px;border-radius:10px}
+.bk-warn{margin-top:8px;padding:7px 11px;border-radius:8px;background:#FEF3C7;color:#92400E;font-size:12.5px;line-height:1.6}
+.bk-warn b{color:#78350F}
+
+/* ── ยอดรวม: กดเพื่อดูเฉพาะกลุ่มนั้น ── */
+.tx-sum{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:9px 20px;background:var(--wms-surface);
+  border-bottom:1px solid var(--wms-border);font-size:13px;color:var(--wms-muted)}
+.tx-sum:empty{display:none}
+.bk-chip{display:inline-flex;align-items:baseline;gap:5px;padding:3px 11px;border-radius:999px;border:1px solid var(--wms-border);
+  background:var(--wms-surface2);font-family:var(--wms-font);font-size:12.5px;color:var(--wms-muted);cursor:pointer}
+.bk-chip b{font-size:14px;color:var(--wms-text);font-variant-numeric:tabular-nums}
+.bk-chip:hover{border-color:var(--wms-primary)}
+.bk-chip.on{border-color:var(--wms-primary);background:var(--wms-primary-light);color:var(--wms-primary-dark)}
+.bk-chip.zero{opacity:.5}
+.bk-chip.c-ok b{color:#047857}
+.bk-chip.c-warn b{color:#B45309}
+.bk-chip.c-red b{color:#B91C1C}
+
+/* ── ปุ่มบันทึก ── */
+.bk-act{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:10px 20px;background:var(--wms-surface);
+  border-bottom:1px solid var(--wms-border);font-size:13px;color:var(--wms-muted)}
+.bk-act:empty{display:none}
+.bk-save{padding:8px 18px;border-radius:10px;border:0;background:var(--wms-primary);color:#fff;font-family:var(--wms-font);
+  font-size:14px;font-weight:700;cursor:pointer}
+.bk-save:hover:not(:disabled){filter:brightness(1.08)}
+.bk-save:disabled{opacity:.5;cursor:default}
+.bk-act b{color:var(--wms-text)}
+.bk-msg{width:100%;padding:8px 12px;border-radius:8px;font-size:13px;line-height:1.65}
+.bk-msg.ok{background:#ECFDF5;color:#065F46}
+.bk-msg.bad{background:#FEF2F2;color:#991B1B}
+.bk-msg.warn{background:#FEF3C7;color:#92400E}
+.bk-msg b{color:inherit}
+.bk-msg ol{margin:4px 0 2px 20px}
+
+/* ── ตาราง ── */
+.tx-body{padding:12px 20px 30px}
+.tx-empty{padding:34px 20px;text-align:center;color:var(--wms-muted);font-size:14px;line-height:1.75}
+.tx-empty b{color:var(--wms-text)}
+.bk-wrap{overflow:auto;max-height:calc(100vh - 170px);border:1px solid var(--wms-border2);border-radius:8px;background:var(--wms-surface)}
+.bk-xl{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
+.bk-xl th{position:sticky;top:0;z-index:2;padding:6px 8px;background:#F1F5F9;text-align:left;font-size:11.5px;font-weight:600;
+  color:var(--wms-muted);border-bottom:1px solid var(--wms-border2);border-right:1px solid #E2E8F0;white-space:nowrap}
+.bk-xl td{height:30px;padding:0 8px;border-bottom:1px solid #EEF2F6;border-right:1px solid #EEF2F6;white-space:nowrap;
+  vertical-align:middle;color:var(--wms-text)}
+.bk-xl .num{text-align:right;font-variant-numeric:tabular-nums}
+.bk-xl .c-no{font-size:12px;color:var(--wms-muted)}
+.bk-xl .c-sku{font-weight:700}
+.bk-xl .c-nm{max-width:260px;overflow:hidden;text-overflow:ellipsis}
+.bk-xl .c-sub{font-size:12px;color:var(--wms-muted)}
+.bk-xl .c-warn{color:#B45309;font-weight:700}
+.bk-xl .c-red{color:#B91C1C;font-weight:700}
+.bk-xl .c-ok{color:#047857;font-weight:600}
+.bk-xl tr.r-void td{color:var(--wms-faint);text-decoration:line-through}
+.bk-xl tr.r-void td.c-act{text-decoration:none}
+.bk-xl .c-act{width:1%}
+.bk-more{margin-top:8px;font-size:12.5px;color:var(--wms-muted)}
+.bk-btn{padding:3px 10px;border-radius:6px;border:1px solid var(--wms-border2);background:var(--wms-surface);
+  font-family:var(--wms-font);font-size:12px;color:#334155;cursor:pointer}
+.bk-btn:hover{border-color:var(--wms-primary);color:var(--wms-primary-dark)}
+.bk-btn.x:hover{border-color:#FCA5A5;background:#FEF2F2;color:#B91C1C}
+
+/* ── ชุดที่บันทึก ── */
+.bk-docs{padding:0 20px 60px}
+.bk-docs:empty{display:none}
+.bk-dh{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px;color:var(--wms-muted)}
+.bk-dh b{font-size:14px;color:var(--wms-text)}
+
+@media (max-width:640px){
+  .tx-src,.bk-in,.tx-sum,.bk-act,.tx-body,.bk-docs{padding-left:16px;padding-right:16px}
+  .bk-field,.bk-date{font-size:16px}   /* ต่ำกว่า 16px iPhone จะซูมหน้าเองตอนแตะช่อง */
+}
+</style>
+</head>
+<body data-wms-module="book">
+
+<div class="wms-shell">
+<div data-wms-shell="book" data-root="../"></div>
+<div class="wms-main">
+
+  <div class="mod-head">
+    <div class="mod-title">
+      <div class="ic"><img src="../icons/notebook.png" alt="" width="38" height="38"></div>
+      <div>
+        <h2>สมุดสต๊อก · ตัดขาย</h2>
+        <button type="button" class="mod-info" aria-expanded="false" aria-label="คำอธิบายหน้านี้">i</button>
+        <p>วางไฟล์ออเดอร์ JST / CRM ระบบเลือกกองให้ตาม FIFO กดบันทึกได้เลขที่เอกสารและคัดลอกแถวไปวางในชีต Transaction
+          ออเดอร์ที่ตัดแล้วจะไม่ถูกตัดซ้ำ ของไม่พอทั้งบรรทัดจะไม่ตัด รอตัดรอบหน้า · สคริปต์ของหน้านี้ไม่แตะชีต Transaction</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="tx-src" id="src"></div>
+  <div class="bk-in" id="inp"></div>
+  <div class="tx-sum" id="sum"></div>
+  <div class="bk-act" id="act"></div>
+  <div class="tx-body" id="body"></div>
+  <div class="bk-docs" id="docs"></div>
+
+</div><!-- /.wms-main -->
+</div><!-- /.wms-shell -->
+
+<script type="module" src="../wms-shell.js"></script>
+<script src="../wms-settings.js"></script>
+<script src="../wms-gas.js"></script>
+<script src="../wms-shared.js"></script>
+<script src="../wms-book.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const f = n => (Math.round(n * 1000) / 1000).toLocaleString('en-US');
+const dm = d => { const p = String(d || '').split('-'); return p.length === 3 ? `${+p[2]}/${+p[1]}` : ''; };
+const B = WmsBook;
+const XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+const DRAFT = 'wms:book:draft';   // ไฟล์ที่วางค้าง วันที่ตัด ชุดที่ส่งค้าง (เครื่องนี้เท่านั้น)
+const ME = 'wms:book:me';         // คนที่เข้าสมุดในแท็บนี้ อยู่ใน sessionStorage ปิดแท็บแล้วต้องเข้าใหม่
+const ROW_MAX = 600;              // แถวที่วาดในตารางต่อครั้ง
+const HEAD_ROLE = 'หัวหน้า';
+
+let RES = null;      // คำตอบ tx-fifo (ข้อมูลกลาง)
+let ST = null;       // กองสต๊อกหลังหักชุดที่ยังไม่วาง
+let REF = { done: [], wait: [] };
+let FILES = [];      // [{ name, sys, lines, skipped, dates, whs }]
+let MERGED = { lines: [], dup: 0 };
+let DATE = '';       // วันที่ตัด
+let DATE_AUTO = true;
+let SEEN = {};       // { คีย์บรรทัด: เลขที่ } ที่ตัดไปแล้ว
+let DOCS = [];       // ชุดที่บันทึกในไม่กี่วันล่าสุด
+let DOCS_OK = false; // โหลดชุดที่บันทึกสำเร็จแล้ว ยังไม่สำเร็จห้ามบันทึก กองที่ชุดก่อนตัดไปจะยังดูเหมือนมีของ
+let CUT = null;
+let FILTER = 'rows';
+let USER = null;     // { who, role, pin }
+let NAMES = null;
+let PENDING = null;  // ชุดที่ส่งแล้วยังไม่รู้ผล ส่งซ้ำแบบเดิมเท่านั้น
+let LAST = null;     // ชุดล่าสุดที่บันทึกในแท็บนี้ { doc, who, copy }
+let MSG = null;      // { kind: ok|bad|warn, html }
+let BUSY = '', ERR = '', WAIT = null, LOADING = false;
+let BKBUSY = '', BKERR = '', SETURL = false;
+let XLSX_LOAD = null;
+
+function readJson(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } }
+function writeJson(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }
+function today() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+
+(function restore() {
+  const d = readJson(DRAFT);
+  if (d) {
+    FILES = Array.isArray(d.files) ? d.files : [];
+    if (d.date) { DATE = d.date; DATE_AUTO = !!d.auto; }
+    PENDING = d.pending || null;
+  }
+  try { USER = JSON.parse(sessionStorage.getItem(ME) || 'null'); } catch (e) { USER = null; }
+})();
+
+function saveDraft() {
+  if (!writeJson(DRAFT, { files: FILES, date: DATE, auto: DATE_AUTO, pending: PENDING, at: Date.now() })) {
+    MSG = { kind: 'warn', html: 'เก็บไฟล์ที่วางไว้ในเครื่องไม่ได้ (พื้นที่เต็มหรือโหมดส่วนตัว) ปิดหน้าแล้วต้องวางใหม่' };
+  }
+}
+
+function compute() {
+  MERGED = B.merge(FILES);
+  if (DATE_AUTO || !DATE) { DATE = B.mainDate(FILES) || today(); DATE_AUTO = true; }
+  REF = RES ? B.reflect(RES, DOCS) : { done: [], wait: [] };
+  ST = RES ? B.stock(RES, B.extraOf(REF.wait)) : null;
+  CUT = ST ? B.allocate(MERGED.lines, ST, { seen: SEEN }) : null;
+}
+
+/* ── สต๊อกจาก tx-api (อ่านอย่างเดียว) ───────────────────────────────────── */
+
+async function load(fresh, quiet) {
+  const url = WmsSettings.txUrl();
+  if (LOADING || !url) return;
+  LOADING = true;
+  ERR = '';
+  const say = (sec) => { BUSY = fresh ? `กำลังอ่านสมุด Transaction ทั้งชีต…${sec ? ` ${sec} วินาที` : ''}` : 'กำลังโหลดสต๊อกชุดล่าสุด…'; renderSrc(); };
+  const opts = { retries: 1, timeoutMs: 240000, onProgress: quiet ? undefined : say };
+  if (!quiet) say(0);
+  try {
+    let res;
+    if (fresh) {
+      res = await WmsShared.press(url, 'tx-fifo', null, opts);
+      if (res && res.error === WmsShared.OLD) res = await WmsGas.json(url, 'tx-fifo', opts);
+    } else {
+      res = await WmsShared.read(url, 'tx-fifo', opts);
+    }
+    if (res && res.busy && !res.rows) {
+      WAIT = res.busy;
+      WATCH.soon();
+      BUSY = '';
+      LOADING = false;
+      render();
+      return;
+    }
+    WAIT = null;
+    if (res.error) throw new Error(res.error);
+    if (res.app !== 'transaction') throw new Error('URL ของ Transaction ในหน้าตั้งค่าไม่ใช่สคริปต์ tx-api.gs');
+    if (!res.rows) throw new Error('สคริปต์ tx-api.gs ยังเป็นรุ่นที่ไม่ส่งแถวของสมุด ให้วางโค้ดใหม่แล้ว Deploy เป็น New version');
+    RES = res;
+    compute();
+  } catch (e) {
+    ERR = e.message;
+  }
+  BUSY = '';
+  LOADING = false;
+  render();
+}
+
+/* ── สมุดสต๊อก (book-api.gs) ─────────────────────────────────────────────── */
+
+function bookUrl() { return WmsSettings.bookUrl(); }
+
+function checkV(r) {
+  if (r && !r.error && r.app === 'book' && !(r.v >= B.API_V)) {
+    throw new Error(`สคริปต์ book-api.gs ยังเป็นรุ่น ${r.v || 'เก่า'} หน้านี้ต้องใช้รุ่น ${B.API_V} ให้วางโค้ดใหม่แล้ว Deploy เป็น New version`);
+  }
+  if (r && !r.error && r.app !== 'book') throw new Error('URL นี้ไม่ใช่สคริปต์ book-api.gs ของสมุดสต๊อก');
+  return r;
+}
+
+async function bookPost(op, body) {
+  const r = await WmsGas.post(bookUrl(), { op, who: USER ? USER.who : '', pin: USER ? USER.pin : '', ...body }, { timeoutMs: 120000, busy: true });
+  if (r && r.error && /รหัสไม่ถูก|ไม่มีชื่อ|ต้องเลือกชื่อ|รอ \d+ นาที/.test(r.error) && op !== 'bk-login') logout(r.error);
+  return r.error ? r : checkV(r);
+}
+
+async function loadNames() {
+  if (!bookUrl()) return;
+  BKERR = '';
+  try {
+    const r = checkV(await WmsGas.json(bookUrl(), 'bk-names', { retries: 1, timeoutMs: 60000 }));
+    if (r.error) throw new Error(r.error);
+    NAMES = r.names || [];
+  } catch (e) {
+    NAMES = null;
+    BKERR = e.message;
+  }
+  renderSrc();
+}
+
+async function login() {
+  const who = $('bkWho') ? $('bkWho').value : '';
+  const pin = $('bkPin') ? $('bkPin').value.trim() : '';
+  if (!who || !pin) { BKERR = 'เลือกชื่อและใส่รหัสก่อน'; renderSrc(); return; }
+  BKBUSY = 'กำลังเข้า…'; BKERR = ''; renderSrc();
+  try {
+    USER = { who, pin, role: '' };
+    const r = await bookPost('bk-login', {});
+    if (r.error) throw new Error(r.error);
+    USER = { who: r.who, pin, role: r.role };
+    try { sessionStorage.setItem(ME, JSON.stringify(USER)); } catch (e) {}
+    BKBUSY = '';
+    render();
+    await refreshDocs();
+    await refreshSeen();
+  } catch (e) {
+    USER = null;
+    BKERR = e.message;
+  }
+  BKBUSY = '';
+  render();
+}
+
+function logout(why) {
+  USER = null;
+  DOCS = []; DOCS_OK = false; SEEN = {}; SEEN_FOR = '';
+  try { sessionStorage.removeItem(ME); } catch (e) {}
+  BKERR = why || '';
+  compute();
+  render();
+}
+
+async function refreshDocs() {
+  if (!USER || !bookUrl()) return;
+  try {
+    const r = await bookPost('bk-recent', { days: 3 });
+    if (r.error) throw new Error(r.error);
+    DOCS = r.docs || [];
+    DOCS_OK = true;
+    BKERR = '';
+    compute();
+  } catch (e) { DOCS_OK = false; BKERR = 'โหลดชุดที่บันทึกไม่ได้ ยังบันทึกไม่ได้: ' + e.message; }
+  render();
+}
+
+let SEEN_FOR = '';
+async function refreshSeen() {
+  if (!USER || !bookUrl()) return;
+  const keys = MERGED.lines.map((l) => l.key);
+  const tag = DATE + '#' + keys.length + '#' + (keys[0] || '') + '#' + (keys[keys.length - 1] || '');
+  if (!keys.length) { SEEN = {}; SEEN_FOR = tag; compute(); render(); return; }
+  BKBUSY = 'กำลังเช็คออเดอร์ที่ตัดแล้ว…'; renderAct();
+  try {
+    const r = await bookPost('bk-seen', { date: DATE, keys });
+    if (r.error) throw new Error(r.error);
+    SEEN = r.seen || {};
+    SEEN_FOR = tag;
+  } catch (e) {
+    SEEN_FOR = '';
+    MSG = { kind: 'bad', html: `เช็คออเดอร์ที่ตัดแล้วไม่สำเร็จ ยังบันทึกไม่ได้: ${esc(e.message)}` };
+  }
+  BKBUSY = '';
+  compute();
+  render();
+}
+function seenReady() {
+  if (!DOCS_OK) return false;
+  const keys = MERGED.lines.map((l) => l.key);
+  return SEEN_FOR === DATE + '#' + keys.length + '#' + (keys[0] || '') + '#' + (keys[keys.length - 1] || '');
+}
+
+/* ── บันทึก + คัดลอก ──────────────────────────────────────────────────────── */
+
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
+  try {
+    const t = document.createElement('textarea');
+    t.value = text; t.style.position = 'fixed'; t.style.opacity = '0';
+    document.body.appendChild(t); t.select();
+    const ok = document.execCommand('copy');
+    t.remove();
+    return ok;
+  } catch (e) { return false; }
+}
+
+const sumQty = (copy) => Math.round(copy.reduce((a, c) => a + (+c[6] || 0), 0) * 1000) / 1000;
+
+async function save() {
+  if (!USER || BKBUSY) return;
+  let p = PENDING;
+  if (!p) {
+    if (!CUT || !CUT.total.ok || !seenReady()) return;
+    if (RES && RES.last && RES.last >= DATE &&
+        !confirm(`สมุด Transaction มีแถวขายวันที่ ${dm(RES.last)} แล้ว\nเช็คแล้วว่าไฟล์นี้ยังไม่ได้ตัดด้วยมือในชีตเดิม ใช่ไหม?`)) return;
+    p = { batch: B.uuid(), date: DATE, lines: B.cutLines(CUT), copy: B.copyRows(CUT, DATE), at: Date.now() };
+    PENDING = p;
+    saveDraft();
+  }
+  BKBUSY = 'กำลังบันทึก…'; MSG = null; render();
+  let r;
+  try {
+    r = await bookPost('bk-cut', { batch: p.batch, date: p.date, lines: p.lines, copy: p.copy });
+  } catch (e) {
+    BKBUSY = '';
+    MSG = { kind: 'warn', html: `ส่งไม่สำเร็จ (${esc(e.message)}) ยังไม่รู้ว่าถึงสมุดไหม กด <b>ส่งอีกครั้ง</b> ได้ ระบบไม่บันทึกซ้ำ` };
+    render();
+    return;
+  }
+  BKBUSY = '';
+  if (r.error) {
+    PENDING = null;
+    saveDraft();
+    if (r.dup && r.dup.length) {
+      r.dup.forEach((d) => { SEEN[d.key] = d.doc; });
+      compute();
+      const docs = [...new Set(r.dup.map((d) => d.doc))].join(', ');
+      MSG = { kind: 'bad', html: `มี <b>${f(r.dup.length)}</b> บรรทัดที่ตัดไปแล้วใน ${esc(docs)} เอาออกจากชุดให้แล้ว ตรวจอีกครั้งแล้วกดบันทึกใหม่` };
+    } else {
+      MSG = { kind: 'bad', html: `บันทึกไม่สำเร็จ: ${esc(r.error)}` };
+    }
+    render();
+    refreshDocs();   // ชุดที่เครื่องอื่นเพิ่งบันทึก ต้องหักกองของมันด้วยก่อนบันทึกรอบหน้า
+    return;
+  }
+  p.lines.forEach((l) => { SEEN[`${l.sys}|${l.order}|${l.sku}`] = r.doc; });
+  if (!DOCS.some((d) => d.doc === r.doc)) {
+    DOCS.unshift({ doc: r.doc, type: 'ตัดขาย', date: p.date, who: USER.who, at: r.at || '', rows: p.copy.length, qty: sumQty(p.copy),
+      orders: new Set(p.lines.map((l) => l.sys + '|' + l.order)).size, status: '', copy: p.copy });
+  }
+  LAST = { doc: r.doc, who: USER.who, copy: p.copy };
+  PENDING = null;
+  saveDraft();
+  compute();
+  const ok = await copyText(B.tsv(p.copy, USER.who, r.doc));
+  MSG = null;
+  LAST.copied = ok;
+  render();
+  refreshDocs();
+}
+
+async function copyDoc(doc) {
+  const d = DOCS.find((x) => x.doc === doc) || (LAST && LAST.doc === doc ? LAST : null);
+  if (!d || !d.copy) return;
+  const ok = await copyText(B.tsv(d.copy, d.who, doc));
+  MSG = ok ? { kind: 'ok', html: `คัดลอก <b>${esc(doc)}</b> ${f(d.copy.length)} แถวแล้ว วางที่ช่อง A แถวว่างแรกของชีต Transaction` }
+    : { kind: 'bad', html: 'คัดลอกไม่ได้ เบราว์เซอร์ไม่ให้เขียนคลิปบอร์ด ลองกดอีกครั้ง' };
+  renderAct();
+}
+
+async function voidDoc(doc) {
+  if (!USER || USER.role !== HEAD_ROLE) return;
+  const why = prompt(`ยกเลิก ${doc} ทั้งชุด\nบรรทัดออเดอร์ของชุดนี้จะตัดใหม่ได้ ต้องไปลบแถวที่คอลัมน์ N = ${doc} ในชีต Transaction เอง\n\nเหตุผล:`);
+  if (!why || !why.trim()) return;
+  BKBUSY = 'กำลังยกเลิก…'; render();
+  try {
+    const r = await bookPost('bk-void', { doc, why: why.trim() });
+    if (r.error) throw new Error(r.error);
+    MSG = { kind: 'warn', html: `ยกเลิก <b>${esc(doc)}</b> แล้ว (${f(r.lines)} บรรทัดออเดอร์ตัดใหม่ได้) — <b>ไปลบแถวที่คอลัมน์ N = ${esc(doc)} ในชีต Transaction ด้วย</b>` };
+    if (LAST && LAST.doc === doc) LAST = null;
+  } catch (e) {
+    MSG = { kind: 'bad', html: `ยกเลิกไม่สำเร็จ: ${esc(e.message)}` };
+  }
+  BKBUSY = '';
+  await refreshDocs();
+  SEEN_FOR = '';
+  await refreshSeen();
+}
+
+/* ── อ่านไฟล์ ─────────────────────────────────────────────────────────────── */
+
+function xlsxLib() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  if (!XLSX_LOAD) {
+    XLSX_LOAD = new Promise((ok, bad) => {
+      const s = document.createElement('script');
+      s.src = XLSX_URL;
+      s.onload = () => ok(window.XLSX);
+      s.onerror = () => { XLSX_LOAD = null; bad(new Error('โหลดตัวอ่านไฟล์ Excel ไม่ได้ ลองใหม่อีกครั้ง')); };
+      document.head.appendChild(s);
+    });
+  }
+  return XLSX_LOAD;
+}
+
+function addParsed(name, p) {
+  const file = { name, sys: p.sys, lines: p.lines, skipped: p.skipped, dates: p.dates, whs: p.whs || {} };
+  const i = FILES.findIndex((x) => x.name === name && x.sys === p.sys);
+  if (i >= 0) FILES[i] = file; else FILES.push(file);
+  MSG = null;
+  LAST = null;
+  FILTER = 'rows';
+  compute();
+  saveDraft();
+  render();
+  refreshSeen();
+}
+
+async function readFiles(list) {
+  for (const file of list) {
+    try {
+      const X = await xlsxLib();
+      const wb = X.read(await file.arrayBuffer(), { type: 'array', cellDates: false });
+      let best = null, why = '';
+      for (const tab of wb.SheetNames) {
+        const grid = X.utils.sheet_to_json(wb.Sheets[tab], { header: 1, defval: '', raw: true });
+        const p = B.parseOrders(grid, { today: today() });
+        if (p.error) { why = p.error; continue; }
+        if (!best || p.lines.length > best.lines.length) best = p;
+      }
+      if (!best) throw new Error(why || 'ไฟล์ว่าง');
+      addParsed(file.name, best);
+    } catch (e) {
+      MSG = { kind: 'bad', html: `อ่านไฟล์ <b>${esc(file.name)}</b> ไม่ได้: ${esc(e.message)}` };
+      render();
+    }
+  }
+}
+
+/* ── แถบบน ─────────────────────────────────────────────────────────────── */
+
+function renderSrc() {
+  let html = '';
+  const tx = WmsSettings.txUrl();
+  if (RES && !BUSY) {
+    const when = new Date(WmsShared.stamp(RES)).toLocaleString('th-TH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const who = WmsShared.who(RES);
+    html += `<span class="pill" title="กองที่ใช้ตัดคิดจากสต๊อกชุดนี้ หักชุดที่บันทึกแล้วแต่ยังไม่เห็นในสมุดให้เอง">🕐 สต๊อกเมื่อ <b>${esc(when)}</b>${who ? ` · ${esc(who)}` : ''}</span>`;
+    if (RES.last) html += `<span class="pill">สมุดลงขายถึง <b>${esc(dm(RES.last))}</b></span>`;
+  }
+  if (BUSY) html += `<span class="pill">⏳ ${esc(BUSY)}</span>`;
+  if (WAIT && !BUSY) html += `<span class="pill warn">⏳ ${esc(WmsShared.runner(WAIT))} กำลังดึงชุดใหม่ เสร็จแล้วขึ้นให้เอง</span>`;
+  if (tx) {
+    html += `<button id="loadBtn" class="${RES ? '' : 'p'}" ${BUSY || WAIT ? 'disabled' : ''}>${BUSY ? 'กำลังดึง…' : WAIT ? 'รอชุดใหม่…' : RES ? '🔄 ดึงสต๊อกใหม่' : '▶️ ดึงสต๊อก'}</button>`;
+  } else {
+    html += `<span class="pill warn">ยังไม่ได้ตั้ง Apps Script URL ของ Transaction — <a href="../settings/">ตั้งที่หน้าตั้งค่า</a></span>`;
+  }
+  html += '<span class="sp"></span>';
+
+  const url = bookUrl();
+  if (!url || SETURL) {
+    html += `<span class="pill">สมุดสต๊อก</span><input class="bk-field bk-url" id="bkUrl" placeholder="Apps Script URL ของ book-api.gs" value="${esc(url)}">` +
+      `<button id="bkUrlSave" class="p">บันทึก</button>` + (url ? '<button id="bkUrlCancel">ยกเลิก</button>' : '');
+  } else if (!USER) {
+    if (NAMES && NAMES.length) {
+      html += `<select class="bk-field" id="bkWho" aria-label="ชื่อ">${NAMES.map((n) => `<option>${esc(n)}</option>`).join('')}</select>` +
+        `<input class="bk-field bk-pin" id="bkPin" type="password" inputmode="numeric" maxlength="8" placeholder="รหัส" autocomplete="off">` +
+        `<button id="bkIn" class="p" ${BKBUSY ? 'disabled' : ''}>${BKBUSY ? esc(BKBUSY) : 'เข้าสมุด'}</button>`;
+    } else if (NAMES) {
+      html += '<span class="pill warn">ยังไม่มีรายชื่อคน — หัวหน้าใส่ ชื่อ รหัส สิทธิ์ ในแท็บ ผู้ใช้ ของไฟล์ WMS สมุดสต๊อก</span><button id="bkNames">โหลดใหม่</button>';
+    } else {
+      html += `<button id="bkNames">${BKERR ? 'ลองเชื่อมสมุดอีกครั้ง' : 'กำลังเชื่อมสมุด…'}</button>`;
+    }
+    html += '<button id="bkSet" title="เปลี่ยน URL ของสมุดสต๊อก">⚙️</button>';
+  } else {
+    html += `<span class="pill ok">👤 <b>${esc(USER.who)}</b> · ${esc(USER.role)}</span><button id="bkOut">ออก</button>`;
+  }
+  if (ERR) html += `<div class="tx-err">ดึงสต๊อกไม่สำเร็จ: ${esc(ERR)}</div>`;
+  if (BKERR) html += `<div class="tx-err">สมุดสต๊อก: ${esc(BKERR)}</div>`;
+  $('src').innerHTML = html;
+}
+
+/* ── ไฟล์ออเดอร์ ──────────────────────────────────────────────────────── */
+
+function renderIn() {
+  const files = FILES.map((x, i) => {
+    const qty = x.lines.reduce((a, l) => a + l.qty, 0);
+    const ds = Object.keys(x.dates || {}).sort().map(dm).join(', ');
+    return `<span class="bk-fc" title="${esc(x.name)}"><span class="bk-sys">${esc(x.sys)}</span><b>${f(x.lines.length)}</b> บรรทัด · ${f(qty)} ชิ้น` +
+      `${ds ? ` · ${esc(ds)}` : ''}<button class="bk-x" data-rm="${i}" aria-label="เอาไฟล์ ${esc(x.name)} ออก">✕</button></span>`;
+  }).join('');
+  let warn = '';
+  const other = {};
+  FILES.forEach((x) => Object.keys(x.dates || {}).forEach((d) => { if (d !== DATE) other[d] = (other[d] || 0) + x.dates[d]; }));
+  const od = Object.keys(other).sort();
+  if (od.length) warn += `<div class="bk-warn">มีบรรทัดของวันอื่นในไฟล์ (${od.map((d) => `${esc(dm(d))} ${f(other[d])} บรรทัด`).join(', ')}) จะลงเป็นวันที่ <b>${esc(dm(DATE))}</b> ทั้งหมด</div>`;
+  if (RES && RES.last && FILES.length && RES.last >= DATE) {
+    warn += `<div class="bk-warn">⚠️ สมุด Transaction มีแถวขายวันที่ <b>${esc(dm(RES.last))}</b> แล้ว — เช็คก่อนว่าไฟล์นี้ยังไม่ได้ตัดด้วยมือในชีตเดิม ระบบรู้แค่ชุดที่ตัดจากหน้านี้</div>`;
+  }
+  const whs = {};
+  FILES.forEach((x) => Object.keys(x.whs || {}).forEach((w) => { whs[w] = (whs[w] || 0) + x.whs[w]; }));
+  if (Object.keys(whs).length > 1) warn += `<div class="bk-warn">ไฟล์มีหลายคลัง: ${Object.keys(whs).map((w) => `${esc(w)} ${f(whs[w])}`).join(', ')} — ระบบตัดทุกบรรทัดจากคลังนี้</div>`;
+  $('inp').innerHTML = `
+    <div class="bk-top">
+      <span class="bk-h">ไฟล์ออเดอร์</span>
+      <button class="tx-opt p" id="pickBtn">📂 เลือกไฟล์</button>
+      ${FILES.length ? '<button class="bk-link" id="clearBtn">ล้างทั้งหมด</button>' : ''}
+      <span class="sp"></span>
+      <label for="cutDate">วันที่ตัด <input type="date" class="bk-date" id="cutDate" value="${esc(DATE)}"></label>
+      <input type="file" class="bk-file" id="fileIn" multiple accept=".xlsx,.xls,.csv">
+    </div>
+    ${FILES.length ? `<div class="bk-files">${files}</div>` : `<div class="bk-drop">ลากไฟล์ <b>InoutManageItems</b> (JST) กับ <b>อัพโหลดออเดอร์</b> (CRM) มาวางตรงนี้ ใส่พร้อมกันได้<br>หรือคัดลอกตารางจาก Excel แล้วกด <b>Ctrl+V</b></div>`}
+    ${warn}`;
+}
+
+/* ── ยอดรวม ────────────────────────────────────────────────────────────── */
+
+function renderSum() {
+  if (!FILES.length) { $('sum').innerHTML = ''; return; }
+  const skip = FILES.reduce((a, x) => a + (x.skipped || []).length, 0);
+  if (!CUT) {
+    $('sum').innerHTML = `<span>${f(MERGED.lines.length)} บรรทัดออเดอร์ · รอสต๊อกจากสมุด Transaction ก่อนถึงจะตัดได้</span>`;
+    return;
+  }
+  const t = CUT.total;
+  const chip = (k, cls, label, n, sub) => `<button class="bk-chip ${cls}${FILTER === k ? ' on' : ''}${n ? '' : ' zero'}" data-f="${k}">${label} <b>${f(n)}</b>${sub ? ` ${sub}` : ''}</button>`;
+  let html = chip('rows', 'c-ok', 'ลงสมุด', t.rows, 'แถว') +
+    chip('ok', 'c-ok', 'ตัดได้', t.ok, `บรรทัด · ${f(t.okQty)} ชิ้น`) +
+    chip('short', 'c-warn', 'ขาดของ', t.short, `บรรทัด · ${f(t.shortQty)} ชิ้น`) +
+    chip('done', '', 'ตัดแล้ว', t.done, 'บรรทัด') +
+    chip('nosku', 'c-red', 'ไม่รู้จัก SKU', t.nosku, 'บรรทัด');
+  if (skip) html += chip('skip', '', 'ข้าม', skip, 'แถวในไฟล์');
+  if (CUT.sup.length) html += chip('sup', 'c-red', 'สอง Supplier', CUT.sup.length, 'SKU');
+  if (MERGED.dup) html += `<span title="ระบบ + ออเดอร์ + SKU เดียวกันหลายบรรทัด รวมชิ้นเป็นบรรทัดเดียว">รวมบรรทัดซ้ำ ${f(MERGED.dup)}</span>`;
+  $('sum').innerHTML = html;
+}
+
+/* ── ปุ่มบันทึก ───────────────────────────────────────────────────────── */
+
+function renderAct() {
+  let html = '';
+  if (PENDING) {
+    html += `<button class="bk-save" id="saveBtn" ${!USER || BKBUSY ? 'disabled' : ''}>${BKBUSY ? esc(BKBUSY) : '↻ ส่งอีกครั้ง'}</button>` +
+      `<span>ชุดที่ส่งค้าง <b>${f(PENDING.copy.length)}</b> แถว · ${f(sumQty(PENDING.copy))} ชิ้น ยังไม่รู้ว่าถึงสมุดไหม ส่งอีกครั้งได้ ระบบไม่บันทึกซ้ำ</span>` +
+      `<button class="bk-link" id="dropPending">ทิ้งชุดนี้</button>`;
+  } else if (FILES.length) {
+    const t = CUT ? CUT.total : null;
+    const can = USER && t && t.ok && !BKBUSY && seenReady();
+    html += `<button class="bk-save" id="saveBtn" ${can ? '' : 'disabled'}>${BKBUSY ? esc(BKBUSY) : `💾 บันทึก + คัดลอก ${t ? f(t.rows) : 0} แถว`}</button>`;
+    if (t && t.ok) html += `<span><b>${f(t.okQty)}</b> ชิ้น · ${f(t.orders)} ออเดอร์ · วันที่ ${esc(dm(DATE))}</span>`;
+    if (!USER) html += '<span>เข้าสมุดด้วยชื่อกับรหัสก่อน (มุมขวาบน)</span>';
+    else if (!DOCS_OK && !BKBUSY) html += '<button class="bk-link" id="docsBtn">โหลดชุดที่บันทึกอีกครั้ง</button>';
+    else if (!seenReady() && !BKBUSY) html += '<button class="bk-link" id="seenBtn">เช็คออเดอร์ที่ตัดแล้ว</button>';
+    if (REF.wait.length) {
+      html += `<span title="บันทึกแล้วแต่ยังไม่เห็นแถวในสต๊อกที่ดึงมา หักออกจากกองให้แล้ว ถ้ายังไม่ได้วางในชีต ให้กดคัดลอกที่ตารางชุดด้านล่าง">⏳ ยังไม่เห็นในสมุด ${REF.wait.map((d) => esc(d.doc)).join(', ')} (หักให้แล้ว)</span>`;
+    }
+  }
+  if (LAST) {
+    html += `<div class="bk-msg ok">✅ บันทึก <b>${esc(LAST.doc)}</b> แล้ว · ${LAST.copied ? `คัดลอก ${f(LAST.copy.length)} แถวแล้ว` : 'คัดลอกอัตโนมัติไม่ได้ กดคัดลอกอีกครั้ง'}
+      <ol><li>เปิดชีต Transaction</li><li>คลิกช่อง <b>A</b> ของแถวว่างแรก</li><li>กด <b>Ctrl+V</b> แล้วเช็คว่าคอลัมน์ N เป็น ${esc(LAST.doc)}</li></ol>
+      <button class="bk-btn" data-copy="${esc(LAST.doc)}">📋 คัดลอกอีกครั้ง</button></div>`;
+  }
+  if (MSG) html += `<div class="bk-msg ${MSG.kind}">${MSG.html}</div>`;
+  $('act').innerHTML = html;
+}
+
+/* ── ตาราง ─────────────────────────────────────────────────────────────── */
+
+function table(head, rows, more) {
+  const n = rows.length;
+  return `<div class="bk-wrap"><table class="bk-xl"><thead><tr>${head.map((h) => `<th${h[1] ? ` class="${h[1]}"` : ''}>${h[0]}</th>`).join('')}</tr></thead>` +
+    `<tbody>${rows.slice(0, ROW_MAX).join('')}</tbody></table></div>` +
+    (n > ROW_MAX ? `<div class="bk-more">แสดง ${f(ROW_MAX)} จาก ${f(n)} แถว</div>` : '') + (more || '');
+}
+
+function pileText(p) { return `${p.loc} · LOT ${p.lot} · ${p.po}`; }
+
+function renderBody() {
+  const box = $('body');
+  if (!FILES.length) { box.innerHTML = ''; return; }
+  if (!CUT) {
+    box.innerHTML = `<div class="tx-empty">${RES ? '' : WmsSettings.txUrl() ? 'กำลังรอสต๊อกจากสมุด Transaction…' : 'ตั้ง Apps Script URL ของ Transaction ในหน้าตั้งค่าก่อน'}</div>`;
+    return;
+  }
+  const L = CUT.lines;
+  const no = (i) => `<td class="c-no num">${i + 1}</td>`;
+  if (FILTER === 'rows') {
+    if (!CUT.rows.length) { box.innerHTML = '<div class="tx-empty">ยังไม่มีบรรทัดที่ตัดได้</div>'; return; }
+    const sup = ST && ST.hasSup;
+    box.innerHTML = table([['#', 'num'], ['SKU'], ['ชื่อสินค้า'], ['LOT'], ['PO'], ['Location เบิก'], ['ชิ้น', 'num'], ['ออเดอร์', 'num']].concat(sup ? [['Supplier']] : []),
+      CUT.rows.map((r, i) => `<tr>${no(i)}<td class="c-sku">${esc(r.sku)}</td><td class="c-nm" title="${esc(r.name)}">${esc(r.name)}</td>` +
+        `<td>${esc(r.lot)}</td><td class="c-sub">${esc(r.po)}</td><td>${esc(r.loc)}</td><td class="num">${f(r.qty)}</td>` +
+        `<td class="num c-sub">${f(r.orders)}</td>${sup ? `<td class="c-sub">${esc(r.sup)}</td>` : ''}</tr>`));
+    return;
+  }
+  if (FILTER === 'ok') {
+    const list = L.filter((r) => r.st === 'ok');
+    box.innerHTML = table([['#', 'num'], ['ระบบ'], ['ออเดอร์'], ['SKU'], ['ชิ้น', 'num'], ['กองที่ตัด']],
+      list.map((r, i) => `<tr>${no(i)}<td class="c-sub">${esc(r.line.sys)}</td><td>${esc(r.line.order)}</td><td class="c-sku">${esc(r.line.sku)}</td>` +
+        `<td class="num">${f(r.line.qty)}</td><td class="c-sub">${r.take.map(([p, q]) => `${esc(pileText(p))} ×${f(q)}`).join(' · ')}</td></tr>`));
+    return;
+  }
+  if (FILTER === 'short') {
+    box.innerHTML = table([['#', 'num'], ['SKU'], ['ชื่อสินค้า'], ['ขาด', 'num'], ['บรรทัด', 'num'], ['เปิดเหลือ', 'num'], ['ของสำรองที่มี'], ['แปลงจาก']],
+      CUT.short.map((s, i) => `<tr>${no(i)}<td class="c-sku">${esc(s.sku)}</td><td class="c-nm" title="${esc(s.name)}">${esc(s.name)}</td>` +
+        `<td class="num c-warn">${f(s.need)}</td><td class="num">${f(s.lines)}</td><td class="num">${f(s.left)}</td>` +
+        `<td class="c-sub">${s.reserve.length ? s.reserve.map((p) => `${esc(pileText(p))} = ${f(p.qty)}`).join(' · ') : '<span class="c-red">ไม่มีของในคลัง</span>'}</td>` +
+        `<td class="c-sub">${s.conv.map((c) => `${esc(c.sku)} เปิด ${f(c.open)}`).join(' · ')}</td></tr>`),
+      '<div class="bk-more">บรรทัดที่ขาดของไม่ถูกตัดเลยทั้งบรรทัด เติมโลเปิด (หรือแปลงสินค้า) ในชีตเดิม ดึงสต๊อกใหม่ แล้ววางไฟล์เดิมอีกครั้ง ระบบตัดเฉพาะบรรทัดที่เหลือ</div>');
+    return;
+  }
+  if (FILTER === 'done' || FILTER === 'nosku') {
+    const list = L.filter((r) => r.st === FILTER);
+    box.innerHTML = table([['#', 'num'], ['ระบบ'], ['ออเดอร์'], ['SKU'], ['ชื่อในไฟล์'], ['ชิ้น', 'num'], [FILTER === 'done' ? 'เลขที่' : 'แถวในไฟล์']],
+      list.map((r, i) => `<tr>${no(i)}<td class="c-sub">${esc(r.line.sys)}</td><td>${esc(r.line.order)}</td><td class="c-sku">${esc(r.line.sku)}</td>` +
+        `<td class="c-nm" title="${esc(r.line.name)}">${esc(r.line.name)}</td><td class="num">${f(r.line.qty)}</td>` +
+        `<td class="c-sub">${FILTER === 'done' ? esc(r.doc) : `${esc(r.line.file)} · ${r.line.n}`}</td></tr>`),
+      FILTER === 'nosku' ? '<div class="bk-more">SKU ที่ไม่เคยมีในสมุด Transaction ตัดไม่ได้ เช็คว่าในระบบพิมพ์รหัสผิดหรือเป็นสินค้าใหม่ที่ยังไม่เคยรับเข้า</div>' : '');
+    return;
+  }
+  if (FILTER === 'skip') {
+    const rows = [];
+    FILES.forEach((x) => (x.skipped || []).forEach((s) => rows.push(`<tr>${no(rows.length)}<td>${esc(x.name)}</td><td class="num">${s.n}</td><td>${esc(s.why)}</td></tr>`)));
+    box.innerHTML = table([['#', 'num'], ['ไฟล์'], ['แถว', 'num'], ['เหตุผล']], rows);
+    return;
+  }
+  if (FILTER === 'sup') {
+    box.innerHTML = table([['#', 'num'], ['SKU'], ['ชื่อสินค้า'], ['Supplier ที่ตัด']],
+      CUT.sup.map((s, i) => `<tr>${no(i)}<td class="c-sku">${esc(s.sku)}</td><td class="c-nm">${esc(s.name)}</td>` +
+        `<td class="c-red">${Object.keys(s.sups).map((k) => `${esc(k)} ${f(s.sups[k])}`).join(' · ')}</td></tr>`),
+      '<div class="bk-more">SKU นี้มีโลเปิดของสอง Supplier พร้อมกัน (ผิดกติกา PO. Truck) ปิดโลของ Supplier หนึ่งในชีตเดิมก่อนดีกว่า</div>');
+  }
+}
+
+/* ── ชุดที่บันทึก ─────────────────────────────────────────────────────── */
+
+function renderDocs() {
+  if (!USER || !DOCS.length) { $('docs').innerHTML = ''; return; }
+  const done = new Set(REF.done.map((d) => d.doc)), wait = new Set(REF.wait.map((d) => d.doc));
+  const head = USER.role === HEAD_ROLE;
+  const rows = DOCS.map((d) => {
+    const v = d.status === 'ยกเลิก';
+    const st = v ? `<span class="c-sub" title="${esc(d.why)}">ยกเลิกโดย ${esc(d.voidBy)}</span>`
+      : done.has(d.doc) ? '<span class="c-ok">✓ วางแล้ว</span>' : wait.has(d.doc) ? '<span class="c-warn">⏳ ยังไม่เห็น</span>' : '<span class="c-sub">—</span>';
+    return `<tr${v ? ' class="r-void"' : ''}><td class="c-sku">${esc(d.doc)}</td><td>${esc(dm(d.date))}</td><td>${esc(d.who)}</td>` +
+      `<td class="c-sub">${esc(String(d.at).slice(5, 16))}</td><td class="num">${f(d.rows)}</td><td class="num">${f(d.qty)}</td><td class="num">${f(d.orders)}</td>` +
+      `<td>${st}</td><td class="c-act">${v ? '' : `<button class="bk-btn" data-copy="${esc(d.doc)}">📋 คัดลอก</button>${head ? ` <button class="bk-btn x" data-void="${esc(d.doc)}">ยกเลิก</button>` : ''}`}</td></tr>`;
+  });
+  $('docs').innerHTML = `<div class="bk-dh"><b>ชุดที่บันทึก</b> 3 วันล่าสุด · ในสมุด = เห็นแถวในสต๊อกที่ดึงมาแล้ว</div>` +
+    table([['เลขที่'], ['วันที่ตัด'], ['ผู้ลง'], ['บันทึกเมื่อ'], ['แถว', 'num'], ['ชิ้น', 'num'], ['ออเดอร์', 'num'], ['ในสมุด'], ['', 'c-act']], rows);
+}
+
+function render() {
+  renderSrc();
+  renderIn();
+  renderSum();
+  renderAct();
+  renderBody();
+  renderDocs();
+}
+
+/* ── ปุ่มและช่อง ─────────────────────────────────────────────────────────── */
+
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('button');
+  if (!t) return;
+  if (t.id === 'loadBtn') load(!!RES);
+  else if (t.id === 'bkUrlSave') {
+    const v = $('bkUrl').value.trim();
+    if (!WmsSettings.setBookUrl(v)) { BKERR = 'เก็บ URL ในเครื่องนี้ไม่ได้'; renderSrc(); return; }
+    SETURL = false; NAMES = null; BKERR = '';
+    logout();
+    loadNames();
+  }
+  else if (t.id === 'bkUrlCancel') { SETURL = false; renderSrc(); }
+  else if (t.id === 'bkSet') { SETURL = true; renderSrc(); }
+  else if (t.id === 'bkNames') loadNames();
+  else if (t.id === 'bkIn') login();
+  else if (t.id === 'bkOut') logout();
+  else if (t.id === 'pickBtn') $('fileIn').click();
+  else if (t.id === 'clearBtn') { FILES = []; DATE_AUTO = true; SEEN = {}; SEEN_FOR = ''; LAST = null; MSG = null; compute(); saveDraft(); render(); }
+  else if (t.dataset.rm !== undefined) { FILES.splice(+t.dataset.rm, 1); LAST = null; compute(); saveDraft(); render(); refreshSeen(); }
+  else if (t.dataset.f) { FILTER = t.dataset.f; renderSum(); renderBody(); }
+  else if (t.id === 'saveBtn') save();
+  else if (t.id === 'seenBtn') refreshSeen();
+  else if (t.id === 'docsBtn') refreshDocs().then(refreshSeen);
+  else if (t.id === 'dropPending') {
+    if (!confirm('ทิ้งชุดที่ส่งค้าง?\nถ้าชุดนี้ถึงสมุดแล้ว จะเห็นในตารางชุดที่บันทึกด้านล่าง กดคัดลอกจากตรงนั้นได้')) return;
+    PENDING = null; saveDraft(); MSG = null; render(); refreshDocs(); SEEN_FOR = ''; refreshSeen();
+  }
+  else if (t.dataset.copy) copyDoc(t.dataset.copy);
+  else if (t.dataset.void) voidDoc(t.dataset.void);
+});
+
+document.addEventListener('change', (e) => {
+  if (e.target.id === 'fileIn' && e.target.files.length) { readFiles([...e.target.files]); e.target.value = ''; }
+  else if (e.target.id === 'cutDate' && e.target.value) {
+    DATE = e.target.value; DATE_AUTO = false; LAST = null;
+    compute(); saveDraft(); render(); refreshSeen();
+  }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.id === 'bkPin') login();
+  if (e.key === 'Enter' && e.target.id === 'bkUrl') $('bkUrlSave').click();
+});
+
+/* วางตารางจาก Excel ได้ทุกที่ในหน้า ยกเว้นตอนพิมพ์อยู่ในช่อง */
+document.addEventListener('paste', (e) => {
+  if (WmsShared.typing()) return;
+  const text = e.clipboardData && e.clipboardData.getData('text');
+  if (!text || !text.trim()) return;
+  e.preventDefault();
+  const p = B.parseOrders(B.gridOf(text), { today: today() });
+  if (p.error) { MSG = { kind: 'bad', html: esc(p.error) }; renderAct(); return; }
+  const now = new Date();
+  addParsed(`วางจากคลิปบอร์ด ${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`, p);
+});
+
+/* ลากไฟล์มาวางที่ไหนก็ได้ในหน้า */
+let DRAG = 0;
+document.addEventListener('dragenter', (e) => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { DRAG++; $('inp').classList.add('bk-dragging'); } });
+document.addEventListener('dragleave', () => { if (DRAG && !--DRAG) $('inp').classList.remove('bk-dragging'); });
+document.addEventListener('dragover', (e) => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) e.preventDefault(); });
+document.addEventListener('drop', (e) => {
+  if (!e.dataTransfer || !e.dataTransfer.files.length) return;
+  e.preventDefault();
+  DRAG = 0;
+  $('inp').classList.remove('bk-dragging');
+  readFiles([...e.dataTransfer.files]);
+});
+
+/* ── ข้อมูลกลาง: มีคนดึงสต๊อกชุดใหม่ ขึ้นให้เอง ── */
+
+async function checkShared() {
+  const url = WmsSettings.txUrl();
+  if (!url || LOADING) return false;
+  const st = await WmsShared.status(url);
+  if (!WmsShared.knows(st, 'transaction')) return false;
+  const run = WmsShared.running(st, 'tx-fifo');
+  const had = !!WAIT;
+  WAIT = run;
+  if (run) { if (!had) renderSrc(); return true; }
+  if (!RES || !WmsShared.newer(st, 'tx-fifo', RES)) { if (had) renderSrc(); return false; }
+  if (WmsShared.typing() || BKBUSY) { if (had) renderSrc(); return true; }
+  await load(false, true);
+  return false;
+}
+
+compute();
+render();
+const WATCH = WmsShared.watch(checkShared);
+if (WmsSettings.txUrl()) load(false);
+if (bookUrl()) {
+  loadNames();
+  if (USER) { refreshDocs().then(refreshSeen); }
+}
+</script>
+</body>
+</html>

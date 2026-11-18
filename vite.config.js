@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { defineConfig } from 'vite';
-import { loadStocktake, fakeFifo, stocktakeMtime, loadStockApi, stockMtime } from './src/dev/fake-gas.js';
+import { loadStocktake, fakeFifo, stocktakeMtime, loadStockApi, stockMtime, loadBook, bookMtime } from './src/dev/fake-gas.js';
 
 /**
  * GitHub Pages serves public/summary/index.html at /summary/, but Vite's dev
@@ -35,6 +35,9 @@ function folderIndex() {
  *                      รหัสหัวหน้า demo-head รหัสคนนับ demo-count ข้อมูลหายเมื่อปิด dev server
  *   /__fake/stock      รัน apps-script/stock-api.gs ตัวจริงกับชีตสต๊อก TRcloud สมมติ (Stock, WH Loss, ราคาทุน) ที่เข้ากับสมุดสมมติ
  *                      ตั้ง URL สต๊อกในหน้าตั้งค่า = http://localhost:5173/__fake/stock
+ *   /__fake/book       รัน apps-script/book-api.gs ตัวจริงกับชีตในหน่วยความจำ (สมุดสต๊อก ตัดขาย)
+ *                      คนสมมติ: ทดลอง รหัส 1111 (ลงรายการ) · หัวหน้าทดลอง รหัส 9999 (หัวหน้า) ข้อมูลหายเมื่อปิด dev server
+ *                      ตั้งในหน้าสมุดสต๊อก ⚙️ = http://localhost:5173/__fake/book
  * ตั้งในหน้านับสต๊อกใหญ่: URL = http://localhost:5173/__fake/stocktake รหัส = demo-head
  * และ URL Transaction ในหน้าตั้งค่า = http://localhost:5173/__fake/tx
  */
@@ -45,6 +48,8 @@ function fakeGas() {
   let skAt = 0;
   const moves = [];
   let emptyLive = false;
+  let bk = null;
+  let bkAt = 0;
   return {
     name: 'fake-gas',
     apply: 'serve',
@@ -82,6 +87,21 @@ function fakeGas() {
           const mt = stockMtime();
           if (!sk || mt !== skAt) { sk = loadStockApi(); skAt = mt; }
           return send(sk.get(params));
+        }
+        if (pathname === '/__fake/book') {
+          /* แก้ .gs ระหว่างเปิด dev server = โหลดสคริปต์ใหม่กับไฟล์ชีตเดิม */
+          const mt = bookMtime();
+          if (!bk || mt !== bkAt) {
+            const old = bk;
+            bk = loadBook(old ? { ss: old.ss, files: old.files, props: old.props } : {});
+            if (!old) bk.users([['ทดลอง', '1111', 'ลงรายการ'], ['หัวหน้าทดลอง', '9999', 'หัวหน้า']]);
+            bkAt = mt;
+          }
+          if (req.method !== 'POST') return send(bk.get(params));
+          let body = '';
+          req.on('data', (c) => { body += c; });
+          req.on('end', () => send(bk.post(JSON.parse(body || '{}'))));
+          return;
         }
         if (pathname === '/__fake/stocktake') {
           /* แก้ .gs ระหว่างเปิด dev server = โหลดสคริปต์ใหม่กับชีตเดิม ไม่ต้องตั้งรอบใหม่ทุกครั้ง */

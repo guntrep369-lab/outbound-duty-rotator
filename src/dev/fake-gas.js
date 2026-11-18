@@ -7,6 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -60,16 +61,19 @@ export function fakeTab(name) {
   return tab;
 }
 
-export function fakeSpreadsheet(tz = 'Asia/Bangkok') {
+export function fakeSpreadsheet(tz = 'Asia/Bangkok', id = 'fake') {
   const tabs = [];
   return {
     tabs,
     tab: (name) => tabs.find((t) => t.name === name) || null,
     getSheetByName: (name) => tabs.find((t) => t.name === name) || null,
     insertSheet: (name) => { const t = fakeTab(name); tabs.push(t); return t; },
+    deleteSheet: (t) => { const i = tabs.indexOf(t); if (i >= 0) tabs.splice(i, 1); },
     getSheets: () => tabs.slice(),
     getSpreadsheetTimeZone: () => tz,
-    getUrl: () => 'https://docs.example/d/fake/edit',
+    getId: () => id,
+    getName: () => id,
+    getUrl: () => `https://docs.example/d/${id}/edit`,
   };
 }
 
@@ -139,6 +143,94 @@ export function loadStocktake({ head = 'head-secret', count = '', ss = fakeSprea
     props,
     get: (params) => parse(ctx.doGet({ parameter: params || {} })),
     post: (body) => parse(ctx.doPost({ postData: { contents: JSON.stringify(body) } })),
+  };
+}
+
+/* ── สมุดสต๊อก (apps-script/book-api.gs) ────────────────────────────────── */
+
+const BOOK_GS = path.resolve(HERE, '../../apps-script/book-api.gs');
+
+/** เวลาแก้ไฟล์ book-api.gs ล่าสุด dev server ใช้รู้ว่าต้องโหลดสคริปต์ใหม่ (ชีตเดิมอยู่ครบ) */
+export function bookMtime() {
+  try { return fs.statSync(BOOK_GS).mtimeMs; } catch (e) { return 0; }
+}
+
+/**
+ * โหลด book-api.gs ตัวจริงกับไฟล์ชีตในหน่วยความจำ
+ *   files = ไฟล์ที่สคริปต์สร้างเอง (SpreadsheetApp.create) เปิดคืนได้ด้วย openById เท่านั้น
+ *   openByUrl ไม่มีให้เรียก — สคริปต์นี้ต้องไม่เปิดไฟล์อื่นนอกจากที่ตัวเองสร้าง
+ *   now = ฟังก์ชันคืนเวลา (เทสต์ตั้งเวลาเองได้)
+ */
+export function loadBook({ ss = fakeSpreadsheet('Asia/Bangkok', 'book'), files = new Map(), props = new Map(), now, source } = {}) {
+  const src = source || fs.readFileSync(BOOK_GS, 'utf8');
+  const lock = { held: false, waits: 0, flushes: 0 };
+  const cache = new Map();
+  const opened = [];
+  let made = 0;
+  const ctx = {
+    SpreadsheetApp: {
+      getActiveSpreadsheet: () => ss,
+      flush: () => { lock.flushes++; },
+      create: (name) => {
+        const f = fakeSpreadsheet('Asia/Bangkok', `log${++made}`);
+        f.title = name;
+        f.insertSheet('Sheet1');
+        files.set(f.getId(), f);
+        return f;
+      },
+      openById: (id) => {
+        opened.push(id);
+        if (!files.has(id)) throw new Error(`ไม่มีไฟล์ ${id}`);
+        return files.get(id);
+      },
+    },
+    LockService: {
+      getScriptLock: () => ({
+        waitLock: () => { if (lock.held) throw new Error('ล็อกซ้อน'); lock.held = true; lock.waits++; },
+        releaseLock: () => { lock.held = false; },
+      }),
+    },
+    Utilities: {
+      formatDate,
+      getUuid: () => globalThis.crypto.randomUUID(),
+      DigestAlgorithm: { SHA_256: 'sha256' },
+      Charset: { UTF_8: 'utf8' },
+      /* Apps Script คืนไบต์แบบมีเครื่องหมาย (-128..127) */
+      computeDigest: (alg, s) => [...crypto.createHash(alg).update(String(s), 'utf8').digest()].map((b) => (b > 127 ? b - 256 : b)),
+    },
+    CacheService: {
+      getScriptCache: () => ({
+        get: (k) => { const x = cache.get(k); return x && x.until > ctx.now_() ? x.v : null; },
+        put: (k, v, ttl) => { cache.set(k, { v: String(v), until: ctx.now_() + (ttl || 600) * 1000 }); },
+        remove: (k) => { cache.delete(k); },
+      }),
+    },
+    PropertiesService: {
+      getScriptProperties: () => ({
+        getProperty: (k) => (props.has(k) ? props.get(k) : null),
+        setProperty: (k, v) => { props.set(k, String(v)); },
+        deleteProperty: (k) => { props.delete(k); },
+      }),
+    },
+    ContentService: {
+      MimeType: { JSON: 'json' },
+      createTextOutput: (s) => ({ text: s, setMimeType() { return this; } }),
+    },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(src, ctx);
+  if (now) ctx.now_ = now;
+  const parse = (o) => JSON.parse(o.text);
+  return {
+    ss, files, props, lock, cache, ctx, opened,
+    get: (params) => parse(ctx.doGet({ parameter: params || {} })),
+    post: (body) => parse(ctx.doPost({ postData: { contents: JSON.stringify(body) } })),
+    /** ใส่รายชื่อคนในแท็บผู้ใช้แบบที่หัวหน้าพิมพ์เอง [[ชื่อ, รหัส, สิทธิ์, ใช้งาน]] */
+    users: (list) => {
+      ctx.setup();
+      const t = ss.getSheetByName('ผู้ใช้');
+      t.getRange(2, 1, list.length, 4).setValues(list.map((u) => [u[0], u[1], u[2] || '', u[3] || '']));
+    },
   };
 }
 

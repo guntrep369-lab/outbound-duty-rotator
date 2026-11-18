@@ -27,6 +27,7 @@
     cutUrl:         'wms:cut:url',
     stUrl:          'wms:st:url',
     stToken:        'wms:st:token',
+    bookUrl:        'wms:book:url',
     me:             'wms:me',
   };
 
@@ -113,6 +114,13 @@
     setStToken: function (v) { return write(KEYS.stToken, v); },
 
     /**
+     * Apps Script URL ของสมุดสต๊อก (apps-script/book-api.gs ผูกกับไฟล์ชีตใหม่ WMS สมุดสต๊อก ไม่ใช่ไฟล์ Transaction)
+     * ใส่ในหน้าสมุดสต๊อก ทุกคนในทีม Inventory ใช้ URL เดียวกัน แต่ละคนเข้าด้วยชื่อกับรหัสของตัวเอง
+     */
+    bookUrl: function () { return read(KEYS.bookUrl); },
+    setBookUrl: function (v) { return write(KEYS.bookUrl, v); },
+
+    /**
      * ชื่อคนที่ใช้เครื่องนี้ — ติดไปกับไฟล์ที่บันทึกขึ้นส่วนกลาง
      *
      * ไม่ใช่การล็อกอินและไม่ได้กันอะไร แค่ให้เด็กคลังที่มาเลือกไฟล์รู้ว่าใครอัปมา
@@ -152,9 +160,11 @@
      * wms:st:out คือผลนับที่เครื่องนี้ยังส่งไม่ถึงชีต wms:st:dev คือรหัสเครื่อง wms:st:me คือทีม/ชื่อคนนับ
      * wms:st:cfg คือลิงก์นับที่เปิดในเครื่องนี้ wms:st:rd คือข้อมูลรอบที่โหลดไว้ใช้ตอนออฟไลน์
      * กู้ไปอีกเครื่องแล้วเครื่องนั้นจะส่งผลนับของคนอื่นซ้ำ หรือสองเครื่องใช้รหัสเดียวกันจนแยกไม่ออก
+     *
+     * wms:book:draft คือไฟล์ออเดอร์ที่วางค้างในหน้าตัดขายกับชุดที่ส่งค้าง กู้ไปอีกเครื่องแล้วอาจส่งชุดเดิมซ้ำจากสองเครื่อง
      */
     SKIP: ['wms:session', 'wms:orders', 'wms:stock', 'wms:transport:file', 'wms:me', 'wms:roster:sync', 'wms:tx:count:draft', 'wms:cut:result', 'wms:cut:ledger', 'wms:lotpo:ledger',
-      'wms:st:out', 'wms:st:dev', 'wms:st:me', 'wms:st:mine', 'wms:st:cfg', 'wms:st:rd'],
+      'wms:st:out', 'wms:st:dev', 'wms:st:me', 'wms:st:mine', 'wms:st:cfg', 'wms:st:rd', 'wms:book:draft'],
 
     /**
      * ไฟล์สำรองแยกเป็นสองชนิด ตามสิ่งที่ "หลุดแล้วเสียหายต่างกัน"
