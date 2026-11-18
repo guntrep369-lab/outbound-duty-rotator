@@ -46,6 +46,8 @@ export function fakeTab(name) {
         getValues: () => Array.from({ length: nr }, (_, i) => Array.from({ length: nc }, (_, j) => cell(r - 1 + i, c - 1 + j))),
         setValues: (vals) => {
           if (vals.length !== nr || vals.some((v) => v.length !== nc)) throw new Error('ขนาดข้อมูลไม่ตรงกับช่วง');
+          /* Google Sheet รับข้อความช่องละไม่เกิน 50,000 ตัวอักษร */
+          if (vals.some((v) => v.some((x) => typeof x === 'string' && x.length > 50000))) throw new Error('ข้อความในช่องเกิน 50000 ตัวอักษร');
           vals.forEach((v, i) => {
             grid[r - 1 + i] = grid[r - 1 + i] || [];
             v.forEach((x, j) => { grid[r - 1 + i][c - 1 + j] = x instanceof Date ? new Date(x.getTime()) : x; });

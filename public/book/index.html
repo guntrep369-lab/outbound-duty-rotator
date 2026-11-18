@@ -124,6 +124,31 @@
 .bk-btn:hover{border-color:var(--wms-primary);color:var(--wms-primary-dark)}
 .bk-btn.x:hover{border-color:#FCA5A5;background:#FEF2F2;color:#B91C1C}
 
+/* ── แท็บงาน ── */
+.bk-tabs{display:flex;gap:2px;padding:6px 20px 0;background:var(--wms-surface);border-bottom:1px solid var(--wms-border);overflow-x:auto}
+.bk-tab{padding:8px 14px;border:0;border-bottom:3px solid transparent;background:none;font-family:var(--wms-font);font-size:14px;
+  font-weight:600;color:var(--wms-muted);cursor:pointer;white-space:nowrap}
+.bk-tab:hover{color:var(--wms-text)}
+.bk-tab.on{color:var(--wms-primary-dark);border-bottom-color:var(--wms-primary)}
+.bk-tab .dot{display:inline-block;width:7px;height:7px;margin-left:5px;border-radius:50%;background:#F59E0B;vertical-align:middle}
+
+/* ── ตารางพิมพ์ (ย้าย / คืน) ── */
+.g-hint{font-size:12.5px}
+.g-tip{width:22px;height:22px;border-radius:999px;border:1px solid var(--wms-border2);background:var(--wms-surface);
+  font-size:12px;color:var(--wms-muted);cursor:help}
+.g-xl td.g-in{padding:0}
+.g-xl td.g-in input{display:block;width:100%;height:30px;padding:0 8px;border:0;background:transparent;font-family:var(--wms-font);
+  font-size:13px;color:var(--wms-text)}
+.g-xl td.g-in.num input{text-align:right}
+.g-xl td.g-in input::placeholder{color:var(--wms-faint)}
+.g-xl td.g-in input:focus{outline:2px solid var(--wms-primary);outline-offset:-2px;background:var(--wms-surface)}
+.g-xl td.g-out{min-width:220px;padding:4px 8px;white-space:normal;font-size:12.5px;line-height:1.5}
+.g-xl tr.r-bad td{background:#FEF2F2}
+.g-xl tr.r-warn td.g-out{background:#FFFBEB}
+.g-xl .c-nm{max-width:200px}
+.g-xl td.g-out .tk{white-space:nowrap}
+.g-open{padding:0 6px;border-radius:999px;background:#ECFDF5;color:#047857;font-size:11px;font-weight:700}
+
 /* ── ชุดที่บันทึก ── */
 .bk-docs{padding:0 20px 60px}
 .bk-docs:empty{display:none}
@@ -131,8 +156,9 @@
 .bk-dh b{font-size:14px;color:var(--wms-text)}
 
 @media (max-width:640px){
-  .tx-src,.bk-in,.tx-sum,.bk-act,.tx-body,.bk-docs{padding-left:16px;padding-right:16px}
-  .bk-field,.bk-date{font-size:16px}   /* ต่ำกว่า 16px iPhone จะซูมหน้าเองตอนแตะช่อง */
+  .tx-src,.bk-in,.tx-sum,.bk-act,.tx-body,.bk-docs,.bk-tabs{padding-left:16px;padding-right:16px}
+  .bk-field,.bk-date,.g-xl td.g-in input{font-size:16px}   /* ต่ำกว่า 16px iPhone จะซูมหน้าเองตอนแตะช่อง */
+  .g-hint{display:none}
 }
 </style>
 </head>
@@ -146,15 +172,17 @@
     <div class="mod-title">
       <div class="ic"><img src="../icons/notebook.png" alt="" width="38" height="38"></div>
       <div>
-        <h2>สมุดสต๊อก · ตัดขาย</h2>
+        <h2>สมุดสต๊อก</h2>
         <button type="button" class="mod-info" aria-expanded="false" aria-label="คำอธิบายหน้านี้">i</button>
-        <p>วางไฟล์ออเดอร์ JST / CRM ระบบเลือกกองให้ตาม FIFO กดบันทึกได้เลขที่เอกสารและคัดลอกแถวไปวางในชีต Transaction
-          ออเดอร์ที่ตัดแล้วจะไม่ถูกตัดซ้ำ ของไม่พอทั้งบรรทัดจะไม่ตัด รอตัดรอบหน้า · สคริปต์ของหน้านี้ไม่แตะชีต Transaction</p>
+        <p>ตัดขายจากไฟล์ออเดอร์ JST / CRM · ย้าย เติม QA · คืนของตามเลขออเดอร์ ระบบเลือกกอง LOT PO ให้จากสต๊อกในสมุด Transaction
+          กดบันทึกได้เลขที่เอกสารและคัดลอกแถวไปวางในชีต Transaction · ออเดอร์ที่ตัดแล้วไม่ถูกตัดซ้ำ คืนเกินที่ตัดไม่ได้
+          · สคริปต์ของหน้านี้ไม่แตะชีต Transaction</p>
       </div>
     </div>
   </div>
 
   <div class="tx-src" id="src"></div>
+  <div class="bk-tabs" id="tabs" role="tablist"></div>
   <div class="bk-in" id="inp"></div>
   <div class="tx-sum" id="sum"></div>
   <div class="bk-act" id="act"></div>
@@ -169,6 +197,7 @@
 <script src="../wms-gas.js"></script>
 <script src="../wms-shared.js"></script>
 <script src="../wms-book.js"></script>
+<script src="book-grid.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -180,6 +209,9 @@ const DRAFT = 'wms:book:draft';   // ไฟล์ที่วางค้าง 
 const ME = 'wms:book:me';         // คนที่เข้าสมุดในแท็บนี้ อยู่ใน sessionStorage ปิดแท็บแล้วต้องเข้าใหม่
 const ROW_MAX = 600;              // แถวที่วาดในตารางต่อครั้ง
 const HEAD_ROLE = 'หัวหน้า';
+const MODE_KEY = 'wms:book:draft:mode';   // แท็บที่เปิดค้าง (เครื่องนี้)
+const MODES = [['cut', 'ตัดขาย'], ['move', 'ย้าย / เติม / QA'], ['ret', 'คืนของ']];
+let MODE = (() => { try { const m = localStorage.getItem(MODE_KEY); return MODES.some((x) => x[0] === m) ? m : 'cut'; } catch (e) { return 'cut'; } })();
 
 let RES = null;      // คำตอบ tx-fifo (ข้อมูลกลาง)
 let ST = null;       // กองสต๊อกหลังหักชุดที่ยังไม่วาง
@@ -396,14 +428,14 @@ async function save() {
     if (!CUT || !CUT.total.ok || !seenReady()) return;
     if (RES && RES.last && RES.last >= DATE &&
         !confirm(`สมุด Transaction มีแถวขายวันที่ ${dm(RES.last)} แล้ว\nเช็คแล้วว่าไฟล์นี้ยังไม่ได้ตัดด้วยมือในชีตเดิม ใช่ไหม?`)) return;
-    p = { batch: B.uuid(), date: DATE, lines: B.cutLines(CUT), copy: B.copyRows(CUT, DATE), at: Date.now() };
+    p = { batch: B.uuid(), date: DATE, base: B.lastRow(RES), lines: B.cutLines(CUT), copy: B.copyRows(CUT, DATE), at: Date.now() };
     PENDING = p;
     saveDraft();
   }
   BKBUSY = 'กำลังบันทึก…'; MSG = null; render();
   let r;
   try {
-    r = await bookPost('bk-cut', { batch: p.batch, date: p.date, lines: p.lines, copy: p.copy });
+    r = await bookPost('bk-cut', { batch: p.batch, date: p.date, base: p.base || 0, lines: p.lines, copy: p.copy });
   } catch (e) {
     BKBUSY = '';
     MSG = { kind: 'warn', html: `ส่งไม่สำเร็จ (${esc(e.message)}) ยังไม่รู้ว่าถึงสมุดไหม กด <b>ส่งอีกครั้ง</b> ได้ ระบบไม่บันทึกซ้ำ` };
@@ -429,7 +461,7 @@ async function save() {
   p.lines.forEach((l) => { SEEN[`${l.sys}|${l.order}|${l.sku}`] = r.doc; });
   if (!DOCS.some((d) => d.doc === r.doc)) {
     DOCS.unshift({ doc: r.doc, type: 'ตัดขาย', date: p.date, who: USER.who, at: r.at || '', rows: p.copy.length, qty: sumQty(p.copy),
-      orders: new Set(p.lines.map((l) => l.sys + '|' + l.order)).size, status: '', copy: p.copy });
+      orders: new Set(p.lines.map((l) => l.sys + '|' + l.order)).size, status: '', base: p.base || 0, copy: p.copy });
   }
   LAST = { doc: r.doc, who: USER.who, copy: p.copy };
   PENDING = null;
@@ -451,16 +483,22 @@ async function copyDoc(doc) {
   renderAct();
 }
 
+const VOID_NOTE = { 'ตัดขาย': 'บรรทัดออเดอร์ของชุดนี้จะตัดใหม่ได้', 'คืน': 'ออเดอร์ของชุดนี้คืนใหม่ได้', 'ย้าย': 'กองจะกลับไปอยู่ที่โลเดิมในหน้านี้' };
+
 async function voidDoc(doc) {
   if (!USER || USER.role !== HEAD_ROLE) return;
-  const why = prompt(`ยกเลิก ${doc} ทั้งชุด\nบรรทัดออเดอร์ของชุดนี้จะตัดใหม่ได้ ต้องไปลบแถวที่คอลัมน์ N = ${doc} ในชีต Transaction เอง\n\nเหตุผล:`);
+  const d = DOCS.find((x) => x.doc === doc);
+  const type = d ? d.type : '';
+  const why = prompt(`ยกเลิก ${doc}${type ? ` (${type})` : ''} ทั้งชุด\n${VOID_NOTE[type] || ''} ต้องไปลบแถวที่คอลัมน์ N = ${doc} ในชีต Transaction เอง\n\nเหตุผล:`);
   if (!why || !why.trim()) return;
   BKBUSY = 'กำลังยกเลิก…'; render();
   try {
     const r = await bookPost('bk-void', { doc, why: why.trim() });
     if (r.error) throw new Error(r.error);
-    MSG = { kind: 'warn', html: `ยกเลิก <b>${esc(doc)}</b> แล้ว (${f(r.lines)} บรรทัดออเดอร์ตัดใหม่ได้) — <b>ไปลบแถวที่คอลัมน์ N = ${esc(doc)} ในชีต Transaction ด้วย</b>` };
+    const n = r.type === 'ตัดขาย' ? ` (${f(r.lines)} บรรทัดออเดอร์ตัดใหม่ได้)` : r.type === 'คืน' ? ` (${f(r.lines)} บรรทัดคืนใหม่ได้)` : '';
+    MSG = { kind: 'warn', html: `ยกเลิก <b>${esc(doc)}</b> แล้ว${n} — <b>ไปลบแถวที่คอลัมน์ N = ${esc(doc)} ในชีต Transaction ด้วย</b>` };
     if (LAST && LAST.doc === doc) LAST = null;
+    if (r.type === 'คืน') BookGrid.forget();
   } catch (e) {
     MSG = { kind: 'bad', html: `ยกเลิกไม่สำเร็จ: ${esc(e.message)}` };
   }
@@ -621,6 +659,7 @@ function renderSum() {
 /* ── ปุ่มบันทึก ───────────────────────────────────────────────────────── */
 
 function renderAct() {
+  if (MODE !== 'cut') { BookGrid.act(MODE); return; }
   let html = '';
   if (PENDING) {
     html += `<button class="bk-save" id="saveBtn" ${!USER || BKBUSY ? 'disabled' : ''}>${BKBUSY ? esc(BKBUSY) : '↻ ส่งอีกครั้ง'}</button>` +
@@ -634,9 +673,16 @@ function renderAct() {
     if (!USER) html += '<span>เข้าสมุดด้วยชื่อกับรหัสก่อน (มุมขวาบน)</span>';
     else if (!DOCS_OK && !BKBUSY) html += '<button class="bk-link" id="docsBtn">โหลดชุดที่บันทึกอีกครั้ง</button>';
     else if (!seenReady() && !BKBUSY) html += '<button class="bk-link" id="seenBtn">เช็คออเดอร์ที่ตัดแล้ว</button>';
-    if (REF.wait.length) {
-      html += `<span title="บันทึกแล้วแต่ยังไม่เห็นแถวในสต๊อกที่ดึงมา หักออกจากกองให้แล้ว ถ้ายังไม่ได้วางในชีต ให้กดคัดลอกที่ตารางชุดด้านล่าง">⏳ ยังไม่เห็นในสมุด ${REF.wait.map((d) => esc(d.doc)).join(', ')} (หักให้แล้ว)</span>`;
-    }
+  }
+  html += actTail();
+  $('act').innerHTML = html;
+}
+
+/** ท้ายแถบบันทึกของทุกแท็บ: ชุดที่ยังไม่เห็นในสมุด ชุดล่าสุดที่บันทึก ข้อความ */
+function actTail() {
+  let html = '';
+  if (REF.wait.length && USER) {
+    html += `<span title="บันทึกแล้วแต่ยังไม่เห็นแถวในสต๊อกที่ดึงมา คิดกองให้แล้วเหมือนวางแล้ว ถ้ายังไม่ได้วางในชีต ให้กดคัดลอกที่ตารางชุดด้านล่าง">⏳ ยังไม่เห็นในสมุด ${REF.wait.map((d) => esc(d.doc)).join(', ')} (คิดให้แล้ว)</span>`;
   }
   if (LAST) {
     html += `<div class="bk-msg ok">✅ บันทึก <b>${esc(LAST.doc)}</b> แล้ว · ${LAST.copied ? `คัดลอก ${f(LAST.copy.length)} แถวแล้ว` : 'คัดลอกอัตโนมัติไม่ได้ กดคัดลอกอีกครั้ง'}
@@ -644,7 +690,7 @@ function renderAct() {
       <button class="bk-btn" data-copy="${esc(LAST.doc)}">📋 คัดลอกอีกครั้ง</button></div>`;
   }
   if (MSG) html += `<div class="bk-msg ${MSG.kind}">${MSG.html}</div>`;
-  $('act').innerHTML = html;
+  return html;
 }
 
 /* ── ตาราง ─────────────────────────────────────────────────────────────── */
@@ -725,21 +771,42 @@ function renderDocs() {
     const v = d.status === 'ยกเลิก';
     const st = v ? `<span class="c-sub" title="${esc(d.why)}">ยกเลิกโดย ${esc(d.voidBy)}</span>`
       : done.has(d.doc) ? '<span class="c-ok">✓ วางแล้ว</span>' : wait.has(d.doc) ? '<span class="c-warn">⏳ ยังไม่เห็น</span>' : '<span class="c-sub">—</span>';
-    return `<tr${v ? ' class="r-void"' : ''}><td class="c-sku">${esc(d.doc)}</td><td>${esc(dm(d.date))}</td><td>${esc(d.who)}</td>` +
-      `<td class="c-sub">${esc(String(d.at).slice(5, 16))}</td><td class="num">${f(d.rows)}</td><td class="num">${f(d.qty)}</td><td class="num">${f(d.orders)}</td>` +
+    return `<tr${v ? ' class="r-void"' : ''}><td class="c-sku">${esc(d.doc)}</td><td>${esc(d.type)}</td><td>${esc(dm(d.date))}</td><td>${esc(d.who)}</td>` +
+      `<td class="c-sub">${esc(String(d.at).slice(5, 16))}</td><td class="num">${f(d.rows)}</td><td class="num">${f(d.qty)}</td><td class="num">${d.orders ? f(d.orders) : ''}</td>` +
       `<td>${st}</td><td class="c-act">${v ? '' : `<button class="bk-btn" data-copy="${esc(d.doc)}">📋 คัดลอก</button>${head ? ` <button class="bk-btn x" data-void="${esc(d.doc)}">ยกเลิก</button>` : ''}`}</td></tr>`;
   });
-  $('docs').innerHTML = `<div class="bk-dh"><b>ชุดที่บันทึก</b> 3 วันล่าสุด · ในสมุด = เห็นแถวในสต๊อกที่ดึงมาแล้ว</div>` +
-    table([['เลขที่'], ['วันที่ตัด'], ['ผู้ลง'], ['บันทึกเมื่อ'], ['แถว', 'num'], ['ชิ้น', 'num'], ['ออเดอร์', 'num'], ['ในสมุด'], ['', 'c-act']], rows);
+  $('docs').innerHTML = `<div class="bk-dh"><b>ชุดที่บันทึก</b> 3 วันล่าสุด ทุกแท็บ · ในสมุด = เห็นแถวในสต๊อกที่ดึงมาแล้ว</div>` +
+    table([['เลขที่'], ['ประเภท'], ['วันที่'], ['ผู้ลง'], ['บันทึกเมื่อ'], ['แถว', 'num'], ['ชิ้น', 'num'], ['ออเดอร์', 'num'], ['ในสมุด'], ['', 'c-act']], rows);
+}
+
+function renderTabs() {
+  $('tabs').innerHTML = MODES.map(([k, t]) => {
+    const dot = (k === 'cut' ? !!PENDING : BookGrid.pending(k)) ? '<span class="dot" title="มีชุดที่ส่งค้าง"></span>' : '';
+    return `<button class="bk-tab${MODE === k ? ' on' : ''}" role="tab" aria-selected="${MODE === k}" data-mode="${k}">${t}${dot}</button>`;
+  }).join('');
 }
 
 function render() {
   renderSrc();
-  renderIn();
-  renderSum();
-  renderAct();
-  renderBody();
+  renderTabs();
+  if (MODE === 'cut') {
+    renderIn();
+    renderSum();
+    renderAct();
+    renderBody();
+  } else {
+    BookGrid.render(MODE);
+  }
   renderDocs();
+}
+
+function setMode(m) {
+  if (m === MODE) return;
+  MODE = m;
+  try { localStorage.setItem(MODE_KEY, m); } catch (e) {}
+  LAST = null; MSG = null;
+  $('body').innerHTML = '';
+  render();
 }
 
 /* ── ปุ่มและช่อง ─────────────────────────────────────────────────────────── */
@@ -747,7 +814,8 @@ function render() {
 document.addEventListener('click', (e) => {
   const t = e.target.closest('button');
   if (!t) return;
-  if (t.id === 'loadBtn') load(!!RES);
+  if (t.dataset.mode) setMode(t.dataset.mode);
+  else if (t.id === 'loadBtn') load(!!RES);
   else if (t.id === 'bkUrlSave') {
     const v = $('bkUrl').value.trim();
     if (!WmsSettings.setBookUrl(v)) { BKERR = 'เก็บ URL ในเครื่องนี้ไม่ได้'; renderSrc(); return; }
@@ -794,6 +862,7 @@ document.addEventListener('paste', (e) => {
   const text = e.clipboardData && e.clipboardData.getData('text');
   if (!text || !text.trim()) return;
   e.preventDefault();
+  if (MODE !== 'cut') { BookGrid.pasteAppend(MODE, text); return; }
   const p = B.parseOrders(B.gridOf(text), { today: today() });
   if (p.error) { MSG = { kind: 'bad', html: esc(p.error) }; renderAct(); return; }
   const now = new Date();
@@ -810,6 +879,7 @@ document.addEventListener('drop', (e) => {
   e.preventDefault();
   DRAG = 0;
   $('inp').classList.remove('bk-dragging');
+  if (MODE !== 'cut') setMode('cut');   // ไฟล์ออเดอร์ใช้กับแท็บตัดขายเท่านั้น
   readFiles([...e.dataTransfer.files]);
 });
 

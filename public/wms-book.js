@@ -1,5 +1,5 @@
 /**
- * @file wms-book.js — สมุดสต๊อก ขั้น 1: ตัดขายจากไฟล์ออเดอร์ (ตรรกะล้วน ไม่แตะหน้าจอ)
+ * @file wms-book.js — สมุดสต๊อก ขั้น 1–2: ตัดขายจากไฟล์ออเดอร์ ย้าย/เติม/QA และคืนของ (ตรรกะล้วน ไม่แตะหน้าจอ)
  *
  * ไฟล์ export สองระบบ
  *   JST  InoutManageItems….xlsx  หมายเลขออเดอร์ภายใน + รหัสสินค้า + จำนวนสินค้า + วันที่ออกจากคลังสินค้า
@@ -21,7 +21,7 @@
   'use strict';
 
   /* ต้องตรงกับ VERSION ใน apps-script/book-api.gs */
-  var API_V = 1;
+  var API_V = 2;
 
   function up(v) { return String(v == null ? '' : v).trim().toUpperCase(); }
   function round(n) { return Math.round(n * 1000) / 1000; }
@@ -55,7 +55,7 @@
     JST: {
       need: { order: ['หมายเลขออเดอร์ภายใน'], sku: ['รหัสสินค้า'], qty: ['จำนวนสินค้า'] },
       opt: { ref: ['หมายเลขคำสั่งซื้อออนไลน์'], status: ['สถานะ'], out: ['วันที่ออกจากคลังสินค้า'], name: ['ชื่อสินค้า'],
-        carrier: ['บริษัทขนส่ง'], wh: ['คลัง'] },
+        carrier: ['บริษัทขนส่ง'], wh: ['คลัง'], track: ['หมายเลขพัสดุ', 'เลขพัสดุ'] },
     },
     CRM: {
       need: { order: ['Order ID'], sku: ['SKU'], qty: ['จำนวน'] },
@@ -151,6 +151,7 @@
         sys: h.sys, order: order, ref: c.ref >= 0 ? orderOf(row[c.ref]) : '', sku: sku, qty: qty, date: date, at: at, n: n,
         name: c.name >= 0 ? cellText(row[c.name]) : [cellText(row[c.brand]), cellText(row[c.size])].filter(Boolean).join(' '),
         carrier: c.carrier >= 0 ? cellText(row[c.carrier]) : '',
+        track: c.track >= 0 ? orderOf(row[c.track]) : '',
       });
     }
     return { sys: h.sys, cols: c, head: h.row, lines: lines, skipped: skipped, dates: dates, whs: whs };
@@ -172,7 +173,7 @@
         var e = byKey[k];
         if (e) { e.qty = round(e.qty + l.qty); e.dup++; dupLines++; return; }
         e = byKey[k] = { sys: l.sys, order: l.order, ref: l.ref, sku: l.sku, qty: l.qty, date: l.date, at: l.at, n: l.n,
-          name: l.name, carrier: l.carrier, file: f.name || '', dup: 0, key: k };
+          name: l.name, carrier: l.carrier, track: l.track || '', file: f.name || '', dup: 0, key: k };
         list.push(e);
       });
     });
@@ -237,25 +238,30 @@
       apply(s, up(e[2]), idxOf(poIdx, pos, e[3]), from, to, +e[6] || 0, t, String(e[9] || '').trim() === 'เปิด', '');
     });
 
-    var open = {}, reserve = {};
+    var open = {}, reserve = {}, all = {};
     Object.keys(bal).forEach(function (k) {
       var q = round(bal[k]);
       if (!(q > 0)) return;
       var p = k.split('|'), s = +p[0], loc = locs[+p[3]], po = pos[+p[2]];
       var L = up(loc);
-      if (/^(QA|IQA)\b/.test(L)) return;
       var pile = {
         s: s, lot: p[1], po: po, loc: loc, qty: q, open: !!isOpen[k], first: first[s + '|' + p[1] + '|' + p[2]] || '',
         sup: supMap[basePo(po)] || '', id: k,
       };
+      (all[s] || (all[s] = [])).push(pile);
+      if (/^(QA|IQA)\b/.test(L)) return;
       if (pile.open && cuttable(loc)) (open[s] || (open[s] = [])).push(pile);
       else if (!pile.open) (reserve[s] || (reserve[s] = [])).push(pile);
     });
     Object.keys(open).forEach(function (s) { open[s].sort(fifo); });
     Object.keys(reserve).forEach(function (s) { reserve[s].sort(fifo); });
+    Object.keys(all).forEach(function (s) { all[s].sort(fifo); });
+    var knownLoc = {};
+    (res.locs || []).forEach(function (l) { knownLoc[up(l)] = 1; });
 
     return {
-      skus: skus, open: open, reserve: reserve, unknown: unknown,
+      skus: skus, open: open, reserve: reserve, all: all, unknown: unknown,
+      known: function (loc) { return !!knownLoc[up(loc)]; },
       code: function (sku) { var i = byCode[up(sku)]; return i === undefined ? -1 : i; },
       supOf: function (po) { return supMap[basePo(po)] || ''; },
       hasSup: Object.keys(supMap).length > 0,
@@ -415,7 +421,7 @@
   function cutLines(cut) {
     return cut.lines.filter(function (r) { return r.st === 'ok'; }).map(function (r) {
       return {
-        sys: r.line.sys, order: r.line.order, ref: r.line.ref || '', sku: r.line.sku, qty: r.line.qty,
+        sys: r.line.sys, order: r.line.order, ref: r.line.ref || '', track: r.line.track || '', sku: r.line.sku, qty: r.line.qty,
         piles: r.take.map(function (t) { return [t[0].loc, t[0].lot, String(t[0].po), t[1]]; }),
       };
     });
@@ -433,6 +439,256 @@
     }).join('\n');
   }
 
+  /* ── ย้าย / เติม / QA ──────────────────────────────────────────────── */
+
+  /** โลที่ของวางรอ ไม่เปิดขาย: ชั้นวางสูง R, QA IQA RIB, ทางเดิน, หน้าโล */
+  function shelfOnly(loc) { return /^(R|QA|IQA|RIB|WALKWAY|หน้า)/.test(up(loc)); }
+  function qaLoc(loc) { return /^(QA|IQA|RIB)\b/.test(up(loc)); }
+  /** R ตามด้วยเลข = ชั้นวางสูงที่เก็บของสำรอง */
+  function rackLoc(loc) { return /^R\d/.test(up(loc)); }
+  /** Note ของแถวย้ายแบบที่ชีตเดิมใช้: เกี่ยวกับ QA IQA RIB = โอนย้าย QA */
+  function moveNote(from, to) { return qaLoc(from) || qaLoc(to) ? 'โอนย้าย QA' : 'โอนย้าย'; }
+  /** ช่องสถานะที่คนพิมพ์: ว่าง = ตามโลปลายทาง (R QA RIB ทางเดิน ไม่เปิด ที่เหลือเปิด) · เปิด · - ไม่ ปิด = ไม่เปิด */
+  function statusOf(v, to) {
+    var s = cellText(v);
+    if (/^(เปิด|open|y|1)$/i.test(s)) return 'เปิด';
+    if (/^(-|ไม่|ปิด|no|n|0)$/i.test(s)) return '';
+    return shelfOnly(to) ? '' : 'เปิด';
+  }
+  /** โลที่ SKU นี้เปิดขายอยู่ (โลพื้น/ชั้นวางก่อน) ไม่มีคืน '' */
+  function openLoc(st, s) {
+    var list = st.open[s] || [];
+    var p = list.filter(function (x) { return pickZone(x.loc); })[0] || list[0];
+    return p ? up(p.loc) : '';
+  }
+  /** Supplier ของกองที่เปิดขายอยู่และยังมีของ */
+  function openSups(st, s, avail) {
+    var out = [];
+    (st.open[s] || []).forEach(function (p) { if (p.sup && avail(p) > 1e-9 && out.indexOf(p.sup) < 0) out.push(p.sup); });
+    return out;
+  }
+  function uniq(list) { return list.filter(function (x, k, a) { return x && a.indexOf(x) === k; }); }
+
+  /**
+   * แถวที่คนพิมพ์ [{sku, from, to, qty, lot, po, status}] → แถวลงสมุด
+   * จากว่าง = เติมจากของสำรองที่ R กองเก่าสุด Supplier เดียวกับที่เปิดขายอยู่ก่อน · ไปว่าง = โลที่ SKU นี้เปิดขายอยู่
+   * LOT / PO ว่าง = เอากองที่โลต้นทางตามลำดับ FIFO แบ่งหลายกองได้
+   * แถวก่อนหน้าในชุดเดียวกันหักกองไปแล้ว แถวหลังย้ายต่อจากโลที่เพิ่งย้ายเข้าได้
+   * แถวผิดแถวเดียวก็บันทึกไม่ได้ทั้งชุด (หน้าเว็บบอกให้แก้หรือลบแถว)
+   * @returns {{lines:[{n, in, st:'ok'|'bad'|'blank', why, warn:[], s, from, to, take:[row]}], rows:[row], total}}
+   *   row = {n, s, sku, long, name, lot, po, from, to, qty, status, note, sup}
+   */
+  function planMoves(input, st) {
+    var left = {}, virt = {}, lines = [], rows = [];
+    function avail(p) { return left[p.id] === undefined ? p.qty : left[p.id]; }
+    function at(s, loc) {
+      var L = up(loc);
+      var list = (st.all[s] || []).filter(function (p) { return up(p.loc) === L; });
+      Object.keys(virt).forEach(function (k) { var v = virt[k]; if (v.s === s && up(v.loc) === L) list.push(v); });
+      return list;
+    }
+    (input || []).forEach(function (r, i) {
+      r = r || {};
+      var o = { n: i + 1, in: r, st: 'ok', why: '', warn: [], s: -1, from: up(r.from), to: up(r.to), take: [] };
+      lines.push(o);
+      function bad(why) { o.st = 'bad'; o.why = why; }
+      var sku = up(r.sku), qty = qtyOf(r.qty);
+      if (!sku && !o.from && !o.to && !cellText(r.qty) && !cellText(r.lot) && !cellText(r.po)) { o.st = 'blank'; return; }
+      if (!sku) return bad('ใส่ SKU');
+      var s = st.code(sku);
+      o.s = s;
+      if (s < 0) return bad('ไม่รู้จัก SKU นี้');
+      if (!(qty > 0)) return bad('ใส่ชิ้น');
+      if (!o.to) {
+        o.to = openLoc(st, s);
+        o.autoTo = true;
+        if (!o.to) return bad('SKU นี้ไม่มีโลเปิดขาย ใส่โลปลายทาง');
+      }
+      var lot = up(r.lot), po = up(r.po), cand;
+      if (o.from) {
+        if (o.from === o.to) return bad('ต้นทางกับปลายทางเป็นที่เดียวกัน');
+        cand = at(s, o.from);
+      } else {
+        o.autoFrom = true;
+        cand = (st.reserve[s] || []).filter(function (p) { return rackLoc(p.loc) && up(p.loc) !== o.to; });
+        var sups = openSups(st, s, avail);
+        if (sups.length) {
+          var same = function (p) { return !p.sup || sups.indexOf(p.sup) >= 0; };
+          cand = cand.filter(same).concat(cand.filter(function (p) { return !same(p); }));
+        }
+      }
+      if (lot) cand = cand.filter(function (p) { return up(p.lot) === lot; });
+      if (po) cand = cand.filter(function (p) { return up(p.po) === po; });
+      var have = 0;
+      cand.forEach(function (p) { have = round(have + avail(p)); });
+      if (have < qty) {
+        var what = [lot && 'LOT ' + lot, po].filter(Boolean).join(' ');
+        return bad(o.from ? 'ที่ ' + o.from + (what ? ' (' + what + ')' : '') + ' มี ' + have + ' ชิ้น'
+          : have ? 'ของสำรองที่ R' + (what ? ' (' + what + ')' : '') + ' มี ' + have + ' ชิ้น' : 'ไม่มีของสำรองที่ R ใส่โลต้นทาง');
+      }
+      var status = statusOf(r.status, o.to), need = qty, sk = st.skus[s] || [];
+      for (var j = 0; j < cand.length && need > 1e-9; j++) {
+        var p = cand[j], can = avail(p);
+        if (!(can > 1e-9)) continue;
+        var q = Math.min(can, need);
+        left[p.id] = round(can - q);
+        need = round(need - q);
+        var from = up(p.loc);
+        var row = { n: o.n, s: s, sku: sk[0] || sku, long: sk[1] || sku, name: sk[2] || '', lot: String(p.lot), po: String(p.po),
+          from: from, to: o.to, qty: q, status: status, note: moveNote(from, o.to), sup: p.sup || '' };
+        o.take.push(row);
+        rows.push(row);
+        var vk = s + '|' + p.lot + '|' + p.po + '|' + o.to;
+        var v = virt[vk] || (virt[vk] = { s: s, lot: p.lot, po: p.po, loc: o.to, qty: 0, open: status === 'เปิด', first: p.first, sup: p.sup, id: 'v|' + vk });
+        v.qty = round(v.qty + q);
+        if (left[v.id] !== undefined) left[v.id] = round(left[v.id] + q);
+      }
+      if (!o.from) o.from = uniq(o.take.map(function (t) { return t.from; })).join(' + ');
+      if (!st.known(o.to)) o.warn.push('โล ' + o.to + ' ไม่เคยมีในสมุด เช็คว่าพิมพ์ถูก');
+      if (status === 'เปิด') {
+        var sups2 = uniq(openSups(st, s, avail).concat(o.take.map(function (t) { return t.sup; })));
+        if (sups2.length > 1) o.warn.push('เปิดสอง Supplier พร้อมกัน (' + sups2.join(' / ') + ')');
+      }
+    });
+    var total = { rows: rows.length, qty: 0, ok: 0, bad: 0, warn: 0, lines: 0 };
+    rows.forEach(function (r) { total.qty = round(total.qty + r.qty); });
+    lines.forEach(function (o) {
+      if (o.st === 'blank') return;
+      total.lines++;
+      if (o.st === 'bad') total.bad++; else total.ok++;
+      if (o.warn.length) total.warn++;
+    });
+    return { lines: lines, rows: rows, total: total };
+  }
+
+  /** แผนย้าย → แถวที่ book-api.gs เก็บ [SKU, SKU เต็ม, LOT, PO, โลเบิก, โลรับ, ชิ้น, เบิก, Note, Status] */
+  function moveCopy(plan) {
+    return plan.rows.map(function (r) { return [r.sku, r.long, r.lot, r.po, r.from, r.to, r.qty, 'เบิก', r.note, r.status]; });
+  }
+
+  /* ── คืนของ ─────────────────────────────────────────────────────────── */
+
+  /** Note ของแถวคืน: หมายเหตุขึ้นต้น M/E ใช้ตามนั้น (M/E-00304) ที่เหลือ RETURN */
+  function returnNote(v) {
+    var s = up(v).replace(/\s+/g, '');
+    return /^M\/E/.test(s) ? s.slice(0, 30) : 'RETURN';
+  }
+
+  /**
+   * แถวที่คนพิมพ์ [{key (เลขออเดอร์ / เลขอ้างอิง / เลขพัสดุ), sku, qty, to, note}] × ผลหาออเดอร์ → แถวลงสมุด
+   * look = { found: { เลข: [บรรทัดที่ตัด] }, miss: { เลข: 1 } } จาก bk-find (เลขตัวพิมพ์ใหญ่)
+   * เจอในบันทึกตัด: คืนเข้า LOT / PO เดิมของกองที่ตัด (ไล่จากกองท้าย) ไม่ใส่ SKU = ทั้งออเดอร์ ไม่ใส่ชิ้น = ที่เหลือยังไม่คืน
+   * ไม่เจอ (ออเดอร์ที่ตัดด้วยมือ) หรือไม่มีเลข: ต้องใส่ SKU กับชิ้น คืนเป็น LOT 0 / PO 0 แบบเดิม
+   * ไปว่าง = โลที่ SKU นี้เปิดขายอยู่ · คืนเกินที่ตัด (รวมที่คืนไปแล้วและแถวก่อนหน้าในชุด) = แถวผิด
+   * @returns {{lines:[{n, in, st:'ok'|'bad'|'wait'|'blank', why, warn, key, take:[row]}], rows:[row], save:[line], total}}
+   */
+  function planReturns(input, look, st) {
+    look = look || {};
+    var found = look.found || {}, miss = look.miss || {};
+    var used = {}, lines = [], rows = [], save = [];
+    (input || []).forEach(function (r, i) {
+      r = r || {};
+      var o = { n: i + 1, in: r, st: 'ok', why: '', warn: [], key: up(r.key), take: [] };
+      lines.push(o);
+      function bad(why) { o.st = 'bad'; o.why = why; }
+      var sku = up(r.sku), hasQty = !!cellText(r.qty), qty = hasQty ? qtyOf(r.qty) : null, note = returnNote(r.note);
+      if (!o.key && !sku && !hasQty && !cellText(r.to) && !cellText(r.note)) { o.st = 'blank'; return; }
+      if (hasQty && !(qty > 0)) return bad('ชิ้นต้องเป็นตัวเลขมากกว่า 0');
+      var s0 = sku ? st.code(sku) : -1;
+      if (sku && s0 < 0) return bad('ไม่รู้จัก SKU นี้');
+      var hits = null;
+      if (o.key) {
+        if (found[o.key]) hits = found[o.key];
+        else if (!miss[o.key]) { o.st = 'wait'; o.why = 'ยังไม่ได้หาออเดอร์นี้'; return; }
+      }
+      function dest(s) { return up(r.to) || openLoc(st, s); }
+      function row(s, lot, po, to, q, extra) {
+        var sk = st.skus[s] || [];
+        return { n: o.n, s: s, sku: sk[0] || sku, long: sk[1] || sku, name: sk[2] || '', lot: String(lot), po: String(po), from: '', to: to,
+          qty: q, status: statusOf('', to), note: note, order: extra.order || '', sys: extra.sys || '', doc: extra.doc || '' };
+      }
+      if (!hits) {
+        if (!sku) return bad(o.key ? 'ไม่พบออเดอร์นี้ในบันทึกตัด ใส่ SKU กับชิ้น คืนเป็น LOT 0' : 'ใส่เลขออเดอร์ / เลขพัสดุ หรือ SKU');
+        if (!hasQty) return bad('ใส่ชิ้น');
+        var to0 = dest(s0);
+        if (!to0) return bad('SKU นี้ไม่มีโลเปิดขาย ใส่โลที่วาง');
+        var r0 = row(s0, '0', '0', to0, qty, { order: o.key });
+        o.take.push(r0);
+        rows.push(r0);
+        o.lot0 = true;
+        if (o.key) o.warn.push('ไม่พบในบันทึกตัด คืนเป็น LOT 0 / PO 0');
+        save.push({ sys: '', order: o.key, ref: '', track: '', sku: r0.long, qty: qty, cut: '', cutQty: 0, piles: [[to0, '0', '0', qty]] });
+        return;
+      }
+      if (sku) hits = hits.filter(function (h) { return st.code(h.sku) === s0; });
+      if (!hits.length) return bad('ออเดอร์นี้ไม่มี SKU ' + sku);
+      if (hasQty && hits.length > 1) return bad('ออเดอร์นี้มี ' + hits.length + ' SKU ใส่ SKU ด้วย');
+      var plan = [], full = [];
+      for (var a = 0; a < hits.length; a++) {
+        var h = hits[a];
+        var k = h.sys + '|' + h.order + '|' + h.sku;
+        var done = round((h.back || 0) + (used[k] || 0));
+        var can = round(h.qty - done);
+        if (hasQty && qty > can + 1e-9) return bad('คืนเกินที่ตัด (ตัด ' + h.qty + ' คืนแล้ว ' + done + ')');
+        var q = hasQty ? qty : can;
+        if (!(q > 1e-9)) { full.push(h); continue; }
+        var s = st.code(h.sku);
+        if (s < 0) return bad('ไม่รู้จัก SKU ' + h.sku);
+        var to = dest(s);
+        if (!to) return bad('SKU ' + h.sku + ' ไม่มีโลเปิดขาย ใส่โลที่วาง');
+        /* คืนเข้ากองที่ตัดไล่จากกองท้าย ข้ามชิ้นที่คืนไปแล้ว */
+        var skip = done, need = q, piles = [];
+        for (var j = (h.piles || []).length - 1; j >= 0 && need > 1e-9; j--) {
+          var p = h.piles[j], pq = +p[3] || 0;
+          if (skip >= pq - 1e-9) { skip = round(skip - pq); continue; }
+          var take = Math.min(round(pq - skip), need);
+          skip = 0;
+          need = round(need - take);
+          piles.push([to, String(p[1]), String(p[2]), take]);
+        }
+        if (need > 1e-9) piles.push([to, '0', '0', need]);
+        plan.push({ k: k, q: q, h: h, s: s, to: to, piles: piles });
+      }
+      if (!plan.length) return bad('คืนครบแล้ว (ตัด ' + full.map(function (x) { return x.qty; }).join('+') + ' ชิ้น)');
+      if (full.length) o.warn.push('ข้าม ' + full.length + ' SKU ที่คืนครบแล้ว');
+      plan.forEach(function (x) {
+        used[x.k] = round((used[x.k] || 0) + x.q);
+        x.piles.forEach(function (p) {
+          var rr = row(x.s, p[1], p[2], x.to, p[3], { order: x.h.order, sys: x.h.sys, doc: x.h.doc });
+          o.take.push(rr);
+          rows.push(rr);
+        });
+        save.push({ sys: x.h.sys, order: x.h.order, ref: x.h.ref || '', track: x.h.track || '', sku: x.h.sku, qty: x.q, cut: x.h.doc,
+          cutQty: x.h.qty, piles: x.piles });
+      });
+    });
+    var total = { rows: rows.length, qty: 0, lines: 0, ok: 0, bad: 0, wait: 0, lot0: 0, warn: 0 };
+    rows.forEach(function (r) { total.qty = round(total.qty + r.qty); });
+    lines.forEach(function (o) {
+      if (o.st === 'blank') return;
+      total.lines++;
+      total[o.st]++;
+      if (o.lot0) total.lot0++;
+      if (o.warn.length) total.warn++;
+    });
+    return { lines: lines, rows: rows, save: save, total: total };
+  }
+
+  /** แผนคืน → แถวที่ book-api.gs เก็บ [SKU, SKU เต็ม, LOT, PO, '', โลรับ, ชิ้น, รับ, RETURN | M/E-…, Status] */
+  function returnCopy(plan) {
+    return plan.rows.map(function (r) { return [r.sku, r.long, r.lot, r.po, '', r.to, r.qty, 'รับ', r.note, r.status]; });
+  }
+
+  /** เลขที่ต้องหาในบันทึกตัด (ยังไม่เคยหา) */
+  function lookKeys(input, look) {
+    var found = (look && look.found) || {}, miss = (look && look.miss) || {}, out = [];
+    (input || []).forEach(function (r) {
+      var k = up(r && r.key);
+      if (k && !found[k] && !miss[k] && out.indexOf(k) < 0) out.push(k);
+    });
+    return out;
+  }
+
   /* ── ชุดที่บันทึกแล้ว ─────────────────────────────────────────────────── */
 
   /** เวลาในชีต 'yyyy-MM-dd HH:mm:ss' (เวลาไทย) → มิลลิวินาที */
@@ -442,10 +698,27 @@
     return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)) - 7 * 3600000;
   }
 
+  /** แถวสุดท้ายของสมุดในคำตอบ tx-fifo ส่งไปเก็บกับชุดตอนบันทึก */
+  function lastRow(res) {
+    var top = 0;
+    ((res && res.rows) || []).forEach(function (x) { if (x[0] > top) top = x[0]; });
+    return top;
+  }
+
+  var TYPE_OF = { 'รับ': 0, 'เบิก': 1, 'ขาย': 2 };
+  /* แถวในชีตเดิมที่อาจถูกลบหลังกดบันทึก แถวที่วางยอมให้อยู่สูงกว่าแถวตอนบันทึกได้เท่านี้ */
+  var BASE_SLACK = 200;
+
+  function rowKey(t, s, lot, po, from, to, qty, day) {
+    return [t, s, up(lot), up(po), up(from), up(to), +qty, String(day || '')].join('|');
+  }
+
   /**
-   * ชุดที่บันทึกแล้ว วางในชีตเดิมแล้วหรือยัง ดูจากแถวขายในสต๊อกที่ดึงมา (tx-fifo)
+   * ชุดที่บันทึกแล้ว วางในชีตเดิมแล้วหรือยัง ดูจากแถวในสต๊อกที่ดึงมา (tx-fifo)
    * ไม่ดูจากเวลา เพราะไฟล์สำเนาของ tx-api ดึงจากชีตจริงช้ากว่าจริงได้ เวลาดึงสต๊อกจึงไม่ได้บอกว่าเห็นแถวถึงไหน
-   * ชุดที่ทุกแถวเจอเป็นแถวขาย (SKU LOT PO โล ชิ้น วันที่ ตรงกัน) = วางแล้ว แถวที่เจอถูกใช้แล้วจะไม่นับให้ชุดอื่นอีก
+   * ชุดที่ทุกแถวเจอ (ประเภท SKU LOT PO โลเบิก โลรับ ชิ้น และวันที่ของแถวขาย ตรงกัน) = วางแล้ว
+   * แถวที่เจอถูกใช้แล้วจะไม่นับให้ชุดอื่นอีก · ชุดที่รู้แถวสมุดตอนบันทึก (base) นับเฉพาะแถวที่อยู่ล่างกว่านั้น
+   * แถวย้ายกับแถวคืนไม่มีวันที่ ชุดที่ไม่รู้ base (รุ่น 1) จึงเช็คได้แค่แถวขาย
    * ชุดที่ยังไม่เจอครบ = ยังไม่อยู่ในสต๊อกที่เห็น ต้องหักเอง ไม่งั้นตัดกองเดิมซ้ำ (วางไปครึ่งเดียวก็หักทั้งชุด ของขาดดีกว่าตัดเกิน)
    * ชุดที่ยกเลิกไม่นับ
    * @returns {{done: [doc], wait: [doc]}}
@@ -456,23 +729,36 @@
     skus.forEach(function (t, i) { [t[1], t[0]].forEach(function (k) { k = up(k); if (k && byCode[k] === undefined) byCode[k] = i; }); });
     var have = {};
     (res.rows || []).forEach(function (x) {
-      if (x[7] !== 2 || !(x[9] & 8) || x[4] < 0 || x[8] < 0) return;
-      var k = [x[1], up(x[2]), up(pos[x[3]]), up(locs[x[4]]), +x[6], days[x[8]]].join('|');
-      have[k] = (have[k] || 0) + 1;
+      var t = x[7];
+      if (t === 2 && (!(x[9] & 8) || x[4] < 0 || x[8] < 0)) return;
+      var k = rowKey(t, x[1], x[2], pos[x[3]], t && x[4] >= 0 ? locs[x[4]] : '', x[5] >= 0 ? locs[x[5]] : '', x[6], t === 2 ? days[x[8]] : '');
+      (have[k] || (have[k] = [])).push(x[0]);
     });
-    var done = [], wait = [];
+    Object.keys(have).forEach(function (k) { have[k].sort(function (a, b) { return a - b; }); });
+    var used = {}, done = [], wait = [];
     (docs || []).filter(function (d) { return d.status !== 'ยกเลิก'; })
       .sort(function (a, b) { return stampMs(a.at) - stampMs(b.at); })
       .forEach(function (d) {
-        var need = {}, ok = (d.copy || []).length > 0;
+        var need = {}, ok = (d.copy || []).length > 0, min = d.base > 0 ? d.base - BASE_SLACK : 0;
         (d.copy || []).forEach(function (c) {
           var s = byCode[up(c[1])] !== undefined ? byCode[up(c[1])] : byCode[up(c[0])];
-          if (s === undefined || String(c[7]) !== 'ขาย') { ok = false; return; }
-          var k = [s, up(c[2]), up(c[3]), up(c[4]), +c[6], String(c[8])].join('|');
+          var t = TYPE_OF[String(c[7] || '').trim()];
+          if (s === undefined || t === undefined || (!(d.base > 0) && t !== 2)) { ok = false; return; }
+          var k = rowKey(t, s, c[2], c[3], t ? c[4] : '', c[5], c[6], t === 2 ? c[8] : '');
           need[k] = (need[k] || 0) + 1;
         });
-        Object.keys(need).forEach(function (k) { if ((have[k] || 0) < need[k]) ok = false; });
-        if (ok) { Object.keys(need).forEach(function (k) { have[k] -= need[k]; }); done.push(d); }
+        var pick = [];
+        if (ok) {
+          Object.keys(need).some(function (k) {
+            var list = have[k] || [], n = need[k];
+            for (var i = 0; i < list.length && n; i++) {
+              if (list[i] > min && !used[list[i]]) { pick.push(list[i]); n--; }
+            }
+            if (n) ok = false;
+            return !ok;
+          });
+        }
+        if (ok) { pick.forEach(function (r) { used[r] = 1; }); done.push(d); }
         else wait.push(d);
       });
     return { done: done, wait: wait };
@@ -493,6 +779,8 @@
     API_V: API_V,
     up: up, cuttable: cuttable, pickZone: pickZone, dateOf: dateOf, findHead: findHead, parseOrders: parseOrders, gridOf: gridOf,
     key: key, merge: merge, mainDate: mainDate, stock: stock, fifo: fifo, allocate: allocate, copyRows: copyRows, cutLines: cutLines,
-    tsv: tsv, stampMs: stampMs, reflect: reflect, extraOf: extraOf, uuid: uuid, basePo: basePo,
+    tsv: tsv, stampMs: stampMs, reflect: reflect, extraOf: extraOf, uuid: uuid, basePo: basePo, lastRow: lastRow,
+    statusOf: statusOf, moveNote: moveNote, openLoc: openLoc, planMoves: planMoves, moveCopy: moveCopy,
+    returnNote: returnNote, planReturns: planReturns, returnCopy: returnCopy, lookKeys: lookKeys,
   };
 })();

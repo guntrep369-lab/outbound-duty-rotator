@@ -54,7 +54,7 @@ describe('อ่านไฟล์ออเดอร์', () => {
     const p = B.parseOrders([JST_HEAD, jst('261109AAA', 1094166, 'aaa0000000001', 1, '2026-11-10 17:15:43')], { today: '2026-11-18' });
     expect(p.sys).toBe('JST');
     expect(p.lines).toHaveLength(1);
-    expect(p.lines[0]).toMatchObject({ sys: 'JST', order: '1094166', ref: '261109AAA', sku: 'AAA0000000001', qty: 1, date: '2026-11-10' });
+    expect(p.lines[0]).toMatchObject({ sys: 'JST', order: '1094166', ref: '261109AAA', track: 'P1', sku: 'AAA0000000001', qty: 1, date: '2026-11-10' });
     expect(p.dates).toEqual({ '2026-11-10': 1 });
   });
 
@@ -207,7 +207,7 @@ describe('ตัด', () => {
     const lines = B.tsv(copy, 'ทดลอง', 'T2611-0007').split('\n');
     expect(lines[0].split('\t')).toEqual(['AAA001', '', '', '8', 'P1', 'A-01-01', '', '2', 'ขาย', '2026-11-10', 'เปิด', '', 'ทดลอง', 'T2611-0007']);
     expect(lines).toHaveLength(2);
-    expect(B.cutLines(cut)).toEqual([{ sys: 'JST', order: '1', ref: '', sku: 'AAA0000000001', qty: 3,
+    expect(B.cutLines(cut)).toEqual([{ sys: 'JST', order: '1', ref: '', track: '', sku: 'AAA0000000001', qty: 3,
       piles: [['A-01-01', '8', 'P1', 2], ['A-01-01', '9', 'P2', 1]] }]);
   });
 });
@@ -242,7 +242,7 @@ describe('book-api.gs', () => {
     const api = setup();
     expect(api.get({ api: 'bk-names' }).names).toEqual(['ทดลอง', 'หัวหน้าทดลอง']);
     const r = api.post({ op: 'bk-login', ...me });
-    expect(r).toMatchObject({ who: 'ทดลอง', role: 'ลงรายการ', v: 1 });
+    expect(r).toMatchObject({ who: 'ทดลอง', role: 'ลงรายการ', v: 2 });
     const cell = api.ss.getSheetByName('ผู้ใช้').grid[1][1];
     expect(cell).toMatch(/^#[0-9a-f]{64}$/);
     expect(api.post({ op: 'bk-login', ...me }).error).toBeUndefined();
@@ -284,7 +284,8 @@ describe('book-api.gs', () => {
     ]);
     const docs = api.ss.getSheetByName('เลขที่เอกสาร').grid;
     expect(docs[1].slice(0, 9)).toEqual(['T2611-0001', 'ตัดขาย', '2026-11-10', 'ทดลอง', '2026-11-10 10:00:00', 1, 3, 2, '']);
-    expect(JSON.parse(docs[1][14])[0]).toEqual(['AAA001', 'AAA0000000001', '8', 'P1', 'A-01-01', '', 3, 'ขาย', '2026-11-10', 'เปิด']);
+    expect(docs[1][14]).toBe('@2+1');
+    expect(api.ss.getSheetByName('แถวที่คัดลอก').grid[1]).toEqual(['T2611-0001', 'AAA001', 'AAA0000000001', '8', 'P1', 'A-01-01', '', 3, 'ขาย', '2026-11-10', 'เปิด']);
   });
 
   it('บรรทัดที่ตัดไปแล้ว (เดือนนี้หรือเดือนก่อน) ไม่รับทั้งชุด บอกเลขที่เดิม', () => {
