@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { defineConfig } from 'vite';
-import { loadStocktake, fakeFifo, stocktakeMtime, loadStockApi, stockMtime, loadBook, bookMtime } from './src/dev/fake-gas.js';
+import { loadStocktake, fakeFifo, stocktakeMtime, loadStockApi, stockMtime, loadBook, bookMtime, fifoFromBook } from './src/dev/fake-gas.js';
 
 /**
  * GitHub Pages serves public/summary/index.html at /summary/, but Vite's dev
@@ -31,6 +31,8 @@ function folderIndex() {
  *   /__fake/tx         ตอบ tx-fifo จากสมุดสมมติ ?api=fake-move เพิ่มแถวขายหลังตัดยอดไว้ลองคำเตือน (&from=0 = ขายจากโลแร็ค)
  *                      ?api=fake-old เพิ่มของบีบสูญญากาศ LOT เก่าไว้ลองหน้าเช็คความเสี่ยง MFG (mfg/)
  *                      ?api=fake-empty อ่านสดได้สมุดว่าง แต่ชุดกลาง (&shared=1) ยังมีของ แบบที่เจอจริง 16 พ.ย. 69 (&on=0 = เลิก)
+ *                      ?api=fake-book ให้ tx-fifo อ่านแท็บ Transaction ของสมุดใหม่สมมติ (/__fake/book) ด้วย tx-api.gs ตัวจริง
+ *                      เหมือนตอนตัดรอบที่เปลี่ยน IMPORTRANGE ไปสมุดใหม่ (&on=0 = กลับไปอ่านสมุดเก่าสมมติ)
  *   /__fake/stocktake  รัน apps-script/stocktake-api.gs ตัวจริงกับชีตในหน่วยความจำ
  *                      รหัสหัวหน้า demo-head รหัสคนนับ demo-count ข้อมูลหายเมื่อปิด dev server
  *   /__fake/stock      รัน apps-script/stock-api.gs ตัวจริงกับชีตสต๊อก TRcloud สมมติ (Stock, WH Loss, ราคาทุน) ที่เข้ากับสมุดสมมติ
@@ -50,6 +52,7 @@ function fakeGas() {
   let emptyLive = false;
   let bk = null;
   let bkAt = 0;
+  let bookLive = false;
   return {
     name: 'fake-gas',
     apply: 'serve',
@@ -60,6 +63,25 @@ function fakeGas() {
         const params = Object.fromEntries(new URLSearchParams(query));
         const send = (o) => { res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.end(JSON.stringify(o)); };
         if (pathname === '/__fake/tx') {
+          /* คำตอบ tx-fifo: สมุดเก่าสมมติ หรือแท็บ Transaction ของสมุดใหม่สมมติ (fake-book) */
+          const fifoNow = () => {
+            if (bookLive) return bk ? fifoFromBook(bk.ss) : { error: 'ยังไม่ได้เปิดสมุดใหม่สมมติ (/__fake/book)' };
+            const d = fakeFifo({ extraRows: moves });
+            return emptyLive ? { ...d, last: '', skus: [], pos: [], locs: [], days: [], rows: [] } : d;
+          };
+          if (req.method === 'POST') {
+            /* ปุ่มดึงสต๊อกใหม่ (WmsShared.press) ส่ง {op: 'shared-fresh', api: 'tx-fifo'} */
+            let body = '';
+            req.on('data', (c) => { body += c; });
+            req.on('end', () => {
+              let b = {};
+              try { b = JSON.parse(body || '{}'); } catch (e) { b = {}; }
+              if (b.op !== 'shared-fresh' || b.api !== 'tx-fifo') return send({ error: 'ไม่รู้จักคำสั่งนี้' });
+              const d = fifoNow();
+              send(d.error ? d : { ...d, shared: { at: d.at, by: b.by || '', auto: false } });
+            });
+            return;
+          }
           if (params.api === 'fake-move') {
             /* from = ลำดับโลในสมุดสมมติ (0 = R1-01-01 โลแร็ค, ไม่ใส่ = 66 โลเปิดฝั่ง B) ไว้ลองนับ 2 วัน: ขายจากโลเปิดไม่เตือน เบิกจากแร็คเตือน */
             moves.push([0, 9, 0, +params.from >= 0 ? +params.from : 66, -1, 1, 2, -1, 0]);
@@ -72,6 +94,12 @@ function fakeGas() {
             return send({ ok: 1, moves: moves.length });
           }
           if (params.api === 'fake-empty') { emptyLive = params.on !== '0'; return send({ ok: 1, emptyLive }); }
+          if (params.api === 'fake-book') { bookLive = params.on !== '0'; return send({ ok: 1, bookLive }); }
+          if (params.api === 'tx-fifo' && bookLive) {
+            const d = fifoNow();
+            if (params.shared && !d.error) return send({ ...d, shared: { at: d.at, by: '', auto: true } });
+            return send(d);
+          }
           if (params.api === 'tx-fifo') {
             const d = fakeFifo({ extraRows: moves });
             /* ชุดกลางมีป้ายเวลาเหมือนสคริปต์จริง ตั้งไว้ว่าเก็บตั้งแต่ 4 ชั่วโมงก่อน */

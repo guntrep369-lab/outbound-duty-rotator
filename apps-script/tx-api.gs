@@ -734,11 +734,12 @@ function history_(sku) {
  *   Location เบิก ส่งเฉพาะแถวเบิกกับขาย แถวอื่นไม่หักยอดต้นทาง (-1 = ไม่มี)
  *   ประเภท 0 = รับหรืออื่น ๆ, 1 = เบิก, 2 = ขาย
  *   วันที่ = วันที่ของแถวเอง หรือของแถวล่าสุดด้านบนที่มีวันที่ (-1 = ยังไม่มี)
- *   ธง 1 = Status เปิด, 2 = รับเข้าที่มี GR (วันที่คือวันรับ), 4 = แถวนับสต๊อก, 8 = วันที่เป็นของแถวเอง,
+ *   ธง 1 = Status เปิด, 2 = รับเข้าที่มี GR (วันที่คือวันรับ), 4 = แถวนับสต๊อก หรือแถวยอดยกมาของสมุดใหม่, 8 = วันที่เป็นของแถวเอง,
  *      16 = แถวแปลงสินค้า (Note มีคำว่า แปลง) หน้าเช็ครายการตัดสต๊อกใช้จับคู่ SKU ที่เบิกออกกับ SKU ที่รับเข้าแทน
  *      32 = แถวรับคืน (Note มี RETURN หรือ คืน), 64 = แถว M/E (Note มี M/E)
  *      หน้า LOT / PO ที่ขายออกใช้สองธงนี้ประมาณ LOT/PO ให้ของที่ลงไว้เป็น LOT 0 (ดู public/wms-lot0.js)
  * conv = 1 บอกว่าสคริปต์รุ่นนี้ส่งธง 16 แล้ว รุ่นก่อนไม่มีธงนี้ หน้าเว็บจะได้ไม่เข้าใจว่าไม่เคยมีการแปลงเลย
+ * ob = 1 บอกว่าแถวยอดยกมาของสมุดใหม่ (Note ยอดยกมา … · GR dd-mm-yy) ได้ธง 4 กับวันรับใน cgr เหมือนแถวนับสต๊อก
  * lot0 = 1 บอกว่าส่งธง 32 กับ 64 แล้ว รุ่นก่อนแยกแถวรับคืนกับ M/E ออกจากแถวรับอื่นไม่ได้
  * before คือยอดจากแท็บ ยอดก่อนนับ (ดู before_) ไม่มีแท็บส่ง null
  * cap คือความจุต่อพาเลท (ดู cap_) sup คือ PO → Supplier จากแท็บ PO. Truck (ดู sup_) หน้าจัดที่เก็บใช้ ไม่มีแท็บส่ง null
@@ -752,7 +753,7 @@ function fifo_() {
   var sheet = ledgerSheet_(ss);
   var rows = readRows_(sheet, tz);
   var out = {
-    app: 'transaction', at: Date.now(), today: today, last: sales_(rows, today).last, conv: 1, lot0: 1,
+    app: 'transaction', at: Date.now(), today: today, last: sales_(rows, today).last, conv: 1, lot0: 1, ob: 1,
     sheet: link_(ss, sheet),
     skus: [], pos: [], locs: [], days: [], rows: [],
     /* แถวนับสต๊อกที่พ่วงวันรับของ PO ไว้ใน Note (Stock Count Q4/26 · GR 02-10-26 ตอนตั้งต้นสมุดใหม่) [เลขแถว, yyyy-mm-dd]
@@ -772,7 +773,7 @@ function fifo_() {
     var s = no('sku', out.skus, same_(r.long), [r.sku, r.long, r.name]);
     if (!out.skus[s][2] && r.name) out.skus[s][2] = r.name;
     var t = r.type === 'ขาย' ? 2 : r.type === 'เบิก' ? 1 : 0;
-    var flag = (r.open ? 1 : 0) + (r.date && /^GR/i.test(r.note) ? 2 : 0) + (/stock\s*count/i.test(r.note) ? 4 : 0) + (r.date ? 8 : 0)
+    var flag = (r.open ? 1 : 0) + (r.date && /^GR/i.test(r.note) ? 2 : 0) + (/stock\s*count|ยอดยกมา/i.test(r.note) ? 4 : 0) + (r.date ? 8 : 0)
       + (/แปลง/.test(r.note) ? 16 : 0) + (/return|คืน/i.test(r.note) ? 32 : 0) + (/M\/E/i.test(r.note) ? 64 : 0);
     out.rows.push([
       r.row, s, r.lot, no('po', out.pos, same_(r.po), r.po),

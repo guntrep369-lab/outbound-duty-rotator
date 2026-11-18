@@ -21,7 +21,7 @@
   'use strict';
 
   /* ต้องตรงกับ VERSION ใน apps-script/book-api.gs */
-  var API_V = 2;
+  var API_V = 3;
 
   function up(v) { return String(v == null ? '' : v).trim().toUpperCase(); }
   function round(n) { return Math.round(n * 1000) / 1000; }
@@ -215,6 +215,9 @@
       return map[k];
     }
 
+    /* แถวนับสต๊อก / ยอดยกมาที่มีวันรับใน Note (cgr) ใช้วันรับนั้นแทนวันที่รอบข้าง ลำดับ FIFO หลังตั้งต้นสมุดจะได้ไม่หาย */
+    var cgr = {};
+    (res.cgr || []).forEach(function (c) { cgr[c[0]] = c[1]; });
     var bal = {}, isOpen = {}, first = {};
     function apply(s, lot, po, from, to, qty, t, open, day) {
       var base = s + '|' + lot + '|' + po + '|';
@@ -227,7 +230,8 @@
       if (from >= 0 && t) bal[base + from] = (bal[base + from] || 0) - qty;
     }
     (res.rows || []).forEach(function (x) {
-      apply(x[1], up(x[2]), x[3], x[4], x[5], typeof x[6] === 'number' ? x[6] : 0, x[7], !!(x[9] & 1), x[8] >= 0 ? days[x[8]] : '');
+      var day = x[9] & 4 && cgr[x[0]] ? cgr[x[0]] : x[8] >= 0 ? days[x[8]] : '';
+      apply(x[1], up(x[2]), x[3], x[4], x[5], typeof x[6] === 'number' ? x[6] : 0, x[7], !!(x[9] & 1), day);
     });
     var unknown = 0;
     (extra || []).forEach(function (e) {
@@ -238,11 +242,12 @@
       apply(s, up(e[2]), idxOf(poIdx, pos, e[3]), from, to, +e[6] || 0, t, String(e[9] || '').trim() === 'เปิด', '');
     });
 
-    var open = {}, reserve = {}, all = {};
+    var open = {}, reserve = {}, all = {}, neg = [];
     Object.keys(bal).forEach(function (k) {
       var q = round(bal[k]);
-      if (!(q > 0)) return;
       var p = k.split('|'), s = +p[0], loc = locs[+p[3]], po = pos[+p[2]];
+      if (q < 0) neg.push({ s: s, lot: p[1], po: po, loc: loc, qty: q });
+      if (!(q > 0)) return;
       var L = up(loc);
       var pile = {
         s: s, lot: p[1], po: po, loc: loc, qty: q, open: !!isOpen[k], first: first[s + '|' + p[1] + '|' + p[2]] || '',
@@ -260,7 +265,7 @@
     (res.locs || []).forEach(function (l) { knownLoc[up(l)] = 1; });
 
     return {
-      skus: skus, open: open, reserve: reserve, all: all, unknown: unknown,
+      skus: skus, open: open, reserve: reserve, all: all, unknown: unknown, neg: neg,
       known: function (loc) { return !!knownLoc[up(loc)]; },
       code: function (sku) { var i = byCode[up(sku)]; return i === undefined ? -1 : i; },
       supOf: function (po) { return supMap[basePo(po)] || ''; },
@@ -689,6 +694,244 @@
     return out;
   }
 
+  /* ── สมุดใหม่ (ขั้น 3) ─────────────────────────────────────────────── */
+
+  /** 'yyyy-mm-dd' → 'Q4/26' แบบที่ tx-api.gs อ่านเป็นเดือนของรอบนับ */
+  function quarterOf(d) {
+    var m = /^(\d{4})-(\d{2})/.exec(d || '');
+    return m ? 'Q' + Math.ceil(+m[2] / 3) + '/' + m[1].slice(2) : '';
+  }
+
+  /** LOT / PO ว่างของสมุดเดิม = ไม่รู้ ลงสมุดใหม่เป็น 0 แบบที่ทีมใช้กับของไม่รู้ LOT/PO */
+  function code0(v) { var s = up(v); return s === '' ? '0' : s; }
+
+  /**
+   * วันรับแรกต่อ SKU+LOT+PO จากแถว GR (ธง 2+8) และแถวนับ/ยอดยกมาที่มีวันรับใน Note (cgr)
+   * ไม่มีวันรับแต่เป็นแถวนับในช่วงของ cq = ไตรมาสของรอบนับนั้น (tx-api ใช้บอกปีของ LOT)
+   * @returns {{gr: {'s|LOT|PO': 'yyyy-mm-dd'}, q: {'s|LOT|PO': 'Q4/26'}}}
+   */
+  function receiveDays(res) {
+    var pos = res.pos || [], days = res.days || [], cq = res.cq || [], cgr = {}, gr = {}, q = {};
+    (res.cgr || []).forEach(function (c) { cgr[c[0]] = c[1]; });
+    (res.rows || []).forEach(function (x) {
+      if (!(x[5] >= 0)) return;
+      var k = x[1] + '|' + up(x[2]) + '|' + up(pos[x[3]]);
+      var d = x[9] & 2 && x[9] & 8 && x[8] >= 0 ? days[x[8]] : x[9] & 4 ? cgr[x[0]] || '' : '';
+      if (d) { if (!gr[k] || d < gr[k]) gr[k] = d; return; }
+      if (!(x[9] & 4)) return;
+      for (var i = 0; i < cq.length; i++) {
+        if (x[0] >= cq[i][1] && x[0] <= cq[i][2]) { q[k] = quarterOf(cq[i][0]); break; }
+      }
+    });
+    return { gr: gr, q: q };
+  }
+
+  function cmpText(a, b) { return String(a).localeCompare(String(b), 'en', { numeric: true }); }
+
+  /**
+   * ยอดยกมาของสมุดใหม่ = ยอดคงเหลือทุกกองของสมุดเดิม (คำตอบ tx-fifo, st = stock(res) ไม่มีชุดค้าง) กองละแถว ส่งให้ bk-open
+   * LOT / PO ว่างลงเป็น 0 (กองที่กลายเป็นกองเดียวกันรวมยอด) · กองติดลบไม่ลง แยกไว้ใน neg ให้หัวหน้าดูก่อน
+   * @returns {{rows: [[SKU, SKU เต็ม, ชื่อ, LOT, PO, โล, ชิ้น, Status, วันรับ, ไตรมาส]], neg: [{sku, long, lot, po, loc, qty}],
+   *            asOf: แถวสุดท้ายของสมุดเดิม, total: {piles, qty, open, noGr, blank, neg, negQty}}}
+   */
+  function openingRows(res, st) {
+    var rd = receiveDays(res), map = {}, blank = 0;
+    Object.keys(st.all).forEach(function (s) {
+      var sk = st.skus[s] || [];
+      st.all[s].forEach(function (p) {
+        var lot = code0(p.lot), po = code0(p.po), loc = up(p.loc);
+        if (lot !== up(p.lot) || po !== up(p.po)) blank++;
+        var rk = p.s + '|' + up(p.lot) + '|' + up(p.po);
+        var k = loc + '|' + p.s + '|' + lot + '|' + po;
+        var r = map[k];
+        if (!r) {
+          r = map[k] = [sk[0] || sk[1] || '', sk[1] || sk[0] || '', sk[2] || '', lot, po, loc, 0, '', '', ''];
+        }
+        r[6] = round(r[6] + p.qty);
+        if (p.open) r[7] = 'เปิด';
+        var gr = rd.gr[rk] || '';
+        if (gr && (!r[8] || gr < r[8])) r[8] = gr;
+        if (!r[9] && rd.q[rk]) r[9] = rd.q[rk];
+      });
+    });
+    var rows = Object.keys(map).map(function (k) { var r = map[k]; if (r[8]) r[9] = ''; return r; });
+    rows.sort(function (a, b) { return cmpText(a[5], b[5]) || cmpText(a[1], b[1]) || cmpText(a[3], b[3]) || cmpText(a[4], b[4]); });
+    var qty = 0, open = 0, noGr = 0;
+    rows.forEach(function (r) { qty += r[6]; if (r[7]) open++; if (!r[8]) noGr++; });
+    var negQty = 0;
+    var neg = (st.neg || []).map(function (p) {
+      var sk = st.skus[p.s] || [];
+      negQty += p.qty;
+      return { sku: sk[0] || '', long: sk[1] || '', lot: p.lot, po: String(p.po), loc: up(p.loc), qty: p.qty };
+    });
+    return {
+      rows: rows, neg: neg, asOf: lastRow(res),
+      total: { piles: rows.length, qty: round(qty), open: open, noGr: noGr, blank: blank, neg: neg.length, negQty: round(negQty) },
+    };
+  }
+
+  /**
+   * เทียบยอดคงเหลือ: สมุดเดิมจาก tx-fifo (st = stock(res) ไม่มีชุดค้าง) กับแท็บยอดคงเหลือในสมุดใหม่ (bk-stock piles)
+   * ราย โล × SKU × LOT × PO · LOT/PO ว่างนับเป็น 0 แบบยอดยกมา · กองติดลบของสมุดเดิมนับเป็น 0
+   * @returns {{same: boolean, diff: [{loc, sku, lot, po, old, book}], piles, oldQty, bookQty}}
+   */
+  function compareStock(st, piles) {
+    var a = {}, b = {}, meta = {}, oldQty = 0, bookQty = 0;
+    Object.keys(st.all).forEach(function (s) {
+      var sk = st.skus[s] || [];
+      st.all[s].forEach(function (p) {
+        var k = [up(p.loc), up(sk[1] || sk[0]), code0(p.lot), code0(p.po)].join('|');
+        a[k] = round((a[k] || 0) + p.qty);
+        oldQty += p.qty;
+        if (!meta[k]) meta[k] = { loc: up(p.loc), sku: sk[0] || sk[1] || '', lot: code0(p.lot), po: code0(p.po) };
+      });
+    });
+    (piles || []).forEach(function (r) {
+      var q = +r[5] || 0;
+      var k = [up(r[0]), up(r[2] || r[1]), code0(r[3]), code0(r[4])].join('|');
+      b[k] = round((b[k] || 0) + q);
+      bookQty += q;
+      if (!meta[k]) meta[k] = { loc: up(r[0]), sku: up(r[1] || r[2]), lot: code0(r[3]), po: code0(r[4]) };
+    });
+    var diff = [];
+    Object.keys(meta).forEach(function (k) {
+      var x = a[k] || 0, y = b[k] || 0;
+      if (Math.abs(x - y) > 1e-9) diff.push({ loc: meta[k].loc, sku: meta[k].sku, lot: meta[k].lot, po: meta[k].po, old: x, book: y });
+    });
+    diff.sort(function (p, q) { return cmpText(p.loc, q.loc) || cmpText(p.sku, q.sku); });
+    return { same: !diff.length, diff: diff, piles: Object.keys(meta).length, oldQty: round(oldQty), bookQty: round(bookQty) };
+  }
+
+  /**
+   * tx-api อ่านไฟล์สมุดใหม่แล้วหรือยัง: แถว 2 ในคำตอบ tx-fifo ตรงกับแถวแรกของแท็บ Transaction ในสมุดใหม่ (bk-state first)
+   */
+  function readsBook(res, first) {
+    if (!first || !res) return false;
+    var x = (res.rows || []).filter(function (r) { return r[0] === 2; })[0];
+    if (!x || !(x[5] >= 0)) return false;
+    var sk = (res.skus || [])[x[1]] || [];
+    return up(sk[1] || sk[0]) === up(first.long || first.sku) && up(x[2]) === up(first.lot)
+      && up((res.pos || [])[x[3]]) === up(first.po) && up((res.locs || [])[x[5]]) === up(first.to) && +x[6] === +first.qty;
+  }
+
+  var TX_TYPES = ['รับ', 'เบิก', 'ขาย'];
+  function txType(v) {
+    var s = cellText(v);
+    if (!s) return '';
+    if (/^(รับ|in)$/i.test(s)) return 'รับ';
+    if (/^(เบิก|out)$/i.test(s)) return 'เบิก';
+    if (/^(ขาย|sale)$/i.test(s)) return 'ขาย';
+    return '?';
+  }
+
+  /**
+   * ตารางแบบสมุดเดิม [{sku, lot, po, from, to, qty, type, note, status}] → แถวลงสมุด (หัวหน้าใช้กับงานที่ยังไม่มีหน้าของตัวเอง)
+   *   รับ = โลรับอย่างเดียว ต้องใส่ LOT และ PO · เบิก = มีโลเบิก (โลรับมีหรือไม่มีก็ได้) · ขาย = โลเบิกอย่างเดียว · ต้องมี Note
+   *   แถวออก (เบิก / ขาย) LOT/PO ว่าง = โลนั้นมี SKU นี้กองเดียวใช้กองนั้น หลายกองต้องใส่เอง · กองไม่พอ = ผิด (สมุดไม่มีกองติดลบ)
+   *   แถวขาย Note = วันที่ขาย (แบบชีตเดิม รายงานยอดขายรายวันกับการเช็คว่าชุดลงสมุดแล้วใช้วันที่นี้) ว่าง = วันที่ของชุด (opt.date)
+   *   แถวก่อนหน้าในชุดเดียวกันเปลี่ยนยอดกองแล้ว · แถวผิดแถวเดียวบันทึกไม่ได้ทั้งชุด
+   * @returns {{lines:[{n, in, st:'ok'|'bad'|'blank', why, warn:[], row, take:[row]}], rows:[row], total}}
+   *   row = {n, s, sku, long, name, lot, po, from, to, qty, type, note, status}
+   */
+  function planRows(input, st, opt) {
+    var bal = {}, seeded = {}, lines = [], rows = [], day = (opt && opt.date) || '';
+    function seed(s) {
+      if (seeded[s]) return;
+      seeded[s] = 1;
+      (st.all[s] || []).forEach(function (p) {
+        var k = s + '|' + up(p.loc) + '|' + up(p.lot) + '|' + up(p.po);
+        bal[k] = { loc: up(p.loc), lot: up(p.lot), po: String(p.po), qty: (bal[k] ? bal[k].qty : 0) + p.qty };
+      });
+    }
+    function pilesAt(s, loc) {
+      seed(s);
+      var pre = s + '|' + up(loc) + '|';
+      return Object.keys(bal).filter(function (k) { return k.indexOf(pre) === 0 && bal[k].qty > 1e-9; }).map(function (k) { return bal[k]; });
+    }
+    function have(s, loc, lot, po) { seed(s); var b = bal[s + '|' + up(loc) + '|' + up(lot) + '|' + up(po)]; return b ? b.qty : 0; }
+    function add(s, loc, lot, po, q) {
+      seed(s);
+      var k = s + '|' + up(loc) + '|' + up(lot) + '|' + up(po);
+      var b = bal[k] || (bal[k] = { loc: up(loc), lot: up(lot), po: String(po), qty: 0 });
+      b.qty = round(b.qty + q);
+    }
+    (input || []).forEach(function (r, i) {
+      r = r || {};
+      var o = { n: i + 1, in: r, st: 'ok', why: '', warn: [], row: null, take: [] };
+      lines.push(o);
+      function bad(why) { if (o.st !== 'bad') { o.st = 'bad'; o.why = why; } }
+      var sku = up(r.sku), lot = up(cellText(r.lot)), po = up(cellText(r.po)), from = up(r.from), to = up(r.to);
+      var qty = qtyOf(r.qty), t = txType(r.type), note = cellText(r.note);
+      if (!sku && !lot && !po && !from && !to && !cellText(r.qty) && !t && !note && !cellText(r.status)) { o.st = 'blank'; return; }
+      var s = st.code(sku);
+      if (!sku) return bad('ใส่ SKU');
+      if (s < 0) return bad('ไม่รู้จัก SKU ' + sku + ' ในสมุด');
+      if (!t) return bad('ใส่ประเภท รับ เบิก หรือ ขาย');
+      if (t === '?') return bad('ประเภทต้องเป็น รับ เบิก หรือ ขาย');
+      if (!(qty > 0)) return bad('ชิ้นต้องมากกว่า 0');
+      if (t === 'รับ' && (!to || from)) return bad('แถวรับมีแค่โลรับ');
+      if (t === 'เบิก' && !from) return bad('แถวเบิกต้องมีโลเบิก');
+      if (t === 'ขาย' && (!from || to)) return bad('แถวขายมีแค่โลเบิก');
+      if (from && from === to) return bad('โลเบิกกับโลรับเป็นที่เดียวกัน');
+      if (t === 'ขาย') {
+        var sold = note ? dateOf(note, day) : day;
+        if (!sold) return bad('แถวขาย Note ต้องเป็นวันที่ขาย เช่น 19/11/2026 (ว่างไว้ = วันที่ของชุด)');
+        note = sold;
+      } else if (!note) return bad('ใส่ Note ว่าเป็นงานอะไร');
+      if (t === 'รับ' && (!lot || !po)) return bad('แถวรับต้องใส่ LOT และ PO');
+      if (t !== 'รับ') {
+        if (!lot || !po) {
+          var ps = pilesAt(s, from).filter(function (p) { return (!lot || p.lot === lot) && (!po || up(p.po) === po); });
+          if (!ps.length) return bad('โล ' + from + ' ไม่มี SKU นี้' + (lot || po ? ' (LOT/PO ที่ใส่)' : ''));
+          if (ps.length > 1) return bad('โล ' + from + ' มี SKU นี้ ' + ps.length + ' กอง ต้องใส่ LOT และ PO');
+          lot = ps[0].lot;
+          po = up(ps[0].po);
+        }
+        var h = have(s, from, lot, po);
+        if (h + 1e-9 < qty) return bad('กองไม่พอ: ' + from + ' LOT ' + lot + ' PO ' + po + ' มี ' + round(Math.max(0, h)));
+      }
+      if (to && !st.known(to)) o.warn.push('โล ' + to + ' ไม่เคยมีในสมุด');
+      var sk = st.skus[s] || [];
+      o.row = {
+        n: o.n, s: s, sku: sk[0] || sku, long: sk[1] || sku, name: sk[2] || '', lot: lot, po: po, from: from, to: to, qty: qty, type: t,
+        note: note, status: to ? statusOf(r.status, to) : '',
+      };
+      o.take = [o.row];
+      if (to) add(s, to, lot, po, qty);
+      if (from) add(s, from, lot, po, -qty);
+    });
+    var total = { rows: 0, qty: 0, ok: 0, bad: 0, warn: 0, lines: 0 };
+    lines.forEach(function (o) {
+      if (o.st === 'blank') return;
+      total.lines++;
+      if (o.warn.length) total.warn++;
+      if (o.st === 'bad') { total.bad++; return; }
+      total.ok++;
+      total.qty = round(total.qty + o.row.qty);
+      rows.push(o.row);
+    });
+    total.rows = rows.length;
+    return { lines: lines, rows: rows, total: total };
+  }
+
+  /** ผลตารางแบบเดิม → แถวที่ book-api.gs เก็บ */
+  function rowsCopy(plan) {
+    return plan.rows.map(function (r) { return [r.sku, r.long, r.lot, String(r.po), r.from, r.to, r.qty, r.type, r.note, r.status]; });
+  }
+
+  /** ชื่อสินค้าของแถวที่จะบันทึก { SKU เต็ม: ชื่อ } สคริปต์ใช้เติมช่อง Product Name ในโหมดบันทึก */
+  function namesOf(st, copy) {
+    var out = {};
+    (copy || []).forEach(function (c) {
+      var k = up(c[1] || c[0]);
+      if (!k || out[k] !== undefined) return;
+      var s = st.code(c[1]) >= 0 ? st.code(c[1]) : st.code(c[0]);
+      var nm = s >= 0 ? (st.skus[s] || [])[2] || '' : '';
+      if (nm) out[k] = nm;
+    });
+    return out;
+  }
+
   /* ── ชุดที่บันทึกแล้ว ─────────────────────────────────────────────────── */
 
   /** เวลาในชีต 'yyyy-MM-dd HH:mm:ss' (เวลาไทย) → มิลลิวินาที */
@@ -720,7 +963,8 @@
    * แถวที่เจอถูกใช้แล้วจะไม่นับให้ชุดอื่นอีก · ชุดที่รู้แถวสมุดตอนบันทึก (base) นับเฉพาะแถวที่อยู่ล่างกว่านั้น
    * แถวย้ายกับแถวคืนไม่มีวันที่ ชุดที่ไม่รู้ base (รุ่น 1) จึงเช็คได้แค่แถวขาย
    * ชุดที่ยังไม่เจอครบ = ยังไม่อยู่ในสต๊อกที่เห็น ต้องหักเอง ไม่งั้นตัดกองเดิมซ้ำ (วางไปครึ่งเดียวก็หักทั้งชุด ของขาดดีกว่าตัดเกิน)
-   * ชุดที่ยกเลิกไม่นับ
+   * ชุดที่ยกเลิกไม่นับ · ยอดยกมาไม่นับ (เป็นจุดเริ่มของสมุดใหม่ ไม่มีแถวให้วางในชีตเดิม)
+   * ชุดที่ลงสมุดใหม่แล้ว (โหมดบันทึก) base = แถวก่อนแถวแรกที่ลง: tx-api อ่านสมุดใหม่แล้วเจอตรงแถว ยังอ่านชีตเดิมอยู่ = ยังไม่เห็น ต้องหัก
    * @returns {{done: [doc], wait: [doc]}}
    */
   function reflect(res, docs) {
@@ -736,7 +980,7 @@
     });
     Object.keys(have).forEach(function (k) { have[k].sort(function (a, b) { return a - b; }); });
     var used = {}, done = [], wait = [];
-    (docs || []).filter(function (d) { return d.status !== 'ยกเลิก'; })
+    (docs || []).filter(function (d) { return d.status !== 'ยกเลิก' && d.type !== 'ยอดยกมา'; })
       .sort(function (a, b) { return stampMs(a.at) - stampMs(b.at); })
       .forEach(function (d) {
         var need = {}, ok = (d.copy || []).length > 0, min = d.base > 0 ? d.base - BASE_SLACK : 0;
@@ -782,5 +1026,7 @@
     tsv: tsv, stampMs: stampMs, reflect: reflect, extraOf: extraOf, uuid: uuid, basePo: basePo, lastRow: lastRow,
     statusOf: statusOf, moveNote: moveNote, openLoc: openLoc, planMoves: planMoves, moveCopy: moveCopy,
     returnNote: returnNote, planReturns: planReturns, returnCopy: returnCopy, lookKeys: lookKeys,
+    quarterOf: quarterOf, receiveDays: receiveDays, openingRows: openingRows, compareStock: compareStock, readsBook: readsBook,
+    TX_TYPES: TX_TYPES, txType: txType, planRows: planRows, rowsCopy: rowsCopy, namesOf: namesOf,
   };
 })();

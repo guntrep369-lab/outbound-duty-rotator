@@ -242,7 +242,7 @@ describe('book-api.gs', () => {
     const api = setup();
     expect(api.get({ api: 'bk-names' }).names).toEqual(['ทดลอง', 'หัวหน้าทดลอง']);
     const r = api.post({ op: 'bk-login', ...me });
-    expect(r).toMatchObject({ who: 'ทดลอง', role: 'ลงรายการ', v: 2 });
+    expect(r).toMatchObject({ who: 'ทดลอง', role: 'ลงรายการ', v: 3, mode: 'copy' });
     const cell = api.ss.getSheetByName('ผู้ใช้').grid[1][1];
     expect(cell).toMatch(/^#[0-9a-f]{64}$/);
     expect(api.post({ op: 'bk-login', ...me }).error).toBeUndefined();

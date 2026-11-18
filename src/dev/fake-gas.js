@@ -168,6 +168,7 @@ export function loadBook({ ss = fakeSpreadsheet('Asia/Bangkok', 'book'), files =
   const lock = { held: false, waits: 0, flushes: 0 };
   const cache = new Map();
   const opened = [];
+  const triggers = [];
   let made = 0;
   const ctx = {
     SpreadsheetApp: {
@@ -218,13 +219,28 @@ export function loadBook({ ss = fakeSpreadsheet('Asia/Bangkok', 'book'), files =
       MimeType: { JSON: 'json' },
       createTextOutput: (s) => ({ text: s, setMimeType() { return this; } }),
     },
+    /* ตัวตั้งเวลาสำรองข้อมูลทุกคืน (installBackup) เก็บไว้ในตัวแปรให้เทสต์เปิดดู */
+    ScriptApp: {
+      getProjectTriggers: () => triggers.slice(),
+      deleteTrigger: (t) => { const i = triggers.indexOf(t); if (i >= 0) triggers.splice(i, 1); },
+      newTrigger: (fn) => {
+        const t = { fn, every: 0, hour: -1, getHandlerFunction: () => fn };
+        const b = {
+          timeBased: () => b,
+          everyDays: (n) => { t.every = n; return b; },
+          atHour: (h) => { t.hour = h; return b; },
+          create: () => { triggers.push(t); return t; },
+        };
+        return b;
+      },
+    },
   };
   vm.createContext(ctx);
   vm.runInContext(src, ctx);
   if (now) ctx.now_ = now;
   const parse = (o) => JSON.parse(o.text);
   return {
-    ss, files, props, lock, cache, ctx, opened,
+    ss, files, props, lock, cache, ctx, opened, triggers,
     get: (params) => parse(ctx.doGet({ parameter: params || {} })),
     post: (body) => parse(ctx.doPost({ postData: { contents: JSON.stringify(body) } })),
     /** ใส่รายชื่อคนในแท็บผู้ใช้แบบที่หัวหน้าพิมพ์เอง [[ชื่อ, รหัส, สิทธิ์, ใช้งาน]] */
@@ -291,10 +307,53 @@ export function fakeFifo({ extraRows = [] } = {}) {
   extraRows.forEach((x) => rows.push([row++, ...x]));
   const sup = { tab: 'PO. Truck', rows: pos.map((p, i) => [p, `ผู้ผลิต ${'กขค'[i % 3]} สมมติ`]), dup: [], missing: '' };
   return {
-    app: 'transaction', at: Date.now(), today: '2026-11-09', last: '2026-11-08', conv: 1, lot0: 1,
+    app: 'transaction', at: Date.now(), today: '2026-11-09', last: '2026-11-08', conv: 1, lot0: 1, ob: 1,
     sheet: { url: 'https://docs.example/d/ledger/edit', gid: 0 },
     skus, pos, locs, days, rows, before: null, convert: null, cap: null, sup,
   };
+}
+
+const TX_GS = path.resolve(HERE, '../../apps-script/tx-api.gs');
+
+/**
+ * คำตอบ tx-fifo จากแท็บ Transaction ของสมุดใหม่สมมติ (ไฟล์ของ loadBook)
+ * รัน tx-api.gs ตัวจริงกับไฟล์ที่มีแท็บนั้นแท็บเดียว เหมือนตอนตัดรอบที่เปลี่ยน IMPORTRANGE ในไฟล์สำเนาไปอ่านสมุดใหม่
+ * แท็บถูกห่อให้อ่านได้อย่างเดียว ถ้าสคริปต์เผลอเขียนจะ error
+ */
+export function fifoFromBook(bookSs) {
+  const tx = bookSs.getSheetByName('Transaction');
+  const shown = (v) => (v instanceof Date ? formatDate(v, '', 'dd/MM/yyyy') : String(v ?? ''));
+  const ro = tx && {
+    getName: () => 'Transaction',
+    getSheetId: () => 1,
+    getLastRow: () => tx.getLastRow(),
+    getLastColumn: () => tx.getLastColumn(),
+    getRange: (r, c, nr = 1, nc = 1) => {
+      const g = tx.getRange(r, c, nr, nc);
+      return { getValues: () => g.getValues(), getDisplayValues: () => g.getValues().map((x) => x.map(shown)) };
+    },
+  };
+  const ss = {
+    getSheets: () => (ro ? [ro] : []),
+    getSheetByName: (n) => (ro && n === 'Transaction' ? ro : null),
+    insertSheet: () => { throw new Error('ไฟล์สำเนาสมมติ: ห้ามเพิ่มแท็บ'); },
+    getSpreadsheetTimeZone: () => 'Asia/Bangkok',
+    getUrl: () => 'https://docs.example/d/book-copy/edit',
+    getName: () => 'สำเนาสมุดใหม่สมมติ',
+    getId: () => 'book-copy',
+  };
+  const no = () => { throw new Error('ห้ามเปิดไฟล์อื่น'); };
+  const ctx = {
+    SpreadsheetApp: { getActiveSpreadsheet: () => ss, openById: no, openByUrl: no },
+    ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (t) => ({ text: t, setMimeType() { return this; } }) },
+    Utilities: { formatDate },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) },
+    LockService: { getScriptLock: () => ({ waitLock: () => {}, releaseLock: () => {} }) },
+    DriveApp: {}, ScriptApp: {},
+  };
+  vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(TX_GS, 'utf8'), ctx);
+  return JSON.parse(ctx.doGet({ parameter: { api: 'tx-fifo' } }).text);
 }
 
 /* ── ชีตสต๊อก TRcloud สมมติ (apps-script/stock-api.gs) ───────────────────── */

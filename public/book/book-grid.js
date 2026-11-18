@@ -1,12 +1,13 @@
 /**
- * book-grid.js — สมุดสต๊อก ขั้น 2: แท็บ ย้าย / เติม / QA กับ คืนของ ของหน้า public/book/
+ * book-grid.js — สมุดสต๊อก ขั้น 2–3: แท็บ ย้าย / เติม / QA, คืนของ และตารางแบบสมุดเดิม (หัวหน้า) ของหน้า public/book/
  *
  * ตารางพิมพ์แบบ Excel หนึ่งแถวต่อหนึ่งงาน วางจาก Excel ได้ (Ctrl+V ลงช่องไหนก็เติมจากช่องนั้น วางนอกตารางต่อท้าย)
  * ทุกครั้งที่พิมพ์ คิดแผนใหม่จากกองสต๊อกของหน้า (ST) แล้วขึ้นผลท้ายแถว ไม่วาดช่องพิมพ์ใหม่ เคอร์เซอร์จะได้ไม่หลุด
- * กติกาเลือกกอง / LOT / PO อยู่ใน public/wms-book.js (planMoves, planReturns)
+ * กติกาเลือกกอง / LOT / PO อยู่ใน public/wms-book.js (planMoves, planReturns, planRows)
+ * โหมดบันทึก (หลังตัดรอบ) กดบันทึกแล้วลงสมุดใหม่เลย ไม่ต้องคัดลอก · ส่งไม่สำเร็จเพราะเน็ต ชุดค้างไว้แล้วส่งซ้ำเอง (queueRetry ของหน้า)
  *
  * ใช้ตัวแปรและฟังก์ชันของสคริปต์ในหน้า (USER RES ST DOCS REF BKBUSY MSG LAST esc f dm bookPost copyText compute render
- * refreshDocs actTail) ตอนถูกเรียกเท่านั้น ไฟล์นี้โหลดก่อนสคริปต์ในหน้า ห้ามเรียกของพวกนั้นตอนโหลด
+ * refreshDocs actTail bookMode shortList queueRetry) ตอนถูกเรียกเท่านั้น ไฟล์นี้โหลดก่อนสคริปต์ในหน้า ห้ามเรียกของพวกนั้นตอนโหลด
  * เปิดเป็น window.BookGrid
  */
 (function () {
@@ -29,8 +30,19 @@
       { k: 'to', t: 'โลที่วาง', w: 100, dl: 'dl-loc', ph: 'โลเปิดขาย' },
       { k: 'note', t: 'M/E', w: 96, ph: 'RETURN' },
     ],
+    rows: [
+      { k: 'sku', t: 'SKU', w: 112, dl: 'dl-sku' },
+      { k: 'lot', t: 'LOT', w: 46 },
+      { k: 'po', t: 'PO', w: 100 },
+      { k: 'from', t: 'Location เบิก', w: 100, dl: 'dl-loc' },
+      { k: 'to', t: 'Location รับ', w: 100, dl: 'dl-loc' },
+      { k: 'qty', t: 'QTY', w: 54, num: true },
+      { k: 'type', t: 'รับ/เบิก', w: 62, dl: 'dl-type' },
+      { k: 'note', t: 'Note', w: 150 },
+      { k: 'status', t: 'Status', w: 54, ph: 'auto' },
+    ],
   };
-  var TITLE = { move: 'ย้าย / เติม / QA', ret: 'คืนของ' };
+  var TITLE = { move: 'ย้าย / เติม / QA', ret: 'คืนของ', rows: 'ตารางแบบสมุดเดิม' };
   var TIP = {
     move: 'พิมพ์หรือวางจาก Excel เรียงคอลัมน์ SKU · จาก · ไป · ชิ้น · LOT · PO\n' +
       'จากว่าง = เติมจากของสำรองที่ R กองเก่าสุด (Supplier เดียวกับที่เปิดขายก่อน)\nไปว่าง = โลที่ SKU นี้เปิดขายอยู่\n' +
@@ -39,9 +51,16 @@
     ret: 'วางเลขออเดอร์ / เลขอ้างอิง (ออนไลน์) / เลขพัสดุ ทีละบรรทัด ระบบหาว่าตัดจากกองไหน แล้วคืนเข้า LOT / PO เดิม\n' +
       'ไม่ใส่ SKU = คืนทั้งออเดอร์ · ไม่ใส่ชิ้น = ชิ้นที่ยังไม่คืน\nไม่เจอ (ออเดอร์ที่ตัดด้วยมือในชีตเดิม) = ใส่ SKU กับชิ้น คืนเป็น LOT 0 / PO 0 แบบเดิม\n' +
       'โลที่วางว่าง = โลที่ SKU นี้เปิดขายอยู่ · ช่อง M/E ใส่เลข M/E-xxxxx ถ้าเป็นของ M/E',
+    rows: 'ลงแถวแบบชีต Transaction เดิม ใช้กับงานที่ยังไม่มีหน้า (รับของ แปลงสินค้า M/E ปรับยอด) เฉพาะหัวหน้า\n' +
+      'วางจาก Excel ได้ เรียงคอลัมน์ SKU · LOT · PO · Location เบิก · Location รับ · QTY · รับ/เบิก · Note · Status\n' +
+      'รับ = มีแต่ Location รับ ต้องใส่ LOT PO · เบิก = มี Location เบิก (รับมีหรือไม่ก็ได้) · ขาย = มีแต่ Location เบิก\n' +
+      'แถวเบิก/ขาย LOT PO ว่าง = โลนั้นมี SKU นี้กองเดียวใช้กองนั้น · กองไม่พอบันทึกไม่ได้ · ทุกแถวต้องมี Note\n' +
+      'แถวขาย Note = วันที่ขาย แบบชีตเดิม (ว่างไว้ = วันที่ของชุด)\n' +
+      'Status ว่าง = ตามโลรับ (R QA RIB ทางเดิน ไม่เปิด) พิมพ์ - = ไม่เปิด',
   };
-  var KEY = { move: 'wms:book:draft:move', ret: 'wms:book:draft:ret' };
-  var TYPE = { move: 'ย้าย', ret: 'คืน' };
+  var KEY = { move: 'wms:book:draft:move', ret: 'wms:book:draft:ret', rows: 'wms:book:draft:rows' };
+  var TYPE = { move: 'ย้าย', ret: 'คืน', rows: 'ตารางเดิม' };
+  var OP = { move: 'bk-move', ret: 'bk-return', rows: 'bk-rows' };
 
   var S = {};                 // { move: {rows, date, pending}, ret: {...} } โหลดตอนใช้ครั้งแรก
   var LOOK = { found: {}, miss: {} };
@@ -58,7 +77,7 @@
   function state(mode) {
     if (!S[mode]) {
       var d = rj(KEY[mode]) || {};
-      S[mode] = { rows: Array.isArray(d.rows) ? d.rows : [], date: d.date || '', pending: d.pending || null };
+      S[mode] = { rows: Array.isArray(d.rows) ? d.rows : [], date: d.date || '', pending: d.pending || null, ref: d.ref || '' };
       if (!S[mode].date || S[mode].date < todayStr() && !S[mode].pending) S[mode].date = todayStr();
       tidy(mode);
     }
@@ -73,14 +92,14 @@
   }
   function keep(mode, now) {
     clearTimeout(saveTimer);
-    var go = function () { wj(KEY[mode], { rows: S[mode].rows, date: S[mode].date, pending: S[mode].pending, at: Date.now() }); };
+    var go = function () { wj(KEY[mode], { rows: S[mode].rows, date: S[mode].date, pending: S[mode].pending, ref: S[mode].ref, at: Date.now() }); };
     if (now) go(); else saveTimer = setTimeout(go, 400);
   }
 
   function plan(mode) {
     if (!ST) return null;
     var g = state(mode);
-    return mode === 'move' ? WmsBook.planMoves(g.rows, ST) : WmsBook.planReturns(g.rows, LOOK, ST);
+    return mode === 'move' ? WmsBook.planMoves(g.rows, ST) : mode === 'rows' ? WmsBook.planRows(g.rows, ST, { date: g.date }) : WmsBook.planReturns(g.rows, LOOK, ST);
   }
 
   /* ── datalist SKU กับโล จากสต๊อกที่ดึงมา ───────────────────────────── */
@@ -93,12 +112,17 @@
     var sk = (RES.skus || []).map(function (t) { return '<option value="' + esc(t[0]) + '">' + esc(t[2] || '') + '</option>'; });
     var lc = (RES.locs || []).slice().sort(function (a, b) { return String(a).localeCompare(String(b), 'en', { numeric: true }); })
       .map(function (l) { return '<option value="' + esc(l) + '"></option>'; });
-    box.innerHTML = '<datalist id="dl-sku">' + sk.join('') + '</datalist><datalist id="dl-loc">' + lc.join('') + '</datalist>';
+    box.innerHTML = '<datalist id="dl-sku">' + sk.join('') + '</datalist><datalist id="dl-loc">' + lc.join('') + '</datalist>' +
+      '<datalist id="dl-type">' + WmsBook.TX_TYPES.map(function (t) { return '<option value="' + t + '"></option>'; }).join('') + '</datalist>';
   }
 
   /* ── ผลท้ายแถว ──────────────────────────────────────────────────────── */
 
   function takeText(r, mode, o) {
+    if (mode === 'rows') {
+      return '<b>' + esc(r.type) + '</b>' + (r.type === 'ขาย' ? ' ' + esc(r.note.slice(8, 10) + '/' + r.note.slice(5, 7)) : '') + ' LOT ' + esc(r.lot) + ' · ' + esc(r.po) + ' ×' + f(r.qty) + ' ' + (r.from ? esc(r.from) : '') + (r.to ? ' → ' + esc(r.to) : '') +
+        (r.status === 'เปิด' ? ' <span class="g-open">เปิด</span>' : '');
+    }
     var lot = r.lot === '0' && r.po === '0' ? '<span class="c-warn">LOT 0 / PO 0</span>' : 'LOT ' + esc(r.lot) + ' · ' + esc(r.po);
     /* ตัวหนา = ระบบเลือกให้ */
     var where = mode === 'move'
@@ -124,6 +148,7 @@
     var many = o.take.some(function (t) { return t.s !== o.take[0].s; });
     if (many) return '';   // คืนทั้งออเดอร์หลาย SKU ชื่ออยู่ในช่องลงสมุดแล้ว
     var s = mode === 'move' ? o.s : o.take.length ? o.take[0].s : ST.code(String(o.in.sku || ''));
+    if (s === undefined) s = -1;
     var t = s >= 0 ? ST.skus[s] : null;
     return t ? t[2] || '' : '';
   }
@@ -152,7 +177,11 @@
     var need = mode === 'ret' ? WmsBook.lookKeys(g.rows, LOOK).length : 0;
     var html = '<div class="bk-top"><span class="bk-h">' + TITLE[mode] + '</span>' +
       '<button type="button" class="g-tip" title="' + esc(TIP[mode]) + '" aria-label="วิธีใช้">ⓘ</button>' +
-      '<span class="g-hint">' + (mode === 'move' ? 'พิมพ์หรือ Ctrl+V จาก Excel · ช่องว่างระบบเลือกให้' : 'วางเลขออเดอร์ / เลขพัสดุ ระบบหากองที่ตัดให้') + '</span>';
+      '<span class="g-hint">' + (mode === 'move' ? 'พิมพ์หรือ Ctrl+V จาก Excel · ช่องว่างระบบเลือกให้'
+        : mode === 'rows' ? 'เฉพาะหัวหน้า · งานที่ยังไม่มีหน้า' : 'วางเลขออเดอร์ / เลขพัสดุ ระบบหากองที่ตัดให้') + '</span>';
+    if (mode === 'rows') {
+      html += '<input class="bk-field" id="gRef" style="width:220px" maxlength="60" placeholder="อ้างอิง เช่น เลข GR / Transfer" value="' + esc(g.ref || '') + '">';
+    }
     if (mode === 'ret') {
       html += '<button class="tx-opt' + (need ? ' p' : '') + '" id="gFind" ' + (FINDING || !need || !USER ? 'disabled' : '') + '>' +
         (FINDING ? 'กำลังหา…' : '🔍 หาออเดอร์' + (need ? ' ' + f(need) : '')) + '</button>';
@@ -186,11 +215,12 @@
     var g = state(mode), p = PLAN[mode], html = '';
     if (g.pending) {
       html += '<button class="bk-save" id="gSave" ' + (!USER || BKBUSY ? 'disabled' : '') + '>' + (BKBUSY ? esc(BKBUSY) : '↻ ส่งอีกครั้ง') + '</button>' +
-        '<span>ชุดที่ส่งค้าง <b>' + f(g.pending.copy.length) + '</b> แถว ยังไม่รู้ว่าถึงสมุดไหม ส่งอีกครั้งได้ ระบบไม่บันทึกซ้ำ</span>' +
+        '<span>ชุดที่ส่งค้าง <b>' + f(g.pending.copy.length) + '</b> แถว ยังไม่รู้ว่าถึงสมุดไหม ระบบส่งซ้ำเองทุก 30 วินาที (กดเองก็ได้) ไม่บันทึกซ้ำ</span>' +
         '<button class="bk-link" id="gDrop">ทิ้งชุดนี้</button>';
     } else {
       var n = p ? p.total.rows : 0;
-      html += '<button class="bk-save" id="gSave" ' + (canSave(mode) ? '' : 'disabled') + '>' + (BKBUSY ? esc(BKBUSY) : '💾 บันทึก + คัดลอก ' + f(n) + ' แถว') + '</button>';
+      html += '<button class="bk-save" id="gSave" ' + (canSave(mode) ? '' : 'disabled') + '>' + (BKBUSY ? esc(BKBUSY)
+        : bookMode() ? '💾 ลงสมุด ' + f(n) + ' แถว' : '💾 บันทึก + คัดลอก ' + f(n) + ' แถว') + '</button>';
       if (!USER) html += '<span>เข้าสมุดด้วยชื่อกับรหัสก่อน (มุมขวาบน)</span>';
       else if (!DOCS_OK && !BKBUSY) html += '<button class="bk-link" id="docsBtn">โหลดชุดที่บันทึกอีกครั้ง</button>';
       else if (p && p.total.bad) html += '<span class="c-red">แก้หรือลบแถวผิด ' + f(p.total.bad) + ' แถวก่อน</span>';
@@ -310,20 +340,24 @@
     if (!p) {
       if (!canSave(mode)) return;
       var pl = PLAN[mode];
-      p = { batch: WmsBook.uuid(), date: g.date, base: WmsBook.lastRow(RES), copy: mode === 'move' ? WmsBook.moveCopy(pl) : WmsBook.returnCopy(pl) };
+      p = { batch: WmsBook.uuid(), date: g.date, base: WmsBook.lastRow(RES),
+        copy: mode === 'move' ? WmsBook.moveCopy(pl) : mode === 'rows' ? WmsBook.rowsCopy(pl) : WmsBook.returnCopy(pl) };
       if (mode === 'ret') p.lines = pl.save;
+      if (mode === 'rows') p.ref = g.ref || '';
+      p.names = WmsBook.namesOf(ST, p.copy);
       g.pending = p;
       keep(mode, true);
     }
     BKBUSY = 'กำลังบันทึก…'; MSG = null; LAST = null;
-    renderAct(mode);
+    show(mode);
     var r;
     try {
-      r = await bookPost(mode === 'move' ? 'bk-move' : 'bk-return', p);
+      r = await bookPost(OP[mode], p);
     } catch (e) {
       BKBUSY = '';
-      MSG = { kind: 'warn', html: 'ส่งไม่สำเร็จ (' + esc(e.message) + ') ยังไม่รู้ว่าถึงสมุดไหม กด <b>ส่งอีกครั้ง</b> ได้ ระบบไม่บันทึกซ้ำ' };
-      renderAct(mode);
+      MSG = { kind: 'warn', html: TITLE[mode] + ': ส่งไม่สำเร็จ (' + esc(e.message) + ') ยังไม่รู้ว่าถึงสมุดไหม ระบบส่งซ้ำเองเมื่อเน็ตกลับมา ไม่บันทึกซ้ำ' };
+      show(mode);
+      queueRetry();
       return;
     }
     BKBUSY = '';
@@ -336,8 +370,8 @@
         LOOK = { found: {}, miss: {} };
         findSoon(0);
       }
-      MSG = { kind: 'bad', html: 'บันทึกไม่สำเร็จ: ' + esc(r.error) + (list.length ? '<ol>' + list.join('') + '</ol>' : '') };
-      render(mode);
+      MSG = { kind: 'bad', html: TITLE[mode] + ' บันทึกไม่สำเร็จ: ' + esc(r.error) + (list.length ? '<ol>' + list.join('') + '</ol>' : shortList(r)) };
+      if (MODE === mode) render(mode); else renderAll();
       refreshDocs();
       return;
     }
@@ -345,17 +379,29 @@
       DOCS.unshift({ doc: r.doc, type: TYPE[mode], date: p.date, who: USER.who, at: r.at || '', rows: p.copy.length,
         qty: Math.round(p.copy.reduce(function (a, c) { return a + (+c[6] || 0); }, 0) * 1000) / 1000,
         orders: mode === 'ret' ? new Set(p.lines.filter(function (l) { return l.order; }).map(function (l) { return l.sys + '|' + l.order; })).size : 0,
-        status: '', base: p.base, copy: p.copy });
+        status: '', base: r.book ? r.txAt - 1 : p.base, copy: p.copy, book: r.book ? 1 : 0 });
     }
-    LAST = { doc: r.doc, who: USER.who, copy: p.copy };
+    LAST = { doc: r.doc, who: USER.who, copy: p.copy, book: !!r.book, txAt: r.txAt };
     g.pending = null;
     g.rows = [{}];
+    if (mode === 'rows') g.ref = '';
     keep(mode, true);
     if (mode === 'ret') LOOK = { found: {}, miss: {} };
     compute();
-    LAST.copied = await copyText(WmsBook.tsv(p.copy, USER.who, r.doc));
+    if (!r.book) LAST.copied = await copyText(WmsBook.tsv(p.copy, USER.who, r.doc));
     renderAll();
     refreshDocs();
+  }
+
+  /** แถบบันทึกของแท็บนี้ถ้ากำลังเปิดอยู่ ไม่งั้นวาดทั้งหน้า (ส่งซ้ำเองตอนอยู่แท็บอื่น) */
+  function show(mode) { if (MODE === mode) renderAct(mode); else renderAll(); }
+
+  /** ส่งชุดที่ค้างของทุกแท็บอีกครั้ง (หน้าเรียกเองทุก 30 วินาทีหลังส่งไม่สำเร็จ และตอนเน็ตกลับมา) */
+  async function retry() {
+    var modes = Object.keys(KEY);
+    for (var i = 0; i < modes.length; i++) {
+      if (state(modes[i]).pending && !BKBUSY && USER) await save(modes[i]);
+    }
   }
 
   /** วาดทั้งหน้าของสคริปต์ในหน้า */
@@ -363,7 +409,7 @@
 
   /* ── ปุ่มและช่อง (ทำงานเฉพาะตอนอยู่แท็บย้าย / คืน) ───────────────────── */
 
-  function grid() { return typeof MODE !== 'undefined' && MODE !== 'cut' ? MODE : ''; }
+  function grid() { return typeof MODE !== 'undefined' && COLS[MODE] ? MODE : ''; }
 
   document.addEventListener('input', function (e) {
     var mode = grid();
@@ -390,6 +436,7 @@
   document.addEventListener('change', function (e) {
     var mode = grid();
     if (!mode) return;
+    if (e.target.id === 'gRef') { state(mode).ref = e.target.value.trim(); keep(mode, true); return; }
     if (e.target.id === 'gDate' && e.target.value) {
       state(mode).date = e.target.value;
       keep(mode, true);
@@ -422,7 +469,9 @@
     pasteAppend: function (mode, text) { return paste(mode, text, -1, ''); },
     /** หลังยกเลิกชุดคืน ชิ้นที่คืนแล้วเปลี่ยน ต้องหาใหม่ */
     forget: function () { LOOK = { found: {}, miss: {} }; if (S.ret) findSoon(0); },
-    pending: function (mode) { return !!state(mode).pending; },
+    pending: function (mode) { return !!(KEY[mode] && state(mode).pending); },
+    retry: retry,
+    modes: function () { return Object.keys(KEY); },
     act: function (mode) { renderAct(mode); },
   };
 })();

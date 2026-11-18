@@ -1,8 +1,8 @@
 /**
- * book-api.gs — สมุดสต๊อก ขั้น 1–2: รหัสคน เลขที่เอกสาร ตัดขาย ย้าย/เติม/QA และคืนของ ใช้กับหน้า public/book/
+ * book-api.gs — สมุดสต๊อก ขั้น 1–3: รหัสคน เลขที่เอกสาร ตัดขาย ย้าย/เติม/QA คืนของ และสมุดใหม่เต็มตัว ใช้กับหน้า public/book/
  *
  * ผูกกับไฟล์ Google Sheet ใหม่ "WMS สมุดสต๊อก" ไม่ใช่ไฟล์ Transaction
- * สคริปต์นี้ไม่รู้จักสมุด Transaction เลย ไม่มี URL ไม่มีรหัสไฟล์ของมัน และไม่เปิดไฟล์อื่นนอกจากไฟล์ที่ตัวเองสร้าง
+ * สคริปต์นี้ไม่รู้จักสมุด Transaction เดิมเลย ไม่มี URL ไม่มีรหัสไฟล์ของมัน และไม่เปิดไฟล์อื่นนอกจากไฟล์ที่ตัวเองสร้าง
  * ยอดสต๊อกที่หน้าเว็บใช้คิดมาจาก tx-api.gs (อ่านอย่างเดียว) แล้วหน้าเว็บคัดลอกแถวให้คนไปวางในชีตเดิมเอง
  * สมุดจริงจึงไม่มีทางถูกแตะจากสคริปต์นี้
  *
@@ -31,17 +31,37 @@
  * POST {op:'bk-return'}    บันทึกชุดคืนของ คืนเกินที่ตัด = ไม่รับทั้งชุด
  * POST {op:'bk-recent'}    ชุดที่บันทึกในไม่กี่วันล่าสุด พร้อมแถวที่คัดลอก
  * POST {op:'bk-void'}      ยกเลิกชุด (หัวหน้า) บรรทัดออเดอร์ของชุดนั้นตัดหรือคืนใหม่ได้ ต้องไปลบแถวเลขนั้นในชีตเดิมเอง
+ * POST {op:'bk-rows'}      บันทึกชุดจากตารางแบบสมุดเดิม A–K ทุกประเภท (หัวหน้า) ใช้กับงานที่ยังไม่มีหน้าของตัวเอง
+ * POST {op:'bk-state'}     โหมดตอนนี้ แถวใน Transaction ยอดยกมา Backup ล่าสุด
+ * POST {op:'bk-stock'}     ยอดคงเหลือทุกกองในสมุดใหม่ (หน้าตั้งค่าใช้เทียบกับยอดสมุดเดิม)
+ * POST {op:'bk-open'}      ลงยอดยกมา (หัวหน้า โหมดคัดลอกเท่านั้น) ลงใหม่ได้ด้วย replace
+ * POST {op:'bk-mode'}      สลับโหมด คัดลอก ↔ บันทึก (หัวหน้า)
+ * POST {op:'bk-rebuild'}   คิดแท็บยอดคงเหลือใหม่จากแท็บ Transaction ทั้งแท็บ (หัวหน้า)
+ * POST {op:'bk-backup'}    สำรองแถวใหม่ของ Transaction ตอนนี้เลย (หัวหน้า) ปกติสคริปต์ทำเองทุกคืน
  * ไม่ใส่ api               บอกแค่ว่าเป็นสคริปต์นี้ ให้หน้าเว็บเช็คว่าใส่ URL ถูกตัว
+ *
+ * สองโหมด (ขั้น 3) เก็บใน Script Properties ชื่อ mode
+ *   คัดลอก (ค่าเริ่มต้น)  ชีตเดิมยังเป็นตัวจริง ทุกชุดได้แถวให้คนคัดลอกไปวางในชีตเดิม แท็บ Transaction ในไฟล์นี้มีแค่ยอดยกมา
+ *   บันทึก               หลังตัดรอบ ทุกชุดลงแท็บ Transaction ในไฟล์นี้เลย เช็คกองในแท็บยอดคงเหลือก่อนลง กองไม่พอ = ไม่รับทั้งชุด
+ *                        แถวที่คัดลอกยังเก็บเหมือนเดิม ถ้าต้องถอยกลับไปใช้ชีตเดิม หัวหน้าคัดลอกชุดพวกนี้ไปวางต่อได้
+ *   Transaction          คอลัมน์ตรงกับชีตเดิมทุกช่อง (A–K, L ว่าง, M NAME, N เลขที่, O เวลา) + P ประเภทชุด Q อ้างอิง R รหัสชุด
+ *                        วันตัดรอบแค่เปลี่ยนลิงก์ใน IMPORTRANGE ของไฟล์ที่ tx-api.gs อ่าน หน้าอื่นใช้ได้เหมือนเดิม
+ *                        ทีมเปิดไฟล์นี้แบบดูอย่างเดียว ลงรายการผ่านหน้าเว็บเท่านั้น
+ *   ยอดคงเหลือ           หนึ่งแถวต่อกอง (โล SKU LOT PO) สคริปต์คิดใหม่ทุกครั้งที่ลง Transaction
+ *   Backup               ทุกคืนต่อท้ายแถวใหม่ของ Transaction ลงไฟล์ "WMS สมุดสต๊อก · สำรอง ปี Qn" ที่สคริปต์สร้างเอง
+ *                        ตั้งเวลาครั้งเดียว: หน้าแก้สคริปต์ เลือกฟังก์ชัน installBackup แล้วกด Run
  *
  * ทุกคำตอบมี v = รุ่นของสคริปต์ หน้าเว็บเทียบกับรุ่นที่ต้องใช้ ลืม Deploy เวอร์ชันใหม่จะขึ้นแถบแดงบอก
  */
 
 /* เพิ่มทีละ 1 ทุกครั้งที่หน้าเว็บต้องใช้ของใหม่จากสคริปต์ (ต้องตรงกับ API_V ใน public/wms-book.js) */
-var VERSION = 2;
+var VERSION = 3;
 
 var T_USER = 'ผู้ใช้';
 var T_DOC = 'เลขที่เอกสาร';
 var T_COPY = 'แถวที่คัดลอก';
+var T_TX = 'Transaction';
+var T_BAL = 'ยอดคงเหลือ';
 
 var TABS = {};
 TABS[T_USER] = {
@@ -50,12 +70,22 @@ TABS[T_USER] = {
 };
 TABS[T_DOC] = {
   head: ['เลขที่', 'ประเภท', 'วันที่', 'ผู้ลง', 'บันทึกเมื่อ', 'แถว', 'ชิ้น', 'ออเดอร์', 'สถานะ', 'ยกเลิกโดย', 'ยกเลิกเมื่อ',
-    'เหตุผล', 'รหัสชุด', 'ไฟล์', 'แถวที่คัดลอก', 'แถวสมุดตอนบันทึก'],
-  text: [1, 2, 3, 4, 5, 9, 10, 11, 12, 13, 14, 15],
+    'เหตุผล', 'รหัสชุด', 'ไฟล์', 'แถวที่คัดลอก', 'แถวสมุดตอนบันทึก', 'แถว Transaction'],
+  text: [1, 2, 3, 4, 5, 9, 10, 11, 12, 13, 14, 15, 17],
 };
 TABS[T_COPY] = {
   head: ['เลขที่', 'SKU', 'SKU เต็ม', 'LOT', 'PO', 'โลเบิก', 'โลรับ', 'ชิ้น', 'ประเภท', 'Note', 'Status'],
   text: [1, 2, 3, 4, 5, 6, 7, 9, 10, 11],
+};
+/* คอลัมน์ตรงกับชีต Transaction เดิม (L เป็นช่องสูตรในชีตเดิม ที่นี่ปล่อยว่าง) LOT PO ไม่ตั้งเป็นข้อความ จะได้เป็นตัวเลขแบบที่คนวางในชีตเดิม */
+TABS[T_TX] = {
+  head: ['SKU', 'SKU', 'Product Name', 'LOT', 'PO', 'Location เบิก', 'Location รับ', 'QTY', 'รับ/เบิก', 'Note', 'Status', '-',
+    'NAME', 'RUNNUMBER', 'Time', 'ประเภทชุด', 'อ้างอิง', 'รหัสชุด'],
+  text: [1, 2, 3, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18],
+};
+TABS[T_BAL] = {
+  head: ['Location', 'SKU', 'SKU เต็ม', 'LOT', 'PO', 'ยอด', 'Status', 'วันรับแรก', 'แถวล่าสุด'],
+  text: [1, 2, 3, 4, 5, 7, 8],
 };
 /* แท็บเดือนในไฟล์ออเดอร์ที่ตัด — สองคอลัมน์แรกคือที่ต้องอ่านทุกครั้งที่เช็คตัดซ้ำ จึงอยู่ติดกันทางซ้าย */
 var LOG = {
@@ -76,6 +106,11 @@ var VOID = 'ยกเลิก';
 var TYPE_SALE = 'ตัดขาย';
 var TYPE_MOVE = 'ย้าย';
 var TYPE_RET = 'คืน';
+var TYPE_ROWS = 'ตารางเดิม';
+var TYPE_OPEN = 'ยอดยกมา';
+var MODE_BOOK = 'book';
+var MODE_COPY = 'copy';
+var TX_TYPES = ['รับ', 'เบิก', 'ขาย'];
 var SYSTEMS = ['JST', 'CRM'];
 var MOVE_NOTES = ['โอนย้าย', 'โอนย้าย QA'];
 var LINES_MAX = 8000;      // บรรทัดออเดอร์ต่อชุด ไฟล์ JST ทั้งวันราว 2,400 บรรทัด
@@ -89,6 +124,9 @@ var BAD_MIN = 10;          // พักกี่นาที
 var BACK_DAYS = 45;        // วันที่ตัดย้อนหลังได้ไม่เกินกี่วัน
 var RECENT_MAX = 7;        // bk-recent ย้อนได้ไม่เกินกี่วัน
 var LOCK_MS = 30000;
+var OPEN_MAX = 40000;      // แถวยอดยกมา (กองที่มีของ) ราว 5,000–15,000 กอง
+var NAMES_MAX = 5000;      // ชื่อสินค้าที่ส่งมากับชุด
+var BACKUP_ROWS = 20000;   // แถวที่สำรองต่อครั้ง เกินนี้ทำต่อคืนถัดไป (หรือกดสำรองซ้ำ)
 
 /* ── ทางเข้า ─────────────────────────────────────────────────────────────── */
 
@@ -105,7 +143,18 @@ function doGet(e) {
 function doPost(e) {
   try {
     var req = JSON.parse(e.postData.contents);
-    if (req.op === 'bk-login') { var u = auth_(req); return out_({ app: 'book', who: u.name, role: u.role }); }
+    if (req.op === 'bk-login') { var u = auth_(req); return out_({ app: 'book', who: u.name, role: u.role, mode: mode_() }); }
+    if (req.op === 'bk-state') { auth_(req); return out_(state_()); }
+    if (req.op === 'bk-stock') { auth_(req); return out_(stock_()); }
+    if (/^bk-(rows|open|mode|rebuild|backup)$/.test(String(req.op))) {
+      var hd = auth_(req);
+      if (hd.role !== ROLE_HEAD) return out_({ error: 'คำสั่งนี้ใช้ได้เฉพาะหัวหน้ากับรองหัวหน้า' });
+      if (req.op === 'bk-rows') return out_(rowsSave_(req, hd));
+      if (req.op === 'bk-open') return out_(open_(req, hd));
+      if (req.op === 'bk-mode') return out_(setMode_(req, hd));
+      if (req.op === 'bk-rebuild') return out_(withLock_(function () { return rebuild_(); }));
+      return out_(withLock_(function () { return backup_(); }));
+    }
     if (req.op === 'bk-seen') { auth_(req); return out_(seen_(req)); }
     if (req.op === 'bk-cut') { var c = auth_(req); return out_(cut_(req, c)); }
     if (req.op === 'bk-move') { var m = auth_(req); return out_(move_(req, m)); }
@@ -152,7 +201,7 @@ function head_(sheet, spec) {
 }
 
 /** รันครั้งเดียวจากหน้าแก้สคริปต์ก็ได้ ให้เห็นแท็บผู้ใช้ก่อนมีคนล็อกอิน (ใช้งานจริงสคริปต์สร้างเองอยู่แล้ว) */
-function setup() { [T_USER, T_DOC, T_COPY].forEach(tab_); }
+function setup() { [T_USER, T_DOC, T_COPY, T_TX, T_BAL].forEach(tab_); }
 
 function rows_(sheet, cols) {
   var n = sheet.getLastRow() - 1;
@@ -302,16 +351,28 @@ function monthsBack_(ym, n) {
 function logTab_(name, make) {
   var p = period_(name.slice(0, 7) + '-01');
   var spec = name.length > 7 ? RET : LOG;
+  var file = ownFile_('log|' + p.q, 'WMS สมุดสต๊อก · ออเดอร์ที่ตัด ' + p.y + ' Q' + p.q.slice(-1), make);
+  return file ? monthTab_(file, name, spec, make) : null;
+}
+
+/**
+ * ไฟล์ที่สคริปต์สร้างเอง รหัสไฟล์เก็บใน Script Properties ตาม key (log|2026Q4, bak|2026Q4)
+ * make = สร้างไฟล์ที่ยังไม่มี ไม่ make แล้วไม่มี = null · ที่เดียวในสคริปต์ที่เปิดไฟล์อื่น และเปิดได้แค่รหัสที่ตัวเองเก็บไว้
+ */
+function ownFile_(key, title, make) {
   var props = PropertiesService.getScriptProperties();
-  var key = 'log|' + p.q;
   var id = props.getProperty(key);
   var file = null;
   if (id) file = SpreadsheetApp.openById(id);
   else if (make) {
-    file = SpreadsheetApp.create('WMS สมุดสต๊อก · ออเดอร์ที่ตัด ' + p.y + ' Q' + p.q.slice(-1));
+    file = SpreadsheetApp.create(title);
     props.setProperty(key, file.getId());
   }
-  if (!file) return null;
+  return file;
+}
+
+/** แท็บชื่อ name ในไฟล์ของสคริปต์ ไม่มีแล้ว make = สร้างพร้อมหัวตาราง */
+function monthTab_(file, name, spec, make) {
   var sheet = file.getSheetByName(name);
   if (!sheet) {
     if (!make) return null;
@@ -382,7 +443,7 @@ function docs_(from) {
       row: i + 2, doc: text_(r[0]), type: text_(r[1]), date: text_(r[2]), who: text_(r[3]), at: text_(r[4]),
       rows: +r[5] || 0, qty: +r[6] || 0, orders: +r[7] || 0, status: text_(r[8]),
       voidBy: text_(r[9]), voidAt: text_(r[10]), why: text_(r[11]), batch: text_(r[12]), file: text_(r[13]), ptr: text_(r[14]),
-      base: +r[15] || 0,
+      base: +r[15] || 0, tx: text_(r[16]),
     };
   }).filter(function (d) { return d.doc; });
   if (typeof from === 'number') {
@@ -391,28 +452,46 @@ function docs_(from) {
   return list;
 }
 
-/** ใส่ d.copy ให้ชุดในรายการ อ่านแท็บแถวที่คัดลอกช่วงเดียวครอบทุกชุด (ชุดของรุ่น 1 เก็บเป็น JSON ในช่องเดียว) */
+/**
+ * ใส่ d.copy ให้ชุดในรายการ อ่านแท็บแถวที่คัดลอกช่วงเดียวครอบทุกชุด (ชุดของรุ่น 1 เก็บเป็น JSON ในช่องเดียว)
+ * ชุดที่ลงแท็บ Transaction แล้ว (โหมดบันทึก) อ่านแถวจาก Transaction แทน ยอดยกมาไม่อ่าน (หลายพันแถว ไม่มีใครต้องคัดลอก)
+ */
 function copies_(list) {
-  var lo = 0, hi = 0;
+  var lo = 0, hi = 0, tlo = 0, thi = 0;
   list.forEach(function (d) {
     d.copy = [];
-    var m = /^@(\d+)\+(\d+)$/.exec(d.ptr);
+    var m = /^@(\d+)\+(\d+)$/.exec(d.ptr), t = /^@(\d+)\+(\d+)$/.exec(d.tx || '');
     if (m) {
       d.at0 = +m[1]; d.n0 = +m[2];
       if (!lo || d.at0 < lo) lo = d.at0;
       hi = Math.max(hi, d.at0 + d.n0 - 1);
+    } else if (t && d.type !== TYPE_OPEN) {
+      d.t0 = +t[1]; d.tn = +t[2];
+      if (!tlo || d.t0 < tlo) tlo = d.t0;
+      thi = Math.max(thi, d.t0 + d.tn - 1);
     } else if (/^\[/.test(d.ptr)) {
       try { d.copy = JSON.parse(d.ptr) || []; } catch (e) { d.copy = []; }
     }
   });
-  if (!lo) return;
-  var vals = tab_(T_COPY).getRange(lo, 1, hi - lo + 1, TABS[T_COPY].head.length).getValues();
-  list.forEach(function (d) {
-    if (!d.n0) return;
-    d.copy = vals.slice(d.at0 - lo, d.at0 - lo + d.n0).filter(function (r) { return text_(r[0]) === d.doc; }).map(function (r) {
-      return [text_(r[1]), text_(r[2]), text_(r[3]), text_(r[4]), text_(r[5]), text_(r[6]), +r[7] || 0, text_(r[8]), text_(r[9]), text_(r[10])];
+  if (lo) {
+    var vals = tab_(T_COPY).getRange(lo, 1, hi - lo + 1, TABS[T_COPY].head.length).getValues();
+    list.forEach(function (d) {
+      if (!d.n0) return;
+      d.copy = vals.slice(d.at0 - lo, d.at0 - lo + d.n0).filter(function (r) { return text_(r[0]) === d.doc; }).map(function (r) {
+        return [text_(r[1]), text_(r[2]), text_(r[3]), text_(r[4]), text_(r[5]), text_(r[6]), +r[7] || 0, text_(r[8]), text_(r[9]), text_(r[10])];
+      });
     });
-  });
+  }
+  if (tlo) {
+    var tx = tab_(T_TX), end = Math.min(thi, tx.getLastRow());
+    var tv = end >= tlo ? tx.getRange(tlo, 1, end - tlo + 1, 14).getValues() : [];
+    list.forEach(function (d) {
+      if (!d.tn) return;
+      d.copy = tv.slice(d.t0 - tlo, d.t0 - tlo + d.tn).filter(function (r) { return text_(r[13]) === d.doc; }).map(function (r) {
+        return [text_(r[0]), text_(r[1]), text_(r[3]), text_(r[4]), text_(r[5]), text_(r[6]), +r[7] || 0, text_(r[8]), text_(r[9]), text_(r[10])];
+      });
+    });
+  }
 }
 
 /** เลขถัดไปของเดือนนี้ ดูจากแท็บเลขที่เอกสารเอง (เรียกภายใต้ล็อกเท่านั้น) */
@@ -430,13 +509,13 @@ function nextDoc_(list) {
 /** เขียนชุดใหม่: แถวที่คัดลอกก่อน แล้วแถวเลขที่เอกสารที่ชี้ไปหา (เรียกภายใต้ล็อกเท่านั้น) */
 function writeDoc_(o) {
   var start = append_(tab_(T_COPY), TABS[T_COPY], o.copy.map(function (r) { return [o.doc].concat(r); }));
-  append_(tab_(T_DOC), TABS[T_DOC], [[o.doc, o.type, o.day, o.who, o.at, o.copy.length, o.qty, o.orders || 0,
-    '', '', '', '', o.batch, o.file || '', '@' + start + '+' + o.copy.length, o.base || '']]);
+  append_(tab_(T_DOC), TABS[T_DOC], [[o.doc, o.type, o.day, o.who, o.at, o.rows !== undefined ? o.rows : o.copy.length, o.qty, o.orders || 0,
+    '', '', '', '', o.batch, o.file || '', o.copy.length ? '@' + start + '+' + o.copy.length : '', o.base || '', o.tx || '']]);
 }
 
 function lite_(d, withCopy) {
   var o = { doc: d.doc, type: d.type, date: d.date, who: d.who, at: d.at, rows: d.rows, qty: d.qty, orders: d.orders,
-    status: d.status, voidBy: d.voidBy, voidAt: d.voidAt, why: d.why, batch: d.batch, base: d.base };
+    status: d.status, voidBy: d.voidBy, voidAt: d.voidAt, why: d.why, batch: d.batch, base: d.base, book: d.tx ? 1 : 0 };
   if (withCopy) o.copy = d.copy || [];
   return o;
 }
@@ -450,7 +529,7 @@ function base_(req) {
 /** รหัสชุดเดิมที่บันทึกไปแล้ว (เน็ตหลุดตอนรอคำตอบแล้วกดส่งอีกครั้ง) */
 function again_(list, batch) {
   var d = list.filter(function (x) { return x.batch === batch; })[0];
-  return d ? { app: 'book', doc: d.doc, again: true, at: d.at, status: d.status } : null;
+  return d ? { app: 'book', doc: d.doc, again: true, at: d.at, status: d.status, book: d.tx ? 1 : 0 } : null;
 }
 
 /**
@@ -525,6 +604,7 @@ function cut_(req, user) {
   });
   if (cp.error) return cp;
   if (Math.abs(cp.qty - sumLines) > 1e-9) return { error: 'ชิ้นในแถวที่คัดลอก (' + cp.qty + ') ไม่เท่ากับชิ้นในออเดอร์ (' + sumLines + ')' };
+  var names = namesIn_(req.names);
 
   return withLock_(function () {
     var list = docs_();
@@ -534,6 +614,8 @@ function cut_(req, user) {
     var have = cutKeys_(day), dup = [];
     clean.forEach(function (l) { if (have[l.key]) dup.push({ key: l.key, doc: have[l.key] }); });
     if (dup.length) return { error: 'มีบรรทัดออเดอร์ที่ตัดไปแล้ว ' + dup.length + ' บรรทัด', dup: dup };
+    var chk = bookCheck_(cp.rows);
+    if (chk && chk.error) return chk;
 
     var doc = nextDoc_(list), at = stamp_(), ym = period_(day).ym;
     var orders = {};
@@ -542,9 +624,9 @@ function cut_(req, user) {
     append_(log, LOG, clean.map(function (l) {
       return [doc, '', l.sys, l.order, l.sku, l.qty, day, l.ref, l.piles, user.name, at, l.track];
     }));
-    writeDoc_({ doc: doc, type: TYPE_SALE, day: day, who: user.name, at: at, copy: cp.rows, qty: sumLines,
-      orders: Object.keys(orders).length, batch: batch, file: ym, base: base_(req) });
-    return { app: 'book', doc: doc, at: at, lines: clean.length, rows: cp.rows.length, qty: sumLines };
+    var bk = commit_({ doc: doc, type: TYPE_SALE, day: day, who: user.name, at: at, copy: cp.rows, qty: sumLines,
+      orders: Object.keys(orders).length, batch: batch, file: ym, base: base_(req), names: names }, chk);
+    return { app: 'book', doc: doc, at: at, lines: clean.length, rows: cp.rows.length, qty: sumLines, book: bk.book, txAt: bk.txAt };
   });
 }
 
@@ -566,13 +648,17 @@ function move_(req, user) {
     return '';
   });
   if (cp.error) return cp;
+  var names = namesIn_(req.names);
   return withLock_(function () {
     var list = docs_();
     var again = again_(list, batch);
     if (again) return again;
+    var chk = bookCheck_(cp.rows);
+    if (chk && chk.error) return chk;
     var doc = nextDoc_(list), at = stamp_();
-    writeDoc_({ doc: doc, type: TYPE_MOVE, day: day, who: user.name, at: at, copy: cp.rows, qty: cp.qty, batch: batch, base: base_(req) });
-    return { app: 'book', doc: doc, at: at, rows: cp.rows.length, qty: cp.qty };
+    var bk = commit_({ doc: doc, type: TYPE_MOVE, day: day, who: user.name, at: at, copy: cp.rows, qty: cp.qty, batch: batch, base: base_(req),
+      names: names }, chk);
+    return { app: 'book', doc: doc, at: at, rows: cp.rows.length, qty: cp.qty, book: bk.book, txAt: bk.txAt };
   });
 }
 
@@ -689,6 +775,7 @@ function return_(req, user) {
   if (cp.error) return cp;
   sumLines = Math.round(sumLines * 1000) / 1000;
   if (Math.abs(cp.qty - sumLines) > 1e-9) return { error: 'ชิ้นในแถวที่คัดลอก (' + cp.qty + ') ไม่เท่ากับชิ้นที่คืน (' + sumLines + ')' };
+  var names = namesIn_(req.names);
 
   return withLock_(function () {
     var list = docs_();
@@ -703,6 +790,8 @@ function return_(req, user) {
       if (had + l.qty > l.cutQty + 1e-9) over.push({ key: l.key, cut: l.cutQty, back: had, qty: l.qty });
     });
     if (over.length) return { error: 'คืนเกินชิ้นที่ตัด ' + over.length + ' บรรทัด', over: over };
+    var chk = bookCheck_(cp.rows);
+    if (chk && chk.error) return chk;
 
     var doc = nextDoc_(list), at = stamp_();
     var orders = {};
@@ -711,9 +800,9 @@ function return_(req, user) {
     append_(logTab_(file, true), RET, clean.map(function (l) {
       return [doc, '', l.sys, l.order, l.sku, l.qty, day, l.ref, l.piles, user.name, at, l.track, l.cut];
     }));
-    writeDoc_({ doc: doc, type: TYPE_RET, day: day, who: user.name, at: at, copy: cp.rows, qty: sumLines,
-      orders: Object.keys(orders).length, batch: batch, file: file, base: base_(req) });
-    return { app: 'book', doc: doc, at: at, lines: clean.length, rows: cp.rows.length, qty: sumLines };
+    var bk = commit_({ doc: doc, type: TYPE_RET, day: day, who: user.name, at: at, copy: cp.rows, qty: sumLines,
+      orders: Object.keys(orders).length, batch: batch, file: file, base: base_(req), names: names }, chk);
+    return { app: 'book', doc: doc, at: at, lines: clean.length, rows: cp.rows.length, qty: sumLines, book: bk.book, txAt: bk.txAt };
   });
 }
 
@@ -737,6 +826,10 @@ function void_(req, user) {
     var d = docs_().filter(function (x) { return x.doc === doc; })[0];
     if (!d) return { error: 'ไม่พบเลขที่ ' + doc };
     if (d.status === VOID) return { error: doc + ' ถูกยกเลิกไปแล้ว' };
+    if (d.tx || d.type === TYPE_OPEN) {
+      return { error: d.type === TYPE_OPEN ? 'ยอดยกมายกเลิกไม่ได้ ใช้ ลงยอดยกมาใหม่ ในหน้าตั้งค่าสมุด'
+        : doc + ' ลงแท็บ Transaction ไปแล้ว ยกเลิกแบบลงแถวกลับจะมาในขั้น 4 ตอนนี้ให้หัวหน้าลงแถวแก้ในตารางแบบเดิม' };
+    }
     var at = stamp_();
     var sheet = tab_(T_DOC);
     sheet.getRange(d.row, 9, 1, 4).setValues([[VOID, user.name, at, why]]);
@@ -758,4 +851,385 @@ function void_(req, user) {
     }
     return { app: 'book', doc: doc, type: d.type, status: VOID, at: at, lines: marked };
   });
+}
+
+/* ── สมุดใหม่ (ขั้น 3) ───────────────────────────────────────────────────── */
+
+function mode_() { return PropertiesService.getScriptProperties().getProperty('mode') === MODE_BOOK ? MODE_BOOK : MODE_COPY; }
+
+function round3_(n) { return Math.round(n * 1000) / 1000; }
+function pad2_(n) { return (+n < 10 ? '0' : '') + (+n); }
+
+/** ค่าที่เป็นตัวเลขล้วน (LOT 8, PO 0, LOT 0.11) เขียนเป็นตัวเลขแบบที่คนวางในชีตเดิม ที่เหลือเป็นข้อความ */
+function sheetNum_(v) {
+  var s = text_(v);
+  return /^(0|[1-9]\d{0,14})(\.\d+)?$/.test(s) ? Number(s) : s;
+}
+
+function pileKey_(loc, sku, lot, po) {
+  return [loc, sku, lot, po].map(function (v) { return text_(v).toUpperCase(); }).join('|');
+}
+
+/** วันรับใน Note: "GR 02-10-26" หรือ "ยอดยกมา T2612-0001 · GR 02-10-26" → '2026-10-02' */
+function grDay_(note) {
+  var m = /\bGR\s*(\d{1,2})-(\d{1,2})-(\d{2})\b/i.exec(text_(note));
+  return m ? '20' + m[3] + '-' + pad2_(m[2]) + '-' + pad2_(m[1]) : '';
+}
+
+/** '2026-10-02' → '02-10-26' แบบที่ทีมพิมพ์ในสมุด */
+function grText_(d) { return d.slice(8, 10) + '-' + d.slice(5, 7) + '-' + d.slice(2, 4); }
+
+/** ไตรมาสของวันนี้แบบที่ tx-api.gs อ่านได้ Q4/26 */
+function quarterTag_() { var p = period_(today_()); return 'Q' + Math.ceil(p.m / 3) + '/' + String(p.y).slice(2); }
+
+/** ชื่อสินค้าที่หน้าเว็บส่งมา { SKU เต็ม หรือ SKU: ชื่อ } ใช้เติมช่อง Product Name */
+function namesIn_(v) {
+  var out = {}, n = 0;
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return out;
+  Object.keys(v).forEach(function (k) {
+    if (n >= NAMES_MAX) return;
+    var key = code_(k, 60);
+    if (!key) return;
+    out[key] = plain_(v[k], 120);
+    n++;
+  });
+  return out;
+}
+
+/** แท็บยอดคงเหลือ → { คีย์กอง: {loc, sku, long, lot, po, qty, status, first, last} } */
+function balance_() {
+  var map = {};
+  rows_(tab_(T_BAL), TABS[T_BAL].head.length).forEach(function (r) {
+    var p = { loc: text_(r[0]), sku: text_(r[1]), long: text_(r[2]), lot: text_(r[3]), po: text_(r[4]), qty: +r[5] || 0,
+      status: text_(r[6]), first: text_(r[7]), last: +r[8] || 0 };
+    if (p.loc && (p.long || p.sku)) map[pileKey_(p.loc, p.long || p.sku, p.lot, p.po)] = p;
+  });
+  return map;
+}
+
+/**
+ * แถว [SKU, SKU เต็ม, LOT, PO, โลเบิก, โลรับ, ชิ้น, ประเภท, Note, Status] เข้ายอดคงเหลือ กติกาเดียวกับ tx-api.gs
+ *   เข้า = มีโลรับ ไม่ดูประเภท · ออก = มีโลเบิกและประเภทเป็น เบิก หรือ ขาย · Status ของกองยึดแถวเข้าล่าสุด
+ * at = เลขแถวใน Transaction ของแถวแรก · strict = บอกแถวที่กองไม่พอ (โหมดบันทึก) ไม่ strict = ติดลบได้ (คิดใหม่ทั้งแท็บ)
+ * แก้ map ในที่ คืนรายการกองไม่พอ
+ */
+function applyRows_(map, rows, at, strict) {
+  var short = [];
+  function pile(loc, r) {
+    var k = pileKey_(loc, r[1] || r[0], r[2], r[3]);
+    return map[k] || (map[k] = { loc: text_(loc).toUpperCase(), sku: text_(r[0]).toUpperCase(), long: text_(r[1]).toUpperCase(),
+      lot: text_(r[2]).toUpperCase(), po: text_(r[3]).toUpperCase(), qty: 0, status: '', first: '', last: 0 });
+  }
+  rows.forEach(function (r, i) {
+    if (!r[0] && !r[1]) return;
+    var qty = +r[6] || 0;
+    if (r[5]) {
+      var p = pile(r[5], r);
+      p.qty = round3_(p.qty + qty);
+      p.status = r[9] === 'เปิด' ? 'เปิด' : '';
+      p.last = at + i;
+      var d = grDay_(r[8]);
+      if (d && (!p.first || d < p.first)) p.first = d;
+    }
+    if (r[4] && (r[7] === 'เบิก' || r[7] === 'ขาย')) {
+      var q = pile(r[4], r);
+      if (strict && q.qty + 1e-9 < qty) short.push({ n: i + 1, loc: q.loc, sku: r[0], lot: r[2], po: r[3], have: Math.max(0, q.qty), need: qty });
+      q.qty = round3_(q.qty - qty);
+      q.last = at + i;
+    }
+  });
+  return short;
+}
+
+/** เขียนแท็บยอดคงเหลือใหม่ทั้งแท็บ กองยอด 0 ไม่ลง เรียงตามโล แล้ว SKU LOT PO คืนรายการกอง */
+function writeBalance_(map) {
+  var sheet = tab_(T_BAL), spec = TABS[T_BAL];
+  var cmp = function (a, b) { return String(a).localeCompare(String(b), 'en', { numeric: true }); };
+  var list = Object.keys(map).map(function (k) { return map[k]; }).filter(function (p) { return Math.abs(p.qty) > 1e-9; });
+  list.sort(function (a, b) { return cmp(a.loc, b.loc) || cmp(a.long || a.sku, b.long || b.sku) || cmp(a.lot, b.lot) || cmp(a.po, b.po); });
+  var old = Math.max(0, sheet.getLastRow() - 1);
+  if (list.length) {
+    var short = list.length + 1 - sheet.getMaxRows();
+    if (short > 0) sheet.insertRowsAfter(sheet.getMaxRows(), short);
+    spec.text.forEach(function (c) { sheet.getRange(2, c, list.length, 1).setNumberFormat('@'); });
+    sheet.getRange(2, 1, list.length, spec.head.length).setValues(list.map(function (p) {
+      return [p.loc, p.sku, p.long, p.lot, p.po, p.qty, p.status, p.first, p.last || ''];
+    }));
+  }
+  if (old > list.length) sheet.getRange(list.length + 2, 1, old - list.length, spec.head.length).clearContent();
+  return list;
+}
+
+/**
+ * ลงแถวต่อท้ายแท็บ Transaction (เรียกภายใต้ล็อกเท่านั้น) คืนแถวแรกที่ลง
+ * o = {rows (แบบแถวที่คัดลอก), names, who, doc, at, type, ref, batch}
+ */
+function txWrite_(o) {
+  var names = o.names || {};
+  return append_(tab_(T_TX), TABS[T_TX], o.rows.map(function (r) {
+    return [r[0], r[1], names[r[1]] || names[r[0]] || '', sheetNum_(r[2]), sheetNum_(r[3]), r[4], r[5], r[6], r[7], r[8], r[9], '',
+      o.who, o.doc, o.at, o.type, o.ref || '', o.batch];
+  }));
+}
+
+/**
+ * โหมดบันทึก: เช็คกองก่อนลง (เรียกภายใต้ล็อก) · โหมดคัดลอกคืน null
+ * กองไม่พอ (รวมแถวก่อนหน้าในชุดเดียวกัน) = ไม่รับทั้งชุด คืน {error, short} · ผ่าน = {map ยอดหลังลง, at แถวแรกที่จะลง}
+ */
+function bookCheck_(rows) {
+  if (mode_() !== MODE_BOOK) return null;
+  var map = balance_(), at = tab_(T_TX).getLastRow() + 1;
+  var short = applyRows_(map, rows, at, true);
+  if (short.length) {
+    return { error: 'ยอดในสมุดไม่พอ ' + short.length + ' แถว ต้องลงรับของ หรือให้หัวหน้าปรับยอดก่อน', short: short.slice(0, 50) };
+  }
+  return { map: map, at: at };
+}
+
+/**
+ * ส่วนท้ายของทุกชุด (ภายใต้ล็อก) โหมดบันทึก: ลงแท็บ Transaction เขียนยอดคงเหลือ แถวที่คัดลอกไม่ต้องเก็บซ้ำ (อ่านจาก Transaction ได้)
+ * แล้วเขียนแถวเลขที่เอกสาร · คืน {book, txAt}
+ */
+function commit_(o, chk) {
+  var out = {};
+  if (chk) {
+    var at = txWrite_({ rows: o.copy, names: o.names, who: o.who, doc: o.doc, at: o.at, type: o.type, ref: o.ref, batch: o.batch });
+    writeBalance_(chk.map);
+    o.tx = '@' + at + '+' + o.copy.length;
+    o.base = at - 1;
+    o.rows = o.copy.length;
+    o.copy = [];
+    out = { book: 1, txAt: at };
+  }
+  writeDoc_(o);
+  return out;
+}
+
+/* ── ตารางแบบสมุดเดิม ────────────────────────────────────────────────────── */
+
+/**
+ * req = {batch, date, base, ref, names, copy:[[SKU, SKU เต็ม, LOT, PO, โลเบิก, โลรับ, ชิ้น, รับ | เบิก | ขาย, Note, Status]]}
+ * ลงได้ทุกประเภท (รับของ แปลง M/E ปรับยอด) จนกว่าแต่ละงานจะมีหน้าของตัวเอง เฉพาะหัวหน้ากับรองหัวหน้า
+ *   รับ = มีโลรับอย่างเดียว · เบิก = มีโลเบิก (โลรับมีหรือไม่มีก็ได้) · ขาย = มีโลเบิกอย่างเดียว · ทุกแถวต้องมี Note
+ *   แถวขาย Note = วันที่ขาย yyyy-mm-dd แบบชีตเดิม (tx-api อ่านเป็นวันขาย หน้าเว็บใช้เช็คว่าชุดลงสมุดแล้ว)
+ */
+function rowsSave_(req, user) {
+  var batch = plain_(req.batch, 60);
+  if (!batch) return { error: 'ไม่มีรหัสชุด' };
+  var day = checkDay_(text_(req.date));
+  var cp = copyRows_(req.copy, function (r) {
+    if (TX_TYPES.indexOf(r[7]) < 0) return 'ประเภทต้องเป็น ' + TX_TYPES.join(' ');
+    if (r[7] === 'รับ' && (!r[5] || r[4])) return 'แถวรับมีแค่โลรับ';
+    if (r[7] === 'เบิก' && !r[4]) return 'แถวเบิกต้องมีโลเบิก';
+    if (r[7] === 'ขาย' && (!r[4] || r[5])) return 'แถวขายมีแค่โลเบิก';
+    if (r[4] && r[4] === r[5]) return 'โลเบิกกับโลรับเป็นที่เดียวกัน';
+    if (!r[8]) return 'ต้องมี Note บอกว่าเป็นงานอะไร';
+    if (r[7] === 'ขาย' && !/^\d{4}-\d{2}-\d{2}$/.test(r[8])) return 'แถวขาย Note ต้องเป็นวันที่ขาย (yyyy-mm-dd)';
+    return '';
+  });
+  if (cp.error) return cp;
+  var names = namesIn_(req.names), ref = plain_(req.ref, 60);
+  return withLock_(function () {
+    var list = docs_();
+    var again = again_(list, batch);
+    if (again) return again;
+    var chk = bookCheck_(cp.rows);
+    if (chk && chk.error) return chk;
+    var doc = nextDoc_(list), at = stamp_();
+    var bk = commit_({ doc: doc, type: TYPE_ROWS, day: day, who: user.name, at: at, copy: cp.rows, qty: cp.qty, batch: batch, base: base_(req),
+      names: names, ref: ref }, chk);
+    return { app: 'book', doc: doc, at: at, rows: cp.rows.length, qty: cp.qty, book: bk.book, txAt: bk.txAt };
+  });
+}
+
+/* ── ยอดยกมา สถานะ สลับโหมด ─────────────────────────────────────────────── */
+
+/**
+ * req = {batch, asOf, replace, rows:[[SKU, SKU เต็ม, ชื่อ, LOT, PO, โล, ชิ้น, Status, วันรับ yyyy-mm-dd, ไตรมาส Q4/26]]}
+ * ยอดยกมา = ยอดคงเหลือทุกกองของสมุดเดิม ณ วันตัดรอบ (หน้าเว็บคิดจาก tx-fifo) ลงเป็นแถวรับ กองละแถว
+ * Note "ยอดยกมา T2612-0001 · GR 02-10-26" = วันรับแรกของ SKU+LOT+PO (หน้า FIFO กับปีของ LOT ใช้)
+ * ไม่รู้วันรับ = "· Q4/26" ไตรมาสของรอบนับที่ของกองนั้นมาจาก หรือไตรมาสของวันที่ลง
+ * asOf = แถวสุดท้ายของสมุดเดิมที่ใช้คิด · ลงได้เฉพาะโหมดคัดลอก · ลงใหม่ (replace) = ล้าง Transaction กับยอดคงเหลือก่อน
+ */
+function open_(req, user) {
+  var batch = plain_(req.batch, 60);
+  if (!batch) return { error: 'ไม่มีรหัสชุด' };
+  var src = Array.isArray(req.rows) ? req.rows : [];
+  if (!src.length || src.length > OPEN_MAX) return { error: 'ยอดยกมาต้องมี 1–' + OPEN_MAX + ' กอง' };
+  var asOf = num_(req.asOf);
+  var rows = [], names = {}, bad = [], qty = 0, seen = {};
+  src.forEach(function (c, i) {
+    c = c || [];
+    var r = [code_(c[0], 60), code_(c[1], 60), code_(c[3], 20), code_(c[4], 40), '', code_(c[5], 40), num_(c[6]), 'รับ', '',
+      text_(c[7]) === 'เปิด' ? 'เปิด' : ''];
+    var why = !r[0] ? 'ไม่มี SKU' : !r[5] ? 'ไม่มีโล' : r[6] === null || r[6] <= 0 ? 'ชิ้นต้องมากกว่า 0'
+      : r[2] === '' || r[3] === '' ? 'ไม่มี LOT หรือ PO' : '';
+    var k = pileKey_(r[5], r[1] || r[0], r[2], r[3]);
+    if (!why && seen[k]) why = 'กองซ้ำ';
+    if (why) { bad.push({ n: i + 1, sku: r[0], loc: r[5], why: why }); return; }
+    seen[k] = 1;
+    var gr = /^\d{4}-\d{2}-\d{2}$/.test(text_(c[8])) ? text_(c[8]) : '';
+    var q = /^Q[1-4]\/\d{2}$/.test(text_(c[9])) ? text_(c[9]) : '';
+    rows.push({ r: r, gr: gr, q: q });
+    var nm = plain_(c[2], 120);
+    if (nm) names[r[1] || r[0]] = nm;
+    qty += r[6];
+  });
+  if (bad.length) return { error: 'ยอดยกมาไม่ถูก ' + bad.length + ' กอง', bad: bad.slice(0, 50) };
+
+  return withLock_(function () {
+    if (mode_() === MODE_BOOK) return { error: 'โหมดบันทึกอยู่ ลงยอดยกมาไม่ได้ ต้องสลับกลับเป็นโหมดคัดลอกก่อน' };
+    var list = docs_();
+    var again = again_(list, batch);
+    if (again) return again;
+    var tx = tab_(T_TX), had = Math.max(0, tx.getLastRow() - 1);
+    var prev = list.filter(function (d) { return d.type === TYPE_OPEN && d.status !== VOID; });
+    if ((had || prev.length) && !req.replace) {
+      return { error: 'มียอดยกมาแล้ว' + (prev.length ? ' (' + prev[prev.length - 1].doc + ')' : '') + ' จะลงใหม่ต้องกด ลงใหม่', had: had };
+    }
+    var at = stamp_(), qt = quarterTag_();
+    if (had) tx.getRange(2, 1, had, TABS[T_TX].head.length).clearContent();
+    var bal = tab_(T_BAL), nb = Math.max(0, bal.getLastRow() - 1);
+    if (nb) bal.getRange(2, 1, nb, TABS[T_BAL].head.length).clearContent();
+    var dsheet = tab_(T_DOC);
+    prev.forEach(function (d) { dsheet.getRange(d.row, 9, 1, 4).setValues([[VOID, user.name, at, 'ลงยอดยกมาใหม่']]); });
+    var doc = nextDoc_(list);
+    var out = rows.map(function (x) {
+      x.r[8] = TYPE_OPEN + ' ' + doc + ' · ' + (x.gr ? 'GR ' + grText_(x.gr) : x.q || qt);
+      return x.r;
+    });
+    var map = {};
+    applyRows_(map, out, 2, false);
+    var txAt = txWrite_({ rows: out, names: names, who: user.name, doc: doc, at: at, type: TYPE_OPEN,
+      ref: asOf ? 'สมุดเดิมถึงแถว ' + asOf : '', batch: batch });
+    writeBalance_(map);
+    writeDoc_({ doc: doc, type: TYPE_OPEN, day: today_(), who: user.name, at: at, copy: [], rows: out.length, qty: round3_(qty),
+      batch: batch, base: asOf || '', tx: '@' + txAt + '+' + out.length });
+    return { app: 'book', doc: doc, at: at, rows: out.length, qty: round3_(qty), replaced: prev.map(function (d) { return d.doc; }) };
+  });
+}
+
+/**
+ * สถานะสมุดใหม่: โหมด ยอดยกมาล่าสุด ชุดที่บันทึกหลังยอดยกมา แถวแรกของ Transaction (หน้าเว็บเทียบกับ tx-fifo
+ * ว่า tx-api อ่านไฟล์นี้แล้วหรือยัง) และ Backup ล่าสุด
+ */
+function state_() {
+  var props = PropertiesService.getScriptProperties();
+  var list = docs_();
+  var op = list.filter(function (d) { return d.type === TYPE_OPEN && d.status !== VOID; }).pop() || null;
+  var after = op ? list.filter(function (d) { return d.row > op.row && d.status !== VOID && d.type !== TYPE_OPEN; }) : [];
+  var tx = tab_(T_TX), last = tx.getLastRow();
+  var f = last >= 2 ? tx.getRange(2, 1, 1, 11).getValues()[0] : null;
+  return {
+    app: 'book', mode: mode_(), modeAt: props.getProperty('modeAt') || '', modeBy: props.getProperty('modeBy') || '',
+    rows: Math.max(0, last - 1), piles: Math.max(0, tab_(T_BAL).getLastRow() - 1),
+    open: op ? { doc: op.doc, at: op.at, who: op.who, rows: op.rows, qty: op.qty, asOf: op.base || 0 } : null,
+    after: after.length, afterDocs: after.slice(-10).map(function (d) { return d.doc; }),
+    first: f ? { sku: text_(f[0]), long: text_(f[1]), lot: text_(f[3]), po: text_(f[4]), to: text_(f[6]), qty: +f[7] || 0 } : null,
+    backup: { at: props.getProperty('bakAt') || '', row: +(props.getProperty('bakRow') || 0) },
+    today: today_(),
+  };
+}
+
+/** req = {mode: 'book' | 'copy', why} สลับไปโหมดบันทึกต้องมียอดยกมา และไม่มีชุดที่บันทึกหลังยอดยกมา */
+function setMode_(req, user) {
+  var want = req.mode === MODE_BOOK ? MODE_BOOK : req.mode === MODE_COPY ? MODE_COPY : '';
+  if (!want) return { error: 'โหมดต้องเป็น book หรือ copy' };
+  var why = plain_(req.why, 200);
+  return withLock_(function () {
+    if (mode_() === want) return { app: 'book', mode: want, same: true };
+    if (want === MODE_BOOK) {
+      var st = state_();
+      if (!st.open) return { error: 'ยังไม่ได้ลงยอดยกมา' };
+      if (st.after) {
+        return { error: 'มี ' + st.after + ' ชุดที่บันทึกหลังลงยอดยกมา (' + st.afterDocs.join(', ') + ') ของพวกนี้อยู่ในชีตเดิม ยอดยกมาไม่มี ต้องลงยอดยกมาใหม่ก่อนสลับ' };
+      }
+    } else if (!why) {
+      return { error: 'ถอยกลับโหมดคัดลอกต้องใส่เหตุผล' };
+    }
+    var props = PropertiesService.getScriptProperties(), at = stamp_();
+    props.setProperty('mode', want);
+    props.setProperty('modeAt', at);
+    props.setProperty('modeBy', user.name);
+    var hist = [];
+    try { hist = JSON.parse(props.getProperty('modeLog') || '[]'); } catch (e) { hist = []; }
+    hist.push([at, user.name, want, why]);
+    props.setProperty('modeLog', JSON.stringify(hist.slice(-20)));
+    return { app: 'book', mode: want, at: at };
+  });
+}
+
+/** ยอดคงเหลือทุกกอง [[โล, SKU, SKU เต็ม, LOT, PO, ยอด, Status]] */
+function stock_() {
+  var map = balance_();
+  return {
+    app: 'book', mode: mode_(), rows: Math.max(0, tab_(T_TX).getLastRow() - 1),
+    piles: Object.keys(map).map(function (k) { var p = map[k]; return [p.loc, p.sku, p.long, p.lot, p.po, p.qty, p.status]; }),
+  };
+}
+
+/** คิดแท็บยอดคงเหลือใหม่จาก Transaction ทั้งแท็บ (เรียกภายใต้ล็อก) ใช้ตอนมีคนแก้แท็บ Transaction ด้วยมือ */
+function rebuild_() {
+  var tx = tab_(T_TX), n = tx.getLastRow() - 1, map = {};
+  if (n > 0) {
+    var vals = tx.getRange(2, 1, n, 11).getValues().map(function (c) {
+      return [text_(c[0]).toUpperCase(), text_(c[1]).toUpperCase(), text_(c[3]).toUpperCase(), text_(c[4]).toUpperCase(),
+        text_(c[5]).toUpperCase(), text_(c[6]).toUpperCase(), typeof c[7] === 'number' ? c[7] : 0, text_(c[8]), text_(c[9]), text_(c[10])];
+    });
+    applyRows_(map, vals, 2, false);
+  }
+  var list = writeBalance_(map);
+  var neg = list.filter(function (p) { return p.qty < 0; });
+  return {
+    app: 'book', rows: Math.max(0, n), piles: list.length, neg: neg.length,
+    negList: neg.slice(0, 50).map(function (p) { return [p.loc, p.sku, p.lot, p.po, p.qty]; }),
+  };
+}
+
+/* ── Backup ──────────────────────────────────────────────────────────────── */
+
+var BAK = {
+  head: ['แถวในสมุด'].concat(TABS[T_TX].head),
+  text: TABS[T_TX].text.map(function (c) { return c + 1; }),
+};
+
+/** แท็บเดือนในไฟล์สำรองรายไตรมาสที่สคริปต์สร้างเอง */
+function bakTab_(day) {
+  var p = period_(day);
+  var file = ownFile_('bak|' + p.q, 'WMS สมุดสต๊อก · สำรอง Transaction ' + p.y + ' Q' + p.q.slice(-1), true);
+  return monthTab_(file, p.ym, BAK, true);
+}
+
+/**
+ * ต่อท้ายแถวใหม่ของ Transaction ลงไฟล์สำรอง (เรียกภายใต้ล็อก) จำแถวที่สำรองแล้วใน Script Properties (bakRow)
+ * ยอดยกมาเปลี่ยน (ลงใหม่) = เริ่มสำรองใหม่ตั้งแต่แถว 2 · ครั้งละไม่เกิน BACKUP_ROWS แถว
+ */
+function backup_() {
+  var props = PropertiesService.getScriptProperties();
+  var tx = tab_(T_TX), last = tx.getLastRow();
+  var op = (docs_().filter(function (d) { return d.type === TYPE_OPEN && d.status !== VOID; }).pop() || {}).doc || '';
+  var done = +(props.getProperty('bakRow') || 1);
+  if ((props.getProperty('bakDoc') || '') !== op || done > last) done = 1;
+  var n = Math.max(0, Math.min(last - done, BACKUP_ROWS));
+  var at = stamp_();
+  if (n) {
+    var vals = tx.getRange(done + 1, 1, n, TABS[T_TX].head.length).getValues();
+    append_(bakTab_(today_()), BAK, vals.map(function (r, i) { return [done + 1 + i].concat(r); }));
+  }
+  props.setProperty('bakRow', String(done + n));
+  props.setProperty('bakDoc', op);
+  props.setProperty('bakAt', at);
+  return { app: 'book', rows: n, at: at, upTo: done + n, more: Math.max(0, last - done - n) };
+}
+
+/** ตัวที่ตั้งเวลาเรียกทุกคืน */
+function backup() { return withLock_(backup_); }
+
+/** รันครั้งเดียวจากหน้าแก้สคริปต์: ตั้งเวลาสำรองทุกคืนตีหนึ่ง (รันซ้ำได้ ตัวเก่าถูกลบก่อน) */
+function installBackup() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'backup') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('backup').timeBased().everyDays(1).atHour(1).create();
+  return 'ตั้งเวลาสำรองทุกคืนตีหนึ่งแล้ว';
 }

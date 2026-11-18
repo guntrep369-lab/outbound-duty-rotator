@@ -149,6 +149,15 @@
 .g-xl td.g-out .tk{white-space:nowrap}
 .g-open{padding:0 6px;border-radius:999px;background:#ECFDF5;color:#047857;font-size:11px;font-weight:700}
 
+/* ── ⚙️ สมุดใหม่ ── */
+.s-mode .pill{display:inline-flex;padding:1px 9px;border-radius:999px;border:1px solid var(--wms-border);background:var(--wms-surface2);
+  color:var(--wms-text);font-weight:600}
+.s-mode .pill.ok{background:#ECFDF5;border-color:#A7F3D0;color:#065F46}
+.bk-xl td.s-v{white-space:normal;min-width:260px;line-height:1.5;padding:4px 8px}
+.s-gap{margin-top:14px}
+.bk-act .sp{flex:1}
+.tx-src .pill.book{background:#ECFDF5;border-color:#A7F3D0;color:#065F46;font-weight:600}
+
 /* ── ชุดที่บันทึก ── */
 .bk-docs{padding:0 20px 60px}
 .bk-docs:empty{display:none}
@@ -175,8 +184,8 @@
         <h2>สมุดสต๊อก</h2>
         <button type="button" class="mod-info" aria-expanded="false" aria-label="คำอธิบายหน้านี้">i</button>
         <p>ตัดขายจากไฟล์ออเดอร์ JST / CRM · ย้าย เติม QA · คืนของตามเลขออเดอร์ ระบบเลือกกอง LOT PO ให้จากสต๊อกในสมุด Transaction
-          กดบันทึกได้เลขที่เอกสารและคัดลอกแถวไปวางในชีต Transaction · ออเดอร์ที่ตัดแล้วไม่ถูกตัดซ้ำ คืนเกินที่ตัดไม่ได้
-          · สคริปต์ของหน้านี้ไม่แตะชีต Transaction</p>
+          · โหมดคัดลอก (ตอนนี้) กดบันทึกได้เลขที่เอกสารแล้วคัดลอกแถวไปวางในชีต Transaction เดิม · โหมดบันทึก (หลังตัดรอบ) ลงไฟล์ WMS สมุดสต๊อก เลย
+          · ออเดอร์ที่ตัดแล้วไม่ถูกตัดซ้ำ คืนเกินที่ตัดไม่ได้ · สคริปต์ของหน้านี้ไม่แตะชีต Transaction เดิม</p>
       </div>
     </div>
   </div>
@@ -198,6 +207,7 @@
 <script src="../wms-shared.js"></script>
 <script src="../wms-book.js"></script>
 <script src="book-grid.js"></script>
+<script src="book-set.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -210,8 +220,10 @@ const ME = 'wms:book:me';         // คนที่เข้าสมุดใ�
 const ROW_MAX = 600;              // แถวที่วาดในตารางต่อครั้ง
 const HEAD_ROLE = 'หัวหน้า';
 const MODE_KEY = 'wms:book:draft:mode';   // แท็บที่เปิดค้าง (เครื่องนี้)
-const MODES = [['cut', 'ตัดขาย'], ['move', 'ย้าย / เติม / QA'], ['ret', 'คืนของ']];
+const MODES = [['cut', 'ตัดขาย'], ['move', 'ย้าย / เติม / QA'], ['ret', 'คืนของ'], ['rows', 'ตารางแบบเดิม'], ['set', '⚙️ สมุดใหม่']];
+const HEAD_ONLY = { rows: 1, set: 1 };   // แท็บของหัวหน้ากับรองหัวหน้า
 let MODE = (() => { try { const m = localStorage.getItem(MODE_KEY); return MODES.some((x) => x[0] === m) ? m : 'cut'; } catch (e) { return 'cut'; } })();
+const RETRY_MS = 30000;   // ชุดที่ส่งไม่สำเร็จเพราะเน็ต ส่งซ้ำเองทุกเท่านี้
 
 let RES = null;      // คำตอบ tx-fifo (ข้อมูลกลาง)
 let ST = null;       // กองสต๊อกหลังหักชุดที่ยังไม่วาง
@@ -232,6 +244,8 @@ let LAST = null;     // ชุดล่าสุดที่บันทึก�
 let MSG = null;      // { kind: ok|bad|warn, html }
 let BUSY = '', ERR = '', WAIT = null, LOADING = false;
 let BKBUSY = '', BKERR = '', SETURL = false;
+let BSTATE = null;   // สถานะสมุดใหม่จาก bk-state (โหมด ยอดยกมา Backup) หรืออย่างน้อย { mode } จากตอนเข้าสมุด
+let RETRY_T = 0;
 let XLSX_LOAD = null;
 
 function readJson(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } }
@@ -306,6 +320,45 @@ async function load(fresh, quiet) {
 
 function bookUrl() { return WmsSettings.bookUrl(); }
 
+/** โหมดบันทึก = หลังตัดรอบ กดบันทึกแล้วลงสมุดใหม่เลย ไม่ต้องคัดลอกไปวางในชีตเดิม */
+function bookMode() { return !!(BSTATE && BSTATE.mode === 'book'); }
+function isHead() { return !!(USER && USER.role === HEAD_ROLE); }
+function tabs() { return MODES.filter((m) => !HEAD_ONLY[m[0]] || isHead()); }
+
+async function refreshState() {
+  if (!USER || !bookUrl()) return;
+  try {
+    const r = await bookPost('bk-state', {});
+    if (r.error) throw new Error(r.error);
+    BSTATE = r;
+  } catch (e) { BKERR = 'อ่านสถานะสมุดไม่ได้: ' + e.message; }
+}
+
+/** กองไม่พอในโหมดบันทึก (คำตอบ short ของสคริปต์) → รายการให้คนอ่าน */
+function shortList(r) {
+  if (!r || !r.short || !r.short.length) return '';
+  return '<ol>' + r.short.slice(0, 8).map((x) => `<li>แถว ${x.n} ${esc(x.sku)} โล ${esc(x.loc)} LOT ${esc(x.lot)} PO ${esc(x.po)}: มี ${f(x.have)} ต้องการ ${f(x.need)}</li>`).join('') +
+    (r.short.length > 8 ? `<li>อีก ${f(r.short.length - 8)} แถว</li>` : '') + '</ol>';
+}
+
+/** ชุดที่ค้าง (ส่งไม่สำเร็จเพราะเน็ต) ส่งซ้ำเองทุก RETRY_MS และตอนเน็ตกลับมา รหัสชุดเดิม = สคริปต์ไม่บันทึกซ้ำ */
+function queueRetry(ms) {
+  clearTimeout(RETRY_T);
+  RETRY_T = setTimeout(retryAll, ms === undefined ? RETRY_MS : ms);
+  /* ป้ายรอส่งบนแถบบน · ยังไม่เข้าสมุดไม่วาดใหม่ ช่องรหัสที่กำลังพิมพ์จะได้ไม่หาย */
+  if (USER) renderSrc();
+}
+function pendingCount() { return (PENDING ? 1 : 0) + BookGrid.modes().filter((m) => BookGrid.pending(m)).length; }
+async function retryAll() {
+  if (!pendingCount()) return;
+  if (!USER || BKBUSY || !DOCS_OK || (navigator.onLine === false)) { queueRetry(); return; }
+  if (PENDING) await save();
+  await BookGrid.retry();
+  if (pendingCount()) queueRetry();
+  else renderSrc();
+}
+window.addEventListener('online', () => queueRetry(1000));
+
 function checkV(r) {
   if (r && !r.error && r.app === 'book' && !(r.v >= B.API_V)) {
     throw new Error(`สคริปต์ book-api.gs ยังเป็นรุ่น ${r.v || 'เก่า'} หน้านี้ต้องใช้รุ่น ${B.API_V} ให้วางโค้ดใหม่แล้ว Deploy เป็น New version`);
@@ -344,11 +397,14 @@ async function login() {
     const r = await bookPost('bk-login', {});
     if (r.error) throw new Error(r.error);
     USER = { who: r.who, pin, role: r.role };
+    BSTATE = { mode: r.mode || 'copy' };
     try { sessionStorage.setItem(ME, JSON.stringify(USER)); } catch (e) {}
     BKBUSY = '';
     render();
+    await refreshState();
     await refreshDocs();
     await refreshSeen();
+    if (pendingCount()) queueRetry(1000);
   } catch (e) {
     USER = null;
     BKERR = e.message;
@@ -359,6 +415,7 @@ async function login() {
 
 function logout(why) {
   USER = null;
+  BSTATE = null;
   DOCS = []; DOCS_OK = false; SEEN = {}; SEEN_FOR = '';
   try { sessionStorage.removeItem(ME); } catch (e) {}
   BKERR = why || '';
@@ -429,17 +486,19 @@ async function save() {
     if (RES && RES.last && RES.last >= DATE &&
         !confirm(`สมุด Transaction มีแถวขายวันที่ ${dm(RES.last)} แล้ว\nเช็คแล้วว่าไฟล์นี้ยังไม่ได้ตัดด้วยมือในชีตเดิม ใช่ไหม?`)) return;
     p = { batch: B.uuid(), date: DATE, base: B.lastRow(RES), lines: B.cutLines(CUT), copy: B.copyRows(CUT, DATE), at: Date.now() };
+    p.names = B.namesOf(ST, p.copy);
     PENDING = p;
     saveDraft();
   }
   BKBUSY = 'กำลังบันทึก…'; MSG = null; render();
   let r;
   try {
-    r = await bookPost('bk-cut', { batch: p.batch, date: p.date, base: p.base || 0, lines: p.lines, copy: p.copy });
+    r = await bookPost('bk-cut', { batch: p.batch, date: p.date, base: p.base || 0, lines: p.lines, copy: p.copy, names: p.names || {} });
   } catch (e) {
     BKBUSY = '';
-    MSG = { kind: 'warn', html: `ส่งไม่สำเร็จ (${esc(e.message)}) ยังไม่รู้ว่าถึงสมุดไหม กด <b>ส่งอีกครั้ง</b> ได้ ระบบไม่บันทึกซ้ำ` };
+    MSG = { kind: 'warn', html: `ตัดขาย: ส่งไม่สำเร็จ (${esc(e.message)}) ยังไม่รู้ว่าถึงสมุดไหม ระบบส่งซ้ำเองเมื่อเน็ตกลับมา ไม่บันทึกซ้ำ` };
     render();
+    queueRetry();
     return;
   }
   BKBUSY = '';
@@ -452,7 +511,7 @@ async function save() {
       const docs = [...new Set(r.dup.map((d) => d.doc))].join(', ');
       MSG = { kind: 'bad', html: `มี <b>${f(r.dup.length)}</b> บรรทัดที่ตัดไปแล้วใน ${esc(docs)} เอาออกจากชุดให้แล้ว ตรวจอีกครั้งแล้วกดบันทึกใหม่` };
     } else {
-      MSG = { kind: 'bad', html: `บันทึกไม่สำเร็จ: ${esc(r.error)}` };
+      MSG = { kind: 'bad', html: `ตัดขาย บันทึกไม่สำเร็จ: ${esc(r.error)}${shortList(r)}` };
     }
     render();
     refreshDocs();   // ชุดที่เครื่องอื่นเพิ่งบันทึก ต้องหักกองของมันด้วยก่อนบันทึกรอบหน้า
@@ -461,15 +520,15 @@ async function save() {
   p.lines.forEach((l) => { SEEN[`${l.sys}|${l.order}|${l.sku}`] = r.doc; });
   if (!DOCS.some((d) => d.doc === r.doc)) {
     DOCS.unshift({ doc: r.doc, type: 'ตัดขาย', date: p.date, who: USER.who, at: r.at || '', rows: p.copy.length, qty: sumQty(p.copy),
-      orders: new Set(p.lines.map((l) => l.sys + '|' + l.order)).size, status: '', base: p.base || 0, copy: p.copy });
+      orders: new Set(p.lines.map((l) => l.sys + '|' + l.order)).size, status: '', base: r.book ? r.txAt - 1 : p.base || 0, copy: p.copy,
+      book: r.book ? 1 : 0 });
   }
-  LAST = { doc: r.doc, who: USER.who, copy: p.copy };
+  LAST = { doc: r.doc, who: USER.who, copy: p.copy, book: !!r.book, txAt: r.txAt };
   PENDING = null;
   saveDraft();
   compute();
-  const ok = await copyText(B.tsv(p.copy, USER.who, r.doc));
   MSG = null;
-  LAST.copied = ok;
+  if (!r.book) LAST.copied = await copyText(B.tsv(p.copy, USER.who, r.doc));
   render();
   refreshDocs();
 }
@@ -594,6 +653,10 @@ function renderSrc() {
     }
     html += '<button id="bkSet" title="เปลี่ยน URL ของสมุดสต๊อก">⚙️</button>';
   } else {
+    const n = pendingCount();
+    if (n) html += `<span class="pill warn" title="ส่งไม่สำเร็จ ระบบส่งซ้ำเองทุก 30 วินาที">⏳ รอส่ง <b>${n}</b> ชุด</span>`;
+    html += bookMode() ? '<span class="pill book" title="หลังตัดรอบ กดบันทึกแล้วลงไฟล์ WMS สมุดสต๊อก เลย ไม่ต้องคัดลอก">📗 โหมดบันทึก</span>'
+      : '<span class="pill" title="ชีต Transaction เดิมยังเป็นตัวจริง บันทึกแล้วคัดลอกแถวไปวางในชีตเดิม">📋 โหมดคัดลอก</span>';
     html += `<span class="pill ok">👤 <b>${esc(USER.who)}</b> · ${esc(USER.role)}</span><button id="bkOut">ออก</button>`;
   }
   if (ERR) html += `<div class="tx-err">ดึงสต๊อกไม่สำเร็จ: ${esc(ERR)}</div>`;
@@ -659,16 +722,17 @@ function renderSum() {
 /* ── ปุ่มบันทึก ───────────────────────────────────────────────────────── */
 
 function renderAct() {
+  if (MODE === 'set') return;
   if (MODE !== 'cut') { BookGrid.act(MODE); return; }
   let html = '';
   if (PENDING) {
     html += `<button class="bk-save" id="saveBtn" ${!USER || BKBUSY ? 'disabled' : ''}>${BKBUSY ? esc(BKBUSY) : '↻ ส่งอีกครั้ง'}</button>` +
-      `<span>ชุดที่ส่งค้าง <b>${f(PENDING.copy.length)}</b> แถว · ${f(sumQty(PENDING.copy))} ชิ้น ยังไม่รู้ว่าถึงสมุดไหม ส่งอีกครั้งได้ ระบบไม่บันทึกซ้ำ</span>` +
+      `<span>ชุดที่ส่งค้าง <b>${f(PENDING.copy.length)}</b> แถว · ${f(sumQty(PENDING.copy))} ชิ้น ยังไม่รู้ว่าถึงสมุดไหม ระบบส่งซ้ำเองทุก 30 วินาที (กดเองก็ได้) ไม่บันทึกซ้ำ</span>` +
       `<button class="bk-link" id="dropPending">ทิ้งชุดนี้</button>`;
   } else if (FILES.length) {
     const t = CUT ? CUT.total : null;
     const can = USER && t && t.ok && !BKBUSY && seenReady();
-    html += `<button class="bk-save" id="saveBtn" ${can ? '' : 'disabled'}>${BKBUSY ? esc(BKBUSY) : `💾 บันทึก + คัดลอก ${t ? f(t.rows) : 0} แถว`}</button>`;
+    html += `<button class="bk-save" id="saveBtn" ${can ? '' : 'disabled'}>${BKBUSY ? esc(BKBUSY) : `💾 ${bookMode() ? 'ลงสมุด' : 'บันทึก + คัดลอก'} ${t ? f(t.rows) : 0} แถว`}</button>`;
     if (t && t.ok) html += `<span><b>${f(t.okQty)}</b> ชิ้น · ${f(t.orders)} ออเดอร์ · วันที่ ${esc(dm(DATE))}</span>`;
     if (!USER) html += '<span>เข้าสมุดด้วยชื่อกับรหัสก่อน (มุมขวาบน)</span>';
     else if (!DOCS_OK && !BKBUSY) html += '<button class="bk-link" id="docsBtn">โหลดชุดที่บันทึกอีกครั้ง</button>';
@@ -684,7 +748,9 @@ function actTail() {
   if (REF.wait.length && USER) {
     html += `<span title="บันทึกแล้วแต่ยังไม่เห็นแถวในสต๊อกที่ดึงมา คิดกองให้แล้วเหมือนวางแล้ว ถ้ายังไม่ได้วางในชีต ให้กดคัดลอกที่ตารางชุดด้านล่าง">⏳ ยังไม่เห็นในสมุด ${REF.wait.map((d) => esc(d.doc)).join(', ')} (คิดให้แล้ว)</span>`;
   }
-  if (LAST) {
+  if (LAST && LAST.book) {
+    html += `<div class="bk-msg ok">✅ ลง <b>${esc(LAST.doc)}</b> ในสมุดแล้ว ${f(LAST.copy.length)} แถว (แท็บ Transaction แถว ${f(LAST.txAt)}${LAST.copy.length > 1 ? `–${f(LAST.txAt + LAST.copy.length - 1)}` : ''}) ไม่ต้องคัดลอก</div>`;
+  } else if (LAST) {
     html += `<div class="bk-msg ok">✅ บันทึก <b>${esc(LAST.doc)}</b> แล้ว · ${LAST.copied ? `คัดลอก ${f(LAST.copy.length)} แถวแล้ว` : 'คัดลอกอัตโนมัติไม่ได้ กดคัดลอกอีกครั้ง'}
       <ol><li>เปิดชีต Transaction</li><li>คลิกช่อง <b>A</b> ของแถวว่างแรก</li><li>กด <b>Ctrl+V</b> แล้วเช็คว่าคอลัมน์ N เป็น ${esc(LAST.doc)}</li></ol>
       <button class="bk-btn" data-copy="${esc(LAST.doc)}">📋 คัดลอกอีกครั้ง</button></div>`;
@@ -769,27 +835,35 @@ function renderDocs() {
   const head = USER.role === HEAD_ROLE;
   const rows = DOCS.map((d) => {
     const v = d.status === 'ยกเลิก';
+    const open = d.type === 'ยอดยกมา';
     const st = v ? `<span class="c-sub" title="${esc(d.why)}">ยกเลิกโดย ${esc(d.voidBy)}</span>`
+      : open ? '<span class="c-sub">จุดเริ่มสมุดใหม่</span>'
+      : d.book ? (wait.has(d.doc) ? '<span class="c-ok" title="ลงไฟล์ WMS สมุดสต๊อก แล้ว สต๊อกที่ดึงมายังไม่เห็น คิดกองให้แล้ว">📗 ลงแล้ว · ⏳ รอสต๊อก</span>' : '<span class="c-ok">📗 ลงสมุดใหม่แล้ว</span>')
       : done.has(d.doc) ? '<span class="c-ok">✓ วางแล้ว</span>' : wait.has(d.doc) ? '<span class="c-warn">⏳ ยังไม่เห็น</span>' : '<span class="c-sub">—</span>';
+    const copyBtn = open || (d.book && !head) ? '' : `<button class="bk-btn" data-copy="${esc(d.doc)}" ${d.book ? 'title="ใช้ตอนถอยกลับไปชีตเดิมเท่านั้น"' : ''}>📋 คัดลอก</button>`;
+    const voidBtn = head && !open && !d.book ? ` <button class="bk-btn x" data-void="${esc(d.doc)}">ยกเลิก</button>` : '';
     return `<tr${v ? ' class="r-void"' : ''}><td class="c-sku">${esc(d.doc)}</td><td>${esc(d.type)}</td><td>${esc(dm(d.date))}</td><td>${esc(d.who)}</td>` +
       `<td class="c-sub">${esc(String(d.at).slice(5, 16))}</td><td class="num">${f(d.rows)}</td><td class="num">${f(d.qty)}</td><td class="num">${d.orders ? f(d.orders) : ''}</td>` +
-      `<td>${st}</td><td class="c-act">${v ? '' : `<button class="bk-btn" data-copy="${esc(d.doc)}">📋 คัดลอก</button>${head ? ` <button class="bk-btn x" data-void="${esc(d.doc)}">ยกเลิก</button>` : ''}`}</td></tr>`;
+      `<td>${st}</td><td class="c-act">${v ? '' : copyBtn + voidBtn}</td></tr>`;
   });
-  $('docs').innerHTML = `<div class="bk-dh"><b>ชุดที่บันทึก</b> 3 วันล่าสุด ทุกแท็บ · ในสมุด = เห็นแถวในสต๊อกที่ดึงมาแล้ว</div>` +
+  $('docs').innerHTML = `<div class="bk-dh"><b>ชุดที่บันทึก</b> 3 วันล่าสุด ทุกแท็บ · ${bookMode() ? 'โหมดบันทึก ทุกชุดลงไฟล์ WMS สมุดสต๊อก แล้ว' : 'ในสมุด = เห็นแถวในสต๊อกที่ดึงมาแล้ว'}</div>` +
     table([['เลขที่'], ['ประเภท'], ['วันที่'], ['ผู้ลง'], ['บันทึกเมื่อ'], ['แถว', 'num'], ['ชิ้น', 'num'], ['ออเดอร์', 'num'], ['ในสมุด'], ['', 'c-act']], rows);
 }
 
 function renderTabs() {
-  $('tabs').innerHTML = MODES.map(([k, t]) => {
+  $('tabs').innerHTML = tabs().map(([k, t]) => {
     const dot = (k === 'cut' ? !!PENDING : BookGrid.pending(k)) ? '<span class="dot" title="มีชุดที่ส่งค้าง"></span>' : '';
     return `<button class="bk-tab${MODE === k ? ' on' : ''}" role="tab" aria-selected="${MODE === k}" data-mode="${k}">${t}${dot}</button>`;
   }).join('');
 }
 
 function render() {
+  if (!tabs().some((m) => m[0] === MODE)) MODE = 'cut';   // ออกจากระบบหรือไม่ใช่หัวหน้า แท็บของหัวหน้าหายไป
   renderSrc();
   renderTabs();
-  if (MODE === 'cut') {
+  if (MODE === 'set') {
+    BookSet.render();
+  } else if (MODE === 'cut') {
     renderIn();
     renderSum();
     renderAct();
@@ -806,7 +880,9 @@ function setMode(m) {
   try { localStorage.setItem(MODE_KEY, m); } catch (e) {}
   LAST = null; MSG = null;
   $('body').innerHTML = '';
+  $('sum').innerHTML = '';
   render();
+  if (m === 'set') refreshState().then(render);
 }
 
 /* ── ปุ่มและช่อง ─────────────────────────────────────────────────────────── */
@@ -862,6 +938,7 @@ document.addEventListener('paste', (e) => {
   const text = e.clipboardData && e.clipboardData.getData('text');
   if (!text || !text.trim()) return;
   e.preventDefault();
+  if (MODE === 'set') return;
   if (MODE !== 'cut') { BookGrid.pasteAppend(MODE, text); return; }
   const p = B.parseOrders(B.gridOf(text), { today: today() });
   if (p.error) { MSG = { kind: 'bad', html: esc(p.error) }; renderAct(); return; }
@@ -906,7 +983,9 @@ const WATCH = WmsShared.watch(checkShared);
 if (WmsSettings.txUrl()) load(false);
 if (bookUrl()) {
   loadNames();
-  if (USER) { refreshDocs().then(refreshSeen); }
+  if (USER) {
+    refreshState().then(() => { render(); return refreshDocs(); }).then(refreshSeen).then(() => { if (pendingCount()) queueRetry(2000); });
+  }
 }
 </script>
 </body>
