@@ -87,7 +87,7 @@ TABS[T_BASE] = {
 };
 /* แถว PO มี SKU กับ LOT ที่ PO นั้นเคยรับในสมุด (ไม่มียอด) หน้ากรอกใช้เตือนตอน PO / LOT ไม่เข้ากับ SKU */
 TABS[T_MASTER] = {
-  head: ['รหัสรอบ', 'ชนิด', 'รหัส', 'รหัสเต็ม / Supplier', 'ชื่อสินค้า', 'SKU ที่เคยรับ', 'LOT ที่เคยรับ'],
+  head: ['รหัสรอบ', 'ชนิด', 'รหัส', 'รหัสเต็ม / Supplier', 'ชื่อสินค้า / วันรับแรกของ PO', 'SKU ที่เคยรับ', 'LOT ที่เคยรับ'],
   text: [1, 2, 3, 4, 5, 6, 7],
 };
 TABS[T_LOG] = {
@@ -267,6 +267,15 @@ function plain_(v, max) {
 function code_(v, max) { return plain_(v, max).toUpperCase(); }
 
 function num_(v) { return typeof v === 'number' && isFinite(v) ? v : null; }
+
+/** วันที่ yyyy-mm-dd จากช่องที่เป็นข้อความหรือวันที่จริงก็ได้ อ่านไม่ได้ = '' */
+function day_(v) {
+  if (v && typeof v.getTime === 'function') {
+    return isNaN(v.getTime()) ? '' : Utilities.formatDate(v, ss_().getSpreadsheetTimeZone(), 'yyyy-MM-dd');
+  }
+  var s = text_(v);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '';
+}
 
 function ms_(v) { return v && typeof v.getTime === 'function' ? v.getTime() : (typeof v === 'number' ? v : 0); }
 
@@ -464,7 +473,8 @@ function roundSave_(req) {
 /**
  * เก็บยอดตั้งต้นชุดใหม่ ชุดเก่าอยู่ในแท็บต่อไป (ใช้ย้อนดูว่าเคยดึงไปกี่รอบ ได้ตัวเลขอะไร)
  * piles = [[Location, SKU, SKU เต็ม, ชื่อสินค้า, LOT, PO, ยอด, เปิดขาย 0/1]] คิดจากสมุดโดยหน้าเว็บ (WmsStocktake.baseline)
- * skus = [[SKU, SKU เต็ม, ชื่อ]] pos = [[PO, Supplier, [SKU เต็มที่เคยรับ], [LOT ที่เคยรับ]]] แทนรายการเดิมของรอบนี้ทั้งชุด
+ * skus = [[SKU, SKU เต็ม, ชื่อ]] pos = [[PO, Supplier, [SKU เต็มที่เคยรับ], [LOT ที่เคยรับ], วันรับแรก]] แทนรายการเดิมของรอบนี้ทั้งชุด
+ *   วันรับแรก (yyyy-mm-dd) ใช้บอกปีของ LOT เก็บในช่องชื่อของแถว PO ที่ว่างอยู่ ไม่ต้องเพิ่มคอลัมน์
  * ปิดรอบแล้วดึงใหม่ไม่ได้ ยอดที่อนุมัติไปแล้วต้องเทียบกับชุดเดิม
  */
 function baseline_(req) {
@@ -493,7 +503,10 @@ function baseline_(req) {
       return (Array.isArray(v) ? v : []).map(function (x) { return plain_(x, 60).replace(/,/g, ' '); }).filter(function (x) { return x; }).join(',').slice(0, 20000);
     };
     pos.forEach(function (p) {
-      if (Array.isArray(p) && text_(p[0])) master.push([r.id, 'PO', plain_(p[0], 40), plain_(p[1], 80), '', list(p[2]), list(p[3])]);
+      if (Array.isArray(p) && text_(p[0])) {
+        var day = day_(p[4]);
+        master.push([r.id, 'PO', plain_(p[0], 40), plain_(p[1], 80), day, list(p[2]), list(p[3])]);
+      }
     });
     /* ไฟล์ที่สร้างก่อนมีสองช่องหลัง หัวตารางยังไม่มี เขียนหัวใหม่ให้ครบ */
     tab_(T_MASTER).getRange(1, 1, 1, TABS[T_MASTER].head.length).setValues([TABS[T_MASTER].head]);
@@ -519,7 +532,7 @@ function master_(id) {
   rows_(T_MASTER).forEach(function (m) {
     if (text_(m[0]) !== id) return;
     if (text_(m[1]) === 'SKU') out.skus.push([text_(m[2]), text_(m[3]), text_(m[4])]);
-    else if (text_(m[1]) === 'PO') out.pos.push([text_(m[2]), text_(m[3]), split_(m[5]), split_(m[6])]);
+    else if (text_(m[1]) === 'PO') out.pos.push([text_(m[2]), text_(m[3]), split_(m[5]), split_(m[6]), day_(m[4])]);
   });
   return out;
 }
@@ -1022,7 +1035,9 @@ function bossRound_(r) {
 
 function bossData_(r) {
   var m = master_(r.id);
-  return { round: bossRound_(r), piles: baseRows_(r), skus: m.skus, locs: locsOf_(r.id), rows: logRows_(r.id, 0, '') };
+  /* PO ส่งแค่วันรับแรก ใช้บอกปีของ LOT (รายการ SKU / LOT ของ PO หน้าเจ้านายไม่ใช้) */
+  var pos = m.pos.filter(function (p) { return p[4]; }).map(function (p) { return [p[0], '', [], [], p[4]]; });
+  return { round: bossRound_(r), piles: baseRows_(r), skus: m.skus, pos: pos, locs: locsOf_(r.id), rows: logRows_(r.id, 0, '') };
 }
 
 /** รอบ MFG เดือนก่อนที่ใกล้ที่สุด เดือนเดียวกันหลายรอบเอารอบที่สร้างทีหลัง (เหมือน WmsMfg.prevRound) */

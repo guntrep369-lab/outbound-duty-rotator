@@ -6,8 +6,10 @@
  * กติกาทั้งหมดอยู่ที่ไฟล์นี้ สคริปต์แค่ส่งแถว ปรับกติกาแล้วไม่ต้องวางสคริปต์ใหม่
  *
  * ลำดับเก่าไปใหม่ (ผู้ใช้ยืนยัน 2026-11-04)
- *   1. LOT คือเดือนของสินค้า 1–12 = เดือนของปีนี้, 0.11 / 0.12 = พ.ย. / ธ.ค. ของปีก่อน, 0 หรือว่าง = ไม่รู้
- *      LOT เลขเต็มที่มากกว่าเดือนของรายงาน เป็นของปีก่อน (รายงาน ม.ค. เห็น LOT 12 คือ ธ.ค. ปีก่อน)
+ *   1. LOT คือเดือนของสินค้า 1–12, 0.11 / 0.12 = พ.ย. / ธ.ค. ของปีก่อน (แบบเขียนเก่า), 0 หรือว่าง = ไม่รู้
+ *      ปีของ LOT ดูจากวันรับเข้าของกองนั้น (ผู้ใช้เลือก 2026-11-18 ทีมกรอก LOT 1–12 เหมือนเดิม ไม่เปลี่ยนเป็นเลขปี)
+ *      LOT ไม่เกินเดือนที่รับ = ปีเดียวกับที่รับ มากกว่า = ปีก่อนรับ (รับ ม.ค. 70 เห็น LOT 12 คือ ธ.ค. 69)
+ *      ของค้างคลังเกินปีจึงยังอ่านปีถูก ไม่รู้วันรับใช้เดือนของรายงานแทนแบบเดิม (ดู lotMonth กับ anchors)
  *   2. LOT เดียวกัน เรียงตาม PO ตามวันที่รับเข้า คือวันที่ GR แถวแรกของ SKU + LOT + PO นั้น
  *      PO ที่อยู่ในแถวนับสต๊อกถือว่ารับก่อนทุก GR ในสมุด PO ที่รับวันเดียวกันถือว่าเก่าเท่ากัน
  *      PO 0 หรือ PO ที่ไม่มีวันรับ (มาจาก RETURN หรือแปลงสินค้าอย่างเดียว) เทียบในระดับ PO ไม่ได้
@@ -43,18 +45,60 @@
   /** 9900000001-01 กับ 9900000001-02 เป็น PO 9900000001 ส่วนท้ายคือวันที่รับเข้า ไม่ใช่อีก PO */
   function basePo(v) { var s = up(v); var m = /^(\d{6,})-\d{1,2}$/.exec(s); return m ? m[1] : s; }
 
-  /** เดือนของ LOT เทียบกับเดือนของรายงาน (yyyy-mm) ไม่รู้ได้ null  key = ปี × 12 + เดือน ใช้เรียงและคิดอายุ */
-  function lotMonth(lot, ref) {
+  /**
+   * เดือนของ LOT ไม่รู้ได้ null  key = ปี × 12 + เดือน ใช้เรียงและคิดอายุ
+   *   ref = เดือนของรายงาน (yyyy-mm หรือ yyyy-mm-dd)  at = วันรับเข้าของกอง (anchorOf) ไม่รู้ = '' ใช้ ref แทน
+   *   LOT 1–12 ย้อนจากเดือนฐานไปหาเดือนนั้นที่ใกล้สุด (ไม่เกินเดือนฐาน)
+   *   LOT ที่อยู่หลังเดือนรับ 1–2 เดือน ถือว่าปีเดียวกับที่รับ (วันรับพิมพ์ผิด หรือป้ายลงเดือนล่วงหน้า)
+   *     ไม่ใช่ของที่ผลิตก่อนรับ 10–11 เดือน แต่ต้องไม่เลยเดือนของรายงาน
+   *   0.11 / 0.12 = ปีก่อนปีของเดือนฐาน
+   */
+  function lotMonth(lot, ref, at) {
     var s = text(lot);
     var n = s === '' ? NaN : Number(s);
     if (!(n > 0)) return null;
-    var ry = +ref.slice(0, 4), rm = +ref.slice(5, 7);
-    var y, m;
-    if (n < 1) { m = Math.round(n * 100); y = ry - 1; }
-    else if (n === Math.floor(n) && n <= 12) { m = n; y = n <= rm ? ry : ry - 1; }
-    else return null;
-    if (m < 1 || m > 12) return null;
-    return { key: y * 12 + m - 1, y: y, m: m };
+    var base = /^\d{4}-\d{2}/.test(text(at)) && +text(at).slice(0, 4) > 0 ? text(at) : ref;
+    var by = +base.slice(0, 4), bm = +base.slice(5, 7), key;
+    if (!by || !(bm >= 1 && bm <= 12)) return null;
+    if (n < 1) {
+      var m = Math.round(n * 100);
+      if (m < 1 || m > 12) return null;
+      key = (by - 1) * 12 + m - 1;
+    } else if (n === Math.floor(n) && n <= 12) {
+      var back = (bm - n + 12) % 12;
+      key = by * 12 + bm - 1 - back;
+      if (back >= 10 && key + 12 <= refKey(ref)) key += 12;
+    } else return null;
+    return { key: key, y: Math.floor(key / 12), m: key % 12 + 1 };
+  }
+
+  /**
+   * วันรับเข้าที่ใช้บอกปีของ LOT คิดจากทุกแถวในสมุด (ไม่ขึ้นกับว่าเดินถึงแถวไหน)
+   *   วันรับจริง = แถว GR หรือแถวนับที่พ่วงวันรับไว้ (cgr) เอาวันแรกสุด
+   *   ไม่มีวันรับจริง = เดือนของรอบนับใน Note (cq: Stock Count Q4/26 = ธ.ค. 2026)
+   *   b = sku|lot|po → วัน   po = PO → วันแรกของ PO นั้นทุก SKU ทุก LOT (ใช้เมื่อกองนั้นไม่มีวันของตัวเอง)
+   */
+  function anchors(rows) {
+    var real = { b: {}, po: {} }, lab = { b: {}, po: {} };
+    function put(m, b, po, d) {
+      if (!m.b[b] || d < m.b[b]) m.b[b] = d;
+      if (!noPo(po) && (!m.po[po] || d < m.po[po])) m.po[po] = d;
+    }
+    rows.forEach(function (r) {
+      if (r.to < 0) return;
+      var b = r.sku + '|' + r.lot + '|' + r.po;
+      var d = r.gr ? r.d : r.count ? r.cgr : '';
+      if (d) put(real, b, r.po, d);
+      else if (r.count && r.cq) put(lab, b, r.po, r.cq);
+    });
+    return { real: real, lab: lab };
+  }
+
+  /** วันฐานของกอง b (sku|lot|po): วันรับของกอง → ของ PO → เดือนรอบนับของกอง → ของ PO  ไม่รู้ = '' */
+  function anchorOf(at, b, po) {
+    if (!at) return '';
+    var p = noPo(po) ? '' : po;
+    return at.real.b[b] || (p && at.real.po[p]) || at.lab.b[b] || (p && at.lab.po[p]) || '';
   }
 
   /** ป้ายเดือนแบบสั้น ปี พ.ศ. สองหลัก เช่น ก.ย. 69 */
@@ -89,11 +133,18 @@
   function parse(res) {
     var cg = {};   // แถวนับสต๊อกที่พ่วงวันรับของ PO ไว้ (สมุดที่ตั้งต้นใหม่หลังนับใหญ่)
     (res.cgr || []).forEach(function (c) { cg[c[0]] = c[1]; });
+    var cq = res.cq || [];   // [[yyyy-mm-dd, แถวแรก, แถวสุดท้าย]] เดือนของรอบนับจาก Note ใช้กับแถวนับในช่วงนั้น
+    function cqOf(row) {
+      for (var i = 0; i < cq.length; i++) if (row >= cq[i][1] && row <= cq[i][2]) return cq[i][0];
+      return '';
+    }
     return res.rows.map(function (x) {
+      var count = !!(x[9] & 4);
       return {
         row: x[0], sku: x[1], lot: up(x[2]), po: basePo(res.pos[x[3]]), from: x[4], to: x[5],
         qty: typeof x[6] === 'number' ? x[6] : 0, t: x[7], d: x[8] >= 0 ? res.days[x[8]] : '',
-        open: !!(x[9] & 1), gr: !!(x[9] & 2), count: !!(x[9] & 4), own: !!(x[9] & 8), cgr: cg[x[0]] || '',
+        open: !!(x[9] & 1), gr: !!(x[9] & 2), count: count, own: !!(x[9] & 8), cgr: cg[x[0]] || '',
+        cq: count ? cqOf(x[0]) : '',
       };
     });
   }
@@ -150,11 +201,12 @@
     var walk = newState(), snap = newState();
     var issues = [];
     var meta = {};   // ลำดับ LOT ของ sku|lot|po คิดครั้งเดียว
+    var at = anchors(rows);
     function info(st, b) {
       var m = meta[b];
       if (!m) {
         var p = b.split('|');
-        m = meta[b] = { lot: p[1], po: p[2], lm: lotMonth(p[1], ym) };
+        m = meta[b] = { lot: p[1], po: p[2], lm: lotMonth(p[1], ym, anchorOf(at, b, p[2])) };
       }
       return { lot: m.lot, po: m.po, lm: m.lm, recv: st.recv[b] || '' };
     }
@@ -618,7 +670,7 @@
   }
 
   window.WmsFifo = {
-    lotMonth: lotMonth, monthText: monthText, lastDay: lastDay, months: months, analyze: analyze, older: older, noPo: noPo, basePo: basePo,
+    lotMonth: lotMonth, anchors: anchors, anchorOf: anchorOf, monthText: monthText, lastDay: lastDay, months: months, analyze: analyze, older: older, noPo: noPo, basePo: basePo,
     filterStock: filterStock, skipsBySku: skipsBySku, recvText: recvText, roundsText: roundsText,
     QUEUES: QUEUES, firstQueue: firstQueue, stockState: stockState, lotName: lotName, batchWords: batchWords, lotWords: lotWords,
     placeWords: placeWords, refillTask: refillTask, pickTask: pickTask, unknownTask: unknownTask,

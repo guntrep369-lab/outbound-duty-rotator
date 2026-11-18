@@ -175,8 +175,13 @@ describe('เตือน LOT ในหน้ากรอกมือถือ',
     const ym = '2026-11';
     const at = (lot) => M.lotCheck(lot, ym);
     expect(at('9')).toMatchObject({ level: 'new' });
-    expect(at('9').hint).toContain('นับ LOT 8 ลงไป');
-    expect(at('9').ask).toContain('ไม่ต้องนับ');
+    /* ยังไม่รู้วันรับของ PO: ไม่บอกว่าไม่ต้องนับ ให้ใส่ PO ก่อน (ของปีก่อนที่ค้างจะได้ไม่ถูกข้าม) */
+    expect(at('9').hint).toContain('ใส่ PO');
+    expect(at('9').ask).toContain('ของปีก่อน');
+    const po = M.lotCheck('9', ym, '2026-10-05');
+    expect(po.level).toBe('new');
+    expect(po.hint).toContain('นับ LOT 8 ลงไป');
+    expect(po.ask).toContain('ไม่ต้องนับ');
     expect(at('11').level).toBe('new');
     expect(at('8')).toEqual({ level: 'ok', hint: '✓ LOT 8 (' + M.monthText({ y: 2026, m: 8 }) + ') ต้องนับ', ask: '' });
     expect(at('12').hint).toContain(M.monthText({ y: 2025, m: 12 }));
@@ -544,6 +549,87 @@ describe('เทียบกับรอบเดือนก่อน', () => {
     expect([plain.cmp, plain.decide, plain.tiles[0].pct, plain.more]).toEqual([null, null, undefined, 1]);
     expect(M.decideShort({ code: 'other', note: 'โอนสาขา' })).toBe('โอนสาขา');
     expect(M.decideShort({ code: 'other', note: '' })).toBe('อื่นๆ');
+  });
+});
+
+describe('ปีของ LOT ดูจากวันรับของ PO (รอบ เม.ย. 70 นับ LOT ม.ค. 70 ลงไป)', () => {
+  const LIST = [['AAA0000000001', 'Mattress']];
+  const P = (loc, lot, po, qty) => [loc, 'AAA001', 'AAA0000000001', 'ที่นอน 5FT สมมติ Mattress', lot, po, qty, 0];
+  const BASE27 = {
+    piles: [
+      P('R1-01-01', '4', '9900000011', 6),   // รับ เม.ย. 69 = ของ เม.ย. 69 ค้างปีนึง
+      P('R1-01-02', '4', '9900000012', 5),   // รับ เม.ย. 70 = ของใหม่
+      P('R1-01-03', '2', '9900000013', 3),   // ไม่รู้วันรับ ใช้เดือนของรอบ = ก.พ. 70
+    ],
+    skus: SKUS,
+    pos: [
+      ['9900000011', 'ผู้ผลิต ก สมมติ', ['AAA0000000001'], ['4'], '2026-04-10'],
+      ['9900000012', '', ['AAA0000000001'], ['4'], '2027-04-02'],
+      ['9900000013', '', ['AAA0000000001'], ['2']],
+    ],
+  };
+  const days = () => M.poDays(BASE27.pos);
+
+  it('วันรับของ PO: PO-01 ใช้วันของ PO หลักได้ PO 0 กับวันที่ผิดไม่เอา', () => {
+    const d = M.poDays([...BASE27.pos, ['0', '', [], [], '2026-01-01'], ['9900000020-02', '', [], [], '2026-08-03'], ['9900000021', '', [], [], 'เมื่อวาน']]);
+    expect(d).toEqual({ '9900000011': '2026-04-10', '9900000012': '2027-04-02', '9900000020-02': '2026-08-03', '9900000020': '2026-08-03' });
+    expect(M.poDay(d, '9900000020-01')).toBe('2026-08-03');
+    expect(M.poDay(d, '9900000099')).toBe('');
+    expect(M.poDay(null, '9900000011')).toBe('');
+  });
+
+  it('กอง LOT 4 ที่รับปีก่อนต้องนับ (เสี่ยง) LOT 4 ที่เพิ่งรับไม่ต้องนับ · ไม่รู้วันรับใช้เดือนของรอบแบบเดิม', () => {
+    expect(M.statusOf('4', '2027-04', '2026-04-10')).toMatchObject({ st: 'risk', months: 12 });
+    expect(M.statusOf('4', '2027-04', '2027-04-02').st).toBe('new');
+    expect(M.statusOf('4', '2027-04').st).toBe('new');
+    const s = M.scope(BASE27, LIST, '2027-04');
+    expect(s.piles.map((p) => p[0])).toEqual(['R1-01-01']);
+    expect(s.pos.map((p) => p[4] || '')).toEqual(['2026-04-10', '2027-04-02', '']);
+  });
+
+  it('รายงานใช้วันรับทั้งกองในสมุดและกองที่นับ คอลัมน์ Lot 4 คือ เม.ย. 69 · ไม่ส่ง pos = แบบเดิม (ของเก่าหลุด)', () => {
+    const s = M.scope(BASE27, LIST, '2027-04');
+    const entries = [
+      e('R1-01-01', 'AAA001', '4', 6, { po: '9900000011' }),
+      e('R1-01-02', 'AAA001', '4', 5, { po: '9900000012' }),
+      e('R1-01-02', 'AAA001', '4', 1),
+    ];
+    const rep = M.report({ ym: '2027-04', today: '2027-04-16', list: LIST, skus: SKUS, book: s.piles, entries, mode: 'count', locs: s.locs, pos: s.pos });
+    expect(rep.cols.map((c) => [c.label, c.month, c.st])).toEqual([['Lot 4', 'เม.ย. 69', 'risk']]);
+    const a = rep.rows[0];
+    expect(a.total).toEqual({ book: 6, count: 6 });
+    expect(a.st).toBe('risk');
+    expect(rep.ignored.newer.map((x) => x.qty)).toEqual([5, 1]);
+    const old = M.report({ ym: '2027-04', today: '2027-04-16', list: LIST, skus: SKUS, book: s.piles, entries, mode: 'count', locs: s.locs });
+    expect(old.rows).toEqual([]);
+    /* Excel ผลนับทั้งหมด ใช้วันรับเหมือนกัน */
+    const sh = M.countSheet(entries, { ym: '2027-04', skus: SKUS, list: LIST, locs: s.locs, pos: s.pos });
+    expect(sh.aoa.slice(3, -1).map((r) => [r[6], r[7], r[9]])).toEqual([['4', 'เม.ย. 69', '9900000011'], ['4', 'เม.ย. 70', '9900000012'], ['4', 'เม.ย. 70', '']]);
+  });
+
+  it('มือถือคนนับ: ใส่ PO ที่รับปีก่อน บอกว่าต้องนับพร้อมเดือนปีที่ถูก', () => {
+    const c = M.lotCheck('4', '2027-04', M.poDay(days(), '9900000011'));
+    expect(c).toMatchObject({ level: 'ok', ask: '' });
+    expect(c.hint).toContain('เม.ย. 69');
+    expect(M.lotCheck('4', '2027-04', M.poDay(days(), '9900000012')).hint).toContain('รอบนี้');
+    expect(M.lotCheck('4', '2027-04', '').hint).toContain('ใส่ PO');
+  });
+
+  it('สคริปต์นับสต๊อกเก็บวันรับของ PO ส่งให้หน้ากรอก หน้าหัวหน้า และหน้าเจ้านาย', () => {
+    const api = loadStocktake({ head: 'head-secret', count: 'nab' });
+    const s = M.scope(BASE27, LIST, '2027-04');
+    const settings = { kind: 'mfg', ym: '2027-04', list: M.packList(LIST) };
+    const id = api.post({ op: 'st-round-save', t: 'head-secret', round: { name: M.roundName('2027-04'), date: '2027-04-16', cutoff: '2027-04-16 08:00', settings } }).round.id;
+    api.post({ op: 'st-baseline', t: 'head-secret', round: id, piles: s.piles, skus: s.skus, pos: s.pos, lastRow: 9, lastDate: '2027-04-15' });
+    const view = api.get({ api: 'st-round', round: id, k: 'nab' });
+    expect(M.poDay(M.poDays(view.pos), '9900000011')).toBe('2026-04-10');
+    const head = api.get({ api: 'st-head', round: id, t: 'head-secret' });
+    expect(head.pos.map((p) => p[4])).toEqual(['2026-04-10', '2027-04-02', '']);
+    const key = api.post({ op: 'st-boss-key', t: 'head-secret', round: id }).key;
+    const boss = api.get({ api: 'st-boss', round: id, b: key });
+    expect(boss.pos).toEqual([['9900000011', '', [], [], '2026-04-10'], ['9900000012', '', [], [], '2027-04-02']]);
+    const bm = M.bossModel(boss, '2027-04-16');
+    expect(bm.rep.rows.map((r) => [r.short, r.st])).toEqual([['AAA001', 'risk']]);
   });
 });
 

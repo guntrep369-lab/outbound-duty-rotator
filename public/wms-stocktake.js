@@ -108,7 +108,8 @@
    * supOf(po) → ชื่อ Supplier (ส่ง WmsSup เข้ามา) ไม่ส่ง = ไม่รู้ชื่อ
    * @returns {{piles: Array, skus: Array, pos: Array, locs: Array, lastRow: number, lastDate: string}}
    *   piles = [[Location, SKU, SKU เต็ม, ชื่อ, LOT, PO, ยอด, เปิดขาย 0/1]]
-   *   pos   = [[PO, Supplier, [SKU เต็มที่เคยรับ], [LOT ที่เคยรับ]]] ไม่มียอด ส่งไปหน้ากรอกได้
+   *   pos   = [[PO, Supplier, [SKU เต็มที่เคยรับ], [LOT ที่เคยรับ], วันรับแรก yyyy-mm-dd]] ไม่มียอด ส่งไปหน้ากรอกได้
+   *           วันรับแรกใช้บอกปีของ LOT (WmsFifo.lotMonth) กติกาเดียวกับ WmsFifo.anchors ระดับ PO ไม่รู้ = ''
    *   locs  = [{loc, piles, rows}] ทุก Location ที่เคยมีในสมุด
    */
   function baseline(fifo, supOf) {
@@ -117,6 +118,13 @@
     var piles = {}, order = [], lastRow = 0, used = {};
     /* PO ไหนเคยรับ SKU / LOT อะไร (ทุกแถวที่มี PO นั้น ไม่สนยอด) ให้หน้ากรอกเตือนตอนไม่เข้ากัน */
     var poSku = {}, poLot = {};
+    var cg = {}, cq = f.cq || [], poDay = {}, poQ = {};
+    (f.cgr || []).forEach(function (c) { cg[c[0]] = c[1]; });
+    function cqOf(row) {
+      for (var i = 0; i < cq.length; i++) if (row >= cq[i][1] && row <= cq[i][2]) return cq[i][0];
+      return '';
+    }
+    function early(m, k, d) { if (d && (!m[k] || d < m[k])) m[k] = d; }
     (f.rows || []).forEach(function (r) {
       var row = r[0], s = r[1], lot = r[2], po = r[3], from = r[4], to = r[5], qty = +r[6] || 0, flag = r[9] || 0;
       if (row > lastRow) lastRow = row;
@@ -124,6 +132,11 @@
         (poSku[po] = poSku[po] || {})[s] = 1;
         var lt = lot === null || lot === undefined ? '' : String(lot).trim();
         if (lt) (poLot[po] = poLot[po] || {})[up(lt)] = lt;
+        if (to >= 0) {
+          var d = flag & 2 ? (r[8] >= 0 && (f.days || [])[r[8]]) || '' : flag & 4 ? cg[row] || '' : '';
+          if (d) early(poDay, po, d);
+          else if (flag & 4) early(poQ, po, cqOf(row));
+        }
       }
       function at(loc) {
         var k = s + '|' + up(lot) + '|' + po + '|' + loc;
@@ -153,7 +166,7 @@
         var sk = Object.keys(poSku[i] || {}).map(function (s) { return (skus[s] || [])[1] || (skus[s] || [])[0] || ''; })
           .filter(function (x) { return x; }).sort(natCmp);
         var lt = Object.keys(poLot[i] || {}).map(function (k) { return poLot[i][k]; }).sort(natCmp);
-        return [p, supOf ? supOf(p) || '' : '', sk, lt];
+        return [p, supOf ? supOf(p) || '' : '', sk, lt, poDay[i] || poQ[i] || ''];
       }).filter(function (p) { return p; }),
       locs: locs.map(function (l, i) { return { loc: up(l), piles: count[i] || 0, rows: used[i] || 0 }; }),
       lastRow: lastRow,
@@ -2189,6 +2202,7 @@
         : 'สมุดเดิมไม่มีแถวหลังดึงยอดตั้งต้น ไม่ต้องคัดลอกอะไรต่อ',
       'รอสำเนาที่หน้าเว็บอ่านอัปเดต 1–2 นาที › หน้านับสต๊อกใหญ่ แท็บตั้งต้นสมุด กด เช็คสมุดใหม่ ต้องขึ้น ✓ ตรงทุกกอง ก่อนเปิดคลัง',
       'แถวที่ LOT/PO ประมาณจาก GR ล่าสุด มีคำว่า "' + EST_NOTE + '" ต่อท้าย Note ดูว่ามาจากกองไหนที่ชีต ประมาณ LOT-PO',
+      'อย่าแก้ Note ของแถวตั้งต้น: "GR วัน-เดือน-ปี" กับ "Q/ปี" ในนั้น แอปใช้บอกปีของ LOT (LOT ยังกรอก 1–12 เหมือนเดิมตลอดไป)',
     ];
     var a3 = [['ขั้น', 'ทำอะไร']].concat(steps.map(function (x, i) { return [i + 1, x]; }));
     var cell = function (v) { return v === null || v === undefined ? '' : v; };

@@ -67,6 +67,83 @@ describe('lotMonth — LOT คือเดือนของสินค้า',
   });
 });
 
+describe('ปีของ LOT ดูจากวันรับ — ทีมกรอก LOT 1–12 เหมือนเดิม (ผู้ใช้เลือก 2026-11-18)', () => {
+  it('LOT ไม่เกินเดือนที่รับ = ปีที่รับ มากกว่า = ปีก่อนรับ ของค้างเกินปียังอ่านปีถูก', () => {
+    expect(F.lotMonth(12, '2027-03', '2027-01-05')).toMatchObject({ y: 2026, m: 12 });
+    expect(F.lotMonth(1, '2027-03', '2027-01-05')).toMatchObject({ y: 2027, m: 1 });
+    expect(F.lotMonth(5, '2027-03', '2027-01-10')).toMatchObject({ y: 2026, m: 5 });
+    /* รับ ม.ค. 69 ค้างถึง มิ.ย. 70: แบบเดิมเทียบเดือนรายงาน อ่านเป็น ม.ค. 70 (กลายเป็นของใหม่) */
+    expect(F.lotMonth(1, '2027-06', '2026-01-20')).toMatchObject({ y: 2026, m: 1 });
+    expect(F.lotMonth(1, '2027-06')).toMatchObject({ y: 2027, m: 1 });
+  });
+
+  it('0.11 / 0.12 (แบบเขียนเก่า) = ปีก่อนปีที่รับ', () => {
+    expect(F.lotMonth('0.11', '2027-02', '2026-02-10')).toMatchObject({ y: 2025, m: 11 });
+    expect(F.lotMonth(0.12, '2027-02', '2026-12-01')).toMatchObject({ y: 2025, m: 12 });
+  });
+
+  it('LOT หลังเดือนรับ 1–2 เดือน ถือว่าปีเดียวกับที่รับ (วันรับพิมพ์ผิด) แต่ไม่เลยเดือนของรายงาน', () => {
+    expect(F.lotMonth(10, '2026-11', '2026-09-02')).toMatchObject({ y: 2026, m: 10 });
+    expect(F.lotMonth(11, '2026-11', '2026-09-02')).toMatchObject({ y: 2026, m: 11 });
+    expect(F.lotMonth(10, '2026-09', '2026-09-02')).toMatchObject({ y: 2025, m: 10 });
+    expect(F.lotMonth(1, '2027-01', '2026-12-28')).toMatchObject({ y: 2027, m: 1 });
+    /* หลังเดือนรับ 3 เดือนขึ้นไป = ของปีก่อน */
+    expect(F.lotMonth(12, '2027-01', '2026-09-02')).toMatchObject({ y: 2025, m: 12 });
+  });
+
+  it('วันรับที่ไม่ใช่วันจริง (ก่อนนับสต๊อก 0000-00-00 หรือว่าง) ใช้เดือนของรายงานแบบเดิม', () => {
+    expect(F.lotMonth(12, '2027-01', F.COUNT_DAY)).toMatchObject({ y: 2026, m: 12 });
+    expect(F.lotMonth(3, '2026-10', '')).toMatchObject({ y: 2026, m: 3 });
+    expect(F.lotMonth(13, '2026-10', '2026-09-01')).toBe(null);
+  });
+
+  it('วันฐานของกอง: วันรับของกอง → ของ PO → เดือนรอบนับของกอง → ของ PO · PO 0 ไม่ใช้', () => {
+    const res = ledger([
+      { row: 2, count: true, own: false, to: 'R1-01-01', lot: 3, po: '9900000001' },
+      { row: 3, count: true, own: false, to: 'R1-01-02', lot: 4, po: '9900000002' },
+      { row: 4, count: true, own: false, to: 'R1-01-03', lot: 5, po: '9900000003' },
+      { row: 5, count: true, own: false, to: 'R1-01-04', lot: 6, po: '0' },
+      gr({ row: 10, lot: 6, po: '9900000001', d: '2026-10-05' }),
+      gr({ row: 11, lot: 4, po: '9900000002', d: '2026-11-01' }),
+    ]);
+    res.cgr = [[3, '2026-09-15']];
+    res.cq = [['2026-09-01', 2, 5]];
+    const rows = F.parse(res);
+    const at = F.anchors(rows);
+    const k = (lot, po) => '0|' + lot + '|' + po;
+    expect(F.anchorOf(at, k(4, '9900000002'), '9900000002')).toBe('2026-09-15');
+    expect(F.anchorOf(at, k(3, '9900000001'), '9900000001')).toBe('2026-10-05');
+    expect(F.anchorOf(at, k(5, '9900000003'), '9900000003')).toBe('2026-09-01');
+    expect(F.anchorOf(at, k(6, '0'), '0')).toBe('2026-09-01');
+    expect(F.anchorOf(at, k(9, '0'), '0')).toBe('');
+    expect(F.anchorOf(at, k(9, '9900000009'), '9900000009')).toBe('');
+    expect(F.anchorOf(null, k(3, '9900000001'), '9900000001')).toBe('');
+    expect(rows.find((r) => r.row === 10).cq).toBe('');
+    expect(rows.find((r) => r.row === 2).cq).toBe('2026-09-01');
+  });
+
+  it('รายงานปี 70: ของ LOT 1 ปี 69 ที่ค้างอยู่เก่ากว่า LOT 1 ปี 70 เติมของใหม่ทั้งที่ของเก่ายังอยู่ = ข้าม LOT', () => {
+    const res = ledger([
+      /* สมุดตั้งต้นหลังนับใหญ่ (Stock Count Q4/26) */
+      { row: 2, count: true, own: false, to: 'R1-01-01', lot: 1, po: '9900000001', qty: 4 },
+      { row: 3, count: true, own: false, to: 'R1-01-02', lot: 12, po: '9900000002', qty: 3 },
+      gr({ row: 10, lot: 1, po: '9900000003', to: 'R1-01-03', qty: 6, d: '2027-01-10' }),
+      refill({ row: 20, lot: 1, po: '9900000003', from: 'R1-01-03', qty: 2, d: '2027-02-03' }),
+    ]);
+    res.cgr = [[2, '2026-01-15']];
+    res.cq = [['2026-12-01', 2, 3]];
+    const an = F.analyze(res, '2027-02');
+    expect(an.issues).toHaveLength(1);
+    expect(an.issues[0]).toMatchObject({ kind: 'refill', state: 'lot' });
+    expect(an.issues[0].lm).toMatchObject({ y: 2027, m: 1 });
+    expect(an.issues[0].older.map((o) => [o.po, o.lm.y, o.lm.m])).toEqual([['9900000001', 2026, 1], ['9900000002', 2026, 12]]);
+    /* คงเหลือเรียงเก่าไปใหม่: LOT 1 ปี 69 → LOT 12 ปี 69 → LOT 1 ปี 70 อายุ 13 / 2 / 1 เดือน */
+    const sk = an.stock.list[0];
+    expect(sk.batches.map((b) => [b.po, b.age])).toEqual([['9900000001', 13], ['9900000002', 2], ['9900000003', 1]]);
+    expect(an.stock.aging.map((a) => F.monthText(a.lm))).toEqual(['ม.ค. 69', 'ธ.ค. 69', 'ม.ค. 70']);
+  });
+});
+
 describe('analyze — หยิบขาย', () => {
   it('หยิบ LOT เก่าสุดคือตาม FIFO', () => {
     const an = F.analyze(ledger([

@@ -2065,6 +2065,7 @@ function openingView() {
       <span class="sp"></span>
       <button class="st-btn p" data-act="op-xlsx" ${S.busy || !t.rows ? 'disabled' : ''}>Excel ตั้งต้นสมุด${closed ? '' : ' (ร่าง)'}</button>${checkBtn}
     </div>
+    ${/\bQ\s*[1-4]\s*[\/\-]\s*(\d{4}|\d{2})\b/i.test(opNote()) ? '' : `<div class="st-warn">Note ต้องมีรอบนับ เช่น <b>${esc(ST.countLabel(R().date))}</b> — กองที่ไม่รู้วันรับ แอปใช้ Q กับปีตรงนี้บอกปีของ LOT</div>`}
     ${t.neg.lines ? `<div class="st-note" style="margin:0 0 8px">ยอดติดลบ ${f(t.neg.lines)} รายการ (${f(t.neg.qty)} ชิ้น) ที่โลไม่ได้นับ ไม่ลงสมุดใหม่ = ถือเป็น 0</div>` : ''}
     <div class="st-bar">
       ${chip('', 'ทั้งหมด', f(t.rows))}

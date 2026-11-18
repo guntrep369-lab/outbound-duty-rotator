@@ -193,12 +193,36 @@
   function noLot(v) { var s = text(v); return s === '' || /^0*(\.0*)?$/.test(s); }
 
   /**
-   * สถานะของ LOT ในรอบเดือน ym
+   * วันรับแรกของแต่ละ PO จากรายการ PO ของรอบ [[PO, Supplier, [SKU], [LOT], วันรับแรก]] → { PO ตัวพิมพ์ใหญ่: yyyy-mm-dd }
+   * ใช้บอกปีของ LOT (LOT 1–12 ปีดูจากวันรับ) PO 0 / ว่าง ไม่เอา รอบเก่าที่ยังไม่มีวันรับได้ {} = ใช้เดือนของรอบแบบเดิม
+   */
+  function poDays(pos) {
+    var m = {};
+    (pos || []).forEach(function (p) {
+      var po = up(p && p[0]), d = text(p && p[4]);
+      if (!po || /^0*$/.test(po) || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+      if (!m[po] || d < m[po]) m[po] = d;
+      var b = /^(\d{6,})-\d{1,2}$/.exec(po);   // PO-01 / PO-02 = PO เดียวกันทยอยรับ
+      if (b && (!m[b[1]] || d < m[b[1]])) m[b[1]] = d;
+    });
+    return m;
+  }
+
+  /** วันรับของ PO ที่คนนับพิมพ์ (หรือที่อยู่ในกอง) ไม่รู้ = '' */
+  function poDay(days, po) {
+    var p = up(po);
+    if (!p || !days) return '';
+    var b = /^(\d{6,})-\d{1,2}$/.exec(p);
+    return days[p] || (b && days[b[1]]) || '';
+  }
+
+  /**
+   * สถานะของ LOT ในรอบเดือน ym  at = วันรับของ PO (poDay) ใช้บอกปีของ LOT ไม่รู้ = ใช้เดือนของรอบ
    *   risk / watch / ok = ต้องนับ   new = ใหม่กว่า LOT ตัด ไม่นับ   nolot = ไม่รู้ LOT หรือเลข LOT อ่านไม่ออก
    */
-  function statusOf(lot, ym) {
+  function statusOf(lot, ym, at) {
     if (noLot(lot)) return { st: 'nolot', lm: null, bad: false };
-    var lm = F().lotMonth(up(lot), ym);
+    var lm = F().lotMonth(up(lot), ym, at);
     if (!lm) return { st: 'nolot', lm: null, bad: true };
     var age = refKey(ym) - lm.key;
     var st = age >= RISK ? 'risk' : age >= WATCH ? 'watch' : age >= CUT ? 'ok' : 'new';
@@ -278,10 +302,11 @@
   function scope(base, list, ym) {
     var b = base || {};
     var want = listMap(list, b.skus);
+    var days = poDays(b.pos);
     var piles = (b.piles || []).filter(function (p) {
       if (!(+p[6] > 0)) return false;
       if (want[up(p[2])] === undefined) return false;
-      return statusOf(p[4], ym).st !== 'new';
+      return statusOf(p[4], ym, poDay(days, p[5])).st !== 'new';
     });
     var skus = (b.skus || []).filter(function (s) { return want[up(s[1] || s[0])] !== undefined; });
     var have = {};
@@ -297,7 +322,7 @@
     var totals = { piles: piles.length, locs: locs.length, qty: 0, skus: 0, by: {} };
     var seen = {};
     piles.forEach(function (p) {
-      var s = statusOf(p[4], ym).st;
+      var s = statusOf(p[4], ym, poDay(days, p[5])).st;
       var t = totals.by[s] || (totals.by[s] = { qty: 0, piles: 0 });
       t.qty = round3(t.qty + p[6]);
       t.piles++;
@@ -333,8 +358,9 @@
 
   /**
    * ตารางรายงานราย SKU × LOT แบบที่ทีมทำส่งเจ้านาย
-   *   input = { ym, today, list, skus, book, entries, mode, locs }
+   *   input = { ym, today, list, skus, book, entries, mode, locs, pos }
    *     book    = ยอดตั้งต้นของรอบ [[Location, SKU, SKU เต็ม, ชื่อ, LOT, PO, ยอด, เปิดขาย]] (ตัดแล้ว)
+   *     pos     = รายการ PO ของรอบ (มีวันรับแรก) ใช้บอกปีของ LOT ทั้งกองในสมุดและกองที่นับ ไม่ส่ง = ใช้เดือนของรอบ
    *     entries = แถวบันทึกนับ (WmsStocktake.fromRow) ทั้งหมด ยังไม่ตัดแถวที่ถูกแทน
    *     mode    = 'count' ตัวเลขจากที่นับได้ | 'book' ตัวเลขจากสมุด
    *     locs    = โลของรอบ ใช้บอกว่านับครบหรือยัง
@@ -350,6 +376,7 @@
     var eff = st.effective(o.entries || []);
     var done = {};
     eff.forEach(function (e) { done[up(e.loc)] = 1; });
+    var days = poDays(o.pos);
 
     var cells = {}, cols = {}, names = {};
     function cell(long, key, lm, loc) {
@@ -362,7 +389,7 @@
     (o.book || []).forEach(function (p) {
       var long = up(p[2]);
       if (want[long] === undefined) return;
-      var s = statusOf(p[4], ym);
+      var s = statusOf(p[4], ym, poDay(days, p[5]));
       if (s.st === 'new') return;
       if (p[3] && !names[long]) names[long] = text(p[3]);
       var x = cell(long, s.lm ? String(s.lm.key) : NOLOT, s.lm, up(p[0]));
@@ -376,7 +403,7 @@
       var long = s0 ? up(s0[1] || s0[0]) : up(e.long || e.sku);
       var item = { loc: up(e.loc), sku: text(e.sku || e.long), lot: text(e.lot), qty: +e.qty, who: text(e.who) };
       if (want[long] === undefined) { ignored.other.push(item); return; }
-      var s = statusOf(e.lot, ym);
+      var s = statusOf(e.lot, ym, poDay(days, e.po));
       if (s.st === 'new') { ignored.newer.push(item); return; }
       var x = cell(long, s.lm ? String(s.lm.key) : NOLOT, s.lm, up(e.loc));
       x.c.count = round3(x.c.count + (+e.qty));
@@ -834,12 +861,13 @@
   /**
    * Excel "ผลนับทั้งหมด": กองที่คนนับกรอกทุกกองที่ยังมีผล (แก้แล้วเอาแถวล่าสุด ลบแล้วไม่เอา) + โลที่ตั้งว่าง
    * ไม่สนตัวกรองบนจอ เรียงตามโล แล้ว SKU แล้ว LOT
-   *   meta = { ym, at, skus, list, locs: [{loc, group}], teams: [{id, name}] }
+   *   meta = { ym, at, skus, list, locs: [{loc, group}], teams: [{id, name}], pos }  pos = PO ของรอบ บอกปีของ LOT
    *   หมายเหตุ: โลว่าง · โลนอกรายการ · SKU ไม่อยู่ในรายชื่อบีบสูญญากาศ
    * @returns {{aoa, styles, merges, cols}} แถวข้อมูลเริ่มแถวที่ 3 (เลขเริ่ม 0)
    */
   function countSheet(entries, meta) {
     var m = meta || {};
+    var days = poDays(m.pos);
     var st = S();
     var idx = skuIndex(m.skus);
     var want = listMap(m.list, m.skus);
@@ -877,7 +905,7 @@
       var s = idx[up(e.long)] || idx[up(e.sku)];
       var long = s ? up(s[1] || s[0]) : up(e.long || e.sku);
       if (want[long] === undefined) note.push('ไม่อยู่ในรายชื่อบีบสูญญากาศ');
-      var x = statusOf(e.lot, m.ym);
+      var x = statusOf(e.lot, m.ym, poDay(days, e.po));
       var label = x.st === 'new' ? 'ใหม่กว่าที่ต้องนับ' : x.st === 'nolot' ? (x.bad ? 'LOT อ่านไม่ออก' : 'NO LOT ต้องตรวจสอบ') : STATUS[x.st].label;
       var n = Number(e.qty) || 0;
       qty = round3(qty + n);
@@ -1084,11 +1112,13 @@
    * LOT ที่คนนับพิมพ์ ในรอบ MFG เดือน ym
    *   level: ok = ต้องนับ (บอกเดือนให้เทียบกับป้าย) · new = ใหม่กว่าที่ต้องนับ · bad = อ่านไม่ออก · none = LOT 0 · blank = ยังไม่พิมพ์
    *   hint = ข้อความใต้ช่อง LOT · ask = ถามยืนยันตอนกดเพิ่มกอง ('' = ไม่ต้องถาม · ช่องว่างหน้ากรอกเตือนเองอยู่แล้ว)
+   *   at = วันรับของ PO ที่พิมพ์ (poDay) บอกปีของ LOT ไม่รู้ = เดาจากเดือนของรอบ ถ้าเดาว่าใหม่ บอกให้ใส่ PO ก่อน
+   *        ของปีก่อนที่ค้างคลังจะได้ไม่ถูกบอกว่าไม่ต้องนับ
    */
-  function lotCheck(lot, ym) {
+  function lotCheck(lot, ym, at) {
     var s = text(lot);
     if (s === '') return { level: 'blank', hint: '', ask: '' };
-    var st = statusOf(s, ym);
+    var st = statusOf(s, ym, at);
     if (st.st === 'nolot' && !st.bad) return { level: 'none', hint: 'LOT 0 = ป้ายไม่มี LOT · ไปอยู่กลุ่ม NO LOT ต้องตรวจสอบ', ask: '' };
     if (st.bad) {
       var b = 'อ่าน LOT "' + s + '" ไม่ออก · LOT คือเลขเดือน 1–12 (ป้ายไม่มี LOT ใส่ 0)';
@@ -1096,6 +1126,12 @@
     }
     var lab = 'LOT ' + s + ' (' + monthText(st.lm) + ')';
     var r = rule(ym);
+    if (st.st === 'new' && !at) {
+      return {
+        level: 'new', hint: '⚠ ' + lab + ' ดูเหมือนใหม่กว่าที่ต้องนับ · ใส่ PO ให้ตรงป้าย แอปจะดูปีของ LOT จากวันรับ',
+        ask: lab + ' ดูเหมือนใหม่กว่าที่ต้องนับ แต่ยังไม่รู้วันรับของ PO\nถ้าเป็นของปีก่อนที่ค้างอยู่ ต้องนับ ใส่ PO ให้ตรงป้ายก่อน\n\nถ้าแน่ใจว่าเป็นของใหม่และยังจะบันทึก กดตกลง',
+      };
+    }
     if (st.st === 'new') {
       return {
         level: 'new', hint: '⚠ ' + lab + ' ใหม่กว่าที่ต้องนับ · รอบนี้' + r.text + ' ไม่ต้องนับกองนี้',
@@ -1198,7 +1234,7 @@
     var list = unpackList(set.list);
     return {
       list: list,
-      rep: report({ ym: set.ym, today: today || d.round.date, list: list, skus: d.skus, book: d.piles, entries: entries,
+      rep: report({ ym: set.ym, today: today || d.round.date, list: list, skus: d.skus, book: d.piles, entries: entries, pos: d.pos,
         mode: st.effective(entries).length ? 'count' : 'book', locs: d.locs || [] }),
     };
   }
@@ -1229,7 +1265,7 @@
     typeOf: typeOf, canonType: canonType, typeCode: typeCode, typeName: typeName,
     guessList: guessList, guessNew: guessNew, parseList: parseList, packList: packList, unpackList: unpackList, listMap: listMap,
     rule: rule, roundName: roundName, ymText: ymText, monthText: monthText, months: months,
-    noLot: noLot, statusOf: statusOf, ageDays: ageDays,
+    noLot: noLot, statusOf: statusOf, poDays: poDays, poDay: poDay, ageDays: ageDays,
     ledgerProblem: ledgerProblem, ledgerTime: ledgerTime, ledgerLink: ledgerLink,
     scope: scope, teams: teams, report: report, filter: filter, sheet: sheet, countSheet: countSheet, lineText: lineText,
     CMP: CMP, prevRound: prevRound, compare: compare, cmpText: cmpText, compareSheet: compareSheet,

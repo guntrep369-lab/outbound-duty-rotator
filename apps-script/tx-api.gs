@@ -758,6 +758,9 @@ function fifo_() {
     /* แถวนับสต๊อกที่พ่วงวันรับของ PO ไว้ใน Note (Stock Count Q4/26 · GR 02-10-26 ตอนตั้งต้นสมุดใหม่) [เลขแถว, yyyy-mm-dd]
        หน้า FIFO เรียง PO ตามวันรับนี้แทนคำว่าก่อนนับสต๊อก แถวนับไม่ได้เป็นแถวรับเข้าวันนั้น จึงไม่ใส่ในธง GR */
     cgr: [],
+    /* แถวนับสต๊อกที่ไม่มีวันรับ: เดือนของรอบนับจาก Note (Stock Count Q4/26 = ธ.ค. 2026) หน้าเว็บใช้บอกปีของ LOT
+       [[yyyy-mm-dd, แถวแรก, แถวสุดท้าย]] แถวนับเดือนเดียวกันที่อยู่ติดกันรวมเป็นช่วงเดียว แถวอื่นที่คั่นอยู่หน้าเว็บไม่เอาไปใช้ */
+    cq: [],
   };
   var idx = { sku: {}, po: {}, loc: {}, day: {} };
   function no(kind, list, key, v) {
@@ -780,6 +783,13 @@ function fifo_() {
     var cg = flag & 4 ? /\bGR\s*(\d{1,2})-(\d{1,2})-(\d{2})\b/i.exec(r.note) : null;
     var cd = cg ? ymd_(cg[3], cg[2], cg[1]) : '';
     if (cd) out.cgr.push([r.row, cd]);
+    var cq = flag & 4 && !cd ? /\bQ\s*([1-4])\s*[\/\-]\s*(\d{4}|\d{2})\b/i.exec(r.note) : null;
+    var qd = cq ? ymd_(cq[2], +cq[1] * 3, 1) : '';
+    if (qd) {
+      var run = out.cq[out.cq.length - 1];
+      if (run && run[0] === qd) run[2] = r.row;
+      else out.cq.push([qd, r.row, r.row]);
+    }
   });
   out.before = before_(ss, tz);
   out.convert = convert_(ss, rows);

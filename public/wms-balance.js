@@ -59,12 +59,17 @@
    *   lines = บรรทัดที่ยอดสุทธิมากกว่า 0 เรียง SKU แล้วกองเก่าไปใหม่ LOT ที่ไม่รู้อยู่ท้าย
    *   neg = บรรทัดที่ยอดสุทธิติดลบ
    */
+  var AT = { rows: null, at: null };   // วันรับที่บอกปีของ LOT คิดจากทุกแถว ครั้งเดียวต่อชุดแถว
+
   function asOf(res, date, rows) {
     var fifo = F();
     var ym = date.slice(0, 7), ref = fifo.refKey(ym);
     var st = fifo.newState();
     var counted = 0, later = 0;
-    (rows || fifo.parse(res)).forEach(function (r) {
+    rows = rows || fifo.parse(res);
+    if (AT.rows !== rows) { AT.rows = rows; AT.at = fifo.anchors ? fifo.anchors(rows) : null; }
+    var at = AT.at;
+    rows.forEach(function (r) {
       if (r.d && r.d > date) { later++; return; }
       counted++;
       fifo.apply(st, r);
@@ -119,14 +124,16 @@
       if (!qty) return;
       var j = x.rest.indexOf('|');
       var lot = x.rest.slice(0, j), po = x.rest.slice(j + 1);
-      var lm = fifo.lotMonth(lot, ym);
       /* วันรับเข้าแรกสุดและรอบรับเข้าของทุก SKU ที่รวมกันในบรรทัดนี้ */
-      var recv = '', days = {};
+      var recv = '', days = {}, base = '';
       Object.keys(x.src).forEach(function (b) {
         var r = st.recv[b];
         if (r && (!recv || r < recv)) recv = r;
+        var a = fifo.anchorOf ? fifo.anchorOf(at, b, po) : '';
+        if (a && (!base || a < base)) base = a;
         fifo.rounds(st, b).forEach(function (y) { days[y.d] = (days[y.d] || 0) + y.qty; });
       });
+      var lm = fifo.lotMonth(lot, ym, base);
       var conv = Object.keys(x.conv).sort().map(function (s) { return { sku: s, qty: clean(x.conv[s]) }; })
         .filter(function (c) { return c.qty; });
       locs.sort(function (a, c) { return c.qty - a.qty; });

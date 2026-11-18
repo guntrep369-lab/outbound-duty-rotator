@@ -329,7 +329,7 @@ function link() {
   return ST.countLink(new URL('../stocktake/count.html', location.href).href, new URL(cfg().url, location.href).href, S.head.countKey, S.rid, 'mfg');
 }
 function rep(mode) {
-  return M.report({ ym: ymOf(), today: today(), list: listOf(), skus: S.head.skus, book: S.head.piles, entries: S.raw, mode, locs: locList() });
+  return M.report({ ym: ymOf(), today: today(), list: listOf(), skus: S.head.skus, book: S.head.piles, entries: S.raw, mode, locs: locList(), pos: S.head.pos });
 }
 function repMode() { return RF.mode || (ST.effective(S.raw).length ? 'count' : 'book'); }
 
@@ -667,7 +667,7 @@ async function loadPrev(p) {
     const mode = ST.effective(raw).length ? 'count' : 'book';
     const locs = head.locs.map(l => ({ loc: l[0], zone: l[1], group: l[2], src: l[3] }));
     PREV = { id: p.id, rep: M.report({ ym: p.settings.ym, today: p.date || today(), list: M.unpackList(p.settings.list), skus: head.skus,
-      book: head.piles, entries: raw, mode, locs }) };
+      book: head.piles, entries: raw, mode, locs, pos: head.pos }) };
   } catch (e) { PREV = { id: p.id, err: e.message }; }
   PREV_BUSY = false;
   paintBody();
@@ -1029,7 +1029,7 @@ async function downloadXlsx() {
 /** Excel ผลนับทั้งหมด: ทุกกองที่คนนับกรอก (ไม่สนตัวกรองบนจอ) ใครนับ เมื่อไหร่ โลว่าง โลนอกรายการ */
 async function downloadCounts() {
   if (!ST.effective(S.raw).length) { S.err = 'ยังไม่มีผลนับในรอบนี้'; paint(); return; }
-  const sh = M.countSheet(S.raw, { ym: ymOf(), at: new Date().toLocaleString('th-TH'), skus: S.head.skus, list: listOf(), locs: locList(),
+  const sh = M.countSheet(S.raw, { ym: ymOf(), at: new Date().toLocaleString('th-TH'), skus: S.head.skus, list: listOf(), locs: locList(), pos: S.head.pos,
     teams: ST.teamsOf(S.head.teams, 1) });
   await job('กำลังสร้างไฟล์ Excel…', async () => {
     const X = await xlsxLib();

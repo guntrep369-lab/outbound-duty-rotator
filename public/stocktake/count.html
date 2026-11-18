@@ -1013,12 +1013,20 @@ function hints() {
 /* รอบเช็คความเสี่ยง MFG: เดือนของรอบอ่านจากชื่อรอบ ใช้บอกว่า LOT ที่พิมพ์ต้องนับไหม (นับสต๊อกใหญ่ = '' ไม่เตือน) */
 function mfgYm() { return window.WmsMfg && RD && RD.round ? WmsMfg.ymFromName(RD.round.name) : ''; }
 
+/** วันรับแรกของ PO ที่พิมพ์ (จากรายการ PO ของรอบ) ใช้บอกปีของ LOT · สคริปต์รุ่นเก่าไม่มีวันรับ = '' เดาจากเดือนของรอบ */
+let POD = { pos: null, days: null };
+function poAt(po) {
+  if (!window.WmsMfg || !WmsMfg.poDays || !RD) return '';
+  if (POD.pos !== RD.pos) POD = { pos: RD.pos, days: WmsMfg.poDays(RD.pos) };
+  return WmsMfg.poDay(POD.days, po);
+}
+
 /** ใต้ช่อง LOT: ต้องนับ (บอกเดือนให้เทียบป้าย) · ใหม่กว่าที่ต้องนับ · อ่านไม่ออก */
 function lotHint() {
   const el = $('lotHint');
   if (!el) return;
   const ym = mfgYm();
-  const c = ym ? WmsMfg.lotCheck(FORM.lot, ym) : null;
+  const c = ym ? WmsMfg.lotCheck(FORM.lot, ym, poAt(FORM.po)) : null;
   el.className = 'ct-hint' + (!c ? '' : c.level === 'new' || c.level === 'bad' ? ' bad' : c.level === 'ok' ? ' ok' : '');
   el.textContent = c ? c.hint : '';
 }
@@ -1130,7 +1138,7 @@ function readForm() {
   if (!ex && !confirm(`ไม่พบ SKU "${sku}" ในคลัง\nแน่ใจว่าพิมพ์ถูก? (ถ้าใช่ กดตกลง)`)) { oops('fSku'); return null; }
   /* รอบ MFG: LOT ใหม่กว่าที่ต้องนับ (รายงานไม่เอาไปคิด) หรืออ่านไม่ออก (ไปกอง NO LOT) ถามก่อนบันทึก */
   const ym = mfgYm();
-  const lc = ym ? WmsMfg.lotCheck(lot, ym) : null;
+  const lc = ym ? WmsMfg.lotCheck(lot, ym, poAt(po)) : null;
   if (lc && lc.ask && !confirm(lc.ask)) { oops('fLot'); return null; }
   /* รอบ MFG: รุ่นที่ไม่อยู่ในที่ควรมีของโลนี้ ถามก่อน (กันหยิบรุ่นหน้าตาคล้ายกัน) แต่ยังบันทึกได้ ของวางผิดที่ก็ต้องรู้ */
   if (hintOn() && !WmsMfg.hintFits(RD.hint, LOC, sku, RD.skus) &&
