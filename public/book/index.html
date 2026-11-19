@@ -183,7 +183,8 @@
       <div>
         <h2>สมุดสต๊อก</h2>
         <button type="button" class="mod-info" aria-expanded="false" aria-label="คำอธิบายหน้านี้">i</button>
-        <p>ตัดขายจากไฟล์ออเดอร์ JST / CRM · ย้าย เติม QA · คืนของตามเลขออเดอร์ ระบบเลือกกอง LOT PO ให้จากสต๊อกในสมุด Transaction
+        <p>ตัดขายจากไฟล์ออเดอร์ JST / CRM · รับของจากหน้าจัดที่เก็บ · ย้าย เติม QA · คืนของตามเลขออเดอร์ · แปลงสินค้า · ปรับยอด (หัวหน้า)
+          ระบบเลือกกอง LOT PO ให้จากสต๊อกในสมุด Transaction · ใส่เลข TRcloud ได้ทุกแท็บ (ลงช่อง RUNNUMBER)
           · โหมดคัดลอก (ตอนนี้) กดบันทึกได้เลขที่เอกสารแล้วคัดลอกแถวไปวางในชีต Transaction เดิม · โหมดบันทึก (หลังตัดรอบ) ลงไฟล์ WMS สมุดสต๊อก เลย
           · ออเดอร์ที่ตัดแล้วไม่ถูกตัดซ้ำ คืนเกินที่ตัดไม่ได้ · สคริปต์ของหน้านี้ไม่แตะชีต Transaction เดิม</p>
       </div>
@@ -220,8 +221,9 @@ const ME = 'wms:book:me';         // คนที่เข้าสมุดใ�
 const ROW_MAX = 600;              // แถวที่วาดในตารางต่อครั้ง
 const HEAD_ROLE = 'หัวหน้า';
 const MODE_KEY = 'wms:book:draft:mode';   // แท็บที่เปิดค้าง (เครื่องนี้)
-const MODES = [['cut', 'ตัดขาย'], ['move', 'ย้าย / เติม / QA'], ['ret', 'คืนของ'], ['rows', 'ตารางแบบเดิม'], ['set', '⚙️ สมุดใหม่']];
-const HEAD_ONLY = { rows: 1, set: 1 };   // แท็บของหัวหน้ากับรองหัวหน้า
+const MODES = [['cut', 'ตัดขาย'], ['gr', 'รับของ'], ['move', 'ย้าย / เติม / QA'], ['ret', 'คืนของ'], ['conv', 'แปลงสินค้า'],
+  ['adj', 'ปรับยอด'], ['rows', 'ตารางแบบเดิม'], ['set', '⚙️ สมุดใหม่']];
+const HEAD_ONLY = { adj: 1, rows: 1, set: 1 };   // แท็บของหัวหน้ากับรองหัวหน้า
 let MODE = (() => { try { const m = localStorage.getItem(MODE_KEY); return MODES.some((x) => x[0] === m) ? m : 'cut'; } catch (e) { return 'cut'; } })();
 const RETRY_MS = 30000;   // ชุดที่ส่งไม่สำเร็จเพราะเน็ต ส่งซ้ำเองทุกเท่านี้
 
@@ -537,25 +539,41 @@ async function copyDoc(doc) {
   const d = DOCS.find((x) => x.doc === doc) || (LAST && LAST.doc === doc ? LAST : null);
   if (!d || !d.copy) return;
   const ok = await copyText(B.tsv(d.copy, d.who, doc));
-  MSG = ok ? { kind: 'ok', html: `คัดลอก <b>${esc(doc)}</b> ${f(d.copy.length)} แถวแล้ว วางที่ช่อง A แถวว่างแรกของชีต Transaction` }
+  MSG = ok ? { kind: 'ok', html: `คัดลอก <b>${esc(doc)}</b> ${f(d.copy.length)} แถวแล้ว วางที่ช่อง A แถวว่างแรกของชีต Transaction (ช่อง N = ${esc(nOf(d, doc))})` }
     : { kind: 'bad', html: 'คัดลอกไม่ได้ เบราว์เซอร์ไม่ให้เขียนคลิปบอร์ด ลองกดอีกครั้ง' };
   renderAct();
 }
 
-const VOID_NOTE = { 'ตัดขาย': 'บรรทัดออเดอร์ของชุดนี้จะตัดใหม่ได้', 'คืน': 'ออเดอร์ของชุดนี้คืนใหม่ได้', 'ย้าย': 'กองจะกลับไปอยู่ที่โลเดิมในหน้านี้' };
+const VOID_NOTE = { 'ตัดขาย': 'บรรทัดออเดอร์ของชุดนี้จะตัดใหม่ได้', 'คืน': 'ออเดอร์ของชุดนี้คืนใหม่ได้', 'ย้าย': 'กองจะกลับไปอยู่ที่โลเดิมในหน้านี้',
+  'รับของ': 'ของที่รับเข้าจะหายจากกอง', 'แปลง': 'SKU จะกลับเป็น SKU ตอนซื้อ', 'ปรับยอด': 'ยอดกองกลับไปเท่าก่อนปรับ' };
+
+/** ค่าในช่อง N ของแถวในชุด (เลข TRcloud หรือเลขที่) คนต้องหาแถวพวกนี้ในชีตเดิม */
+function nOf(d, doc) { return [...new Set((d && d.copy ? d.copy : []).map((c) => c[10] || doc))].join(', ') || doc; }
+/* แถวที่ต้องลบในชีตเดิม: เลข TRcloud ซ้ำกับชุดอื่นได้ (รับของสองวันเลข GR เดียวกัน) บอกจำนวนแถวให้เช็คก่อนลบ */
+function delHint(d, doc) {
+  const rows = d && d.copy ? d.copy.length : 0, tr = !!(d && d.copy && d.copy.some((c) => c[10]));
+  return `แถวที่คอลัมน์ N = ${nOf(d, doc)}${rows ? ` (${f(rows)} แถว)` : ''}${tr ? ' · เลข TRcloud ซ้ำกับชุดอื่นได้ เช็ค SKU กับชิ้นก่อนลบ' : ''}`;
+}
 
 async function voidDoc(doc) {
   if (!USER || USER.role !== HEAD_ROLE) return;
   const d = DOCS.find((x) => x.doc === doc);
   const type = d ? d.type : '';
-  const why = prompt(`ยกเลิก ${doc}${type ? ` (${type})` : ''} ทั้งชุด\n${VOID_NOTE[type] || ''} ต้องไปลบแถวที่คอลัมน์ N = ${doc} ในชีต Transaction เอง\n\nเหตุผล:`);
+  const book = !!(d && d.book);
+  const ns = delHint(d, doc);
+  const ask = book
+    ? `ยกเลิก ${doc}${type ? ` (${type})` : ''} ทั้งชุด\nลงแถวกลับในสมุดใหม่เป็นชุดใหม่ (แถวขายลงชิ้นติดลบวันเดิม แถวย้าย/รับ/เบิกลงกลับทาง) ไม่ลบแถวเดิม\n${VOID_NOTE[type] || ''}\n\nเหตุผล:`
+    : `ยกเลิก ${doc}${type ? ` (${type})` : ''} ทั้งชุด\n${VOID_NOTE[type] || ''} ต้องไปลบ${ns} ในชีต Transaction เอง\n\nเหตุผล:`;
+  const why = prompt(ask);
   if (!why || !why.trim()) return;
   BKBUSY = 'กำลังยกเลิก…'; render();
   try {
     const r = await bookPost('bk-void', { doc, why: why.trim() });
-    if (r.error) throw new Error(r.error);
+    if (r.error) throw new Error(r.error + shortList(r).replace(/<[^>]+>/g, ' '));
     const n = r.type === 'ตัดขาย' ? ` (${f(r.lines)} บรรทัดออเดอร์ตัดใหม่ได้)` : r.type === 'คืน' ? ` (${f(r.lines)} บรรทัดคืนใหม่ได้)` : '';
-    MSG = { kind: 'warn', html: `ยกเลิก <b>${esc(doc)}</b> แล้ว${n} — <b>ไปลบแถวที่คอลัมน์ N = ${esc(doc)} ในชีต Transaction ด้วย</b>` };
+    MSG = r.reversed
+      ? { kind: 'ok', html: `ยกเลิก <b>${esc(doc)}</b> แล้ว${n} · ลงแถวกลับเป็น <b>${esc(r.reversed)}</b> ${f(r.rows)} แถว (แท็บ Transaction แถว ${f(r.txAt)}${r.rows > 1 ? `–${f(r.txAt + r.rows - 1)}` : ''})` }
+      : { kind: 'warn', html: `ยกเลิก <b>${esc(doc)}</b> แล้ว${n} — <b>ไปลบ${esc(ns)} ในชีต Transaction ด้วย</b>` };
     if (LAST && LAST.doc === doc) LAST = null;
     if (r.type === 'คืน') BookGrid.forget();
   } catch (e) {
@@ -752,7 +770,7 @@ function actTail() {
     html += `<div class="bk-msg ok">✅ ลง <b>${esc(LAST.doc)}</b> ในสมุดแล้ว ${f(LAST.copy.length)} แถว (แท็บ Transaction แถว ${f(LAST.txAt)}${LAST.copy.length > 1 ? `–${f(LAST.txAt + LAST.copy.length - 1)}` : ''}) ไม่ต้องคัดลอก</div>`;
   } else if (LAST) {
     html += `<div class="bk-msg ok">✅ บันทึก <b>${esc(LAST.doc)}</b> แล้ว · ${LAST.copied ? `คัดลอก ${f(LAST.copy.length)} แถวแล้ว` : 'คัดลอกอัตโนมัติไม่ได้ กดคัดลอกอีกครั้ง'}
-      <ol><li>เปิดชีต Transaction</li><li>คลิกช่อง <b>A</b> ของแถวว่างแรก</li><li>กด <b>Ctrl+V</b> แล้วเช็คว่าคอลัมน์ N เป็น ${esc(LAST.doc)}</li></ol>
+      <ol><li>เปิดชีต Transaction</li><li>คลิกช่อง <b>A</b> ของแถวว่างแรก</li><li>กด <b>Ctrl+V</b> แล้วเช็คว่าคอลัมน์ N เป็น ${esc(nOf(LAST, LAST.doc))}</li></ol>
       <button class="bk-btn" data-copy="${esc(LAST.doc)}">📋 คัดลอกอีกครั้ง</button></div>`;
   }
   if (MSG) html += `<div class="bk-msg ${MSG.kind}">${MSG.html}</div>`;
@@ -800,8 +818,10 @@ function renderBody() {
       CUT.short.map((s, i) => `<tr>${no(i)}<td class="c-sku">${esc(s.sku)}</td><td class="c-nm" title="${esc(s.name)}">${esc(s.name)}</td>` +
         `<td class="num c-warn">${f(s.need)}</td><td class="num">${f(s.lines)}</td><td class="num">${f(s.left)}</td>` +
         `<td class="c-sub">${s.reserve.length ? s.reserve.map((p) => `${esc(pileText(p))} = ${f(p.qty)}`).join(' · ') : '<span class="c-red">ไม่มีของในคลัง</span>'}</td>` +
-        `<td class="c-sub">${s.conv.map((c) => `${esc(c.sku)} เปิด ${f(c.open)}`).join(' · ')}</td></tr>`),
-      '<div class="bk-more">บรรทัดที่ขาดของไม่ถูกตัดเลยทั้งบรรทัด เติมโลเปิด (หรือแปลงสินค้า) ในชีตเดิม ดึงสต๊อกใหม่ แล้ววางไฟล์เดิมอีกครั้ง ระบบตัดเฉพาะบรรทัดที่เหลือ</div>');
+        `<td class="c-sub">${s.conv.map((c) => c.open > 0
+          ? `<button class="bk-btn" data-conv="${esc(s.sku)}|${esc(c.sku)}|${Math.min(c.open, Math.max(0, Math.round((s.need - s.left) * 1000) / 1000))}" title="ไปแท็บแปลงสินค้า เติมแถวให้">🔁 แปลง ${esc(c.sku)}</button> เปิด ${f(c.open)}`
+          : `${esc(c.sku)} เปิด 0`).join(' · ')}</td></tr>`),
+      '<div class="bk-more">บรรทัดที่ขาดของไม่ถูกตัดเลยทั้งบรรทัด เติมโลเปิด หรือกด 🔁 แปลง (ลงชุดแปลงสินค้าแล้วกลับมาแท็บนี้) ระบบตัดเฉพาะบรรทัดที่เหลือ</div>');
     return;
   }
   if (FILTER === 'done' || FILTER === 'nosku') {
@@ -836,18 +856,23 @@ function renderDocs() {
   const rows = DOCS.map((d) => {
     const v = d.status === 'ยกเลิก';
     const open = d.type === 'ยอดยกมา';
-    const st = v ? `<span class="c-sub" title="${esc(d.why)}">ยกเลิกโดย ${esc(d.voidBy)}</span>`
+    const rev = d.type === 'กลับรายการ';
+    /* ชุดในสมุดใหม่ที่ยกเลิกแล้ว แถวยังอยู่ ถูกหักด้วยชุดกลับรายการ (ชุดที่เกี่ยว) */
+    const st = v ? `<span class="c-sub" title="${esc(d.why)}">ยกเลิกโดย ${esc(d.voidBy)}${d.link ? ` · กลับด้วย ${esc(d.link)}` : ''}</span>`
       : open ? '<span class="c-sub">จุดเริ่มสมุดใหม่</span>'
       : d.book ? (wait.has(d.doc) ? '<span class="c-ok" title="ลงไฟล์ WMS สมุดสต๊อก แล้ว สต๊อกที่ดึงมายังไม่เห็น คิดกองให้แล้ว">📗 ลงแล้ว · ⏳ รอสต๊อก</span>' : '<span class="c-ok">📗 ลงสมุดใหม่แล้ว</span>')
       : done.has(d.doc) ? '<span class="c-ok">✓ วางแล้ว</span>' : wait.has(d.doc) ? '<span class="c-warn">⏳ ยังไม่เห็น</span>' : '<span class="c-sub">—</span>';
     const copyBtn = open || (d.book && !head) ? '' : `<button class="bk-btn" data-copy="${esc(d.doc)}" ${d.book ? 'title="ใช้ตอนถอยกลับไปชีตเดิมเท่านั้น"' : ''}>📋 คัดลอก</button>`;
-    const voidBtn = head && !open && !d.book ? ` <button class="bk-btn x" data-void="${esc(d.doc)}">ยกเลิก</button>` : '';
-    return `<tr${v ? ' class="r-void"' : ''}><td class="c-sku">${esc(d.doc)}</td><td>${esc(d.type)}</td><td>${esc(dm(d.date))}</td><td>${esc(d.who)}</td>` +
-      `<td class="c-sub">${esc(String(d.at).slice(5, 16))}</td><td class="num">${f(d.rows)}</td><td class="num">${f(d.qty)}</td><td class="num">${d.orders ? f(d.orders) : ''}</td>` +
+    /* ชุดในสมุดใหม่ยกเลิกได้ตอนอยู่โหมดบันทึก (ลงแถวกลับ) · ยอดยกมากับชุดกลับรายการยกเลิกไม่ได้ */
+    const voidBtn = head && !open && !rev && (!d.book || bookMode())
+      ? ` <button class="bk-btn x" data-void="${esc(d.doc)}" ${d.book ? 'title="ลงแถวกลับในสมุดใหม่"' : ''}>${d.book ? '↩ ยกเลิก' : 'ยกเลิก'}</button>` : '';
+    const type = rev && d.link ? `${esc(d.type)} <span class="c-sub">↩ ${esc(d.link)}</span>` : esc(d.type);
+    return `<tr${v ? ' class="r-void"' : ''}><td class="c-sku">${esc(d.doc)}</td><td>${type}</td><td>${esc(dm(d.date))}</td><td>${esc(d.who)}</td>` +
+      `<td class="c-sub">${esc(String(d.at).slice(5, 16))}</td><td class="c-sub">${esc(d.tr || '')}</td><td class="num">${f(d.rows)}</td><td class="num">${f(d.qty)}</td><td class="num">${d.orders ? f(d.orders) : ''}</td>` +
       `<td>${st}</td><td class="c-act">${v ? '' : copyBtn + voidBtn}</td></tr>`;
   });
   $('docs').innerHTML = `<div class="bk-dh"><b>ชุดที่บันทึก</b> 3 วันล่าสุด ทุกแท็บ · ${bookMode() ? 'โหมดบันทึก ทุกชุดลงไฟล์ WMS สมุดสต๊อก แล้ว' : 'ในสมุด = เห็นแถวในสต๊อกที่ดึงมาแล้ว'}</div>` +
-    table([['เลขที่'], ['ประเภท'], ['วันที่'], ['ผู้ลง'], ['บันทึกเมื่อ'], ['แถว', 'num'], ['ชิ้น', 'num'], ['ออเดอร์', 'num'], ['ในสมุด'], ['', 'c-act']], rows);
+    table([['เลขที่'], ['ประเภท'], ['วันที่'], ['ผู้ลง'], ['บันทึกเมื่อ'], ['เลข TRcloud'], ['แถว', 'num'], ['ชิ้น', 'num'], ['ออเดอร์', 'num'], ['ในสมุด'], ['', 'c-act']], rows);
 }
 
 function renderTabs() {
@@ -917,6 +942,21 @@ document.addEventListener('click', (e) => {
   }
   else if (t.dataset.copy) copyDoc(t.dataset.copy);
   else if (t.dataset.void) voidDoc(t.dataset.void);
+  else if (t.dataset.conv) {
+    /* ตัดขายขาดของ → แท็บแปลงสินค้า เติมแถว SKU ที่จะได้ + SKU ตอนซื้อ + ชิ้นที่ขาด */
+    const [sku, buy, qty] = t.dataset.conv.split('|');
+    BookGrid.append('conv', [{ sku, buy, qty: +qty > 0 ? String(qty) : '' }]);
+    setMode('conv');
+  }
+});
+
+/* หน้าจัดที่เก็บ (แท็บอื่นในเครื่องนี้) ส่งของมาแท็บรับของ / ย้าย: อ่านร่างใหม่จากเครื่อง */
+window.addEventListener('storage', (e) => {
+  const m = /^wms:book:draft:(gr|move)$/.exec(e.key || '');
+  if (!m || BookGrid.pending(m[1])) return;
+  BookGrid.reload(m[1]);
+  if (MODE === m[1]) render();
+  else renderTabs();
 });
 
 document.addEventListener('change', (e) => {

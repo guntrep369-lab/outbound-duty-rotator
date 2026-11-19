@@ -1,9 +1,9 @@
 /**
- * book-grid.js — สมุดสต๊อก ขั้น 2–3: แท็บ ย้าย / เติม / QA, คืนของ และตารางแบบสมุดเดิม (หัวหน้า) ของหน้า public/book/
+ * book-grid.js — สมุดสต๊อก ขั้น 2–4: แท็บ รับของ, ย้าย / เติม / QA, คืนของ, แปลงสินค้า, ปรับยอด (หัวหน้า) และตารางแบบสมุดเดิม (หัวหน้า) ของหน้า public/book/
  *
  * ตารางพิมพ์แบบ Excel หนึ่งแถวต่อหนึ่งงาน วางจาก Excel ได้ (Ctrl+V ลงช่องไหนก็เติมจากช่องนั้น วางนอกตารางต่อท้าย)
  * ทุกครั้งที่พิมพ์ คิดแผนใหม่จากกองสต๊อกของหน้า (ST) แล้วขึ้นผลท้ายแถว ไม่วาดช่องพิมพ์ใหม่ เคอร์เซอร์จะได้ไม่หลุด
- * กติกาเลือกกอง / LOT / PO อยู่ใน public/wms-book.js (planMoves, planReturns, planRows)
+ * กติกาเลือกกอง / LOT / PO อยู่ใน public/wms-book.js (planGr, planMoves, planReturns, planConv, planAdj, planRows) เลข TRcloud ใส่ด้วย trApply
  * โหมดบันทึก (หลังตัดรอบ) กดบันทึกแล้วลงสมุดใหม่เลย ไม่ต้องคัดลอก · ส่งไม่สำเร็จเพราะเน็ต ชุดค้างไว้แล้วส่งซ้ำเอง (queueRetry ของหน้า)
  *
  * ใช้ตัวแปรและฟังก์ชันของสคริปต์ในหน้า (USER RES ST DOCS REF BKBUSY MSG LAST esc f dm bookPost copyText compute render
@@ -13,7 +13,18 @@
 (function () {
   'use strict';
 
+  /* ช่องเลข TRcloud ท้ายตาราง ว่าง = ใช้เลขของชุด (ช่องด้านบน) */
+  var TR = { k: 'tr', t: 'TRcloud', w: 112, ph: 'เลขของชุด' };
   var COLS = {
+    gr: [
+      { k: 'sku', t: 'SKU', w: 112, dl: 'dl-sku' },
+      { k: 'lot', t: 'LOT', w: 46, ph: 'บนของ' },
+      { k: 'po', t: 'PO', w: 100 },
+      { k: 'to', t: 'โลที่วาง', w: 100, dl: 'dl-loc' },
+      { k: 'qty', t: 'ชิ้น', w: 54, num: true },
+      { k: 'status', t: 'เปิด?', w: 50, ph: 'auto' },
+      TR,
+    ],
     move: [
       { k: 'sku', t: 'SKU', w: 112, dl: 'dl-sku' },
       { k: 'from', t: 'จาก', w: 100, dl: 'dl-loc', ph: 'R เก่าสุด' },
@@ -22,6 +33,7 @@
       { k: 'lot', t: 'LOT', w: 46, ph: 'FIFO' },
       { k: 'po', t: 'PO', w: 100, ph: 'FIFO' },
       { k: 'status', t: 'เปิด?', w: 50, ph: 'auto' },
+      TR,
     ],
     ret: [
       { k: 'key', t: 'ออเดอร์ / เลขพัสดุ', w: 150 },
@@ -29,6 +41,26 @@
       { k: 'qty', t: 'ชิ้น', w: 54, num: true, ph: 'ที่เหลือ' },
       { k: 'to', t: 'โลที่วาง', w: 100, dl: 'dl-loc', ph: 'โลเปิดขาย' },
       { k: 'note', t: 'M/E', w: 96, ph: 'RETURN' },
+      TR,
+    ],
+    conv: [
+      { k: 'sku', t: 'SKU ที่จะได้', w: 112, dl: 'dl-sku' },
+      { k: 'buy', t: 'SKU ตอนซื้อ', w: 112, dl: 'dl-sku', ph: 'MASTER' },
+      { k: 'from', t: 'โล', w: 100, dl: 'dl-loc', ph: 'โลเปิดขาย' },
+      { k: 'qty', t: 'ชิ้น', w: 54, num: true },
+      { k: 'lot', t: 'LOT', w: 46, ph: 'FIFO' },
+      { k: 'po', t: 'PO', w: 100, ph: 'FIFO' },
+      { k: 'mr', t: 'MR', w: 112, ph: 'เลขของชุด' },
+      { k: 'gr', t: 'GR', w: 112, ph: 'เลขของชุด' },
+    ],
+    adj: [
+      { k: 'loc', t: 'โล', w: 100, dl: 'dl-loc' },
+      { k: 'sku', t: 'SKU', w: 112, dl: 'dl-sku' },
+      { k: 'lot', t: 'LOT', w: 46, ph: 'กองเดียว' },
+      { k: 'po', t: 'PO', w: 100, ph: 'กองเดียว' },
+      { k: 'count', t: 'นับได้', w: 60, num: true },
+      { k: 'why', t: 'เหตุผล', w: 96, dl: 'dl-why' },
+      TR,
     ],
     rows: [
       { k: 'sku', t: 'SKU', w: 112, dl: 'dl-sku' },
@@ -40,9 +72,10 @@
       { k: 'type', t: 'รับ/เบิก', w: 62, dl: 'dl-type' },
       { k: 'note', t: 'Note', w: 150 },
       { k: 'status', t: 'Status', w: 54, ph: 'auto' },
+      { k: 'tr', t: 'RUNNUMBER', w: 112, ph: 'เลขของชุด' },
     ],
   };
-  var TITLE = { move: 'ย้าย / เติม / QA', ret: 'คืนของ', rows: 'ตารางแบบสมุดเดิม' };
+  var TITLE = { gr: 'รับของ', move: 'ย้าย / เติม / QA', ret: 'คืนของ', conv: 'แปลงสินค้า', adj: 'ปรับยอด', rows: 'ตารางแบบสมุดเดิม' };
   var TIP = {
     move: 'พิมพ์หรือวางจาก Excel เรียงคอลัมน์ SKU · จาก · ไป · ชิ้น · LOT · PO\n' +
       'จากว่าง = เติมจากของสำรองที่ R กองเก่าสุด (Supplier เดียวกับที่เปิดขายก่อน)\nไปว่าง = โลที่ SKU นี้เปิดขายอยู่\n' +
@@ -51,20 +84,43 @@
     ret: 'วางเลขออเดอร์ / เลขอ้างอิง (ออนไลน์) / เลขพัสดุ ทีละบรรทัด ระบบหาว่าตัดจากกองไหน แล้วคืนเข้า LOT / PO เดิม\n' +
       'ไม่ใส่ SKU = คืนทั้งออเดอร์ · ไม่ใส่ชิ้น = ชิ้นที่ยังไม่คืน\nไม่เจอ (ออเดอร์ที่ตัดด้วยมือในชีตเดิม) = ใส่ SKU กับชิ้น คืนเป็น LOT 0 / PO 0 แบบเดิม\n' +
       'โลที่วางว่าง = โลที่ SKU นี้เปิดขายอยู่ · ช่อง M/E ใส่เลข M/E-xxxxx ถ้าเป็นของ M/E',
-    rows: 'ลงแถวแบบชีต Transaction เดิม ใช้กับงานที่ยังไม่มีหน้า (รับของ แปลงสินค้า M/E ปรับยอด) เฉพาะหัวหน้า\n' +
+    rows: 'ลงแถวแบบชีต Transaction เดิม ใช้กับงานที่ยังไม่มีหน้า (ส่งเคลม ตัดซ่อม งานแปลก ๆ) เฉพาะหัวหน้า\n' +
       'วางจาก Excel ได้ เรียงคอลัมน์ SKU · LOT · PO · Location เบิก · Location รับ · QTY · รับ/เบิก · Note · Status\n' +
       'รับ = มีแต่ Location รับ ต้องใส่ LOT PO · เบิก = มี Location เบิก (รับมีหรือไม่ก็ได้) · ขาย = มีแต่ Location เบิก\n' +
       'แถวเบิก/ขาย LOT PO ว่าง = โลนั้นมี SKU นี้กองเดียวใช้กองนั้น · กองไม่พอบันทึกไม่ได้ · ทุกแถวต้องมี Note\n' +
       'แถวขาย Note = วันที่ขาย แบบชีตเดิม (ว่างไว้ = วันที่ของชุด)\n' +
-      'Status ว่าง = ตามโลรับ (R QA RIB ทางเดิน ไม่เปิด) พิมพ์ - = ไม่เปิด',
+      'Status ว่าง = ตามโลรับ (R QA RIB ทางเดิน ไม่เปิด) พิมพ์ - = ไม่เปิด\nRUNNUMBER = เลข TRcloud ของแถว ว่าง = เลขของชุด ไม่มีเลยใช้เลขที่ของระบบ',
+    gr: 'กดส่งจากหน้าจัดที่เก็บ หรือคัดลอกตารางจากหน้าจัดที่เก็บ / แท็บ OUTPUT มาวาง (Ctrl+V) ระบบเรียงช่องให้เอง\n' +
+      'หรือพิมพ์ / วางจาก Excel เรียงคอลัมน์ SKU · LOT · PO · โลที่วาง · ชิ้น\n' +
+      'LOT = เดือนที่เห็นบนของ (1–12) ปีมาจากวันที่รับ · Note ลงเป็น GR วว-ดด-ปป ของวันที่ด้านบน\n' +
+      'เปิด? ว่าง = ตามโล (R QA RIB ทางเดิน ไม่เปิด) · แถว ย้ายจาก RIB ของหน้าจัดที่เก็บไปอยู่แท็บย้ายให้เอง',
+    conv: 'แปลงแบบสมุดเดิม: เบิก SKU ตอนซื้อออก รับ SKU ใหม่เข้าโลเดียวกัน LOT PO เดิม Note แปลงสินค้า\n' +
+      'SKU ตอนซื้อว่าง = หาจาก MASTER แปลงสินค้า ตัวที่มีของพอ · โลว่าง = โลเปิดขายตาม FIFO แบ่งหลายกองให้เอง\n' +
+      'MR = เลข TRcloud ฝั่งเบิก · GR = ฝั่งรับ (ช่องด้านบนใช้ทั้งชุด ช่องในแถวใช้แทนเฉพาะแถว)\n' +
+      'แท็บตัดขาย ขาดของ → กดปุ่ม แปลง ข้าง SKU ที่แปลงได้ จะมาเติมแถวที่นี่',
+    adj: 'ใส่ยอดที่นับได้จริงของกอง ระบบลงแถวส่วนต่างให้ ขาด = เบิกออก เกิน = รับเข้า ตรงแล้วไม่ลง\n' +
+      'LOT / PO ว่าง = โลนั้นมี SKU นี้กองเดียว · ของที่เจอใหม่ใส่ LOT PO เอง · นับได้ 0 = ของไม่มีแล้ว\n' +
+      'เหตุผล: นับผิด ของเสีย หาย เจอเพิ่ม ลงผิด (พิมพ์เองได้) · เฉพาะหัวหน้ากับรองหัวหน้า\n' +
+      'โหมดบันทึก: มีคนลงกองเดียวกันระหว่างนั้น ระบบไม่รับ ให้ดึงสต๊อกใหม่แล้วดูยอดอีกครั้ง',
   };
-  var KEY = { move: 'wms:book:draft:move', ret: 'wms:book:draft:ret', rows: 'wms:book:draft:rows' };
-  var TYPE = { move: 'ย้าย', ret: 'คืน', rows: 'ตารางเดิม' };
-  var OP = { move: 'bk-move', ret: 'bk-return', rows: 'bk-rows' };
+  TIP.move += '\nTRcloud = เลขของแถว ว่าง = เลขของชุด (โอน QA ไม่มีเลขขึ้นเตือนสีส้ม)';
+  TIP.ret += '\nTRcloud = เลขของแถว ว่าง = เลขของชุด (คืนของ 2 เลขในชุดเดียว ใส่ในแถว) ไม่มีเลขขึ้นเตือนสีส้ม';
+  var KEY = { gr: 'wms:book:draft:gr', move: 'wms:book:draft:move', ret: 'wms:book:draft:ret', conv: 'wms:book:draft:conv',
+    adj: 'wms:book:draft:adj', rows: 'wms:book:draft:rows' };
+  var TYPE = { gr: 'รับของ', move: 'ย้าย', ret: 'คืน', conv: 'แปลง', adj: 'ปรับยอด', rows: 'ตารางเดิม' };
+  var OP = { gr: 'bk-gr', move: 'bk-move', ret: 'bk-return', conv: 'bk-conv', adj: 'bk-adj', rows: 'bk-rows' };
+  var HINT = {
+    gr: 'วางจากหน้าจัดที่เก็บ หรือ Excel · LOT ตามที่เห็นบนของ',
+    move: 'พิมพ์หรือ Ctrl+V จาก Excel · ช่องว่างระบบเลือกให้',
+    ret: 'วางเลขออเดอร์ / เลขพัสดุ ระบบหากองที่ตัดให้',
+    conv: 'SKU ตอนซื้อ → SKU ใหม่ ตาม MASTER แปลงสินค้า',
+    adj: 'เฉพาะหัวหน้า · ใส่ยอดที่นับได้จริง',
+    rows: 'เฉพาะหัวหน้า · งานที่ยังไม่มีหน้า',
+  };
 
-  var S = {};                 // { move: {rows, date, pending}, ret: {...} } โหลดตอนใช้ครั้งแรก
+  var S = {};                 // { move: {rows, date, pending, ref, tr, mr, gr}, ret: {...} } โหลดตอนใช้ครั้งแรก
   var LOOK = { found: {}, miss: {} };
-  var PLAN = { move: null, ret: null };
+  var PLAN = {};
   var DRAWN = null;           // ตารางที่วาดอยู่ { mode, n, res } เปลี่ยนเมื่อไรถึงวาดใหม่ทั้งตาราง
   var LISTS = null;           // RES ที่ใช้ทำ datalist ล่าสุด
   var FINDING = false, FIND_ERR = '', findTimer = 0, outTimer = 0, saveTimer = 0;
@@ -77,7 +133,8 @@
   function state(mode) {
     if (!S[mode]) {
       var d = rj(KEY[mode]) || {};
-      S[mode] = { rows: Array.isArray(d.rows) ? d.rows : [], date: d.date || '', pending: d.pending || null, ref: d.ref || '' };
+      S[mode] = { rows: Array.isArray(d.rows) ? d.rows : [], date: d.date || '', pending: d.pending || null, ref: d.ref || '',
+        tr: d.tr || '', mr: d.mr || '', gr: d.gr || '' };
       if (!S[mode].date || S[mode].date < todayStr() && !S[mode].pending) S[mode].date = todayStr();
       tidy(mode);
     }
@@ -92,14 +149,25 @@
   }
   function keep(mode, now) {
     clearTimeout(saveTimer);
-    var go = function () { wj(KEY[mode], { rows: S[mode].rows, date: S[mode].date, pending: S[mode].pending, ref: S[mode].ref, at: Date.now() }); };
+    var g = S[mode];
+    var go = function () { wj(KEY[mode], { rows: g.rows, date: g.date, pending: g.pending, ref: g.ref, tr: g.tr, mr: g.mr, gr: g.gr, at: Date.now() }); };
     if (now) go(); else saveTimer = setTimeout(go, 400);
   }
 
   function plan(mode) {
     if (!ST) return null;
-    var g = state(mode);
-    return mode === 'move' ? WmsBook.planMoves(g.rows, ST) : mode === 'rows' ? WmsBook.planRows(g.rows, ST, { date: g.date }) : WmsBook.planReturns(g.rows, LOOK, ST);
+    var g = state(mode), B = WmsBook;
+    var p = mode === 'move' ? B.planMoves(g.rows, ST) : mode === 'rows' ? B.planRows(g.rows, ST, { date: g.date })
+      : mode === 'gr' ? B.planGr(g.rows, ST, { date: g.date }) : mode === 'conv' ? B.planConv(g.rows, ST)
+      : mode === 'adj' ? B.planAdj(g.rows, ST) : B.planReturns(g.rows, LOOK, ST);
+    return B.trApply(p, mode, { tr: g.tr, mr: g.mr, gr: g.gr });
+  }
+
+  /** แผน → แถวที่ส่งให้สคริปต์ */
+  function copyOf(mode, pl) {
+    var B = WmsBook;
+    return mode === 'move' ? B.moveCopy(pl) : mode === 'rows' ? B.rowsCopy(pl) : mode === 'gr' ? B.grCopy(pl)
+      : mode === 'conv' ? B.convCopy(pl) : mode === 'adj' ? B.adjCopy(pl) : B.returnCopy(pl);
   }
 
   /* ── datalist SKU กับโล จากสต๊อกที่ดึงมา ───────────────────────────── */
@@ -112,16 +180,30 @@
     var sk = (RES.skus || []).map(function (t) { return '<option value="' + esc(t[0]) + '">' + esc(t[2] || '') + '</option>'; });
     var lc = (RES.locs || []).slice().sort(function (a, b) { return String(a).localeCompare(String(b), 'en', { numeric: true }); })
       .map(function (l) { return '<option value="' + esc(l) + '"></option>'; });
+    var opts = function (list) { return list.map(function (t) { return '<option value="' + esc(t) + '"></option>'; }).join(''); };
     box.innerHTML = '<datalist id="dl-sku">' + sk.join('') + '</datalist><datalist id="dl-loc">' + lc.join('') + '</datalist>' +
-      '<datalist id="dl-type">' + WmsBook.TX_TYPES.map(function (t) { return '<option value="' + t + '"></option>'; }).join('') + '</datalist>';
+      '<datalist id="dl-type">' + opts(WmsBook.TX_TYPES) + '</datalist><datalist id="dl-why">' + opts(WmsBook.ADJ_WHY) + '</datalist>';
   }
 
   /* ── ผลท้ายแถว ──────────────────────────────────────────────────────── */
 
+  function trTag(r) { return r.tr ? ' <span class="c-sub">' + esc(r.tr) + '</span>' : ''; }
+
   function takeText(r, mode, o) {
+    var open = r.status === 'เปิด' ? ' <span class="g-open">เปิด</span>' : '';
     if (mode === 'rows') {
       return '<b>' + esc(r.type) + '</b>' + (r.type === 'ขาย' ? ' ' + esc(r.note.slice(8, 10) + '/' + r.note.slice(5, 7)) : '') + ' LOT ' + esc(r.lot) + ' · ' + esc(r.po) + ' ×' + f(r.qty) + ' ' + (r.from ? esc(r.from) : '') + (r.to ? ' → ' + esc(r.to) : '') +
-        (r.status === 'เปิด' ? ' <span class="g-open">เปิด</span>' : '');
+        open + trTag(r);
+    }
+    if (mode === 'gr') return 'LOT ' + esc(r.lot) + ' · ' + esc(r.po) + ' ×' + f(r.qty) + ' → ' + esc(r.to) + open + ' <span class="c-sub">' + esc(r.note) + '</span>' + trTag(r);
+    if (mode === 'conv') {
+      return r.type === 'เบิก'
+        ? '<b>เบิก</b> ' + (o.autoBuy ? '<b>' + esc(r.sku) + '</b>' : esc(r.sku)) + ' LOT ' + esc(r.lot) + ' · ' + esc(r.po) + ' ×' + f(r.qty) + ' ที่ ' + esc(r.from) + trTag(r)
+        : '<b>รับ</b> ' + esc(r.sku) + ' → ' + esc(r.to) + open + trTag(r);
+    }
+    if (mode === 'adj') {
+      return 'มี ' + f(o.have) + ' → นับ ' + f(o.count) + ' = <b class="' + (o.diff < 0 ? 'c-red' : 'c-ok') + '">' + (o.diff > 0 ? '+' : '') + f(o.diff) + '</b> ' +
+        esc(r.type) + ' LOT ' + esc(r.lot) + ' · ' + esc(r.po) + open + trTag(r);
     }
     var lot = r.lot === '0' && r.po === '0' ? '<span class="c-warn">LOT 0 / PO 0</span>' : 'LOT ' + esc(r.lot) + ' · ' + esc(r.po);
     /* ตัวหนา = ระบบเลือกให้ */
@@ -131,12 +213,13 @@
     var st = r.status === 'เปิด' ? ' <span class="g-open">เปิด</span>' : '';
     var doc = mode === 'ret' && r.doc ? ' <span class="c-sub">ตัด ' + esc(r.doc) + '</span>' : '';
     var sku = mode === 'ret' && !o.in.sku ? '<b>' + esc(r.sku) + '</b> ' : '';
-    return sku + lot + ' ×' + f(r.qty) + (where ? ' ' + where : '') + st + doc;
+    return sku + lot + ' ×' + f(r.qty) + (where ? ' ' + where : '') + st + doc + trTag(r);
   }
 
   function outHtml(mode, o) {
     if (!o || o.st === 'blank') return '';
     if (o.st === 'bad') return '<span class="c-red">' + esc(o.why) + '</span>';
+    if (o.st === 'same') return '<span class="c-ok">✓ ตรงแล้ว ' + f(o.have) + ' ไม่ต้องปรับ</span>';
     if (o.st === 'wait') return '<span class="c-sub">' + (FINDING ? 'กำลังหา…' : esc(o.why)) + '</span>';
     var html = o.take.map(function (r) { return '<span class="tk">' + takeText(r, mode, o) + '</span>'; }).join('<br>');
     if (o.warn.length) html += '<br><span class="c-warn">⚠ ' + o.warn.map(esc).join(' · ') + '</span>';
@@ -145,9 +228,14 @@
 
   function nameOf(mode, o) {
     if (!o || o.st === 'blank' || !ST) return '';
-    var many = o.take.some(function (t) { return t.s !== o.take[0].s; });
+    if (mode === 'conv' || mode === 'gr') {
+      /* แปลง: ชื่อของ SKU ที่จะได้ · รับของ: SKU ใหม่ใช้ชื่อที่มากับแถว */
+      var row = o.take.filter(function (t) { return t.type === 'รับ'; })[0];
+      if (row && row.name) return row.name;
+    }
+    var many = mode !== 'conv' && o.take.some(function (t) { return t.s !== o.take[0].s; });
     if (many) return '';   // คืนทั้งออเดอร์หลาย SKU ชื่ออยู่ในช่องลงสมุดแล้ว
-    var s = mode === 'move' ? o.s : o.take.length ? o.take[0].s : ST.code(String(o.in.sku || ''));
+    var s = mode === 'move' ? o.s : o.take.length && mode !== 'conv' ? o.take[0].s : ST.code(String(o.in.sku || ''));
     if (s === undefined) s = -1;
     var t = s >= 0 ? ST.skus[s] : null;
     return t ? t[2] || '' : '';
@@ -175,13 +263,19 @@
   function renderIn(mode) {
     var g = state(mode);
     var need = mode === 'ret' ? WmsBook.lookKeys(g.rows, LOOK).length : 0;
+    var field = function (id, k, w, ph) {
+      return '<input class="bk-field" id="' + id + '" style="width:' + w + 'px" maxlength="30" placeholder="' + esc(ph) + '" value="' + esc(g[k] || '') +
+        '" autocomplete="off" spellcheck="false" aria-label="' + esc(ph) + '">';
+    };
     var html = '<div class="bk-top"><span class="bk-h">' + TITLE[mode] + '</span>' +
       '<button type="button" class="g-tip" title="' + esc(TIP[mode]) + '" aria-label="วิธีใช้">ⓘ</button>' +
-      '<span class="g-hint">' + (mode === 'move' ? 'พิมพ์หรือ Ctrl+V จาก Excel · ช่องว่างระบบเลือกให้'
-        : mode === 'rows' ? 'เฉพาะหัวหน้า · งานที่ยังไม่มีหน้า' : 'วางเลขออเดอร์ / เลขพัสดุ ระบบหากองที่ตัดให้') + '</span>';
+      '<span class="g-hint">' + esc(HINT[mode]) + '</span>';
     if (mode === 'rows') {
-      html += '<input class="bk-field" id="gRef" style="width:220px" maxlength="60" placeholder="อ้างอิง เช่น เลข GR / Transfer" value="' + esc(g.ref || '') + '">';
+      html += '<input class="bk-field" id="gRef" style="width:200px" maxlength="60" placeholder="อ้างอิง เช่น เลข Transfer" value="' + esc(g.ref || '') + '">';
     }
+    /* เลข TRcloud ทั้งชุด (แปลง = MR ฝั่งเบิก GR ฝั่งรับ) ช่องในแถวใช้แทนเฉพาะแถว */
+    if (mode === 'conv') html += field('gMr', 'mr', 150, 'เลข MR ทั้งชุด') + field('gGr', 'gr', 150, 'เลข GR ทั้งชุด');
+    else html += field('gTr', 'tr', 160, 'เลข TRcloud ทั้งชุด');
     if (mode === 'ret') {
       html += '<button class="tx-opt' + (need ? ' p' : '') + '" id="gFind" ' + (FINDING || !need || !USER ? 'disabled' : '') + '>' +
         (FINDING ? 'กำลังหา…' : '🔍 หาออเดอร์' + (need ? ' ' + f(need) : '')) + '</button>';
@@ -203,6 +297,8 @@
     };
     var html = chip('c-ok', 'ลงสมุด', t.rows, 'แถว · ' + f(t.qty) + ' ชิ้น') + chip('c-red', 'แถวผิด', t.bad, '') + chip('c-warn', 'เตือน', t.warn, '');
     if (mode === 'ret') html += chip('', 'รอหา', t.wait, '') + chip('c-warn', 'LOT 0', t.lot0, 'บรรทัด');
+    if (mode === 'adj') html += chip('c-ok', 'ตรงแล้ว', t.same, 'กอง');
+    if (t.noTr) html += chip('c-warn', 'ไม่มีเลข TRcloud', t.noTr, 'บรรทัด');
     $('sum').innerHTML = html;
   }
 
@@ -274,6 +370,8 @@
     var g = state(mode), i = +el.dataset.r;
     if (!g.rows[i]) return;
     g.rows[i][el.dataset.c] = el.value;
+    /* รหัสยาวกับชื่อที่มากับแถวจากหน้าจัดที่เก็บ ใช้ไม่ได้แล้วเมื่อแก้ SKU */
+    if (el.dataset.c === 'sku') { delete g.rows[i].long; delete g.rows[i].name; }
     LAST = null;
     var grew = false;
     if (i === g.rows.length - 1 && el.value.trim()) { g.rows.push({}); grew = true; }
@@ -283,9 +381,33 @@
     if (mode === 'ret' && el.dataset.c === 'key') findSoon();
   }
 
+  /** เติมแถวต่อท้ายตาราง (ปุ่มแปลงในแท็บตัดขาย ปุ่มส่งของหน้าจัดที่เก็บ) */
+  function append(mode, list) {
+    var g = state(mode);
+    var r = g.rows.length;
+    while (r > 0 && blank(g.rows[r - 1])) r--;
+    g.rows.length = r;
+    (list || []).forEach(function (x) { g.rows.push(x); });
+    tidy(mode);
+    keep(mode, true);
+  }
+
   /** วางตารางจาก Excel ลงที่แถว r คอลัมน์ c (r = -1 ต่อท้าย) */
   function paste(mode, text, r, c) {
-    var grid = String(text || '').replace(/\r/g, '').replace(/\n+$/, '').split('\n').map(function (l) { return l.split('\t'); });
+    text = String(text || '').replace(/\r/g, '');
+    /* รับของ: ตารางจากหน้าจัดที่เก็บ (มี REMARK Location OPEN …) เรียงช่องให้เอง แถวย้ายจาก RIB ไปแท็บย้าย */
+    var out = mode === 'gr' ? WmsBook.grFromOutput(text) : null;
+    if (out) {
+      append('gr', out.rows);
+      if (out.moves.length) append('move', out.moves);
+      LAST = null;
+      MSG = { kind: 'ok', html: 'วางจากหน้าจัดที่เก็บ ' + f(out.rows.length) + ' แถว' +
+        (out.moves.length ? ' · แถว ย้ายจาก RIB ' + f(out.moves.length) + ' แถวไปอยู่แท็บ ย้าย / เติม / QA' : '') + ' · ใส่ LOT ที่เห็นบนของให้ครบ' };
+      renderIn(mode);
+      renderBody(mode, true);
+      return true;
+    }
+    var grid = text.replace(/\n+$/, '').split('\n').map(function (l) { return l.split('\t'); });
     if (!grid.length) return false;
     var g = state(mode), cols = COLS[mode];
     var c0 = c ? Math.max(0, cols.findIndex(function (x) { return x.k === c; })) : 0;
@@ -340,11 +462,11 @@
     if (!p) {
       if (!canSave(mode)) return;
       var pl = PLAN[mode];
-      p = { batch: WmsBook.uuid(), date: g.date, base: WmsBook.lastRow(RES),
-        copy: mode === 'move' ? WmsBook.moveCopy(pl) : mode === 'rows' ? WmsBook.rowsCopy(pl) : WmsBook.returnCopy(pl) };
+      p = { batch: WmsBook.uuid(), date: g.date, base: WmsBook.lastRow(RES), copy: copyOf(mode, pl) };
       if (mode === 'ret') p.lines = pl.save;
+      if (mode === 'adj') p.lines = pl.check;
       if (mode === 'rows') p.ref = g.ref || '';
-      p.names = WmsBook.namesOf(ST, p.copy);
+      p.names = WmsBook.namesOf(ST, p.copy, pl.rows);
       g.pending = p;
       keep(mode, true);
     }
@@ -370,6 +492,9 @@
         LOOK = { found: {}, miss: {} };
         findSoon(0);
       }
+      if (r.moved) {
+        list = r.moved.slice(0, 8).map(function (m) { return '<li>' + esc(m.loc) + ' ' + esc(m.sku) + ' LOT ' + esc(m.lot) + ' ' + esc(m.po) + ': ตอนคิด ' + f(m.have) + ' ตอนนี้ ' + f(m.now) + '</li>'; });
+      }
       MSG = { kind: 'bad', html: TITLE[mode] + ' บันทึกไม่สำเร็จ: ' + esc(r.error) + (list.length ? '<ol>' + list.join('') + '</ol>' : shortList(r)) };
       if (MODE === mode) render(mode); else renderAll();
       refreshDocs();
@@ -384,7 +509,7 @@
     LAST = { doc: r.doc, who: USER.who, copy: p.copy, book: !!r.book, txAt: r.txAt };
     g.pending = null;
     g.rows = [{}];
-    if (mode === 'rows') g.ref = '';
+    g.ref = ''; g.tr = ''; g.mr = ''; g.gr = '';
     keep(mode, true);
     if (mode === 'ret') LOOK = { found: {}, miss: {} };
     compute();
@@ -437,6 +562,8 @@
     var mode = grid();
     if (!mode) return;
     if (e.target.id === 'gRef') { state(mode).ref = e.target.value.trim(); keep(mode, true); return; }
+    var fk = { gTr: 'tr', gMr: 'mr', gGr: 'gr' }[e.target.id];
+    if (fk) { state(mode)[fk] = e.target.value.trim().toUpperCase(); e.target.value = state(mode)[fk]; keep(mode, true); updateOut(mode); return; }
     if (e.target.id === 'gDate' && e.target.value) {
       state(mode).date = e.target.value;
       keep(mode, true);
@@ -473,5 +600,9 @@
     retry: retry,
     modes: function () { return Object.keys(KEY); },
     act: function (mode) { renderAct(mode); },
+    /** เติมแถวต่อท้ายตารางของแท็บ (ปุ่ม แปลง ในแท็บตัดขาย) */
+    append: function (mode, list) { if (KEY[mode]) { append(mode, list); DRAWN = null; } },
+    /** แท็บอื่นในเครื่องเดียวกัน (หน้าจัดที่เก็บ) เขียนร่างไว้ อ่านใหม่จากเครื่อง */
+    reload: function (mode) { if (KEY[mode]) { delete S[mode]; DRAWN = null; } },
   };
 })();

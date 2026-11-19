@@ -263,7 +263,7 @@ describe('book-api.gs ขั้น 2', () => {
     expect(api.post({ op: 'bk-move', ...me, batch: 'm-1', date: '2026-11-10', copy: [mvRow()] })).toMatchObject({ doc: 'T2611-0002', again: true });
     const docs = api.ss.getSheetByName('เลขที่เอกสาร').grid;
     expect(docs[2].slice(0, 9)).toEqual(['T2611-0002', 'ย้าย', '2026-11-10', 'ทดลอง', '2026-11-10 10:00:00', 2, 7, 0, '']);
-    expect(docs[2].slice(13)).toEqual(['', '@3+2', 812, '']);
+    expect(docs[2].slice(13)).toEqual(['', '@3+2', 812, '', '', '']);
     const recent = api.post({ op: 'bk-recent', ...me, days: 2 });
     expect(recent.docs.map((d) => [d.doc, d.type, d.base, d.copy.length])).toEqual([['T2611-0002', 'ย้าย', 812, 2], ['T2611-0001', 'ตัดขาย', 500, 1]]);
     expect(recent.docs[0].copy[1]).toEqual(['AAA001', 'AAA0000000001', '9', 'P2', 'R01-01-01', 'A-01-01', 2, 'เบิก', 'โอนย้าย', 'เปิด']);

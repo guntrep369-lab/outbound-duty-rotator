@@ -195,18 +195,40 @@
       return takeOut(j).map(copy);
     }
 
+    /**
+     * แถวขายชิ้นติดลบ = ยกเลิกแถวขายก่อนหน้า (สมุดใหม่ยกเลิกชุดด้วยแถวกลับ วันที่เดิม จำนวนเท่ากัน กองเดิม)
+     * แถวขายที่ถูกยกเลิกไม่ให้รับคืนย้อนไปหาอีก · ถ้าหยิบจากกอง LOT 0 ไว้ ของกลับเข้าหัวคิวเดิม
+     * แถวติดลบได้ค่าประมาณเดียวกับแถวที่ยกเลิกแต่ติดลบ หน้า LOT / PO หักกันเองได้
+     */
+    function cancel(r) {
+      var s = r[1], q = -r[6], d = text(days[r[8]]), list = sales(s);
+      for (var j = list.length - 1; j >= 0; j--) {
+        var e = list[j];
+        if (Math.abs(e.q - q) > 1e-9 || e.d !== d || e.from !== r[4]) continue;
+        list.splice(j, 1);
+        if (e.took) {
+          var qq = queue(s, r[4]);
+          e.took.filter(function (p) { return p.src !== 'none'; }).reverse().forEach(function (p) { qq.unshift(copy(p)); });
+          var o = out[e.row];
+          if (o) out[r[0]] = { s: o.s, q: r[6], d: d, p: o.p.map(function (x) { return [x[0], x[1], -x[2], x[3], x[4], x[5]]; }) };
+        }
+        return;
+      }
+    }
+
     rows.forEach(function (r, i) {
       var s = r[1], lot = r[2], po = pos[r[3]], from = r[4], to = r[5], qty = r[6], t = r[7], flag = r[9];
+      if (t === 2 && qty < 0) return cancel(r);
       if (!(qty > 0)) return;
       if (!unknown(lot, po)) {
-        if (t === 2) sales(s).push({ row: r[0], p: [piece(lot, po, qty, 'real', 0, 0)] });
+        if (t === 2) sales(s).push({ row: r[0], q: qty, d: text(days[r[8]]), from: from, p: [piece(lot, po, qty, 'real', 0, 0)] });
         return;
       }
       var took = t === 2 || (t === 1 && from >= 0) ? takeOut(i) : null;
       if (t === 2) {
         out[r[0]] = { s: text((skus[s] || [])[1]).toUpperCase(), q: qty, d: text(days[r[8]]),
           p: took.map(function (p) { return [p.lot, p.po, p.qty, p.src, p.from, p.via]; }) };
-        sales(s).push({ row: r[0], p: took.map(copy) });
+        sales(s).push({ row: r[0], q: qty, d: text(days[r[8]]), from: from, p: took.map(copy), took: took.map(copy) });
         return;
       }
       if (to < 0) return;

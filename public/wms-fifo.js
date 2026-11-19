@@ -212,6 +212,17 @@
     }
 
     rows.forEach(function (r) {
+      /* แถวขายชิ้นติดลบ = ยกเลิกแถวขายก่อนหน้า (สมุดใหม่ลงแถวกลับ วันที่เดิม กองเดิม) เอาแถวที่ถูกยกเลิกออกจากรายการตรวจ */
+      if (r.t === 2 && r.qty < 0) {
+        for (var c = issues.length - 1; c >= 0; c--) {
+          var it = issues[c];
+          if (it.kind === 'sale' && it.sku === r.sku && it.lot === r.lot && it.po === r.po && it.from === r.from && it.date === r.d &&
+              Math.abs(it.qty + r.qty) < 1e-9) { issues.splice(c, 1); break; }
+        }
+        apply(walk, r);
+        if (!r.d || r.d <= to) apply(snap, r);
+        return;
+      }
       var judged = r.d >= from && r.d <= to && r.t && r.from >= 0 && !SPECIAL.test(up(res.locs[r.from]));
       var kind = !judged ? '' : r.t === 2 ? 'sale' : r.to >= 0 && r.open && !SPECIAL.test(up(res.locs[r.to])) ? 'refill' : '';
       if (kind) {

@@ -242,7 +242,7 @@ describe('book-api.gs', () => {
     const api = setup();
     expect(api.get({ api: 'bk-names' }).names).toEqual(['ทดลอง', 'หัวหน้าทดลอง']);
     const r = api.post({ op: 'bk-login', ...me });
-    expect(r).toMatchObject({ who: 'ทดลอง', role: 'ลงรายการ', v: 3, mode: 'copy' });
+    expect(r).toMatchObject({ who: 'ทดลอง', role: 'ลงรายการ', v: 4, mode: 'copy' });
     const cell = api.ss.getSheetByName('ผู้ใช้').grid[1][1];
     expect(cell).toMatch(/^#[0-9a-f]{64}$/);
     expect(api.post({ op: 'bk-login', ...me }).error).toBeUndefined();
@@ -285,7 +285,7 @@ describe('book-api.gs', () => {
     const docs = api.ss.getSheetByName('เลขที่เอกสาร').grid;
     expect(docs[1].slice(0, 9)).toEqual(['T2611-0001', 'ตัดขาย', '2026-11-10', 'ทดลอง', '2026-11-10 10:00:00', 1, 3, 2, '']);
     expect(docs[1][14]).toBe('@2+1');
-    expect(api.ss.getSheetByName('แถวที่คัดลอก').grid[1]).toEqual(['T2611-0001', 'AAA001', 'AAA0000000001', '8', 'P1', 'A-01-01', '', 3, 'ขาย', '2026-11-10', 'เปิด']);
+    expect(api.ss.getSheetByName('แถวที่คัดลอก').grid[1]).toEqual(['T2611-0001', 'AAA001', 'AAA0000000001', '8', 'P1', 'A-01-01', '', 3, 'ขาย', '2026-11-10', 'เปิด', '']);
   });
 
   it('บรรทัดที่ตัดไปแล้ว (เดือนนี้หรือเดือนก่อน) ไม่รับทั้งชุด บอกเลขที่เดิม', () => {

@@ -103,6 +103,9 @@
       });
     });
 
+    /* แถวขายที่ถูกยกเลิก (แถวขายติดลบวันเดิมของสมุดใหม่) หักกันจนเหลือ 0 ไม่ต้องขึ้นเป็นบรรทัด */
+    rows = rows.filter(function (r) { return Math.abs(r.qty) > 1e-9 || r.bad.length; });
+
     /* วันเดียวกัน SKU เดียวกันออกมากี่ LOT/PO บัญชีต้องแบ่งต้นทุนตามนี้ */
     var n = {};
     rows.forEach(function (r) { n[r.date + '|' + r.sku] = (n[r.date + '|' + r.sku] || 0) + 1; });

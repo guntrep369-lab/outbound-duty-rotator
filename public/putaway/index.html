@@ -633,6 +633,7 @@ function renderBody() {
   body.innerHTML = `<div class="pw-bar">
       <button class="tx-opt p" id="copyBtn">📋 คัดลอกไปวางในชีต</button>
       <button class="tx-opt" id="xlsxBtn">⬇️ Excel</button>
+      <button class="tx-opt" id="bookBtn" title="ส่งแถวไปแท็บรับของในหน้าสมุดสต๊อก (แถว ย้ายจาก RIB ไปแท็บย้าย) ใส่ LOT ที่เห็นบนของแล้วลงสมุด">📥 ส่งไปสมุด (รับของ)</button>
       ${PLAN.skipped.length ? `<details class="pw-skip"><summary>ข้าม ${f(PLAN.skipped.length)} แถว</summary><ul>${PLAN.skipped.map((s) => `<li>${esc(s.label || 'แถว ' + s.n)}${s.code ? ` (${esc(s.code)})` : ''}: ${esc(s.why)}</li>`).join('')}</ul></details>` : ''}
       <span class="sp"></span>
       ${edited ? `<span class="pw-edit">✎ แก้เอง ${f(edited)} บรรทัด</span> <button class="tx-opt" id="resetAll">คืนค่าทั้งหมด</button>` : ''}
@@ -744,7 +745,41 @@ $('body').addEventListener('click', (e) => {
     return;
   }
   if (e.target.closest('#xlsxBtn')) downloadXlsx();
+  if (e.target.closest('#bookBtn')) sendToBook();
 });
+
+/**
+ * ส่งแพลนที่จัดแล้วไปแท็บรับของของหน้าสมุดสต๊อก (เครื่องเดียวกัน ผ่านร่างในเครื่อง wms:book:draft:gr)
+ * แถวรับ = SKU รหัสยาว ชื่อ LOT PO โล ชิ้น เปิด? · แถว ย้ายจาก RIB = งานย้าย ไปร่างแท็บย้าย
+ * ต่อท้ายแถวที่ค้างอยู่ในร่าง · ชุดที่ส่งค้าง (ยังไม่รู้ว่าถึงสมุดไหม) ห้ามแตะ
+ */
+function sendToBook() {
+  const KEY_GR = 'wms:book:draft:gr', KEY_MV = 'wms:book:draft:move';
+  const gr = readJson(KEY_GR) || {}, mv = readJson(KEY_MV) || {};
+  if (gr.pending || mv.pending) { alert('หน้าสมุดสต๊อกมีชุดรับของหรือย้ายที่ส่งค้างอยู่ ไปส่งให้เสร็จ (หรือทิ้ง) ก่อน'); return; }
+  const rows = [], moves = [];
+  let noLoc = 0;
+  OUT.forEach((o, i) => {
+    const ln = PLAN.lines[i];
+    const lot = ln.lot && ln.lot !== '?' ? String(ln.lot) : '';
+    o.rows.forEach((r) => {
+      if (!(+r.qty > 0)) return;
+      if (!r.loc) { noLoc++; return; }
+      if (r.move) { moves.push({ sku: ln.sku || ln.pid, from: r.from || 'RIB', to: r.loc, qty: String(+r.qty), lot, po: ln.po || '' }); return; }
+      rows.push({ sku: ln.sku || ln.pid, long: ln.pid || '', name: o.name || ln.name || '', lot, po: ln.po || '', to: r.loc, qty: String(+r.qty),
+        status: r.open ? 'เปิด' : '-' });
+    });
+  });
+  if (!rows.length && !moves.length) { alert('ยังไม่มีแถวที่มีโลเคชั่นให้ส่ง'); return; }
+  if (noLoc && !confirm(`มี ${noLoc} แถวที่ยังไม่ได้เลือกโลเคชั่น จะไม่ถูกส่ง ส่งที่เหลือไหม?`)) return;
+  const keep = (d) => (Array.isArray(d.rows) ? d.rows : []).filter((r) => r && Object.keys(r).some((k) => String(r[k] ?? '').trim()));
+  const put = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } };
+  const ok = put(KEY_GR, { ...gr, rows: keep(gr).concat(rows, [{}]), at: Date.now() }) &&
+    (!moves.length || put(KEY_MV, { ...mv, rows: keep(mv).concat(moves, [{}]), at: Date.now() }));
+  if (!ok) { alert('เก็บลงเครื่องไม่ได้ (พื้นที่เต็มหรือโหมดส่วนตัว)'); return; }
+  try { localStorage.setItem('wms:book:draft:mode', 'gr'); } catch (e) {}
+  window.open('../book/', 'wms-book');
+}
 
 function copyText(text) {
   if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text).then(() => true, () => false);

@@ -1,5 +1,5 @@
 /**
- * book-api.gs — สมุดสต๊อก ขั้น 1–3: รหัสคน เลขที่เอกสาร ตัดขาย ย้าย/เติม/QA คืนของ และสมุดใหม่เต็มตัว ใช้กับหน้า public/book/
+ * book-api.gs — สมุดสต๊อก ขั้น 1–4: รหัสคน เลขที่เอกสาร ตัดขาย ย้าย/เติม/QA คืนของ สมุดใหม่เต็มตัว รับของ แปลง ปรับยอด ใช้กับหน้า public/book/
  *
  * ผูกกับไฟล์ Google Sheet ใหม่ "WMS สมุดสต๊อก" ไม่ใช่ไฟล์ Transaction
  * สคริปต์นี้ไม่รู้จักสมุด Transaction เดิมเลย ไม่มี URL ไม่มีรหัสไฟล์ของมัน และไม่เปิดไฟล์อื่นนอกจากไฟล์ที่ตัวเองสร้าง
@@ -30,7 +30,8 @@
  * POST {op:'bk-find'}      หาออเดอร์ที่ตัดขายไว้ จากเลขออเดอร์ เลขอ้างอิง หรือเลขพัสดุ ย้อน 3 เดือน พร้อมชิ้นที่คืนไปแล้ว
  * POST {op:'bk-return'}    บันทึกชุดคืนของ คืนเกินที่ตัด = ไม่รับทั้งชุด
  * POST {op:'bk-recent'}    ชุดที่บันทึกในไม่กี่วันล่าสุด พร้อมแถวที่คัดลอก
- * POST {op:'bk-void'}      ยกเลิกชุด (หัวหน้า) บรรทัดออเดอร์ของชุดนั้นตัดหรือคืนใหม่ได้ ต้องไปลบแถวเลขนั้นในชีตเดิมเอง
+ * POST {op:'bk-void'}      ยกเลิกชุด (หัวหน้า) บรรทัดออเดอร์ของชุดนั้นตัดหรือคืนใหม่ได้ โหมดคัดลอกต้องไปลบแถวของชุดในชีตเดิมเอง
+ *                          ชุดที่ลงสมุดใหม่แล้วลงแถวกลับเป็นชุดใหม่ประเภท กลับรายการ
  * POST {op:'bk-rows'}      บันทึกชุดจากตารางแบบสมุดเดิม A–K ทุกประเภท (หัวหน้า) ใช้กับงานที่ยังไม่มีหน้าของตัวเอง
  * POST {op:'bk-state'}     โหมดตอนนี้ แถวใน Transaction ยอดยกมา Backup ล่าสุด
  * POST {op:'bk-stock'}     ยอดคงเหลือทุกกองในสมุดใหม่ (หน้าตั้งค่าใช้เทียบกับยอดสมุดเดิม)
@@ -38,7 +39,16 @@
  * POST {op:'bk-mode'}      สลับโหมด คัดลอก ↔ บันทึก (หัวหน้า)
  * POST {op:'bk-rebuild'}   คิดแท็บยอดคงเหลือใหม่จากแท็บ Transaction ทั้งแท็บ (หัวหน้า)
  * POST {op:'bk-backup'}    สำรองแถวใหม่ของ Transaction ตอนนี้เลย (หัวหน้า) ปกติสคริปต์ทำเองทุกคืน
+ * POST {op:'bk-gr'}        บันทึกชุดรับของ (ขั้น 4) แถวรับ Note GR วว-ดด-ปป
+ * POST {op:'bk-conv'}      บันทึกชุดแปลงสินค้า (ขั้น 4) แถวคู่ เบิก SKU ตอนซื้อ + รับ SKU ใหม่ LOT PO เดิม Note แปลงสินค้า
+ * POST {op:'bk-adj'}       บันทึกชุดปรับยอดจากยอดที่นับได้ (หัวหน้า ขั้น 4) โหมดบันทึกเช็คว่ายอดในสมุดยังเท่ากับที่หน้าเว็บเห็น
  * ไม่ใส่ api               บอกแค่ว่าเป็นสคริปต์นี้ ให้หน้าเว็บเช็คว่าใส่ URL ถูกตัว
+ *
+ * เลข TRcloud (ขั้น 4) งานโอน QA คืนของ แปลงสินค้า M/E มีเลขเอกสารจาก TRcloud ที่ทีมจดในช่อง RUNNUMBER (N)
+ *   แถวที่คัดลอกมีช่องที่ 11 = เลข TRcloud ของแถวนั้น (ไม่มี = ว่าง)
+ *   Transaction ช่อง N = เลข TRcloud ถ้ามี ไม่มีใช้เลขที่ของระบบ (T2611-0001) แบบเลขรันเดิม · ช่อง S = เลขที่ของระบบเสมอ
+ * ยกเลิกชุดในโหมดบันทึก (ขั้น 4) ไม่ลบแถว ลงชุดใหม่ประเภท กลับรายการ
+ *   แถวขาย = แถวขายชิ้นติดลบ วันที่เดิม (ยอดขายรายวันกับ LOT/PO หักกันเอง) · แถวย้าย = ย้ายกลับ · แถวรับ = เบิกออก · แถวเบิก = รับกลับ
  *
  * สองโหมด (ขั้น 3) เก็บใน Script Properties ชื่อ mode
  *   คัดลอก (ค่าเริ่มต้น)  ชีตเดิมยังเป็นตัวจริง ทุกชุดได้แถวให้คนคัดลอกไปวางในชีตเดิม แท็บ Transaction ในไฟล์นี้มีแค่ยอดยกมา
@@ -55,7 +65,7 @@
  */
 
 /* เพิ่มทีละ 1 ทุกครั้งที่หน้าเว็บต้องใช้ของใหม่จากสคริปต์ (ต้องตรงกับ API_V ใน public/wms-book.js) */
-var VERSION = 3;
+var VERSION = 4;
 
 var T_USER = 'ผู้ใช้';
 var T_DOC = 'เลขที่เอกสาร';
@@ -70,18 +80,19 @@ TABS[T_USER] = {
 };
 TABS[T_DOC] = {
   head: ['เลขที่', 'ประเภท', 'วันที่', 'ผู้ลง', 'บันทึกเมื่อ', 'แถว', 'ชิ้น', 'ออเดอร์', 'สถานะ', 'ยกเลิกโดย', 'ยกเลิกเมื่อ',
-    'เหตุผล', 'รหัสชุด', 'ไฟล์', 'แถวที่คัดลอก', 'แถวสมุดตอนบันทึก', 'แถว Transaction'],
-  text: [1, 2, 3, 4, 5, 9, 10, 11, 12, 13, 14, 15, 17],
+    'เหตุผล', 'รหัสชุด', 'ไฟล์', 'แถวที่คัดลอก', 'แถวสมุดตอนบันทึก', 'แถว Transaction', 'เลข TRcloud', 'ชุดที่เกี่ยว'],
+  text: [1, 2, 3, 4, 5, 9, 10, 11, 12, 13, 14, 15, 17, 18, 19],
 };
 TABS[T_COPY] = {
-  head: ['เลขที่', 'SKU', 'SKU เต็ม', 'LOT', 'PO', 'โลเบิก', 'โลรับ', 'ชิ้น', 'ประเภท', 'Note', 'Status'],
-  text: [1, 2, 3, 4, 5, 6, 7, 9, 10, 11],
+  head: ['เลขที่', 'SKU', 'SKU เต็ม', 'LOT', 'PO', 'โลเบิก', 'โลรับ', 'ชิ้น', 'ประเภท', 'Note', 'Status', 'เลข TRcloud'],
+  text: [1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12],
 };
-/* คอลัมน์ตรงกับชีต Transaction เดิม (L เป็นช่องสูตรในชีตเดิม ที่นี่ปล่อยว่าง) LOT PO ไม่ตั้งเป็นข้อความ จะได้เป็นตัวเลขแบบที่คนวางในชีตเดิม */
+/* คอลัมน์ตรงกับชีต Transaction เดิม (L เป็นช่องสูตรในชีตเดิม ที่นี่ปล่อยว่าง) LOT PO ไม่ตั้งเป็นข้อความ จะได้เป็นตัวเลขแบบที่คนวางในชีตเดิม
+   N = เลข TRcloud ถ้ามี ไม่มีใช้เลขที่ของระบบ · S = เลขที่ของระบบเสมอ */
 TABS[T_TX] = {
   head: ['SKU', 'SKU', 'Product Name', 'LOT', 'PO', 'Location เบิก', 'Location รับ', 'QTY', 'รับ/เบิก', 'Note', 'Status', '-',
-    'NAME', 'RUNNUMBER', 'Time', 'ประเภทชุด', 'อ้างอิง', 'รหัสชุด'],
-  text: [1, 2, 3, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18],
+    'NAME', 'RUNNUMBER', 'Time', 'ประเภทชุด', 'อ้างอิง', 'รหัสชุด', 'เลขที่ระบบ'],
+  text: [1, 2, 3, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
 };
 TABS[T_BAL] = {
   head: ['Location', 'SKU', 'SKU เต็ม', 'LOT', 'PO', 'ยอด', 'Status', 'วันรับแรก', 'แถวล่าสุด'],
@@ -108,6 +119,12 @@ var TYPE_MOVE = 'ย้าย';
 var TYPE_RET = 'คืน';
 var TYPE_ROWS = 'ตารางเดิม';
 var TYPE_OPEN = 'ยอดยกมา';
+var TYPE_GR = 'รับของ';
+var TYPE_CONV = 'แปลง';
+var TYPE_ADJ = 'ปรับยอด';
+var TYPE_REV = 'กลับรายการ';
+var CONV_NOTE = 'แปลงสินค้า';
+var ADJ_NOTE = 'ปรับยอด';
 var MODE_BOOK = 'book';
 var MODE_COPY = 'copy';
 var TX_TYPES = ['รับ', 'เบิก', 'ขาย'];
@@ -146,10 +163,11 @@ function doPost(e) {
     if (req.op === 'bk-login') { var u = auth_(req); return out_({ app: 'book', who: u.name, role: u.role, mode: mode_() }); }
     if (req.op === 'bk-state') { auth_(req); return out_(state_()); }
     if (req.op === 'bk-stock') { auth_(req); return out_(stock_()); }
-    if (/^bk-(rows|open|mode|rebuild|backup)$/.test(String(req.op))) {
+    if (/^bk-(rows|open|mode|rebuild|backup|adj)$/.test(String(req.op))) {
       var hd = auth_(req);
       if (hd.role !== ROLE_HEAD) return out_({ error: 'คำสั่งนี้ใช้ได้เฉพาะหัวหน้ากับรองหัวหน้า' });
       if (req.op === 'bk-rows') return out_(rowsSave_(req, hd));
+      if (req.op === 'bk-adj') return out_(adj_(req, hd));
       if (req.op === 'bk-open') return out_(open_(req, hd));
       if (req.op === 'bk-mode') return out_(setMode_(req, hd));
       if (req.op === 'bk-rebuild') return out_(withLock_(function () { return rebuild_(); }));
@@ -158,6 +176,8 @@ function doPost(e) {
     if (req.op === 'bk-seen') { auth_(req); return out_(seen_(req)); }
     if (req.op === 'bk-cut') { var c = auth_(req); return out_(cut_(req, c)); }
     if (req.op === 'bk-move') { var m = auth_(req); return out_(move_(req, m)); }
+    if (req.op === 'bk-gr') { var g = auth_(req); return out_(gr_(req, g)); }
+    if (req.op === 'bk-conv') { var v = auth_(req); return out_(conv_(req, v)); }
     if (req.op === 'bk-find') { auth_(req); return out_(find_(req)); }
     if (req.op === 'bk-return') { var r = auth_(req); return out_(return_(req, r)); }
     if (req.op === 'bk-recent') { auth_(req); return out_(recent_(req)); }
@@ -184,10 +204,21 @@ function now_() { return Date.now(); }
 function ss_() { return SpreadsheetApp.getActiveSpreadsheet(); }
 function tz_() { return ss_().getSpreadsheetTimeZone(); }
 
+/* แท็บที่เช็คหัวตารางแล้วในการเรียกครั้งนี้ */
+var HEAD_OK = {};
+
 function tab_(name) {
   var ss = ss_();
   var sheet = ss.getSheetByName(name);
-  if (sheet) return sheet;
+  if (sheet) {
+    /* แท็บของรุ่นก่อน หัวตารางยังไม่มีคอลัมน์ใหม่ (รุ่น 4 เพิ่มเลข TRcloud) เติมหัวให้ ข้อมูลเดิมไม่แตะ */
+    if (!HEAD_OK[name]) {
+      HEAD_OK[name] = 1;
+      var spec = TABS[name];
+      if (!text_(sheet.getRange(1, spec.head.length, 1, 1).getValues()[0][0])) sheet.getRange(1, 1, 1, spec.head.length).setValues([spec.head]);
+    }
+    return sheet;
+  }
   sheet = ss.insertSheet(name, ss.getSheets().length);
   head_(sheet, TABS[name]);
   return sheet;
@@ -443,7 +474,7 @@ function docs_(from) {
       row: i + 2, doc: text_(r[0]), type: text_(r[1]), date: text_(r[2]), who: text_(r[3]), at: text_(r[4]),
       rows: +r[5] || 0, qty: +r[6] || 0, orders: +r[7] || 0, status: text_(r[8]),
       voidBy: text_(r[9]), voidAt: text_(r[10]), why: text_(r[11]), batch: text_(r[12]), file: text_(r[13]), ptr: text_(r[14]),
-      base: +r[15] || 0, tx: text_(r[16]),
+      base: +r[15] || 0, tx: text_(r[16]), tr: text_(r[17]), link: text_(r[18]),
     };
   }).filter(function (d) { return d.doc; });
   if (typeof from === 'number') {
@@ -452,9 +483,14 @@ function docs_(from) {
   return list;
 }
 
+/** แถวที่คัดลอก 10 ช่อง + เลข TRcloud ต่อท้ายเฉพาะแถวที่มี */
+function withTr_(row, tr) { return tr ? row.concat([tr]) : row; }
+
 /**
  * ใส่ d.copy ให้ชุดในรายการ อ่านแท็บแถวที่คัดลอกช่วงเดียวครอบทุกชุด (ชุดของรุ่น 1 เก็บเป็น JSON ในช่องเดียว)
  * ชุดที่ลงแท็บ Transaction แล้ว (โหมดบันทึก) อ่านแถวจาก Transaction แทน ยอดยกมาไม่อ่าน (หลายพันแถว ไม่มีใครต้องคัดลอก)
+ * แถวของชุดใน Transaction = ช่อง S เป็นเลขที่ (แถวรุ่น 3 ไม่มีช่อง S ใช้ช่อง N) · N ไม่ใช่เลขที่ = เลข TRcloud
+ * ชุดจาก Transaction ได้ d.names = ชื่อสินค้าในช่อง C ด้วย (ลงแถวกลับใช้)
  */
 function copies_(list) {
   var lo = 0, hi = 0, tlo = 0, thi = 0;
@@ -478,20 +514,32 @@ function copies_(list) {
     list.forEach(function (d) {
       if (!d.n0) return;
       d.copy = vals.slice(d.at0 - lo, d.at0 - lo + d.n0).filter(function (r) { return text_(r[0]) === d.doc; }).map(function (r) {
-        return [text_(r[1]), text_(r[2]), text_(r[3]), text_(r[4]), text_(r[5]), text_(r[6]), +r[7] || 0, text_(r[8]), text_(r[9]), text_(r[10])];
+        return withTr_([text_(r[1]), text_(r[2]), text_(r[3]), text_(r[4]), text_(r[5]), text_(r[6]), +r[7] || 0, text_(r[8]), text_(r[9]), text_(r[10])],
+          text_(r[11]));
       });
     });
   }
   if (tlo) {
     var tx = tab_(T_TX), end = Math.min(thi, tx.getLastRow());
-    var tv = end >= tlo ? tx.getRange(tlo, 1, end - tlo + 1, 14).getValues() : [];
+    var tv = end >= tlo ? tx.getRange(tlo, 1, end - tlo + 1, TABS[T_TX].head.length).getValues() : [];
     list.forEach(function (d) {
       if (!d.tn) return;
-      d.copy = tv.slice(d.t0 - tlo, d.t0 - tlo + d.tn).filter(function (r) { return text_(r[13]) === d.doc; }).map(function (r) {
-        return [text_(r[0]), text_(r[1]), text_(r[3]), text_(r[4]), text_(r[5]), text_(r[6]), +r[7] || 0, text_(r[8]), text_(r[9]), text_(r[10])];
+      d.names = {};
+      d.copy = tv.slice(d.t0 - tlo, d.t0 - tlo + d.tn).filter(function (r) { return (text_(r[18]) || text_(r[13])) === d.doc; }).map(function (r) {
+        if (text_(r[2])) d.names[text_(r[1]) || text_(r[0])] = text_(r[2]);
+        var qty = typeof r[7] === 'number' ? r[7] : +r[7] || 0;
+        return withTr_([text_(r[0]), text_(r[1]), text_(r[3]), text_(r[4]), text_(r[5]), text_(r[6]), qty, text_(r[8]), text_(r[9]), text_(r[10])],
+          text_(r[13]) !== d.doc ? text_(r[13]) : '');
       });
     });
   }
+}
+
+/** เลข TRcloud ทุกเลขในชุด (ช่องที่ 11 ของแถว) ไม่ซ้ำ ใส่ช่องเลข TRcloud ของแท็บเลขที่เอกสาร */
+function trOf_(rows) {
+  var seen = {}, out = [];
+  (rows || []).forEach(function (r) { var t = text_(r[10]); if (t && !seen[t]) { seen[t] = 1; out.push(t); } });
+  return out.join(', ').slice(0, 300);
 }
 
 /** เลขถัดไปของเดือนนี้ ดูจากแท็บเลขที่เอกสารเอง (เรียกภายใต้ล็อกเท่านั้น) */
@@ -508,14 +556,18 @@ function nextDoc_(list) {
 
 /** เขียนชุดใหม่: แถวที่คัดลอกก่อน แล้วแถวเลขที่เอกสารที่ชี้ไปหา (เรียกภายใต้ล็อกเท่านั้น) */
 function writeDoc_(o) {
-  var start = append_(tab_(T_COPY), TABS[T_COPY], o.copy.map(function (r) { return [o.doc].concat(r); }));
+  var start = append_(tab_(T_COPY), TABS[T_COPY], o.copy.map(function (r) {
+    return [o.doc].concat(r.slice(0, 10), [r[10] || '']);
+  }));
   append_(tab_(T_DOC), TABS[T_DOC], [[o.doc, o.type, o.day, o.who, o.at, o.rows !== undefined ? o.rows : o.copy.length, o.qty, o.orders || 0,
-    '', '', '', '', o.batch, o.file || '', o.copy.length ? '@' + start + '+' + o.copy.length : '', o.base || '', o.tx || '']]);
+    '', '', '', '', o.batch, o.file || '', o.copy.length ? '@' + start + '+' + o.copy.length : '', o.base || '', o.tx || '',
+    o.tr !== undefined ? o.tr : trOf_(o.copy), o.link || '']]);
 }
 
 function lite_(d, withCopy) {
   var o = { doc: d.doc, type: d.type, date: d.date, who: d.who, at: d.at, rows: d.rows, qty: d.qty, orders: d.orders,
-    status: d.status, voidBy: d.voidBy, voidAt: d.voidAt, why: d.why, batch: d.batch, base: d.base, book: d.tx ? 1 : 0 };
+    status: d.status, voidBy: d.voidBy, voidAt: d.voidAt, why: d.why, batch: d.batch, base: d.base, book: d.tx ? 1 : 0,
+    tr: d.tr || '', link: d.link || '' };
   if (withCopy) o.copy = d.copy || [];
   return o;
 }
@@ -533,8 +585,8 @@ function again_(list, batch) {
 }
 
 /**
- * แถวที่คัดลอก [SKU, SKU เต็ม, LOT, PO, โลเบิก, โลรับ, ชิ้น, ประเภท, Note, Status] ล้างให้ปลอดภัย แล้วเช็คตามประเภทชุด
- * check(row) คืนเหตุผลถ้าแถวไม่ถูก · คืน { rows, qty } หรือ { error }
+ * แถวที่คัดลอก [SKU, SKU เต็ม, LOT, PO, โลเบิก, โลรับ, ชิ้น, ประเภท, Note, Status, เลข TRcloud] ล้างให้ปลอดภัย แล้วเช็คตามประเภทชุด
+ * check(row) คืนเหตุผลถ้าแถวไม่ถูก · คืน { rows (11 ช่องทุกแถว เลข TRcloud ว่างได้), qty } หรือ { error }
  */
 function copyRows_(copy, check) {
   if (!Array.isArray(copy) || !copy.length || copy.length > ROWS_MAX) return { error: 'แถวที่คัดลอกต้องมี 1–' + ROWS_MAX + ' แถว' };
@@ -542,7 +594,7 @@ function copyRows_(copy, check) {
   copy.forEach(function (c, i) {
     c = c || [];
     var r = [code_(c[0], 60), code_(c[1], 60), code_(c[2], 20), code_(c[3], 40), code_(c[4], 40), code_(c[5], 40),
-      num_(c[6]), plain_(c[7], 20), plain_(c[8], 60), plain_(c[9], 20)];
+      num_(c[6]), plain_(c[7], 20), plain_(c[8], 60), plain_(c[9], 20), code_(c[10], 30)];
     var why = !r[0] ? 'ไม่มี SKU' : r[6] === null || r[6] <= 0 ? 'ชิ้นต้องมากกว่า 0' : r[2] === '' || r[3] === '' ? 'ไม่มี LOT หรือ PO'
       : r[9] && r[9] !== 'เปิด' ? 'Status ต้องเป็น เปิด หรือว่าง' : check(r);
     if (why) { bad.push({ n: i + 1, sku: r[0], why: why }); return; }
@@ -817,40 +869,89 @@ function recent_(req) {
   return { app: 'book', today: today_(), docs: list.map(function (d) { return lite_(d, true); }) };
 }
 
-/** req = {doc, why} ยกเลิกทั้งชุด: ทำเครื่องหมายในแท็บเลขที่เอกสารและทุกบรรทัดของชุดในไฟล์ออเดอร์ที่ตัด ไม่ลบแถว */
+/**
+ * req = {doc, why} ยกเลิกทั้งชุด: ทำเครื่องหมายในแท็บเลขที่เอกสารและทุกบรรทัดของชุดในไฟล์ออเดอร์ที่ตัด ไม่ลบแถว
+ * ชุดที่ยังไม่ลงสมุดใหม่ (โหมดคัดลอก) คนต้องไปลบแถวของชุดในชีตเดิมเอง
+ * ชุดที่ลงแท็บ Transaction แล้ว (โหมดบันทึก) ลงชุดใหม่ประเภท กลับรายการ แทน (ดู reverse_) ยกเลิกได้ตอนอยู่โหมดบันทึกเท่านั้น
+ */
 function void_(req, user) {
   var doc = code_(req.doc, 20), why = plain_(req.why, 200);
   if (!doc) return { error: 'ไม่ได้บอกเลขที่เอกสาร' };
   if (!why) return { error: 'ต้องใส่เหตุผลที่ยกเลิก' };
   return withLock_(function () {
-    var d = docs_().filter(function (x) { return x.doc === doc; })[0];
+    var list = docs_();
+    var d = list.filter(function (x) { return x.doc === doc; })[0];
     if (!d) return { error: 'ไม่พบเลขที่ ' + doc };
     if (d.status === VOID) return { error: doc + ' ถูกยกเลิกไปแล้ว' };
-    if (d.tx || d.type === TYPE_OPEN) {
-      return { error: d.type === TYPE_OPEN ? 'ยอดยกมายกเลิกไม่ได้ ใช้ ลงยอดยกมาใหม่ ในหน้าตั้งค่าสมุด'
-        : doc + ' ลงแท็บ Transaction ไปแล้ว ยกเลิกแบบลงแถวกลับจะมาในขั้น 4 ตอนนี้ให้หัวหน้าลงแถวแก้ในตารางแบบเดิม' };
+    if (d.type === TYPE_OPEN) return { error: 'ยอดยกมายกเลิกไม่ได้ ใช้ ลงยอดยกมาใหม่ ในหน้าตั้งค่าสมุด' };
+    if (d.type === TYPE_REV) return { error: doc + ' เป็นชุดลงแถวกลับของ ' + (d.link || 'ชุดอื่น') + ' ยกเลิกซ้ำไม่ได้ ถ้าต้องการของคืนให้ลงชุดใหม่' };
+    var at = stamp_(), rev = null;
+    if (d.tx) {
+      if (mode_() !== MODE_BOOK) return { error: doc + ' ลงแท็บ Transaction ของสมุดใหม่แล้ว ยกเลิกได้ตอนอยู่โหมดบันทึกเท่านั้น' };
+      rev = reverse_(d, list, user, at, why);
+      if (rev.error) return rev;
     }
-    var at = stamp_();
     var sheet = tab_(T_DOC);
     sheet.getRange(d.row, 9, 1, 4).setValues([[VOID, user.name, at, why]]);
-    var marked = 0;
-    var log = d.file ? logTab_(d.file, false) : null;
-    if (log) {
-      var col = rows_(log, 2);
-      var first = -1, n = 0;
-      col.forEach(function (r, i) {
-        if (text_(r[0]) !== doc) return;
-        if (first < 0) first = i;
-        n = i - first + 1;
-      });
-      if (first >= 0) {
-        var block = col.slice(first, first + n).map(function (r) { return [text_(r[0]) === doc ? VOID : text_(r[1])]; });
-        log.getRange(first + 2, 2, n, 1).setValues(block);
-        marked = block.filter(function (b) { return b[0] === VOID; }).length;
-      }
-    }
-    return { app: 'book', doc: doc, type: d.type, status: VOID, at: at, lines: marked };
+    if (rev) sheet.getRange(d.row, 19, 1, 1).setValues([[rev.doc]]);
+    var marked = voidLog_(d);
+    return { app: 'book', doc: doc, type: d.type, status: VOID, at: at, lines: marked,
+      reversed: rev ? rev.doc : '', rows: rev ? rev.rows : 0, txAt: rev ? rev.txAt : 0 };
   });
+}
+
+/** บรรทัดของชุดในไฟล์ออเดอร์ที่ตัด (ตัดขาย / คืน) ใส่สถานะยกเลิก ออเดอร์จะตัดหรือคืนใหม่ได้ คืนจำนวนบรรทัด */
+function voidLog_(d) {
+  var log = d.file ? logTab_(d.file, false) : null;
+  if (!log) return 0;
+  var col = rows_(log, 2);
+  var first = -1, n = 0;
+  col.forEach(function (r, i) {
+    if (text_(r[0]) !== d.doc) return;
+    if (first < 0) first = i;
+    n = i - first + 1;
+  });
+  if (first < 0) return 0;
+  var block = col.slice(first, first + n).map(function (r) { return [text_(r[0]) === d.doc ? VOID : text_(r[1])]; });
+  log.getRange(first + 2, 2, n, 1).setValues(block);
+  return block.filter(function (b) { return b[0] === VOID; }).length;
+}
+
+/**
+ * แถวกลับของแถวหนึ่ง (ไล่จากแถวท้ายของชุด ย้ายต่อกันหลายทอดจะถอยถูกลำดับ)
+ *   ขาย = ขายชิ้นติดลบ Note วันที่ขายเดิม · เบิกที่มีโลรับ (ย้าย) = ย้ายกลับ · เบิกโลเดียว (แปลง ส่งซ่อม) = รับกลับเข้าโลเดิม
+ *   รับ = เบิกออกจากโลที่รับ · Note "ยกเลิก T2611-0005 · Note เดิม" (ไม่ขึ้นต้นด้วย GR หน้าอื่นจะไม่นับเป็นวันรับ)
+ *   แถวรับกลับใช้ Status ของกองนั้นตอนนี้ กองเปิดขายอยู่จะได้ไม่ถูกปิด
+ */
+function revRow_(r, doc, bal) {
+  var note = 'ยกเลิก ' + doc + (r[8] ? ' · ' + r[8] : '');
+  function st(loc) { var p = bal[pileKey_(loc, r[1] || r[0], r[2], r[3])]; return p && p.status === 'เปิด' ? 'เปิด' : ''; }
+  if (r[7] === 'ขาย') return [r[0], r[1], r[2], r[3], r[4], '', -r[6], 'ขาย', r[8], r[9], ''];
+  if (r[7] === 'เบิก' && r[5]) return [r[0], r[1], r[2], r[3], r[5], r[4], r[6], 'เบิก', note, st(r[4]), ''];
+  if (r[7] === 'เบิก') return [r[0], r[1], r[2], r[3], '', r[4], r[6], 'รับ', note, st(r[4]), ''];
+  return [r[0], r[1], r[2], r[3], r[5], '', r[6], 'เบิก', note, '', ''];
+}
+
+/**
+ * ยกเลิกชุดที่ลงแท็บ Transaction แล้ว (ภายใต้ล็อก โหมดบันทึก): ลงชุดใหม่ประเภท กลับรายการ แถวละแถวกลับ ไม่ลบแถวเดิม
+ * ของที่ชุดนี้รับหรือย้ายเข้าถูกใช้ไปแล้ว (กองไม่พอให้ถอย) = ยกเลิกไม่ได้ ให้ปรับยอดแทน · คืน {doc, rows, txAt} หรือ {error}
+ */
+function reverse_(d, list, user, at, why) {
+  copies_([d]);
+  if (!d.copy.length || d.copy.length !== d.rows) {
+    return { error: 'แถวของ ' + d.doc + ' ในแท็บ Transaction ไม่ครบ (เจอ ' + d.copy.length + ' จาก ' + d.rows + ' แถว) มีคนแก้แท็บด้วยมือ ให้ลงแถวแก้ในตารางแบบเดิม' };
+  }
+  var bal = balance_();
+  var rows = d.copy.slice().reverse().map(function (r) { return revRow_(r, d.doc, bal); });
+  var chk = bookCheck_(rows);
+  if (chk.error) {
+    return { error: 'ยกเลิก ' + d.doc + ' ไม่ได้ ของที่ชุดนี้รับหรือย้ายเข้าถูกใช้ไปแล้ว ' + chk.short.length + ' แถว ให้หัวหน้าปรับยอดแทน', short: chk.short };
+  }
+  var doc = nextDoc_(list);
+  var qty = round3_(rows.reduce(function (a, r) { return a + Math.abs(r[6]); }, 0));
+  var bk = commit_({ doc: doc, type: TYPE_REV, day: today_(), who: user.name, at: at, copy: rows, qty: qty, batch: 'rev|' + d.doc,
+    base: '', names: d.names, ref: 'ยกเลิก ' + d.doc + ' · ' + why, link: d.doc }, chk);
+  return { doc: doc, rows: rows.length, txAt: bk.txAt };
 }
 
 /* ── สมุดใหม่ (ขั้น 3) ───────────────────────────────────────────────────── */
@@ -962,13 +1063,13 @@ function writeBalance_(map) {
 
 /**
  * ลงแถวต่อท้ายแท็บ Transaction (เรียกภายใต้ล็อกเท่านั้น) คืนแถวแรกที่ลง
- * o = {rows (แบบแถวที่คัดลอก), names, who, doc, at, type, ref, batch}
+ * o = {rows (แบบแถวที่คัดลอก), names, who, doc, at, type, ref, batch} · ช่อง N = เลข TRcloud ของแถว ไม่มีใช้เลขที่ · S = เลขที่
  */
 function txWrite_(o) {
   var names = o.names || {};
   return append_(tab_(T_TX), TABS[T_TX], o.rows.map(function (r) {
     return [r[0], r[1], names[r[1]] || names[r[0]] || '', sheetNum_(r[2]), sheetNum_(r[3]), r[4], r[5], r[6], r[7], r[8], r[9], '',
-      o.who, o.doc, o.at, o.type, o.ref || '', o.batch];
+      o.who, r[10] || o.doc, o.at, o.type, o.ref || '', o.batch, o.doc];
   }));
 }
 
@@ -992,6 +1093,7 @@ function bookCheck_(rows) {
  */
 function commit_(o, chk) {
   var out = {};
+  if (o.tr === undefined) o.tr = trOf_(o.copy);
   if (chk) {
     var at = txWrite_({ rows: o.copy, names: o.names, who: o.who, doc: o.doc, at: o.at, type: o.type, ref: o.ref, batch: o.batch });
     writeBalance_(chk.map);
@@ -1039,6 +1141,116 @@ function rowsSave_(req, user) {
     var bk = commit_({ doc: doc, type: TYPE_ROWS, day: day, who: user.name, at: at, copy: cp.rows, qty: cp.qty, batch: batch, base: base_(req),
       names: names, ref: ref }, chk);
     return { app: 'book', doc: doc, at: at, rows: cp.rows.length, qty: cp.qty, book: bk.book, txAt: bk.txAt };
+  });
+}
+
+/* ── รับของ แปลงสินค้า ปรับยอด (ขั้น 4) ──────────────────────────────────── */
+
+/**
+ * ทางบันทึกร่วมของชุดที่มีแต่แถว (ไม่มีบรรทัดออเดอร์) เหมือน move_
+ * o = {type, check(row) → เหตุผล, all(rows) → {error} | null (เช็คทั้งชุดก่อนล็อก), locked() → {error} | null (เช็คภายใต้ล็อก),
+ *      qty(cp) → ชิ้นของชุด}
+ */
+function saveRows_(req, user, o) {
+  var batch = plain_(req.batch, 60);
+  if (!batch) return { error: 'ไม่มีรหัสชุด' };
+  var day = checkDay_(text_(req.date));
+  var cp = copyRows_(req.copy, o.check);
+  if (cp.error) return cp;
+  var bad = o.all ? o.all(cp.rows) : null;
+  if (bad) return bad;
+  var names = namesIn_(req.names), ref = plain_(req.ref, 60), qty = o.qty ? o.qty(cp) : cp.qty;
+  return withLock_(function () {
+    var list = docs_();
+    var again = again_(list, batch);
+    if (again) return again;
+    var stop = o.locked ? o.locked() : null;
+    if (stop) return stop;
+    var chk = bookCheck_(cp.rows);
+    if (chk && chk.error) return chk;
+    var doc = nextDoc_(list), at = stamp_();
+    var bk = commit_({ doc: doc, type: o.type, day: day, who: user.name, at: at, copy: cp.rows, qty: qty, batch: batch, base: base_(req),
+      names: names, ref: ref }, chk);
+    return { app: 'book', doc: doc, at: at, rows: cp.rows.length, qty: qty, book: bk.book, txAt: bk.txAt };
+  });
+}
+
+/**
+ * req = {batch, date, base, names, copy:[[SKU, SKU เต็ม, LOT, PO, '', โลรับ, ชิ้น, รับ, GR วว-ดด-ปป, Status, เลข TRcloud]]}
+ * รับของเข้าคลัง (หน้าเว็บวางจากหน้าจัดที่เก็บ หรือ Excel) LOT = เดือนที่เห็นบนของ · Note GR + วันรับ แบบที่ tx-api อ่านเป็นวันรับ
+ */
+function gr_(req, user) {
+  return saveRows_(req, user, {
+    type: TYPE_GR,
+    check: function (r) {
+      if (r[7] !== 'รับ') return 'ประเภทต้องเป็น รับ';
+      if (r[4] || !r[5]) return 'แถวรับของมีแค่โลรับ';
+      if (!/^GR \d{2}-\d{2}-\d{2}$/.test(r[8])) return 'Note ต้องเป็น GR วว-ดด-ปป';
+      return '';
+    },
+  });
+}
+
+/**
+ * req = {batch, date, base, names, copy: คู่ละสองแถว
+ *        [SKU ตอนซื้อ, …, LOT, PO, โล, '', ชิ้น, เบิก, แปลงสินค้า, '', เลข MR] แล้ว [SKU ใหม่, …, LOT, PO, '', โล, ชิ้น, รับ, แปลงสินค้า, Status, เลข GR]}
+ * แปลงสินค้าแบบในสมุดเดิม: เบิก SKU ตอนซื้อออก รับ SKU ใหม่เข้า LOT PO ชิ้นเดียวกัน (หน้าเว็บเลือกคู่จาก MASTER แปลงสินค้า)
+ */
+function conv_(req, user) {
+  return saveRows_(req, user, {
+    type: TYPE_CONV,
+    check: function (r) {
+      if (r[8] !== CONV_NOTE) return 'Note ต้องเป็น ' + CONV_NOTE;
+      if (r[7] === 'เบิก') return r[4] && !r[5] ? '' : 'แถวเบิกของแปลงมีแค่โลเบิก';
+      if (r[7] === 'รับ') return r[5] && !r[4] ? '' : 'แถวรับของแปลงมีแค่โลรับ';
+      return 'ประเภทต้องเป็น เบิก หรือ รับ';
+    },
+    all: function (rows) {
+      if (rows.length % 2) return { error: 'แถวแปลงต้องมาเป็นคู่ เบิก SKU ตอนซื้อ แล้วรับ SKU ใหม่' };
+      var bad = [];
+      for (var i = 0; i < rows.length; i += 2) {
+        var a = rows[i], b = rows[i + 1], n = i / 2 + 1;
+        var why = a[7] !== 'เบิก' || b[7] !== 'รับ' ? 'คู่ต้องเป็นแถวเบิกแล้วแถวรับ'
+          : (a[1] || a[0]) === (b[1] || b[0]) ? 'แปลงเป็น SKU เดิม'
+          : a[2] !== b[2] || a[3] !== b[3] ? 'LOT / PO ของคู่ไม่ตรงกัน'
+          : Math.abs(a[6] - b[6]) > 1e-9 ? 'ชิ้นของคู่ไม่ตรงกัน' : '';
+        if (why) bad.push({ n: n, sku: b[0], why: why });
+      }
+      return bad.length ? { error: 'คู่แปลงไม่ถูก ' + bad.length + ' คู่', bad: bad.slice(0, 50) } : null;
+    },
+    qty: function (cp) { return round3_(cp.qty / 2); },
+  });
+}
+
+/**
+ * req = {batch, date, base, names, lines:[{loc, sku (SKU เต็ม), lot, po, have, count}],
+ *        copy:[[SKU, …, LOT, PO, โล | '', '' | โล, ชิ้นที่ต่าง, เบิก | รับ, ปรับยอด เหตุผล, Status, เลข TRcloud]]}
+ * หัวหน้าใส่ยอดที่นับได้จริง หน้าเว็บลงแถวส่วนต่าง: ขาด = เบิกออก เกิน = รับเข้า
+ * โหมดบันทึก: ยอดในแท็บยอดคงเหลือต้องยังเท่ากับ have ที่หน้าเว็บเห็น (มีคนลงอย่างอื่นระหว่างนั้น = ไม่รับ ให้นับเทียบใหม่)
+ */
+function adj_(req, user) {
+  var lines = (Array.isArray(req.lines) ? req.lines : []).slice(0, ROWS_MAX).map(function (l) {
+    l = l || {};
+    return { loc: code_(l.loc, 40), sku: code_(l.sku, 60), lot: code_(l.lot, 20), po: code_(l.po, 40), have: num_(l.have), count: num_(l.count) };
+  });
+  return saveRows_(req, user, {
+    type: TYPE_ADJ,
+    check: function (r) {
+      if (r[8].indexOf(ADJ_NOTE + ' ') !== 0 || r[8].length <= ADJ_NOTE.length + 1) return 'Note ต้องเป็น ' + ADJ_NOTE + ' ตามด้วยเหตุผล';
+      if (r[7] === 'เบิก') return r[4] && !r[5] ? '' : 'แถวปรับลดมีแค่โลเบิก';
+      if (r[7] === 'รับ') return r[5] && !r[4] ? '' : 'แถวปรับเพิ่มมีแค่โลรับ';
+      return 'ประเภทต้องเป็น เบิก หรือ รับ';
+    },
+    locked: function () {
+      if (mode_() !== MODE_BOOK) return null;
+      if (!lines.length) return { error: 'ไม่มียอดที่นับ' };
+      var map = balance_(), moved = [];
+      lines.forEach(function (l) {
+        var p = map[pileKey_(l.loc, l.sku, l.lot, l.po)], now = p ? p.qty : 0;
+        if (l.have === null || Math.abs(now - l.have) > 1e-9) moved.push({ loc: l.loc, sku: l.sku, lot: l.lot, po: l.po, have: l.have, now: now });
+      });
+      return moved.length ? { error: 'ยอดในสมุดเปลี่ยนไปแล้ว ' + moved.length + ' กอง (มีคนลงรายการระหว่างนั้น) ดึงสต๊อกใหม่แล้วดูยอดอีกครั้ง', moved: moved.slice(0, 50) } : null;
+    },
   });
 }
 

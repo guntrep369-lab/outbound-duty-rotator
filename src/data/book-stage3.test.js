@@ -182,7 +182,7 @@ describe('book-api.gs ขั้น 3', () => {
       expect(api.post({ op, ...me, batch: 'x' }).error).toBe('คำสั่งนี้ใช้ได้เฉพาะหัวหน้ากับรองหัวหน้า');
     });
     expect(api.post({ op: 'bk-state', ...me })).toMatchObject({ mode: 'copy', rows: 0, open: null });
-    expect(api.post({ op: 'bk-login', ...head })).toMatchObject({ v: 3, mode: 'copy' });
+    expect(api.post({ op: 'bk-login', ...head })).toMatchObject({ v: 4, mode: 'copy' });
   });
 
   it('ลงยอดยกมา: กองละแถวรับ Note บอกเลขที่กับวันรับ (ไม่รู้ = ไตรมาส) LOT/PO ตัวเลขเป็นตัวเลข ยอดคงเหลือครบ', () => {
@@ -191,7 +191,7 @@ describe('book-api.gs ขั้น 3', () => {
     expect(r).toMatchObject({ doc: 'T2611-0001', rows: 4, qty: 22, replaced: [] });
     const t = tx(api);
     expect(t[0]).toEqual(['AAA001', 'AAA0000000001', 'ที่นอนสมมติ 1', 8, 'P1', '', 'A-01-01', 5, 'รับ', 'ยอดยกมา T2611-0001 · GR 02-10-26', 'เปิด', '',
-      'หัวหน้าทดลอง', 'T2611-0001', '2026-11-10 10:00:00', 'ยอดยกมา', 'สมุดเดิมถึงแถว 900', 'o-1']);
+      'หัวหน้าทดลอง', 'T2611-0001', '2026-11-10 10:00:00', 'ยอดยกมา', 'สมุดเดิมถึงแถว 900', 'o-1', 'T2611-0001']);
     expect(t.map((x) => [x[3], x[4], x[9]])).toEqual([
       [8, 'P1', 'ยอดยกมา T2611-0001 · GR 02-10-26'],
       [8, 'P1', 'ยอดยกมา T2611-0001 · GR 02-10-26'],
@@ -263,13 +263,12 @@ describe('book-api.gs ขั้น 3', () => {
     const r = cut(api, 'c-1', [sale('1', [['A-01-01', '8', 'P1', 2]])]);
     expect(r).toMatchObject({ doc: 'T2611-0002', rows: 1, book: 1, txAt: 6 });
     expect(tx(api)[4]).toEqual(['AAA001', 'AAA0000000001', 'ที่นอนสมมติ 1', 8, 'P1', 'A-01-01', '', 2, 'ขาย', '2026-11-10', 'เปิด', '',
-      'ทดลอง', 'T2611-0002', '2026-11-10 10:00:00', 'ตัดขาย', '', 'c-1']);
+      'ทดลอง', 'T2611-0002', '2026-11-10 10:00:00', 'ตัดขาย', '', 'c-1', 'T2611-0002']);
     expect(bal(api)[0]).toEqual(['A-01-01', 'AAA001', 'AAA0000000001', '8', 'P1', 3, 'เปิด', '2026-10-02', 6]);
     expect(api.ss.getSheetByName('แถวที่คัดลอก').getLastRow()).toBe(1);
     const d = api.post({ op: 'bk-recent', ...me, days: 1 }).docs[0];
     expect(d).toMatchObject({ doc: 'T2611-0002', base: 5, book: 1 });
     expect(d.copy).toEqual([['AAA001', 'AAA0000000001', '8', 'P1', 'A-01-01', '', 2, 'ขาย', '2026-11-10', 'เปิด']]);
-    expect(api.post({ op: 'bk-void', ...head, doc: 'T2611-0002', why: 'ผิด' }).error).toMatch(/ลงแท็บ Transaction ไปแล้ว/);
     /* ย้ายกับคืนก็ลงสมุดเหมือนกัน */
     const mv = api.post({ op: 'bk-move', ...me, batch: 'm-1', date: '2026-11-10', base: 900,
       copy: [['AAA001', 'AAA0000000001', '8', 'P1', 'R01-01-01', 'A-01-01', 4, 'เบิก', 'โอนย้าย', 'เปิด']] });
@@ -320,7 +319,7 @@ describe('book-api.gs ขั้น 3', () => {
     bookMode(api);
     expect(save('g-1', [gr], { ref: 'GR สมมติ', names: { AAA0000000001: 'ที่นอนสมมติ 1' } })).toMatchObject({ book: 1, txAt: 6 });
     expect(tx(api)[4].slice(0, 11)).toEqual(['AAA001', 'AAA0000000001', 'ที่นอนสมมติ 1', 10, 'P9', '', 'R01-02-01', 3, 'รับ', 'GR 09-11-26', '']);
-    expect(tx(api)[4].slice(15)).toEqual(['ตารางเดิม', 'GR สมมติ', 'g-1']);
+    expect(tx(api)[4].slice(15)).toEqual(['ตารางเดิม', 'GR สมมติ', 'g-1', 'T2611-0003']);
     expect(bal(api).find((x) => x[0] === 'R01-02-01')).toEqual(['R01-02-01', 'AAA001', 'AAA0000000001', '10', 'P9', 3, '', '2026-11-09', 6]);
     /* แปลงสินค้า: เบิกออกกองหนึ่ง (ไม่มีโลรับ) */
     expect(save('g-2', [['AAA001', 'AAA0000000001', '10', 'P9', 'R01-02-01', '', 5, 'เบิก', 'แปลง', '']]).short[0]).toMatchObject({ have: 3, need: 5 });
