@@ -83,10 +83,16 @@
       }
       if (col === 'master' || col === 'trc') { if (!head) return 'เขียน ' + col + ' ได้เฉพาะหัวหน้า'; continue; }
       if (!staff) return 'บัญชีนี้ดูได้อย่างเดียว';
+      if (col === 'xfer') {
+        /* บันทึกว่าวางแถวลงชีตเดิมแล้ว ครั้งละวันเดียว */
+        if (id !== 'log' || diffKeys(d, old).length !== 1) return 'xfer แก้ได้ครั้งละวัน';
+        continue;
+      }
       if (col === 'docs') {
         if (old) {
           var changed = Object.keys(d).concat(Object.keys(old)).filter(function (k) { return JSON.stringify(d[k]) !== JSON.stringify(old[k]); });
           if (changed.some(function (k) { return TR_KEYS.indexOf(k) < 0; }) || d.trBy !== email) return 'เอกสารแก้ได้เฉพาะเลข TRcloud';
+          if (C.TR_STATES.indexOf(d.trState) < 0 || d.trAt !== C.TIME || typeof d.tr !== 'string' || d.tr.length > 100) return 'สถานะ TRcloud ไม่ถูก';
           continue;
         }
         calls += 1;   // getAfter(meta/head)
@@ -114,11 +120,19 @@
           if (!last || last.seq !== d.seq) return 'meta ต้องมากับเอกสารใหม่ seq เดียวกัน';
           if (d.month !== month || d.next !== (mb && mb.month === month ? +mb.next || 1 : 1) + 1) return 'เลขถัดไปใน meta ไม่ถูก';
           if (d.at !== C.TIME) return 'at ต้องเป็นเวลาเซิร์ฟเวอร์';
+          if ((+d.mv || 0) !== (mb ? +mb.mv || 0 : 0) || (+d.tv || 0) !== (mb ? +mb.tv || 0 : 0) || (d.trc || '') !== (mb ? mb.trc || '' : '')) {
+            return 'บันทึกเอกสารต้องคง mv tv trc ของ meta เดิม';
+          }
+          continue;
+        }
+        var diff = diffKeys(d, mb);
+        /* ใส่เลข TRcloud: tv +1 ให้เครื่องอื่นรู้ว่าต้องดึงเลขใหม่ (ทุกคนที่ลงรายการได้) */
+        if (diff.length === 1 && diff[0] === 'tv') {
+          if (d.tv !== (+mb.tv || 0) + 1) return 'tv ต้องเพิ่มทีละ 1';
           continue;
         }
         if (!head) return 'meta เขียนได้เฉพาะตอนบันทึกเอกสาร';
-        var diff = Object.keys(d).concat(Object.keys(mb)).filter(function (k) { return JSON.stringify(d[k]) !== JSON.stringify(mb[k]); });
-        if (diff.some(function (k) { return k !== 'mv'; })) return 'หัวหน้าแก้ meta ได้แค่ mv';
+        if (diff.some(function (k) { return k !== 'mv' && k !== 'trc'; })) return 'หัวหน้าแก้ meta ได้แค่ mv กับ trc';
         continue;
       }
       return 'เขียน ' + col + ' ไม่ได้';
@@ -193,6 +207,13 @@
           own.reads += Math.max(1, list.length);
           return Promise.resolve(list.map(function (p) { return { id: p.slice(5), data: clone(docs[p].d) }; }));
         },
+        /** เอกสารที่แก้เลข TRcloud ตั้งแต่เวลา ms (trAt >= ms) [{id, data}] */
+        trAfter: function (ms) {
+          var list = Object.keys(docs).filter(function (p) { return p.indexOf('docs/') === 0 && typeof docs[p].d.trAt === 'number' && docs[p].d.trAt >= ms; });
+          counts.reads += Math.max(1, list.length);
+          own.reads += Math.max(1, list.length);
+          return Promise.resolve(list.map(function (p) { return { id: p.slice(5), data: clone(docs[p].d) }; }));
+        },
         /** ทุกเอกสารในคอลเลกชัน [{id, data}] */
         list: function (col) {
           var why = listError(col);
@@ -209,6 +230,13 @@
             var t = {
               get: function (p) { counts.reads++; own.reads++; seen[p] = docs[p] ? docs[p].ver : 0; return Promise.resolve(docs[p] ? clone(docs[p].d) : null); },
               set: function (p, d) { writes.push([p, clone(d)]); },
+              /** แก้บางช่องของเอกสารที่มีอยู่ (update) ไม่มีเอกสาร = ผิดแบบ Firestore */
+              patch: function (p, fields) {
+                if (!docs[p]) throw new Error('ไม่พบเอกสาร ' + p);
+                var d = clone(docs[p].d);
+                Object.keys(fields).forEach(function (k) { d[k] = clone(fields[k]); });
+                writes.push([p, d]);
+              },
             };
             var out = await fn(t);
             if (hook) { var h = hook; hook = null; await h(); }
@@ -246,6 +274,12 @@
         connect: client,
         /** เขียนตรงไม่ผ่านกฎ ใช้ตั้งข้อมูลทดลองเท่านั้น */
         seed: function (data) { Object.keys(data).forEach(function (p) { docs[p] = { ver: (docs[p] ? docs[p].ver : 0) + 1, d: clone(data[p]) }; }); },
+        /** ล้างฐานแล้วใส่ data แทนทั้งหมด (กู้คืนจากไฟล์สำรองในฐานทดลอง เหมือนสคริปต์กู้คืนที่ใช้สิทธิ์เจ้าของโปรเจกต์) */
+        replace: function (data) {
+          Object.keys(docs).forEach(function (p) { delete docs[p]; });
+          Object.keys(data || {}).forEach(function (p) { docs[p] = { ver: 1, d: clone(data[p]) }; });
+          if (opt.onCommit) opt.onCommit(snapshot());
+        },
       };
     }
     return client();
@@ -294,12 +328,20 @@
           return s.docs.map(function (x) { return { id: x.id, data: out(x) }; });
         });
       },
+      trAfter: function (ms) {
+        var q = F.query(F.collection(db, 'docs'), F.where('trAt', '>=', F.Timestamp.fromMillis(ms)));
+        return F.getDocs(q).then(function (s) {
+          if (!s.size) counts.reads++;
+          return s.docs.map(function (x) { return { id: x.id, data: out(x) }; });
+        });
+      },
       tx: function (fn) {
         counts.tx++;
         return F.runTransaction(db, function (t) {
           return fn({
             get: function (p) { return t.get(ref(p)).then(out); },
             set: function (p, d) { counts.writes++; t.set(ref(p), inn(d)); },
+            patch: function (p, d) { counts.writes++; t.update(ref(p), inn(d)); },
           });
         });
       },
@@ -376,7 +418,8 @@
 
   /* ── สำเนาในเครื่อง ──────────────────────────────────────────────────── */
 
-  function emptyLocal() { return { v: C.V, seq: 0, meta: null, docs: [], piles: {}, master: {}, mv: -1 }; }
+  /* tv = รุ่นเลข TRcloud ที่เครื่องนี้ดึงแล้ว (null = ยังไม่เคย) · trAt = เวลาแก้เลข TRcloud ล่าสุดที่เห็น · trc = ยอด TRcloud ล่าสุด {key, id, data} */
+  function emptyLocal() { return { v: C.V, seq: 0, meta: null, docs: [], piles: {}, master: {}, mv: -1, tv: null, trAt: 0, trc: null }; }
 
   function memCache() {
     var saved = null;
@@ -415,7 +458,8 @@
       put: async function (local, added) {
         var d = await db(), tx = d.transaction(['docs', 'kv'], 'readwrite'), ds = tx.objectStore('docs');
         (added || local.docs).forEach(function (x) { ds.put(x); });
-        tx.objectStore('kv').put({ v: local.v, seq: local.seq, meta: local.meta, piles: local.piles, master: local.master, mv: local.mv }, 'state');
+        tx.objectStore('kv').put({ v: local.v, seq: local.seq, meta: local.meta, piles: local.piles, master: local.master, mv: local.mv,
+          tv: local.tv === undefined ? null : local.tv, trAt: local.trAt || 0, trc: local.trc || null }, 'state');
         return done(tx);
       },
       clear: async function () {
@@ -505,6 +549,7 @@
         return { seq: 0, added: 0 };
       }
       if (meta.v !== C.V || local.v !== C.V || meta.seq < local.seq) { local = emptyLocal(); try { await cache.clear(); } catch (e) {} }
+      var fresh = !local.seq;
       var guard = 0;
       while (local.seq < meta.seq && guard++ < 10000) {
         var list = await store.docsAfter(local.seq, PAGE);
@@ -526,8 +571,33 @@
           local.piles = C.applyDoc(local.piles || {}, d);
           added.push(d);
           local.seq = Math.max(local.seq, d.seq);
+          if (d.trAt > (local.trAt || 0)) local.trAt = d.trAt;
         }
         if (!mains.length) break;
+      }
+      /* เลข TRcloud ที่มีคนใส่ทีหลัง (แก้เอกสารเก่า seq ไม่เปลี่ยน): tv ใน meta เปลี่ยน = ดึงเอกสารที่ trAt ใหม่กว่าที่เคยเห็น */
+      var tv = +meta.tv || 0;
+      if (local.tv === null || local.tv === undefined) local.tv = fresh ? tv : -1;
+      if (local.tv !== tv) {
+        var byId = {};
+        local.docs.forEach(function (x) { byId[x.id] = x; });
+        (await store.trAfter(local.trAt || 0)).forEach(function (x) {
+          var d = byId[x.id];
+          if (!d || x.data.of) return;
+          d.tr = x.data.tr || '';
+          d.trState = x.data.trState || '';
+          d.trBy = x.data.trBy || '';
+          d.trAt = typeof x.data.trAt === 'number' ? x.data.trAt : 0;
+          if (d.trAt > (local.trAt || 0)) local.trAt = d.trAt;
+          if (added.indexOf(d) < 0) added.push(d);
+        });
+        local.tv = tv;
+      }
+      /* ยอด TRcloud ล่าสุดที่หัวหน้านำเข้า (meta.trc = 'วันที่#รุ่น') ดึงเมื่อเปลี่ยน */
+      if (meta.trc && (!local.trc || local.trc.key !== meta.trc)) {
+        var id = String(meta.trc).split('#')[0];
+        var td = await store.get('trc/' + id);
+        local.trc = td ? { key: meta.trc, id: id, data: td } : null;
       }
       if ((+meta.mv || 0) !== local.mv) {
         var ms = await store.getMany(MASTERS.map(function (n) { return 'master/' + n; }));
@@ -671,6 +741,140 @@
       return sync();
     }
 
+    /* ── ขั้น 3: รอลง TRcloud กระทบยอด ตารางหลัก ชีตเดิม สำรอง (ตรรกะอยู่ใน wms-fire-trc.js) ── */
+
+    function T() { if (!window.WmsFireTrc) throw new Error('ยังไม่ได้โหลด wms-fire-trc.js'); return window.WmsFireTrc; }
+    function errOf(e) { return String(e && e.message || e); }
+
+    /** รายการหน้ารอลง TRcloud (ดึงของใหม่ก่อน) */
+    async function trList() {
+      if (!user) return fail('ยังไม่ได้ล็อกอิน');
+      await sync();
+      return reply({ list: T().trList(local, now()), today: C.today(now()) });
+    }
+
+    /**
+     * ใส่เลข TRcloud / เปลี่ยนสถานะ items = [{no, tr, state}] ไม่เกิน TR_MAX ต่อครั้ง
+     * transaction เดียว: แก้ช่อง tr ของเอกสาร + meta.tv +1 (เครื่องอื่นเห็นภายในรอบดึงถัดไป)
+     */
+    async function trSave(items) {
+      if (!user) return fail('ยังไม่ได้ล็อกอิน');
+      if (user.role === 'viewer') return fail('บัญชีนี้ดูได้อย่างเดียว');
+      await sync();
+      var chk = T().trSet(local, items, user);
+      if (chk.error) return reply(chk);
+      try {
+        await store.tx(async function (t) {
+          var meta = await t.get('meta/head');
+          if (!meta) throw new Error('ยังไม่มีสมุด');
+          chk.writes.forEach(function (w) { t.patch(w[0], w[1]); });
+          t.patch('meta/head', { tv: (+meta.tv || 0) + 1 });
+        });
+      } catch (e) { return fail(errOf(e)); }
+      var at = now(), changed = [];
+      chk.writes.forEach(function (w) {
+        var d = local.docs.filter(function (x) { return 'docs/' + x.id === w[0]; })[0];
+        if (!d) return;
+        d.tr = w[1].tr; d.trState = w[1].trState; d.trBy = user.email; d.trAt = at;
+        changed.push(d);
+      });
+      try { await cache.put(local, changed); } catch (e) {}
+      tally();
+      return reply({ saved: changed.length, states: T().trStates(local) });
+    }
+
+    /** ไฟล์ปรับยอดลง TRcloud ของเอกสารที่เลือก */
+    function trFile(nos) { return T().trFile(local, nos); }
+
+    /** ยอด TRcloud ล่าสุดที่นำเข้า (จากสำเนาในเครื่อง ดึงเมื่อหัวหน้านำเข้าใหม่) + ผลเทียบกับยอดในระบบ */
+    async function trc() {
+      if (!user) return fail('ยังไม่ได้ล็อกอิน');
+      await sync();
+      var x = local.trc && T().trcIn(local.trc.data);
+      if (!x) return reply({ trc: null });
+      return reply({ trc: x, cmp: T().trcCompare(local, x, now()) });
+    }
+
+    /** หัวหน้านำเข้ายอด TRcloud: trc/{วันที่} + meta.trc = 'วันที่#รุ่น' ใน transaction เดียว */
+    async function trcSave(parsed, day, files) {
+      if (!user || user.role !== 'head') return fail('นำเข้ายอด TRcloud ได้เฉพาะหัวหน้า');
+      var made = T().trcDoc(parsed, { day: day, by: user.email, name: user.name, files: files });
+      if (made.error) return reply(made);
+      try {
+        await store.tx(async function (t) {
+          var meta = await t.get('meta/head');
+          if (!meta) throw new Error('ลงยอดยกมาก่อน แล้วค่อยนำเข้ายอด TRcloud');
+          var old = String(meta.trc || '').split('#');
+          t.set('trc/' + day, made.data);
+          t.patch('meta/head', { trc: day + '#' + ((old[0] === day ? +old[1] || 0 : 0) + 1) });
+        });
+      } catch (e) { return fail(errOf(e)); }
+      local.trc = null;   // ดึงตัวที่เก็บแล้ว (เวลาเซิร์ฟเวอร์) ในรอบนี้
+      var r = await trc();
+      return r.error ? r : reply({ saved: day, n: made.data.n, trc: r.trc, cmp: r.cmp });
+    }
+
+    /** หัวหน้านำเข้าตารางหลัก kind = sup (PO → Supplier) | conv (MASTER แปลงสินค้า) + meta.mv +1 ให้ทุกเครื่องดึงใหม่ */
+    async function masterSave(kind, part) {
+      if (!user || user.role !== 'head') return fail('แก้ตารางหลักได้เฉพาะหัวหน้า');
+      if (MASTERS.indexOf(kind) < 0) return fail('ไม่รู้จักตาราง ' + kind);
+      var made = T().masterDoc(kind, part, { by: user.email, name: user.name });
+      if (made.error) return reply(made);
+      try {
+        await store.tx(async function (t) {
+          var meta = await t.get('meta/head');
+          if (!meta) throw new Error('ลงยอดยกมาก่อน แล้วค่อยนำเข้าตารางหลัก');
+          t.set('master/' + kind, made.data);
+          t.patch('meta/head', { mv: (+meta.mv || 0) + 1 });
+        });
+      } catch (e) { return fail(errOf(e)); }
+      await sync();
+      return reply({ saved: kind, n: made.data.n });
+    }
+
+    /** ตารางหลักที่มีอยู่ { sup: {n, tab, at, name}, conv: {…} } */
+    function masters() {
+      var out = {};
+      MASTERS.forEach(function (n) {
+        var m = local.master && local.master[n];
+        if (m) out[n] = { n: +m.n || C.dec(m.rows).length, tab: m.tab || '', at: +m.at || 0, name: m.name || '', dup: (m.dup || []).length, blank: +m.blank || 0 };
+      });
+      return out;
+    }
+
+    /** วันที่ต้องวางแถวลงชีตเดิม + ใครวางแล้ว (xfer/log อ่าน 1 ครั้ง) */
+    async function xferDays() {
+      if (!user) return fail('ยังไม่ได้ล็อกอิน');
+      await sync();
+      var log = null;
+      try { log = await store.get('xfer/log'); } catch (e) { log = null; }
+      tally();
+      return reply({ days: T().xferDays(local, log || {}) });
+    }
+    function xferText(day, after) { return T().xferText(local, day, after); }
+    /** วางลงชีตเดิมแล้ว: เติมวันนั้นใน xfer/log (ครั้งละวัน) */
+    async function xferMark(day, info) {
+      if (!user || user.role === 'viewer') return fail('บัญชีนี้ดูได้อย่างเดียว');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(day || ''))) return fail('วันที่ต้องเป็น yyyy-mm-dd');
+      var entry = {};
+      entry[day] = { by: user.name, at: now(), n: +(info && info.rows) || 0, last: String(info && info.last || '') };
+      try { await store.patch('xfer/log', entry); } catch (e) { return fail(errOf(e)); }
+      tally();
+      return reply({ day: day, done: entry[day] });
+    }
+
+    /** ไฟล์สำรองจากสำเนาในเครื่อง + รายชื่อ + ยอด TRcloud ล่าสุด + บันทึกชีตเดิม (หัวหน้า) */
+    async function backup() {
+      if (!user || user.role !== 'head') return fail('ดาวน์โหลดสำรองได้เฉพาะหัวหน้า');
+      await sync();
+      var us = await users();
+      if (us.error) return us;
+      var xf = null;
+      try { xf = await store.get('xfer/log'); } catch (e) { xf = null; }
+      tally();
+      return reply({ backup: T().backupOf(local, { users: us.users, trc: local.trc, xfer: xf }, now()) });
+    }
+
     function docByNo(no) { return local.docs.filter(function (d) { return d.no === no; })[0] || null; }
 
     /** บันทึกหนึ่งชุด = transaction เดียว: อ่าน meta + docs/{รหัสชุด} เช็คกับสำเนาในเครื่อง (seq ตรงแล้ว) แล้วเขียนเอกสาร + meta */
@@ -758,6 +962,8 @@
       store: store, auth: auth, domain: domain,
       login: login, restore: restore, logout: logout, sync: sync, post: post,
       users: users, saveUser: saveUser, quota: quota, reload: reload,
+      trList: trList, trSave: trSave, trFile: trFile, trc: trc, trcSave: trcSave, masterSave: masterSave, masters: masters,
+      xferDays: xferDays, xferText: xferText, xferMark: xferMark, backup: backup,
       user: function () { return user; },
       local: function () { return local; },
       fifo: function () { return C.fifo(local, now()); },

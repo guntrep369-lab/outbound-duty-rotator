@@ -7,6 +7,8 @@
     { "collectionGroup": "docs", "fieldPath": "ref", "indexes": [] },
     { "collectionGroup": "docs", "fieldPath": "why", "indexes": [] },
     { "collectionGroup": "master", "fieldPath": "rows", "indexes": [] },
-    { "collectionGroup": "trc", "fieldPath": "rows", "indexes": [] }
+    { "collectionGroup": "trc", "fieldPath": "rows", "indexes": [] },
+    { "collectionGroup": "trc", "fieldPath": "loss", "indexes": [] },
+    { "collectionGroup": "trc", "fieldPath": "cost", "indexes": [] }
   ]
 }

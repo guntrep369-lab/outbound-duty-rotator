@@ -14,14 +14,18 @@ import { loadBook, fifoFromBook } from '../dev/fake-gas.js';
 
 const read = (f) => fs.readFileSync(path.resolve(__dirname, '../../public', f), 'utf8');
 
-let B, C, W, S;
+let B, C, W, S, TR;
 beforeAll(() => {
   const win = {};
-  ['wms-book.js', 'wms-fire-core.js', 'wms-fire.js', 'wms-stocktake.js'].forEach((f) => new Function('window', read(f))(win));
+  ['wms-book.js', 'wms-fire-core.js', 'wms-fire-trc.js', 'wms-fire.js', 'wms-stocktake.js'].forEach((f) => new Function('window', read(f))(win));
   B = win.WmsBook;
   C = win.WmsFireCore;
+  TR = win.WmsFireTrc;
   W = win.WmsFire;
   S = win.WmsStocktake;
+  /* wms-fire.js เรียก window.WmsFireTrc ตอนใช้งาน: ฟังก์ชันขั้น 3 ต้องเห็นตัวเดียวกัน */
+  globalThis.window = globalThis.window || win;
+  globalThis.window.WmsFireTrc = TR;
 });
 
 const NOW = Date.UTC(2026, 10, 10, 3, 0, 0);   // 10 พ.ย. 2569 10:00 เวลาไทย
@@ -445,12 +449,14 @@ describe('WmsFire: สิทธิ์แบบ Rules', () => {
   it('เอกสารเดิมแก้ได้เฉพาะเลข TRcloud · users กับ master เขียนได้เฉพาะหัวหน้า · ดูอย่างเดียวเขียนไม่ได้ · นอกโดเมนไม่ได้', async () => {
     const x = await ready();
     const d = x.store.dump()['docs/o-1'], s = as(x, STAFF_EMAIL);
-    await expect(s.commit([['docs/o-1', { ...d, tr: 'GR1', trState: 'ลงแล้ว', trBy: STAFF_EMAIL, trAt: 1 }]])).resolves.toBeUndefined();
+    await expect(s.commit([['docs/o-1', { ...d, tr: 'GR1', trState: 'done', trBy: STAFF_EMAIL, trAt: C.TIME }]])).resolves.toBeUndefined();
+    await expect(s.commit([['docs/o-1', { ...d, tr: 'GR1', trState: 'ลงแล้ว', trBy: STAFF_EMAIL, trAt: C.TIME }]])).rejects.toThrow(/สถานะ TRcloud ไม่ถูก/);
+    await expect(s.commit([['docs/o-1', { ...d, tr: 'GR1', trState: 'done', trBy: STAFF_EMAIL, trAt: 1 }]])).rejects.toThrow(/สถานะ TRcloud ไม่ถูก/);
     await expect(s.commit([['docs/o-1', { ...d, qty: 999, trBy: STAFF_EMAIL }]])).rejects.toThrow(/แก้ได้เฉพาะเลข TRcloud/);
     await expect(s.commit([['users/x@example.test', { name: 'x', role: 'head', active: true }]])).rejects.toThrow(/เฉพาะหัวหน้า/);
     await expect(as(x, HEAD_EMAIL).commit([['master/sup', { rows: 'P1\tผู้ผลิตสมมติ' }]])).resolves.toBeUndefined();
     await expect(as(x, HEAD_EMAIL).commit([['meta/head', { ...meta(x), mv: 1 }]])).resolves.toBeUndefined();
-    await expect(as(x, HEAD_EMAIL).commit([['meta/head', { ...meta(x), rows: 50 }]])).rejects.toThrow(/แค่ mv/);
+    await expect(as(x, HEAD_EMAIL).commit([['meta/head', { ...meta(x), rows: 50 }]])).rejects.toThrow(/แค่ mv กับ trc/);
     await expect(as(x, HEAD_EMAIL).commit([['meta/head', { ...meta(x), seq: 50 }]])).rejects.toThrow(/seq ต้องเพิ่มทีละ 1/);
     await expect(as(x, VIEW_EMAIL).commit([['docs/o-1', { ...d, tr: 'x', trBy: VIEW_EMAIL }]])).rejects.toThrow(/ดูได้อย่างเดียว/);
     await expect(as(x, 'staff@other.test').commit([['docs/o-1', { ...d, tr: 'x' }]])).rejects.toThrow(/นอกโดเมน/);
@@ -693,6 +699,526 @@ describe('WmsFire ขั้น 2: ยอดยกมาจากไฟล์ต�
   });
 });
 
+/* ── ขั้น 3: TRcloud ช่วงเปลี่ยนผ่าน สำรอง ──────────────────────────────── */
+
+const mv3 = (over = {}) => Object.assign(['AAA001', 'AAA0000000001', '8', 'P1', 'R01-01-01', 'A-01-01', 1, 'เบิก', 'โอนย้าย', 'เปิด'], over);
+const QA_MV = mv3({ 5: 'QA', 8: 'โอนย้าย QA', 9: '' });
+const GR3 = ['AAA001', 'AAA0000000001', '10', 'P9', '', 'R01-02-01', 3, 'รับ', 'GR 09-11-26', ''];
+const ADJ3 = ['AAA001', 'AAA0000000001', '8', 'P1', 'A-01-01', '', 2, 'เบิก', 'ปรับยอด หาย', ''];
+const ADJ_LINES = [{ loc: 'A-01-01', sku: 'AAA0000000001', lot: '8', po: 'P1', have: 20, count: 18 }];
+const stOf = (x, no) => Object.values(x.store.dump()).find((d) => d && d.no === no).trState;
+const ok = (r) => { expect(r.error, JSON.stringify(r).slice(0, 200)).toBeUndefined(); return r; };
+
+describe('WmsFire ขั้น 3: รอลง TRcloud', () => {
+  async function ready() {
+    const x = await both();
+    await x.open();
+    ok(await x.staff.post('bk-move', body('m-1', [mv3()])));                  // T2611-0002 ย้ายในคลัง
+    ok(await x.staff.post('bk-move', body('m-2', [QA_MV])));                  // 0003 เข้า QA
+    ok(await x.staff.post('bk-gr', body('g-1', [GR3])));                      // 0004 รับของ ไม่มีเลข
+    ok(await x.staff.post('bk-gr', body('g-2', [[...GR3, 'GR6911-0001']])));  // 0005 รับของ มีเลข
+    ok(await x.staff.post('bk-cut', cutBody('c-1', [saleLine('1', 1)])));     // 0006 ตัดขาย
+    ok(await x.head.post('bk-adj', body('a-1', [ADJ3], { lines: ADJ_LINES }))); // 0007 ปรับยอด
+    return x;
+  }
+
+  it('สถานะตอนบันทึก: ย้ายในคลัง/ขาย/ยอดยกมา ไม่ต้องลง · เข้า QA รับของไม่มีเลข ปรับยอด รอลง · มีเลขมาด้วย ลงแล้ว', async () => {
+    const x = await ready();
+    const nos = ['T2611-0001', 'T2611-0002', 'T2611-0003', 'T2611-0004', 'T2611-0005', 'T2611-0006', 'T2611-0007'];
+    expect(nos.map((n) => stOf(x, n))).toEqual(['none', 'none', 'wait', 'wait', 'done', 'none', 'wait']);
+    const r = ok(await x.staff.trList());
+    expect(r.list.map((d) => [d.no, d.state, d.kind])).toEqual([
+      ['T2611-0007', 'wait', 'file'], ['T2611-0005', 'done', 'number'], ['T2611-0004', 'wait', 'number'],
+      ['T2611-0003', 'wait', 'file'], ['T2611-0002', 'none', 'file'],
+    ]);
+    const qa = r.list.find((d) => d.no === 'T2611-0003');
+    expect(qa.wh.slice().sort()).toEqual([['AAA0000000001', 'WH-02', -1], ['AAA0000000001', 'WH-QA', 1]]);
+    expect(r.list.find((d) => d.no === 'T2611-0005').tr).toBe('GR6911-0001');
+    /* RIB อยู่คลัง WH-02 (แบบหน้านับสต๊อก) · QA IQA = WH-QA */
+    expect(['QA', 'IQA-01', 'qa', 'RIB', 'QAX-1', 'A-01-01'].map(C.whOf)).toEqual(['WH-QA', 'WH-QA', 'WH-QA', 'WH-02', 'WH-02', 'WH-02']);
+    expect(['QA', 'IQA-01', 'RIB', 'A-01-01'].map(C.whOf)).toEqual(['QA', 'IQA-01', 'RIB', 'A-01-01'].map(S.whOf));
+  });
+
+  it('ใส่เลข TRcloud: บันทึกครั้งละไม่เกิน 10 · ลงแล้วต้องมีเลข · เครื่องอื่นเห็นในรอบดึงถัดไป (tv + trAt) · ดูอย่างเดียวใส่ไม่ได้', async () => {
+    const x = await ready();
+    expect((await x.staff.trSave([{ no: 'T2611-0004', tr: '', state: 'done' }])).error).toMatch(/ลงแล้วต้องมีเลข TRcloud/);
+    expect((await x.staff.trSave(Array.from({ length: 11 }, () => ({ no: 'T2611-0004', tr: 'x', state: 'done' })))).error).toMatch(/ไม่เกิน 10 เอกสาร/);
+    expect((await x.staff.trSave([{ no: 'T2611-0006', tr: 'x', state: 'done' }])).error).toMatch(/ตัดขายไม่ต้องลง/);
+    expect((await x.staff.trSave([{ no: 'T2611-9999', tr: 'x', state: 'done' }])).error).toMatch(/ไม่พบเลขที่นี้/);
+    expect((await x.staff.trSave([{ no: 'T2611-0004', tr: 'x', state: 'ลงแล้ว' }])).error).toMatch(/สถานะต้องเป็น/);
+    expect((await (await x.device(VIEW_EMAIL)).trSave([{ no: 'T2611-0004', tr: 'x', state: 'done' }])).error).toMatch(/ดูได้อย่างเดียว/);
+    expect(x.store.dump()['meta/head'].tv || 0).toBe(0);
+
+    await x.head.trList();   // เครื่องหัวหน้ามีสำเนาก่อนใส่เลข
+    x.tick(60000);
+    const r = ok(await x.staff.trSave([{ no: 'T2611-0004', tr: 'GR6911-0002', state: 'done' }, { no: 'T2611-0002', tr: '', state: 'wait' }]));
+    expect(r.saved).toBe(2);
+    expect(r.states['T2611-0004']).toBe('done');
+    const d4 = Object.values(x.store.dump()).find((d) => d && d.no === 'T2611-0004');
+    expect(d4).toMatchObject({ tr: 'GR6911-0002', trState: 'done', trBy: STAFF_EMAIL, trAt: NOW + 60000 });
+    expect(x.store.dump()['meta/head'].tv).toBe(1);
+    const h = ok(await x.head.trList());
+    expect(h.list.find((d) => d.no === 'T2611-0004')).toMatchObject({ state: 'done', tr: 'GR6911-0002', trBy: STAFF_EMAIL });
+    expect(h.list.find((d) => d.no === 'T2611-0002').state).toBe('wait');
+    /* เครื่องใหม่ได้สถานะจากเอกสารที่ดึงมาเลย */
+    const v = ok(await (await x.device(VIEW_EMAIL)).trList());
+    expect(v.list.find((d) => d.no === 'T2611-0004').tr).toBe('GR6911-0002');
+
+    /* Rules: tv เพิ่มทีละ 1 เท่านั้น */
+    x.store.setUser({ email: STAFF_EMAIL, verified: true });
+    const m = x.store.dump()['meta/head'];
+    await expect(x.store.commit([['meta/head', { ...m, tv: 5 }]])).rejects.toThrow(/tv ต้องเพิ่มทีละ 1/);
+    await expect(x.store.commit([['meta/head', { ...m, tv: 2 }]])).resolves.toBeUndefined();
+  });
+
+  it('ยกเลิก: ก่อนลง TRcloud ไม่ต้องลงทั้งคู่ · หลังลงแล้ว เอกสารกลับรายการรอลง (ชนิดเดียวกับเอกสารเดิม)', async () => {
+    const x = await ready();
+    ok(await x.head.post('bk-void', { doc: 'T2611-0007', why: 'นับผิด' }));       // 0008 ปรับยอดยังไม่ลง
+    ok(await x.head.post('bk-void', { doc: 'T2611-0005', why: 'รับผิด PO' }));    // 0009 รับของลงแล้ว
+    ok(await x.staff.trSave([{ no: 'T2611-0003', tr: 'ADJ-0003', state: 'done' }]));
+    ok(await x.head.post('bk-void', { doc: 'T2611-0003', why: 'ย้ายผิด' }));       // 0010 เข้า QA ลงแล้ว
+    const r = ok(await x.staff.trList());
+    const row = (no) => r.list.find((d) => d.no === no);
+    expect(['T2611-0007', 'T2611-0008'].map((n) => row(n).state)).toEqual(['none', 'none']);
+    expect(row('T2611-0007')).toMatchObject({ voided: true, link: 'T2611-0008' });
+    expect([row('T2611-0005').state, row('T2611-0009').state, row('T2611-0009').kind]).toEqual(['done', 'wait', 'number']);
+    expect([row('T2611-0003').state, row('T2611-0010').state, row('T2611-0010').kind, row('T2611-0010').link]).toEqual(['done', 'wait', 'file', 'T2611-0003']);
+    /* เอกสารกลับรายการ: ไฟล์ปรับยอดกลับเครื่องหมาย */
+    const f = x.staff.trFile(['T2611-0010']);
+    expect(f.aoa.slice(1).sort()).toEqual([
+      ['AAA0000000001', '2026-11-10', '', 1, '', '', 'T2611-0010', 'IV', 'WH-QA', ''],
+      ['AAA0000000001', '2026-11-10', 1, '', '', '', 'T2611-0010', 'IV', 'WH-02', ''],
+    ]);
+    /* ใส่เลขให้กลับรายการ / กดไม่ต้องลงเองได้ */
+    ok(await x.staff.trSave([{ no: 'T2611-0009', tr: 'GR6911-0001-R', state: 'done' }, { no: 'T2611-0010', tr: '', state: 'none' }]));
+    const r2 = ok(await x.head.trList());
+    expect(['T2611-0009', 'T2611-0010'].map((n) => r2.list.find((d) => d.no === n).state)).toEqual(['done', 'none']);
+  });
+
+  it('ไฟล์ปรับยอดลง TRcloud: หัวตารางตรงกับไฟล์ของหน้าเช็คตัดสต๊อกและหน้านับสต๊อก · แถวละ SKU + คลัง · เอกสารที่ต้องใส่เลขไม่อยู่ในไฟล์', async () => {
+    const x = await ready();
+    expect(TR.TRC_HEAD).toEqual(S.TRC_HEAD);
+    const line = (src) => /var TRC_HEAD = (\[[^\]]+\]);/.exec(src)[1];
+    expect(line(read('wms-cut.js'))).toBe(line(read('wms-fire-trc.js')));
+    await x.staff.trList();   // หน้ารอลงดึงของใหม่ก่อน (ปรับยอดของหัวหน้า) ไฟล์คิดจากสำเนาในเครื่อง
+    const f = x.staff.trFile(['T2611-0003', 'T2611-0007', 'T2611-0004', 'T2611-0002', 'T2611-0099']);
+    expect(f.aoa[0]).toEqual(S.TRC_HEAD);
+    expect(f.aoa.slice(1)).toEqual([
+      ...x.staff.trFile(['T2611-0003']).aoa.slice(1),
+      ['AAA0000000001', '2026-11-10', '', 2, '', '', 'T2611-0007', 'IV', 'WH-02', ''],
+    ]);
+    expect(f.aoa.slice(1, 3).map((r) => [r[2], r[3], r[8]]).sort()).toEqual([['', 1, 'WH-02'], [1, '', 'WH-QA']]);
+    expect(f.docs).toEqual(['T2611-0003', 'T2611-0007']);
+    expect(f.skip).toEqual(['T2611-0004', 'T2611-0002']);   // รับของ = ใส่เลข · ย้ายในคลังไม่เปลี่ยนคลัง
+    expect(f.widths).toHaveLength(10);
+  });
+});
+
+describe('WmsFire ขั้น 3: นำเข้ายอด TRcloud ตารางหลัก กระทบยอด', () => {
+  const STOCK = [
+    ['รายงานสินค้าคงเหลือ (ข้อมูลสมมติ)'],
+    [],
+    ['รหัสสินค้า', 'ชื่อสินค้า', 'NEW WH', 'QA', 'รวม'],
+    ['AAA0000000001', 'ที่นอนสมมติ 1', '34', 0, 34],
+    ['BBB0000000001', 'ท็อปเปอร์สมมติ 1', 4, 0, 4],
+    ['CCC0000000004', 'หมอนสมมติ 4', 0, 3, 3],
+    ['ZZZ0000000009', 'ของสมมติ 9', 2, '', 2],
+    ['AAA0000000001', '', '1', '', ''],
+  ];
+  const LOSS = [['SKU', 'ชื่อ', 'WH-Loss'], ['AAA0000000001', 'ที่นอนสมมติ 1', 2], ['AAA0000000001', '', 1]];
+  const COST = [['รหัสสินค้า', 'ราคาทุน'], ['AAA0000000001', '1,500'], ['BBB0000000001', 800], ['ZZZ0000000009', 100]];
+  const SUP = [['Truck', 'PO.'], ['ผู้ผลิตสมมติ ก', 'P1'], ['ผู้ผลิตสมมติ ข', 'p 5'], ['ผู้ผลิตสมมติ ค', 'P1'], ['', 'P7']];
+  const CONV = [['SKU ตอนซื้อ', 'SKU หลังแปลง'], ['BBB0000000001', 'BBB0000000002'], ['', 'XXX0000000001'], ['AAA0000000001', 'AAA0000000001']];
+  const FILES = [{ name: 'Stock', grid: STOCK }, { name: 'WH-Loss', grid: LOSS }, { name: 'ราคาทุน', grid: COST }, { name: 'Sheet9', grid: [['อื่น ๆ']] }];
+
+  it('อ่านไฟล์: หัวตารางไม่อยู่แถวแรกได้ · SKU ซ้ำรวม · ผลเท่าที่หน้านับสต๊อกอ่าน (trcParse) · ชีตที่ไม่รู้จักข้าม · ไม่มี NEW WH บอกชัด', () => {
+    const p = TR.readSheets(FILES);
+    expect(p.tabs).toEqual({ stock: 'Stock', loss: 'WH-Loss', cost: 'ราคาทุน' });
+    expect(p.skipped).toEqual(['Sheet9']);
+    expect(p.stock.list).toEqual([
+      ['AAA0000000001', 'ที่นอนสมมติ 1', 35, 0], ['BBB0000000001', 'ท็อปเปอร์สมมติ 1', 4, 0], ['CCC0000000004', 'หมอนสมมติ 4', 0, 3], ['ZZZ0000000009', 'ของสมมติ 9', 2, 0],
+    ]);
+    expect(p.loss.list).toEqual([['AAA0000000001', 3]]);
+    expect(p.cost.list).toEqual([['AAA0000000001', 1500], ['BBB0000000001', 800], ['ZZZ0000000009', 100]]);
+    /* หน้านับสต๊อกอ่านไฟล์เดียวกันผ่าน stock-api.gs (แถวเป็นวัตถุตามหัวตาราง) ต้องได้ยอดเท่ากัน */
+    const objs = (grid) => { const t = TR.tabRows(grid); return t.rows.map((r) => Object.fromEntries(t.head.map((h, j) => [h, r[j] === undefined ? '' : r[j]]))); };
+    const old = S.trcParse({ v: 3, at: 1, stock: objs(STOCK), loss: objs(LOSS), cost: objs(COST), tabs: {} });
+    const mine = TR.trcIn(TR.trcDoc(p, { day: '2026-11-10', by: HEAD_EMAIL, name: 'หัวหน้าทดลอง', files: 'สมมติ.xlsx' }).data);
+    expect(mine.stock).toEqual(old.stock);
+    expect(mine.loss).toEqual(old.loss);
+    expect(mine.cost).toEqual(old.cost);
+    expect(TR.readSheets([{ name: 'Stock', grid: [['SKU', 'จำนวน'], ['A', 1]] }])).toMatchObject({ error: expect.stringMatching(/NEW WH/) });
+    expect(TR.readSheets([{ name: 'อื่น', grid: [['ก', 'ข']] }]).error).toMatch(/ไม่เจอชีต Stock/);
+    expect(TR.trcDoc(p, { day: '10/11/2026' }).error).toMatch(/yyyy-mm-dd/);
+    expect(TR.trcDoc({ ...p, stock: null }, { day: '2026-11-10' }).error).toMatch(/ไม่มีชีต Stock/);
+  });
+
+  it('PO. Truck → Supplier กับ MASTER แปลงสินค้า: แบบ tx-api.gs · หัวหน้านำเข้า ทุกเครื่องได้ใน fifo()', async () => {
+    const x = await both();
+    await x.open();
+    const p = TR.readSheets([{ name: 'PO. Truck', grid: SUP }, { name: 'MASTER แปลงสินค้า', grid: CONV }]);
+    expect(p.sup).toMatchObject({ rows: [['P1', 'ผู้ผลิตสมมติ ก'], ['P5', 'ผู้ผลิตสมมติ ข']], dup: ['P1'] });
+    expect(p.conv).toMatchObject({ pairs: [['BBB0000000002', 'BBB0000000001']], blank: 1 });
+    expect((await x.staff.masterSave('sup', p.sup)).error).toMatch(/เฉพาะหัวหน้า/);
+    ok(await x.head.masterSave('sup', p.sup));
+    ok(await x.head.masterSave('conv', p.conv));
+    expect(x.store.dump()['meta/head'].mv).toBe(2);
+    await x.staff.sync();
+    const f = x.staff.fifo();
+    expect(f.sup.rows).toEqual([['P1', 'ผู้ผลิตสมมติ ก'], ['P5', 'ผู้ผลิตสมมติ ข']]);
+    expect(f.convert.pairs).toEqual([['BBB0000000002', 'BBB0000000001', '']]);
+    expect(x.staff.masters()).toMatchObject({ sup: { n: 2, tab: 'PO. Truck', dup: 1 }, conv: { n: 1, blank: 1 } });
+  });
+
+  it('กระทบยอด: ยอดระบบ ณ สิ้นวันของไฟล์ · จับคู่ SKU แปลง · ตรง ต่าง ไม่มีใน TRcloud TRcloud มีระบบไม่มี · มูลค่าต่าง · เอกสารรอลง', async () => {
+    const x = await both();
+    await x.open();
+    const p = TR.readSheets(FILES);
+    ok(await x.head.masterSave('conv', TR.readSheets([{ name: 'MASTER แปลงสินค้า', grid: CONV }]).conv));
+    ok(await x.staff.post('bk-gr', body('g-1', [['DDD005', 'DDD0000000005', '11', 'P8', '', 'R01-03-01', 3, 'รับ', 'GR 10-11-26', '']])));   // รอลง
+    x.tick(DAY);
+    ok(await x.staff.post('bk-gr', body('g-2', [GR3], { date: '2026-11-11' })));   // หลังวันของไฟล์ ไม่นับ
+    expect((await x.staff.trcSave(p, '2026-11-10', 'สมมติ.xlsx')).error).toMatch(/เฉพาะหัวหน้า/);
+    const s = ok(await x.head.trcSave(p, '2026-11-10', 'สมมติ.xlsx'));
+    expect(s).toMatchObject({ saved: '2026-11-10', n: 4 });
+    expect(x.store.dump()['meta/head'].trc).toBe('2026-11-10#1');
+    ok(await x.head.trcSave(p, '2026-11-10', 'สมมติ.xlsx'));
+    expect(x.store.dump()['meta/head'].trc).toBe('2026-11-10#2');
+
+    const r = ok(await x.staff.trc());
+    expect(r.trc).toMatchObject({ day: '2026-11-10', name: 'หัวหน้าทดลอง', files: 'สมมติ.xlsx', n: 4 });
+    const by = Object.fromEntries(r.cmp.items.map((i) => [i.sku, i]));
+    /* AAA: ระบบ 36 (20 + 10 + 6) TRcloud 35 */
+    expect(by.AAA0000000001).toMatchObject({ group: 'diff', s02: 36, t02: 35, d02: 1, loss: 3, cost: 1500, value: 1500, wait: 1 });   // g-2 รอลง (หลังวันของไฟล์ แต่ยังรอ)
+    expect(by.BBB0000000001).toMatchObject({ group: 'ok', s02: 4, t02: 4, conv: ['BBB0000000002'] });
+    expect(by.CCC0000000004).toMatchObject({ group: 'ok', sqa: 3, tqa: 3 });
+    expect(by.ZZZ0000000009).toMatchObject({ group: 'nosys', t02: 2, value: -200 });
+    expect(by.DDD0000000005).toMatchObject({ group: 'notrc', s02: 3, wait: 1, cost: null });
+    expect(r.cmp.items.map((i) => i.group)).toEqual(['diff', 'nosys', 'notrc', 'ok', 'ok']);
+    expect(r.cmp.tot).toMatchObject({ skus: 5, ok: 2, diff: 1, notrc: 1, nosys: 1, value: 1300, noCost: 1 });
+    const book = TR.trcBook(r.cmp, r.trc);
+    expect(book.map((b) => b.name)).toEqual(['เทียบราย SKU', 'สรุป']);
+    expect(book[0].aoa).toHaveLength(6);
+
+    /* Rules: trc เขียนได้เฉพาะหัวหน้า · meta.trc หัวหน้าเท่านั้น */
+    x.store.setUser({ email: STAFF_EMAIL, verified: true });
+    await expect(x.store.commit([['trc/2026-11-11', { v: 1 }]])).rejects.toThrow(/เขียน trc ได้เฉพาะหัวหน้า/);
+  });
+
+  it('รหัสที่มีอักษรไทย (ของใช้ภายใน) TRcloud ไม่มี = ไม่เทียบ', async () => {
+    const x = await both();
+    await x.open();
+    const local = JSON.parse(JSON.stringify(x.head.local()));
+    local.docs.push({ ...local.docs[0], id: 'z', no: 'T2611-0099', seq: 99, row: 99, type: 'ตารางเดิม', date: '2026-11-10',
+      rows: [['ถุงมือ', 'ถุงมือ', '0', '0', '', 'A-09-09', 5, 'รับ', 'ของใช้', '', '']] });
+    const trc = TR.trcIn(TR.trcDoc(TR.readSheets(FILES), { day: '2026-11-10' }).data);
+    const res = TR.trcCompare(local, trc, NOW);
+    expect(res.tot.internal).toBe(1);
+    expect(res.items.find((i) => /ถุงมือ/.test(i.sku))).toBeUndefined();
+  });
+});
+
+describe('WmsFire ขั้น 3: วางแถวลงชีต Transaction เดิม (ช่วงเปลี่ยนผ่าน)', () => {
+  it('วันละครั้ง: แถวตามลำดับที่บันทึกรูปเดียวกับ WmsBook.tsv · ยอดยกมาไม่ต้องวาง · วางแล้วมีเพิ่มคัดลอกเฉพาะส่วนที่เพิ่ม', async () => {
+    const x = await both();
+    await x.open();
+    ok(await x.staff.post('bk-move', body('m-1', [mv3()])));
+    ok(await x.staff.post('bk-move', body('m-2', [QA_MV, mv3({ 4: 'A-01-01', 5: 'B-01-01', 6: 2 })])));
+    x.tick(DAY);
+    ok(await x.staff.post('bk-move', body('m-3', [mv3({ 6: 3 })])));
+    const d1 = ok(await x.staff.xferDays()).days;
+    expect(d1.map((d) => [d.day, d.docs, d.rows, d.first, d.last, d.done, d.more])).toEqual([
+      ['2026-11-11', 1, 1, 'T2611-0004', 'T2611-0004', null, false],
+      ['2026-11-10', 2, 3, 'T2611-0002', 'T2611-0003', null, false],
+    ]);
+    const t = x.staff.xferText('2026-11-10');
+    const docs = x.staff.local().docs.filter((d) => d.no === 'T2611-0002' || d.no === 'T2611-0003');
+    expect(t).toMatchObject({ docs: 2, rows: 3, last: 'T2611-0003' });
+    expect(t.text).toBe(docs.map((d) => B.tsv(d.rows, 'ทดลอง', d.no)).join('\n'));
+    const cols = t.text.split('\n').map((l) => l.split('\t'));
+    expect(cols.every((c) => c.length === 14 && c[12] === 'ทดลอง')).toBe(true);
+    expect(cols.map((c) => [c[0], c[5], c[6], c[7], c[13]])).toEqual([
+      ['AAA001', 'R01-01-01', 'A-01-01', '1', 'T2611-0002'], ['AAA001', 'R01-01-01', 'QA', '1', 'T2611-0003'], ['AAA001', 'A-01-01', 'B-01-01', '2', 'T2611-0003'],
+    ]);
+
+    /* เลข TRcloud ที่ใส่ทีหลังในหน้ารอลง ลงคอลัมน์ N แทนเลขที่ (แถวที่มีเลขของตัวเองใช้เลขของแถว) */
+    ok(await x.staff.trSave([{ no: 'T2611-0003', tr: 'ADJ-9', state: 'done' }]));
+    expect(x.staff.xferText('2026-11-10').text.split('\n').map((l) => l.split('\t')[13])).toEqual(['T2611-0002', 'ADJ-9', 'ADJ-9']);
+    ok(await x.staff.xferMark('2026-11-10', { rows: 3, last: 'T2611-0003' }));
+    ok(await x.staff.xferMark('2026-11-11', { rows: 1, last: 'T2611-0004' }));
+    ok(await x.staff.post('bk-move', body('m-4', [mv3({ 6: 4 })])));
+    const d2 = ok(await x.head.xferDays()).days;
+    expect(d2[0]).toMatchObject({ day: '2026-11-11', docs: 2, last: 'T2611-0005', more: true, done: { by: 'ทดลอง', n: 1, last: 'T2611-0004' } });
+    expect(d2[1]).toMatchObject({ day: '2026-11-10', more: false, done: { by: 'ทดลอง', n: 3 } });
+    const more = x.head.xferText('2026-11-11', 'T2611-0004');
+    expect(more).toMatchObject({ docs: 1, rows: 1, last: 'T2611-0005' });
+    expect(more.text.split('\t')[13]).toBe('T2611-0005');
+
+    expect((await (await x.device(VIEW_EMAIL)).xferMark('2026-11-11', { rows: 1 })).error).toMatch(/ดูได้อย่างเดียว/);
+    expect((await x.staff.xferMark('11/11/2026', { rows: 1 })).error).toMatch(/yyyy-mm-dd/);
+    x.store.setUser({ email: STAFF_EMAIL, verified: true });
+    await expect(x.store.patch('xfer/log', { '2026-11-12': { n: 1 }, '2026-11-13': { n: 1 } })).rejects.toThrow(/ครั้งละวัน/);
+    await expect(x.store.patch('xfer/other', { '2026-11-12': { n: 1 } })).rejects.toThrow(/ครั้งละวัน/);
+  });
+});
+
+/* Firestore REST จำลอง (ไม่ต่อเน็ต) สำหรับ apps-script/fire-backup.gs */
+const TIME3 = ['at', 'trAt', 'last'];
+function toRest(v, key) {
+  if (v === null || v === undefined) return { nullValue: null };
+  if (typeof v === 'boolean') return { booleanValue: v };
+  if (typeof v === 'number') {
+    if (key && TIME3.includes(key)) return { timestampValue: new Date(v).toISOString().replace('Z', '456Z') };   // ไมโครวินาทีแบบ Firestore
+    return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+  }
+  if (typeof v === 'string') return { stringValue: v };
+  if (Array.isArray(v)) return { arrayValue: { values: v.map((y) => toRest(y)) } };
+  return { mapValue: { fields: Object.fromEntries(Object.entries(v).map(([k, y]) => [k, toRest(y)])) } };
+}
+function fromRest(v) {
+  if ('stringValue' in v) return v.stringValue;
+  if ('integerValue' in v) return Number(v.integerValue);
+  if ('doubleValue' in v) return v.doubleValue;
+  if ('booleanValue' in v) return v.booleanValue;
+  if ('nullValue' in v) return null;
+  if ('timestampValue' in v) return Date.parse(v.timestampValue.replace(/(\.\d{3})\d+/, '$1'));
+  if ('arrayValue' in v) return (v.arrayValue.values || []).map(fromRest);
+  return Object.fromEntries(Object.entries(v.mapValue.fields || {}).map(([k, y]) => [k, fromRest(y)]));
+}
+const restDoc = (data) => Object.fromEntries(Object.entries(data).map(([k, v]) => [k, toRest(v, k)]));
+const plainDoc = (fields) => Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, fromRest(v)]));
+const noUse = (dump) => Object.fromEntries(Object.entries(dump).filter(([p]) => !p.startsWith('use/')));
+
+function fakeGcp() {
+  const projects = {}, calls = [];
+  const proj = (id) => projects[id] || (projects[id] = {});
+  const resp = (code, body) => ({ getResponseCode: () => code, getContentText: () => (body === undefined ? '' : JSON.stringify(body)) });
+  const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+  function fetch(url, opt) {
+    const m = /^https:\/\/firestore\.googleapis\.com\/v1\/projects\/([^/]+)\/databases\/\(default\)\/documents(.*)$/.exec(url);
+    if (!m) throw new Error('ห้ามเรียก ' + url);
+    const [, p, rest] = m;
+    if (opt.headers.Authorization !== 'Bearer token-ทดลอง' || opt.headers['X-Goog-User-Project'] !== p) return resp(403, { error: 'auth' });
+    calls.push([opt.method, p, rest]);
+    const db = proj(p), name = (path) => `projects/${p}/databases/(default)/documents/${path}`;
+    if (rest === ':commit') {
+      JSON.parse(opt.payload).writes.forEach((w) => { db[w.update.name.split('/documents/')[1]] = w.update.fields; });
+      return resp(200, { commitTime: 'x' });
+    }
+    if (rest === ':runQuery') {
+      const q = JSON.parse(opt.payload).structuredQuery, coll = q.from[0].collectionId;
+      let list = Object.keys(db).filter((k) => k.split('/')[0] === coll).map((k) => ({ path: k, f: db[k] }));
+      const f = q.where && q.where.fieldFilter, field = f ? f.field.fieldPath : '';
+      if (f) {
+        const want = fromRest(f.value);
+        list = list.filter((d) => d.f[field] && (f.op === 'GREATER_THAN' ? fromRest(d.f[field]) > want : fromRest(d.f[field]) >= want));
+        list.sort((a, b) => cmp(fromRest(a.f[field]), fromRest(b.f[field])) || cmp(name(a.path), name(b.path)));
+      } else list.sort((a, b) => cmp(a.path, b.path));
+      if (q.startAt) {
+        const [cv, cr] = q.startAt.values, c = fromRest(cv);
+        list = list.filter((d) => { const v = fromRest(d.f[field]); return v > c || (v === c && name(d.path) > cr.referenceValue); });
+      }
+      list = list.slice(0, q.limit || list.length);
+      return resp(200, list.length ? list.map((d) => ({ document: { name: name(d.path), fields: d.f }, readTime: 'x' })) : [{ readTime: 'x' }]);
+    }
+    const lm = /^\/([^/?]+)\?pageSize=(\d+)(?:&pageToken=(\d+))?$/.exec(rest);
+    if (lm) {
+      const all = Object.keys(db).filter((k) => k.split('/')[0] === lm[1]).sort(), from = +(lm[3] || 0), size = +lm[2];
+      const page = all.slice(from, from + size);
+      const out = { documents: page.map((k) => ({ name: name(k), fields: db[k] })) };
+      if (from + size < all.length) out.nextPageToken = String(from + size);
+      return resp(200, page.length ? out : {});
+    }
+    const path = rest.slice(1).split('/').map(decodeURIComponent).join('/');
+    return db[path] ? resp(200, { name: name(path), fields: db[path] }) : resp(404, { error: { code: 404 } });
+  }
+  const iter = (list) => { let i = 0; return { hasNext: () => i < list.length, next: () => list[i++] }; };
+  const folders = [];
+  let n = 0;
+  const mkFolder = (fname) => {
+    const f = { id: 'folder' + ++n, name: fname, files: [] };
+    Object.assign(f, {
+      getId: () => f.id, isTrashed: () => false, getFiles: () => iter(f.files.slice()),
+      createFile: (name, content) => { const file = { id: 'file' + ++n, name, content, getId: () => file.id, getName: () => file.name, getBlob: () => ({ getDataAsString: () => file.content }) }; f.files.push(file); return file; },
+    });
+    folders.push(f);
+    return f;
+  };
+  const props = {}, triggers = [], logs = [];
+  const env = {
+    UrlFetchApp: { fetch },
+    ScriptApp: {
+      getOAuthToken: () => 'token-ทดลอง',
+      getProjectTriggers: () => triggers.slice(),
+      deleteTrigger: (t) => triggers.splice(triggers.indexOf(t), 1),
+      newTrigger: (h) => { const t = { h, getHandlerFunction: () => h }; const c = { timeBased: () => c, atHour: (x) => { t.hour = x; return c; }, everyDays: (x) => { t.days = x; return c; }, create: () => { triggers.push(t); return t; } }; return c; },
+    },
+    DriveApp: {
+      getFolderById: (id) => { const f = folders.find((x) => x.id === id); if (!f) throw new Error('ไม่มีโฟลเดอร์'); return f; },
+      getFoldersByName: (fname) => iter(folders.filter((f) => f.name === fname)),
+      createFolder: mkFolder,
+    },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null), setProperty: (k, v) => { props[k] = String(v); }, deleteProperty: (k) => { delete props[k]; } }) },
+    Utilities: { formatDate: (d, tz, fmt) => { expect([tz, fmt]).toEqual(['Asia/Bangkok', 'yyyy-MM-dd-HHmm']); const s = new Date(d.getTime() + 7 * 3600000).toISOString(); return s.slice(0, 10) + '-' + s.slice(11, 13) + s.slice(14, 16); } },
+    Logger: { log: (s) => logs.push(String(s)) },
+  };
+  const GS = fs.readFileSync(path.resolve(__dirname, '../../apps-script/fire-backup.gs'), 'utf8');
+  const load = (over = {}) => {
+    let src = GS.replace("var FIREBASE_PROJECT_ID = '';", "var FIREBASE_PROJECT_ID = 'demo-src';");
+    Object.entries(over).forEach(([k, v]) => { src = src.replace(new RegExp(`var ${k} = [^;]+;`), `var ${k} = ${v};`); });
+    return new Function(...Object.keys(env), `${src}\nreturn { installBackup, stopBackup, backupNightly, backupFull, restoreAll };`)(...Object.values(env));
+  };
+  return {
+    GS, env, load, projects, calls, folders, props, triggers, logs,
+    /** ใส่ข้อมูลของ memStore ลงโปรเจกต์ demo-src แบบที่ Firestore เก็บ (เวลาเป็น timestamp) */
+    mirror: (dump) => { projects['demo-src'] = Object.fromEntries(Object.entries(noUse(dump)).map(([p, d]) => [p, restDoc(d)])); },
+    files: () => (folders[0] ? folders[0].files.map((f) => ({ name: f.name, b: JSON.parse(f.content) })) : []),
+    plain: (id) => Object.fromEntries(Object.entries(projects[id] || {}).map(([p, f]) => [p, plainDoc(f)])),
+  };
+}
+
+describe('WmsFire ขั้น 3: สำรองและกู้คืน', () => {
+  /** ข้อมูลทดลองครบทุกคอลเลกชัน: เอกสารแยกส่วน เลข TRcloud ยอด TRcloud ตารางหลัก ชีตเดิม */
+  async function filled() {
+    const x = await both({ partBytes: 3000 });
+    await x.open();
+    ok(await x.staff.post('bk-cut', cutBody('big', Array.from({ length: 40 }, (_, i) => saleLine(String(5000 + i), 0.25)))));
+    ok(await x.staff.post('bk-move', body('m-1', [QA_MV])));
+    ok(await x.staff.post('bk-gr', body('g-1', [GR3])));
+    ok(await x.staff.trSave([{ no: 'T2611-0004', tr: 'GR6911-0005', state: 'done' }]));
+    ok(await x.head.trcSave(TR.readSheets([{ name: 'Stock', grid: [['SKU', 'NEW WH', 'QA'], ['AAA0000000001', 30, 1]] }]), '2026-11-10', 'สมมติ.xlsx'));
+    ok(await x.head.masterSave('sup', TR.readSheets([{ name: 'PO. Truck', grid: [['Truck', 'PO.'], ['ผู้ผลิตสมมติ', 'P1']] }]).sup));
+    ok(await x.staff.xferMark('2026-11-10', { rows: 2, last: 'T2611-0003' }));
+    expect(Object.keys(x.store.dump()).filter((k) => /^docs\/big~\d$/.test(k)).length).toBeGreaterThan(0);
+    return x;
+  }
+  /** ระบบที่กู้แล้วต้องได้ยอดทุกกอง fifo และหน้ารอลง TRcloud เท่าของเดิม */
+  async function sameAfterRestore(x, data) {
+    const s2 = W.memStore({ now: x.clock, domain: DOMAIN });
+    s2.replace(data);
+    const f = W.open({ store: s2.connect(), auth: W.fakeAuth(ACCOUNTS), now: x.clock });
+    ok(await f.login(HEAD_EMAIL));
+    await f.sync();
+    await x.head.sync();
+    expect(C.allPiles(f.local())).toEqual(C.allPiles(x.head.local()));
+    const a = f.fifo(), b = x.head.fifo();
+    ['skus', 'pos', 'locs', 'days', 'rows', 'cgr', 'cq', 'sup'].forEach((k) => expect(a[k], k).toEqual(b[k]));
+    expect((await f.trList()).list).toEqual((await x.head.trList()).list);
+    expect((await f.trc()).cmp).toEqual((await x.head.trc()).cmp);
+    expect((await f.post('bk-state', {})).open).toEqual((await x.head.post('bk-state', {})).open);
+  }
+
+  it('ไฟล์สำรองจากเครื่องหัวหน้า = ข้อมูลในฐานทุกช่อง (รวมส่วนแยก ~2) · กู้ลงฐานว่างได้ยอดเท่าเดิม · คนลงรายการดาวน์โหลดไม่ได้', async () => {
+    const x = await filled();
+    expect((await x.staff.backup()).error).toMatch(/เฉพาะหัวหน้า/);
+    const r = ok(await x.head.backup());
+    const chk = TR.readBackup(JSON.stringify(r.backup));
+    expect(chk.error).toBeUndefined();
+    const b = chk.backup;
+    expect(b).toMatchObject({ kind: 'wms-fire-backup', v: 1, from: 'browser', made: NOW, docs: 4 });
+    const want = noUse(x.store.dump());
+    expect(Object.keys(b.data).sort()).toEqual(Object.keys(want).sort());
+    Object.keys(want).forEach((p) => expect(b.data[p], p).toEqual(want[p]));
+    await sameAfterRestore(x, b.data);
+  });
+
+  it('อ่านไฟล์สำรอง: ไม่ใช่ JSON · ไม่ใช่ไฟล์ของระบบ · ที่เก็บแปลก · ไม่มี meta/head · หลายไฟล์ไฟล์หลังทับไฟล์ก่อน', () => {
+    expect(TR.readBackup('{oops').error).toBe('ไม่ใช่ไฟล์ JSON');
+    expect(TR.readBackup({ kind: 'อื่น', v: 1, data: {} }).error).toMatch(/ไม่ใช่ไฟล์สำรอง/);
+    expect(TR.readBackup({ kind: 'wms-fire-backup', v: 1, data: { 'meta/head': {}, 'use/2026-11-10': {} } }).error).toMatch(/ที่เก็บที่ไม่รู้จัก use\/2026-11-10/);
+    expect(TR.readBackup({ kind: 'wms-fire-backup', v: 1, data: { 'docs/a': {} } }).error).toMatch(/ไม่มี meta\/head/);
+    const merged = TR.mergeBackups([{ made: 2, data: { 'docs/a': { tr: 'ใหม่' } } }, { made: 1, data: { 'docs/a': { tr: '' }, 'docs/b': { n: 1 } } }]);
+    expect(merged).toEqual({ 'docs/a': { tr: 'ใหม่' }, 'docs/b': { n: 1 } });
+  });
+
+  it('fire-backup.gs: คืนแรกทั้งหมด = ไฟล์จากเครื่อง · คืนถัดไปเฉพาะของใหม่และเลข TRcloud ที่เปลี่ยน · ตั้งเวลาตี 2 · ไม่มีชีต', async () => {
+    const x = await filled();
+    const g = fakeGcp();
+    expect(g.GS).toContain("var FIREBASE_PROJECT_ID = '';");
+    expect(g.GS).toContain("var RESTORE_PROJECT_ID = '';");
+    expect(g.GS).not.toMatch(/SpreadsheetApp|getActiveSpreadsheet|openById|openByUrl/);
+    expect(g.GS.match(/https:\/\/[^'"\s)]+/g).filter((u) => !u.startsWith('https://firestore.googleapis.com/v1/') && !u.startsWith('https://www.googleapis.com/auth/'))).toEqual([]);
+    expect(() => new Function(...Object.keys(g.env), `${g.GS}\nreturn backupNightly();`)(...Object.values(g.env))).toThrow(/ใส่ FIREBASE_PROJECT_ID ก่อน/);
+
+    g.mirror(x.store.dump());
+    const gs = g.load();
+    g.triggers.push({ h: 'backupNightly', getHandlerFunction: () => 'backupNightly' });   // ตั้งไว้แล้วรอบก่อน: ไม่ซ้อน
+    const r1 = gs.installBackup();
+    expect(g.triggers.map((t) => [t.h, t.hour, t.days])).toEqual([['backupNightly', 2, 1]]);
+    expect(g.folders.map((f) => f.name)).toEqual(['WMS ระบบใหม่ สำรอง']);
+    const [f1] = g.files();
+    expect(f1.name).toMatch(/^wms-fire-backup-\d{4}-\d{2}-\d{2}-\d{4}-full\.json$/);
+    expect(f1.b).toMatchObject({ kind: 'wms-fire-backup', v: 1, from: 'full', since: 0, more: false, docs: 4 });
+    expect(TR.readBackup(f1.b).error).toBeUndefined();
+    expect(r1).toMatchObject({ docs: 4, more: false });
+    const browser = ok(await x.head.backup()).backup.data;
+    expect(Object.keys(f1.b.data).sort()).toEqual(Object.keys(browser).sort());
+    Object.keys(browser).forEach((p) => expect(f1.b.data[p], p).toEqual(browser[p]));
+
+    /* วันถัดไป: เอกสารใหม่ 1 + ใส่เลข TRcloud ให้เอกสารเก่า 1 */
+    x.tick(DAY);
+    ok(await x.staff.post('bk-move', body('m-2', [mv3()])));
+    ok(await x.staff.trSave([{ no: 'T2611-0003', tr: 'ADJ-1', state: 'done' }]));
+    g.mirror(x.store.dump());
+    const before = g.calls.length;
+    const r2 = gs.backupNightly();
+    expect(r2).toMatchObject({ docs: 1, more: false });
+    const f2 = g.files()[1];
+    expect(f2.name).not.toMatch(/-full/);
+    expect(f2.b.from).toBe('nightly');
+    const docKeys = Object.keys(f2.b.data).filter((k) => k.startsWith('docs/')).sort();
+    const id = (no) => Object.keys(x.store.dump()).find((k) => x.store.dump()[k].no === no);
+    /* 0004 ใส่เลขไว้ก่อนคืนแรก อ่านซ้ำเพราะย้อน 10 นาทีกันพลาด (ทับด้วยค่าเดิม ไม่เสียหาย) */
+    expect(docKeys).toEqual([id('T2611-0003'), id('T2611-0004'), id('T2611-0005')].sort());
+    expect(f2.b.data[id('T2611-0003')]).toMatchObject({ tr: 'ADJ-1', trState: 'done', trBy: STAFF_EMAIL });
+    expect(Object.keys(f2.b.data).filter((k) => !k.startsWith('docs/')).sort()).toEqual(
+      ['meta/head', 'master/sup', 'trc/2026-11-10', 'xfer/log', ...Object.keys(USERS)].sort());
+    expect(g.calls.length - before).toBeLessThan(12);   // ไม่กี่คำขอ ไม่อ่านเอกสารเก่าซ้ำ
+    expect(g.logs.join('\n')).toMatch(/เอกสารใหม่ 1 ใบ/);
+  });
+
+  it('fire-backup.gs กู้คืน: รวมทุกไฟล์ลงโปรเจกต์ว่าง ได้ข้อมูลเท่าฐานเดิมทุกช่อง (เวลาเป็น timestamp) · มีข้อมูลแล้วไม่ทับ · เกินเวลาทำต่อได้', async () => {
+    const x = await filled();
+    const g = fakeGcp();
+    g.mirror(x.store.dump());
+    const gs = g.load();
+    gs.backupNightly();
+    x.tick(DAY);
+    ok(await x.staff.post('bk-move', body('m-2', [mv3()])));
+    ok(await x.staff.trSave([{ no: 'T2611-0003', tr: 'ADJ-1', state: 'done' }]));
+    g.mirror(x.store.dump());
+    gs.backupNightly();
+    /* ไฟล์ที่ไม่ใช่ไฟล์สำรองในโฟลเดอร์ข้ามไป */
+    g.folders[0].createFile('บันทึก.json', '{"kind":"อื่น"}');
+    g.folders[0].createFile('อ่านก่อน.txt', 'x');
+
+    expect(() => gs.restoreAll('')).toThrow(/RESTORE_PROJECT_ID/);
+    const r = gs.restoreAll('demo-new');
+    expect(r).toMatchObject({ ok: true, files: 2, docs: 5 });
+    expect(g.logs.join('\n')).toMatch(/ข้าม บันทึก\.json/);
+    const want = noUse(x.store.dump());
+    expect(g.plain('demo-new')).toEqual(want);
+    const raw = g.projects['demo-new'];
+    expect(Object.keys(raw['meta/head'].at)).toEqual(['timestampValue']);
+    expect(Object.keys(raw[`users/${STAFF_EMAIL}`].last)).toEqual(['timestampValue']);
+    expect(Object.keys(raw['meta/head'].seq)).toEqual(['integerValue']);
+    expect(Object.keys(raw['xfer/log']['2026-11-10'].mapValue.fields.at)).toEqual(['integerValue']);   // เวลาในบันทึกชีตเดิมเป็นตัวเลขอยู่แล้ว
+    await sameAfterRestore(x, g.plain('demo-new'));
+    expect(() => gs.restoreAll('demo-new')).toThrow(/มีข้อมูลแล้ว/);
+
+    /* เกินเวลา: หยุดหลังเขียนแต่ละครั้ง จำว่าถึงไหน meta/head เขียนสุดท้าย */
+    const slow = g.load({ STOP_MS: -1, WRITE_MAX: 4 });
+    const p1 = slow.restoreAll('demo-b');
+    expect(p1).toMatchObject({ more: true, done: 4 });
+    expect(g.projects['demo-b']['meta/head']).toBeUndefined();
+    let p = p1, runs = 1;
+    while (p.more) { p = slow.restoreAll('demo-b'); runs++; }
+    expect(runs).toBe(Math.ceil(p.total / 4));
+    expect(g.plain('demo-b')).toEqual(want);
+    expect(Object.keys(g.props).filter((k) => k.startsWith('fr.'))).toEqual([]);
+  });
+});
+
 /* ── ตรรกะล้วน ───────────────────────────────────────────────────────── */
 
 describe('wms-fire-core.js', () => {
@@ -727,13 +1253,19 @@ describe('wms-fire-core.js', () => {
     expect(rules).toContain("affectedKeys().hasOnly(['last'])");
     expect(rules).toMatch(/match \/use\/\{day\}[\s\S]*affectedKeys\(\)\.size\(\) == 1/);
     expect(rules).not.toMatch(/allow (delete|write): if true|allow [a-z, ]+: if request\.auth != null;/);
+    /* ขั้น 3: เลข TRcloud สถานะต้องถูก · tv เพิ่มทีละ 1 · หัวหน้าแก้ได้แค่ mv trc · xfer/log เติมทีละวัน */
+    expect(rules).toContain("d.trState in ['wait', 'done', 'none']");
+    expect(rules).toContain("d.tv == (('tv' in old) ? old.tv : 0) + 1");
+    expect(rules).toContain("hasOnly(['mv', 'trc'])");
+    expect(rules).toMatch(/match \/xfer\/\{id\}[\s\S]*id == 'log'[\s\S]*affectedKeys\(\)\.size\(\) == 1/);
+    expect(C.TR_STATES).toEqual(['wait', 'done', 'none']);
     const idx = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../firebase/firestore.indexes.json'), 'utf8'));
     expect(idx.fieldOverrides.filter((f) => f.collectionGroup === 'docs').map((f) => f.fieldPath)).toEqual(expect.arrayContaining(['rows', 'orders', 'names']));
     expect(idx.fieldOverrides.map((f) => f.fieldPath)).not.toContain('seq');
   });
 
   it('ไฟล์ไม่มี URL key หรือ config ของ Firebase จริง SDK ตรึงรุ่นจาก gstatic เท่านั้น · dev server ห้ามต่อของจริง', () => {
-    const src = read('wms-fire.js') + read('wms-fire-core.js') + read('book/book-fire.js') + read('book/book-fire-set.js');
+    const src = read('wms-fire.js') + read('wms-fire-core.js') + read('wms-fire-trc.js') + read('book/book-fire.js') + read('book/book-fire-set.js') + read('book/book-fire-trc.js');
     expect(src).not.toMatch(/AIza[0-9A-Za-z_-]{20,}|firebaseapp\.com|script\.google\.com|apiKey\s*:/);
     expect(src.match(/https:\/\/[^'"\s)]+/g).filter((u) => !u.startsWith('https://www.gstatic.com/firebasejs/'))).toEqual([]);
     expect(W.SDK_V).toMatch(/^\d+\.\d+\.\d+$/);

@@ -62,6 +62,14 @@
   var OPEN_MAX = 40000;
   var NAMES_MAX = 5000;
 
+  /* ขั้น 3: สถานะลง TRcloud ของเอกสาร (ช่อง trState) · คลังใน TRcloud ตามโล (แบบหน้านับสต๊อกใหญ่) */
+  var TR_WAIT = 'wait';   // ต้องลง TRcloud ยังไม่มีเลข
+  var TR_DONE = 'done';   // ลงแล้ว มีเลข TRcloud
+  var TR_NONE = 'none';   // ไม่ต้องลง (ตัดขาย ยอดยกมา ย้ายในคลังเดียวกัน หรือคนกดไม่ต้องลง)
+  var TR_STATES = [TR_WAIT, TR_DONE, TR_NONE];
+  var WH_MAIN = 'WH-02';
+  var WH_QA = 'WH-QA';
+
   /** op ของหน้าเว็บ → ประเภทเอกสาร และใครลงได้ */
   var OPS = {
     'bk-cut': { type: TYPE_SALE, head: false },
@@ -197,6 +205,42 @@
       }
     });
     return short;
+  }
+
+  /* ── คลังใน TRcloud (ขั้น 3) ─────────────────────────────────────────── */
+
+  /** คลังของโล: QA, IQA (QA-01, IQA2 ก็ได้) = WH-QA นอกนั้น (รวม RIB) = WH-02 แบบ WmsStocktake.whOf */
+  function whOf(loc) { return /^I?QA(?![A-Z])/.test(up(loc)) ? WH_QA : WH_MAIN; }
+
+  /**
+   * ยอดที่เปลี่ยนในแต่ละคลังของ TRcloud จากแถวของเอกสาร [[SKU เต็ม หรือ SKU, คลัง, +/− ชิ้น]] รวมต่อ SKU + คลัง ตัด 0 ทิ้ง
+   * ขาย = TRcloud ตัดจากออเดอร์เอง ไม่นับ · ย้ายในคลังเดียวกัน = ไม่เปลี่ยน · ย้ายข้ามคลัง = ลดต้นทาง เพิ่มปลายทาง
+   * เบิกออก (มีแต่โลเบิก) = ลด · รับ = เพิ่มที่คลังของโลรับ
+   */
+  function whLines(rows) {
+    var by = {}, order = [];
+    function add(sku, wh, q) {
+      var k = sku + '|' + wh;
+      if (!(k in by)) { by[k] = 0; order.push([sku, wh, k]); }
+      by[k] = round3(by[k] + q);
+    }
+    (rows || []).forEach(function (r) {
+      var sku = up(r[1] || r[0]), q = +r[6] || 0;
+      if (!sku || !q || r[7] === 'ขาย') return;
+      if (r[7] === 'เบิก' && r[4]) {
+        if (r[5]) {
+          if (whOf(r[4]) !== whOf(r[5])) { add(sku, whOf(r[4]), -q); add(sku, whOf(r[5]), q); }
+        } else add(sku, whOf(r[4]), -q);
+      } else if (r[5]) add(sku, whOf(r[5]), q);
+    });
+    return order.filter(function (o) { return Math.abs(by[o[2]]) > 1e-9; }).map(function (o) { return [o[0], o[1], by[o[2]]]; });
+  }
+
+  /** เอกสารประเภทนี้ต้องลง TRcloud ไหม: รับของ แปลง คืน ปรับยอด ต้องเสมอ · ย้ายกับตารางเดิม เฉพาะที่ยอดในคลังเปลี่ยน */
+  function trNeed(type, rows) {
+    if (type === TYPE_GR || type === TYPE_CONV || type === TYPE_RET || type === TYPE_ADJ) return true;
+    if (type === TYPE_MOVE || type === TYPE_ROWS) return whLines(rows).length > 0;
+    return false;
   }
 
   function strictCheck(map, rows, at) {
@@ -528,19 +572,53 @@
 
   /* ── สำเนาในเครื่อง: เอกสาร สถานะ ค้นหา ─────────────────────────────── */
 
+  function lineCount(s) { return s ? String(s).split('\n').length : 0; }
+  /** จุดตัดส่วนของเอกสารใหญ่ [[บรรทัด rows, บรรทัด orders] ต่อส่วน] ไว้ทำไฟล์สำรองให้แยกส่วนตรงกับในฐาน */
+  function cutOf(main, rest) {
+    return [[lineCount(main.rows), lineCount(main.orders)]].concat(rest.map(function (p) { return [lineCount(p.rows), lineCount(p.orders)]; }));
+  }
+
   /** เอกสารจากฐาน (+ ส่วนที่แยก) → รูปที่ใช้ในเครื่อง */
   function docIn(id, d, parts) {
     var rows = d.rows || '', orders = d.orders || '';
-    (parts || []).slice().sort(function (a, b) { return a.i - b.i; }).forEach(function (p) {
+    var sorted = (parts || []).slice().sort(function (a, b) { return a.i - b.i; });
+    sorted.forEach(function (p) {
       if (p.rows) rows = rows ? rows + '\n' + p.rows : p.rows;
       if (p.orders) orders = orders ? orders + '\n' + p.orders : p.orders;
     });
-    return {
+    var out = {
       id: id, no: d.no || '', seq: +d.seq || 0, row: +d.row || 0, n: +d.n || 0, type: d.type || '', date: d.date || '',
       by: d.by || '', name: d.name || '', at: typeof d.at === 'number' ? d.at : 0, stamp: d.stamp || '',
       ref: d.ref || '', link: d.link || '', why: d.why || '', qty: +d.qty || 0, tr: d.tr || '', trState: d.trState || '',
+      trBy: d.trBy || '', trAt: typeof d.trAt === 'number' ? d.trAt : 0,
       rows: rowsIn(rows), names: decMap(d.names), lines: linesIn(orders), part: +d.part || 1,
     };
+    if (sorted.length) out.cut = cutOf(d, sorted);
+    var w = widthOf(rows);
+    if (w) out.w = w;
+    return out;
+  }
+
+  /** จำนวนช่องของแถวที่เก็บ: 10 ทุกแถว = 0 (ไม่เก็บ) · เท่ากันทุกแถว = ตัวเลข · ปนกัน = รายแถว (docOut เขียนกลับได้ตรงทุกตัวอักษร) */
+  function widthOf(s) {
+    var ws = s ? String(s).split('\n').map(function (l) { return l.split('\t').length; }) : [];
+    if (!ws.length || ws.every(function (x) { return x === 10; })) return 0;
+    return ws.every(function (x) { return x === ws[0]; }) ? ws[0] : ws;
+  }
+
+  /** รูปในเครื่อง → ข้อมูลที่เก็บในฐาน (ก่อนแยกส่วน) ตรงกับที่ plan() เขียน ใช้ทำไฟล์สำรองจากสำเนาในเครื่อง */
+  function docOut(d) {
+    var o = {
+      v: V, no: d.no, seq: d.seq, row: d.row, n: d.n, type: d.type, date: d.date, by: d.by, name: d.name,
+      at: d.at, stamp: d.stamp, ref: d.ref, link: d.link, why: d.why, qty: d.qty, tr: d.tr, trState: d.trState,
+      rows: enc(d.rows.map(function (r, i) {
+        var w = Array.isArray(d.w) ? d.w[i] : d.w || 10;
+        return r.slice(0, Math.max(w, r[10] ? 11 : 10));
+      })), names: encMap(d.names || {}),
+      orders: d.lines && d.lines.length ? linesOut(d.lines) : '', part: 1,
+    };
+    if (d.trBy) { o.trBy = d.trBy; o.trAt = d.trAt; }
+    return o;
   }
 
   /** สถานะยกเลิกของทุกเอกสาร { เลขที่: {status, voidBy, voidAt, why, link} } จากเอกสารกลับรายการ และยอดยกมาที่ถูกลงใหม่ */
@@ -817,10 +895,14 @@
     }
 
     var seq = (+meta.seq || 0) + 1;
-    var newMeta = { v: V, seq: seq, month: month, next: nextNo + 1, last: P.batch, rows: rowAt - 2 + rows.length, open: open, mv: +meta.mv || 0, at: TIME };
+    var newMeta = { v: V, seq: seq, month: month, next: nextNo + 1, last: P.batch, rows: rowAt - 2 + rows.length, open: open, mv: +meta.mv || 0, tv: +meta.tv || 0, at: TIME };
+    if (meta.trc) newMeta.trc = meta.trc;   // ยอด TRcloud ล่าสุดที่หัวหน้านำเข้า (Rules บังคับให้คงไว้)
+    /* สถานะลง TRcloud: ใส่เลขมาตอนบันทึก = ลงแล้ว · กลับรายการคิดจากชุดเดิมในเครื่อง (trStates) จึงเก็บว่าง */
+    var tr = trOf(rows);
+    var trState = P.op === 'bk-void' ? '' : trNeed(P.type, rows) ? (tr ? TR_DONE : TR_WAIT) : TR_NONE;
     var docData = {
       v: V, no: no, seq: seq, row: rowAt, n: rows.length, type: P.type, date: P.day, by: ctx.user.email, name: ctx.user.name,
-      at: TIME, stamp: st, ref: ref, link: link, why: why, qty: qty, tr: trOf(rows), trState: '',
+      at: TIME, stamp: st, ref: ref, link: link, why: why, qty: qty, tr: tr, trState: trState,
       rows: enc(rows), names: encMap(names), orders: lines.length ? linesOut(lines) : '', part: 1,
     };
     var parts = splitDoc(P.batch, docData, ctx.partBytes || PART_BYTES);
@@ -832,6 +914,7 @@
     writes.push(['meta/head', newMeta]);
 
     var doc = docIn(P.batch, docData, []);
+    if (parts.rest.length) doc.cut = cutOf(parts.main, parts.rest.map(function (x) { return x.data; }));
     doc.rows = rows.map(function (r) { return [r[0], r[1], r[2], r[3], r[4], r[5], +r[6] || 0, r[7], r[8], r[9], r[10] || '']; });
     doc.names = names;
     doc.lines = lines.map(function (l) { return { sys: l.sys, order: l.order, sku: l.sku, qty: l.qty, ref: l.ref, track: l.track, piles: l.piles, cut: l.cut || '' }; });
@@ -851,6 +934,32 @@
     if (r[7] === 'เบิก' && r[5]) return [r[0], r[1], r[2], r[3], r[5], r[4], r[6], 'เบิก', note, st(r[4]), ''];
     if (r[7] === 'เบิก') return [r[0], r[1], r[2], r[3], '', r[4], r[6], 'รับ', note, st(r[4]), ''];
     return [r[0], r[1], r[2], r[3], r[5], '', r[6], 'เบิก', note, '', ''];
+  }
+
+  /**
+   * แยกส่วนตามจุดตัดเดิม (doc.cut) ได้ส่วนหลักกับ ~2 ~3 ตรงกับที่เก็บในฐาน
+   * ใส่เลข TRcloud ทีหลังทำให้ส่วนหลักยาวขึ้น แยกใหม่ด้วย splitDoc อาจตัดคนละบรรทัด · จำนวนบรรทัดไม่ตรง → null
+   */
+  function splitByCut(id, data, cut) {
+    var rows = data.rows ? data.rows.split('\n') : [], orders = data.orders ? data.orders.split('\n') : [];
+    var nr = 0, no = 0;
+    cut.forEach(function (c) { nr += c[0]; no += c[1]; });
+    if (nr !== rows.length || no !== orders.length) return null;
+    var ri = 0, oi = 0;
+    var chunks = cut.map(function (c) {
+      var x = { rows: rows.slice(ri, ri + c[0]).join('\n'), orders: orders.slice(oi, oi + c[1]).join('\n') };
+      ri += c[0]; oi += c[1];
+      return x;
+    });
+    var main = {};
+    Object.keys(data).forEach(function (k) { main[k] = data[k]; });
+    main.rows = chunks[0].rows;
+    main.orders = chunks[0].orders;
+    main.part = chunks.length;
+    var rest = chunks.slice(1).map(function (c, i) {
+      return { id: id + '~' + (i + 2), data: { v: V, of: id, seq: data.seq, i: i + 2, rows: c.rows, orders: c.orders } };
+    });
+    return { main: main, rest: rest };
   }
 
   /** เอกสารใหญ่เกิน → ส่วนหลัก + {รหัสชุด}~2, ~3 (rows กับ orders ตัดตามบรรทัด) */
@@ -1088,11 +1197,15 @@
   }
 
   window.WmsFireCore = {
+    splitByCut: splitByCut, cutOf: cutOf,
     V: V, API_V: API_V, PART_BYTES: PART_BYTES, PARTS_MAX: PARTS_MAX, TIME: TIME, OPS: OPS,
     ROLE_HEAD: ROLE_HEAD, ROLE_USER: ROLE_USER, ROLE_VIEW: ROLE_VIEW, VOID: VOID,
     HEAD_TYPES: HEAD_TYPES, STAFF_TYPES: STAFF_TYPES, TYPE_OPEN: TYPE_OPEN, TYPE_REV: TYPE_REV, TYPE_SALE: TYPE_SALE, TYPE_RET: TYPE_RET,
+    TYPE_MOVE: TYPE_MOVE, TYPE_GR: TYPE_GR, TYPE_CONV: TYPE_CONV, TYPE_ADJ: TYPE_ADJ, TYPE_ROWS: TYPE_ROWS,
+    TR_WAIT: TR_WAIT, TR_DONE: TR_DONE, TR_NONE: TR_NONE, TR_STATES: TR_STATES, WH_MAIN: WH_MAIN, WH_QA: WH_QA,
+    whOf: whOf, whLines: whLines, trNeed: trNeed, docOut: docOut, round3: round3, code: code, dayNo: dayNo, grDay: grDay,
     text: text, up: up, today: today, stamp: stamp, yymm: yymm, period: period, prevYm: prevYm, monthsBack: monthsBack,
-    byteLen: byteLen, enc: enc, dec: dec, encMap: encMap, decMap: decMap,
+    byteLen: byteLen, enc: enc, dec: dec, encMap: encMap, decMap: decMap, rowsIn: rowsIn, linesOut: linesOut,
     pileKey: pileKey, applyRows: applyRows, applyDoc: applyDoc, pilesFor: pilesFor,
     prep: prep, retMonths: retMonths, plan: plan, splitDoc: splitDoc, revRow: revRow,
     docIn: docIn, voids: voids, liveDocs: liveDocs, cutKeys: cutKeys, returnedLocal: returnedLocal,

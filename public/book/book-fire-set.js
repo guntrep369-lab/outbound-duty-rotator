@@ -4,6 +4,8 @@
  *   👥 คนใช้และสิทธิ์ (หัวหน้า)  เพิ่มคนด้วยอีเมลบริษัท เปลี่ยนสิทธิ์ เปิด/ปิด แก้แล้วบันทึกทันที ไม่มีรหัสให้จำ
  *   📥 ยอดยกมา (หัวหน้า)        ไฟล์ตั้งต้นสมุดจากหน้านับสต๊อกใหญ่ (ชีต ยอดตั้งต้น) ลาก/เลือกไฟล์ หรือ Ctrl+V แล้วกดลง
  *   🔍 ตรวจยอด                 คิดยอดใหม่จากเอกสารทุกใบเทียบกับยอดในเครื่อง (หัวหน้า) · โหลดสำเนาเครื่องนี้ใหม่ (ทุกคน)
+ *   📋 ชีตเดิม (หัวหน้า ขั้น 3)  ช่วงเปลี่ยนผ่าน: คัดลอกแถวของแต่ละวันไปวางต่อท้ายชีต Transaction เดิม แล้วกด วางแล้ว
+ *   💾 สำรอง (หัวหน้า ขั้น 3)    ดาวน์โหลดไฟล์สำรองจากสำเนาในเครื่อง · ฐานทดลองกู้คืนจากไฟล์ได้ (ระบบจริงใช้ fire-backup.gs)
  *   📊 โควตาฟรี                อ่าน/เขียนวันนี้ของเครื่องนี้และทุกเครื่องที่ส่งยอดมา
  *
  * ใช้ตัวแปรและฟังก์ชันของสคริปต์ในหน้า (FIRE USER BSTATE BKBUSY RES esc f table isHead bookPost refreshState refreshDocs compute render xlsxLib)
@@ -21,6 +23,7 @@
   var OPEN = null;        // ไฟล์ยอดตั้งต้นที่อ่านแล้ว ยังไม่ลง { rows, bad, tot, name, batch }
   var SHOW = 'rows';
   var CHECK = null, CHECK_AT = 0;
+  var XFER = null, XFER_AT = 0;   // วันที่ต้องวางลงชีตเดิม
   var ADD = { name: '', email: '', role: 'staff' };
   var ROLE_TH = { head: 'หัวหน้า', staff: 'ลงรายการ', viewer: 'ดูอย่างเดียว' };
 
@@ -32,7 +35,7 @@
   }
   function hm(ms) { return new Date(ms).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }); }
   function secs() {
-    return head() ? [['users', '👥 คนใช้และสิทธิ์'], ['open', '📥 ยอดยกมา'], ['check', '🔍 ตรวจยอด'], ['quota', '📊 โควตาฟรี']]
+    return head() ? [['users', '👥 คนใช้และสิทธิ์'], ['open', '📥 ยอดยกมา'], ['check', '🔍 ตรวจยอด'], ['xfer', '📋 ชีตเดิม'], ['backup', '💾 สำรอง'], ['quota', '📊 โควตาฟรี']]
       : [['check', '🔍 สำเนาเครื่องนี้'], ['quota', '📊 โควตาฟรี']];
   }
   function sec() {
@@ -53,6 +56,16 @@
     var s = sec();
     if (s === 'users' && head() && USERS_FOR !== USER.email && !BUSY) loadUsers();
     if (s === 'quota' && (!Q || Date.now() - Q_AT > 60000) && !BUSY) loadQuota();
+    if (s === 'xfer' && head() && (!XFER || Date.now() - XFER_AT > 60000) && !BUSY) loadXfer();
+  }
+
+  async function loadXfer() {
+    BUSY = 'กำลังโหลด…'; renderAll();
+    var r = await FIRE.xferDays();
+    BUSY = '';
+    if (r.error) NOTE = { kind: 'bad', html: 'โหลดไม่ได้: ' + esc(r.error) };
+    else { XFER = r.days; XFER_AT = Date.now(); }
+    renderAll();
   }
 
   async function loadUsers() {
@@ -78,6 +91,12 @@
     open: 'ลงยอดยกมา (วันเปิดระบบ)\n1 หน้านับสต๊อกใหญ่ › แท็บตั้งต้นสมุด › อนุมัติแล้วดาวน์โหลด Excel\n2 ลากไฟล์มาวางที่นี่ หรือเปิดชีต ยอดตั้งต้น คัดลอกทั้งตารางแล้วกด Ctrl+V\n3 ดูตัวเลข แถวผิดต้องเป็น 0 แล้วกด ลงยอดยกมา\n4 แท็บ ตรวจยอด ต้องขึ้น ✓\nลงใหม่ได้จนกว่าจะมีเอกสารอื่นต่อจากยอดยกมา หลังจากนั้นใช้ปรับยอดแทน',
     check: 'ตรวจยอด: คิดยอดใหม่จากเอกสารทุกใบในเครื่องนี้ เทียบกับยอดคงเหลือที่เครื่องเก็บไว้ ไม่ตรง = ซ่อมจากเอกสารให้เอง\nโหลดใหม่ทั้งหมด: ล้างสำเนาในเครื่องแล้วดึงเอกสารทุกใบจากฐานอีกครั้ง ใช้เมื่อสงสัยว่าเครื่องนี้ไม่ตรงกับเครื่องอื่น (อ่านเท่าจำนวนเอกสาร)',
     quota: '',
+    xfer: 'ช่วงเปลี่ยนผ่าน (1 เดือนหลังเปิดระบบ): หน้ารายงานเดิม (FIFO, LOT/PO, Stock by Location, MFG, เช็คตัดสต๊อก) ยังอ่านชีต Transaction เดิม\n' +
+      'วันละครั้ง กด คัดลอก ของวันก่อน วางที่แถวว่างแรกของชีต Transaction (คอลัมน์ A) แล้วกด ✓ วางแล้ว\n' +
+      'แถวเรียงตามที่บันทึก รวมใบยกเลิก (แถวกลับ) · ยอดยกมาไม่ต้องวาง · วางแล้วมีเอกสารเพิ่ม กดคัดลอกอีกครั้งได้เฉพาะส่วนที่เพิ่ม',
+    backup: 'Firebase แผนฟรีไม่มีระบบสำรองให้\nสำรองอัตโนมัติ: apps-script/fire-backup.gs ดึงเอกสารใหม่ลง Google Drive ทุกคืน (ตั้งตอนเปิดระบบจริง)\n' +
+      'ปุ่มนี้: ดาวน์โหลดไฟล์สำรองจากสำเนาในเครื่องนี้ทันที (เอกสารทุกใบ รายชื่อ ตารางหลัก ยอด TRcloud ล่าสุด)\n' +
+      'กู้คืน: โปรเจกต์ใหม่ที่ว่าง + fire-backup.gs ฟังก์ชัน restoreAll (อ่านไฟล์ทุกไฟล์ในโฟลเดอร์สำรอง)',
   };
 
   function renderIn() {
@@ -120,6 +139,13 @@
       }
     } else if (s === 'quota' && Q) {
       html = '<span>วันที่ ' + esc(Q.day) + ' (เวลาแปซิฟิก) · รีเซ็ต <b>' + esc(hm(Q.resetAt)) + ' น.</b></span>';
+    } else if (s === 'xfer' && XFER) {
+      var left = XFER.filter(function (d) { return !d.done || d.more; });
+      html = chip(left.length ? 'c-warn' : 'c-ok', 'ยังไม่วาง', left.length, 'วัน') + chip('', 'วางแล้ว', XFER.length - left.length, 'วัน') +
+        '<span>วางต่อท้ายชีต Transaction เดิม วันละครั้ง ตามลำดับวัน</span>';
+    } else if (s === 'backup') {
+      var cb = FIRE.copy();
+      if (cb) html = '<span>สำเนาเครื่องนี้: <b>' + f(cb.docs) + '</b> เอกสาร · seq ' + f(cb.seq) + '</span>';
     } else if (s === 'check') {
       var cp = FIRE.copy();
       if (cp) html = '<span>สำเนาเครื่องนี้: <b>' + f(cp.docs) + '</b> เอกสาร · ' + f(cp.piles) + ' กอง' + (CHECK_AT ? ' · ตรวจล่าสุด ' + esc(when(CHECK_AT)) : '') + '</span>';
@@ -148,6 +174,11 @@
       html += '<button class="bk-link" id="fsReload" ' + dis + ' title="อ่านประมาณ ' + f(cp ? cp.docs + 1 : 0) + ' ครั้ง">⟳ โหลดสำเนาเครื่องนี้ใหม่ทั้งหมด</button>';
     } else if (s === 'users') {
       html += '<span class="g-hint">แก้ชื่อ สิทธิ์ หรือใช้งาน แล้วบันทึกทันที · คนที่ออก เอาเครื่องหมายใช้งานออก</span>';
+    } else if (s === 'xfer') {
+      html += '<span class="g-hint">📋 คัดลอก → วางที่แถวว่างแรกของชีต Transaction คอลัมน์ A → ✓ วางแล้ว</span>';
+    } else if (s === 'backup') {
+      html += '<button class="bk-save" id="fsBackup" ' + dis + '>⬇ ดาวน์โหลดไฟล์สำรอง</button>';
+      if (FIRE.dev) html += '<button class="bk-link" id="fsRestore" ' + dis + '>♻️ กู้คืนจากไฟล์ (ฐานทดลอง)</button><input type="file" class="bk-file" id="fsRestoreFile" accept=".json">';
     }
     if (NOTE) html += '<div class="bk-msg ' + NOTE.kind + '">' + NOTE.html + '</div>';
     $('act').innerHTML = html;
@@ -216,6 +247,27 @@
     return html || '<div class="tx-empty">' + (head() ? 'กด <b>ตรวจยอดตอนนี้</b> เพื่อคิดยอดใหม่จากเอกสารทุกใบในเครื่องนี้' : 'สำเนาเครื่องนี้ดึงเฉพาะเอกสารใหม่ทุกนาที ถ้าสงสัยว่ายอดไม่ตรงกับเครื่องอื่น กด โหลดสำเนาเครื่องนี้ใหม่ทั้งหมด') + '</div>';
   }
 
+  function renderXfer() {
+    if (!XFER) return BUSY ? '' : '<div class="tx-empty">กด 🔄 เพื่อโหลด</div>';
+    if (!XFER.length) return '<div class="tx-empty">ยังไม่มีเอกสารหลังยอดยกมา</div>';
+    var dis = BUSY ? ' disabled' : '';
+    return table([['วันที่บันทึก'], ['เอกสาร', 'num'], ['แถว', 'num'], ['เลขที่'], ['วางแล้ว'], ['', 'c-act']], XFER.map(function (d) {
+      var st = d.done ? '✓ ' + esc(d.done.by) + ' · ' + esc(when(d.done.at)) + (d.more ? ' <span class="c-warn">มีเอกสารเพิ่มหลังวาง</span>' : '') : '<span class="c-warn">ยังไม่วาง</span>';
+      var todo = !d.done || d.more;
+      return '<tr' + (todo ? '' : ' class="r-off"') + '><td>' + esc(d.day) + '</td><td class="num">' + f(d.docs) + '</td><td class="num">' + f(d.rows) + '</td>' +
+        '<td class="c-sub">' + esc(d.first) + (d.last !== d.first ? ' – ' + esc(d.last) : '') + '</td><td>' + st + '</td>' +
+        '<td style="white-space:nowrap"><button class="bk-btn" data-xcopy="' + esc(d.day) + '"' + dis + '>📋 คัดลอก' + (d.more ? 'ส่วนที่เพิ่ม' : '') + '</button> ' +
+        (todo ? '<button class="bk-btn" data-xmark="' + esc(d.day) + '"' + dis + '>✓ วางแล้ว</button>' : '') + '</td></tr>';
+    }));
+  }
+
+  function renderBackup() {
+    var rows = [['เอกสารทุกใบ (รวมส่วนแยกของเอกสารใหญ่)', 'docs/…'], ['ตัวนับเลขเอกสาร ยอดยกมาล่าสุด', 'meta/head'], ['รายชื่อคนใช้และสิทธิ์', 'users/…'],
+      ['ตารางหลัก PO → Supplier แปลงสินค้า', 'master/…'], ['ยอด TRcloud ล่าสุด', 'trc/…'], ['บันทึกการวางชีตเดิม', 'xfer/log']];
+    return table([['ในไฟล์สำรอง'], ['ที่เก็บ']], rows.map(function (r) { return '<tr><td>' + r[0] + '</td><td class="c-sub">' + r[1] + '</td></tr>'; })) +
+      '<div class="tx-empty">ไม่มีตัวนับโควตา (use/…) ในไฟล์สำรอง · ไฟล์นี้ไม่มีรหัสผ่านหรือคีย์ แต่มีรายชื่อและยอดสต๊อกทั้งหมด เก็บในที่ที่คนนอกเข้าไม่ได้</div>';
+  }
+
   function bar(v, max) {
     var p = max ? Math.min(1, v / max) : 0;
     return '<span class="fs-bar"><i class="' + (p > 0.85 ? 'r' : p > 0.6 ? 'w' : '') + '" style="width:' + Math.max(p * 100, v ? 2 : 0).toFixed(1) + '%"></i></span>';
@@ -237,7 +289,8 @@
 
   function renderBody() {
     var s = sec();
-    $('body').innerHTML = s === 'users' ? renderUsers() : s === 'open' ? renderOpen() : s === 'check' ? renderCheck() : renderQuota();
+    $('body').innerHTML = s === 'users' ? renderUsers() : s === 'open' ? renderOpen() : s === 'check' ? renderCheck()
+      : s === 'xfer' ? renderXfer() : s === 'backup' ? renderBackup() : renderQuota();
   }
 
   function render() {
@@ -382,6 +435,62 @@
     renderAll();
   }
 
+  /* ── ชีตเดิม ── */
+
+  async function copyDay(day) {
+    var d = (XFER || []).filter(function (x) { return x.day === day; })[0];
+    if (!d) return;
+    var t = FIRE.xferText(day, d.more ? d.done.last : '');
+    if (!t.text) { NOTE = { kind: 'warn', html: 'ไม่มีแถวที่ต้องวาง' }; renderAll(); return; }
+    var ok = await copyText(t.text);
+    NOTE = ok ? { kind: 'ok', html: '📋 คัดลอก ' + f(t.rows) + ' แถว (' + f(t.docs) + ' เอกสาร ถึง ' + esc(t.last) + ') ของวันที่ ' + esc(day) + ' แล้ว · วางที่แถวว่างแรกของชีต Transaction คอลัมน์ A แล้วกด ✓ วางแล้ว' }
+      : { kind: 'bad', html: 'คัดลอกไม่ได้ เบราว์เซอร์ไม่ให้เข้าคลิปบอร์ด' };
+    renderAll();
+  }
+
+  async function markDay(day) {
+    var d = (XFER || []).filter(function (x) { return x.day === day; })[0];
+    if (!d) return;
+    var older = XFER.filter(function (x) { return x.day < day && !x.done; });
+    if (older.length && !confirm('ยังไม่ได้วางวันที่ ' + older.map(function (x) { return x.day; }).reverse().join(', ') + '\nแถวในชีตเดิมควรเรียงตามวัน ยืนยันว่าวางวันที่ ' + day + ' แล้ว?')) return;
+    BUSY = 'กำลังบันทึก…'; NOTE = null; renderAll();
+    var r = await FIRE.xferMark(day, { rows: d.rows, last: d.last });
+    BUSY = '';
+    NOTE = r.error ? { kind: 'bad', html: 'บันทึกไม่ได้: ' + esc(r.error) } : { kind: 'ok', html: '✓ วันที่ ' + esc(day) + ' วางลงชีตเดิมแล้ว' };
+    XFER = null;
+    await loadXfer();
+  }
+
+  /* ── สำรอง ── */
+
+  async function downloadBackup() {
+    BUSY = 'กำลังทำไฟล์สำรอง…'; NOTE = null; renderAll();
+    var r = await FIRE.backup();
+    BUSY = '';
+    if (r.error) { NOTE = { kind: 'bad', html: 'ทำไฟล์สำรองไม่ได้: ' + esc(r.error) }; renderAll(); return; }
+    var b = r.backup, d = new Date(b.made);
+    var name = 'wms-fire-backup-' + d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') +
+      '-' + String(d.getHours()).padStart(2, '0') + String(d.getMinutes()).padStart(2, '0') + '.json';
+    var url = URL.createObjectURL(new Blob([JSON.stringify(b)], { type: 'application/json' }));
+    var a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
+    NOTE = { kind: 'ok', html: '⬇ ดาวน์โหลด <b>' + esc(name) + '</b> แล้ว · ' + f(b.docs) + ' เอกสาร · ' + f(Object.keys(b.data).length) + ' รายการในไฟล์' };
+    renderAll();
+  }
+
+  async function restoreFile(file) {
+    var text;
+    try { text = await file.text(); } catch (e) { NOTE = { kind: 'bad', html: 'อ่านไฟล์ไม่ได้' }; renderAll(); return; }
+    var chk = window.WmsFireTrc.readBackup(text);
+    if (chk.error) { NOTE = { kind: 'bad', html: esc(file.name) + ': ' + esc(chk.error) }; renderAll(); return; }
+    if (!confirm('ล้างฐานทดลองทั้งหมดแล้วใส่ข้อมูลจาก ' + file.name + ' แทน?\n' + f(chk.backup.docs || 0) + ' เอกสาร · ต้องเข้าระบบใหม่')) return;
+    var r = await FIRE.restoreDev(text);
+    if (r.error) { NOTE = { kind: 'bad', html: 'กู้คืนไม่ได้: ' + esc(r.error) }; renderAll(); return; }
+    location.reload();
+  }
+
   /* ── ปุ่มและช่อง (ทำงานเฉพาะแท็บตั้งค่าของระบบใหม่) ── */
 
   function active() { return typeof MODE !== 'undefined' && MODE === 'set' && window.BookFire && USER; }
@@ -396,6 +505,7 @@
       NOTE = null;
       if (sec() === 'users') USERS_FOR = '';
       if (sec() === 'quota') Q = null;
+      if (sec() === 'xfer') XFER = null;
       refreshState().then(renderAll);
     }
     else if (t.id === 'fsAdd') addUser();
@@ -404,12 +514,17 @@
     else if (t.id === 'fsOpenX') { OPEN = null; NOTE = null; renderAll(); }
     else if (t.id === 'fsCheck') check();
     else if (t.id === 'fsReload') reload();
+    else if (t.dataset.xcopy) copyDay(t.dataset.xcopy);
+    else if (t.dataset.xmark) markDay(t.dataset.xmark);
+    else if (t.id === 'fsBackup') downloadBackup();
+    else if (t.id === 'fsRestore') $('fsRestoreFile').click();
   });
 
   document.addEventListener('change', function (e) {
     if (!active()) return;
     var el = e.target;
     if (el.id === 'fsFile' && el.files.length) { readFile(el.files[0]); el.value = ''; return; }
+    if (el.id === 'fsRestoreFile' && el.files.length) { restoreFile(el.files[0]); el.value = ''; return; }
     var email = el.dataset && el.dataset.u, k = el.dataset && el.dataset.k;
     if (!email || !k) return;
     if (k === 'name') {

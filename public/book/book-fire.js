@@ -6,6 +6,7 @@
  * กดเข้าสู่ระบบแล้วได้หน้าต่างเลือกบัญชีทดลองแทนป๊อปอัป Google (ระบบจริงเข้าด้วย Google ของบริษัท)
  * มีบัญชีนอกโดเมน บัญชีที่ยังไม่ถูกเพิ่ม และบัญชีที่ปิดแล้ว ไว้ลองว่าถูกกันจริง
  * เปิดสองแท็บได้ แท็บหนึ่งบันทึก อีกแท็บเห็นภายในหนึ่งนาที (หรือกดดึงสต๊อกใหม่)
+ * ขั้น 3: แท็บ 🔁 TRcloud (รอลง กระทบยอด นำเข้า) · ตั้งค่า › ชีตเดิม / สำรอง · กู้คืนจากไฟล์สำรองได้เฉพาะฐานทดลองนี้
  *
  * หน้าเว็บที่ deploy ไม่โหลดอะไรเพิ่ม: นอก localhost หรือไม่มี ?fire= ได้ window.BookFire = null
  * ข้อมูลทั้งหมดสมมติขึ้น
@@ -59,6 +60,7 @@
 
   var ready = (async function () {
     await script('../wms-fire-core.js');
+    await script('../wms-fire-trc.js');
     await script('../wms-fire.js');
     var W = window.WmsFire;
     if (m[1] === 'reset') {
@@ -141,5 +143,30 @@
       return { docs: l.docs.length, seq: l.seq, piles: Object.keys(l.piles || {}).length };
     },
     usage: function () { return fire ? fire.usage() : null; },
+    /* ขั้น 3 */
+    trList: async function () { await ready; return fire.trList(); },
+    trSave: async function (items) { await ready; return fire.trSave(items); },
+    trFile: function (nos) { return fire.trFile(nos); },
+    trc: async function () { await ready; return fire.trc(); },
+    trcSave: async function (parsed, day, files) { await ready; return fire.trcSave(parsed, day, files); },
+    masterSave: async function (kind, part) { await ready; return fire.masterSave(kind, part); },
+    masters: function () { return fire ? fire.masters() : {}; },
+    xferDays: async function () { await ready; return fire.xferDays(); },
+    xferText: function (day, after) { return fire.xferText(day, after); },
+    xferMark: async function (day, info) { await ready; return fire.xferMark(day, info); },
+    backup: async function () { await ready; return fire.backup(); },
+    /**
+     * กู้คืนจากไฟล์สำรองลงฐานทดลอง (ล้างของเดิมทั้งหมด) แล้วโหลดหน้าใหม่ ต้องเข้าระบบใหม่ด้วยรายชื่อในไฟล์
+     * ระบบจริงกู้คืนด้วย apps-script/fire-backup.gs (สิทธิ์เจ้าของโปรเจกต์ ลงโปรเจกต์ว่าง)
+     */
+    restoreDev: async function (text) {
+      await ready;
+      var r = window.WmsFireTrc.readBackup(text);
+      if (r.error) return r;
+      save(r.backup.data);
+      try { await window.WmsFire.idbCache(IDB).clear(); } catch (e) {}
+      remember('');
+      return { ok: 1, docs: Object.keys(r.backup.data).filter(function (p) { return /^docs\/[^~]+$/.test(p); }).length };
+    },
   };
 })();

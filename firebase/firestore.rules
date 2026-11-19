@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// ระบบใหม่บน Firebase: สมุดสต๊อก (ขั้น 1 ตัวสมุด · ขั้น 2 รายชื่อคนใช้ ตัวนับโควตา)
+// ระบบใหม่บน Firebase: สมุดสต๊อก (ขั้น 1 ตัวสมุด · ขั้น 2 รายชื่อคนใช้ ตัวนับโควตา · ขั้น 3 เลข TRcloud ยอด TRcloud ชีตเดิม)
 // กฎชุดเดียวกับ rulesError() ใน public/wms-fire.js (store จำลองเช็คแบบนี้ เทสต์อยู่ใน src/data/fire.test.js)
 //
 // ก่อนใช้จริง: เปลี่ยน example[.]com ในฟังก์ชัน signedIn() เป็นโดเมนอีเมลบริษัท (จุดเขียนเป็น [.])
@@ -9,18 +9,20 @@ rules_version = '2';
 // ที่เก็บ
 //   users/{อีเมลตัวเล็ก}  {name, role: head | staff | viewer, active, last, by, at}  หัวหน้าเพิ่มชื่อในหน้าตั้งค่า
 //   use/{วันแปซิฟิก}      {รหัสเครื่อง: {r, w, by}}  ตัวนับโควตา แต่ละเครื่องส่งยอดของตัวเองชั่วโมงละครั้ง
-//   meta/head            {v, seq, month, next, last, rows, open, mv, at}  ทุกการบันทึกเขียนตัวนี้ จึงเรียงกันทีละชุด
-//   docs/{รหัสชุด}         กดบันทึก 1 ครั้ง = 1 เอกสาร สร้างได้อย่างเดียว แก้ได้เฉพาะเลข TRcloud ลบไม่ได้
+//   meta/head            {v, seq, month, next, last, rows, open, mv, tv, trc, at}  ทุกการบันทึกเขียนตัวนี้ จึงเรียงกันทีละชุด
+//                        tv = รุ่นเลข TRcloud (ใส่เลขแล้ว +1) · trc = 'วันที่#รุ่น' ยอด TRcloud ล่าสุด · mv = รุ่นตารางหลัก
+//   docs/{รหัสชุด}         กดบันทึก 1 ครั้ง = 1 เอกสาร สร้างได้อย่างเดียว แก้ได้เฉพาะเลข TRcloud (tr trState trBy trAt) ลบไม่ได้
 //   docs/{รหัสชุด}~2, ~3  ส่วนแยกของเอกสารใหญ่ ต้องมาในคำขอเดียวกับเอกสารหลัก
 //   master/{conv|sup|cap} ตารางแปลงสินค้า Supplier ความจุ หัวหน้าแก้
-//   trc/{วันที่}           ไฟล์ TRcloud ที่นำเข้า หัวหน้าแก้ (ขั้น 3)
+//   trc/{วันที่}           ยอดคงเหลือ TRcloud ที่นำเข้า (Stock WH-Loss ราคาทุน) หัวหน้าแก้
+//   xfer/log             {วันที่: {by, at, n, last}} วางแถวลงชีต Transaction เดิมแล้ว (ช่วงเปลี่ยนผ่าน) แก้ครั้งละวัน
 //   ที่อื่นทั้งหมด = ปฏิเสธ
 //
 // Rules อ่านเอกสารประกอบ (get / getAfter / exists) ได้ไม่เกิน 10 ครั้งต่อการเขียนเอกสารเดียว
 // และ 20 ครั้งต่อ transaction หรือ batch นับรวมทุกเอกสาร จึงออกแบบให้ใช้น้อย:
 //   docs สร้างใหม่ (หลักหรือส่วนแยก)  2  = users + getAfter(meta/head)
 //   meta/head seq +1                2  = users + getAfter(docs/{last})
-//   อื่น ๆ                           1  = users
+//   อื่น ๆ                           1  = users (ใส่เลข TRcloud ครั้งละไม่เกิน 10 เอกสาร + meta = 11)
 //   บันทึกหนึ่งชุด = 4 + 2 ต่อส่วนแยก แอปจำกัดไม่เกิน 7 ส่วน (PARTS_MAX) = 16
 
 service cloud.firestore {
@@ -65,8 +67,10 @@ service cloud.firestore {
     function docCreate(id, d, u, m) {
       return isStaff(u) && (('of' in d) ? partOk(id, d, m) : mainOk(id, d, u, m));
     }
+    /** ใส่เลข TRcloud ทีหลัง: แก้ได้แค่ 4 ช่องนี้ เวลาเป็นของเซิร์ฟเวอร์ สถานะ รอลง / ลงแล้ว / ไม่ต้องลง */
     function trUpdate(d, old, u) {
-      return isStaff(u) && d.diff(old).affectedKeys().hasOnly(['tr', 'trState', 'trBy', 'trAt']) && d.trBy == email();
+      return isStaff(u) && d.diff(old).affectedKeys().hasOnly(['tr', 'trState', 'trBy', 'trAt']) && d.trBy == email()
+        && d.trAt == request.time && d.trState in ['wait', 'done', 'none'] && d.tr is string && d.tr.size() <= 100;
     }
 
     match /docs/{id} {
@@ -83,11 +87,18 @@ service cloud.firestore {
       let prevNext = old != null && old.month == thaiMonth() ? old.next : 1;
       return isStaff(u) && d.seq == prevSeq + 1 && d.at == request.time
         && d.month == thaiMonth() && d.next == prevNext + 1
+        && d.get('mv', 0) == (old == null ? 0 : old.get('mv', 0))
+        && d.get('tv', 0) == (old == null ? 0 : old.get('tv', 0))
+        && d.get('trc', '') == (old == null ? '' : old.get('trc', ''))
         && getAfter(/databases/$(database)/documents/docs/$(d.last)).data.seq == d.seq;
     }
-    /** หัวหน้าเปลี่ยน master แล้วเพิ่ม mv ให้ทุกเครื่องดึงใหม่ แก้อย่างอื่นไม่ได้ */
+    /** หัวหน้าเปลี่ยน master (mv +1) หรือนำเข้ายอด TRcloud (trc) ให้ทุกเครื่องดึงใหม่ แก้อย่างอื่นไม่ได้ */
     function metaMv(d, old, u) {
-      return isHead(u) && d.diff(old).affectedKeys().hasOnly(['mv']);
+      return isHead(u) && d.diff(old).affectedKeys().hasOnly(['mv', 'trc']);
+    }
+    /** ใส่เลข TRcloud แล้ว tv +1 ให้เครื่องอื่นดึงเลขใหม่ (ทุกคนที่ลงรายการได้) */
+    function metaTv(d, old, u) {
+      return isStaff(u) && d.diff(old).affectedKeys().hasOnly(['tv']) && d.tv == (('tv' in old) ? old.tv : 0) + 1;
     }
 
     match /meta/{id} {
@@ -96,7 +107,7 @@ service cloud.firestore {
       allow update: if signedIn() && id == 'head'
         && (request.resource.data.seq != resource.data.seq
           ? metaBump(request.resource.data, resource.data, profile())
-          : metaMv(request.resource.data, resource.data, profile()));
+          : (metaTv(request.resource.data, resource.data, profile()) || metaMv(request.resource.data, resource.data, profile())));
     }
 
     /* ── รายชื่อ ตารางหลัก ไฟล์ TRcloud ── */
@@ -126,6 +137,13 @@ service cloud.firestore {
     match /trc/{d} {
       allow read: if signedIn() && isActive(profile());
       allow write: if signedIn() && isHead(profile());
+    }
+    /** วางแถวลงชีตเดิมแล้ว (ช่วงเปลี่ยนผ่าน) ครั้งละวันเดียว */
+    match /xfer/{id} {
+      allow read: if signedIn() && isActive(profile());
+      allow create: if signedIn() && isStaff(profile()) && id == 'log' && request.resource.data.keys().size() == 1;
+      allow update: if signedIn() && isStaff(profile()) && id == 'log'
+        && request.resource.data.diff(resource.data).affectedKeys().size() == 1;
     }
   }
 }

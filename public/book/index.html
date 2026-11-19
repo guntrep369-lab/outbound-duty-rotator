@@ -201,6 +201,14 @@ select.fs-in{min-width:110px;cursor:pointer}
 .fs-bar i{display:block;height:100%;border-radius:999px;background:#10B981}
 .fs-bar i.w{background:#F59E0B}
 .fs-bar i.r{background:#EF4444}
+.tt-in{min-width:130px;font-family:inherit}
+.bk-xl tr.r-det td{background:var(--wms-surface2,#F8FAFC);font-size:12px;color:var(--wms-muted);white-space:normal}
+.bk-xl tr.r-void td{color:var(--wms-faint)}
+.tt-wh{white-space:nowrap}
+.tt-wh b{font-weight:600}
+.tt-p{color:#047857}
+.tt-m{color:#B91C1C}
+.tt-no{background:none;border:0;padding:0;color:var(--wms-primary);font:inherit;font-weight:600;cursor:pointer;text-decoration:underline dotted}
 
 @media (max-width:640px){
   .tx-src,.bk-in,.tx-sum,.bk-act,.tx-body,.bk-docs,.bk-tabs{padding-left:16px;padding-right:16px}
@@ -251,6 +259,7 @@ select.fs-in{min-width:110px;cursor:pointer}
 <script src="book-set.js"></script>
 <script src="book-fire.js"></script>
 <script src="book-fire-set.js"></script>
+<script src="book-fire-trc.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -264,7 +273,7 @@ const ROW_MAX = 600;              // แถวที่วาดในตาร�
 const HEAD_ROLE = 'หัวหน้า';
 const MODE_KEY = 'wms:book:draft:mode';   // แท็บที่เปิดค้าง (เครื่องนี้)
 const MODES = [['cut', 'ตัดขาย'], ['gr', 'รับของ'], ['move', 'ย้าย / เติม / QA'], ['ret', 'คืนของ'], ['conv', 'แปลงสินค้า'],
-  ['adj', 'ปรับยอด'], ['rows', 'ตารางแบบเดิม'], ['set', '⚙️ สมุดใหม่']];
+  ['adj', 'ปรับยอด'], ['rows', 'ตารางแบบเดิม'], ['trc', '🔁 TRcloud'], ['set', '⚙️ สมุดใหม่']];
 const HEAD_ONLY = { adj: 1, rows: 1, set: 1 };   // แท็บของหัวหน้ากับรองหัวหน้า
 let MODE = (() => { try { const m = localStorage.getItem(MODE_KEY); return MODES.some((x) => x[0] === m) ? m : 'cut'; } catch (e) { return 'cut'; } })();
 const RETRY_MS = 30000;   // ชุดที่ส่งไม่สำเร็จเพราะเน็ต ส่งซ้ำเองทุกเท่านี้
@@ -389,7 +398,9 @@ function bookMode() { return !!(BSTATE && BSTATE.mode === 'book'); }
 function isHead() { return !!(USER && USER.role === HEAD_ROLE); }
 function tabs() {
   /* ระบบใหม่: แท็บตั้งค่าเห็นทุกคน (คนลงรายการเห็นตัวนับโควตาและสำเนาเครื่องตัวเอง) */
-  return MODES.filter((m) => !HEAD_ONLY[m[0]] || isHead() || (FIRE && m[0] === 'set')).map((m) => (FIRE && m[0] === 'set' ? ['set', '⚙️ ตั้งค่า'] : m));
+  /* แท็บ TRcloud (รอลง กระทบยอด นำเข้า) มีเฉพาะระบบใหม่ เห็นทุกคน */
+  return MODES.filter((m) => (m[0] !== 'trc' || FIRE) && (!HEAD_ONLY[m[0]] || isHead() || (FIRE && m[0] === 'set')))
+    .map((m) => (FIRE && m[0] === 'set' ? ['set', '⚙️ ตั้งค่า'] : m));
 }
 
 async function refreshState() {
@@ -1035,6 +1046,8 @@ function render() {
   renderTabs();
   if (MODE === 'set') {
     if (FIRE) BookFireSet.render(); else BookSet.render();
+  } else if (MODE === 'trc') {
+    BookFireTrc.render();
   } else if (MODE === 'cut') {
     renderIn();
     renderSum();
@@ -1055,6 +1068,7 @@ function setMode(m) {
   $('sum').innerHTML = '';
   render();
   if (m === 'set') refreshState().then(() => { render(); if (FIRE) BookFireSet.opened(); });
+  if (m === 'trc') BookFireTrc.opened();
 }
 
 /* ── ปุ่มและช่อง ─────────────────────────────────────────────────────────── */
@@ -1133,6 +1147,7 @@ document.addEventListener('paste', (e) => {
   e.preventDefault();
   if (FIRE && !USER) return;
   if (MODE === 'set') { if (FIRE) BookFireSet.paste(text); return; }
+  if (MODE === 'trc') { BookFireTrc.paste(text); return; }
   if (MODE !== 'cut') { BookGrid.pasteAppend(MODE, text); return; }
   const p = B.parseOrders(B.gridOf(text), { today: today() });
   if (p.error) { MSG = { kind: 'bad', html: esc(p.error) }; renderAct(); return; }
@@ -1152,6 +1167,7 @@ document.addEventListener('drop', (e) => {
   $('inp').classList.remove('bk-dragging');
   if (FIRE && !USER) return;
   if (FIRE && MODE === 'set') { BookFireSet.files([...e.dataTransfer.files]); return; }   // ไฟล์ยอดตั้งต้น
+  if (FIRE && MODE === 'trc') { BookFireTrc.files([...e.dataTransfer.files]); return; }   // ไฟล์ยอด TRcloud / ตารางหลัก
   if (MODE !== 'cut') setMode('cut');   // ไฟล์ออเดอร์ใช้กับแท็บตัดขายเท่านั้น
   readFiles([...e.dataTransfer.files]);
 });
