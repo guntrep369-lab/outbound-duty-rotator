@@ -263,9 +263,12 @@
           Object.keys(fields).forEach(function (k) { d[k] = clone(fields[k]); });
           return this.commit([[p, d]]);
         },
+        /** ฟัง meta/head แบบ onSnapshot: ตอนเริ่มอ่าน 1 ครั้ง และทุกครั้งที่ meta เปลี่ยนอ่าน 1 ครั้ง (นับเข้าเครื่องที่ฟัง) */
         onMeta: function (cb) {
-          listeners.push(cb);
-          return function () { listeners = listeners.filter(function (x) { return x !== cb; }); };
+          var l = function (m) { counts.reads++; own.reads++; cb(m); };
+          listeners.push(l);
+          Promise.resolve().then(function () { if (listeners.indexOf(l) >= 0 && docs['meta/head']) l(clone(docs['meta/head'].d)); else { counts.reads++; own.reads++; } });
+          return function () { listeners = listeners.filter(function (x) { return x !== l; }); };
         },
         hook: function (fn) { hook = fn; },
         stats: function () { return clone(counts); },
@@ -361,8 +364,8 @@
         counts.writes++;
         return F.setDoc(ref(p), inn(fields), { merge: true });
       },
-      onMeta: function (cb) {
-        return F.onSnapshot(ref('meta/head'), function (snap) { var d = out(snap); if (d) cb(d); });
+      onMeta: function (cb, err) {
+        return F.onSnapshot(ref('meta/head'), function (snap) { var d = out(snap); if (d) cb(d); }, function (e) { if (err) err(e); });
       },
       stats: function () { return clone(counts); },
       mine: function () { return clone(counts); },
@@ -745,6 +748,11 @@
 
     function T() { if (!window.WmsFireTrc) throw new Error('ยังไม่ได้โหลด wms-fire-trc.js'); return window.WmsFireTrc; }
     function errOf(e) { return String(e && e.message || e); }
+    /** เน็ตหลุด / เซิร์ฟเวอร์ไม่ตอบ (ยังไม่รู้ว่าถึงฐานไหม) ต่างจากถูกปฏิเสธ หน้าเก็บเป็นชุดรอส่งแล้วส่งซ้ำเอง */
+    function netOf(e) {
+      if (/unavailable|deadline-exceeded|network-request-failed/.test(String(e && e.code || ''))) return { net: 1 };
+      return /offline|network|failed to fetch/i.test(errOf(e)) ? { net: 1 } : null;
+    }
 
     /** รายการหน้ารอลง TRcloud (ดึงของใหม่ก่อน) */
     async function trList() {
@@ -900,7 +908,7 @@
             return { plan: pl };
           });
         } catch (e) {
-          return fail(String(e && e.message || e));
+          return fail(errOf(e), netOf(e));
         }
         if (res.stale) { await sync(); continue; }
         if (res.again) {
@@ -954,7 +962,7 @@
         if (op === 'bk-backup') return fail('ระบบใหม่สำรองทุกคืนด้วย fire-backup.gs');
         return fail('ไม่รู้จักคำสั่งนี้');
       } catch (e) {
-        return fail(String(e && e.message || e));
+        return fail(errOf(e), netOf(e));
       }
     }
 
@@ -967,9 +975,9 @@
       user: function () { return user; },
       local: function () { return local; },
       fifo: function () { return C.fifo(local, now()); },
-      /** มีคนบันทึกจากเครื่องอื่น (meta เปลี่ยน) → cb(meta) */
-      watch: function (cb) {
-        return store.onMeta(function (meta) { if (meta && +meta.seq !== local.seq) cb(meta); });
+      /** มีคนบันทึกจากเครื่องอื่น (meta เปลี่ยน) → cb(meta) · ฟังไม่ได้ (หลุดสิทธิ์ ฯลฯ) → err(e) · คืนฟังก์ชันเลิกฟัง */
+      watch: function (cb, err) {
+        return store.onMeta(function (meta) { if (meta && +meta.seq !== local.seq) cb(meta); }, err);
       },
       usage: function () { return store.stats(); },
     };

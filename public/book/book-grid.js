@@ -107,6 +107,8 @@
   TIP.ret += '\nTRcloud = เลขของแถว ว่าง = เลขของชุด (คืนของ 2 เลขในชุดเดียว ใส่ในแถว) ไม่มีเลขขึ้นเตือนสีส้ม';
   var KEY = { gr: 'wms:book:draft:gr', move: 'wms:book:draft:move', ret: 'wms:book:draft:ret', conv: 'wms:book:draft:conv',
     adj: 'wms:book:draft:adj', rows: 'wms:book:draft:rows' };
+  /** กุญแจร่างในเครื่อง โหมดซ้อม/ทดลองของระบบใหม่แยกกุญแจ ชุดรอส่งจะได้ไม่หลุดไปส่งเข้าระบบจริง (BookFire โหลดทีหลังไฟล์นี้ อ่านตอนใช้) */
+  function keyOf(mode) { var ns = window.BookFire && window.BookFire.ns; return KEY[mode] + (ns ? ':' + ns : ''); }
   var TYPE = { gr: 'รับของ', move: 'ย้าย', ret: 'คืน', conv: 'แปลง', adj: 'ปรับยอด', rows: 'ตารางเดิม' };
   var OP = { gr: 'bk-gr', move: 'bk-move', ret: 'bk-return', conv: 'bk-conv', adj: 'bk-adj', rows: 'bk-rows' };
   var HINT = {
@@ -132,7 +134,7 @@
 
   function state(mode) {
     if (!S[mode]) {
-      var d = rj(KEY[mode]) || {};
+      var d = rj(keyOf(mode)) || {};
       S[mode] = { rows: Array.isArray(d.rows) ? d.rows : [], date: d.date || '', pending: d.pending || null, ref: d.ref || '',
         tr: d.tr || '', mr: d.mr || '', gr: d.gr || '' };
       if (!S[mode].date || S[mode].date < todayStr() && !S[mode].pending) S[mode].date = todayStr();
@@ -150,7 +152,7 @@
   function keep(mode, now) {
     clearTimeout(saveTimer);
     var g = S[mode];
-    var go = function () { wj(KEY[mode], { rows: g.rows, date: g.date, pending: g.pending, ref: g.ref, tr: g.tr, mr: g.mr, gr: g.gr, at: Date.now() }); };
+    var go = function () { wj(keyOf(mode), { rows: g.rows, date: g.date, pending: g.pending, ref: g.ref, tr: g.tr, mr: g.mr, gr: g.gr, at: Date.now() }); };
     if (now) go(); else saveTimer = setTimeout(go, 400);
   }
 

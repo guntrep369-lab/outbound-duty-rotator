@@ -42,6 +42,11 @@ const USERS = {
 };
 const ACCOUNTS = Object.keys(USERS).map((p) => ({ email: p.slice(6), name: USERS[p].name }));
 
+/** ค่าใน public/wms-fire-config.js (สวิตช์ โดเมน web config) */
+function fireConfig() { const w = {}; new Function('window', read('wms-fire-config.js'))(w); return w.WMS_FIRE_CONFIG; }
+/** localStorage จำลอง */
+function memLS() { const m = new Map(); return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k) }; }
+
 /* ยอดยกมาสมมติ [SKU, SKU เต็ม, ชื่อ, LOT, PO, โล, ชิ้น, Status, วันรับ, ไตรมาส] */
 const OPEN = [
   ['AAA001', 'AAA0000000001', 'ที่นอนสมมติ 1', '8', 'P1', 'A-01-01', 20, 'เปิด', '2026-10-02', ''],
@@ -1239,7 +1244,7 @@ describe('wms-fire-core.js', () => {
     expect([C.today(late), C.stamp(late), C.yymm(late)]).toEqual(['2026-12-01', '2026-12-01 00:30:00', '2612']);
   });
 
-  it('firestore.rules ตรงกับกฎของ store จำลอง: ประเภทเอกสารต่อสิทธิ์ ฟิลด์ TRcloud ที่แก้ได้ เพดานส่วน · ยังเป็นโดเมนตัวอย่าง', () => {
+  it('firestore.rules ตรงกับกฎของ store จำลอง: ประเภทเอกสารต่อสิทธิ์ ฟิลด์ TRcloud ที่แก้ได้ เพดานส่วน · โดเมนตรงกับ wms-fire-config.js', () => {
     const rules = fs.readFileSync(path.resolve(__dirname, '../../firebase/firestore.rules'), 'utf8');
     const list = (s) => s.split(',').map((x) => x.trim().replace(/^'|'$/g, ''));
     const m = /\(d\.type in \[([^\]]+)\]\) \? \(u\.role == 'head'\)\s*: \(d\.type in \[([^\]]+)\]\)/.exec(rules);
@@ -1247,7 +1252,9 @@ describe('wms-fire-core.js', () => {
     expect(rules).toContain("hasOnly(['tr', 'trState', 'trBy', 'trAt'])");
     expect(rules).toContain('ไม่เกิน ' + C.PARTS_MAX + ' ส่วน (PARTS_MAX) = ' + (4 + 2 * (C.PARTS_MAX - 1)));
     expect(4 + 2 * (C.PARTS_MAX - 1)).toBeLessThanOrEqual(20);
-    expect(rules).toMatch(/matches\('\.\*@example\[\.\]com'\)/);
+    const cfg = fireConfig();
+    expect(rules).toContain("matches('.*@" + cfg.domain.replace(/\./g, '[.]') + "')");
+    expect(rules.match(/matches\('\.\*@/g)).toHaveLength(1);
     /* ขั้น 2: ดูทั้งรายชื่อได้เฉพาะหัวหน้า · แก้ตัวเองได้แค่ last · use เติมทีละช่อง */
     expect(rules).toContain('allow list: if signedIn() && isHead(profile());');
     expect(rules).toContain("affectedKeys().hasOnly(['last'])");
@@ -1270,7 +1277,183 @@ describe('wms-fire-core.js', () => {
     expect(src.match(/https:\/\/[^'"\s)]+/g).filter((u) => !u.startsWith('https://www.gstatic.com/firebasejs/'))).toEqual([]);
     expect(W.SDK_V).toMatch(/^\d+\.\d+\.\d+$/);
     expect(read('wms-fire.js')).toMatch(/dev server ห้ามต่อ Firebase จริง/);
-    /* หน้าที่ deploy ไม่เปิดโหมดทดลอง: ต้องเป็น localhost และมี ?fire= เท่านั้น */
-    expect(read('book/book-fire.js')).toMatch(/if \(!local \|\| !m\) \{ window\.BookFire = null; return; \}/);
+  });
+
+  it('wms-fire-config.js: มีแค่สวิตช์ โดเมน และ web config (ไม่มีรหัสลับ) · เปิดสวิตช์ได้เมื่อ config ครบ · โหลดก่อน book-fire.js', () => {
+    const src = read('wms-fire-config.js');
+    const cfg = fireConfig();
+    expect(Object.keys(cfg).sort()).toEqual(['domain', 'firebase', 'on']);
+    expect(typeof cfg.on).toBe('boolean');
+    expect(cfg.domain).toMatch(/^[a-z0-9-]+(\.[a-z0-9-]+)+$/);
+    expect(cfg.domain).not.toMatch(/example|gmail/);
+    const f = cfg.firebase;
+    const need = ['apiKey', 'authDomain', 'projectId', 'appId'];
+    need.forEach((k) => expect(typeof f[k]).toBe('string'));
+    const filled = need.filter((k) => f[k]);
+    expect([0, 4]).toContain(filled.length);   // ว่างทั้งหมด หรือครบทั้งหมด
+    if (filled.length) {
+      expect(f.apiKey).toMatch(/^AIza[0-9A-Za-z_-]{30,}$/);
+      expect(f.authDomain).toBe(f.projectId + '.firebaseapp.com');
+      expect(f.appId).toMatch(/^1:\d+:web:[0-9a-f]+$/);
+    }
+    if (cfg.on) expect(filled.length).toBe(4);
+    expect(src).not.toMatch(/private_key|client_secret|BEGIN [A-Z ]*PRIVATE|service_account|password\s*:|token\s*:/i);
+    expect(src.match(/https?:\/\/[^'"\s)]+/g) || []).toEqual([]);
+    /* หน้าสมุดสต๊อกโหลด config ก่อน book-fire.js (เลือกโหมดตอนโหลด) */
+    const html = read('book/index.html');
+    expect(html.indexOf('<script src="../wms-fire-config.js"></script>')).toBeGreaterThan(0);
+    expect(html.indexOf('../wms-fire-config.js')).toBeLessThan(html.indexOf('book-fire.js'));
+  });
+
+  it('เลือกโหมด: สวิตช์ปิด/ไม่มี config = ระบบเดิม · localhost ไม่ต่อของจริงเด็ดขาด · ?fire=off ต่อเครื่อง · ?fire=live หัวหน้าเปิดแม้สวิตช์ปิด · ?fire=demo ทุกที่', () => {
+    const WEB = 'someone.github.io';
+    const load = (search, cfg, ls) => {
+      const w = { WMS_FIRE_CONFIG: cfg };
+      new Function('window', 'location', 'localStorage', read('book/book-fire.js'))(w, { hostname: WEB, search }, ls || memLS());
+      return w;
+    };
+    const win = load('', fireConfig());
+    expect(win.BookFire).toBe(null);   // config ที่ commit ไว้ยังไม่มี web config: หน้าที่ deploy ใช้ระบบเดิม
+    const pick = win.BookFireMode;
+    const full = { on: true, domain: 'co.test', firebase: { apiKey: 'k', authDomain: 'p.firebaseapp.com', projectId: 'p', appId: '1:2:web:3' } };
+    const off = { ...full, on: false }, empty = { on: true, domain: 'co.test', firebase: { apiKey: '', authDomain: '', projectId: '', appId: '' } };
+    const m = (host, q, cfg, flag) => { const r = pick(host, q, cfg, flag); return r.mode + (r.override ? '!' : '') + (r.reset ? '*' : ''); };
+    expect([
+      m(WEB, '', full), m(WEB, '', off), m(WEB, '', empty), m(WEB, '?fire=live', empty),
+      m(WEB, '?fire=off', full), m(WEB, '', full, '1'), m(WEB, '?fire=on', full, '1'),
+      m(WEB, '?fire=live', off), m(WEB, '?fire=live', full, '1'), m(WEB, '?fire=live', full),
+      m(WEB, '?fire=demo', off), m(WEB, '?x=1&fire=demo-reset', empty), m(WEB, '?fire=dev', full), m(WEB, '?fire=reset', full),
+      m('localhost', '', full), m('127.0.0.1', '?fire=live', full), m('localhost', '?fire=dev', full), m('localhost', '?fire=reset', empty), m('localhost', '?fire=demo', empty),
+      m(WEB, '?fire=demox', full), m(WEB, '?fire=offline', off),
+    ]).toEqual([
+      'live', '', '', '',
+      '', '', 'live',
+      'live!', 'live!', 'live',
+      'demo', 'demo*', 'live', 'live',
+      '', '', 'dev', 'dev*', 'demo',
+      'live', '',
+    ]);
+    /* ?fire=off จำในเครื่อง ?fire=on ล้าง */
+    const ls = memLS();
+    load('?fire=off', off, ls);
+    expect(ls.getItem('wms:fire:off')).toBe('1');
+    load('?fire=on', off, ls);
+    expect(ls.getItem('wms:fire:off')).toBe(null);
+    /* ร่างและชุดรอส่งแยกต่อโหมด: ซ้อม/ทดลองไม่ใช้กุญแจเดียวกับระบบจริง (ระบบจริงใช้กุญแจเดียวกับระบบเดิม ชุดค้างตอนสลับไม่หาย) */
+    expect(read('book/index.html')).toContain("const DRAFT = 'wms:book:draft' + (window.BookFire && window.BookFire.ns ? ':' + window.BookFire.ns : '');");
+    expect(read('book/book-grid.js')).toMatch(/function keyOf\(mode\) \{ var ns = window\.BookFire && window\.BookFire\.ns; return KEY\[mode\] \+ \(ns \? ':' \+ ns : ''\); \}/);
+    expect(read('book/book-grid.js')).not.toMatch(/[rw]j\(KEY\[mode\]/);
+    expect(read('book/book-fire.js')).toMatch(/live: \{ key: '', idb: 'wms-fire', domain: String\(CFG\.domain \|\| ''\)\.toLowerCase\(\), ns: ''/);
+  });
+
+  it('เน็ตหลุดระหว่างบันทึก = net (หน้าเก็บเป็นชุดรอส่งแล้วส่งซ้ำเอง) · ถูกปฏิเสธไม่ใช่ net · ส่งซ้ำรหัสชุดเดิมได้เลขเดิม', async () => {
+    const store = W.memStore({ now: () => NOW, domain: DOMAIN });
+    store.seed(USERS);
+    let cut = null;
+    const flaky = Object.assign({}, store, { tx: (fn) => (cut ? Promise.reject(cut) : store.tx(fn)) });
+    const f = W.open({ store: flaky, auth: W.fakeAuth(ACCOUNTS), now: () => NOW, domain: DOMAIN });
+    expect((await f.login(HEAD_EMAIL)).error).toBeUndefined();
+    expect((await f.post('bk-open', { batch: 'o-1', rows: OPEN })).error).toBeUndefined();
+    const mv = body('m-1', [['AAA001', 'AAA0000000001', '8', 'P1', 'R01-01-01', 'A-01-01', 1, 'เบิก', 'โอนย้าย', 'เปิด']]);
+    cut = Object.assign(new Error('Failed to get document because the client is offline.'), { code: 'unavailable' });
+    expect(await f.post('bk-move', mv)).toMatchObject({ net: 1 });
+    cut = Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' });
+    expect((await f.post('bk-move', mv)).net).toBeUndefined();
+    cut = new Error('TypeError: Failed to fetch');
+    expect(await f.post('bk-move', mv)).toMatchObject({ net: 1 });
+    cut = null;
+    const a = await f.post('bk-move', mv), b = await f.post('bk-move', mv);
+    expect([a.doc, b.doc, b.again]).toEqual(['T2611-0002', 'T2611-0002', true]);
+  });
+
+  it('ฟัง meta/head: เริ่มฟังอ่าน 1 ครั้ง ทุกการบันทึกอ่าน 1 ครั้งต่อเครื่องที่ฟัง · แจ้งเฉพาะ seq ที่ยังไม่มีในเครื่อง · เลิกฟังแล้วไม่นับ', async () => {
+    const x = await both();
+    await x.open();
+    const v = await x.device(VIEW_EMAIL);
+    await v.sync();
+    const got = [];
+    const r0 = v.store.mine().reads;
+    const stop = v.watch((m) => got.push(m.seq));
+    await Promise.resolve();
+    expect(v.store.mine().reads - r0).toBe(1);   // ตอนเริ่มฟัง
+    expect(got).toEqual([]);                     // seq เท่าในเครื่อง ไม่แจ้ง
+    const move = (b) => x.staff.post('bk-move', body(b, [['AAA001', 'AAA0000000001', '8', 'P1', 'R01-01-01', 'A-01-01', 1, 'เบิก', 'โอนย้าย', 'เปิด']]));
+    expect((await move('m-1')).error).toBeUndefined();
+    expect(got).toEqual([2]);
+    expect(v.store.mine().reads - r0).toBe(2);
+    await v.sync();
+    stop();
+    const r1 = v.store.mine().reads;
+    expect((await move('m-2')).error).toBeUndefined();
+    expect([got, v.store.mine().reads - r1]).toEqual([[2], 0]);
+  });
+
+  it('โหมดจริงต่อสายครบ (Firestore/Google จำลอง): สวิตช์ปิด + ?fire=live เข้าได้เฉพาะหัวหน้า · ฟัง meta แทนถามทุกนาที · เน็ตหลุดโยน error ให้หน้าเก็บรอส่ง', async () => {
+    const CO = 'co.test';
+    const store = W.memStore({ now: () => NOW, domain: CO });
+    store.seed({ ['users/head@' + CO]: { name: 'หัวหน้าสมมติ', role: 'head', active: true }, ['users/staff@' + CO]: { name: 'พนักงานสมมติ', role: 'staff', active: true } });
+    let cut = null, who = null, signedIn = null, seenCfg = null;
+    const client = store.connect();
+    const flaky = Object.assign({}, client, { tx: (fn) => (cut ? Promise.reject(cut) : client.tx(fn)) });
+    const fakeW = Object.assign({}, W, {
+      firestoreStore: async (cfg) => { seenCfg = cfg; return { store: flaky, app: {}, sdk: {} }; },
+      googleAuth: (fs, domain) => ({
+        kind: 'google',
+        current: () => signedIn,
+        ready: async () => signedIn,
+        signIn: async () => { signedIn = { email: who, verified: true, name: who }; return signedIn; },
+        signOut: async () => { signedIn = null; },
+      }),
+    });
+    const cfg = { on: false, domain: CO, firebase: { apiKey: 'k', authDomain: 'p.firebaseapp.com', projectId: 'p', appId: '1:2:web:3' } };
+    const win = { WMS_FIRE_CONFIG: cfg };
+    const doc = { createElement: () => ({}), head: { appendChild: (s) => {
+      if (/wms-fire-core\.js$/.test(s.src)) win.WmsFireCore = C;
+      if (/wms-fire-trc\.js$/.test(s.src)) win.WmsFireTrc = TR;
+      if (/wms-fire\.js$/.test(s.src)) win.WmsFire = fakeW;
+      setTimeout(() => s.onload());
+    } } };
+    new Function('window', 'location', 'localStorage', 'document', read('book/book-fire.js'))(win, { hostname: 'someone.github.io', search: '?fire=live' }, memLS(), doc);
+    const F = win.BookFire;
+    expect([F.mode, F.override, F.pick, F.ns, F.domain, F.demoOrders, F.restoreDev]).toEqual(['live', true, false, '', CO, null, null]);
+    await F.ready;
+    expect(seenCfg).toBe(cfg.firebase);
+    expect(await F.restore()).toBe(null);   // ยังไม่เคยเข้า
+
+    who = 'staff@' + CO;
+    const s = await F.signIn();
+    expect(s.error).toMatch(/สวิตช์ระบบใหม่ปิดอยู่/);
+    expect([signedIn, F.user()]).toEqual([null, null]);
+    who = 'head@' + CO;
+    const h = await F.signIn();
+    expect(h).toMatchObject({ who: 'หัวหน้าสมมติ', role: C.ROLE_HEAD });
+    expect((await F.restore()).who).toBe('หัวหน้าสมมติ');   // Google จำไว้ เปิดหน้าใหม่เข้าเอง
+    expect((await F.post('bk-open', { batch: 'o-1', rows: OPEN })).doc).toBe('T2611-0001');
+    await F.fifo();
+    await Promise.resolve();
+    expect(await F.changed()).toBe(false);
+
+    /* อีกเครื่องบันทึก → แท็บนี้รู้จากการฟัง ไม่ต้องอ่าน meta ทุกนาที */
+    const other = W.open({ store: store.connect(), auth: W.fakeAuth([{ email: 'staff@' + CO, name: 'พนักงานสมมติ' }]), now: () => NOW, domain: CO });
+    expect((await other.login('staff@' + CO)).error).toBeUndefined();
+    const mv = (b) => body(b, [['AAA001', 'AAA0000000001', '8', 'P1', 'R01-01-01', 'A-01-01', 1, 'เบิก', 'โอนย้าย', 'เปิด']]);
+    expect((await other.post('bk-move', mv('m-1'))).doc).toBe('T2611-0002');
+    const r0 = client.mine().reads;
+    expect(await F.changed()).toBe(true);
+    expect(client.mine().reads).toBe(r0);
+    await F.fifo();
+    expect(await F.changed()).toBe(false);
+    /* บันทึกเอง: หน้าใช้ fifoNow ไม่ต้องดึงซ้ำ */
+    expect((await F.post('bk-move', mv('m-2'))).doc).toBe('T2611-0003');
+    F.fifoNow();
+    expect(await F.changed()).toBe(false);
+    /* เน็ตหลุด = โยน error (หน้าเก็บเป็นชุดรอส่ง) · ส่งซ้ำได้เลขเดิม */
+    cut = Object.assign(new Error('Failed to get document because the client is offline.'), { code: 'unavailable' });
+    await expect(F.post('bk-move', mv('m-3'))).rejects.toThrow(/offline/);
+    cut = null;
+    expect((await F.post('bk-move', mv('m-3'))).doc).toBe('T2611-0004');
+    expect((await F.post('bk-move', mv('m-3'))).again).toBe(true);
+    F.logout();
+    expect(F.user()).toBe(null);
   });
 });

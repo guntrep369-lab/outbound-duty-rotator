@@ -1,36 +1,80 @@
 /**
- * @file book-fire.js — ลองหน้าสมุดสต๊อกกับระบบใหม่ (WmsFire) บน dev server เท่านั้น
+ * @file book-fire.js — หน้าสมุดสต๊อกกับระบบใหม่ (WmsFire) สามโหมด
  *
- * เปิด http://localhost:5173/book/?fire=dev   ฐานจำลองเก็บใน localStorage ของเครื่องนี้ ไม่ต่อ Firebase จริง
- *      ?fire=reset  ล้างฐานทดลองแล้วเริ่มใหม่ (ลงยอดยกมาสมมติให้)
- * กดเข้าสู่ระบบแล้วได้หน้าต่างเลือกบัญชีทดลองแทนป๊อปอัป Google (ระบบจริงเข้าด้วย Google ของบริษัท)
- * มีบัญชีนอกโดเมน บัญชีที่ยังไม่ถูกเพิ่ม และบัญชีที่ปิดแล้ว ไว้ลองว่าถูกกันจริง
- * เปิดสองแท็บได้ แท็บหนึ่งบันทึก อีกแท็บเห็นภายในหนึ่งนาที (หรือกดดึงสต๊อกใหม่)
- * ขั้น 3: แท็บ 🔁 TRcloud (รอลง กระทบยอด นำเข้า) · ตั้งค่า › ชีตเดิม / สำรอง · กู้คืนจากไฟล์สำรองได้เฉพาะฐานทดลองนี้
+ *   live  ระบบจริง: Firestore + เข้าด้วย Google ของบริษัท ใช้เมื่อ wms-fire-config.js เปิดสวิตช์ (on: true) และใส่ config ครบ
+ *         เครื่องเดียว: ?fire=off ใช้ระบบเดิมจนกว่าจะ ?fire=on · ?fire=live เปิดแม้สวิตช์ปิด (เฉพาะหัวหน้า ใช้ตอนถอยกลับ)
+ *         ไม่ต่อบน localhost เด็ดขาด
+ *   demo  โหมดซ้อมของทีม ?fire=demo (เว็บจริงหรือ dev server) ฐานจำลองใน localStorage ของเครื่องนี้ ไม่แตะฐานจริง
+ *         เลือกบัญชีซ้อมแทนป๊อปอัป Google · ปุ่มออเดอร์ซ้อม · ?fire=demo-reset เริ่มซ้อมใหม่
+ *   dev   ลองโค้ดบน dev server เท่านั้น ?fire=dev · ?fire=reset ล้างฐานทดลองแล้วเริ่มใหม่
+ *         มีบัญชีนอกโดเมน บัญชีที่ยังไม่ถูกเพิ่ม บัญชีที่ปิดแล้ว ไว้ลองว่าถูกกันจริง
  *
- * หน้าเว็บที่ deploy ไม่โหลดอะไรเพิ่ม: นอก localhost หรือไม่มี ?fire= ได้ window.BookFire = null
- * ข้อมูลทั้งหมดสมมติขึ้น
+ * ไม่เข้าโหมดไหน = window.BookFire = null หน้าใช้ Apps Script เดิมเหมือนก่อนมีระบบใหม่
+ * ร่างงานที่วางค้างและชุดรอส่งของโหมดซ้อม/ทดลองเก็บแยก (ns) ไม่หลุดไปส่งเข้าระบบจริง
+ * ข้อมูลซ้อมและข้อมูลทดลองสมมติขึ้นทั้งหมด
  */
 (function () {
   'use strict';
 
-  var local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
-  var m = /[?&]fire=(dev|reset)(?:&|$)/.exec(location.search);
-  if (!local || !m) { window.BookFire = null; return; }
+  var CFG = window.WMS_FIRE_CONFIG || {};
+  var OFF_KEY = 'wms:fire:off';   // เครื่องนี้ขอใช้ระบบเดิม (?fire=off) จนกว่าจะ ?fire=on
 
-  var KEY = 'wms:fire:dev';
-  var WHO = 'wms:fire:dev:who';       // บัญชีที่เข้าค้างไว้ (แบบ Google จำการเข้าในเบราว์เซอร์)
-  var METER = 'wms:fire:dev:meter';   // ตัวนับโควตาของเครื่องนี้
-  var IDB = 'wms-fire-dev';
-  var DOMAIN = 'example.test';
-  var ACCOUNTS = [
+  function lsGet(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+  function lsSet(k, v) { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch (e) {} }
+
+  /** config ของ Firebase ครบพอจะต่อไหม */
+  function cfgReady(c) {
+    var f = (c && c.firebase) || {};
+    return !!(c && c.domain && f.apiKey && f.authDomain && f.projectId && f.appId);
+  }
+
+  /**
+   * เลือกโหมดจากที่อยู่เว็บ ?fire= สวิตช์ และค่าของเครื่อง → { mode: 'live'|'demo'|'dev'|'', reset, override }
+   * เทสต์เรียกตรงผ่าน window.BookFireMode
+   */
+  function pickMode(host, search, cfg, off) {
+    var local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(host);
+    var m = /[?&]fire=(dev|reset|demo|demo-reset|live|off|on)(?:&|$)/.exec(search || '');
+    var ask = m ? m[1] : '';
+    if (ask === 'dev' || ask === 'reset') { if (local) return { mode: 'dev', reset: ask === 'reset' }; ask = ''; }   // นอก localhost ไม่สน
+    if (ask === 'demo' || ask === 'demo-reset') return { mode: 'demo', reset: ask === 'demo-reset' };
+    if (local || !cfgReady(cfg)) return { mode: '' };   // dev server ไม่ต่อของจริง · ยังไม่มี config = ระบบเดิม
+    if (ask === 'live') return { mode: 'live', override: cfg.on !== true || !!off };
+    if (ask === 'off' || (off && ask !== 'on')) return { mode: '' };
+    return cfg.on === true ? { mode: 'live' } : { mode: '' };
+  }
+  window.BookFireMode = pickMode;
+
+  var q = /[?&]fire=(off|on)(?:&|$)/.exec(location.search);
+  if (q) lsSet(OFF_KEY, q[1] === 'off' ? '1' : '');
+  var pick = pickMode(location.hostname, location.search, CFG, lsGet(OFF_KEY));
+  if (!pick.mode) { window.BookFire = null; return; }
+  var MODE = pick.mode;
+
+  /* ── ค่าของแต่ละโหมด ── */
+  var SET = {
+    dev: { key: 'wms:fire:dev', idb: 'wms-fire-dev', domain: 'example.test', ns: 'dev', label: 'ฐานทดลอง' },
+    demo: { key: 'wms:fire:demo', idb: 'wms-fire-demo', domain: 'demo.test', ns: 'demo', label: 'ฐานซ้อม' },
+    live: { key: '', idb: 'wms-fire', domain: String(CFG.domain || '').toLowerCase(), ns: '', label: 'ระบบใหม่' },
+  }[MODE];
+  var KEY = SET.key, WHO = KEY + ':who', METER = MODE === 'live' ? 'wms:fire:meter' : KEY + ':meter', NO = KEY + ':no';
+  var DOMAIN = SET.domain;
+
+  var ACCOUNTS = MODE === 'dev' ? [
     { email: 'staff@' + DOMAIN, name: 'ทดลอง', role: 'staff' },
     { email: 'head@' + DOMAIN, name: 'หัวหน้าทดลอง', role: 'head' },
     { email: 'view@' + DOMAIN, name: 'ดูอย่างเดียวทดลอง', role: 'viewer' },
     { email: 'off@' + DOMAIN, name: 'ออกแล้วทดลอง', role: 'staff', off: true },
     { email: 'new@' + DOMAIN, name: 'คนใหม่ทดลอง', role: '' },
     { email: 'someone@gmail.test', name: 'บัญชีส่วนตัวทดลอง', role: '' },
-  ];
+  ] : MODE === 'demo' ? [
+    { email: 'staff1@' + DOMAIN, name: 'พนักงานซ้อม 1', role: 'staff' },
+    { email: 'staff2@' + DOMAIN, name: 'พนักงานซ้อม 2', role: 'staff' },
+    { email: 'head@' + DOMAIN, name: 'หัวหน้าซ้อม', role: 'head' },
+    { email: 'view@' + DOMAIN, name: 'ดูอย่างเดียวซ้อม', role: 'viewer' },
+    { email: 'someone@gmail.test', name: 'บัญชีส่วนตัว (ลองว่าถูกกัน)', role: '' },
+  ] : [];
+
   /* ยอดยกมาสมมติ [SKU, SKU เต็ม, ชื่อ, LOT, PO, โล, ชิ้น, Status, วันรับ, ไตรมาส] */
   var OPEN = [
     ['AAA001', 'AAA0000000001', 'ที่นอนสมมติ 1', '8', 'P1', 'A-01-01', 20, 'เปิด', '2026-10-02', ''],
@@ -41,6 +85,17 @@
     ['CCC004', 'CCC0000000004', 'หมอนสมมติ 4', '0', '0', 'QA', 3, '', '', ''],
     ['DDD005', 'DDD0000000005', 'ผ้าห่มสมมติ 5', '11', 'P7', 'A-05-01', 15, 'เปิด', '2026-11-03', ''],
   ];
+  /* โหมดซ้อมมีของมากขึ้นให้ตัดได้ทั้งวัน (ยังเป็นของสมมติ) */
+  if (MODE === 'demo') {
+    OPEN = OPEN.concat([
+      ['EEE006', 'EEE0000000006', 'ผ้าปูสมมติ 6', '10', 'P8', 'A-06-01', 40, 'เปิด', '2026-10-15', ''],
+      ['EEE006', 'EEE0000000006', 'ผ้าปูสมมติ 6', '11', 'P10', 'R02-01-01', 60, '', '2026-11-05', ''],
+      ['FFF007', 'FFF0000000007', 'หมอนข้างสมมติ 7', '9', 'P4', 'A-07-01', 25, 'เปิด', '2026-09-20', ''],
+      ['GGG008', 'GGG0000000008', 'ที่นอนพับสมมติ 8', '11', 'P11', 'A-08-01', 8, 'เปิด', '2026-11-10', ''],
+      ['GGG008', 'GGG0000000008', 'ที่นอนพับสมมติ 8', '11', 'P11', 'R02-02-01', 32, '', '2026-11-10', ''],
+    ]);
+    OPEN[1][6] = 80;   // R ของ AAA001 มากพอให้ซ้อมเติมหลายรอบ
+  }
 
   function script(src) {
     return new Promise(function (res, rej) {
@@ -52,21 +107,19 @@
     });
   }
   function readSaved() { try { return JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { return null; } }
-  function save(dump) { try { localStorage.setItem(KEY, JSON.stringify(dump)); } catch (e) { console.warn('เก็บฐานทดลองไม่ได้ —', e.message); } }
-  function remember(email) { try { if (email) localStorage.setItem(WHO, email); else localStorage.removeItem(WHO); } catch (e) {} }
-  function remembered() { try { return localStorage.getItem(WHO) || ''; } catch (e) { return ''; } }
+  function save(dump) { try { localStorage.setItem(KEY, JSON.stringify(dump)); } catch (e) { console.warn('เก็บ' + SET.label + 'ไม่ได้ —', e.message); } }
+  function remember(email) { if (KEY) lsSet(WHO, email || ''); }
+  function remembered() { return KEY ? lsGet(WHO) : ''; }
 
   var fire = null, shownSeq = -1;
+  var watching = false, seen = -1, stopWatch = null;   // live: ฟัง meta/head (อ่าน 1 ครั้งต่อการบันทึก) แทนถามทุกนาที
 
-  var ready = (async function () {
-    await script('../wms-fire-core.js');
-    await script('../wms-fire-trc.js');
-    await script('../wms-fire.js');
-    var W = window.WmsFire;
-    if (m[1] === 'reset') {
-      [KEY, WHO, METER].forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
-      try { await W.idbCache(IDB).clear(); } catch (e) {}
-      history.replaceState(null, '', location.pathname + '?fire=dev' + location.hash);
+  /** ฐานจำลองในเครื่อง (dev / demo) */
+  async function startLocal(W) {
+    if (pick.reset) {
+      [KEY, WHO, METER, NO].forEach(function (k) { lsSet(k, ''); });
+      try { await W.idbCache(SET.idb).clear(); } catch (e) {}
+      history.replaceState(null, '', location.pathname + '?fire=' + MODE + location.hash);
     }
     var data = readSaved();
     if (!data) {
@@ -78,43 +131,116 @@
     /* อีกแท็บบันทึก → ฐานในแท็บนี้ได้ของใหม่ (เครื่องนี้ดึงตอนเช็ครอบหน้า) */
     window.addEventListener('storage', function (e) { if (e.key === KEY && e.newValue) store.seed(JSON.parse(e.newValue)); });
     var cache;
-    try { cache = window.indexedDB ? W.idbCache(IDB) : W.memCache(); } catch (e) { cache = W.memCache(); }
+    try { cache = window.indexedDB ? W.idbCache(SET.idb) : W.memCache(); } catch (e) { cache = W.memCache(); }
     fire = W.open({ store: store, auth: W.fakeAuth(ACCOUNTS), cache: cache, domain: DOMAIN, meter: W.storeMeter(METER) });
     if (!store.dump()['meta/head']) {
-      await fire.login(ACCOUNTS[1].email);
-      var r = await fire.post('bk-open', { batch: 'demo-open', rows: OPEN });
+      var head = ACCOUNTS.filter(function (a) { return a.role === 'head'; })[0];
+      await fire.login(head.email);
+      var r = await fire.post('bk-open', { batch: MODE + '-open', rows: OPEN });
       if (r.error) console.warn('ลงยอดยกมาสมมติไม่ได้ —', r.error);
       await fire.logout();
     }
+  }
+
+  /** Firestore จริง + Google ของบริษัท (เว็บที่ deploy เท่านั้น firestoreStore กัน localhost อีกชั้น) */
+  async function startLive(W) {
+    var fs = await W.firestoreStore(CFG.firebase);
+    var cache;
+    try { cache = window.indexedDB ? W.idbCache(SET.idb) : W.memCache(); } catch (e) { cache = W.memCache(); }
+    fire = W.open({ store: fs.store, auth: W.googleAuth(fs, DOMAIN), cache: cache, domain: DOMAIN, meter: W.storeMeter(METER) });
+  }
+
+  var ready = (async function () {
+    await script('../wms-fire-core.js');
+    await script('../wms-fire-trc.js');
+    await script('../wms-fire.js');
+    if (MODE === 'live') await startLive(window.WmsFire);
+    else await startLocal(window.WmsFire);
   })();
+
+  function watchOn() {
+    if (MODE !== 'live' || stopWatch || !fire) return;
+    try {
+      stopWatch = fire.watch(function (meta) { seen = Math.max(seen, +meta.seq || 0); }, function () { watching = false; stopWatch = null; });
+      watching = true;
+    } catch (e) { watching = false; stopWatch = null; }
+  }
+  function watchOff() {
+    if (stopWatch) { try { stopWatch(); } catch (e) {} }
+    stopWatch = null; watching = false; seen = -1;
+  }
+
+  /** เข้าแล้ว: แท็บที่เปิดแม้สวิตช์ปิด (?fire=live) ใช้ได้เฉพาะหัวหน้า */
+  async function entered(r) {
+    if (!r || r.error) return r;
+    if (pick.override && r.role !== window.WmsFire.ROLE_TH.head) {
+      remember('');
+      await fire.logout();
+      return { error: 'สวิตช์ระบบใหม่ปิดอยู่ ใช้หน้าสมุดสต๊อกแบบเดิม (เปิดแบบนี้ได้เฉพาะหัวหน้า)', noRight: 1 };
+    }
+    watchOn();
+    return r;
+  }
 
   /** op ที่บันทึกลงฐาน (หลังสำเร็จยอดในเครื่องเปลี่ยน) */
   function saves(op) { return !!(window.WmsFireCore && window.WmsFireCore.OPS[op]); }
 
+  /** ออเดอร์ซ้อม (แบบไฟล์ CRM) เลขออเดอร์ไม่ซ้ำในเครื่องนี้ ตัดได้เรื่อย ๆ */
+  function demoOrders(day) {
+    var skus = OPEN.filter(function (r) { return r[7] === 'เปิด'; }).map(function (r) { return r[1]; })
+      .filter(function (s, i, a) { return a.indexOf(s) === i; });
+    var n = +lsGet(NO) || 0, out = ['Order ID\tSKU\tจำนวน\tวันที่\tขนส่ง'];
+    var lines = 8 + Math.floor(Math.random() * 5);
+    for (var i = 0; i < lines; i++) {
+      n++;
+      var id = 'SIM' + String(day || '').replace(/-/g, '').slice(2) + String(n).padStart(4, '0');
+      var sku = skus[Math.floor(Math.random() * skus.length)];
+      out.push([id, sku, Math.random() < 0.8 ? 1 : 2, day, ['ขนส่ง ก', 'ขนส่ง ข'][n % 2]].join('\t'));
+      if (Math.random() < 0.2) out.push([id, skus[(skus.indexOf(sku) + 1) % skus.length], 1, day, ['ขนส่ง ก', 'ขนส่ง ข'][n % 2]].join('\t'));
+    }
+    lsSet(NO, String(n));
+    return out.join('\n');
+  }
+
   window.BookFire = {
     ready: ready,
-    dev: true,
+    mode: MODE,
+    dev: MODE === 'dev',
+    /** เลือกบัญชีในหน้าต่างของหน้าเอง (dev / ซ้อม) แทนป๊อปอัป Google */
+    pick: MODE !== 'live',
+    /** ร่างและชุดรอส่งในเครื่องเก็บแยกต่อโหมด ('' = ร่วมกับระบบเดิม ชุดค้างตอนสลับระบบไม่หาย) */
+    ns: SET.ns,
+    label: SET.label,
+    /** แท็บนี้เปิดระบบใหม่ทั้งที่สวิตช์ปิด (?fire=live) */
+    override: !!pick.override,
     domain: DOMAIN,
-    /** บัญชีให้เลือกในหน้าต่างทดลอง (แทนหน้าต่างเลือกบัญชีของ Google) */
     accounts: function () { return ACCOUNTS.map(function (a) { return { email: a.email, name: a.name }; }); },
-    /** เปิดหน้าใหม่: เข้าด้วยบัญชีที่ค้างไว้ · ไม่มี = null */
+    demoOrders: MODE === 'live' ? null : demoOrders,
+    /** เปิดหน้าใหม่: เข้าด้วยบัญชีที่ค้างไว้ (ระบบจริง Google จำให้) · ไม่มี = null */
     restore: async function () {
       await ready;
+      if (MODE === 'live') return entered(await fire.restore());
       var e = remembered();
       if (!e) return null;
       var r = await fire.login(e);
       if (r.error) remember('');
-      return r;
+      return entered(r);
     },
     signIn: async function (email) {
       await ready;
-      var r = await fire.login(email);
+      var r = MODE === 'live' ? await fire.login() : await fire.login(email);
       remember(r.error ? '' : email);
+      return entered(r);
+    },
+    logout: function () { remember(''); watchOff(); if (fire) fire.logout(); },
+    user: function () { return fire ? fire.user() : null; },
+    /** เน็ตหลุด = โยน error ให้หน้าเก็บเป็นชุดรอส่งแล้วส่งซ้ำเอง (รหัสชุดเดิม ไม่บันทึกซ้ำ) */
+    post: async function (op, body) {
+      await ready;
+      var r = await fire.post(op, body);
+      if (r && r.net) throw new Error(r.error);
       return r;
     },
-    logout: function () { remember(''); if (fire) fire.logout(); },
-    user: function () { return fire ? fire.user() : null; },
-    post: async function (op, body) { await ready; return fire.post(op, body); },
     saves: saves,
     /** คำตอบรูป tx-fifo จากสำเนาในเครื่อง (ดึงเอกสารใหม่ก่อน) */
     fifo: async function () {
@@ -125,9 +251,10 @@
     },
     /** หลังบันทึกสำเร็จ: สำเนาในเครื่องรวมชุดใหม่แล้ว ไม่ต้องดึง */
     fifoNow: function () { shownSeq = fire.local().seq; return fire.fifo(); },
-    /** มีเอกสารใหม่ที่หน้ายังไม่แสดงไหม */
+    /** มีเอกสารใหม่ที่หน้ายังไม่แสดงไหม (ระบบจริงฟังอยู่แล้ว ไม่ต้องอ่านฐานทุกนาที) */
     changed: async function () {
       await ready;
+      if (watching) return seen > shownSeq;
       await fire.sync();
       return fire.local().seq !== shownSeq;
     },
@@ -159,12 +286,12 @@
      * กู้คืนจากไฟล์สำรองลงฐานทดลอง (ล้างของเดิมทั้งหมด) แล้วโหลดหน้าใหม่ ต้องเข้าระบบใหม่ด้วยรายชื่อในไฟล์
      * ระบบจริงกู้คืนด้วย apps-script/fire-backup.gs (สิทธิ์เจ้าของโปรเจกต์ ลงโปรเจกต์ว่าง)
      */
-    restoreDev: async function (text) {
+    restoreDev: MODE !== 'dev' ? null : async function (text) {
       await ready;
       var r = window.WmsFireTrc.readBackup(text);
       if (r.error) return r;
       save(r.backup.data);
-      try { await window.WmsFire.idbCache(IDB).clear(); } catch (e) {}
+      try { await window.WmsFire.idbCache(SET.idb).clear(); } catch (e) {}
       remember('');
       return { ok: 1, docs: Object.keys(r.backup.data).filter(function (p) { return /^docs\/[^~]+$/.test(p); }).length };
     },

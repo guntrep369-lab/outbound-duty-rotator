@@ -3,7 +3,7 @@ rules_version = '2';
 // ระบบใหม่บน Firebase: สมุดสต๊อก (ขั้น 1 ตัวสมุด · ขั้น 2 รายชื่อคนใช้ ตัวนับโควตา · ขั้น 3 เลข TRcloud ยอด TRcloud ชีตเดิม)
 // กฎชุดเดียวกับ rulesError() ใน public/wms-fire.js (store จำลองเช็คแบบนี้ เทสต์อยู่ใน src/data/fire.test.js)
 //
-// ก่อนใช้จริง: เปลี่ยน example[.]com ในฟังก์ชัน signedIn() เป็นโดเมนอีเมลบริษัท (จุดเขียนเป็น [.])
+// โดเมนอีเมลบริษัทอยู่ในฟังก์ชัน signedIn() (จุดเขียนเป็น [.]) ต้องตรงกับ domain ใน public/wms-fire-config.js
 // วางใน Firebase Console > Firestore Database > Rules แล้วกด Publish
 //
 // ที่เก็บ
@@ -31,7 +31,7 @@ service cloud.firestore {
     function signedIn() {
       return request.auth != null
         && request.auth.token.email_verified == true
-        && request.auth.token.email.lower().matches('.*@example[.]com');
+        && request.auth.token.email.lower().matches('.*@lunio[.]co[.]th');
     }
     function email() { return request.auth.token.email.lower(); }
     function profile() { return get(/databases/$(database)/documents/users/$(email())).data; }
