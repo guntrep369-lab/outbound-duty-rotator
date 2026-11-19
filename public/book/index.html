@@ -164,10 +164,50 @@
 .bk-dh{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px;color:var(--wms-muted)}
 .bk-dh b{font-size:14px;color:var(--wms-text)}
 
+/* ── ระบบใหม่: เข้าสู่ระบบด้วย Google ของบริษัท ── */
+.fl-wrap{display:flex;justify-content:center;padding:40px 16px 60px}
+.fl-card{width:100%;max-width:400px;padding:26px 24px;border:1px solid var(--wms-border);border-radius:14px;background:var(--wms-surface);
+  box-shadow:0 6px 24px rgba(15,23,42,.06);text-align:center}
+.fl-card h3{font-size:19px;color:var(--wms-text)}
+.fl-sub{margin-top:4px;font-size:13px;color:var(--wms-muted)}
+.fl-g{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;margin-top:18px;padding:11px 14px;border-radius:10px;
+  border:1px solid var(--wms-border2);background:#fff;font-family:var(--wms-font);font-size:15px;font-weight:600;color:#1F2937;cursor:pointer}
+.fl-g:hover:not(:disabled){border-color:var(--wms-primary);box-shadow:0 0 0 3px var(--wms-primary-light)}
+.fl-g:disabled{opacity:.6;cursor:default}
+.fl-hint{margin-top:10px;font-size:12px;line-height:1.6;color:var(--wms-muted)}
+.fl-card .bk-msg{margin-top:14px;text-align:left}
+.fl-pick{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(15,23,42,.35)}
+.fl-box{width:100%;max-width:360px;border-radius:12px;background:var(--wms-surface);box-shadow:0 12px 40px rgba(15,23,42,.25);overflow:hidden}
+.fl-box h4{padding:14px 16px 4px;font-size:15px;color:var(--wms-text)}
+.fl-box p{padding:0 16px 8px;font-size:12px;color:var(--wms-muted)}
+.fl-acc{display:flex;flex-direction:column;align-items:flex-start;width:100%;padding:9px 16px;border:0;border-top:1px solid var(--wms-border);
+  background:none;font-family:var(--wms-font);text-align:left;cursor:pointer}
+.fl-acc:hover{background:var(--wms-primary-light)}
+.fl-acc b{font-size:13.5px;color:var(--wms-text)}
+.fl-acc span{font-size:12px;color:var(--wms-muted)}
+.fl-other{display:flex;gap:6px;padding:10px 16px 14px;border-top:1px solid var(--wms-border)}
+.fl-other input{flex:1;min-width:0}
+
+/* ── ระบบใหม่: แท็บตั้งค่า ── */
+.fs-in{height:28px;width:100%;min-width:120px;padding:0 8px;border:1px solid transparent;border-radius:6px;background:transparent;
+  font-family:var(--wms-font);font-size:13px;color:var(--wms-text)}
+.fs-in:hover{border-color:var(--wms-border2)}
+.fs-in:focus{outline:none;border-color:var(--wms-primary);background:var(--wms-surface)}
+select.fs-in{min-width:110px;cursor:pointer}
+.bk-xl td.fs-c{padding:0 4px}
+.bk-xl tr.r-off td{color:var(--wms-faint)}
+.bk-xl tr.r-add td{background:#F8FAFC}
+.fs-bar{display:inline-block;width:120px;height:8px;margin-right:8px;border-radius:999px;background:#E2E8F0;vertical-align:middle;overflow:hidden}
+.fs-bar i{display:block;height:100%;border-radius:999px;background:#10B981}
+.fs-bar i.w{background:#F59E0B}
+.fs-bar i.r{background:#EF4444}
+
 @media (max-width:640px){
   .tx-src,.bk-in,.tx-sum,.bk-act,.tx-body,.bk-docs,.bk-tabs{padding-left:16px;padding-right:16px}
-  .bk-field,.bk-date,.g-xl td.g-in input{font-size:16px}   /* ต่ำกว่า 16px iPhone จะซูมหน้าเองตอนแตะช่อง */
+  .bk-field,.bk-date,.g-xl td.g-in input,.fs-in{font-size:16px}   /* ต่ำกว่า 16px iPhone จะซูมหน้าเองตอนแตะช่อง */
   .g-hint{display:none}
+  .fl-wrap{padding-top:20px}
+  .fs-bar{display:none}   /* จอแคบ: ตัวเลขอ่านกับเขียนอยู่ในจอเดียว */
 }
 </style>
 </head>
@@ -210,6 +250,7 @@
 <script src="book-grid.js"></script>
 <script src="book-set.js"></script>
 <script src="book-fire.js"></script>
+<script src="book-fire-set.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -264,6 +305,7 @@ function today() { const d = new Date(); return `${d.getFullYear()}-${String(d.g
     PENDING = d.pending || null;
   }
   try { USER = JSON.parse(sessionStorage.getItem(ME) || 'null'); } catch (e) { USER = null; }
+  if (FIRE) USER = null;   // ระบบใหม่: บัญชีที่ค้างไว้เข้าให้เองตอนเปิดหน้า (FIRE.restore)
 })();
 
 function saveDraft() {
@@ -321,9 +363,9 @@ async function load(fresh, quiet) {
   render();
 }
 
-/** ระบบใหม่ (ทดลอง): สต๊อกคิดจากสำเนาเอกสารในเครื่อง ดึงเฉพาะเอกสารใหม่ */
+/** ระบบใหม่ (ทดลอง): สต๊อกคิดจากสำเนาเอกสารในเครื่อง ดึงเฉพาะเอกสารใหม่ (ต้องเข้าสู่ระบบก่อน แบบ Rules จริง) */
 async function loadFire(quiet) {
-  if (LOADING) return;
+  if (LOADING || !USER) return;
   LOADING = true;
   ERR = '';
   if (!quiet) { BUSY = 'กำลังดึงเอกสารใหม่จากฐานทดลอง…'; renderSrc(); }
@@ -345,7 +387,10 @@ function bookUrl() { return FIRE ? 'fire:dev' : WmsSettings.bookUrl(); }
 /** โหมดบันทึก = หลังตัดรอบ กดบันทึกแล้วลงสมุดใหม่เลย ไม่ต้องคัดลอกไปวางในชีตเดิม */
 function bookMode() { return !!(BSTATE && BSTATE.mode === 'book'); }
 function isHead() { return !!(USER && USER.role === HEAD_ROLE); }
-function tabs() { return MODES.filter((m) => !HEAD_ONLY[m[0]] || isHead()); }
+function tabs() {
+  /* ระบบใหม่: แท็บตั้งค่าเห็นทุกคน (คนลงรายการเห็นตัวนับโควตาและสำเนาเครื่องตัวเอง) */
+  return MODES.filter((m) => !HEAD_ONLY[m[0]] || isHead() || (FIRE && m[0] === 'set')).map((m) => (FIRE && m[0] === 'set' ? ['set', '⚙️ ตั้งค่า'] : m));
+}
 
 async function refreshState() {
   if (!USER || !bookUrl()) return;
@@ -391,8 +436,9 @@ function checkV(r) {
 
 async function bookPost(op, body) {
   if (FIRE) {
-    const fr = await FIRE.post(op, body, USER ? USER.who : '');
+    const fr = await FIRE.post(op, body);
     if (!fr.error && FIRE.saves(op)) { RES = FIRE.fifoNow(); compute(); }   // สำเนาในเครื่องรวมชุดใหม่แล้ว
+    if (fr.error === 'ยังไม่ได้ล็อกอิน' && USER) logout('หลุดจากระบบ เข้าใหม่อีกครั้ง');
     return fr.error ? fr : checkV(fr);
   }
   const r = await WmsGas.post(bookUrl(), { op, who: USER ? USER.who : '', pin: USER ? USER.pin : '', ...body }, { timeoutMs: 120000, busy: true });
@@ -403,7 +449,7 @@ async function bookPost(op, body) {
 async function loadNames() {
   if (!bookUrl()) return;
   BKERR = '';
-  if (FIRE) { NAMES = await FIRE.names(); renderSrc(); return; }
+  if (FIRE) return;   // ระบบใหม่เข้าด้วย Google ไม่มีรายชื่อให้เลือก
   try {
     const r = checkV(await WmsGas.json(bookUrl(), 'bk-names', { retries: 1, timeoutMs: 60000 }));
     if (r.error) throw new Error(r.error);
@@ -442,14 +488,70 @@ async function login() {
 }
 
 function logout(why) {
-  if (FIRE) FIRE.logout();
+  if (FIRE) { FIRE.logout(); LOGIN_ERR = why || ''; }
   USER = null;
   BSTATE = null;
   DOCS = []; DOCS_OK = false; SEEN = {}; SEEN_FOR = '';
   try { sessionStorage.removeItem(ME); } catch (e) {}
-  BKERR = why || '';
+  BKERR = FIRE ? '' : why || '';
   compute();
   render();
+}
+
+/* ── ระบบใหม่: เข้าสู่ระบบด้วย Google ของบริษัท ─────────────────────────── */
+
+let LOGIN_ERR = '';
+let RESTORING = !!FIRE;   // เปิดหน้า: กำลังเช็คบัญชีที่ค้างไว้
+let PICK = false;         // หน้าต่างเลือกบัญชีทดลอง (dev แทนป๊อปอัป Google)
+
+async function afterLogin(r) {
+  USER = { who: r.who, role: r.role, email: r.email || '', pin: '' };
+  BSTATE = { mode: 'book' };
+  LOGIN_ERR = '';
+  render();
+  await loadFire(false);
+  await refreshState();
+  await refreshDocs();
+  await refreshSeen();
+  if (pendingCount()) queueRetry(1000);
+}
+
+async function fireSignIn(email) {
+  if (BKBUSY) return;
+  PICK = false;
+  BKBUSY = 'กำลังเข้า…'; LOGIN_ERR = ''; render();
+  let r;
+  try { r = await FIRE.signIn(email); } catch (e) { r = { error: e.message }; }
+  BKBUSY = '';
+  if (r.error) { LOGIN_ERR = r.error; render(); return; }
+  await afterLogin(r);
+}
+
+function gLogo() {
+  return '<svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.8 2.4 30.2 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.9 6.1C12.5 13.6 17.8 9.5 24 9.5z"/>' +
+    '<path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.7 6c4.5-4.2 6.9-10.3 6.9-17.7z"/>' +
+    '<path fill="#FBBC05" d="M10.6 28.6c-.5-1.4-.8-3-.8-4.6s.3-3.2.8-4.6l-7.9-6.1C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.9-6.1z"/>' +
+    '<path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.7-6c-2.1 1.4-4.9 2.3-8.2 2.3-6.2 0-11.5-4.1-13.4-9.8l-7.9 6.1C6.6 42.6 14.6 48 24 48z"/></svg>';
+}
+
+/** การ์ดเข้าสู่ระบบแทนพื้นที่ทำงาน (ระบบใหม่ ยังไม่เข้า) */
+function renderLogin() {
+  $('tabs').innerHTML = '';
+  ['sum', 'act', 'body', 'docs'].forEach((id) => { $(id).innerHTML = ''; });
+  const dom = FIRE.domain ? `@${esc(FIRE.domain)}` : 'ของบริษัท';
+  const pick = PICK ? `<div class="fl-pick" id="flPick"><div class="fl-box" role="dialog" aria-label="เลือกบัญชีทดลอง">
+      <h4>เลือกบัญชี</h4><p>🧪 บัญชีทดลอง (ระบบจริงเป็นหน้าต่างเลือกบัญชีของ Google)</p>
+      ${FIRE.accounts().map((a) => `<button class="fl-acc" data-acc="${esc(a.email)}"><b>${esc(a.name)}</b><span>${esc(a.email)}</span></button>`).join('')}
+      <div class="fl-other"><input class="bk-field" id="flMail" type="email" placeholder="อีเมลอื่น" autocomplete="off"><button class="tx-opt" id="flMailGo">เข้า</button></div>
+      <div class="fl-other" style="border-top:0;padding-top:0"><button class="bk-link" id="flPickX">ยกเลิก</button></div></div></div>` : '';
+  $('inp').innerHTML = `<div class="fl-wrap"><div class="fl-card">
+      <h3>เข้าสู่ระบบ</h3>
+      <div class="fl-sub">ใช้อีเมล ${dom} เท่านั้น</div>
+      <button class="fl-g" id="fireIn" ${BKBUSY || RESTORING ? 'disabled' : ''}>${gLogo()}${RESTORING ? 'กำลังเช็คบัญชี…' : BKBUSY ? esc(BKBUSY) : 'เข้าสู่ระบบด้วย Google ของบริษัท'}</button>
+      <div class="fl-hint">จะมีหน้าต่างเล็กเด้งขึ้นมาให้เลือกบัญชี ถ้าไม่เด้ง ให้อนุญาตป๊อปอัปของเว็บนี้</div>
+      ${LOGIN_ERR ? `<div class="bk-msg bad">${esc(LOGIN_ERR)}</div>` : ''}
+    </div></div>${pick}`;
+  if (PICK && $('flMail')) setTimeout(() => { const b = document.querySelector('.fl-acc'); if (b) b.focus(); }, 0);
 }
 
 async function refreshDocs() {
@@ -588,7 +690,9 @@ async function voidDoc(doc) {
   const type = d ? d.type : '';
   const book = !!(d && d.book);
   const ns = delHint(d, doc);
-  const ask = book
+  const ask = book && FIRE
+    ? `ยกเลิก ${doc}${type ? ` (${type})` : ''} ทั้งชุด\nลงกลับเป็นเอกสารใหม่ (ขายลงชิ้นติดลบวันเดิม ย้าย/รับ/เบิกลงกลับทาง) เอกสารเดิมไม่ถูกแก้\n${VOID_NOTE[type] || ''}\n\nเหตุผล:`
+    : book
     ? `ยกเลิก ${doc}${type ? ` (${type})` : ''} ทั้งชุด\nลงแถวกลับในสมุดใหม่เป็นชุดใหม่ (แถวขายลงชิ้นติดลบวันเดิม แถวย้าย/รับ/เบิกลงกลับทาง) ไม่ลบแถวเดิม\n${VOID_NOTE[type] || ''}\n\nเหตุผล:`
     : `ยกเลิก ${doc}${type ? ` (${type})` : ''} ทั้งชุด\n${VOID_NOTE[type] || ''} ต้องไปลบ${ns} ในชีต Transaction เอง\n\nเหตุผล:`;
   const why = prompt(ask);
@@ -598,7 +702,9 @@ async function voidDoc(doc) {
     const r = await bookPost('bk-void', { doc, why: why.trim() });
     if (r.error) throw new Error(r.error + shortList(r).replace(/<[^>]+>/g, ' '));
     const n = r.type === 'ตัดขาย' ? ` (${f(r.lines)} บรรทัดออเดอร์ตัดใหม่ได้)` : r.type === 'คืน' ? ` (${f(r.lines)} บรรทัดคืนใหม่ได้)` : '';
-    MSG = r.reversed
+    MSG = r.reversed && FIRE
+      ? { kind: 'ok', html: `ยกเลิก <b>${esc(doc)}</b> แล้ว${n} · ลงกลับเป็น <b>${esc(r.reversed)}</b> ${f(r.rows)} แถว` }
+      : r.reversed
       ? { kind: 'ok', html: `ยกเลิก <b>${esc(doc)}</b> แล้ว${n} · ลงแถวกลับเป็น <b>${esc(r.reversed)}</b> ${f(r.rows)} แถว (แท็บ Transaction แถว ${f(r.txAt)}${r.rows > 1 ? `–${f(r.txAt + r.rows - 1)}` : ''})` }
       : { kind: 'warn', html: `ยกเลิก <b>${esc(doc)}</b> แล้ว${n} — <b>ไปลบ${esc(ns)} ในชีต Transaction ด้วย</b>` };
     if (LAST && LAST.doc === doc) LAST = null;
@@ -668,7 +774,7 @@ function renderSrc() {
   let html = '';
   const tx = FIRE ? 'fire:dev' : WmsSettings.txUrl();
   if (FIRE) html += '<span class="pill warn" title="ฐานจำลองในเครื่องนี้ ไม่ใช่ข้อมูลจริง ล้างด้วย ?fire=reset">🧪 ระบบใหม่ · ฐานทดลองในเครื่อง</span>';
-  if (RES && !BUSY) {
+  if (RES && !BUSY && (!FIRE || USER)) {
     const when = new Date(WmsShared.stamp(RES)).toLocaleString('th-TH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
     const who = WmsShared.who(RES);
     html += `<span class="pill" title="กองที่ใช้ตัดคิดจากสต๊อกชุดนี้ หักชุดที่บันทึกแล้วแต่ยังไม่เห็นในสมุดให้เอง">🕐 สต๊อกเมื่อ <b>${esc(when)}</b>${who ? ` · ${esc(who)}` : ''}</span>`;
@@ -676,7 +782,9 @@ function renderSrc() {
   }
   if (BUSY) html += `<span class="pill">⏳ ${esc(BUSY)}</span>`;
   if (WAIT && !BUSY) html += `<span class="pill warn">⏳ ${esc(WmsShared.runner(WAIT))} กำลังดึงชุดใหม่ เสร็จแล้วขึ้นให้เอง</span>`;
-  if (tx) {
+  if (FIRE && !USER) {
+    /* ยังไม่เข้า: ไม่มีปุ่มดึงสต๊อก (Rules จริงไม่ให้อ่านก่อนเข้า) */
+  } else if (tx) {
     html += `<button id="loadBtn" class="${RES ? '' : 'p'}" ${BUSY || WAIT ? 'disabled' : ''}>${BUSY ? 'กำลังดึง…' : WAIT ? 'รอชุดใหม่…' : RES ? '🔄 ดึงสต๊อกใหม่' : '▶️ ดึงสต๊อก'}</button>`;
   } else {
     html += `<span class="pill warn">ยังไม่ได้ตั้ง Apps Script URL ของ Transaction — <a href="../settings/">ตั้งที่หน้าตั้งค่า</a></span>`;
@@ -684,7 +792,14 @@ function renderSrc() {
   html += '<span class="sp"></span>';
 
   const url = bookUrl();
-  if (!url || SETURL) {
+  if (FIRE) {
+    /* ระบบใหม่: ยังไม่เข้า = การ์ดเข้าสู่ระบบในพื้นที่ทำงาน · เข้าแล้ว = ชื่อ สิทธิ์ อีเมล */
+    if (USER) {
+      const n = pendingCount();
+      if (n) html += `<span class="pill warn" title="ส่งไม่สำเร็จ ระบบส่งซ้ำเองทุก 30 วินาที">⏳ รอส่ง <b>${n}</b> ชุด</span>`;
+      html += `<span class="pill ok" title="${esc(USER.email)}">👤 <b>${esc(USER.who)}</b> · ${esc(USER.role)}</span><button id="bkOut">ออก</button>`;
+    }
+  } else if (!url || SETURL) {
     html += `<span class="pill">สมุดสต๊อก</span><input class="bk-field bk-url" id="bkUrl" placeholder="Apps Script URL ของ book-api.gs" value="${esc(url)}">` +
       `<button id="bkUrlSave" class="p">บันทึก</button>` + (url ? '<button id="bkUrlCancel">ยกเลิก</button>' : '');
   } else if (!USER) {
@@ -794,7 +909,9 @@ function actTail() {
   if (REF.wait.length && USER) {
     html += `<span title="บันทึกแล้วแต่ยังไม่เห็นแถวในสต๊อกที่ดึงมา คิดกองให้แล้วเหมือนวางแล้ว ถ้ายังไม่ได้วางในชีต ให้กดคัดลอกที่ตารางชุดด้านล่าง">⏳ ยังไม่เห็นในสมุด ${REF.wait.map((d) => esc(d.doc)).join(', ')} (คิดให้แล้ว)</span>`;
   }
-  if (LAST && LAST.book) {
+  if (LAST && LAST.book && FIRE) {
+    html += `<div class="bk-msg ok">✅ บันทึก <b>${esc(LAST.doc)}</b> แล้ว ${f(LAST.copy.length)} แถว · ทุกเครื่องเห็นยอดใหม่ในหนึ่งนาที</div>`;
+  } else if (LAST && LAST.book) {
     html += `<div class="bk-msg ok">✅ ลง <b>${esc(LAST.doc)}</b> ในสมุดแล้ว ${f(LAST.copy.length)} แถว (แท็บ Transaction แถว ${f(LAST.txAt)}${LAST.copy.length > 1 ? `–${f(LAST.txAt + LAST.copy.length - 1)}` : ''}) ไม่ต้องคัดลอก</div>`;
   } else if (LAST) {
     html += `<div class="bk-msg ok">✅ บันทึก <b>${esc(LAST.doc)}</b> แล้ว · ${LAST.copied ? `คัดลอก ${f(LAST.copy.length)} แถวแล้ว` : 'คัดลอกอัตโนมัติไม่ได้ กดคัดลอกอีกครั้ง'}
@@ -888,9 +1005,10 @@ function renderDocs() {
     /* ชุดในสมุดใหม่ที่ยกเลิกแล้ว แถวยังอยู่ ถูกหักด้วยชุดกลับรายการ (ชุดที่เกี่ยว) */
     const st = v ? `<span class="c-sub" title="${esc(d.why)}">ยกเลิกโดย ${esc(d.voidBy)}${d.link ? ` · กลับด้วย ${esc(d.link)}` : ''}</span>`
       : open ? '<span class="c-sub">จุดเริ่มสมุดใหม่</span>'
-      : d.book ? (wait.has(d.doc) ? '<span class="c-ok" title="ลงไฟล์ WMS สมุดสต๊อก แล้ว สต๊อกที่ดึงมายังไม่เห็น คิดกองให้แล้ว">📗 ลงแล้ว · ⏳ รอสต๊อก</span>' : '<span class="c-ok">📗 ลงสมุดใหม่แล้ว</span>')
+      : FIRE ? '<span class="c-ok">✓ บันทึกแล้ว</span>'
+      : d.book ?(wait.has(d.doc) ? '<span class="c-ok" title="ลงไฟล์ WMS สมุดสต๊อก แล้ว สต๊อกที่ดึงมายังไม่เห็น คิดกองให้แล้ว">📗 ลงแล้ว · ⏳ รอสต๊อก</span>' : '<span class="c-ok">📗 ลงสมุดใหม่แล้ว</span>')
       : done.has(d.doc) ? '<span class="c-ok">✓ วางแล้ว</span>' : wait.has(d.doc) ? '<span class="c-warn">⏳ ยังไม่เห็น</span>' : '<span class="c-sub">—</span>';
-    const copyBtn = open || (d.book && !head) ? '' : `<button class="bk-btn" data-copy="${esc(d.doc)}" ${d.book ? 'title="ใช้ตอนถอยกลับไปชีตเดิมเท่านั้น"' : ''}>📋 คัดลอก</button>`;
+    const copyBtn = open || FIRE || (d.book && !head) ? '' :`<button class="bk-btn" data-copy="${esc(d.doc)}" ${d.book ? 'title="ใช้ตอนถอยกลับไปชีตเดิมเท่านั้น"' : ''}>📋 คัดลอก</button>`;
     /* ชุดในสมุดใหม่ยกเลิกได้ตอนอยู่โหมดบันทึก (ลงแถวกลับ) · ยอดยกมากับชุดกลับรายการยกเลิกไม่ได้ */
     const voidBtn = head && !open && !rev && (!d.book || bookMode())
       ? ` <button class="bk-btn x" data-void="${esc(d.doc)}" ${d.book ? 'title="ลงแถวกลับในสมุดใหม่"' : ''}>${d.book ? '↩ ยกเลิก' : 'ยกเลิก'}</button>` : '';
@@ -899,7 +1017,7 @@ function renderDocs() {
       `<td class="c-sub">${esc(String(d.at).slice(5, 16))}</td><td class="c-sub">${esc(d.tr || '')}</td><td class="num">${f(d.rows)}</td><td class="num">${f(d.qty)}</td><td class="num">${d.orders ? f(d.orders) : ''}</td>` +
       `<td>${st}</td><td class="c-act">${v ? '' : copyBtn + voidBtn}</td></tr>`;
   });
-  $('docs').innerHTML = `<div class="bk-dh"><b>ชุดที่บันทึก</b> 3 วันล่าสุด ทุกแท็บ · ${bookMode() ? 'โหมดบันทึก ทุกชุดลงไฟล์ WMS สมุดสต๊อก แล้ว' : 'ในสมุด = เห็นแถวในสต๊อกที่ดึงมาแล้ว'}</div>` +
+  $('docs').innerHTML = `<div class="bk-dh"><b>ชุดที่บันทึก</b> 3 วันล่าสุด ทุกแท็บ · ${FIRE ? 'หัวหน้ากด ↩ ยกเลิก = ลงกลับเป็นเอกสารใหม่' : bookMode() ?'โหมดบันทึก ทุกชุดลงไฟล์ WMS สมุดสต๊อก แล้ว' : 'ในสมุด = เห็นแถวในสต๊อกที่ดึงมาแล้ว'}</div>` +
     table([['เลขที่'], ['ประเภท'], ['วันที่'], ['ผู้ลง'], ['บันทึกเมื่อ'], ['เลข TRcloud'], ['แถว', 'num'], ['ชิ้น', 'num'], ['ออเดอร์', 'num'], ['ในสมุด'], ['', 'c-act']], rows);
 }
 
@@ -913,9 +1031,10 @@ function renderTabs() {
 function render() {
   if (!tabs().some((m) => m[0] === MODE)) MODE = 'cut';   // ออกจากระบบหรือไม่ใช่หัวหน้า แท็บของหัวหน้าหายไป
   renderSrc();
+  if (FIRE && !USER) { renderLogin(); return; }
   renderTabs();
   if (MODE === 'set') {
-    BookSet.render();
+    if (FIRE) BookFireSet.render(); else BookSet.render();
   } else if (MODE === 'cut') {
     renderIn();
     renderSum();
@@ -935,7 +1054,7 @@ function setMode(m) {
   $('body').innerHTML = '';
   $('sum').innerHTML = '';
   render();
-  if (m === 'set') refreshState().then(render);
+  if (m === 'set') refreshState().then(() => { render(); if (FIRE) BookFireSet.opened(); });
 }
 
 /* ── ปุ่มและช่อง ─────────────────────────────────────────────────────────── */
@@ -957,6 +1076,10 @@ document.addEventListener('click', (e) => {
   else if (t.id === 'bkNames') loadNames();
   else if (t.id === 'bkIn') login();
   else if (t.id === 'bkOut') logout();
+  else if (t.id === 'fireIn') { if (FIRE.dev) { PICK = true; LOGIN_ERR = ''; render(); } else fireSignIn(); }
+  else if (t.dataset.acc) fireSignIn(t.dataset.acc);
+  else if (t.id === 'flMailGo') { const v = $('flMail').value.trim(); if (v) fireSignIn(v); }
+  else if (t.id === 'flPickX') { PICK = false; render(); }
   else if (t.id === 'pickBtn') $('fileIn').click();
   else if (t.id === 'clearBtn') { FILES = []; DATE_AUTO = true; SEEN = {}; SEEN_FOR = ''; LAST = null; MSG = null; compute(); saveDraft(); render(); }
   else if (t.dataset.rm !== undefined) { FILES.splice(+t.dataset.rm, 1); LAST = null; compute(); saveDraft(); render(); refreshSeen(); }
@@ -997,6 +1120,8 @@ document.addEventListener('change', (e) => {
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && e.target.id === 'bkPin') login();
+  if (e.key === 'Enter' && e.target.id === 'flMail' && e.target.value.trim()) fireSignIn(e.target.value.trim());
+  if (e.key === 'Escape' && PICK) { PICK = false; render(); }
   if (e.key === 'Enter' && e.target.id === 'bkUrl') $('bkUrlSave').click();
 });
 
@@ -1006,7 +1131,8 @@ document.addEventListener('paste', (e) => {
   const text = e.clipboardData && e.clipboardData.getData('text');
   if (!text || !text.trim()) return;
   e.preventDefault();
-  if (MODE === 'set') return;
+  if (FIRE && !USER) return;
+  if (MODE === 'set') { if (FIRE) BookFireSet.paste(text); return; }
   if (MODE !== 'cut') { BookGrid.pasteAppend(MODE, text); return; }
   const p = B.parseOrders(B.gridOf(text), { today: today() });
   if (p.error) { MSG = { kind: 'bad', html: esc(p.error) }; renderAct(); return; }
@@ -1024,6 +1150,8 @@ document.addEventListener('drop', (e) => {
   e.preventDefault();
   DRAG = 0;
   $('inp').classList.remove('bk-dragging');
+  if (FIRE && !USER) return;
+  if (FIRE && MODE === 'set') { BookFireSet.files([...e.dataTransfer.files]); return; }   // ไฟล์ยอดตั้งต้น
   if (MODE !== 'cut') setMode('cut');   // ไฟล์ออเดอร์ใช้กับแท็บตัดขายเท่านั้น
   readFiles([...e.dataTransfer.files]);
 });
@@ -1032,7 +1160,7 @@ document.addEventListener('drop', (e) => {
 
 async function checkShared() {
   if (FIRE) {
-    if (!LOADING && !BKBUSY && !WmsShared.typing() && await FIRE.changed()) await load(false, true);
+    if (USER && !LOADING && !BKBUSY && !WmsShared.typing() && await FIRE.changed()) await load(false, true);
     return false;
   }
   const url = WmsSettings.txUrl();
@@ -1052,8 +1180,16 @@ async function checkShared() {
 compute();
 render();
 const WATCH = WmsShared.watch(checkShared);
-if (FIRE || WmsSettings.txUrl()) load(false);
-if (bookUrl()) {
+if (FIRE) {
+  /* ระบบใหม่: บัญชีที่ค้างไว้ในเบราว์เซอร์เข้าให้เอง ไม่มี = การ์ดเข้าสู่ระบบ */
+  FIRE.restore().then((r) => {
+    RESTORING = false;
+    if (r && !r.error) return afterLogin(r);
+    LOGIN_ERR = r && r.error ? r.error : '';
+    render();
+  }).catch((e) => { RESTORING = false; LOGIN_ERR = e.message; render(); });
+} else if (WmsSettings.txUrl()) load(false);
+if (bookUrl() && !FIRE) {
   loadNames();
   if (USER) {
     refreshState().then(() => { render(); return refreshDocs(); }).then(refreshSeen).then(() => { if (pendingCount()) queueRetry(2000); });

@@ -695,13 +695,19 @@
     };
   }
 
-  /** ตรวจยอด (แทน bk-rebuild): คิดยอดใหม่จากเอกสารทั้งหมดหลังยอดยกมา เทียบกับยอดในเครื่อง ไม่เขียนอะไร */
-  function rebuild(local) {
+  /** ยอดต่อกองคิดใหม่จากเอกสารทุกชุดในสำเนา (ตามลำดับ seq) · rows = แถวที่ใช้คิด */
+  function pilesFromDocs(local) {
     var map = {}, n = 0;
     liveDocs(local).slice().sort(function (a, b) { return a.seq - b.seq; }).forEach(function (d) {
       map = applyDoc(map, d);
       n += d.rows.length;
     });
+    return { map: map, rows: n };
+  }
+
+  /** ตรวจยอด (แทน bk-rebuild): คิดยอดใหม่จากเอกสารทั้งหมดหลังยอดยกมา เทียบกับยอดในเครื่อง ไม่เขียนอะไร */
+  function rebuild(local) {
+    var po = pilesFromDocs(local), map = po.map, n = po.rows;
     var have = allPiles(local), diff = [], keys = {};
     Object.keys(map).forEach(function (k) { keys[k] = 1; });
     Object.keys(have).forEach(function (k) { keys[k] = 1; });
@@ -973,6 +979,114 @@
     return out;
   }
 
+  /* ── ยอดยกมาจากไฟล์นับสต๊อกใหญ่ (ชีต ยอดตั้งต้น ของ WmsStocktake.openingBook) ── */
+
+  var OPEN_SHEET = ['SKU', 'SKU', 'Product Name', 'LOT', 'PO', 'Location เบิก', 'Location รับ', 'QTY', 'รับ/เบิก', 'Note', 'Status', 'NAME'];
+  var EST_NOTE = 'ประมาณ LOT/PO จาก GR';
+
+  /** ค่าในช่องของชีต → ข้อความ (ตัวเลข LOT 0.11 PO 9900000001 กลับเป็นข้อความเดิม) */
+  function sheetText(v) {
+    if (typeof v === 'number') return isFinite(v) ? String(v) : '';
+    return text(v);
+  }
+  function sheetQty(v) {
+    if (typeof v === 'number') return isFinite(v) ? v : null;
+    var s = text(v).replace(/,/g, '');
+    return /^-?\d+(\.\d+)?$/.test(s) ? +s : null;
+  }
+
+  /**
+   * ชีต ยอดตั้งต้น (A–L ตาม OPEN_SHEET มีหัวตารางหรือไม่มีก็ได้) → แถว bk-open
+   *   [SKU, SKU เต็ม, ชื่อ, LOT, PO, โล, ชิ้น, Status, วันรับ yyyy-mm-dd, ไตรมาส Qn/yy]
+   * วันรับจาก "GR dd-mm-yy" ใน Note · ไตรมาสจาก "Qn/yy" ใน Note · LOT / PO ว่าง = 0 (ไม่รู้) · กองเดียวกันหลายแถวรวมเป็นแถวเดียว
+   * ชิ้น 0 ข้าม · ไม่มี SKU ไม่มีโล ชิ้นติดลบ ไม่ใช่แถวรับ = แถวผิด (ลงไม่ได้จนกว่าจะแก้ไฟล์)
+   * @returns {{rows, bad: [{n, sku, loc, why}], tot}} หรือ {error}
+   */
+  function openingFromSheet(grid) {
+    grid = Array.isArray(grid) ? grid : [];
+    var at = -1;
+    for (var i = 0; i < Math.min(grid.length, 30); i++) {
+      var h = (grid[i] || []).map(text);
+      if (h.indexOf('Location รับ') >= 0 && h.indexOf('QTY') >= 0) { at = i; break; }
+    }
+    var col = { sku: 0, long: 1, name: 2, lot: 3, po: 4, from: 5, to: 6, qty: 7, kind: 8, note: 9, st: 10 };
+    if (at >= 0) {
+      var hd = grid[at].map(text), s1 = hd.indexOf('SKU'), s2 = s1 >= 0 ? hd.indexOf('SKU', s1 + 1) : -1;
+      col = { sku: s1, long: s2, name: hd.indexOf('Product Name'), lot: hd.indexOf('LOT'), po: hd.indexOf('PO'), from: hd.indexOf('Location เบิก'),
+        to: hd.indexOf('Location รับ'), qty: hd.indexOf('QTY'), kind: hd.indexOf('รับ/เบิก'), note: hd.indexOf('Note'), st: hd.indexOf('Status') };
+      if (col.sku < 0 || col.lot < 0 || col.po < 0) return { error: 'หัวตารางไม่ครบ ต้องมี SKU LOT PO Location รับ QTY แบบชีต ยอดตั้งต้น' };
+    } else {
+      var first = grid.filter(function (r) { return r && r.some(function (v) { return text(v) !== ''; }); })[0] || [];
+      if (first.length < 8 || sheetQty(first[7]) === null || !text(first[6])) {
+        return { error: 'ไม่ใช่ชีต ยอดตั้งต้น (ต้องมีคอลัมน์ A–L แบบไฟล์ตั้งต้นสมุดจากหน้านับสต๊อกใหญ่)' };
+      }
+    }
+    function get(r, k) { return col[k] >= 0 ? r[col[k]] : ''; }
+    var rows = [], bad = [], by = {}, skus = {}, locs = {}, openLocs = {};
+    var tot = { piles: 0, qty: 0, skus: 0, locs: 0, open: 0, noGr: 0, est: 0, zero: 0, merged: 0, skipped: 0 };
+    for (var j = at + 1; j < grid.length; j++) {
+      var r = grid[j] || [];
+      if (!r.some(function (v) { return text(v) !== ''; })) continue;
+      var n = j + 1;
+      var sku = code(get(r, 'sku'), 60), long = code(get(r, 'long'), 60), loc = code(get(r, 'to'), 40), qty = sheetQty(get(r, 'qty'));
+      var kind = text(get(r, 'kind')), from = text(get(r, 'from'));
+      var why = !sku && !long ? 'ไม่มี SKU' : !loc ? 'ไม่มี Location รับ' : qty === null ? 'QTY ไม่ใช่ตัวเลข' : qty < 0 ? 'QTY ติดลบ'
+        : (kind && kind !== 'รับ') || from ? 'ไม่ใช่แถวรับ (ยอดตั้งต้นต้องเป็นแถวรับเข้าโลเท่านั้น)' : '';
+      if (why) { bad.push({ n: n, sku: sku || long, loc: loc, why: why }); continue; }
+      if (!qty) { tot.skipped++; continue; }
+      var lot = code(sheetText(get(r, 'lot')), 20), po = code(sheetText(get(r, 'po')), 40);
+      if (lot === '' || po === '') { tot.zero++; if (lot === '') lot = '0'; if (po === '') po = '0'; }
+      var note = text(get(r, 'note')), gr = grDay(note), qm = /\bQ([1-4])\/(\d{2})\b/.exec(note);
+      var st = text(get(r, 'st')) === 'เปิด' ? 'เปิด' : '';
+      if (note.indexOf(EST_NOTE) >= 0) tot.est++;
+      var k = pileKey(loc, long || sku, lot, po);
+      if (by[k]) {
+        var p = by[k];
+        p[6] = round3(p[6] + qty);
+        if (st) p[7] = 'เปิด';
+        if (gr && (!p[8] || gr < p[8])) p[8] = gr;
+        tot.merged++;
+      } else {
+        by[k] = [sku || long, long, plain(get(r, 'name'), 120), lot, po, loc, qty, st, gr, qm ? 'Q' + qm[1] + '/' + qm[2] : ''];
+        rows.push(by[k]);
+      }
+      skus[long || sku] = 1;
+      locs[loc] = 1;
+      if (st) openLocs[loc] = 1;
+    }
+    rows.forEach(function (x) { tot.qty = round3(tot.qty + x[6]); if (!x[8]) tot.noGr++; });
+    tot.piles = rows.length;
+    tot.skus = Object.keys(skus).length;
+    tot.locs = Object.keys(locs).length;
+    tot.open = Object.keys(openLocs).length;
+    if (!rows.length && !bad.length) return { error: 'ไม่มีแถวยอดในชีตนี้' };
+    if (rows.length > OPEN_MAX) return { error: 'ยอดยกมาต้องมี 1–' + OPEN_MAX + ' กอง (ไฟล์นี้ ' + rows.length + ' กอง)' };
+    return { rows: rows, bad: bad, tot: tot };
+  }
+
+  /* ── วันของโควตาฟรี: Firebase รีเซ็ตเที่ยงคืนเวลาแปซิฟิก (ไทยประมาณ 14:00–15:00) ── */
+
+  var PT_FMT = null;
+  /** 'yyyy-mm-dd' ตามเวลาแปซิฟิก (มีเวลาออมแสง) */
+  function pacificDay(now) {
+    try {
+      PT_FMT = PT_FMT || new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' });
+      var o = {};
+      PT_FMT.formatToParts(new Date(now)).forEach(function (p) { o[p.type] = p.value; });
+      return o.year + '-' + o.month + '-' + o.day;
+    } catch (e) {
+      var d = new Date(now - 8 * 3600000);
+      return d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate());
+    }
+  }
+  /** เวลา (ms) ที่โควตารีเซ็ตรอบถัดไป ละเอียดระดับนาที */
+  function pacificReset(now) {
+    var day = pacificDay(now), t = now;
+    for (var h = 0; h < 26 && pacificDay(t + 3600000) === day; h++) t += 3600000;
+    for (var m = 0; m < 61 && pacificDay(t) === day; m++) t += 60000;
+    return t - (t % 60000);
+  }
+
   window.WmsFireCore = {
     V: V, API_V: API_V, PART_BYTES: PART_BYTES, PARTS_MAX: PARTS_MAX, TIME: TIME, OPS: OPS,
     ROLE_HEAD: ROLE_HEAD, ROLE_USER: ROLE_USER, ROLE_VIEW: ROLE_VIEW, VOID: VOID,
@@ -982,7 +1096,8 @@
     pileKey: pileKey, applyRows: applyRows, applyDoc: applyDoc, pilesFor: pilesFor,
     prep: prep, retMonths: retMonths, plan: plan, splitDoc: splitDoc, revRow: revRow,
     docIn: docIn, voids: voids, liveDocs: liveDocs, cutKeys: cutKeys, returnedLocal: returnedLocal,
-    seen: seen, find: find, recent: recent, stock: stock, state: state, rebuild: rebuild, fifo: fifo, allPiles: allPiles,
+    seen: seen, find: find, recent: recent, stock: stock, state: state, rebuild: rebuild, pilesFromDocs: pilesFromDocs, fifo: fifo, allPiles: allPiles,
     ownDate: ownDate, plainDate: plainDate, sheetNum: sheetNum,
+    OPEN_SHEET: OPEN_SHEET, OPEN_MAX: OPEN_MAX, openingFromSheet: openingFromSheet, pacificDay: pacificDay, pacificReset: pacificReset, plain: plain,
   };
 })();

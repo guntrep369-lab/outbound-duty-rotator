@@ -1,12 +1,13 @@
 /**
- * @file wms-fire.js — ระบบใหม่บน Firebase ขั้น 1: store (จริง/จำลอง) ล็อกอิน สำเนาในเครื่อง และ op แบบ book-api
+ * @file wms-fire.js — ระบบใหม่บน Firebase: store (จริง/จำลอง) ล็อกอิน สำเนาในเครื่อง op แบบ book-api รายชื่อคนใช้ ตัวนับโควตา
  *
- *   store   interface เดียว: get, getMany, docsAfter, tx, commit, onMeta, setUser, stats
+ *   store   interface เดียว: get, getMany, docsAfter, list, tx, commit, patch, onMeta, setUser, stats, mine (ของเครื่องนี้)
  *           memStore()        ในหน่วยความจำ ทำตัวแบบ Firestore: transaction ลองใหม่เมื่อชน, สร้างได้อย่างเดียว, เช็คสิทธิ์แบบ firestore.rules
  *           firestoreStore()  Firestore จริง โหลด SDK จาก www.gstatic.com (ใช้เฉพาะเว็บที่ deploy ห้ามเรียกจากเทสต์และ dev)
  *   auth    fakeAuth() เลือกบัญชีทดลอง · googleAuth() ป๊อปอัป Google ของบริษัท (signInWithPopup + hd)
  *   cache   memCache() · idbCache() สำเนาใน IndexedDB ต่อท้ายเฉพาะเอกสารใหม่
- *   open()  ตัวสมุด: login, sync (ดึงเฉพาะเอกสารใหม่ ยอดต่อกองคิดในเครื่อง), fifo() รูป tx-fifo, post('bk-…') คำตอบรูปเดิม
+ *   open()  ตัวสมุด: login / restore, sync (ดึงเฉพาะเอกสารใหม่ ยอดต่อกองคิดในเครื่อง), fifo() รูป tx-fifo, post('bk-…') คำตอบรูปเดิม
+ *           users / saveUser (หัวหน้า), quota() อ่าน/เขียนวันนี้ (เครื่องนี้ + ทุกเครื่องที่ส่งยอดมาที่ use/{วัน}), reload() ล้างสำเนาแล้วดึงใหม่
  *
  * ตรรกะทั้งหมดอยู่ใน wms-fire-core.js (ต้องโหลดก่อน) โหลดเป็น classic script เปิดเป็น window.WmsFire
  */
@@ -22,8 +23,18 @@
   var MASTERS = ['conv', 'sup', 'cap'];
   var ROLE_TH = { head: C.ROLE_HEAD, staff: C.ROLE_USER, viewer: C.ROLE_VIEW };
   var NO_RIGHT = 'บัญชีนี้ยังไม่มีสิทธิ์ ติดต่อหัวหน้า Inventory ให้เพิ่มชื่อในหน้าตั้งค่า';
+  var ROLES = ['head', 'staff', 'viewer'];
+  var LIMITS = { reads: 50000, writes: 20000 };   // โควตาฟรีต่อวันของ Firestore (Spark)
+  var LAST_EVERY = 3600000;     // บันทึกเวลาเข้าล่าสุดไม่ถี่กว่าชั่วโมงละครั้ง
+  var REPORT_EVERY = 3600000;   // ส่งยอดอ่าน/เขียนของเครื่องนี้ไปรวมที่ use/{วัน} ชั่วโมงละครั้ง
 
   function clone(o) { return o === undefined || o === null ? o : JSON.parse(JSON.stringify(o)); }
+  function diffKeys(a, b) {
+    a = a || {}; b = b || {};
+    var ks = {};
+    Object.keys(a).concat(Object.keys(b)).forEach(function (k) { if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) ks[k] = 1; });
+    return Object.keys(ks);
+  }
   function pad2(n) { return (+n < 10 ? '0' : '') + (+n); }
   function pad4(n) { var s = String(n); while (s.length < 4) s = '0' + s; return s; }
 
@@ -57,7 +68,20 @@
       var path = writes[i][0], d = writes[i][1], seg = path.split('/'), col = seg[0], id = seg[1], old = before[path];
       if (seg.length !== 2) return 'ที่เขียนไม่ถูก ' + path;
       calls += 1;   // get(users/{อีเมล}) ทุกเอกสาร
-      if (col === 'users' || col === 'master' || col === 'trc') { if (!head) return 'เขียน ' + col + ' ได้เฉพาะหัวหน้า'; continue; }
+      if (col === 'users') {
+        if (head) continue;
+        /* ทุกคนแก้ได้แค่เวลาเข้าล่าสุดของตัวเอง เป็นเวลาเซิร์ฟเวอร์ */
+        var ch = path === 'users/' + email && old && old.active === true ? diffKeys(d, old) : [];
+        if (ch.length === 1 && ch[0] === 'last' && d.last === C.TIME) continue;
+        return 'เขียน users ได้เฉพาะหัวหน้า';
+      }
+      if (col === 'use') {
+        /* ยอดอ่าน/เขียนรายวัน ทุกเครื่องเติมช่องของตัวเอง ครั้งละช่องเดียว */
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(id)) return 'use ต้องเป็นวันที่';
+        if (diffKeys(d, old).length !== 1) return 'use แก้ได้ครั้งละเครื่อง';
+        continue;
+      }
+      if (col === 'master' || col === 'trc') { if (!head) return 'เขียน ' + col + ' ได้เฉพาะหัวหน้า'; continue; }
       if (!staff) return 'บัญชีนี้ดูได้อย่างเดียว';
       if (col === 'docs') {
         if (old) {
@@ -121,8 +145,9 @@
     Object.keys(opt.data || {}).forEach(function (p) { docs[p] = { ver: 1, d: clone(opt.data[p]) }; });
 
     function snapshot() { var o = {}; Object.keys(docs).forEach(function (p) { o[p] = docs[p].d; }); return o; }
-    function read(p) { counts.reads++; return docs[p] ? clone(docs[p].d) : null; }
-    function apply(writes) {
+    /* counts = ทั้งฐาน · own = ของเครื่องนั้น (ตัวนับโควตาของเครื่อง) */
+    function read(p, own) { counts.reads++; own.reads++; return docs[p] ? clone(docs[p].d) : null; }
+    function apply(writes, own) {
       var t = now(), metaHit = false;
       writes.forEach(function (w) {
         var d = clone(w[1]);
@@ -131,6 +156,7 @@
         if (w[0] === 'meta/head') metaHit = true;
       });
       counts.writes += writes.length;
+      own.writes += writes.length;
       if (metaHit) listeners.forEach(function (cb) { cb(clone(docs['meta/head'].d)); });
       if (opt.onCommit) opt.onCommit(snapshot());
     }
@@ -144,24 +170,44 @@
     /** หนึ่งเครื่อง = หนึ่งการเชื่อมต่อ ล็อกอินของใครของมัน */
     function client() {
       var user = null;
+      var own = { reads: 0, writes: 0 };
+      /** อ่านทั้งคอลเลกชันได้ไหม (แบบ allow list ใน firestore.rules) */
+      function listError(col) {
+        if (opt.rules === false) return '';
+        if (!user) return 'ยังไม่ได้ล็อกอิน';
+        var me = docs['users/' + user.email];
+        if (!me || me.d.active !== true) return NO_RIGHT;
+        if (col === 'users' && me.d.role !== 'head') return 'รายชื่อดูได้เฉพาะหัวหน้า';
+        return '';
+      }
       return {
         kind: 'mem',
         setUser: function (u) { user = u ? { email: String(u.email || '').toLowerCase(), verified: u.verified !== false } : null; },
         user: function () { return user; },
-        get: function (p) { return Promise.resolve(read(p)); },
-        getMany: function (ps) { return Promise.resolve(ps.map(read)); },
+        get: function (p) { return Promise.resolve(read(p, own)); },
+        getMany: function (ps) { return Promise.resolve(ps.map(function (p) { return read(p, own); })); },
         docsAfter: function (seq, limit) {
           var list = Object.keys(docs).filter(function (p) { return p.indexOf('docs/') === 0 && +docs[p].d.seq > seq; })
             .sort(function (a, b) { return docs[a].d.seq - docs[b].d.seq || (a < b ? -1 : 1); }).slice(0, limit || PAGE);
           counts.reads += Math.max(1, list.length);
+          own.reads += Math.max(1, list.length);
           return Promise.resolve(list.map(function (p) { return { id: p.slice(5), data: clone(docs[p].d) }; }));
+        },
+        /** ทุกเอกสารในคอลเลกชัน [{id, data}] */
+        list: function (col) {
+          var why = listError(col);
+          if (why) return Promise.reject(denied(why));
+          var ps = Object.keys(docs).filter(function (p) { return p.indexOf(col + '/') === 0 && p.split('/').length === 2; }).sort();
+          counts.reads += Math.max(1, ps.length);
+          own.reads += Math.max(1, ps.length);
+          return Promise.resolve(ps.map(function (p) { return { id: p.slice(col.length + 1), data: clone(docs[p].d) }; }));
         },
         tx: async function (fn) {
           counts.tx++;
           for (var a = 0; a < TX_TRIES; a++) {
             var seen = {}, writes = [];
             var t = {
-              get: function (p) { counts.reads++; seen[p] = docs[p] ? docs[p].ver : 0; return Promise.resolve(docs[p] ? clone(docs[p].d) : null); },
+              get: function (p) { counts.reads++; own.reads++; seen[p] = docs[p] ? docs[p].ver : 0; return Promise.resolve(docs[p] ? clone(docs[p].d) : null); },
               set: function (p, d) { writes.push([p, clone(d)]); },
             };
             var out = await fn(t);
@@ -171,7 +217,7 @@
             if (writes.length) {
               var why = check(user, writes);
               if (why) throw denied(why);
-              apply(writes);
+              apply(writes, own);
             }
             return out;
           }
@@ -180,8 +226,14 @@
         commit: function (writes) {
           var why = check(user, writes);
           if (why) return Promise.reject(denied(why));
-          apply(writes);
+          apply(writes, own);
           return Promise.resolve();
+        },
+        /** เขียนเฉพาะบางช่อง ช่องอื่นคงเดิม (setDoc merge) */
+        patch: function (p, fields) {
+          var d = docs[p] ? clone(docs[p].d) : {};
+          Object.keys(fields).forEach(function (k) { d[k] = clone(fields[k]); });
+          return this.commit([[p, d]]);
         },
         onMeta: function (cb) {
           listeners.push(cb);
@@ -189,6 +241,7 @@
         },
         hook: function (fn) { hook = fn; },
         stats: function () { return clone(counts); },
+        mine: function () { return clone(own); },
         dump: snapshot,
         connect: client,
         /** เขียนตรงไม่ผ่านกฎ ใช้ตั้งข้อมูลทดลองเท่านั้น */
@@ -250,16 +303,27 @@
           });
         });
       },
+      list: function (col) {
+        return F.getDocs(F.collection(db, col)).then(function (s) {
+          if (!s.size) counts.reads++;
+          return s.docs.map(function (x) { return { id: x.id, data: out(x) }; });
+        });
+      },
       commit: function (writes) {
         var b = F.writeBatch(db);
         writes.forEach(function (w) { b.set(ref(w[0]), inn(w[1])); });
         counts.writes += writes.length;
         return b.commit();
       },
+      patch: function (p, fields) {
+        counts.writes++;
+        return F.setDoc(ref(p), inn(fields), { merge: true });
+      },
       onMeta: function (cb) {
         return F.onSnapshot(ref('meta/head'), function (snap) { var d = out(snap); if (d) cb(d); });
       },
       stats: function () { return clone(counts); },
+      mine: function () { return clone(counts); },
     };
     return { store: store, app: app, sdk: m };
   }
@@ -363,16 +427,60 @@
     };
   }
 
+  /** ที่เก็บตัวนับโควตาของเครื่อง (ค่าเริ่มต้นในหน่วยความจำ หน้าเว็บใช้ storeMeter ใน localStorage) */
+  function memMeter() {
+    var v = null;
+    return { load: function () { return clone(v); }, save: function (o) { v = clone(o); } };
+  }
+  function storeMeter(key) {
+    return {
+      load: function () { try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) { return null; } },
+      save: function (o) { try { localStorage.setItem(key, JSON.stringify(o)); } catch (e) {} },
+    };
+  }
+
   /* ── ตัวสมุด ──────────────────────────────────────────────────────────── */
 
   /**
-   * opt = { store, auth, cache, now(), partBytes, onChange(meta) }
-   * คืน fire: login, logout, sync, fifo, post, local, user, watch, usage
+   * opt = { store, auth, cache, now(), partBytes, domain โดเมนอีเมลบริษัท, meter ที่เก็บตัวนับโควตา }
+   * คืน fire: login, logout, sync, fifo, post, local, user, watch, usage, users, saveUser, quota, reload
    */
   function open(opt) {
     var store = opt.store, auth = opt.auth || fakeAuth([]), cache = opt.cache || memCache();
     var now = opt.now || Date.now;
+    var domain = String(opt.domain || '').toLowerCase();
+    var meter = opt.meter || memMeter();
     var local = emptyLocal(), loaded = false, user = null, syncing = null;
+    var mark = (function () { var s = store.mine ? store.mine() : store.stats(); return { reads: s.reads, writes: s.writes }; })();
+
+    /* ── ตัวนับโควตาของเครื่องนี้ (วันตามเวลาแปซิฟิกแบบ Firebase) ── */
+    function used() { return store.mine ? store.mine() : store.stats(); }
+    function tally() {
+      var s = used(), day = C.pacificDay(now());
+      var m = meter.load() || {};
+      if (!m.dev) m.dev = 'd' + Math.random().toString(36).slice(2, 10);
+      if (m.day !== day) { m.day = day; m.reads = 0; m.writes = 0; m.sent = 0; m.sentAt = 0; }
+      if (mark) { m.reads += Math.max(0, s.reads - mark.reads); m.writes += Math.max(0, s.writes - mark.writes); }
+      mark = { reads: s.reads, writes: s.writes };
+      meter.save(m);
+      return m;
+    }
+    /** ส่งยอดของเครื่องนี้ไปรวมที่ use/{วัน} (ชั่วโมงละครั้ง หรือทันทีตอนเปิดหน้าโควตา) เขียนพลาดไม่เป็นไร */
+    async function report(force) {
+      if (!user) return;
+      var m = tally();
+      if (!force && now() - (m.sentAt || 0) < REPORT_EVERY) return;
+      if (m.reads + m.writes === m.sent) return;
+      var entry = {};
+      entry[m.dev] = { r: m.reads, w: m.writes + 1, by: user.name };
+      try {
+        await store.patch('use/' + m.day, entry);
+        m = tally();
+        m.sent = m.reads + m.writes;
+        m.sentAt = now();
+        meter.save(m);
+      } catch (e) {}
+    }
 
     function reply(o) { if (o && typeof o === 'object' && !Array.isArray(o)) { o.v = C.API_V; if (!o.error) o.app = 'book'; } return o; }
     function fail(msg, extra) { var o = { error: msg }; if (extra) Object.keys(extra).forEach(function (k) { o[k] = extra[k]; }); return reply(o); }
@@ -433,20 +541,135 @@
     }
 
     function sync() {
-      if (!syncing) syncing = syncNow().finally(function () { syncing = null; });
+      if (!syncing) {
+        syncing = syncNow().finally(function () { syncing = null; tally(); report(false); });
+      }
       return syncing;
     }
 
-    async function login(email) {
-      var u = typeof email === 'string' ? await auth.signIn(email) : await auth.signIn();
+    function inDomain(e) { return !domain || e.slice(-(domain.length + 1)) === '@' + domain; }
+
+    /** เข้าด้วยบัญชีที่ auth ให้มา (Google ป๊อปอัป / บัญชีทดลอง) แล้วเช็ครายชื่อใน users/{อีเมล} */
+    async function enter(u) {
+      if (!u || !u.email) return fail('ยังไม่ได้เลือกบัญชี');
+      if (!inDomain(u.email)) {
+        try { await auth.signOut(); } catch (e) {}
+        return fail(u.email + ' ไม่ใช่อีเมลบริษัท ใช้บัญชี @' + domain + ' เท่านั้น', { noRight: 1 });
+      }
+      if (u.verified === false) { try { await auth.signOut(); } catch (e) {} return fail('อีเมลนี้ยังไม่ยืนยันกับ Google'); }
       store.setUser(u);
-      var prof = await store.get('users/' + u.email);
-      if (!prof || prof.active !== true) { user = null; store.setUser(null); return fail(NO_RIGHT); }
-      user = { email: u.email, name: prof.name || u.name || u.email, role: prof.role === 'head' || prof.role === 'staff' ? prof.role : 'viewer' };
+      var prof = null;
+      try { prof = await store.get('users/' + u.email); } catch (e) { prof = null; }
+      if (!prof || prof.active !== true) {
+        user = null; store.setUser(null);
+        try { await auth.signOut(); } catch (e) {}
+        return fail(u.email + ' ' + NO_RIGHT.replace('บัญชีนี้', ''), { noRight: 1 });
+      }
+      user = { email: u.email, name: prof.name || u.name || u.email, role: ROLES.indexOf(prof.role) >= 0 ? prof.role : 'viewer' };
+      /* เวลาเข้าล่าสุด หัวหน้าเห็นในหน้าตั้งค่า เขียนไม่เกินชั่วโมงละครั้ง พลาดไม่เป็นไร */
+      if (!(+prof.last > 0) || now() - prof.last > LAST_EVERY) { try { await store.patch('users/' + u.email, { last: C.TIME }); } catch (e) {} }
+      tally();
       return reply({ who: user.name, role: ROLE_TH[user.role], mode: 'book', email: user.email });
     }
 
+    async function login(email) {
+      var u;
+      try { u = typeof email === 'string' ? await auth.signIn(email) : await auth.signIn(); }
+      catch (e) { return fail(/popup|cancel/i.test(String(e && (e.code || e.message))) ? 'ปิดหน้าต่างเลือกบัญชีก่อนเลือก ลองกดอีกครั้ง' : String(e && e.message || e)); }
+      return enter(u);
+    }
+    /** เปิดหน้าใหม่: บัญชีที่ค้างไว้ในเบราว์เซอร์ (Google จำให้) เข้าให้เองโดยไม่เด้งหน้าต่าง · ไม่มี = null */
+    async function restore() {
+      var u = auth.ready ? await auth.ready() : auth.current();
+      return u ? enter(u) : null;
+    }
+
     function logout() { user = null; store.setUser(null); return auth.signOut(); }
+
+    /* ── รายชื่อคนใช้ (หัวหน้า) ── */
+
+    function userRow(id, d) {
+      d = d || {};
+      return { email: id, name: d.name || '', role: ROLES.indexOf(d.role) >= 0 ? d.role : 'viewer', active: d.active === true, last: +d.last || 0, by: d.by || '', at: +d.at || 0 };
+    }
+    async function users() {
+      if (!user || user.role !== 'head') return fail('รายชื่อดูได้เฉพาะหัวหน้า');
+      var list;
+      try { list = await store.list('users'); } catch (e) { return fail(String(e && e.message || e)); }
+      tally();
+      var order = { head: 0, staff: 1, viewer: 2 };
+      var out = list.map(function (x) { return userRow(x.id, x.data); }).sort(function (a, b) {
+        return (+b.active - +a.active) || (order[a.role] - order[b.role]) || a.name.localeCompare(b.name, 'th') || (a.email < b.email ? -1 : 1);
+      });
+      return reply({ users: out, domain: domain });
+    }
+    /** เพิ่มหรือแก้คน (ชื่อ สิทธิ์ เปิด/ปิด) ไม่ลบ: คนที่ออกให้ปิดไว้ ชื่อในเอกสารเก่ายังอ่านได้ */
+    async function saveUser(email, data) {
+      if (!user || user.role !== 'head') return fail('แก้รายชื่อได้เฉพาะหัวหน้า');
+      data = data || {};
+      var e = String(email || '').trim().toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) return fail('อีเมลไม่ถูกรูปแบบ');
+      if (!inDomain(e)) return fail('ต้องเป็นอีเมล @' + domain + ' เท่านั้น');
+      var name = C.plain(data.name, 60);
+      if (!name) return fail('ต้องใส่ชื่อ');
+      if (ROLES.indexOf(data.role) < 0) return fail('สิทธิ์ต้องเป็น หัวหน้า ลงรายการ หรือ ดูอย่างเดียว');
+      var active = data.active !== false;
+      if (e === user.email && (data.role !== 'head' || !active)) return fail('ลดสิทธิ์หรือปิดบัญชีตัวเองไม่ได้ ให้หัวหน้าอีกคนทำ');
+      var list;
+      try { list = await store.list('users'); } catch (err) { return fail(String(err && err.message || err)); }
+      var old = null, heads = 0;
+      list.forEach(function (x) {
+        if (x.id === e) old = x.data;
+        else if (x.data && x.data.active === true && x.data.role === 'head') heads++;
+      });
+      if (!(data.role === 'head' && active) && !heads) return fail('ต้องมีหัวหน้าที่ใช้งานได้อย่างน้อย 1 คน');
+      if (old && data.add) return fail(e + ' มีในรายชื่อแล้ว (' + (old.name || '') + ')');
+      try {
+        await store.patch('users/' + e, { name: name, role: data.role, active: active, by: user.email, at: C.TIME });
+      } catch (err) { return fail(String(err && err.message || err)); }
+      tally();
+      return reply({ user: userRow(e, { name: name, role: data.role, active: active, last: old && old.last, by: user.email, at: now() }), added: !old });
+    }
+
+    /* ── โควตา ── */
+
+    /** วันนี้ (เวลาแปซิฟิก): เครื่องนี้ · ทุกเครื่องที่ส่งยอดมา (use/{วัน}) · เอกสารที่บันทึกวันนี้ทั้งระบบ */
+    async function quota() {
+      if (user) { try { await sync(); } catch (e) {} }   // เอกสารวันนี้นับจากสำเนา ดึงของใหม่ก่อน
+      await report(true);
+      var m = tally(), day = m.day;
+      var docs = 0, dw = 0;
+      (local.docs || []).forEach(function (d) { if (d.at && C.pacificDay(d.at) === day) { docs++; dw += (d.part || 1) + 1; } });
+      var all = null;
+      if (user) {
+        try {
+          var u = await store.get('use/' + day);
+          m = tally();   // ช่องของเครื่องนี้ใช้ยอดล่าสุด (รวมการอ่านครั้งนี้)
+          if (u) {
+            all = { reads: 0, writes: 0, list: [] };
+            Object.keys(u).forEach(function (k) {
+              var x = u[k] || {};
+              if (k === m.dev) x = { r: m.reads, w: m.writes, by: x.by };
+              all.reads += +x.r || 0;
+              all.writes += +x.w || 0;
+              all.list.push({ dev: k, me: k === m.dev, by: x.by || '', r: +x.r || 0, w: +x.w || 0 });
+            });
+            all.list.sort(function (a, b) { return (b.r + b.w) - (a.r + a.w); });
+          }
+        } catch (e) { all = null; }
+      }
+      m = tally();
+      return { day: day, reads: m.reads, writes: m.writes, limits: clone(LIMITS), docs: docs, docWrites: dw, all: all, resetAt: C.pacificReset(now()) };
+    }
+
+    /** ล้างสำเนาในเครื่องแล้วดึงใหม่ทั้งหมด (อ่านเท่าจำนวนเอกสาร) */
+    async function reload() {
+      if (syncing) { try { await syncing; } catch (e) {} }
+      local = emptyLocal();
+      loaded = true;
+      try { await cache.clear(); } catch (e) {}
+      return sync();
+    }
 
     function docByNo(no) { return local.docs.filter(function (d) { return d.no === no; })[0] || null; }
 
@@ -484,6 +707,9 @@
         }
         if (res.fail) return reply(res.fail);
         var pl = res.plan;
+        /* เวลาเซิร์ฟเวอร์ยังไม่รู้ ใช้เวลาเครื่องไปก่อน (ตัวนับเอกสารวันนี้) · ส่วนแยก = เอกสารที่เขียนลบ meta */
+        pl.doc.at = now();
+        pl.doc.part = pl.writes.length - 1;
         local.docs.push(pl.doc);
         local.seq = pl.meta.seq;
         local.meta = clone(pl.meta);
@@ -500,7 +726,7 @@
       body = body || {};
       try {
         if (op === 'bk-login') return user ? reply({ who: user.name, role: ROLE_TH[user.role], mode: 'book', email: user.email }) : fail('ยังไม่ได้ล็อกอิน');
-        if (C.OPS[op]) return await save(op, body);
+        if (C.OPS[op]) { var sv = await save(op, body); tally(); return sv; }
         if (!user) return fail('ยังไม่ได้ล็อกอิน');
         await sync();
         var t = now();
@@ -509,7 +735,17 @@
         if (op === 'bk-recent') return reply(C.recent(local, body, t));
         if (op === 'bk-seen') return reply(C.seen(local, body, t));
         if (op === 'bk-find') return reply(C.find(local, body, t));
-        if (op === 'bk-rebuild') return user.role === 'head' ? reply(C.rebuild(local)) : fail('คำสั่งนี้ใช้ได้เฉพาะหัวหน้ากับรองหัวหน้า');
+        if (op === 'bk-rebuild') {
+          if (user.role !== 'head') return fail('คำสั่งนี้ใช้ได้เฉพาะหัวหน้ากับรองหัวหน้า');
+          /* ยอดในเครื่องไม่ตรงกับที่คิดจากเอกสาร (สำเนาเสียหรือถูกแก้) = ใช้ยอดที่คิดใหม่ แล้วบอกว่าซ่อมแล้ว */
+          var rb = C.rebuild(local);
+          if (!rb.same) {
+            local.piles = C.pilesFromDocs(local).map;
+            try { await cache.put(local, []); } catch (e) {}
+            rb.fixed = 1;
+          }
+          return reply(rb);
+        }
         if (op === 'bk-mode') return body.mode === 'book' ? reply({ mode: 'book', same: true }) : fail('ระบบใหม่ลงสมุดตรงเสมอ ไม่มีโหมดคัดลอก');
         if (op === 'bk-backup') return fail('ระบบใหม่สำรองทุกคืนด้วย fire-backup.gs');
         return fail('ไม่รู้จักคำสั่งนี้');
@@ -519,8 +755,9 @@
     }
 
     return {
-      store: store, auth: auth,
-      login: login, logout: logout, sync: sync, post: post,
+      store: store, auth: auth, domain: domain,
+      login: login, restore: restore, logout: logout, sync: sync, post: post,
+      users: users, saveUser: saveUser, quota: quota, reload: reload,
       user: function () { return user; },
       local: function () { return local; },
       fifo: function () { return C.fifo(local, now()); },
@@ -533,9 +770,9 @@
   }
 
   window.WmsFire = {
-    SDK_V: SDK_V,
+    SDK_V: SDK_V, LIMITS: LIMITS, ROLES: ROLES, ROLE_TH: ROLE_TH,
     memStore: memStore, firestoreStore: firestoreStore, rulesError: rulesError,
-    fakeAuth: fakeAuth, googleAuth: googleAuth, memCache: memCache, idbCache: idbCache,
+    fakeAuth: fakeAuth, googleAuth: googleAuth, memCache: memCache, idbCache: idbCache, memMeter: memMeter, storeMeter: storeMeter,
     open: open,
   };
 })();

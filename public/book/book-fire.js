@@ -3,7 +3,8 @@
  *
  * เปิด http://localhost:5173/book/?fire=dev   ฐานจำลองเก็บใน localStorage ของเครื่องนี้ ไม่ต่อ Firebase จริง
  *      ?fire=reset  ล้างฐานทดลองแล้วเริ่มใหม่ (ลงยอดยกมาสมมติให้)
- * บัญชีทดลองเลือกชื่อแล้วกดเข้า ไม่ต้องใส่รหัส (ระบบจริงเข้าด้วย Google ของบริษัท)
+ * กดเข้าสู่ระบบแล้วได้หน้าต่างเลือกบัญชีทดลองแทนป๊อปอัป Google (ระบบจริงเข้าด้วย Google ของบริษัท)
+ * มีบัญชีนอกโดเมน บัญชีที่ยังไม่ถูกเพิ่ม และบัญชีที่ปิดแล้ว ไว้ลองว่าถูกกันจริง
  * เปิดสองแท็บได้ แท็บหนึ่งบันทึก อีกแท็บเห็นภายในหนึ่งนาที (หรือกดดึงสต๊อกใหม่)
  *
  * หน้าเว็บที่ deploy ไม่โหลดอะไรเพิ่ม: นอก localhost หรือไม่มี ?fire= ได้ window.BookFire = null
@@ -17,12 +18,17 @@
   if (!local || !m) { window.BookFire = null; return; }
 
   var KEY = 'wms:fire:dev';
+  var WHO = 'wms:fire:dev:who';       // บัญชีที่เข้าค้างไว้ (แบบ Google จำการเข้าในเบราว์เซอร์)
+  var METER = 'wms:fire:dev:meter';   // ตัวนับโควตาของเครื่องนี้
   var IDB = 'wms-fire-dev';
   var DOMAIN = 'example.test';
   var ACCOUNTS = [
     { email: 'staff@' + DOMAIN, name: 'ทดลอง', role: 'staff' },
     { email: 'head@' + DOMAIN, name: 'หัวหน้าทดลอง', role: 'head' },
     { email: 'view@' + DOMAIN, name: 'ดูอย่างเดียวทดลอง', role: 'viewer' },
+    { email: 'off@' + DOMAIN, name: 'ออกแล้วทดลอง', role: 'staff', off: true },
+    { email: 'new@' + DOMAIN, name: 'คนใหม่ทดลอง', role: '' },
+    { email: 'someone@gmail.test', name: 'บัญชีส่วนตัวทดลอง', role: '' },
   ];
   /* ยอดยกมาสมมติ [SKU, SKU เต็ม, ชื่อ, LOT, PO, โล, ชิ้น, Status, วันรับ, ไตรมาส] */
   var OPEN = [
@@ -46,6 +52,8 @@
   }
   function readSaved() { try { return JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { return null; } }
   function save(dump) { try { localStorage.setItem(KEY, JSON.stringify(dump)); } catch (e) { console.warn('เก็บฐานทดลองไม่ได้ —', e.message); } }
+  function remember(email) { try { if (email) localStorage.setItem(WHO, email); else localStorage.removeItem(WHO); } catch (e) {} }
+  function remembered() { try { return localStorage.getItem(WHO) || ''; } catch (e) { return ''; } }
 
   var fire = null, shownSeq = -1;
 
@@ -54,14 +62,14 @@
     await script('../wms-fire.js');
     var W = window.WmsFire;
     if (m[1] === 'reset') {
-      try { localStorage.removeItem(KEY); } catch (e) {}
+      [KEY, WHO, METER].forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
       try { await W.idbCache(IDB).clear(); } catch (e) {}
       history.replaceState(null, '', location.pathname + '?fire=dev' + location.hash);
     }
     var data = readSaved();
     if (!data) {
       data = {};
-      ACCOUNTS.forEach(function (a) { data['users/' + a.email] = { name: a.name, role: a.role, active: true }; });
+      ACCOUNTS.forEach(function (a) { if (a.role) data['users/' + a.email] = { name: a.name, role: a.role, active: !a.off }; });
     }
     var store = W.memStore({ data: data, domain: DOMAIN, onCommit: save });
     save(store.dump());
@@ -69,9 +77,8 @@
     window.addEventListener('storage', function (e) { if (e.key === KEY && e.newValue) store.seed(JSON.parse(e.newValue)); });
     var cache;
     try { cache = window.indexedDB ? W.idbCache(IDB) : W.memCache(); } catch (e) { cache = W.memCache(); }
-    fire = W.open({ store: store, auth: W.fakeAuth(ACCOUNTS), cache: cache });
-    await fire.sync();
-    if (!fire.local().meta) {
+    fire = W.open({ store: store, auth: W.fakeAuth(ACCOUNTS), cache: cache, domain: DOMAIN, meter: W.storeMeter(METER) });
+    if (!store.dump()['meta/head']) {
       await fire.login(ACCOUNTS[1].email);
       var r = await fire.post('bk-open', { batch: 'demo-open', rows: OPEN });
       if (r.error) console.warn('ลงยอดยกมาสมมติไม่ได้ —', r.error);
@@ -84,18 +91,28 @@
 
   window.BookFire = {
     ready: ready,
-    names: async function () { await ready; return ACCOUNTS.map(function (a) { return a.name; }); },
-    /** bookPost ของหน้า: เข้าสมุดด้วยชื่อ (หน้าโหลดใหม่ เข้าให้เองจากชื่อที่จำไว้ในแท็บ) */
-    post: async function (op, body, who) {
+    dev: true,
+    domain: DOMAIN,
+    /** บัญชีให้เลือกในหน้าต่างทดลอง (แทนหน้าต่างเลือกบัญชีของ Google) */
+    accounts: function () { return ACCOUNTS.map(function (a) { return { email: a.email, name: a.name }; }); },
+    /** เปิดหน้าใหม่: เข้าด้วยบัญชีที่ค้างไว้ · ไม่มี = null */
+    restore: async function () {
       await ready;
-      if (op === 'bk-login' || (!fire.user() && who)) {
-        var a = ACCOUNTS.filter(function (x) { return x.name === who; })[0];
-        if (!a) return { error: 'ไม่มีชื่อนี้ในบัญชีทดลอง', v: window.WmsFireCore.API_V };
-        var r = await fire.login(a.email);
-        if (op === 'bk-login' || r.error) return r;
-      }
-      return fire.post(op, body);
+      var e = remembered();
+      if (!e) return null;
+      var r = await fire.login(e);
+      if (r.error) remember('');
+      return r;
     },
+    signIn: async function (email) {
+      await ready;
+      var r = await fire.login(email);
+      remember(r.error ? '' : email);
+      return r;
+    },
+    logout: function () { remember(''); if (fire) fire.logout(); },
+    user: function () { return fire ? fire.user() : null; },
+    post: async function (op, body) { await ready; return fire.post(op, body); },
     saves: saves,
     /** คำตอบรูป tx-fifo จากสำเนาในเครื่อง (ดึงเอกสารใหม่ก่อน) */
     fifo: async function () {
@@ -112,7 +129,17 @@
       await fire.sync();
       return fire.local().seq !== shownSeq;
     },
-    logout: function () { if (fire) fire.logout(); },
+    users: async function () { await ready; return fire.users(); },
+    saveUser: async function (email, data) { await ready; return fire.saveUser(email, data); },
+    quota: async function () { await ready; return fire.quota(); },
+    /** ล้างสำเนาเครื่องนี้แล้วดึงใหม่ทั้งหมด */
+    reload: async function () { await ready; await fire.reload(); shownSeq = fire.local().seq; return fire.fifo(); },
+    /** ขนาดสำเนาในเครื่อง { docs, seq, piles } */
+    copy: function () {
+      if (!fire) return null;
+      var l = fire.local();
+      return { docs: l.docs.length, seq: l.seq, piles: Object.keys(l.piles || {}).length };
+    },
     usage: function () { return fire ? fire.usage() : null; },
   };
 })();

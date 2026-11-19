@@ -1,13 +1,14 @@
 rules_version = '2';
 
-// ระบบใหม่บน Firebase ขั้น 1: สมุดสต๊อก
+// ระบบใหม่บน Firebase: สมุดสต๊อก (ขั้น 1 ตัวสมุด · ขั้น 2 รายชื่อคนใช้ ตัวนับโควตา)
 // กฎชุดเดียวกับ rulesError() ใน public/wms-fire.js (store จำลองเช็คแบบนี้ เทสต์อยู่ใน src/data/fire.test.js)
 //
 // ก่อนใช้จริง: เปลี่ยน example[.]com ในฟังก์ชัน signedIn() เป็นโดเมนอีเมลบริษัท (จุดเขียนเป็น [.])
 // วางใน Firebase Console > Firestore Database > Rules แล้วกด Publish
 //
 // ที่เก็บ
-//   users/{อีเมลตัวเล็ก}  {name, role: head | staff | viewer, active}  หัวหน้าเพิ่มชื่อ
+//   users/{อีเมลตัวเล็ก}  {name, role: head | staff | viewer, active, last, by, at}  หัวหน้าเพิ่มชื่อในหน้าตั้งค่า
+//   use/{วันแปซิฟิก}      {รหัสเครื่อง: {r, w, by}}  ตัวนับโควตา แต่ละเครื่องส่งยอดของตัวเองชั่วโมงละครั้ง
 //   meta/head            {v, seq, month, next, last, rows, open, mv, at}  ทุกการบันทึกเขียนตัวนี้ จึงเรียงกันทีละชุด
 //   docs/{รหัสชุด}         กดบันทึก 1 ครั้ง = 1 เอกสาร สร้างได้อย่างเดียว แก้ได้เฉพาะเลข TRcloud ลบไม่ได้
 //   docs/{รหัสชุด}~2, ~3  ส่วนแยกของเอกสารใหญ่ ต้องมาในคำขอเดียวกับเอกสารหลัก
@@ -100,9 +101,23 @@ service cloud.firestore {
 
     /* ── รายชื่อ ตารางหลัก ไฟล์ TRcloud ── */
 
+    /** รายชื่อ: อ่านของตัวเองได้ (ตอนเข้า) ดูทั้งรายชื่อได้เฉพาะหัวหน้า · ทุกคนแก้ได้แค่เวลาเข้าล่าสุดของตัวเอง */
     match /users/{e} {
-      allow read: if signedIn() && (e == email() || isActive(profile()));
-      allow write: if signedIn() && isHead(profile());
+      allow get: if signedIn() && (e == email() || isActive(profile()));
+      allow list: if signedIn() && isHead(profile());
+      allow create, delete: if signedIn() && isHead(profile());
+      allow update: if signedIn() && (isHead(profile())
+        || (e == email() && isActive(resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['last'])
+          && request.resource.data.last == request.time));
+    }
+    /** ยอดอ่าน/เขียนรายวัน (ตัวนับโควตา) แต่ละเครื่องเติมช่องของตัวเอง ครั้งละช่องเดียว */
+    match /use/{day} {
+      allow read: if signedIn() && isActive(profile());
+      allow create: if signedIn() && isActive(profile()) && day.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+        && request.resource.data.keys().size() == 1;
+      allow update: if signedIn() && isActive(profile())
+        && request.resource.data.diff(resource.data).affectedKeys().size() == 1;
     }
     match /master/{n} {
       allow read: if signedIn() && isActive(profile());
