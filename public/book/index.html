@@ -209,6 +209,7 @@
 <script src="../wms-book.js"></script>
 <script src="book-grid.js"></script>
 <script src="book-set.js"></script>
+<script src="book-fire.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -227,6 +228,7 @@ const HEAD_ONLY = { adj: 1, rows: 1, set: 1 };   // แท็บของหั�
 let MODE = (() => { try { const m = localStorage.getItem(MODE_KEY); return MODES.some((x) => x[0] === m) ? m : 'cut'; } catch (e) { return 'cut'; } })();
 const RETRY_MS = 30000;   // ชุดที่ส่งไม่สำเร็จเพราะเน็ต ส่งซ้ำเองทุกเท่านี้
 
+const FIRE = window.BookFire;   // ?fire=dev บน localhost = ลองกับระบบใหม่ (ฐานจำลองในเครื่อง) ไม่งั้น null
 let RES = null;      // คำตอบ tx-fifo (ข้อมูลกลาง)
 let ST = null;       // กองสต๊อกหลังหักชุดที่ยังไม่วาง
 let REF = { done: [], wait: [] };
@@ -281,6 +283,7 @@ function compute() {
 /* ── สต๊อกจาก tx-api (อ่านอย่างเดียว) ───────────────────────────────────── */
 
 async function load(fresh, quiet) {
+  if (FIRE) return loadFire(quiet);
   const url = WmsSettings.txUrl();
   if (LOADING || !url) return;
   LOADING = true;
@@ -318,9 +321,26 @@ async function load(fresh, quiet) {
   render();
 }
 
+/** ระบบใหม่ (ทดลอง): สต๊อกคิดจากสำเนาเอกสารในเครื่อง ดึงเฉพาะเอกสารใหม่ */
+async function loadFire(quiet) {
+  if (LOADING) return;
+  LOADING = true;
+  ERR = '';
+  if (!quiet) { BUSY = 'กำลังดึงเอกสารใหม่จากฐานทดลอง…'; renderSrc(); }
+  try {
+    RES = await FIRE.fifo();
+    compute();
+  } catch (e) {
+    ERR = e.message;
+  }
+  BUSY = '';
+  LOADING = false;
+  render();
+}
+
 /* ── สมุดสต๊อก (book-api.gs) ─────────────────────────────────────────────── */
 
-function bookUrl() { return WmsSettings.bookUrl(); }
+function bookUrl() { return FIRE ? 'fire:dev' : WmsSettings.bookUrl(); }
 
 /** โหมดบันทึก = หลังตัดรอบ กดบันทึกแล้วลงสมุดใหม่เลย ไม่ต้องคัดลอกไปวางในชีตเดิม */
 function bookMode() { return !!(BSTATE && BSTATE.mode === 'book'); }
@@ -370,6 +390,11 @@ function checkV(r) {
 }
 
 async function bookPost(op, body) {
+  if (FIRE) {
+    const fr = await FIRE.post(op, body, USER ? USER.who : '');
+    if (!fr.error && FIRE.saves(op)) { RES = FIRE.fifoNow(); compute(); }   // สำเนาในเครื่องรวมชุดใหม่แล้ว
+    return fr.error ? fr : checkV(fr);
+  }
   const r = await WmsGas.post(bookUrl(), { op, who: USER ? USER.who : '', pin: USER ? USER.pin : '', ...body }, { timeoutMs: 120000, busy: true });
   if (r && r.error && /รหัสไม่ถูก|ไม่มีชื่อ|ต้องเลือกชื่อ|รอ \d+ นาที/.test(r.error) && op !== 'bk-login') logout(r.error);
   return r.error ? r : checkV(r);
@@ -378,6 +403,7 @@ async function bookPost(op, body) {
 async function loadNames() {
   if (!bookUrl()) return;
   BKERR = '';
+  if (FIRE) { NAMES = await FIRE.names(); renderSrc(); return; }
   try {
     const r = checkV(await WmsGas.json(bookUrl(), 'bk-names', { retries: 1, timeoutMs: 60000 }));
     if (r.error) throw new Error(r.error);
@@ -392,7 +418,7 @@ async function loadNames() {
 async function login() {
   const who = $('bkWho') ? $('bkWho').value : '';
   const pin = $('bkPin') ? $('bkPin').value.trim() : '';
-  if (!who || !pin) { BKERR = 'เลือกชื่อและใส่รหัสก่อน'; renderSrc(); return; }
+  if (!who || (!pin && !FIRE)) { BKERR = 'เลือกชื่อและใส่รหัสก่อน'; renderSrc(); return; }
   BKBUSY = 'กำลังเข้า…'; BKERR = ''; renderSrc();
   try {
     USER = { who, pin, role: '' };
@@ -416,6 +442,7 @@ async function login() {
 }
 
 function logout(why) {
+  if (FIRE) FIRE.logout();
   USER = null;
   BSTATE = null;
   DOCS = []; DOCS_OK = false; SEEN = {}; SEEN_FOR = '';
@@ -639,7 +666,8 @@ async function readFiles(list) {
 
 function renderSrc() {
   let html = '';
-  const tx = WmsSettings.txUrl();
+  const tx = FIRE ? 'fire:dev' : WmsSettings.txUrl();
+  if (FIRE) html += '<span class="pill warn" title="ฐานจำลองในเครื่องนี้ ไม่ใช่ข้อมูลจริง ล้างด้วย ?fire=reset">🧪 ระบบใหม่ · ฐานทดลองในเครื่อง</span>';
   if (RES && !BUSY) {
     const when = new Date(WmsShared.stamp(RES)).toLocaleString('th-TH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
     const who = WmsShared.who(RES);
@@ -662,14 +690,14 @@ function renderSrc() {
   } else if (!USER) {
     if (NAMES && NAMES.length) {
       html += `<select class="bk-field" id="bkWho" aria-label="ชื่อ">${NAMES.map((n) => `<option>${esc(n)}</option>`).join('')}</select>` +
-        `<input class="bk-field bk-pin" id="bkPin" type="password" inputmode="numeric" maxlength="8" placeholder="รหัส" autocomplete="off">` +
+        (FIRE ? '' : `<input class="bk-field bk-pin" id="bkPin" type="password" inputmode="numeric" maxlength="8" placeholder="รหัส" autocomplete="off">`) +
         `<button id="bkIn" class="p" ${BKBUSY ? 'disabled' : ''}>${BKBUSY ? esc(BKBUSY) : 'เข้าสมุด'}</button>`;
     } else if (NAMES) {
       html += '<span class="pill warn">ยังไม่มีรายชื่อคน — หัวหน้าใส่ ชื่อ รหัส สิทธิ์ ในแท็บ ผู้ใช้ ของไฟล์ WMS สมุดสต๊อก</span><button id="bkNames">โหลดใหม่</button>';
     } else {
       html += `<button id="bkNames">${BKERR ? 'ลองเชื่อมสมุดอีกครั้ง' : 'กำลังเชื่อมสมุด…'}</button>`;
     }
-    html += '<button id="bkSet" title="เปลี่ยน URL ของสมุดสต๊อก">⚙️</button>';
+    if (!FIRE) html += '<button id="bkSet" title="เปลี่ยน URL ของสมุดสต๊อก">⚙️</button>';
   } else {
     const n = pendingCount();
     if (n) html += `<span class="pill warn" title="ส่งไม่สำเร็จ ระบบส่งซ้ำเองทุก 30 วินาที">⏳ รอส่ง <b>${n}</b> ชุด</span>`;
@@ -792,7 +820,7 @@ function renderBody() {
   const box = $('body');
   if (!FILES.length) { box.innerHTML = ''; return; }
   if (!CUT) {
-    box.innerHTML = `<div class="tx-empty">${RES ? '' : WmsSettings.txUrl() ? 'กำลังรอสต๊อกจากสมุด Transaction…' : 'ตั้ง Apps Script URL ของ Transaction ในหน้าตั้งค่าก่อน'}</div>`;
+    box.innerHTML = `<div class="tx-empty">${RES ? '' : FIRE ? 'กำลังโหลดสต๊อกจากฐานทดลอง…' : WmsSettings.txUrl() ? 'กำลังรอสต๊อกจากสมุด Transaction…' : 'ตั้ง Apps Script URL ของ Transaction ในหน้าตั้งค่าก่อน'}</div>`;
     return;
   }
   const L = CUT.lines;
@@ -1003,6 +1031,10 @@ document.addEventListener('drop', (e) => {
 /* ── ข้อมูลกลาง: มีคนดึงสต๊อกชุดใหม่ ขึ้นให้เอง ── */
 
 async function checkShared() {
+  if (FIRE) {
+    if (!LOADING && !BKBUSY && !WmsShared.typing() && await FIRE.changed()) await load(false, true);
+    return false;
+  }
   const url = WmsSettings.txUrl();
   if (!url || LOADING) return false;
   const st = await WmsShared.status(url);
@@ -1020,7 +1052,7 @@ async function checkShared() {
 compute();
 render();
 const WATCH = WmsShared.watch(checkShared);
-if (WmsSettings.txUrl()) load(false);
+if (FIRE || WmsSettings.txUrl()) load(false);
 if (bookUrl()) {
   loadNames();
   if (USER) {

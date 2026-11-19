@@ -1,0 +1,501 @@
+/**
+ * ระบบใหม่บน Firebase ขั้น 1: public/wms-fire-core.js + public/wms-fire.js กับ store จำลอง
+ *
+ * หลักของเทสต์ชุดนี้: ส่งคำขอเดียวกันเข้า apps-script/book-api.gs ตัวจริง (โหมดบันทึก) กับ WmsFire (store จำลอง)
+ * คำตอบต้องเหมือนกันทุกช่อง (เลขที่ error แถวที่ผิด กองไม่พอ) ยอดคงเหลือทุกกองต้องเท่ากัน
+ * และ fifo() ของ WmsFire ต้องได้แถวเดียวกับ tx-api.gs อ่านแท็บ Transaction ของสมุดใหม่ (fifoFromBook) ทุกช่อง
+ * เพิ่มเคสของระบบใหม่: สองเครื่องบันทึกชนกัน เอกสารแยกส่วน ดึงเฉพาะของใหม่ สำเนารุ่นไม่ตรง ตรวจยอด สิทธิ์แบบ Rules
+ * ข้อมูลทั้งหมดสมมติขึ้น repo นี้เป็นสาธารณะ ไม่มีการเรียก Firebase จริง
+ */
+import { describe, it, expect, beforeAll } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import { loadBook, fifoFromBook } from '../dev/fake-gas.js';
+
+const read = (f) => fs.readFileSync(path.resolve(__dirname, '../../public', f), 'utf8');
+
+let B, C, W;
+beforeAll(() => {
+  const win = {};
+  ['wms-book.js', 'wms-fire-core.js', 'wms-fire.js'].forEach((f) => new Function('window', read(f))(win));
+  B = win.WmsBook;
+  C = win.WmsFireCore;
+  W = win.WmsFire;
+});
+
+const NOW = Date.UTC(2026, 10, 10, 3, 0, 0);   // 10 พ.ย. 2569 10:00 เวลาไทย
+const DAY = 86400000;
+const ME = { who: 'ทดลอง', pin: '1111' };
+const HEAD = { who: 'หัวหน้าทดลอง', pin: '9999' };
+const DOMAIN = 'example.test';
+const STAFF_EMAIL = 'staff@example.test', HEAD_EMAIL = 'head@example.test', VIEW_EMAIL = 'view@example.test';
+const USERS = {
+  ['users/' + STAFF_EMAIL]: { name: 'ทดลอง', role: 'staff', active: true },
+  ['users/' + HEAD_EMAIL]: { name: 'หัวหน้าทดลอง', role: 'head', active: true },
+  ['users/' + VIEW_EMAIL]: { name: 'ดูอย่างเดียวทดลอง', role: 'viewer', active: true },
+  'users/off@example.test': { name: 'ปิดแล้ว', role: 'staff', active: false },
+};
+const ACCOUNTS = Object.keys(USERS).map((p) => ({ email: p.slice(6), name: USERS[p].name }));
+
+/* ยอดยกมาสมมติ [SKU, SKU เต็ม, ชื่อ, LOT, PO, โล, ชิ้น, Status, วันรับ, ไตรมาส] */
+const OPEN = [
+  ['AAA001', 'AAA0000000001', 'ที่นอนสมมติ 1', '8', 'P1', 'A-01-01', 20, 'เปิด', '2026-10-02', ''],
+  ['AAA001', 'AAA0000000001', 'ที่นอนสมมติ 1', '8', 'P1', 'R01-01-01', 10, '', '2026-10-02', ''],
+  ['AAA001', 'AAA0000000001', 'ที่นอนสมมติ 1', '9', 'P2', 'A-01-02', 6, 'เปิด', '', 'Q3/26'],
+  ['BBB002', 'BBB0000000002', 'ท็อปเปอร์สมมติ 2', '7', 'P5', 'A-03-01', 4, 'เปิด', '2026-09-01', ''],
+  ['CCC004', 'CCC0000000004', 'หมอนสมมติ 4', '0', '0', 'QA', 3, '', '', ''],
+];
+const NAMES = { AAA0000000001: 'ที่นอนสมมติ 1', BBB0000000002: 'ท็อปเปอร์สมมติ 2', CCC0000000004: 'หมอนสมมติ 4' };
+
+/** book-api.gs ตัวจริง (โหมดบันทึก) กับ WmsFire สองเครื่อง (ลงรายการ / หัวหน้า) บน store จำลองเดียวกัน */
+async function both(opt = {}) {
+  let t = opt.now || NOW;
+  const clock = () => t;
+  const gas = loadBook({ now: clock });
+  gas.users([['ทดลอง', '1111', 'ลงรายการ'], ['หัวหน้าทดลอง', '9999', 'หัวหน้า']]);
+  const store = W.memStore({ now: clock, domain: DOMAIN });
+  store.seed(USERS);
+  const device = async (email, extra = {}) => {
+    const f = W.open({ store: store.connect(), auth: W.fakeAuth(ACCOUNTS), now: clock, partBytes: opt.partBytes, ...extra });
+    const r = await f.login(email);
+    if (r.error) throw new Error(r.error);
+    return f;
+  };
+  const staff = await device(STAFF_EMAIL), head = await device(HEAD_EMAIL);
+  const as = { me: [ME, staff], head: [HEAD, head] };
+  const x = {
+    gas, store, staff, head, device, clock,
+    tick: (ms) => { t += ms; },
+    /** ส่งคำขอเดียวกันทั้งสองระบบ คำตอบต้องเหมือนกันทุกช่อง */
+    async same(who, op, body) {
+      const g = gas.post({ op, ...as[who][0], ...body });
+      const f = await as[who][1].post(op, body);
+      expect(f, `${op} ${JSON.stringify(body).slice(0, 80)}`).toEqual(g);
+      return f;
+    },
+    async open() {
+      await x.same('head', 'bk-open', { batch: 'o-1', asOf: 900, rows: OPEN });
+      expect(gas.post({ op: 'bk-mode', ...HEAD, mode: 'book' }).mode).toBe('book');
+    },
+  };
+  return x;
+}
+
+const saleLine = (order, qty, loc = 'A-01-01', lot = '8', po = 'P1', sku = 'AAA0000000001') =>
+  ({ sys: 'JST', order, ref: 'ON' + order, track: 'TH' + order, sku, qty, piles: [[loc, lot, po, qty]] });
+function cutBody(batch, lines, date = '2026-11-10') {
+  const copy = [];
+  lines.forEach((l) => l.piles.forEach((p) => copy.push([l.sku === 'AAA0000000001' ? 'AAA001' : l.sku.slice(0, 3) + '00' + l.sku.slice(-1), l.sku, p[1], p[2], p[0], '', p[3], 'ขาย', date, 'เปิด'])));
+  return { batch, date, base: 900, names: NAMES, lines, copy };
+}
+const body = (batch, copy, extra = {}) => ({ batch, date: '2026-11-10', base: 900, names: NAMES, copy, ...extra });
+
+/** ยอดทุกกอง ระบบเดิม (แท็บยอดคงเหลือ) เทียบกับระบบใหม่ (ยอดต่อกองที่คิดในเครื่องหลังดึงใหม่) */
+async function sameBalance(x, f = x.head) {
+  await f.sync();
+  const norm = (list) => list.map((r) => r.join('|')).sort();
+  const gas = x.gas.ss.getSheetByName('ยอดคงเหลือ').grid.slice(1).filter((r) => r && r[0]);
+  const fire = Object.values(C.allPiles(f.local())).map((p) => [p.loc, p.sku, p.long, p.lot, p.po, p.qty, p.status, p.first, p.last || '']);
+  expect(norm(fire)).toEqual(norm(gas));
+}
+
+/** fifo() ของระบบใหม่ = tx-api.gs อ่านแท็บ Transaction ของสมุดใหม่ ทุกแถวทุกช่อง */
+async function sameFifo(x, f = x.head) {
+  await f.sync();
+  const g = fifoFromBook(x.gas.ss), n = f.fifo();
+  /* last ไม่เทียบ: tx-api.gs ใช้วันที่จริงของเครื่อง ส่วนเทสต์เลื่อนเวลาได้ (เช็คแยกในเทสต์ตัดขาย) */
+  ['skus', 'pos', 'locs', 'days', 'rows', 'cgr', 'cq'].forEach((k) => expect(n[k], k).toEqual(g[k]));
+  return n;
+}
+
+/** ชุดที่บันทึก (ไม่นับยอดยกมา: ระบบเดิมเก็บแถวสมุดเดิมไว้ในช่อง base) ทุกช่องเหมือนกัน */
+async function sameRecent(x) {
+  const g = x.gas.post({ op: 'bk-recent', ...HEAD, days: 7 }).docs.filter((d) => d.type !== 'ยอดยกมา');
+  const f = (await x.head.post('bk-recent', { days: 7 })).docs.filter((d) => d.type !== 'ยอดยกมา');
+  expect(f).toEqual(g);
+  return f;
+}
+
+async function sameAll(x) {
+  await sameBalance(x);
+  await sameBalance(x, x.staff);
+  await sameBalance(x, await x.device(VIEW_EMAIL));   // เครื่องใหม่ คิดยอดจากเอกสารที่ดึงมาทั้งหมด
+  const res = await sameFifo(x);
+  const docs = await sameRecent(x);
+  const st = B.stock(res);
+  expect(B.compareStock(st, (await x.head.post('bk-stock', {})).piles)).toMatchObject({ same: true });
+  /* ทุกชุดอยู่ในคำตอบ fifo แล้ว หน้า book จึงไม่หักซ้ำ */
+  expect(B.reflect(res, docs).wait.map((d) => d.doc)).toEqual([]);
+  expect((await x.head.post('bk-rebuild', {})).same).toBe(true);
+}
+
+/* ── ตรงกับ book-api.gs ──────────────────────────────────────────────── */
+
+describe('WmsFire ตอบเหมือน book-api.gs (โหมดบันทึก)', () => {
+  it('ยอดยกมา: เลขที่ ยอดทุกกอง วันรับ (cgr) ไตรมาส (cq) และแถวแบบ tx-fifo ตรงกัน', async () => {
+    const x = await both();
+    await x.open();
+    await sameAll(x);
+    const res = x.head.fifo();
+    expect(res.cgr.map((c) => c[1])).toEqual(['2026-10-02', '2026-10-02', '2026-09-01']);
+    expect(res.cq).toEqual([['2026-09-01', 4, 4], ['2026-12-01', 6, 6]]);
+    expect((await x.head.post('bk-state', {})).open).toMatchObject({ doc: 'T2611-0001', rows: 5, qty: 43 });
+  });
+
+  it('ตัดขาย: เลขที่รันต่อ ส่งซ้ำได้เลขเดิม ตัดซ้ำไม่รับ ตรวจรูปแบบ กองไม่พอ ยกเลิกแล้วตัดใหม่ได้ ข้ามเดือนเลขเริ่มใหม่', async () => {
+    const x = await both();
+    await x.open();
+    await x.same('me', 'bk-cut', cutBody('c-1', [saleLine('1', 2), saleLine('2', 1)]));
+    await x.same('me', 'bk-cut', cutBody('c-1', [saleLine('1', 2), saleLine('2', 1)]));    // ส่งซ้ำ
+    await x.same('me', 'bk-cut', cutBody('c-2', [saleLine('9', 1), saleLine('1', 2)]));    // ตัดซ้ำ
+    await x.same('me', 'bk-seen', { date: '2026-11-10', keys: ['JST|1|AAA0000000001', 'JST|9|AAA0000000001'] });
+    await x.same('me', 'bk-cut', cutBody('x', [{ ...saleLine('3', 2), piles: [['A-01-01', '8', 'P1', 1]] }]));
+    await x.same('me', 'bk-cut', cutBody('x', [{ ...saleLine('3', 1), sys: 'SHOPEE' }]));
+    await x.same('me', 'bk-cut', { ...cutBody('x', [saleLine('3', 1)]), copy: [['AAA001', '', '8', 'P1', 'A-01-01', '', 5, 'ขาย', '', 'เปิด']] });
+    await x.same('me', 'bk-cut', { ...cutBody('x', [saleLine('3', 1)]), date: '2026-09-01' });
+    await x.same('me', 'bk-cut', cutBody('x', [saleLine('3', 50)]));                      // กองไม่พอ
+    await x.same('me', 'bk-cut', cutBody('c-3', [saleLine('3', 1, 'A-01-02', '9', 'P2')]));
+    await x.same('me', 'bk-void', { doc: 'T2611-0002', why: 'ผิด' });                     // ไม่ใช่หัวหน้า
+    await x.same('head', 'bk-void', { doc: 'T2611-0002' });
+    await x.same('head', 'bk-void', { doc: 'T2611-0002', why: 'ไฟล์ผิดวัน' });
+    await x.same('head', 'bk-void', { doc: 'T2611-0002', why: 'ซ้ำ' });
+    await x.same('head', 'bk-void', { doc: 'T2611-0004', why: 'x' });                    // ชุดกลับรายการ
+    await x.same('head', 'bk-void', { doc: 'T2611-0001', why: 'x' });                    // ยอดยกมา
+    await x.same('me', 'bk-cut', cutBody('c-4', [saleLine('1', 2)]));                     // ตัดใหม่ได้
+    await sameAll(x);
+    x.tick(25 * DAY);   // 5 ธ.ค.
+    await x.same('me', 'bk-cut', cutBody('c-5', [saleLine('1', 1)], '2026-12-05'));        // ตัดแล้วเดือนก่อน
+    const r = await x.same('me', 'bk-cut', cutBody('c-6', [saleLine('5', 1)], '2026-12-05'));
+    expect(r.doc).toBe('T2612-0001');
+    await sameAll(x);
+    expect(x.head.fifo().last).toBe('2026-12-05');
+  });
+
+  it('ย้าย รับของ แปลง ปรับยอด ตารางเดิม: แถวผิด สิทธิ์ ยอดเปลี่ยนระหว่างนับ ตรงกันทุกช่อง', async () => {
+    const x = await both();
+    await x.open();
+    const mv = (over = {}) => Object.assign(['AAA001', 'AAA0000000001', '8', 'P1', 'R01-01-01', 'A-01-01', 4, 'เบิก', 'โอนย้าย', 'เปิด'], over);
+    await x.same('me', 'bk-move', body('m-1', [mv(), mv({ 6: 1, 5: 'QA', 8: 'โอนย้าย QA', 9: '' })]));
+    await x.same('me', 'bk-move', body('m-1', [mv()]));
+    for (const bad of [mv({ 5: 'R01-01-01' }), mv({ 5: '' }), mv({ 7: 'ขาย' }), mv({ 8: 'RETURN' }), mv({ 9: 'ปิด' }), mv({ 3: '' }), mv({ 6: 0 })]) {
+      await x.same('me', 'bk-move', body('x', [mv(), bad]));
+    }
+    await x.same('me', 'bk-move', body('x', [mv({ 6: 99 })]));
+    const GR = ['AAA001', 'AAA0000000001', '10', 'P9', '', 'R01-02-01', 3, 'รับ', 'GR 09-11-26', '', 'GR6911-0001'];
+    await x.same('me', 'bk-gr', body('g-1', [GR, GR.slice(0, 10)]));
+    await x.same('me', 'bk-gr', body('x', [Object.assign(GR.slice(), { 8: 'GR 9-11-26' })]));
+    const CONV = [
+      ['BBB002', 'BBB0000000002', '7', 'P5', 'A-03-01', '', 2, 'เบิก', 'แปลงสินค้า', '', 'MR6911-0001'],
+      ['CCC004', 'CCC0000000004', '7', 'P5', '', 'A-03-01', 2, 'รับ', 'แปลงสินค้า', 'เปิด', 'GR6911-0002'],
+    ];
+    await x.same('me', 'bk-conv', body('x', [CONV[0]]));
+    await x.same('me', 'bk-conv', body('x', [CONV[1], CONV[0]]));
+    await x.same('me', 'bk-conv', body('v-1', CONV));
+    const adj = [['AAA001', 'AAA0000000001', '8', 'P1', 'A-01-01', '', 2, 'เบิก', 'ปรับยอด หาย', '']];
+    const lines = [{ loc: 'A-01-01', sku: 'AAA0000000001', lot: '8', po: 'P1', have: 24, count: 22 }];
+    await x.same('me', 'bk-adj', body('a', adj, { lines }));
+    await x.same('head', 'bk-adj', body('a-1', adj, { lines: [{ ...lines[0], have: 20 }] }));   // ยอดเปลี่ยนแล้ว
+    await x.same('head', 'bk-adj', body('a-1', adj, { lines: [] }));
+    await x.same('head', 'bk-adj', body('a-2', adj, { lines }));
+    const rows = [['BBB002', 'BBB0000000002', '7', 'P5', 'A-03-01', '', 1, 'ขาย', '2026-11-09', ''], ['AAA001', 'AAA0000000001', '0', '0', '', 'RIB', 1, 'รับ', 'RETURN', '']];
+    await x.same('me', 'bk-rows', body('r', rows, { ref: 'แก้มือ' }));
+    await x.same('head', 'bk-rows', body('r-1', rows, { ref: 'แก้มือ' }));
+    await x.same('head', 'bk-rows', body('x', [Object.assign(rows[0].slice(), { 8: 'ขายหน้าร้าน' })]));
+    await sameAll(x);
+    /* ยกเลิก: ย้ายกลับ รับ → เบิก แปลงถอยทั้งคู่ ของที่รับเข้าถูกใช้แล้วยกเลิกไม่ได้ */
+    await x.same('head', 'bk-void', { doc: 'T2611-0002', why: 'ย้ายผิด' });
+    await x.same('me', 'bk-move', body('m-2', [mv({ 2: '10', 3: 'P9', 4: 'R01-02-01', 6: 3 })]));
+    await x.same('head', 'bk-void', { doc: 'T2611-0003', why: 'รับผิด PO' });
+    await x.same('head', 'bk-void', { doc: 'T2611-0004', why: 'แปลงผิด' });
+    await sameAll(x);
+  });
+
+  it('คืนของ: หาออเดอร์ คืนตามเลขที่ตัด คืนเกินไม่รับ ยกเลิกชุดคืนแล้วคืนใหม่ได้ คืนแบบไม่รู้ออเดอร์', async () => {
+    const x = await both();
+    await x.open();
+    await x.same('me', 'bk-cut', cutBody('c-1', [saleLine('1001', 3), saleLine('1002', 1, 'A-01-02', '9', 'P2')]));
+    await x.same('me', 'bk-find', { date: '2026-11-10', keys: ['1001', 'on1002', 'th1001', '9999'] });
+    const ret = (batch, qty, extra = {}) => x.same('me', 'bk-return', {
+      batch, date: '2026-11-10', base: 900,
+      lines: [{ sys: 'JST', order: '1001', ref: 'ON1001', track: 'TH1001', sku: 'AAA0000000001', qty, cut: 'T2611-0002', cutQty: 3, piles: [['A-01-01', '8', 'P1', qty]], ...extra }],
+      copy: [['AAA001', 'AAA0000000001', '8', 'P1', '', 'A-01-01', qty, 'รับ', 'RETURN', 'เปิด']],
+    });
+    await ret('r-1', 2);
+    await x.same('me', 'bk-find', { date: '2026-11-10', keys: ['1001'] });
+    await ret('r-2', 2);                                                                 // คืนเกิน
+    await x.same('head', 'bk-void', { doc: 'T2611-0003', why: 'คืนผิดออเดอร์' });
+    await x.same('me', 'bk-find', { date: '2026-11-10', keys: ['1001'] });
+    await ret('r-3', 3);
+    await x.same('me', 'bk-return', {
+      batch: 'r-4', date: '2026-11-10', base: 900,
+      lines: [{ sys: '', order: '', sku: 'BBB0000000002', qty: 1, piles: [['RIB', '0', '0', 1]] }],
+      copy: [['BBB002', 'BBB0000000002', '0', '0', '', 'RIB', 1, 'รับ', 'RETURN', '']],
+    });
+    await x.same('me', 'bk-return', { batch: 'x', date: '2026-11-10', lines: [{ sys: 'JST', order: '1', sku: 'A', qty: 1, cut: 'T1', piles: [['RIB', '0', '0', 1]] }],
+      copy: [['A', 'A', '0', '0', '', 'RIB', 1, 'รับ', 'RETURN', '']] });
+    await sameAll(x);
+  });
+
+  it('LOT 0 ขายแล้วยกเลิก ของกลับกองเดิม · คืนข้ามเดือนนับชิ้นที่คืนเดือนก่อน · ยกเลิกชุดตัดที่คืนไปบางส่วนแล้ว', async () => {
+    const x = await both();
+    await x.open();
+    /* กอง LOT 0 / PO 0 ที่โลขาย (ของคืนที่ไม่รู้ LOT) */
+    expect((await x.same('head', 'bk-rows', body('r-0', [['CCC004', 'CCC0000000004', '0', '0', '', 'A-05-01', 4, 'รับ', 'RETURN', 'เปิด']], { ref: 'ของคืน' }))).doc).toBe('T2611-0002');
+    const lot0 = (order, qty) => saleLine(order, qty, 'A-05-01', '0', '0', 'CCC0000000004');
+    expect((await x.same('me', 'bk-cut', cutBody('c-0', [lot0('3001', 3)]))).doc).toBe('T2611-0003');
+    expect((await x.same('head', 'bk-void', { doc: 'T2611-0003', why: 'ไฟล์ซ้ำ' })).reversed).toBe('T2611-0004');
+    expect((await x.same('me', 'bk-cut', cutBody('c-1', [lot0('3001', 4), saleLine('3002', 5)]))).doc).toBe('T2611-0005');
+    expect((await x.same('me', 'bk-cut', cutBody('x', [lot0('3003', 1)]))).error).toMatch(/^ยอดในสมุดไม่พอ/);   // LOT 0 หมดแล้ว
+    await sameAll(x);
+    /* เดือนถัดไป: คืนออเดอร์ที่ตัดเดือนก่อน */
+    x.tick(25 * DAY);
+    const ret = (batch, qty) => x.same('me', 'bk-return', {
+      batch, date: '2026-12-05', base: 900,
+      lines: [{ sys: 'JST', order: '3002', ref: 'ON3002', track: 'TH3002', sku: 'AAA0000000001', qty, cut: 'T2611-0005', cutQty: 5, piles: [['A-01-01', '8', 'P1', qty]] }],
+      copy: [['AAA001', 'AAA0000000001', '8', 'P1', '', 'A-01-01', qty, 'รับ', 'RETURN', 'เปิด']],
+    });
+    await x.same('me', 'bk-find', { date: '2026-12-05', keys: ['3002', 'ON3001'] });
+    expect((await ret('r-1', 2)).doc).toBe('T2612-0001');
+    expect((await ret('r-2', 4)).error).toMatch(/^คืนเกินชิ้นที่ตัด/);   // รวมเกิน 5
+    expect((await ret('r-3', 3)).doc).toBe('T2612-0002');
+    await x.same('me', 'bk-find', { date: '2026-12-05', keys: ['3002'] });
+    expect((await x.same('head', 'bk-void', { doc: 'T2611-0005', why: 'ตัดผิดไฟล์' })).reversed).toBe('T2612-0003');   // ข้ามเดือน ของคืนแล้ว
+    expect((await x.same('me', 'bk-cut', cutBody('c-2', [saleLine('3002', 1)], '2026-12-05'))).doc).toBe('T2612-0004');   // ยกเลิกแล้วตัดใหม่ได้
+    await sameAll(x);
+  });
+});
+
+/* ── เคสของระบบใหม่ ──────────────────────────────────────────────────── */
+
+describe('WmsFire: สองเครื่อง สำเนาในเครื่อง เอกสารใหญ่', () => {
+  it('สองเครื่องบันทึกชนกัน: transaction ลองใหม่ ดึงของเครื่องอื่นก่อน เลขที่ไม่ซ้ำ กองหักครบทั้งสองชุด', async () => {
+    const x = await both();
+    await x.open();
+    await x.staff.sync();
+    await x.head.sync();
+    const before = x.store.stats().retries;
+    /* ระหว่างเครื่องแรกอยู่ใน transaction เครื่องที่สองบันทึกเสร็จก่อน */
+    x.store.hook(async () => {
+      const r = await x.head.post('bk-move', body('h-1', [['AAA001', 'AAA0000000001', '8', 'P1', 'A-01-01', 'B-01-01', 15, 'เบิก', 'โอนย้าย', 'เปิด']]));
+      expect(r.doc).toBe('T2611-0002');
+    });
+    const a = await x.staff.post('bk-cut', cutBody('c-1', [saleLine('1', 5)]));
+    expect(a).toMatchObject({ doc: 'T2611-0003', book: 1 });
+    expect(x.store.stats().retries).toBeGreaterThan(before);
+    /* เหลือ 20 − 15 − 5 = 0 · ชุดที่สามตัดอีกชิ้นต้องไม่ผ่าน */
+    const c = await x.head.post('bk-cut', cutBody('c-2', [saleLine('2', 1)]));
+    expect(c.error).toMatch(/^ยอดในสมุดไม่พอ 1 แถว/);
+    expect(C.allPiles(x.staff.local())['A-01-01|AAA0000000001|8|P1']).toBeUndefined();
+  });
+
+  it('เอกสารใหญ่แยกส่วน (~2, ~3) เครื่องใหม่ดึงแล้วต่อกลับได้ครบ ส่งซ้ำได้เลขเดิม', async () => {
+    const x = await both({ partBytes: 9000 });
+    await x.open();
+    const lines = Array.from({ length: 300 }, (_, i) => saleLine(String(5000 + i), 0.05));
+    const r = await x.staff.post('bk-cut', cutBody('big', lines));
+    expect(r).toMatchObject({ doc: 'T2611-0002', lines: 300, rows: 300, qty: 15 });
+    const parts = Object.keys(x.store.dump()).filter((p) => p.startsWith('docs/big~'));
+    expect(parts.length).toBeGreaterThan(1);
+    /* ขนาดแบบที่ Firestore นับ: ชื่อฟิลด์ + ไบต์ UTF-8 ของข้อความ + 1 ตัวเลข 8 ไบต์ */
+    const size = (d) => 32 + Object.keys(d).reduce((a, k) => a + C.byteLen(k) + 1 + (typeof d[k] === 'string' ? C.byteLen(d[k]) + 1 : 8), 0);
+    expect(Math.max(...Object.keys(x.store.dump()).filter((p) => p.startsWith('docs/')).map((p) => size(x.store.dump()[p])))).toBeLessThanOrEqual(9000);
+    const fresh = await x.device(HEAD_EMAIL);
+    await fresh.sync();
+    const d = fresh.local().docs.find((y) => y.id === 'big');
+    expect([d.rows.length, d.lines.length, d.lines[299].order]).toEqual([300, 300, '5299']);
+    expect((await fresh.post('bk-recent', { days: 1 })).docs[0].copy).toHaveLength(300);
+    expect(await x.staff.post('bk-cut', cutBody('big', lines))).toMatchObject({ doc: 'T2611-0002', again: true });
+    expect(C.allPiles(fresh.local())['A-01-01|AAA0000000001|8|P1'].qty).toBe(5);
+  });
+
+  it('ดึงเฉพาะของใหม่: เปิดหน้าอีกครั้งอ่านแค่ meta + เอกสารใหม่ · สำเนารุ่นไม่ตรงล้างแล้วโหลดใหม่', async () => {
+    const x = await both();
+    await x.open();
+    const cache = W.memCache();
+    const third = await x.device(STAFF_EMAIL, { cache });
+    await third.sync();
+    expect(third.local().seq).toBe(1);
+    await x.head.post('bk-move', body('m-1', [['BBB002', 'BBB0000000002', '7', 'P5', 'A-03-01', 'B-02-01', 1, 'เบิก', 'โอนย้าย', 'เปิด']]));
+    const r0 = x.store.stats().reads;
+    const s = await third.sync();
+    expect(s).toEqual({ seq: 2, added: 1 });
+    expect(x.store.stats().reads - r0).toBe(2);   // meta + เอกสารใหม่ 1 (ยอดต่อกองคิดในเครื่อง)
+    expect(C.allPiles(third.local())['B-02-01|BBB0000000002|7|P5'].qty).toBe(1);
+    expect(await third.sync()).toEqual({ seq: 2, added: 0 });
+
+    /* เปิดหน้าใหม่บนเครื่องเดิม: อ่านสำเนาจาก cache ไม่ดึงเอกสารเก่าซ้ำ */
+    const again = await x.device(STAFF_EMAIL, { cache });
+    const r1 = x.store.stats().reads;
+    expect(await again.sync()).toEqual({ seq: 2, added: 0 });
+    expect(x.store.stats().reads - r1).toBe(1);
+
+    /* สำเนารุ่นเก่า (v ไม่ตรง) = ทิ้งแล้วโหลดใหม่ทั้งหมด */
+    const old = W.memCache();
+    await old.put({ v: 0, seq: 99, meta: null, docs: [{ id: 'zz', seq: 99, rows: [] }], piles: {}, master: {}, mv: 0 });
+    const z = await x.device(STAFF_EMAIL, { cache: old });
+    expect(await z.sync()).toEqual({ seq: 2, added: 2 });
+    expect(z.local().docs.map((d) => d.no)).toEqual(['T2611-0001', 'T2611-0002']);
+  });
+
+  it('ตรวจยอด: คิดใหม่จากเอกสารทั้งหมดเทียบยอดในเครื่อง ต่างกันบอกกองที่ต่าง', async () => {
+    const x = await both();
+    await x.open();
+    await x.staff.post('bk-cut', cutBody('c-1', [saleLine('1', 2)]));
+    expect(await x.head.post('bk-rebuild', {})).toMatchObject({ same: true, rows: 6, piles: 5, neg: 0 });
+    expect((await x.staff.post('bk-rebuild', {})).error).toBe('คำสั่งนี้ใช้ได้เฉพาะหัวหน้ากับรองหัวหน้า');
+    /* สำเนาในเครื่องเพี้ยน (เช่นแก้ใน DevTools) */
+    delete x.head.local().piles['A-01-01|AAA0000000001|8|P1'];
+    const r = await x.head.post('bk-rebuild', {});
+    expect(r.same).toBe(false);
+    expect(r.diff).toContainEqual(['A-01-01', 'AAA001', '8', 'P1', 18, 0]);
+  });
+
+  it('ยอดยกมาลงใหม่ได้เฉพาะก่อนมีเอกสารอื่น ลงซ้ำต้องกด ลงใหม่ · ลงใหม่แล้วเลขแถวเริ่ม 2 ชุดเก่าเป็นยกเลิก', async () => {
+    const x = await both();
+    await x.open();
+    expect((await x.head.post('bk-open', { batch: 'o-2', rows: OPEN })).error).toBe('มียอดยกมาแล้ว (T2611-0001) จะลงใหม่ต้องกด ลงใหม่');
+    const r = await x.head.post('bk-open', { batch: 'o-2', rows: OPEN.slice(0, 2), replace: true });
+    expect(r).toMatchObject({ doc: 'T2611-0002', rows: 2, qty: 30, replaced: ['T2611-0001'] });
+    const res = x.head.fifo();
+    expect(res.rows.map((y) => y[0])).toEqual([2, 3]);
+    const docs = (await x.head.post('bk-recent', { days: 1 })).docs;
+    expect(docs.find((d) => d.doc === 'T2611-0001')).toMatchObject({ status: 'ยกเลิก', why: 'ลงยอดยกมาใหม่' });
+    expect(Object.keys(C.allPiles(x.head.local()))).toHaveLength(2);
+    await x.staff.post('bk-cut', cutBody('c-1', [saleLine('1', 1)]));
+    expect((await x.head.post('bk-open', { batch: 'o-3', rows: OPEN, replace: true })).error).toMatch(/^มีเอกสารอื่นหลังยอดยกมาแล้ว 1 ชุด \(T2611-0003\)/);
+    expect((await x.staff.post('bk-open', { batch: 'o-4', rows: OPEN })).error).toBe('คำสั่งนี้ใช้ได้เฉพาะหัวหน้ากับรองหัวหน้า');
+  });
+
+  it('ล็อกอิน: บัญชีที่ไม่มีหรือปิดสิทธิ์เข้าไม่ได้ ดูอย่างเดียวบันทึกไม่ได้ แต่อ่านยอดได้', async () => {
+    const x = await both();
+    await x.open();
+    const f = W.open({ store: x.store.connect(), auth: W.fakeAuth(ACCOUNTS), now: x.clock });
+    expect((await f.login('nobody@example.test')).error).toMatch(/ยังไม่มีสิทธิ์/);
+    expect((await f.login('off@example.test')).error).toMatch(/ยังไม่มีสิทธิ์/);
+    const v = await f.login(VIEW_EMAIL);
+    expect(v).toMatchObject({ who: 'ดูอย่างเดียวทดลอง', role: 'ดูอย่างเดียว', mode: 'book' });
+    expect((await f.post('bk-move', body('m', [['AAA001', 'AAA0000000001', '8', 'P1', 'R01-01-01', 'A-01-01', 1, 'เบิก', 'โอนย้าย', 'เปิด']]))).error).toBe('บัญชีนี้ดูได้อย่างเดียว');
+    expect((await f.post('bk-stock', {})).piles).toHaveLength(5);
+    expect((await x.staff.post('bk-login', {}))).toMatchObject({ who: 'ทดลอง', role: 'ลงรายการ', v: 4, app: 'book' });
+  });
+});
+
+/* ── กฎแบบ firestore.rules (store จำลองเช็คแบบเดียวกัน) ─────────────── */
+
+describe('WmsFire: สิทธิ์แบบ Rules', () => {
+  async function ready() {
+    const x = await both();
+    await x.open();
+    return x;
+  }
+  const meta = (x) => x.store.dump()['meta/head'];
+  const as = (x, email) => { x.store.setUser({ email, verified: true }); return x.store; };
+  const nextMeta = (m, id, over = {}) => ({ ...m, seq: m.seq + 1, next: m.next + 1, last: id, at: C.TIME, ...over });
+  const doc = (m, id, over = {}) => ({ v: 1, no: 'T2611-' + String(m.next).padStart(4, '0'), seq: m.seq + 1, row: m.rows + 2, n: 1, type: 'ย้าย', date: '2026-11-10',
+    by: STAFF_EMAIL, name: 'ทดลอง', at: C.TIME, stamp: '', ref: '', link: '', why: '', qty: 1, tr: '', trState: '', rows: '', names: '', orders: '', part: 1, ...over });
+
+  it('เอกสารใหม่ต้องมากับ meta ที่ seq +1 เลขที่ตรงเดือนเซิร์ฟเวอร์ by เป็นคนล็อกอิน ประเภทของหัวหน้าต้องเป็นหัวหน้า', async () => {
+    const x = await ready();
+    const m = meta(x), s = as(x, STAFF_EMAIL);
+    await expect(s.commit([['docs/a', doc(m, 'a')], ['meta/head', nextMeta(m, 'a')]])).resolves.toBeUndefined();
+    const m2 = meta(x);
+    await expect(s.commit([['docs/b', doc(m2, 'b')]])).rejects.toThrow(/meta ที่ seq เพิ่ม 1/);
+    await expect(s.commit([['docs/b', doc(m2, 'b')], ['meta/head', nextMeta(m2, 'b', { seq: m2.seq + 2 })]])).rejects.toThrow(/seq เพิ่ม 1/);
+    await expect(s.commit([['docs/b', doc(m2, 'b', { by: HEAD_EMAIL })], ['meta/head', nextMeta(m2, 'b')]])).rejects.toThrow(/by ต้องเป็นอีเมล/);
+    await expect(s.commit([['docs/b', doc(m2, 'b', { at: 123 })], ['meta/head', nextMeta(m2, 'b')]])).rejects.toThrow(/เวลาเซิร์ฟเวอร์/);
+    await expect(s.commit([['docs/b', doc(m2, 'b', { type: 'ปรับยอด' })], ['meta/head', nextMeta(m2, 'b')]])).rejects.toThrow(/ลงไม่ได้ด้วยสิทธิ์นี้/);
+    await expect(s.commit([['docs/b', doc(m2, 'b', { no: 'T2612-0001' })], ['meta/head', nextMeta(m2, 'b')]])).rejects.toThrow(/เลขเอกสาร/);
+    await expect(s.commit([['docs/b', doc(m2, 'b')], ['meta/head', nextMeta(m2, 'zz')]])).rejects.toThrow(/meta.last/);
+    await expect(s.commit([['bal/00', { v: 9, p: '' }]])).rejects.toThrow(/เขียน bal ไม่ได้/);
+    await expect(s.commit([['cut/2026-11-10', { k: '' }]])).rejects.toThrow(/เขียน cut ไม่ได้/);
+    await expect(s.commit([['meta/head', { ...m2, rows: 1 }]])).rejects.toThrow(/เฉพาะตอนบันทึกเอกสาร/);
+  });
+
+  it('Rules อ่านเอกสารประกอบได้ไม่เกิน 20 ครั้งต่อคำขอ: ชุดใหญ่สุดที่ยอม (PARTS_MAX ส่วน) ยังผ่าน · เกินนั้นแอปบอกให้แบ่งชุด', async () => {
+    const x = await ready();
+    const m = meta(x), s = as(x, STAFF_EMAIL);
+    const parts = (n) => Array.from({ length: n - 1 }, (_, i) => ['docs/a~' + (i + 2), { v: 1, of: 'a', seq: m.seq + 1, i: i + 2, rows: '', orders: '' }]);
+    /* เอกสารหลัก 2 + meta 2 + ส่วนละ 2 */
+    await expect(s.commit([['docs/a', doc(m, 'a', { part: C.PARTS_MAX })], ...parts(C.PARTS_MAX), ['meta/head', nextMeta(m, 'a')]])).resolves.toBeUndefined();
+    const m2 = meta(x);
+    const parts2 = Array.from({ length: 9 }, (_, i) => ['docs/b~' + (i + 2), { v: 1, of: 'b', seq: m2.seq + 1, i: i + 2, rows: '', orders: '' }]);
+    await expect(s.commit([['docs/b', doc(m2, 'b', { part: 10 })], ...parts2, ['meta/head', nextMeta(m2, 'b')]])).rejects.toThrow(/Rules อ่านเอกสารประกอบ 22 ครั้ง เกิน 20/);
+    /* ส่วนแยกที่ไม่ได้มากับเอกสารหลักในคำขอเดียวกัน (เติมแถวให้เอกสารล่าสุดทีหลัง) ไม่ได้ แม้ meta.last ยังชี้เอกสารนั้น */
+    await expect(s.commit([['docs/a~9', { v: 1, of: 'a', seq: m.seq + 1, i: 9, rows: 'x', orders: '' }]])).rejects.toThrow(/ส่วนแยกของเอกสารไม่ตรง/);
+    await expect(as(x, HEAD_EMAIL).commit([['meta/head', { ...meta(x), mv: 2, at: C.TIME }], ['docs/a~9', { v: 1, of: 'a', seq: m.seq + 1, i: 9, rows: 'x', orders: '' }]]))
+      .rejects.toThrow(/แค่ mv|ส่วนแยกของเอกสารไม่ตรง/);
+
+    /* แอปไม่ส่งชุดที่เกิน: แยกได้เกิน PARTS_MAX ส่วน = บอกให้แบ่งชุด */
+    const y = await both({ partBytes: 2000 });
+    await y.open();
+    const lines = Array.from({ length: 300 }, (_, i) => saleLine(String(7000 + i), 0.05));
+    const r = await y.staff.post('bk-cut', cutBody('huge', lines));
+    expect(r.error).toMatch(/^ชุดนี้ใหญ่เกินที่บันทึกได้ในครั้งเดียว \(\d+ ส่วน เกิน 7\) แบ่งเป็นหลายชุด$/);
+    expect(Object.keys(y.store.dump()).filter((k) => k.startsWith('docs/huge'))).toEqual([]);
+  });
+
+  it('เอกสารเดิมแก้ได้เฉพาะเลข TRcloud · users กับ master เขียนได้เฉพาะหัวหน้า · ดูอย่างเดียวเขียนไม่ได้ · นอกโดเมนไม่ได้', async () => {
+    const x = await ready();
+    const d = x.store.dump()['docs/o-1'], s = as(x, STAFF_EMAIL);
+    await expect(s.commit([['docs/o-1', { ...d, tr: 'GR1', trState: 'ลงแล้ว', trBy: STAFF_EMAIL, trAt: 1 }]])).resolves.toBeUndefined();
+    await expect(s.commit([['docs/o-1', { ...d, qty: 999, trBy: STAFF_EMAIL }]])).rejects.toThrow(/แก้ได้เฉพาะเลข TRcloud/);
+    await expect(s.commit([['users/x@example.test', { name: 'x', role: 'head', active: true }]])).rejects.toThrow(/เฉพาะหัวหน้า/);
+    await expect(as(x, HEAD_EMAIL).commit([['master/sup', { rows: 'P1\tผู้ผลิตสมมติ' }]])).resolves.toBeUndefined();
+    await expect(as(x, HEAD_EMAIL).commit([['meta/head', { ...meta(x), mv: 1 }]])).resolves.toBeUndefined();
+    await expect(as(x, HEAD_EMAIL).commit([['meta/head', { ...meta(x), rows: 50 }]])).rejects.toThrow(/แค่ mv/);
+    await expect(as(x, HEAD_EMAIL).commit([['meta/head', { ...meta(x), seq: 50 }]])).rejects.toThrow(/seq ต้องเพิ่มทีละ 1/);
+    await expect(as(x, VIEW_EMAIL).commit([['docs/o-1', { ...d, tr: 'x', trBy: VIEW_EMAIL }]])).rejects.toThrow(/ดูได้อย่างเดียว/);
+    await expect(as(x, 'staff@other.test').commit([['docs/o-1', { ...d, tr: 'x' }]])).rejects.toThrow(/นอกโดเมน/);
+    x.store.setUser(null);
+    await expect(x.store.commit([['docs/o-1', { ...d, tr: 'x' }]])).rejects.toThrow(/ยังไม่ได้ล็อกอิน/);
+    /* master ที่หัวหน้าเปลี่ยน (mv) ทุกเครื่องดึงใหม่ แล้ว fifo มี Supplier */
+    await x.staff.sync();
+    expect(x.staff.fifo().sup.rows).toEqual([['P1', 'ผู้ผลิตสมมติ']]);
+  });
+});
+
+/* ── ตรรกะล้วน ───────────────────────────────────────────────────────── */
+
+describe('wms-fire-core.js', () => {
+  it('applyDoc: ยอดยกมาเริ่มใหม่ กองที่เหลือ 0 หายไป วันรับแรกเก็บไว้ เบิกเฉพาะประเภท เบิก/ขาย', () => {
+    const row = (from, to, qty, type, note = '', st = '') => ['A1', 'A1-LONG', '8', 'P1', from, to, qty, type, note, st, ''];
+    let m = C.applyDoc({ old: { qty: 1 } }, { type: 'ยอดยกมา', row: 2, rows: [row('', 'A-01', 5, 'รับ', 'ยอดยกมา T1 · GR 02-10-26', 'เปิด')] });
+    expect(Object.keys(m)).toEqual(['A-01|A1-LONG|8|P1']);
+    expect(m['A-01|A1-LONG|8|P1']).toMatchObject({ qty: 5, status: 'เปิด', first: '2026-10-02', last: 2 });
+    m = C.applyDoc(m, { type: 'ย้าย', row: 3, rows: [row('A-01', 'B-01', 5, 'เบิก', 'โอนย้าย')] });
+    expect(Object.keys(m)).toEqual(['B-01|A1-LONG|8|P1']);
+    m = C.applyDoc(m, { type: 'คืน', row: 4, rows: [row('B-01', 'C-01', 1, 'รับ', 'RETURN')] });
+    expect([m['B-01|A1-LONG|8|P1'].qty, m['C-01|A1-LONG|8|P1'].qty]).toEqual([5, 1]);
+  });
+
+  it('TSV ไม่พังเมื่อข้อความมีแท็บหรือขึ้นบรรทัด · เวลาไทยข้ามวันข้ามเดือนถูก', () => {
+    expect(C.dec(C.enc([['a\tb', 'c\nd', 1]]))).toEqual([['a b', 'c d', '1']]);
+    const late = Date.UTC(2026, 10, 30, 17, 30, 0);   // 1 ธ.ค. 00:30 เวลาไทย
+    expect([C.today(late), C.stamp(late), C.yymm(late)]).toEqual(['2026-12-01', '2026-12-01 00:30:00', '2612']);
+  });
+
+  it('firestore.rules ตรงกับกฎของ store จำลอง: ประเภทเอกสารต่อสิทธิ์ ฟิลด์ TRcloud ที่แก้ได้ เพดานส่วน · ยังเป็นโดเมนตัวอย่าง', () => {
+    const rules = fs.readFileSync(path.resolve(__dirname, '../../firebase/firestore.rules'), 'utf8');
+    const list = (s) => s.split(',').map((x) => x.trim().replace(/^'|'$/g, ''));
+    const m = /\(d\.type in \[([^\]]+)\]\) \? \(u\.role == 'head'\)\s*: \(d\.type in \[([^\]]+)\]\)/.exec(rules);
+    expect([list(m[1]), list(m[2])]).toEqual([C.HEAD_TYPES, C.STAFF_TYPES]);
+    expect(rules).toContain("hasOnly(['tr', 'trState', 'trBy', 'trAt'])");
+    expect(rules).toContain('ไม่เกิน ' + C.PARTS_MAX + ' ส่วน (PARTS_MAX) = ' + (4 + 2 * (C.PARTS_MAX - 1)));
+    expect(4 + 2 * (C.PARTS_MAX - 1)).toBeLessThanOrEqual(20);
+    expect(rules).toMatch(/matches\('\.\*@example\[\.\]com'\)/);
+    expect(rules).not.toMatch(/allow (delete|write): if true|allow [a-z, ]+: if request\.auth != null;/);
+    const idx = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../firebase/firestore.indexes.json'), 'utf8'));
+    expect(idx.fieldOverrides.filter((f) => f.collectionGroup === 'docs').map((f) => f.fieldPath)).toEqual(expect.arrayContaining(['rows', 'orders', 'names']));
+    expect(idx.fieldOverrides.map((f) => f.fieldPath)).not.toContain('seq');
+  });
+
+  it('ไฟล์ไม่มี URL key หรือ config ของ Firebase จริง SDK ตรึงรุ่นจาก gstatic เท่านั้น · dev server ห้ามต่อของจริง', () => {
+    const src = read('wms-fire.js') + read('wms-fire-core.js') + read('book/book-fire.js');
+    expect(src).not.toMatch(/AIza[0-9A-Za-z_-]{20,}|firebaseapp\.com|script\.google\.com|apiKey\s*:/);
+    expect(src.match(/https:\/\/[^'"\s)]+/g).filter((u) => !u.startsWith('https://www.gstatic.com/firebasejs/'))).toEqual([]);
+    expect(W.SDK_V).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(read('wms-fire.js')).toMatch(/dev server ห้ามต่อ Firebase จริง/);
+    /* หน้าที่ deploy ไม่เปิดโหมดทดลอง: ต้องเป็น localhost และมี ?fire= เท่านั้น */
+    expect(read('book/book-fire.js')).toMatch(/if \(!local \|\| !m\) \{ window\.BookFire = null; return; \}/);
+  });
+});

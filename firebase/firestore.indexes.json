@@ -1,0 +1,12 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    { "collectionGroup": "docs", "fieldPath": "rows", "indexes": [] },
+    { "collectionGroup": "docs", "fieldPath": "orders", "indexes": [] },
+    { "collectionGroup": "docs", "fieldPath": "names", "indexes": [] },
+    { "collectionGroup": "docs", "fieldPath": "ref", "indexes": [] },
+    { "collectionGroup": "docs", "fieldPath": "why", "indexes": [] },
+    { "collectionGroup": "master", "fieldPath": "rows", "indexes": [] },
+    { "collectionGroup": "trc", "fieldPath": "rows", "indexes": [] }
+  ]
+}
