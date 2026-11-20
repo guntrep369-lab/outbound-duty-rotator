@@ -10,6 +10,8 @@
  *         มีบัญชีนอกโดเมน บัญชีที่ยังไม่ถูกเพิ่ม บัญชีที่ปิดแล้ว ไว้ลองว่าถูกกันจริง
  *
  * ไม่เข้าโหมดไหน = window.BookFire = null หน้าใช้ Apps Script เดิมเหมือนก่อนมีระบบใหม่
+ * ระบบจริงเทียบนาฬิกาเครื่องกับเวลาของเว็บ (หัว Date) ตอนเปิดและทุกชั่วโมง คลาดเกิน 30 วินาที = ใช้เวลาเว็บแทน
+ * (เลขเอกสาร เวลาบันทึก วันที่ไม่ขึ้นกับนาฬิกาเครื่องที่ตั้งผิด)
  * ร่างงานที่วางค้างและชุดรอส่งของโหมดซ้อม/ทดลองเก็บแยก (ns) ไม่หลุดไปส่งเข้าระบบจริง
  * ข้อมูลซ้อมและข้อมูลทดลองสมมติขึ้นทั้งหมด
  */
@@ -142,12 +144,34 @@
     }
   }
 
+  /* ── นาฬิกา: เวลาเว็บ − นาฬิกาเครื่อง (ms) ระบบจริงเท่านั้น ── */
+  var SKEW = 0, SKEW_MIN = 30000, CLOCK_EVERY = 3600000, CLOCK_WAIT = 3000;
+  function clockNow() { return Date.now() + SKEW; }
+  /** ขอหัว Date ของหน้านี้ (ไม่ใช้ cache) เทียบกับนาฬิกาเครื่อง · ขอไม่ได้ = ใช้นาฬิกาเครื่องตามเดิม */
+  async function checkClock() {
+    var get = window.fetch;
+    if (typeof get !== 'function') return;
+    try {
+      var t0 = Date.now();
+      var r = await get((location.pathname || '/') + '?clock=' + t0, { method: 'HEAD', cache: 'no-store' });
+      var t1 = Date.now(), h = r && r.headers;
+      var d = Date.parse((h && h.get('Date')) || '');
+      if (!isFinite(d)) return;
+      var off = d + 500 + (+(h.get('Age') || 0) || 0) * 1000 - (t0 + t1) / 2;   // Date ปัดลงเป็นวินาที
+      SKEW = Math.abs(off) >= SKEW_MIN ? Math.round(off) : 0;
+    } catch (e) {}
+  }
+
   /** Firestore จริง + Google ของบริษัท (เว็บที่ deploy เท่านั้น firestoreStore กัน localhost อีกชั้น) */
   async function startLive(W) {
+    if (typeof window.fetch === 'function') {
+      await Promise.race([checkClock(), new Promise(function (res) { setTimeout(res, CLOCK_WAIT); })]);
+      if (typeof window.setInterval === 'function') window.setInterval(checkClock, CLOCK_EVERY);
+    }
     var fs = await W.firestoreStore(CFG.firebase);
     var cache;
     try { cache = window.indexedDB ? W.idbCache(SET.idb) : W.memCache(); } catch (e) { cache = W.memCache(); }
-    fire = W.open({ store: fs.store, auth: W.googleAuth(fs, DOMAIN), cache: cache, domain: DOMAIN, meter: W.storeMeter(METER) });
+    fire = W.open({ store: fs.store, auth: W.googleAuth(fs, DOMAIN), cache: cache, domain: DOMAIN, meter: W.storeMeter(METER), now: clockNow });
   }
 
   var ready = (async function () {
@@ -214,6 +238,8 @@
     /** แท็บนี้เปิดระบบใหม่ทั้งที่สวิตช์ปิด (?fire=live) */
     override: !!pick.override,
     domain: DOMAIN,
+    /** นาฬิกาเครื่องคลาดจากเวลาเว็บกี่ ms (+ = เครื่องช้า) 0 = ตรง หรือไม่ใช่ระบบจริง */
+    clock: function () { return SKEW; },
     accounts: function () { return ACCOUNTS.map(function (a) { return { email: a.email, name: a.name }; }); },
     demoOrders: MODE === 'live' ? null : demoOrders,
     /** เปิดหน้าใหม่: เข้าด้วยบัญชีที่ค้างไว้ (ระบบจริง Google จำให้) · ไม่มี = null */

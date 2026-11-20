@@ -66,7 +66,7 @@
     var after = function (p) { return Object.prototype.hasOwnProperty.call(over, p) ? over[p] : before[p]; };
     var ma = after('meta/head') || null;
     var head = me.role === 'head', staff = head || me.role === 'staff';
-    var month = C.yymm(now), calls = 0;
+    var months = C.monthsOk(now), calls = 0;
     for (var i = 0; i < writes.length; i++) {
       var path = writes[i][0], d = writes[i][1], seg = path.split('/'), col = seg[0], id = seg[1], old = before[path];
       if (seg.length !== 2) return 'ที่เขียนไม่ถูก ' + path;
@@ -116,7 +116,8 @@
         if (d.by !== email) return 'by ต้องเป็นอีเมลคนที่ล็อกอิน';
         if (d.at !== C.TIME) return 'at ต้องเป็นเวลาเซิร์ฟเวอร์';
         if (C.HEAD_TYPES.indexOf(d.type) >= 0 ? !head : C.STAFF_TYPES.indexOf(d.type) < 0) return 'ประเภท ' + d.type + ' ลงไม่ได้ด้วยสิทธิ์นี้';
-        if (ma.month !== month || d.no !== 'T' + month + '-' + pad4(ma.next - 1)) return 'เลขเอกสารไม่ตรงกับเดือนของเซิร์ฟเวอร์';
+        if (months.indexOf(ma.month) < 0) return 'เดือนของเลขเอกสารไม่ตรงกับเวลาเซิร์ฟเวอร์ (นาฬิกาเครื่องคลาดเกิน 10 นาที?)';
+        if (d.no !== 'T' + ma.month + '-' + pad4(ma.next - 1)) return 'เลขเอกสารไม่ตรงกับเลขถัดไปใน meta';
         continue;
       }
       if (col === 'meta') {
@@ -127,7 +128,11 @@
           calls += 1;   // getAfter(docs/{meta.last})
           var last = after('docs/' + d.last);
           if (!last || last.seq !== d.seq) return 'meta ต้องมากับเอกสารใหม่ seq เดียวกัน';
-          if (d.month !== month || d.next !== (mb && mb.month === month ? +mb.next || 1 : 1) + 1) return 'เลขถัดไปใน meta ไม่ถูก';
+          /* เดือนตามเวลาเซิร์ฟเวอร์ (±MONTH_TOL รอบเที่ยงคืนสิ้นเดือน) ไม่ย้อนเดือนเดิม · เลขรันต่อในเดือนเดียวกัน เดือนใหม่เริ่ม 1 */
+          var pm = mb ? String(mb.month || '') : '';
+          if (months.indexOf(d.month) < 0) return 'เดือนของเลขเอกสารไม่ตรงกับเวลาเซิร์ฟเวอร์ (นาฬิกาเครื่องคลาดเกิน 10 นาที?)';
+          if (d.month < pm) return 'เดือนของเลขเอกสารย้อนเดือนเดิมไม่ได้';
+          if (d.next !== (mb && pm === d.month ? +mb.next || 1 : 1) + 1) return 'เลขถัดไปใน meta ไม่ถูก';
           if (d.at !== C.TIME) return 'at ต้องเป็นเวลาเซิร์ฟเวอร์';
           if ((+d.mv || 0) !== (mb ? +mb.mv || 0 : 0) || (+d.tv || 0) !== (mb ? +mb.tv || 0 : 0) || (d.trc || '') !== (mb ? mb.trc || '' : '')) {
             return 'บันทึกเอกสารต้องคง mv tv trc ของ meta เดิม';
@@ -1031,6 +1036,13 @@
       return reply({ closed: e.m, label: T().monthTh(e.m), docs: e.docs, chunks: e.n, skip: e.skip.length, bytes: e.bytes, fix: plan.index.ov.fix, sum: T().archSummary(local, plan.index, now()) });
     }
 
+    /** ฐานจริงไม่บอกเหตุผลที่ไม่รับ (Missing or insufficient permissions) บอกทางแก้ที่พบบ่อยแทน */
+    function saveErr(e) {
+      var msg = errOf(e);
+      if (!(e && e.code === 'permission-denied') || /ไม่มีสิทธิ์เขียน:/.test(msg)) return msg;
+      return 'ฐานข้อมูลไม่รับการบันทึกนี้ (' + msg + ') · กดส่งใหม่อีกครั้ง ถ้ายังไม่ได้ให้ตรวจนาฬิกาเครื่อง (ตั้งเวลาอัตโนมัติ) แล้วแจ้งหัวหน้า';
+    }
+
     function docByNo(no) { return local.docs.filter(function (d) { return d.no === no; })[0] || null; }
 
     /** บันทึกหนึ่งชุด = transaction เดียว: อ่าน meta + docs/{รหัสชุด} เช็คกับสำเนาในเครื่อง (seq ตรงแล้ว) แล้วเขียนเอกสาร + meta */
@@ -1056,7 +1068,7 @@
             return { plan: pl };
           });
         } catch (e) {
-          return fail(errOf(e), netOf(e));
+          return fail(saveErr(e), netOf(e));
         }
         if (res.stale) { await sync(); continue; }
         if (res.again) {

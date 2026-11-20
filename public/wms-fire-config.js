@@ -22,9 +22,9 @@ window.WMS_FIRE_CONFIG = {
   on: false,
   domain: 'lunio.co.th',
   firebase: {
-    apiKey: '',
-    authDomain: '',
-    projectId: '',
-    appId: '',
+    apiKey: 'AIzaSyD_XUc0KWGM9OBqy6Wyu24a3ykW1RvWgmY',
+    authDomain: 'hrz-wms.firebaseapp.com',
+    projectId: 'hrz-wms',
+    appId: '1:681444802240:web:52d212226ed35614c1f725',
   },
 };

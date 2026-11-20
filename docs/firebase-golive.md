@@ -40,6 +40,11 @@
 
 ใช้บัญชี **@lunio.co.th** เท่านั้น ห้ามใช้ Gmail ส่วนตัว ระบบจะได้เป็นของบริษัท
 
+> **หาเมนูไม่เจอ** (Firebase เปลี่ยนหน้าตาเมนูซ้ายบ่อย ชื่อหมวดอาจไม่ใช่ Build): ใช้ลิงก์ตรงแทน
+> เข้าโปรเจกต์แล้วดูช่องที่อยู่เว็บ จะเป็น `console.firebase.google.com/project/<รหัสโปรเจกต์>/overview`
+> เปลี่ยนคำท้าย `overview` เป็น `firestore` (ฐานข้อมูล) หรือ `authentication` (เข้าระบบด้วย Google) แล้วกด Enter
+> หรือเมนูซ้ายกด **All products** (หรือไอคอน ☰ ถ้าเมนูซ่อนอยู่) แล้วหาการ์ดชื่อ Firestore / Authentication
+
 ### 1.1 สร้างโปรเจกต์
 
 1. เปิด https://console.firebase.google.com ด้วยบัญชีบริษัท
@@ -51,7 +56,7 @@
 
 ### 1.2 ฐานข้อมูล Firestore
 
-1. เมนูซ้าย **Build → Firestore Database → Create database**
+1. เมนูซ้าย **Firestore Database** (ลิงก์ตรง `…/project/<รหัสโปรเจกต์>/firestore`) → **Create database**
 2. Edition: **Standard** · Database ID: ปล่อยเป็น **(default)** (ฐานที่ตั้งชื่อเองไม่ได้โควตาฟรี)
 3. Location: **asia-southeast1 (Singapore)** — เปลี่ยนทีหลังไม่ได้
 4. เลือก **Start in production mode** → **Create**
@@ -85,17 +90,28 @@ Query scope = **Collection** · ติ๊กออกทุกช่อง (Asce
 
 ### 1.5 เข้าระบบด้วย Google
 
-1. **Build → Authentication → Get started**
+1. เมนูซ้าย **Authentication** (ลิงก์ตรง `…/project/<รหัสโปรเจกต์>/authentication`) → ปุ่ม **Get started**
+   (ถ้าไม่มีปุ่มนี้ แต่เห็นแถวแท็บ Users · Sign-in method = เปิดไว้แล้ว ไปข้อ 2 ได้เลย)
 2. แท็บ **Sign-in method** → **Google** → Enable → Support email = อีเมลบริษัทของคุณ → Save
-3. แท็บ **Settings → Authorized domains** → **Add domain** → `<ชื่อบัญชี GitHub>.github.io` (โดเมนของเว็บ WMS)
-4. Google Cloud console (https://console.cloud.google.com) เลือกโปรเจกต์เดียวกัน → **Google Auth Platform → Audience** (หรือ APIs & Services → OAuth consent screen) → User type = **Internal**
-   คนนอก @lunio.co.th จะเข้าไม่ได้ตั้งแต่หน้าเลือกบัญชี
+3. หน้า Authentication แถวแท็บด้านบน (Users · Sign-in method · Templates · Usage · **Settings**) → กด **Settings**
+   → เมนูซ้ายในหน้านั้น หัวข้อ Domains → **Authorized domains** → ปุ่ม **Add domain**
+   → ใส่แค่ชื่อโดเมนของเว็บ WMS ไม่มี `https://` ไม่มีชื่อ repo ต่อท้าย
+   (เว็บอยู่ที่ `https://abc.github.io/outbound-duty-rotator/` → ใส่ `abc.github.io`) → Add
+   ในรายการจะมี `localhost` กับ `<โปรเจกต์>.firebaseapp.com` อยู่แล้ว ไม่ต้องลบ
+4. **(ไม่บังคับ ข้ามได้)** กันคนนอกตั้งแต่หน้าเลือกบัญชี: https://console.cloud.google.com → ปุ่มเลือกโปรเจกต์มุมบนซ้าย → เลือกโปรเจกต์ชื่อเดียวกับ Firebase
+   → ช่องค้นหาด้านบนพิมพ์ `Audience` → เลือก **Audience (Google Auth Platform)** → ถ้าเป็น External มีปุ่ม **Make internal** → กด → Confirm
+   - ไม่มีปุ่ม Make internal หรือกดไม่ได้ = โปรเจกต์สร้างด้วย Gmail ส่วนตัว ไม่ได้อยู่ใต้องค์กร lunio.co.th → **ข้ามข้อนี้**
+   - ข้ามแล้วยังปลอดภัย: ป๊อปอัปล็อกอินโชว์เฉพาะบัญชี @lunio.co.th · หน้าเว็บไม่รับอีเมลที่หัวหน้าไม่ได้เพิ่ม · firestore.rules ไม่ให้อ่าน/เขียนถ้าไม่ใช่ @lunio.co.th และไม่อยู่ในผู้ใช้ที่เปิดใช้
 
 ### 1.6 แอปเว็บ + web config
 
-1. ⚙️ **Project settings → General → Your apps → ไอคอน `</>`**
-2. App nickname `WMS` · **ไม่ต้อง**ติ๊ก Firebase Hosting → Register app
-3. จะเห็นโค้ด `const firebaseConfig = { ... }` — ส่ง 4 ค่านี้ให้ Claude (หรือแก้เอง) ใส่ใน `public/wms-fire-config.js`
+1. ⚙️ **Project settings** (เฟืองข้าง Project Overview มุมบนซ้าย · ลิงก์ตรง `…/project/<รหัสโปรเจกต์>/settings/general`)
+   → แท็บ **General** → เลื่อนลงล่างสุดหัวข้อ **Your apps** → กดไอคอน **`</>`** (Web)
+2. App nickname `WMS` · **ไม่ต้อง**ติ๊ก Also set up Firebase Hosting → **Register app**
+3. หน้าถัดไป (Add Firebase SDK) มีโค้ด `const firebaseConfig = { ... }` → คัดลอกทั้งก้อนส่งให้ Claude (หรือแก้เอง)
+   ใส่ใน `public/wms-fire-config.js` ใช้ 4 ค่านี้ ที่เหลือ (storageBucket, messagingSenderId) ไม่ใช้
+   → กด **Continue to console**
+   (ปิดหน้านี้ไปแล้วดูใหม่ได้: Project settings → General → Your apps → แอป WMS → SDK setup and configuration → **Config**)
 
    ```js
    firebase: {
@@ -106,10 +122,14 @@ Query scope = **Collection** · ติ๊กออกทุกช่อง (Asce
    },
    ```
 
-   **ให้ `on: false` ไว้ก่อน** จนถึงเช้า 21 ธ.ค.
-4. จำกัด API key: Google Cloud console → **APIs & Services → Credentials** → key ชื่อ *Browser key (auto created by Firebase)*
-   → Application restrictions = **Websites** → เพิ่ม `https://<ชื่อบัญชี GitHub>.github.io/*` → Save
-   (ไม่ต้องแตะ API restrictions)
+   ค่าพวกนี้ไม่ใช่รหัสลับ (ใครเปิดเว็บก็เห็น) ใส่ใน repo ได้ · **ให้ `on: false` ไว้ก่อน** จนถึงเช้า 21 ธ.ค.
+4. จำกัด API key ให้ใช้ได้เฉพาะเว็บเรา: https://console.cloud.google.com/apis/credentials → เลือกโปรเจกต์เดียวกันมุมบนซ้าย
+   → หัวข้อ API Keys → กดชื่อ *Browser key (auto created by Firebase)*
+   → Application restrictions = **Websites** → **Add** ทีละบรรทัด 2 บรรทัด
+   - `https://<ชื่อบัญชี GitHub>.github.io/*` (เว็บ WMS)
+   - `https://<project-id>.firebaseapp.com/*` (หน้าต่างล็อกอิน Google — **ขาดบรรทัดนี้จะล็อกอินไม่ได้**)
+
+   → **Save** (มีผลภายในไม่กี่นาที) · ไม่ต้องแตะ API restrictions
 
 ### 1.7 หัวหน้าคนแรก
 
@@ -132,6 +152,11 @@ Query scope = **Collection** · ติ๊กออกทุกช่อง (Asce
 1. หัวหน้าเปิด `https://<เว็บ>/book/?fire=live` → **เข้าสู่ระบบด้วย Google ของบริษัท** → ต้องเห็นป้ายแดง *สวิตช์ปิดอยู่ · หัวหน้าเปิดดูระบบใหม่*
 2. ⚙️ ตั้งค่า → 👥 คนใช้และสิทธิ์ → เพิ่มทุกคนด้วยอีเมลบริษัท + สิทธิ์ (หัวหน้า / ลงรายการ / ดูอย่างเดียว)
 3. ให้แต่ละคนเปิดลิงก์เดียวกันแล้วกดเข้า ถ้าขึ้น *สวิตช์ระบบใหม่ปิดอยู่ ใช้หน้าสมุดสต๊อกแบบเดิม* = **บัญชีใช้ได้แล้ว** (ขึ้นอย่างอื่น = ยังไม่ได้เพิ่มชื่อ หรือใช้บัญชีผิด)
+
+ล็อกอินไม่ผ่าน ขึ้นข้อความอังกฤษ:
+- มีคำว่า `unauthorized-domain` → ข้อ 1.5 ข้อ 3 ยังไม่ได้เพิ่มโดเมนเว็บ
+- มีคำว่า `referer` หรือ `API key` / `blocked` → ข้อ 1.6 ข้อ 4 รายชื่อเว็บของ key ไม่ครบ (ต้องมีทั้ง github.io และ firebaseapp.com)
+- ปุ่มกดแล้วไม่มีหน้าต่างขึ้น → เบราว์เซอร์บล็อกป๊อปอัป ให้อนุญาตป๊อปอัปของเว็บนี้
 
 ### 1.9 สำรองทุกคืน
 
@@ -207,6 +232,7 @@ Query scope = **Collection** · ติ๊กออกทุกช่อง (Asce
 - [ ] หัวหน้าเข้า `?fire=live` ได้ · เพิ่มรายชื่อครบ · ทุกคนลองเข้าแล้วขึ้น *สวิตช์ระบบใหม่ปิดอยู่* (ข้อ 1.8)
 - [ ] `fire-backup.gs` ติดตั้งแล้ว โฟลเดอร์สำรองมีไฟล์แรก (ข้อ 1.9)
 - [ ] ทุกคนซ้อมครบ (ข้อ 2.2) · เครื่องที่ใช้งานจริงทุกเครื่องเปิดเว็บได้ อนุญาตป๊อปอัปของเว็บแล้ว
+- [ ] ทุกเครื่องตั้งเวลาอัตโนมัติ (ระบบใช้เวลาของเว็บแทนอยู่แล้ว แต่ถ้าคลาดเกิน 5 นาที หน้าจะขึ้นป้าย **⏰ นาฬิกาเครื่องนี้ช้า/เร็ว** ให้แก้)
 - [ ] เลือกคนเฝ้า: หัวหน้า 1 คน + คนแก้ไฟล์สวิตช์ได้ 1 คน (หรือ Claude)
 
 ### 19–20 ธ.ค. (นับใหญ่)
@@ -235,6 +261,8 @@ Query scope = **Collection** · ติ๊กออกทุกช่อง (Asce
 - [ ] ตรวจยอด ✓ · คุยปัญหาเมื่อวาน
 
 ### 1 ม.ค. 2570 เป็นต้นไป (ทุกต้นเดือน)
+
+เที่ยงคืนสิ้นเดือนบันทึกต่อได้ตามปกติ: เลขเอกสารใช้เดือนตามเวลาเซิร์ฟเวอร์ เผื่อ ±10 นาที (กดก่อนเที่ยงคืนแล้วถึงฐานหลังเที่ยงคืนยังได้เลขเดือนเดิม) เลขรันต่อไม่ซ้ำและไม่ย้อนเดือน
 
 - [ ] หัวหน้า ⚙️ ตั้งค่า → 🗄️ ปิดเดือน → กดปิดเดือนก่อน (ดูหัวข้อ 5)
 

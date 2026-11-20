@@ -58,6 +58,8 @@
   var HITS_MAX = 50;
   var FIND_MONTHS = 3;
   var BACK_DAYS = 45;
+  /* เดือนของเลขเอกสารตามเวลาเซิร์ฟเวอร์ เผื่อ ±10 นาทีรอบเที่ยงคืนสิ้นเดือน (กดก่อนเที่ยงคืนถึงฐานหลังเที่ยงคืน · นาฬิกาเครื่องคลาดเล็กน้อย) ตรงกับ monthOk ใน firestore.rules */
+  var MONTH_TOL = 600000;
   var RECENT_MAX = 7;
   var OPEN_MAX = 40000;
   var NAMES_MAX = 5000;
@@ -107,6 +109,12 @@
   }
   /** เดือนของเลขเอกสาร '2611' ตามวันที่ไทย */
   function yymm(now) { var t = today(now); return t.slice(2, 4) + t.slice(5, 7); }
+  /** เดือนที่ยอมให้เป็นเลขเอกสารเมื่อเวลาเซิร์ฟเวอร์ = now (เดือนนี้ หรือเดือนติดกันถ้าอยู่ห่างเที่ยงคืนสิ้นเดือนไม่เกิน MONTH_TOL) */
+  function monthsOk(now) {
+    var out = [];
+    [now - MONTH_TOL, now, now + MONTH_TOL].forEach(function (t) { var m = yymm(t); if (out.indexOf(m) < 0) out.push(m); });
+    return out;
+  }
   function dayNo(d) { var p = String(d).split('-'); return Math.round(Date.UTC(+p[0], +p[1] - 1, +p[2]) / 86400000); }
   function period(day) { var y = +day.slice(0, 4), m = +day.slice(5, 7); return { ym: day.slice(0, 7), y: y, m: m }; }
   function prevYm(ym) {
@@ -814,7 +822,10 @@
     var now = ctx.now, meta = ctx.meta || { v: V, seq: 0, month: '', next: 1, last: '', rows: 0, open: null, mv: 0 };
     var local = ctx.local || { docs: [], meta: meta, piles: {} };
     var vd = voids(local);
-    var month = yymm(now), nextNo = meta.month === month ? +meta.next || 1 : 1;
+    /* เดือนไม่ย้อน: เครื่องอื่นเริ่มเดือนใหม่แล้ว (นาฬิกาเครื่องนี้ยังเป็นเดือนก่อน) = ใช้เดือนของ meta เลขรันต่อ ไม่เริ่ม 1 ซ้ำ */
+    var month = yymm(now);
+    if (meta.month && meta.month > month) month = meta.month;
+    var nextNo = meta.month === month ? +meta.next || 1 : 1;
     var no = 'T' + month + '-' + pad4(nextNo);
     var st = stamp(now);
     var at = (+meta.rows || 0) + 2;   // เลขแถวแรกแบบแท็บ Transaction (แถว 1 = หัวตาราง)
@@ -1204,7 +1215,7 @@
     TYPE_MOVE: TYPE_MOVE, TYPE_GR: TYPE_GR, TYPE_CONV: TYPE_CONV, TYPE_ADJ: TYPE_ADJ, TYPE_ROWS: TYPE_ROWS,
     TR_WAIT: TR_WAIT, TR_DONE: TR_DONE, TR_NONE: TR_NONE, TR_STATES: TR_STATES, WH_MAIN: WH_MAIN, WH_QA: WH_QA,
     whOf: whOf, whLines: whLines, trNeed: trNeed, docOut: docOut, round3: round3, code: code, dayNo: dayNo, grDay: grDay,
-    text: text, up: up, today: today, stamp: stamp, yymm: yymm, period: period, prevYm: prevYm, monthsBack: monthsBack,
+    text: text, up: up, today: today, stamp: stamp, yymm: yymm, monthsOk: monthsOk, MONTH_TOL: MONTH_TOL, period: period, prevYm: prevYm, monthsBack: monthsBack,
     byteLen: byteLen, enc: enc, dec: dec, encMap: encMap, decMap: decMap, rowsIn: rowsIn, linesOut: linesOut,
     pileKey: pileKey, applyRows: applyRows, applyDoc: applyDoc, pilesFor: pilesFor,
     prep: prep, retMonths: retMonths, plan: plan, splitDoc: splitDoc, revRow: revRow,

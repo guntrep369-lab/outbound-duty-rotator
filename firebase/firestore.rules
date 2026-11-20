@@ -45,10 +45,19 @@ service cloud.firestore {
 
     function pad2(n) { return n < 10 ? '0' + string(n) : string(n); }
     function pad4(n) { return n < 10 ? '000' + string(n) : n < 100 ? '00' + string(n) : n < 1000 ? '0' + string(n) : string(n); }
-    /** เดือนของเลขเอกสาร 'yyMM' ตามเวลาไทยของเซิร์ฟเวอร์ (ไม่เชื่อนาฬิกาเครื่อง) */
-    function thaiMonth() {
-      let t = request.time + duration.value(7, 'h');
-      return pad2(t.year() % 100) + pad2(t.month());
+    /** เดือน 'yyMM' ตามเวลาไทยของเวลา t */
+    function thaiMonthOf(t) {
+      let x = t + duration.value(7, 'h');
+      return pad2(x.year() % 100) + pad2(x.month());
+    }
+    /**
+     * เดือนของเลขเอกสารตามเวลาเซิร์ฟเวอร์ (ไม่เชื่อนาฬิกาเครื่อง) เผื่อ ±10 นาทีรอบเที่ยงคืนสิ้นเดือน
+     * กดบันทึกก่อนเที่ยงคืนแต่ถึงฐานหลังเที่ยงคืน หรือนาฬิกาเครื่องคลาดเล็กน้อย ยังบันทึกได้ (MONTH_TOL ใน wms-fire-core.js)
+     */
+    function monthOk(m) {
+      return m == thaiMonthOf(request.time)
+        || m == thaiMonthOf(request.time - duration.value(10, 'm'))
+        || m == thaiMonthOf(request.time + duration.value(10, 'm'));
     }
 
     /* ── เอกสาร ── */
@@ -59,7 +68,7 @@ service cloud.firestore {
         && d.by == email() && d.at == request.time
         && ((d.type in ['ตารางเดิม', 'ยอดยกมา', 'ปรับยอด', 'กลับรายการ']) ? (u.role == 'head')
           : (d.type in ['ตัดขาย', 'ย้าย', 'คืน', 'รับของ', 'แปลง']))
-        && m.month == thaiMonth() && d.no == 'T' + m.month + '-' + pad4(m.next - 1);
+        && monthOk(m.month) && d.no == 'T' + m.month + '-' + pad4(m.next - 1);
     }
     /** ส่วนแยก: meta.at = เวลาของคำขอนี้ แปลว่า meta เพิ่ง seq +1 ในคำขอนี้ ไม่ใช่เติมส่วนให้เอกสารเก่าทีหลัง */
     function partOk(id, d, m) {
@@ -83,12 +92,13 @@ service cloud.firestore {
 
     /* ── meta/head ── */
 
-    /** seq +1 มากับเอกสารใหม่ seq เดียวกัน เลขถัดไปเริ่ม 1 ทุกเดือน */
+    /** seq +1 มากับเอกสารใหม่ seq เดียวกัน · เดือนไม่ย้อน เลขรันต่อในเดือนเดียวกัน เดือนใหม่เริ่ม 1 (เลขไม่ซ้ำ) */
     function metaBump(d, old, u) {
       let prevSeq = old == null ? 0 : old.seq;
-      let prevNext = old != null && old.month == thaiMonth() ? old.next : 1;
+      let prevMonth = old == null ? '' : old.get('month', '');
+      let prevNext = old != null && prevMonth == d.month ? old.next : 1;
       return isStaff(u) && d.seq == prevSeq + 1 && d.at == request.time
-        && d.month == thaiMonth() && d.next == prevNext + 1
+        && monthOk(d.month) && d.month >= prevMonth && d.next == prevNext + 1
         && d.get('mv', 0) == (old == null ? 0 : old.get('mv', 0))
         && d.get('tv', 0) == (old == null ? 0 : old.get('tv', 0))
         && d.get('trc', '') == (old == null ? '' : old.get('trc', ''))

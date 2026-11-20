@@ -1406,18 +1406,24 @@ describe('wms-fire-core.js', () => {
       }),
     });
     const cfg = { on: false, domain: CO, firebase: { apiKey: 'k', authDomain: 'p.firebaseapp.com', projectId: 'p', appId: '1:2:web:3' } };
-    const win = { WMS_FIRE_CONFIG: cfg };
+    /* หัว Date ของเว็บ = เวลาเซิร์ฟเวอร์ (NOW) นาฬิกาเครื่องจริงต่างไปเท่าไรก็ได้ ระบบใช้เวลาเว็บ */
+    let asked = null;
+    const win = { WMS_FIRE_CONFIG: cfg, fetch: async (url, o) => { asked = [url, o]; return { headers: { get: (k) => (k === 'Date' ? new Date(NOW).toUTCString() : null) } }; } };
     const doc = { createElement: () => ({}), head: { appendChild: (s) => {
       if (/wms-fire-core\.js$/.test(s.src)) win.WmsFireCore = C;
       if (/wms-fire-trc\.js$/.test(s.src)) win.WmsFireTrc = TR;
       if (/wms-fire\.js$/.test(s.src)) win.WmsFire = fakeW;
       setTimeout(() => s.onload());
     } } };
-    new Function('window', 'location', 'localStorage', 'document', read('book/book-fire.js'))(win, { hostname: 'someone.github.io', search: '?fire=live' }, memLS(), doc);
+    new Function('window', 'location', 'localStorage', 'document', read('book/book-fire.js'))(win, { hostname: 'someone.github.io', pathname: '/x/book/', search: '?fire=live' }, memLS(), doc);
     const F = win.BookFire;
     expect([F.mode, F.override, F.pick, F.ns, F.domain, F.demoOrders, F.restoreDev]).toEqual(['live', true, false, '', CO, null, null]);
     await F.ready;
     expect(seenCfg).toBe(cfg.firebase);
+    expect(asked[0]).toMatch(/^\/x\/book\/\?clock=\d+$/);
+    expect(asked[1]).toEqual({ method: 'HEAD', cache: 'no-store' });
+    const skew = NOW + 500 - Date.now();
+    expect(Math.abs(F.clock() - (Math.abs(skew) >= 30000 ? skew : 0))).toBeLessThan(5000);
     expect(await F.restore()).toBe(null);   // ยังไม่เคยเข้า
 
     who = 'staff@' + CO;
@@ -1453,6 +1459,12 @@ describe('wms-fire-core.js', () => {
     cut = null;
     expect((await F.post('bk-move', mv('m-3'))).doc).toBe('T2611-0004');
     expect((await F.post('bk-move', mv('m-3'))).again).toBe(true);
+    /* ฐานจริงไม่รับ (ไม่บอกเหตุผล) = บอกทางแก้ ไม่ใช่เน็ตหลุด */
+    cut = Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' });
+    const den = await F.post('bk-move', mv('m-4'));
+    expect(den.error).toMatch(/ฐานข้อมูลไม่รับการบันทึกนี้ \(Missing or insufficient permissions\.\) · กดส่งใหม่อีกครั้ง ถ้ายังไม่ได้ให้ตรวจนาฬิกาเครื่อง/);
+    expect(den.net).toBeUndefined();
+    cut = null;
     F.logout();
     expect(F.user()).toBe(null);
   });
@@ -1652,5 +1664,67 @@ describe('WmsFire ปิดเดือน', () => {
     expect(TR.archFloor(null)).toBe(null);
     expect(TR.archFloor({ months: [{ trAt: 5000000 }], ov: { trAt: 9000000 } })).toBe(9000000 - TR.TR_MARGIN);
     expect(W.ARCH_BATCH).toBeLessThanOrEqual(9);
+  });
+});
+
+/* ── เลขเอกสารคร่อมเที่ยงคืนสิ้นเดือน ─────────────────────────────────── */
+
+describe('WmsFire เลขเอกสารคร่อมเที่ยงคืนสิ้นเดือน', () => {
+  const END = Date.UTC(2026, 10, 30, 16, 59, 59, 500);   // 30 พ.ย. 2569 23:59:59.5 เวลาไทย
+  const MIN = 60000;
+  const mv = (b) => body(b, [mv3()], { date: '2026-11-30' });
+  /** ยอดยกมาวันก่อน แล้วเลื่อนเวลาเซิร์ฟเวอร์ไปที่ at */
+  async function nearEnd(at) {
+    const x = await both({ now: END - DAY });
+    await x.open();                     // T2611-0001
+    x.tick(at - (END - DAY));
+    return x;
+  }
+  const skewed = (x, ms) => x.device(STAFF_EMAIL, { now: () => x.clock() + ms });
+  const noOf = (x, batch) => x.store.dump()['docs/' + batch].no;
+
+  it('กดก่อนเที่ยงคืน ถึงฐานหลังเที่ยงคืน (นาฬิกาตรง) บันทึกได้ เลขเดือนเดิมรันต่อ · นาฬิกาช้าเกิน 10 นาที ไม่ผ่าน จนมีเครื่องเริ่มเดือนใหม่ แล้วรันต่อได้', async () => {
+    const x = await nearEnd(END);
+    x.store.hook(async () => x.tick(1000));   // ระหว่างคำนวณกับเขียน เวลาเซิร์ฟเวอร์ข้ามเที่ยงคืน
+    expect(ok(await x.staff.post('bk-move', mv('m-1'))).doc).toBe('T2611-0002');
+    expect(C.today(x.clock())).toBe('2026-12-01');
+
+    x.tick(20 * MIN);                           // 1 ธ.ค. 00:20
+    const slow = await skewed(x, -30 * MIN);    // ยังเห็นเป็น 30 พ.ย. 23:50
+    expect((await slow.post('bk-move', mv('s-1'))).error).toMatch(/เดือนของเลขเอกสารไม่ตรงกับเวลาเซิร์ฟเวอร์/);
+    expect(ok(await x.staff.post('bk-move', body('m-2', [mv3()], { date: '2026-12-01' }))).doc).toBe('T2612-0001');
+    expect(ok(await slow.post('bk-move', mv('s-1'))).doc).toBe('T2612-0002');   // เดือนไม่ย้อน ใช้เดือนของ meta
+    expect(x.store.dump()['meta/head']).toMatchObject({ month: '2612', next: 3 });
+  });
+
+  it('เครื่องนาฬิกาเร็วเริ่มเดือนใหม่ก่อนเที่ยงคืนเซิร์ฟเวอร์ เครื่องอื่นรันต่อเดือนใหม่ (ไม่ซ้ำ ไม่ย้อน) · Rules ห้ามเดือนย้อนแม้อยู่ในช่วงเผื่อ', async () => {
+    const x = await nearEnd(END - MIN);         // 23:58:59.5
+    const fast = await skewed(x, 2 * MIN), slow = await skewed(x, -5 * MIN);
+    expect(ok(await fast.post('bk-move', body('f-1', [mv3()], { date: '2026-12-01' }))).doc).toBe('T2612-0001');
+    expect(ok(await x.staff.post('bk-move', mv('m-1'))).doc).toBe('T2612-0002');
+    expect(ok(await slow.post('bk-move', mv('s-1'))).doc).toBe('T2612-0003');
+    const nos = Object.values(x.store.dump()).filter((d) => d && d.no && !d.of).map((d) => d.no);
+    expect(new Set(nos).size).toBe(nos.length);
+    expect(nos.sort()).toEqual(['T2611-0001', 'T2612-0001', 'T2612-0002', 'T2612-0003']);
+
+    /* เขียนตรง: meta กลับเป็น พ.ย. เริ่มเลข 1 (= T2611-0001 ซ้ำ) ถูกกฎกัน */
+    const m = x.store.dump()['meta/head'];
+    x.store.setUser({ email: STAFF_EMAIL, verified: true });
+    const d = { v: 1, no: 'T2611-0001', seq: m.seq + 1, row: m.rows + 2, n: 1, type: 'ย้าย', date: '2026-11-30', by: STAFF_EMAIL, name: 'ทดลอง', at: C.TIME,
+      stamp: '', ref: '', link: '', why: '', qty: 1, tr: '', trState: '', rows: '', names: '', orders: '', part: 1 };
+    await expect(x.store.commit([['docs/back', d], ['meta/head', { ...m, seq: m.seq + 1, month: '2611', next: 2, last: 'back', at: C.TIME }]])).rejects.toThrow(/ย้อนเดือนเดิมไม่ได้/);
+  });
+
+  it('ช่วงเผื่อ ±10 นาทีตรงกันทั้งแอป store จำลอง และ firestore.rules · เดือนเลขเอกสารไม่ย้อน', () => {
+    expect(C.MONTH_TOL).toBe(10 * MIN);
+    expect(C.monthsOk(END)).toEqual(['2611', '2612']);
+    expect(C.monthsOk(END - 11 * MIN)).toEqual(['2611']);
+    expect(C.monthsOk(END + 11 * MIN)).toEqual(['2612']);
+    expect(C.monthsOk(Date.UTC(2026, 11, 31, 17, 5))).toEqual(['2612', '2701']);   // ข้ามปี
+    const rules = fs.readFileSync(path.resolve(__dirname, '../../firebase/firestore.rules'), 'utf8');
+    expect(rules.match(/duration\.value\(10, 'm'\)/g)).toHaveLength(2);
+    expect(rules).toContain('monthOk(m.month) && d.no ==');
+    expect(rules).toContain('monthOk(d.month) && d.month >= prevMonth && d.next == prevNext + 1');
+    expect(rules).not.toMatch(/thaiMonth\(\)/);
   });
 });
