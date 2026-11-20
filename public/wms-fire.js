@@ -27,6 +27,8 @@
   var LIMITS = { reads: 50000, writes: 20000 };   // โควตาฟรีต่อวันของ Firestore (Spark)
   var LAST_EVERY = 3600000;     // บันทึกเวลาเข้าล่าสุดไม่ถี่กว่าชั่วโมงละครั้ง
   var REPORT_EVERY = 3600000;   // ส่งยอดอ่าน/เขียนของเครื่องนี้ไปรวมที่ use/{วัน} ชั่วโมงละครั้ง
+  var ARCH_GAP = 300;           // ตามหลังเกินนี้ (หรือเครื่องใหม่) ลองอ่านก้อนปิดเดือนแทนทีละเอกสาร
+  var ARCH_BATCH = 9;           // ก้อนต่อการเขียนหนึ่งครั้ง (ก้อนละไม่เกิน 900 KB · Rules อ่าน users ทีละเอกสาร เพดาน 20)
 
   function clone(o) { return o === undefined || o === null ? o : JSON.parse(JSON.stringify(o)); }
   function diffKeys(a, b) {
@@ -58,10 +60,11 @@
     if (domain && email.slice(-(domain.length + 1)) !== '@' + domain) return 'อีเมลนอกโดเมนบริษัท';
     var me = before['users/' + email];
     if (!me || me.active !== true) return NO_RIGHT;
-    var after = {};
-    Object.keys(before).forEach(function (p) { after[p] = before[p]; });
-    writes.forEach(function (w) { after[w[0]] = w[1]; });
-    var ma = after['meta/head'] || null;
+    /* ข้อมูลหลังเขียน (getAfter) = ที่เขียนในคำขอนี้ ทับของเดิม (ไม่คัดลอกทั้งฐาน ฐานใหญ่แล้วช้า) */
+    var over = {};
+    writes.forEach(function (w) { over[w[0]] = w[1]; });
+    var after = function (p) { return Object.prototype.hasOwnProperty.call(over, p) ? over[p] : before[p]; };
+    var ma = after('meta/head') || null;
     var head = me.role === 'head', staff = head || me.role === 'staff';
     var month = C.yymm(now), calls = 0;
     for (var i = 0; i < writes.length; i++) {
@@ -82,6 +85,12 @@
         continue;
       }
       if (col === 'master' || col === 'trc') { if (!head) return 'เขียน ' + col + ' ได้เฉพาะหัวหน้า'; continue; }
+      if (col === 'arch') {
+        /* ปิดเดือน: ก้อนสำเนาของเอกสาร หัวหน้าเขียน ชื่อต้องเป็น index ปปดด-n หรือ ov-n */
+        if (!head) return 'ปิดเดือนได้เฉพาะหัวหน้า';
+        if (!/^(index|\d{4}-\d{1,3}|ov-\d{1,3})$/.test(id)) return 'ชื่อก้อนปิดเดือนไม่ถูก ' + id;
+        continue;
+      }
       if (!staff) return 'บัญชีนี้ดูได้อย่างเดียว';
       if (col === 'xfer') {
         /* บันทึกว่าวางแถวลงชีตเดิมแล้ว ครั้งละวันเดียว */
@@ -116,7 +125,7 @@
         if (!mb || d.seq !== mb.seq) {
           if (d.seq !== (mb ? +mb.seq || 0 : 0) + 1) return 'meta seq ต้องเพิ่มทีละ 1 (เอกสารใหม่ต้องมากับ meta ที่ seq เพิ่ม 1)';
           calls += 1;   // getAfter(docs/{meta.last})
-          var last = after['docs/' + d.last];
+          var last = after('docs/' + d.last);
           if (!last || last.seq !== d.seq) return 'meta ต้องมากับเอกสารใหม่ seq เดียวกัน';
           if (d.month !== month || d.next !== (mb && mb.month === month ? +mb.next || 1 : 1) + 1) return 'เลขถัดไปใน meta ไม่ถูก';
           if (d.at !== C.TIME) return 'at ต้องเป็นเวลาเซิร์ฟเวอร์';
@@ -153,12 +162,14 @@
     opt = opt || {};
     var now = opt.now || Date.now;
     var docs = {};
+    var plain = {};   // path → data ชุดเดียวกับ docs (ให้เช็คกฎโดยไม่ต้องสร้างใหม่ทุกครั้ง ห้ามแก้จากข้างนอก)
     var counts = { reads: 0, writes: 0, tx: 0, retries: 0 };
     var listeners = [];
     var hook = null;
-    Object.keys(opt.data || {}).forEach(function (p) { docs[p] = { ver: 1, d: clone(opt.data[p]) }; });
+    function put(p, d, ver) { docs[p] = { ver: ver, d: d }; plain[p] = d; }
+    Object.keys(opt.data || {}).forEach(function (p) { put(p, clone(opt.data[p]), 1); });
 
-    function snapshot() { var o = {}; Object.keys(docs).forEach(function (p) { o[p] = docs[p].d; }); return o; }
+    function snapshot() { var o = {}; Object.keys(plain).forEach(function (p) { o[p] = plain[p]; }); return o; }
     /* counts = ทั้งฐาน · own = ของเครื่องนั้น (ตัวนับโควตาของเครื่อง) */
     function read(p, own) { counts.reads++; own.reads++; return docs[p] ? clone(docs[p].d) : null; }
     function apply(writes, own) {
@@ -166,7 +177,7 @@
       writes.forEach(function (w) {
         var d = clone(w[1]);
         Object.keys(d).forEach(function (k) { if (d[k] === C.TIME) d[k] = t; });
-        docs[w[0]] = { ver: (docs[w[0]] ? docs[w[0]].ver : 0) + 1, d: d };
+        put(w[0], d, (docs[w[0]] ? docs[w[0]].ver : 0) + 1);
         if (w[0] === 'meta/head') metaHit = true;
       });
       counts.writes += writes.length;
@@ -177,7 +188,7 @@
     /** เช็คแบบ Rules กับข้อมูลก่อนเขียน (at ที่เก็บแล้วเป็นเวลา ส่วนที่ส่งมาเป็นตัวแทนเวลาเซิร์ฟเวอร์) */
     function check(user, writes) {
       if (opt.rules === false) return '';
-      return rulesError(user, snapshot(), writes, opt.domain || '', now());
+      return rulesError(user, plain, writes, opt.domain || '', now());
     }
     function denied(why) { var e = new Error('ไม่มีสิทธิ์เขียน: ' + why); e.code = 'permission-denied'; return e; }
 
@@ -276,11 +287,11 @@
         dump: snapshot,
         connect: client,
         /** เขียนตรงไม่ผ่านกฎ ใช้ตั้งข้อมูลทดลองเท่านั้น */
-        seed: function (data) { Object.keys(data).forEach(function (p) { docs[p] = { ver: (docs[p] ? docs[p].ver : 0) + 1, d: clone(data[p]) }; }); },
+        seed: function (data) { Object.keys(data).forEach(function (p) { put(p, clone(data[p]), (docs[p] ? docs[p].ver : 0) + 1); }); },
         /** ล้างฐานแล้วใส่ data แทนทั้งหมด (กู้คืนจากไฟล์สำรองในฐานทดลอง เหมือนสคริปต์กู้คืนที่ใช้สิทธิ์เจ้าของโปรเจกต์) */
         replace: function (data) {
-          Object.keys(docs).forEach(function (p) { delete docs[p]; });
-          Object.keys(data || {}).forEach(function (p) { docs[p] = { ver: 1, d: clone(data[p]) }; });
+          Object.keys(docs).forEach(function (p) { delete docs[p]; delete plain[p]; });
+          Object.keys(data || {}).forEach(function (p) { put(p, clone(data[p]), 1); });
           if (opt.onCommit) opt.onCommit(snapshot());
         },
       };
@@ -552,7 +563,13 @@
         return { seq: 0, added: 0 };
       }
       if (meta.v !== C.V || local.v !== C.V || meta.seq < local.seq) { local = emptyLocal(); try { await cache.clear(); } catch (e) {} }
-      var fresh = !local.seq;
+      var fresh = !local.seq, trFrom = local.trAt || 0, trFloor = null;
+      /* เครื่องใหม่ / ตามหลังมาก: อ่านเดือนที่ปิดแล้วเป็นก้อน (ทีละไม่กี่ร้อย KB) แทนทีละเอกสาร */
+      if ((fresh || meta.seq - local.seq > ARCH_GAP) && window.WmsFireTrc) {
+        var ar = await fromArch();
+        added = added.concat(ar.added);
+        trFloor = ar.floor;
+      }
       var guard = 0;
       while (local.seq < meta.seq && guard++ < 10000) {
         var list = await store.docsAfter(local.seq, PAGE);
@@ -578,13 +595,17 @@
         }
         if (!mains.length) break;
       }
-      /* เลข TRcloud ที่มีคนใส่ทีหลัง (แก้เอกสารเก่า seq ไม่เปลี่ยน): tv ใน meta เปลี่ยน = ดึงเอกสารที่ trAt ใหม่กว่าที่เคยเห็น */
+      /*
+       * เลข TRcloud ที่มีคนใส่ทีหลัง (แก้เอกสารเก่า seq ไม่เปลี่ยน): tv ใน meta เปลี่ยน = ดึงเอกสารที่ trAt ใหม่กว่าที่เคยเห็น
+       * นับจากก่อนดึงรอบนี้ (เอกสารใหม่ในรอบนี้อาจมี trAt ใหม่กว่าเอกสารเก่าที่เพิ่งแก้) · อ่านก้อนปิดเดือน = ดึงตั้งแต่วันปิดล่าสุด
+       */
       var tv = +meta.tv || 0;
-      if (local.tv === null || local.tv === undefined) local.tv = fresh ? tv : -1;
-      if (local.tv !== tv) {
+      if (local.tv === null || local.tv === undefined) local.tv = fresh && trFloor === null ? tv : -1;
+      if (local.tv !== tv || trFloor !== null) {
         var byId = {};
         local.docs.forEach(function (x) { byId[x.id] = x; });
-        (await store.trAfter(local.trAt || 0)).forEach(function (x) {
+        var floor = trFloor === null ? trFrom : fresh ? trFloor : Math.min(trFloor, trFrom);
+        (await store.trAfter(floor)).forEach(function (x) {
           var d = byId[x.id];
           if (!d || x.data.of) return;
           d.tr = x.data.tr || '';
@@ -611,6 +632,68 @@
       local.meta = meta;
       try { await cache.put(local, added); } catch (e) {}
       return { seq: local.seq, added: added.length };
+    }
+
+    /**
+     * อ่านเดือนที่ปิดแล้วต่อจากเอกสารล่าสุดในเครื่อง (arch/index → ก้อน → เอกสารใหญ่ที่ไม่อยู่ในก้อน → เลข TRcloud หลังปิด)
+     * ก้อนหาย / อ่านไม่ได้ / seq ไม่ต่อกัน = หยุดตรงนั้น ที่เหลือดึงทีละเอกสารตามเดิม
+     * → { added, floor } floor = เวลาที่ต้องดึงเลข TRcloud ต่อ (null = ไม่ได้อ่านก้อน)
+     */
+    async function fromArch() {
+      var none = { added: [], floor: null };
+      var idx = null;
+      try { idx = await store.get('arch/index'); } catch (e) { return none; }
+      var use = T().archUse(idx, local.seq);
+      if (!use.length) return none;
+      var added = [], byId = {};
+      for (var u = 0; u < use.length; u++) {
+        var mo = use[u], list = [], ok = true;
+        var ids = [];
+        for (var k = 1; k <= +mo.n; k++) ids.push('arch/' + mo.m + '-' + k);
+        var got = await store.getMany(ids);
+        for (var g = 0; g < got.length && ok; g++) {
+          var ds = got[g] ? T().archDocs(got[g]) : null;
+          if (!ds) ok = false;
+          else list = list.concat(ds);
+        }
+        for (var s = 0; s < (mo.skip || []).length && ok; s++) {
+          var main = await store.get('docs/' + mo.skip[s]);
+          if (!main) { ok = false; break; }
+          var have = [];
+          if ((+main.part || 1) > 1) {
+            var pids = [];
+            for (var q = 2; q <= +main.part; q++) pids.push('docs/' + mo.skip[s] + '~' + q);
+            (await store.getMany(pids)).forEach(function (p) { if (p) have.push(p); });
+          }
+          list.push(C.docIn(mo.skip[s], main, have));
+        }
+        if (!ok) break;
+        list = list.filter(function (d) { return d.seq > local.seq; }).sort(function (a, b) { return a.seq - b.seq; });
+        var run = list.every(function (d, i) { return d.seq === local.seq + 1 + i; }) && list.length && list[list.length - 1].seq === +mo.to;
+        if (!run) break;
+        list.forEach(function (d) {
+          local.docs.push(d);
+          local.piles = C.applyDoc(local.piles || {}, d);
+          added.push(d);
+          byId[d.id] = d;
+        });
+        local.seq = +mo.to;
+      }
+      if (!added.length) return none;
+      /* เลข TRcloud ที่ใส่หลังปิดเดือนก่อน ๆ (ก้อนเก่าเป็นค่าตอนปิด) */
+      var on = idx.ov ? +idx.ov.n || 0 : 0;
+      if (on) {
+        var ovIds = [];
+        for (var o = 1; o <= on; o++) ovIds.push('arch/ov-' + o);
+        (await store.getMany(ovIds)).forEach(function (c) {
+          T().archFix(c).forEach(function (e) {
+            var d = byId[e[0]];
+            if (!d || +e[4] < (d.trAt || 0)) return;
+            d.tr = e[1] || ''; d.trState = e[2] || ''; d.trBy = e[3] || ''; d.trAt = +e[4] || 0;
+          });
+        });
+      }
+      return { added: added, floor: T().archFloor(idx) };
     }
 
     function sync() {
@@ -883,6 +966,71 @@
       return reply({ backup: T().backupOf(local, { users: us.users, trc: local.trc, xfer: xf }, now()) });
     }
 
+    /** หน้าปิดเดือน: เดือนที่ปิดแล้ว เดือนถัดไปที่ปิดได้ ประมาณการอ่านของเครื่องใหม่ (หัวหน้า · อ่าน arch/index 1 ครั้ง) */
+    async function archInfo() {
+      if (!user || user.role !== 'head') return fail('ปิดเดือนได้เฉพาะหัวหน้า');
+      await sync();
+      var idx = null;
+      try { idx = await store.get('arch/index'); } catch (e) { return fail(errOf(e), netOf(e)); }
+      tally();
+      return reply(T().archSummary(local, idx, now()));
+    }
+
+    /**
+     * เอกสารที่บัญชีนี้บันทึก สำเนาในเครื่องเป็นแบบตอนบันทึก (เวลาของเครื่อง ไม่ใช่เวลาเซิร์ฟเวอร์)
+     * ก่อนรวมเป็นก้อน ดึงจากฐานใหม่ (หลัก + ส่วนแยก) ก้อนจะตรงกับดึงทีละเอกสารทุกช่อง
+     */
+    async function refreshOwn(docs) {
+      var mine = docs.filter(function (d) { return d.by === user.email; }), done = [];
+      for (var i = 0; i < mine.length; i += PAGE) {
+        var part = mine.slice(i, i + PAGE);
+        var mains = await store.getMany(part.map(function (d) { return 'docs/' + d.id; }));
+        for (var k = 0; k < part.length; k++) {
+          var m = mains[k];
+          if (!m) continue;
+          var have = [];
+          if ((+m.part || 1) > 1) {
+            var ids = [];
+            for (var q = 2; q <= +m.part; q++) ids.push('docs/' + part[k].id + '~' + q);
+            (await store.getMany(ids)).forEach(function (p) { if (p) have.push(p); });
+          }
+          var fresh = C.docIn(part[k].id, m, have), at = local.docs.indexOf(part[k]);
+          if (at >= 0) { local.docs[at] = fresh; done.push(fresh); }
+        }
+      }
+      if (done.length) { try { await cache.put(local, done); } catch (e) {} }
+    }
+
+    /**
+     * ปิดเดือนถัดไป: ซิงก์ให้ครบ → เขียนก้อน (ครั้งละ ARCH_BATCH) → ก้อนเลข TRcloud → arch/index ใน transaction (จุดยืนยัน)
+     * เขียนไม่ครบ = index ยังเป็นของเดิม กดใหม่ได้ (ก้อนเดิมถูกเขียนทับ) · ไม่แก้ docs เดิม (ไฟล์สำรองยังครบ)
+     */
+    async function archClose() {
+      if (!user || user.role !== 'head') return fail('ปิดเดือนได้เฉพาะหัวหน้า');
+      await sync();
+      var idx = null, plan;
+      try {
+        idx = await store.get('arch/index');
+        var nx = T().archNext(local, idx, now());
+        if (!nx.error) await refreshOwn(nx.docs);
+        plan = T().archPlan(local, idx, now(), { bytes: opt.archBytes, by: user.name });
+        if (plan.error) return reply(plan);
+        for (var i = 0; i < plan.chunks.length; i += ARCH_BATCH) await store.commit(plan.chunks.slice(i, i + ARCH_BATCH));
+        for (var j = 0; j < plan.ov.length; j += ARCH_BATCH) await store.commit(plan.ov.slice(j, j + ARCH_BATCH));
+        var had = idx ? (idx.months || []).length : 0;
+        await store.tx(async function (t) {
+          var cur = await t.get('arch/index');
+          if ((cur ? (cur.months || []).length : 0) !== had) throw new Error('มีคนปิดเดือนพร้อมกัน เปิดหน้าปิดเดือนใหม่แล้วดูอีกครั้ง');
+          t.set('arch/index', plan.index);
+        });
+      } catch (e) {
+        return fail(errOf(e), netOf(e));
+      }
+      tally();
+      var e = plan.entry;
+      return reply({ closed: e.m, label: T().monthTh(e.m), docs: e.docs, chunks: e.n, skip: e.skip.length, bytes: e.bytes, fix: plan.index.ov.fix, sum: T().archSummary(local, plan.index, now()) });
+    }
+
     function docByNo(no) { return local.docs.filter(function (d) { return d.no === no; })[0] || null; }
 
     /** บันทึกหนึ่งชุด = transaction เดียว: อ่าน meta + docs/{รหัสชุด} เช็คกับสำเนาในเครื่อง (seq ตรงแล้ว) แล้วเขียนเอกสาร + meta */
@@ -971,7 +1119,7 @@
       login: login, restore: restore, logout: logout, sync: sync, post: post,
       users: users, saveUser: saveUser, quota: quota, reload: reload,
       trList: trList, trSave: trSave, trFile: trFile, trc: trc, trcSave: trcSave, masterSave: masterSave, masters: masters,
-      xferDays: xferDays, xferText: xferText, xferMark: xferMark, backup: backup,
+      xferDays: xferDays, xferText: xferText, xferMark: xferMark, backup: backup, archInfo: archInfo, archClose: archClose,
       user: function () { return user; },
       local: function () { return local; },
       fifo: function () { return C.fifo(local, now()); },
@@ -987,6 +1135,7 @@
     SDK_V: SDK_V, LIMITS: LIMITS, ROLES: ROLES, ROLE_TH: ROLE_TH,
     memStore: memStore, firestoreStore: firestoreStore, rulesError: rulesError,
     fakeAuth: fakeAuth, googleAuth: googleAuth, memCache: memCache, idbCache: idbCache, memMeter: memMeter, storeMeter: storeMeter,
+    ARCH_GAP: ARCH_GAP, ARCH_BATCH: ARCH_BATCH,
     open: open,
   };
 })();

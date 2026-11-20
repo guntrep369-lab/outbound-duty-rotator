@@ -1457,3 +1457,200 @@ describe('wms-fire-core.js', () => {
     expect(F.user()).toBe(null);
   });
 });
+
+/* ── ปิดเดือน: เอกสารของเดือนที่จบแล้วรวมเป็นก้อน arch/… ─────────────────── */
+
+describe('WmsFire ปิดเดือน', () => {
+  const OCT = Date.UTC(2026, 9, 20, 3, 0, 0);   // 20 ต.ค. 2569 10:00 เวลาไทย
+  const grRow = (note, tr) => ['AAA001', 'AAA0000000001', '10', 'P9', '', 'R01-02-01', 3, 'รับ', note, '', ...(tr ? [tr] : [])];
+  const at = (day) => ({ date: day });
+  const MIN = 60000;
+
+  /** ต.ค. 8 เอกสาร (มีเอกสารแยกส่วน ~2) แล้วเลื่อนไป 5 พ.ย. บันทึกอีก 2 */
+  async function octNov(opt = {}) {
+    const x = await both({ now: OCT, partBytes: 3000 });
+    await x.open();                                                                                           // T2610-0001
+    ok(await x.staff.post('bk-cut', cutBody('big', Array.from({ length: 40 }, (_, i) => saleLine(String(5000 + i), 0.25)), '2026-10-20')));  // 0002 แยกส่วน
+    ok(await x.staff.post('bk-move', body('m-1', [QA_MV], at('2026-10-20'))));                                // 0003 เข้า QA
+    ok(await x.staff.post('bk-gr', body('g-1', [grRow('GR 19-10-26')], at('2026-10-20'))));                   // 0004 รอลง
+    ok(await x.staff.post('bk-gr', body('g-2', [grRow('GR 19-10-26')], at('2026-10-20'))));                   // 0005 รอลง
+    ok(await x.staff.post('bk-gr', body('g-3', [grRow('GR 19-10-26', 'GR6910-0001')], at('2026-10-20'))));    // 0006 มีเลข
+    ok(await x.staff.post('bk-move', body('m-2', [mv3()], at('2026-10-20'))));                                // 0007
+    ok(await x.staff.post('bk-cut', cutBody('c-1', [saleLine('1', 1)], '2026-10-20')));                       // 0008
+    if (opt.stopOct) return x;
+    x.tick(16 * DAY);
+    ok(await x.staff.post('bk-move', body('m-3', [mv3()], at('2026-11-05'))));                                // T2611-0001
+    ok(await x.staff.post('bk-gr', body('g-4', [grRow('GR 04-11-26')], at('2026-11-05'))));                   // T2611-0002
+    return x;
+  }
+  /** เครื่องใหม่ (ดูอย่างเดียว) ล็อกอินแล้วซิงก์ คืน { f, reads } อ่านเฉพาะตอนซิงก์ */
+  async function freshDevice(x, extra) {
+    const f = await x.device(VIEW_EMAIL, extra);
+    const r0 = x.store.stats().reads;
+    await f.sync();
+    return { f, reads: x.store.stats().reads - r0 };
+  }
+  /** เครื่องที่มองไม่เห็นก้อนปิดเดือน = ดึงทีละเอกสารเสมอ (ไว้เทียบ) */
+  async function plainDevice(x) {
+    const client = x.store.connect();
+    const blind = Object.assign({}, client, { get: (p) => (p.startsWith('arch/') ? Promise.resolve(null) : client.get(p)) });
+    const f = await x.device(VIEW_EMAIL, { store: blind });
+    await f.sync();
+    return f;
+  }
+  const docsOnly = (d) => Object.fromEntries(Object.entries(d).filter(([p]) => p.startsWith('docs/')));
+  async function sameCopy(a, b) {
+    expect(a.local().docs).toEqual(b.local().docs);
+    expect(C.allPiles(a.local())).toEqual(C.allPiles(b.local()));
+    const fa = a.fifo(), fb = b.fifo();
+    ['skus', 'pos', 'locs', 'days', 'rows', 'cgr', 'cq'].forEach((k) => expect(fa[k], k).toEqual(fb[k]));
+    expect((await a.trList()).list).toEqual((await b.trList()).list);
+  }
+
+  it('เดือนปัจจุบันปิดไม่ได้ · ปิดทีละเดือนตามลำดับ · เฉพาะหัวหน้า (แอปและ Rules) · เครื่องใหม่อ่านจากก้อนได้สำเนาเท่าดึงทีละเอกสารทุกช่อง', async () => {
+    const early = await octNov({ stopOct: true });
+    expect((await early.head.archClose()).error).toMatch(/เดือน ต\.ค\. 69 ยังไม่จบ ปิดได้ตั้งแต่วันที่ 1 เดือนถัดไป/);
+    expect(ok(await early.head.archInfo()).next).toMatchObject({ wait: '2610' });
+    expect(early.store.dump()['arch/index']).toBeUndefined();
+
+    const x = await octNov();
+    expect((await x.staff.archClose()).error).toMatch(/เฉพาะหัวหน้า/);
+    expect((await x.staff.archInfo()).error).toMatch(/เฉพาะหัวหน้า/);
+    const info = ok(await x.head.archInfo());
+    expect(info.months).toEqual([]);
+    expect(info.next).toMatchObject({ m: '2610', label: 'ต.ค. 69', from: 1, to: 8, docs: 8 });
+
+    const full = await freshDevice(x);   // ยังไม่ปิด = ดึงทีละเอกสาร
+    const before = docsOnly(x.store.dump());
+    const c = ok(await x.head.archClose());
+    expect(c).toMatchObject({ closed: '2610', label: 'ต.ค. 69', docs: 8, chunks: 1, skip: 0, fix: 0 });
+    expect(docsOnly(x.store.dump())).toEqual(before);   // เอกสารเดิมไม่ถูกแก้
+    const idx = x.store.dump()['arch/index'];
+    expect(idx.months).toEqual([expect.objectContaining({ m: '2610', from: 1, to: 8, docs: 8, n: 1, skip: [], by: 'หัวหน้าทดลอง' })]);
+    expect(x.store.dump()['arch/2610-1']).toMatchObject({ m: '2610', k: 1, n: 8 });
+    expect(c.sum.next).toMatchObject({ wait: '2611' });
+    expect((await x.head.archClose()).error).toMatch(/เดือน พ\.ย\. 69 ยังไม่จบ/);
+
+    const fr = await freshDevice(x);
+    await sameCopy(fr.f, full.f);
+    /* meta + index + 1 ก้อน + เอกสาร พ.ย. 2 + เลข TRcloud หลังปิด (ว่าง) + ตารางหลัก 3 */
+    expect(fr.reads).toBe(1 + 1 + 1 + 2 + 1 + 3);
+    expect(fr.reads).toBeLessThan(full.reads);
+    expect(fr.f.local().docs.find((d) => d.id === 'big').cut.length).toBeGreaterThan(1);   // แยกส่วนตรงกับในฐาน (ไฟล์สำรองยังตรง)
+    expect(TR.backupOf(fr.f.local(), {}, NOW).data['docs/big~2']).toEqual(x.store.dump()['docs/big~2']);
+
+    /* Rules: คนลงรายการเขียนก้อนไม่ได้ · ชื่อก้อนต้องถูกรูป */
+    x.store.setUser({ email: STAFF_EMAIL, verified: true });
+    await expect(x.store.commit([['arch/2610-1', { m: '2610', k: 1, n: 0, t: '[]' }]])).rejects.toThrow(/ปิดเดือนได้เฉพาะหัวหน้า/);
+    x.store.setUser({ email: HEAD_EMAIL, verified: true });
+    await expect(x.store.commit([['arch/oops', { t: '[]' }]])).rejects.toThrow(/ชื่อก้อนปิดเดือนไม่ถูก/);
+    const rules = fs.readFileSync(path.resolve(__dirname, '../../firebase/firestore.rules'), 'utf8');
+    expect(rules).toMatch(/match \/arch\/\{id\} \{\s*allow read: if signedIn\(\) && isActive\(profile\(\)\);\s*allow create, update: if signedIn\(\) && isHead\(profile\(\)\)/);
+    const ix = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../../firebase/firestore.indexes.json'), 'utf8'));
+    expect(ix.fieldOverrides.filter((f) => f.collectionGroup === 'arch').map((f) => f.fieldPath)).toContain('t');
+  });
+
+  it('เลข TRcloud ที่ใส่หลังปิดเดือน: เครื่องใหม่เห็นครบ (ดึงหลังวันปิด + ก้อนเลขที่ใส่หลังปิดเดือนก่อน ๆ)', async () => {
+    const x = await octNov();
+    ok(await x.head.archClose());                                                         // ปิด ต.ค.
+    x.tick(MIN);
+    ok(await x.staff.trSave([{ no: 'T2610-0004', tr: 'GR6910-0002', state: 'done' }]));   // เอกสารในก้อน ต.ค.
+    const full = await plainDevice(x);
+    const a = await freshDevice(x);
+    await sameCopy(a.f, full);
+    expect((await a.f.trList()).list.find((d) => d.no === 'T2610-0004')).toMatchObject({ state: 'done', tr: 'GR6910-0002' });
+
+    x.tick(28 * DAY);   // 3 ธ.ค.
+    ok(await x.staff.post('bk-move', body('m-4', [mv3()], at('2026-12-03'))));            // T2612-0001
+    const c = ok(await x.head.archClose());                                               // ปิด พ.ย.
+    expect(c).toMatchObject({ closed: '2611', docs: 2, fix: 1 });
+    expect(x.store.dump()['arch/index'].ov).toMatchObject({ n: 1, fix: 1 });
+    expect(JSON.parse(x.store.dump()['arch/ov-1'].t)).toEqual([['g-1', 'GR6910-0002', 'done', STAFF_EMAIL, OCT + 16 * DAY + MIN]]);
+    x.tick(MIN);
+    ok(await x.staff.trSave([{ no: 'T2610-0005', tr: 'GR6910-0003', state: 'done' }]));   // หลังปิด พ.ย.
+    await full.sync();
+    const b = await freshDevice(x);
+    await sameCopy(b.f, full);
+    const list = (await b.f.trList()).list;
+    expect(['T2610-0004', 'T2610-0005', 'T2611-0002'].map((no) => list.find((d) => d.no === no).state)).toEqual(['done', 'done', 'wait']);
+  });
+
+  it('ดึงเลข TRcloud นับจากก่อนดึงรอบนี้: เอกสารเก่าที่ใส่เลขก่อนเอกสารใหม่ที่ใส่เลขทีหลัง ไม่หลุด', async () => {
+    const x = await octNov({ stopOct: true });
+    const v = await x.device(VIEW_EMAIL);
+    await v.sync();
+    x.tick(MIN);
+    ok(await x.staff.trSave([{ no: 'T2610-0004', tr: 'GR6910-0002', state: 'done' }]));
+    x.tick(MIN);
+    ok(await x.staff.post('bk-gr', body('g-9', [grRow('GR 19-10-26')], at('2026-10-20'))));   // T2610-0009
+    x.tick(MIN);
+    ok(await x.staff.trSave([{ no: 'T2610-0009', tr: 'GR6910-0009', state: 'done' }]));
+    await v.sync();
+    const list = (await v.trList()).list;
+    expect(['T2610-0004', 'T2610-0009'].map((no) => list.find((d) => d.no === no).tr)).toEqual(['GR6910-0002', 'GR6910-0009']);
+  });
+
+  it('เอกสารใหญ่เกินก้อน = skip เครื่องใหม่อ่านทีละเอกสาร (หลัก + ~2 ~3) · เน็ตหลุดตอนเขียน index = ยังไม่ปิด กดใหม่ได้', async () => {
+    const x = await octNov();
+    let cut = null;
+    const client = x.store.connect();
+    const flaky = Object.assign({}, client, { tx: (fn) => (cut ? Promise.reject(cut) : client.tx(fn)) });
+    const h = await x.device(HEAD_EMAIL, { store: flaky, archBytes: 2500 });
+    cut = Object.assign(new Error('Failed to get document because the client is offline.'), { code: 'unavailable' });
+    const bad = await h.archClose();
+    expect(bad).toMatchObject({ net: 1 });
+    expect(x.store.dump()['arch/2610-1']).toBeDefined();
+    expect(x.store.dump()['arch/index']).toBeUndefined();   // index = จุดยืนยัน ยังไม่ปิด
+    cut = null;
+    const c = ok(await h.archClose());
+    expect(c).toMatchObject({ closed: '2610', docs: 8, skip: 1 });
+    expect(c.chunks).toBeGreaterThan(1);
+    expect(x.store.dump()['arch/index'].months[0].skip).toEqual(['big']);
+    Object.keys(x.store.dump()).filter((p) => p.startsWith('arch/2610-')).forEach((p) => expect(C.byteLen(x.store.dump()[p].t)).toBeLessThanOrEqual(2500));
+    const full = await plainDevice(x);
+    const fr = await freshDevice(x);
+    await sameCopy(fr.f, full);
+    /* meta + index + ก้อน + เอกสารใหญ่ (หลัก + ส่วนแยก) + เอกสาร พ.ย. 2 + เลข TRcloud หลังปิด + ตารางหลัก 3 */
+    const parts = Object.keys(x.store.dump()).filter((p) => p.startsWith('docs/big~')).length;
+    expect(parts).toBeGreaterThan(0);
+    expect(fr.reads).toBe(1 + 1 + c.chunks + 1 + parts + 2 + 1 + 3);
+  });
+
+  it('เอกสารที่หัวหน้าบันทึกจากเครื่องตัวเอง (สำเนาตอนบันทึกใช้เวลาเครื่อง) ก่อนรวมก้อนดึงจากฐานใหม่ ก้อนตรงกับในฐาน', async () => {
+    const x = await both({ now: OCT, partBytes: 3000 });
+    const hs = await x.device(HEAD_EMAIL, { now: () => x.clock() + 7000 });
+    ok(await hs.post('bk-open', { batch: 'o-1', rows: OPEN }));
+    ok(await hs.post('bk-cut', cutBody('big', Array.from({ length: 40 }, (_, i) => saleLine(String(5000 + i), 0.25)), '2026-10-20')));
+    ok(await hs.post('bk-move', body('m-1', [mv3()], at('2026-10-20'))));
+    x.tick(16 * DAY);
+    const own = hs.local().docs.find((d) => d.id === 'big');
+    expect(own.at).toBe(OCT + 7000);   // สำเนาตอนบันทึก (เวลาเครื่อง)
+    expect(ok(await hs.archClose())).toMatchObject({ closed: '2610', docs: 3, skip: 0 });
+    const full = await plainDevice(x), fr = await freshDevice(x);
+    await sameCopy(fr.f, full);
+    expect(fr.f.local().docs.map((d) => d.at)).toEqual([OCT, OCT, OCT]);   // เวลาเซิร์ฟเวอร์
+    expect(hs.local().docs.find((d) => d.id === 'big').at).toBe(OCT);
+  });
+
+  it('เดือนถัดไปที่ปิดได้ ตามลำดับ seq · เอกสารเดือนเก่าที่โผล่ทีหลัง (นาฬิกาเครื่องผิด) ไปก้อนถัดไป · เครื่องตามหลังอ่านก้อนเฉพาะที่คุ้ม', () => {
+    const d = (seq, no) => ({ seq, no });
+    const local = { docs: [d(1, 'T2610-0001'), d(2, 'T2611-0001'), d(3, 'T2610-0009'), d(4, 'T2611-0002'), d(5, 'T2612-0001')] };
+    const dec5 = Date.UTC(2026, 11, 5, 3);
+    expect(TR.archNext(local, null, dec5)).toMatchObject({ m: '2610', from: 1, to: 1 });
+    expect(TR.archNext(local, { months: [{ m: '2610', from: 1, to: 1 }] }, dec5)).toMatchObject({ m: '2611', from: 2, to: 4 });
+    expect(TR.archNext(local, { months: [{ m: '2610', to: 1 }, { m: '2611', to: 4 }] }, dec5)).toMatchObject({ wait: '2612' });
+    expect(TR.archNext({ docs: [d(1, 'T2610-0001'), d(3, 'T2610-0003')] }, null, dec5).error).toMatch(/ขาดเอกสารลำดับที่ 2/);
+    expect(TR.archNext({ docs: [] }, null, dec5)).toMatchObject({ none: 1 });
+    expect(['2612', '2701', '2609'].map(TR.monthTh)).toEqual(['ธ.ค. 69', 'ม.ค. 70', 'ก.ย. 69']);
+    const idx = { months: [{ m: '2612', from: 1, to: 900, n: 3, skip: [] }, { m: '2701', from: 901, to: 2000, n: 4, skip: ['x'] }] };
+    expect(TR.archUse(idx, 0).map((m) => m.m)).toEqual(['2612', '2701']);
+    expect(TR.archUse(idx, 500).map((m) => m.m)).toEqual(['2612', '2701']);
+    expect(TR.archUse(idx, 899).map((m) => m.m)).toEqual([]);   // ขาดอีกเอกสารเดียว ดึงทีละเอกสารคุ้มกว่า
+    expect(TR.archUse(idx, 900).map((m) => m.m)).toEqual(['2701']);
+    expect(TR.archUse(idx, 1995).map((m) => m.m)).toEqual([]);
+    expect(TR.archUse(null, 0)).toEqual([]);
+    expect(TR.archFloor(null)).toBe(null);
+    expect(TR.archFloor({ months: [{ trAt: 5000000 }], ov: { trAt: 9000000 } })).toBe(9000000 - TR.TR_MARGIN);
+    expect(W.ARCH_BATCH).toBeLessThanOrEqual(9);
+  });
+});

@@ -282,6 +282,8 @@
     xferText: function (day, after) { return fire.xferText(day, after); },
     xferMark: async function (day, info) { await ready; return fire.xferMark(day, info); },
     backup: async function () { await ready; return fire.backup(); },
+    archInfo: async function () { await ready; return fire.archInfo(); },
+    archClose: async function () { await ready; return fire.archClose(); },
     /**
      * กู้คืนจากไฟล์สำรองลงฐานทดลอง (ล้างของเดิมทั้งหมด) แล้วโหลดหน้าใหม่ ต้องเข้าระบบใหม่ด้วยรายชื่อในไฟล์
      * ระบบจริงกู้คืนด้วย apps-script/fire-backup.gs (สิทธิ์เจ้าของโปรเจกต์ ลงโปรเจกต์ว่าง)

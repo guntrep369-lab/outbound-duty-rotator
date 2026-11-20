@@ -558,6 +558,169 @@
     return data;
   }
 
+  /* ── ปิดเดือน: รวมเอกสารของเดือนที่จบแล้วเป็นก้อน (เครื่องใหม่อ่านไม่กี่ก้อนแทนทีละเอกสาร) ─────── */
+
+  var ARCH_BYTES = 900000;      // ข้อความในก้อนเดียว (Firestore รับ 1 MiB)
+  var TR_MARGIN = 600000;       // เผื่อเวลาเซิร์ฟเวอร์ 10 นาที ตอนดึงเลข TRcloud ที่ใส่หลังปิดเดือน
+  var TH_MON = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+
+  /** 'ปปดด' (ปี ค.ศ. 2 หลัก) → 'พ.ย. 69' */
+  function monthTh(m) {
+    m = String(m || '');
+    if (!/^\d{4}$/.test(m)) return m;
+    return (TH_MON[+m.slice(2) - 1] || m.slice(2)) + ' ' + String((2000 + +m.slice(0, 2) + 543) % 100);
+  }
+  /** เดือนของเอกสารจากเลขที่ T{ปปดด}-{ลำดับ} */
+  function monthOfDoc(d) { var x = /^T(\d{4})-/.exec(d && d.no || ''); return x ? x[1] : ''; }
+
+  /**
+   * เอกสารหนึ่งฉบับในก้อน = [{id, data}, …ส่วนแยก] ข้อมูลแบบที่เก็บใน docs (เวลาเป็นมิลลิวินาที)
+   * เอกสารที่เคยแยกส่วน แยกตามจุดตัดเดิม docIn() อ่านกลับได้ตรงกับดึงจากฐานทีละเอกสาร
+   */
+  function archGroup(d) {
+    var out = C.docOut(d);
+    var parts = d.cut && d.cut.length > 1 && C.splitByCut(d.id, out, d.cut);
+    if (!parts) return [{ id: d.id, data: out }];
+    return [{ id: d.id, data: parts.main }].concat(parts.rest);
+  }
+  function groupDoc(g) { return C.docIn(g[0].id, g[0].data, g.slice(1).map(function (p) { return p.data; })); }
+
+  /** แบ่งรายการเป็นก้อน ข้อความ JSON ไม่เกิน limit ไบต์ · ชิ้นที่ใหญ่เกินก้อนเดียว → big */
+  function pack(items, limit) {
+    var chunks = [], cur = [], size = 2, big = [];
+    items.forEach(function (it) {
+      var s = C.byteLen(JSON.stringify(it));
+      if (s + 2 > limit) { big.push(it); return; }
+      if (cur.length && size + s + 1 > limit) { chunks.push(cur); cur = []; size = 2; }
+      cur.push(it);
+      size += s + 1;
+    });
+    if (cur.length) chunks.push(cur);
+    return { chunks: chunks, big: big };
+  }
+
+  /**
+   * เดือนถัดไปที่ปิดได้ (ต่อจากเดือนล่าสุดที่ปิด ตามลำดับ seq ไม่ข้ามเดือน)
+   * → { m, from, to, docs } หรือ { error, none | wait }
+   * เดือนที่ยังไม่จบ (เดือนปัจจุบันตามเวลาไทย) ปิดไม่ได้ · เอกสารต้องครบทุก seq (ซิงก์ก่อน)
+   * เอกสารเดือนเก่าที่โผล่หลังปิดไปแล้ว (นาฬิกาเครื่องผิด) ไปอยู่ในก้อนเดือนถัดไป ลำดับ seq ไม่ขาด
+   */
+  function archNext(local, idx, now) {
+    var months = (idx && idx.months) || [], last = months.length ? months[months.length - 1] : null;
+    var after = last ? +last.to : 0, cur = C.yymm(now);
+    var docs = (local.docs || []).filter(function (d) { return d.seq > after; }).sort(function (a, b) { return a.seq - b.seq; });
+    if (!docs.length) return { error: 'ยังไม่มีเอกสารใหม่ให้ปิดเดือน', none: 1 };
+    var from = last ? after + 1 : docs[0].seq;
+    if (docs[0].seq !== from) return { error: 'สำเนาในเครื่องขาดเอกสารลำดับที่ ' + from + ' กดโหลดใหม่ทั้งหมดแล้วลองอีกครั้ง' };
+    var m = '';
+    for (var i = 0; i < docs.length && !m; i++) {
+      var mo = monthOfDoc(docs[i]);
+      if (mo && (!last || mo > last.m)) m = mo;
+    }
+    if (!m) return { error: 'ยังไม่มีเอกสารเดือนใหม่ให้ปิด', none: 1 };
+    if (m >= cur) return { error: 'เดือน ' + monthTh(m) + ' ยังไม่จบ ปิดได้ตั้งแต่วันที่ 1 เดือนถัดไป', wait: m };
+    var run = [];
+    for (var j = 0; j < docs.length; j++) {
+      var dm = monthOfDoc(docs[j]) || m;
+      if (dm > m) break;
+      if (docs[j].seq !== from + run.length) return { error: 'สำเนาในเครื่องขาดเอกสารลำดับที่ ' + (from + run.length) + ' กดโหลดใหม่ทั้งหมดแล้วลองอีกครั้ง' };
+      run.push(docs[j]);
+    }
+    return { m: m, from: from, to: run[run.length - 1].seq, docs: run };
+  }
+
+  /**
+   * แผนปิดเดือน → { m, entry, chunks: [[path, data]], ov: [[path, data]], index } หรือ { error }
+   * arch/{ปปดด}-{k} = { m, k, n, t: JSON [[{id, data}, …ส่วนแยก], …] } · เอกสารใหญ่เกินก้อน = skip (เครื่องใหม่อ่านทีละเอกสาร)
+   * arch/ov-{k} = เลข TRcloud ที่ใส่หลังปิดเดือนก่อน ๆ [[id, tr, trState, trBy, trAt], …] เขียนใหม่ทุกครั้งที่ปิด
+   * arch/index = { v, months: [{m, from, to, docs, n, skip, bytes, at, by, trAt}], ov: {n, fix, trAt, at} } เขียนสุดท้าย (จุดยืนยัน)
+   * trAt = เวลาเซิร์ฟเวอร์ล่าสุดที่เครื่องหัวหน้าเห็นเลข TRcloud (เครื่องใหม่ดึงเลขที่ใส่หลังจากนี้)
+   */
+  function archPlan(local, idx, now, opt) {
+    opt = opt || {};
+    var nx = archNext(local, idx, now);
+    if (nx.error) return nx;
+    var limit = opt.bytes || ARCH_BYTES, months = ((idx && idx.months) || []).slice();
+    var packed = pack(nx.docs.map(archGroup), limit);
+    var bytes = 0;
+    var chunks = packed.chunks.map(function (c, i) {
+      var t = JSON.stringify(c);
+      bytes += C.byteLen(t);
+      return ['arch/' + nx.m + '-' + (i + 1), { m: nx.m, k: i + 1, n: c.length, t: t }];
+    });
+    var trAt = +local.trAt || 0;
+    var entry = {
+      m: nx.m, from: nx.from, to: nx.to, docs: nx.docs.length, n: chunks.length,
+      skip: packed.big.map(function (g) { return g[0].id; }), bytes: bytes, at: now, by: opt.by || '', trAt: trAt,
+    };
+    /* เลข TRcloud ของเดือนที่ปิดไปแล้วที่ใส่หลังวันปิด (ก้อนเก่ายังเป็นค่าตอนปิด) */
+    var fix = [];
+    if (months.length) {
+      var lastTo = +months[months.length - 1].to;
+      (local.docs || []).forEach(function (d) {
+        if (d.seq > lastTo || !(d.trAt > 0)) return;
+        var mo = null;
+        for (var i = 0; i < months.length && !mo; i++) if (d.seq >= months[i].from && d.seq <= months[i].to) mo = months[i];
+        if (mo && d.trAt > (+mo.trAt || 0) - TR_MARGIN) fix.push([d.id, d.tr || '', d.trState || '', d.trBy || '', d.trAt]);
+      });
+    }
+    var ovp = pack(fix, limit);
+    if (ovp.big.length) return { error: 'รายการเลข TRcloud ยาวผิดปกติ ' + ovp.big[0][0] };
+    var ov = ovp.chunks.map(function (c, i) { return ['arch/ov-' + (i + 1), { k: i + 1, n: c.length, t: JSON.stringify(c) }]; });
+    months.push(entry);
+    var index = { v: 1, months: months, ov: { n: ov.length, fix: fix.length, trAt: trAt, at: now } };
+    return { m: nx.m, entry: entry, chunks: chunks, ov: ov, index: index };
+  }
+
+  /**
+   * เดือนที่ปิดแล้วที่เครื่องนี้ควรอ่านเป็นก้อน (seq = เอกสารล่าสุดในเครื่อง)
+   * ต่อจากที่มีโดยไม่ข้าม และคุ้มกว่าอ่านทีละเอกสาร
+   */
+  function archUse(idx, seq) {
+    var out = [], at = seq;
+    ((idx && idx.months) || []).forEach(function (mo) {
+      if (+mo.to <= at || +mo.from > at + 1) return;
+      if (+mo.to - at <= (+mo.n || 0) + 2 * (mo.skip || []).length) return;
+      out.push(mo);
+      at = +mo.to;
+    });
+    return out;
+  }
+  /** ก้อนจากฐาน → เอกสารรูปในเครื่อง (อ่านไม่ได้ = null) */
+  function archDocs(chunk) {
+    var a;
+    try { a = JSON.parse(chunk && chunk.t); } catch (e) { return null; }
+    if (!Array.isArray(a)) return null;
+    try { return a.map(groupDoc); } catch (e) { return null; }
+  }
+  /** ก้อนเลข TRcloud → [[id, tr, trState, trBy, trAt]] */
+  function archFix(chunk) {
+    try { var a = JSON.parse(chunk && chunk.t); return Array.isArray(a) ? a : []; } catch (e) { return []; }
+  }
+  /** จุดเริ่มดึงเลข TRcloud หลังอ่านก้อน (ms) · ยังไม่เคยปิด = null */
+  function archFloor(idx) {
+    var ms = (idx && idx.months) || [];
+    if (!ms.length) return null;
+    var w = idx.ov && idx.ov.trAt !== undefined ? +idx.ov.trAt : +ms[ms.length - 1].trAt;
+    return (w || 0) - TR_MARGIN;
+  }
+
+  /** สรุปหน้าปิดเดือน: เดือนที่ปิดแล้ว + เดือนถัดไปที่ปิดได้ + ประมาณการอ่านของเครื่องใหม่ */
+  function archSummary(local, idx, now) {
+    var months = ((idx && idx.months) || []).map(function (mo) {
+      return { m: mo.m, label: monthTh(mo.m), from: mo.from, to: mo.to, docs: mo.docs, n: mo.n, skip: (mo.skip || []).length, bytes: mo.bytes, at: mo.at, by: mo.by };
+    });
+    var nx = archNext(local, idx, now);
+    var next = nx.error ? { error: nx.error, wait: nx.wait || '', none: !!nx.none } : { m: nx.m, label: monthTh(nx.m), from: nx.from, to: nx.to, docs: nx.docs.length };
+    var archived = months.reduce(function (a, mo) { return a + (+mo.docs || 0); }, 0);
+    var reads = months.reduce(function (a, mo) { return a + (+mo.n || 0) + (+mo.skip || 0); }, 0) + ((idx && idx.ov && +idx.ov.n) || 0);
+    var total = (local.docs || []).length;
+    return {
+      months: months, next: next, fix: (idx && idx.ov && +idx.ov.fix) || 0,
+      fresh: { before: total, after: Math.max(0, total - archived) + reads + (months.length ? 1 : 0) },
+    };
+  }
+
   window.WmsFireTrc = {
     TRC_HEAD: TRC_HEAD, TRC_DEPT: TRC_DEPT, TR_MAX: TR_MAX, TR_DAYS: TR_DAYS, FILE_TYPES: FILE_TYPES, TIME_KEYS: TIME_KEYS, BACKUP_KIND: BACKUP_KIND,
     norm: norm, trStates: trStates, trList: trList, trSet: trSet, trFile: trFile, kindOf: kindOf,
@@ -565,5 +728,7 @@
     pilesAsOf: pilesAsOf, trcCompare: trcCompare, trcBook: trcBook,
     sheetTsv: sheetTsv, xferDocs: xferDocs, xferDays: xferDays, xferText: xferText,
     backupOf: backupOf, readBackup: readBackup, mergeBackups: mergeBackups,
+    ARCH_BYTES: ARCH_BYTES, TR_MARGIN: TR_MARGIN, monthTh: monthTh, monthOfDoc: monthOfDoc, archGroup: archGroup,
+    archNext: archNext, archPlan: archPlan, archUse: archUse, archDocs: archDocs, archFix: archFix, archFloor: archFloor, archSummary: archSummary,
   };
 })();

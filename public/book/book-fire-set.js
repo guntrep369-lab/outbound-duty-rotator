@@ -6,6 +6,7 @@
  *   🔍 ตรวจยอด                 คิดยอดใหม่จากเอกสารทุกใบเทียบกับยอดในเครื่อง (หัวหน้า) · โหลดสำเนาเครื่องนี้ใหม่ (ทุกคน)
  *   📋 ชีตเดิม (หัวหน้า ขั้น 3)  ช่วงเปลี่ยนผ่าน: คัดลอกแถวของแต่ละวันไปวางต่อท้ายชีต Transaction เดิม แล้วกด วางแล้ว
  *   💾 สำรอง (หัวหน้า ขั้น 3)    ดาวน์โหลดไฟล์สำรองจากสำเนาในเครื่อง · ฐานทดลองกู้คืนจากไฟล์ได้ (ระบบจริงใช้ fire-backup.gs)
+ *   🗄️ ปิดเดือน (หัวหน้า)       รวมเอกสารของเดือนที่จบแล้วเป็นก้อน เครื่องใหม่ / โหลดใหม่ทั้งหมด อ่านไม่กี่ก้อนแทนทีละเอกสาร
  *   📊 โควตาฟรี                อ่าน/เขียนวันนี้ของเครื่องนี้และทุกเครื่องที่ส่งยอดมา
  *
  * ใช้ตัวแปรและฟังก์ชันของสคริปต์ในหน้า (FIRE USER BSTATE BKBUSY RES esc f table isHead bookPost refreshState refreshDocs compute render xlsxLib)
@@ -24,6 +25,7 @@
   var SHOW = 'rows';
   var CHECK = null, CHECK_AT = 0;
   var XFER = null, XFER_AT = 0;   // วันที่ต้องวางลงชีตเดิม
+  var ARCH = null, ARCH_AT = 0;   // สรุปปิดเดือน { months, next, fix, fresh }
   var ADD = { name: '', email: '', role: 'staff' };
   var ROLE_TH = { head: 'หัวหน้า', staff: 'ลงรายการ', viewer: 'ดูอย่างเดียว' };
 
@@ -35,7 +37,7 @@
   }
   function hm(ms) { return new Date(ms).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }); }
   function secs() {
-    return head() ? [['users', '👥 คนใช้และสิทธิ์'], ['open', '📥 ยอดยกมา'], ['check', '🔍 ตรวจยอด'], ['xfer', '📋 ชีตเดิม'], ['backup', '💾 สำรอง'], ['quota', '📊 โควตาฟรี']]
+    return head() ? [['users', '👥 คนใช้และสิทธิ์'], ['open', '📥 ยอดยกมา'], ['check', '🔍 ตรวจยอด'], ['xfer', '📋 ชีตเดิม'], ['backup', '💾 สำรอง'], ['arch', '🗄️ ปิดเดือน'], ['quota', '📊 โควตาฟรี']]
       : [['check', '🔍 สำเนาเครื่องนี้'], ['quota', '📊 โควตาฟรี']];
   }
   function sec() {
@@ -57,6 +59,16 @@
     if (s === 'users' && head() && USERS_FOR !== USER.email && !BUSY) loadUsers();
     if (s === 'quota' && (!Q || Date.now() - Q_AT > 60000) && !BUSY) loadQuota();
     if (s === 'xfer' && head() && (!XFER || Date.now() - XFER_AT > 60000) && !BUSY) loadXfer();
+    if (s === 'arch' && head() && (!ARCH || Date.now() - ARCH_AT > 60000) && !BUSY) loadArch();
+  }
+
+  async function loadArch() {
+    BUSY = 'กำลังโหลด…'; renderAll();
+    var r = await FIRE.archInfo();
+    BUSY = '';
+    if (r.error) NOTE = { kind: 'bad', html: 'โหลดไม่ได้: ' + esc(r.error) };
+    else { ARCH = r; ARCH_AT = Date.now(); }
+    renderAll();
   }
 
   async function loadXfer() {
@@ -97,6 +109,11 @@
     backup: 'Firebase แผนฟรีไม่มีระบบสำรองให้\nสำรองอัตโนมัติ: apps-script/fire-backup.gs ดึงเอกสารใหม่ลง Google Drive ทุกคืน (ตั้งตอนเปิดระบบจริง)\n' +
       'ปุ่มนี้: ดาวน์โหลดไฟล์สำรองจากสำเนาในเครื่องนี้ทันที (เอกสารทุกใบ รายชื่อ ตารางหลัก ยอด TRcloud ล่าสุด)\n' +
       'กู้คืน: โปรเจกต์ใหม่ที่ว่าง + fire-backup.gs ฟังก์ชัน restoreAll (อ่านไฟล์ทุกไฟล์ในโฟลเดอร์สำรอง)',
+    arch: 'ปิดเดือน: รวมเอกสารของเดือนที่จบแล้วเป็นก้อน (ก้อนละไม่เกิน 900 KB)\n' +
+      'เครื่องใหม่ หรือกด โหลดสำเนาเครื่องนี้ใหม่ทั้งหมด อ่านไม่กี่ก้อนแทนอ่านทีละเอกสาร ประหยัดโควตาอ่าน\n' +
+      'ปิดทีละเดือนตามลำดับ เดือนปัจจุบันยังปิดไม่ได้ · ทำต้นเดือนถัดไป ทุกเดือน\n' +
+      'เลข TRcloud ที่ใส่หลังปิด เครื่องใหม่ยังเห็นครบ (ดึงเพิ่มเอง)\n' +
+      'ไม่แก้ ไม่ลบเอกสารเดิม ไฟล์สำรองยังครบ · เน็ตหลุดกลางทาง กดปิดเดือนใหม่ได้',
   };
 
   function renderIn() {
@@ -143,6 +160,12 @@
       var left = XFER.filter(function (d) { return !d.done || d.more; });
       html = chip(left.length ? 'c-warn' : 'c-ok', 'ยังไม่วาง', left.length, 'วัน') + chip('', 'วางแล้ว', XFER.length - left.length, 'วัน') +
         '<span>วางต่อท้ายชีต Transaction เดิม วันละครั้ง ตามลำดับวัน</span>';
+    } else if (s === 'arch' && ARCH) {
+      var fr = ARCH.fresh;
+      html = chip(ARCH.months.length ? 'c-ok' : '', 'ปิดแล้ว', ARCH.months.length, 'เดือน') +
+        '<span title="ประมาณการอ่านของเครื่องที่ยังไม่มีสำเนา (เครื่องใหม่ / โหลดใหม่ทั้งหมด)">เครื่องใหม่อ่านประมาณ <b>' + f(fr.after) + '</b> ครั้ง' +
+        (fr.after < fr.before ? ' <span class="c-sub">(ไม่ปิดเดือน ' + f(fr.before) + ')</span>' : '') + '</span>' +
+        (ARCH.fix ? '<span class="c-sub" title="เลข TRcloud ที่ใส่หลังปิดเดือน เครื่องใหม่อ่านจากก้อนแยก">เลข TRcloud หลังปิด ' + f(ARCH.fix) + '</span>' : '');
     } else if (s === 'backup') {
       var cb = FIRE.copy();
       if (cb) html = '<span>สำเนาเครื่องนี้: <b>' + f(cb.docs) + '</b> เอกสาร · seq ' + f(cb.seq) + '</span>';
@@ -176,6 +199,10 @@
       html += '<span class="g-hint">แก้ชื่อ สิทธิ์ หรือใช้งาน แล้วบันทึกทันที · คนที่ออก เอาเครื่องหมายใช้งานออก</span>';
     } else if (s === 'xfer') {
       html += '<span class="g-hint">📋 คัดลอก → วางที่แถวว่างแรกของชีต Transaction คอลัมน์ A → ✓ วางแล้ว</span>';
+    } else if (s === 'arch' && ARCH) {
+      var nx = ARCH.next;
+      if (nx.m) html += '<button class="bk-save" id="fsArch" ' + dis + '>🗄️ ปิดเดือน ' + esc(nx.label) + ' · ' + f(nx.docs) + ' เอกสาร</button>';
+      else html += '<span class="' + (nx.none || nx.wait ? 'g-hint' : 'c-warn') + '">' + esc(nx.error) + '</span>';
     } else if (s === 'backup') {
       html += '<button class="bk-save" id="fsBackup" ' + dis + '>⬇ ดาวน์โหลดไฟล์สำรอง</button>';
       if (FIRE.dev) html += '<button class="bk-link" id="fsRestore" ' + dis + '>♻️ กู้คืนจากไฟล์ (ฐานทดลอง)</button><input type="file" class="bk-file" id="fsRestoreFile" accept=".json">';
@@ -268,6 +295,18 @@
       '<div class="tx-empty">ไม่มีตัวนับโควตา (use/…) ในไฟล์สำรอง · ไฟล์นี้ไม่มีรหัสผ่านหรือคีย์ แต่มีรายชื่อและยอดสต๊อกทั้งหมด เก็บในที่ที่คนนอกเข้าไม่ได้</div>';
   }
 
+  function size(b) { return b >= 1e6 ? (b / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1e3)) + ' KB'; }
+  function renderArch() {
+    if (!ARCH) return BUSY ? '' : '<div class="tx-empty">กด 🔄 เพื่อโหลด</div>';
+    if (!ARCH.months.length) return '<div class="tx-empty">ยังไม่เคยปิดเดือน' + (ARCH.next.m ? ' · กดปุ่มด้านบนเพื่อปิดเดือน ' + esc(ARCH.next.label) : '') + '</div>';
+    return table([['เดือน'], ['เอกสาร', 'num'], ['ลำดับ'], ['ก้อน', 'num'], ['ขนาด', 'num'], ['ใหญ่เกินก้อน', 'num'], ['ปิดเมื่อ'], ['โดย']], ARCH.months.slice().reverse().map(function (m) {
+      return '<tr><td><b>' + esc(m.label) + '</b></td><td class="num">' + f(m.docs) + '</td><td class="c-sub">' + f(m.from) + ' – ' + f(m.to) + '</td>' +
+        '<td class="num">' + f(m.n) + '</td><td class="num">' + size(m.bytes || 0) + '</td>' +
+        '<td class="num' + (m.skip ? '' : ' c-sub') + '" title="เอกสารใหญ่เกินก้อนเดียว เครื่องใหม่อ่านทีละเอกสาร">' + f(m.skip) + '</td>' +
+        '<td>' + esc(when(m.at)) + '</td><td>' + esc(m.by || '') + '</td></tr>';
+    }));
+  }
+
   function bar(v, max) {
     var p = max ? Math.min(1, v / max) : 0;
     return '<span class="fs-bar"><i class="' + (p > 0.85 ? 'r' : p > 0.6 ? 'w' : '') + '" style="width:' + Math.max(p * 100, v ? 2 : 0).toFixed(1) + '%"></i></span>';
@@ -290,7 +329,7 @@
   function renderBody() {
     var s = sec();
     $('body').innerHTML = s === 'users' ? renderUsers() : s === 'open' ? renderOpen() : s === 'check' ? renderCheck()
-      : s === 'xfer' ? renderXfer() : s === 'backup' ? renderBackup() : renderQuota();
+      : s === 'xfer' ? renderXfer() : s === 'backup' ? renderBackup() : s === 'arch' ? renderArch() : renderQuota();
   }
 
   function render() {
@@ -491,6 +530,24 @@
     location.reload();
   }
 
+  /* ── ปิดเดือน ── */
+
+  async function closeArch() {
+    var nx = ARCH && ARCH.next;
+    if (!nx || !nx.m) return;
+    if (!confirm('ปิดเดือน ' + nx.label + '?\nรวม ' + f(nx.docs) + ' เอกสาร (ลำดับ ' + f(nx.from) + ' – ' + f(nx.to) + ') เป็นก้อน\nไม่แก้ ไม่ลบเอกสารเดิม · ปิดแล้วย้อนไม่ได้ แต่ไม่กระทบยอด')) return;
+    BUSY = 'กำลังปิดเดือน ' + nx.label + '…'; NOTE = null; renderAll();
+    var r = await FIRE.archClose();
+    BUSY = '';
+    if (r.error) NOTE = { kind: 'bad', html: 'ปิดเดือนไม่ได้: ' + esc(r.error) + (r.net ? ' · เน็ตหลุด กดปิดเดือนใหม่ได้' : '') };
+    else {
+      NOTE = { kind: 'ok', html: '✓ ปิดเดือน <b>' + esc(r.label) + '</b> แล้ว · ' + f(r.docs) + ' เอกสาร → ' + f(r.chunks) + ' ก้อน (' + size(r.bytes) + ')' +
+        (r.skip ? ' · ใหญ่เกินก้อน ' + f(r.skip) + ' เอกสาร' : '') };
+      ARCH = r.sum; ARCH_AT = Date.now();
+    }
+    renderAll();
+  }
+
   /* ── ปุ่มและช่อง (ทำงานเฉพาะแท็บตั้งค่าของระบบใหม่) ── */
 
   function active() { return typeof MODE !== 'undefined' && MODE === 'set' && window.BookFire && USER; }
@@ -506,6 +563,7 @@
       if (sec() === 'users') USERS_FOR = '';
       if (sec() === 'quota') Q = null;
       if (sec() === 'xfer') XFER = null;
+      if (sec() === 'arch') ARCH = null;
       refreshState().then(renderAll);
     }
     else if (t.id === 'fsAdd') addUser();
@@ -517,6 +575,7 @@
     else if (t.dataset.xcopy) copyDay(t.dataset.xcopy);
     else if (t.dataset.xmark) markDay(t.dataset.xmark);
     else if (t.id === 'fsBackup') downloadBackup();
+    else if (t.id === 'fsArch') closeArch();
     else if (t.id === 'fsRestore') $('fsRestoreFile').click();
   });
 

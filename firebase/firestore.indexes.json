@@ -9,6 +9,8 @@
     { "collectionGroup": "master", "fieldPath": "rows", "indexes": [] },
     { "collectionGroup": "trc", "fieldPath": "rows", "indexes": [] },
     { "collectionGroup": "trc", "fieldPath": "loss", "indexes": [] },
-    { "collectionGroup": "trc", "fieldPath": "cost", "indexes": [] }
+    { "collectionGroup": "trc", "fieldPath": "cost", "indexes": [] },
+    { "collectionGroup": "arch", "fieldPath": "t", "indexes": [] },
+    { "collectionGroup": "arch", "fieldPath": "months", "indexes": [] }
   ]
 }

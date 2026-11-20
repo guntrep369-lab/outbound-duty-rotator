@@ -7,6 +7,7 @@
  *   ตัดขาย 6 รอบ × 500 บรรทัด (3,000 บรรทัดออเดอร์) ย้าย/เติม 40 เข้า QA 5 รับของ 12 คืน 15 แปลง 2 ปรับยอด 4
  *   หัวหน้า: รอลง TRcloud + ใส่เลข 5 รอบ วางชีตเดิม 1 ครั้ง ดูโควตา 3 ครั้ง ดูรายชื่อ ดาวน์โหลดสำรอง
  *   เครื่องใหม่ 1 เครื่องโหลดประวัติทั้งหมด (โทรศัพท์ใหม่ / ล้างเบราว์เซอร์)
+ * ปิดเดือน: ประวัติ 61 วัน (21 ธ.ค. – 19 ก.พ.) หัวหน้าปิด ธ.ค. กับ ม.ค. แล้วเครื่องใหม่อ่านก้อน อ่านน้อยลงมาก สำเนาเท่าเดิมทุกช่อง
  * เป้าวันปกติทั้งบริษัท: อ่าน < 15,000 เขียน < 2,000 · วันแคมเปญ (งาน × 3) ต้องไม่เกินโควตาฟรี อ่าน 50,000 เขียน 20,000
  * นับทั้งวันทำงานไทยเป็นวันเดียว (จริง ๆ โควตาเริ่มใหม่ตอน 15:00 ไทย แบ่งเป็นสองวัน) จึงเผื่อไว้แล้ว
  * ข้อมูลทั้งหมดสมมติขึ้น ไม่มีการเรียก Firebase จริง
@@ -255,5 +256,41 @@ describe('ระบบใหม่ ขั้น 4: ซ้อมทั้งว�
     console.log('วันแคมเปญ', JSON.stringify({ reads: camp.reads, writes: camp.writes, saves: camp.saves }));
     expect(camp.reads).toBeLessThan(W.LIMITS.reads);
     expect(camp.writes).toBeLessThan(W.LIMITS.writes);
+  }, 240000);
+
+  it('ปิดเดือน: ประวัติ 61 วัน ปิด ธ.ค. กับ ม.ค. แล้วเครื่องใหม่อ่านไม่ถึงครึ่ง · ใส่เลข TRcloud เอกสารในก้อนหลังปิดก็เห็น · สำเนาเท่าดึงทีละเอกสาร', async () => {
+    const env = await setup();
+    await history(env, 61);
+    env.set(GO_LIVE + 61 * DAY);   // 20 ก.พ. 2570 08:00
+    const fresh = async (blind) => {
+      const client = env.store.connect();
+      const store = blind ? Object.assign({}, client, { get: (p) => (p.startsWith('arch/') ? Promise.resolve(null) : client.get(p)) }) : client;
+      const f = W.open({ store, auth: W.fakeAuth(USERS), cache: W.memCache(), now: env.clock, domain: DOMAIN });
+      ok(await f.login(`newphone@${DOMAIN}`));
+      const r0 = env.store.stats().reads;
+      await f.sync();
+      return { f, reads: env.store.stats().reads - r0 };
+    };
+    const before = await fresh(true);
+
+    const head = env.by(`head1@${DOMAIN}`).fire;
+    const dec = ok(await head.archClose()), jan = ok(await head.archClose());
+    expect([dec.closed, jan.closed]).toEqual(['2612', '2701']);
+    expect((await head.archClose()).error).toMatch(/ก\.พ\. 70 ยังไม่จบ/);
+    /* ใส่เลข TRcloud ให้เอกสารเก่าสุดที่ยังรอ (อยู่ในก้อนแล้ว) */
+    env.tick(MIN);
+    const waits = ok(await head.trList()).list.filter((d) => d.state === 'wait').slice(-10);
+    expect(waits.some((d) => d.no.startsWith('T2612-') || d.no.startsWith('T2701-'))).toBe(true);
+    ok(await head.trSave(waits.map((d) => ({ no: d.no, tr: 'TR' + d.no.slice(1), state: 'done' }))));
+
+    const full = await fresh(true), after = await fresh(false);
+    const docs = full.f.local().docs.length;
+    console.log('ปิดเดือน', JSON.stringify({ docs, ก้อน: dec.chunks + jan.chunks, ขนาด: dec.bytes + jan.bytes, อ่านก่อนปิด: before.reads, อ่านไม่ใช้ก้อน: full.reads, อ่านหลังปิด: after.reads }));
+    expect(docs).toBeGreaterThan(61 * 80);
+    expect(dec.docs + jan.docs).toBeGreaterThan(docs * 0.6);
+    expect(after.reads).toBeLessThan(full.reads * 0.5);
+    expect(after.f.local().docs).toEqual(full.f.local().docs);
+    expect(C.allPiles(after.f.local())).toEqual(C.allPiles(head.local()));
+    expect(ok(await after.f.trList()).list).toEqual(ok(await full.f.trList()).list);
   }, 240000);
 });

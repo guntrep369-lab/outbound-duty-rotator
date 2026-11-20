@@ -16,6 +16,8 @@ rules_version = '2';
 //   master/{conv|sup|cap} ตารางแปลงสินค้า Supplier ความจุ หัวหน้าแก้
 //   trc/{วันที่}           ยอดคงเหลือ TRcloud ที่นำเข้า (Stock WH-Loss ราคาทุน) หัวหน้าแก้
 //   xfer/log             {วันที่: {by, at, n, last}} วางแถวลงชีต Transaction เดิมแล้ว (ช่วงเปลี่ยนผ่าน) แก้ครั้งละวัน
+//   arch/index           ปิดเดือน: เดือนที่รวมเป็นก้อนแล้ว {v, months:[{m, from, to, docs, n, skip, ...}], ov}
+//   arch/{ปปดด}-{n}       ก้อนเอกสารของเดือนนั้น (JSON ของเอกสารเหมือนใน docs) · arch/ov-{n} เลข TRcloud ที่ใส่หลังปิดเดือน
 //   ที่อื่นทั้งหมด = ปฏิเสธ
 //
 // Rules อ่านเอกสารประกอบ (get / getAfter / exists) ได้ไม่เกิน 10 ครั้งต่อการเขียนเอกสารเดียว
@@ -144,6 +146,12 @@ service cloud.firestore {
       allow create: if signedIn() && isStaff(profile()) && id == 'log' && request.resource.data.keys().size() == 1;
       allow update: if signedIn() && isStaff(profile()) && id == 'log'
         && request.resource.data.diff(resource.data).affectedKeys().size() == 1;
+    }
+    /** ปิดเดือน: ก้อนสำเนาของเอกสารเดือนที่จบแล้ว ให้เครื่องใหม่อ่านไม่กี่ครั้ง (ของจริงยังอยู่ใน docs ไม่ลบ ไม่แก้) หัวหน้าเขียน ลบไม่ได้ */
+    match /arch/{id} {
+      allow read: if signedIn() && isActive(profile());
+      allow create, update: if signedIn() && isHead(profile())
+        && (id == 'index' || id.matches('[0-9]{4}-[0-9]{1,3}') || id.matches('ov-[0-9]{1,3}'));
     }
   }
 }
