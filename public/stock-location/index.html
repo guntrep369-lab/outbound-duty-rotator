@@ -238,6 +238,9 @@ button.tx-card.on{border-color:var(--wms-primary);background:var(--wms-primary-l
 <script src="../wms-settings.js"></script>
 <script src="../wms-gas.js"></script>
 <script src="../wms-shared.js"></script>
+<script src="../wms-fire-config.js"></script>
+<script src="../book/book-fire.js"></script>
+<script src="../wms-fire-src.js"></script>
 <script src="../wms-stock.js"></script>
 <script src="../wms-sup.js"></script>
 <script src="../wms-tx.js"></script>
@@ -290,6 +293,7 @@ const load = (s) => {
 /* ── แถบแหล่งข้อมูล ─────────────────────────────────────────────────────── */
 
 function backupPill() {
+  if (RAW.fire) return '';   // ระบบใหม่สำรองทุกคืนด้วย fire-backup.gs ไม่ใช่ installBackup ของชีตเดิม
   const b = WmsTx.backupState(RAW.backup, Date.now());
   if (b.days === null) return `<span class="pill warn">⚠️ ยังไม่ได้ตั้ง Backup — รัน installBackup ในสคริปต์</span>`;
   if (!b.ok) return `<span class="pill warn">⚠️ Backup ล่าสุด ${b.days} วันก่อน</span>`;

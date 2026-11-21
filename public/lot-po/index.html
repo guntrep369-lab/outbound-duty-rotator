@@ -273,6 +273,9 @@ button.lp-pill:hover{border-color:var(--wms-primary)}
 <script src="../wms-settings.js"></script>
 <script src="../wms-gas.js"></script>
 <script src="../wms-shared.js"></script>
+<script src="../wms-fire-config.js"></script>
+<script src="../book/book-fire.js"></script>
+<script src="../wms-fire-src.js"></script>
 <script src="../wms-cut.js"></script>
 <script src="../wms-sup.js"></script>
 <script src="../wms-lotpo.js"></script>
@@ -776,7 +779,7 @@ function convNote(scope) {
   const tab = '<b>MASTER แปลงสินค้า</b>';
   const still = 'SKU ในรายงานยังเป็น SKU ที่ขาย ยังไม่ได้แปลงคืนเป็น SKU ตอนซื้อ';
   if (c === undefined) return `<div class="tx-note">${still} — สคริปต์ tx-api.gs ยังเป็นรุ่นที่ไม่อ่านแท็บ ${tab} ให้วางโค้ดใหม่ Deploy เป็น New version แล้วกดดึงใหม่</div>`;
-  if (!c) return `<div class="tx-note">${still} — ไฟล์สมุด Transaction ยังไม่มีแท็บ ${tab}</div>`;
+  if (!c) return `<div class="tx-note">${still} — ${window.WmsFireSrc ? `ระบบใหม่ยังไม่ได้นำเข้าตาราง ${tab} (สมุดสต๊อก → TRcloud → นำเข้า)` : `ไฟล์สมุด Transaction ยังไม่มีแท็บ ${tab}`}</div>`;
   if (!c.pairs.length) return `<div class="tx-warn">แท็บ ${tab} ยังไม่มีคู่ SKU — แถวแรกเป็นหัวตาราง ใส่ SKU ตอนซื้อกับ SKU หลังแปลงตั้งแต่แถวที่ 2</div>`;
   const t = WmsLotPo.totals(scope);
   /* หัวคอลัมน์ไม่บอกว่าอันไหนเป็นอะไร สคริปต์ใช้ A กับ B บอกไว้ให้เห็นถ้ากรอกสลับกัน */

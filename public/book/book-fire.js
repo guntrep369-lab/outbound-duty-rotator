@@ -179,6 +179,7 @@
     await script('../wms-fire-trc.js');
     await script('../wms-fire-docs.js');
     await script('../wms-fire-item.js');
+    await script('../wms-fire-tx.js');
     await script('../wms-fire-print.js');
     await script('../wms-fire.js');
     if (MODE === 'live') await startLive(window.WmsFire);
@@ -292,6 +293,13 @@
       await fire.sync();
       shownSeq = fire.local().seq;
       return fire.fifo();
+    },
+    /** หน้ารายงาน (wms-fire-src.js): ดึงเอกสารใหม่แล้วส่งสำเนาในเครื่อง + เวลาของระบบ ให้คิดคำตอบแบบ tx-api เอง */
+    snap: async function () {
+      await ready;
+      await fire.sync();
+      shownSeq = fire.local().seq;
+      return { local: fire.local(), now: clockNow() };
     },
     /** หลังบันทึกสำเร็จ: สำเนาในเครื่องรวมชุดใหม่แล้ว ไม่ต้องดึง */
     fifoNow: function () { shownSeq = fire.local().seq; return fire.fifo(); },

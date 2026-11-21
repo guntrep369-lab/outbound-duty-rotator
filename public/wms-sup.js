@@ -41,7 +41,8 @@
    */
   function note(sup) {
     if (sup === undefined) return 'สคริปต์ tx-api.gs รุ่นนี้ยังไม่ส่งชื่อ Supplier (แท็บ PO. Truck) ให้วางโค้ดใหม่แล้ว Deploy เป็น New version';
-    if (!sup) return 'ยังไม่มีแท็บ PO. Truck (หัวตาราง Truck, PO.) ในไฟล์ชีต Transaction จึงยังไม่รู้ชื่อ Supplier';
+    if (!sup) return window.WmsFireSrc ? 'ระบบใหม่ยังไม่ได้นำเข้าตาราง PO. Truck (สมุดสต๊อก → TRcloud → นำเข้า) จึงยังไม่รู้ชื่อ Supplier'
+      : 'ยังไม่มีแท็บ PO. Truck (หัวตาราง Truck, PO.) ในไฟล์ชีต Transaction จึงยังไม่รู้ชื่อ Supplier';
     if (sup.missing) return 'แท็บ ' + sup.tab + ': ' + sup.missing;
     return '';
   }

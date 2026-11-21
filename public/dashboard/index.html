@@ -201,6 +201,9 @@ a.db-tile:focus-visible{outline:2px solid var(--wms-primary-dark);outline-offset
 <script src="../wms-settings.js"></script>
 <script src="../wms-gas.js"></script>
 <script src="../wms-shared.js"></script>
+<script src="../wms-fire-config.js"></script>
+<script src="../book/book-fire.js"></script>
+<script src="../wms-fire-src.js"></script>
 <script src="../wms-tx.js"></script>
 <script src="../wms-fifo.js"></script>
 <script src="../wms-dash.js"></script>
@@ -421,7 +424,7 @@ function srcPill(label, data, run, load) {
 }
 
 function backupPill() {
-  if (!SUM) return '';
+  if (!SUM || SUM.fire) return '';   // ระบบใหม่สำรองทุกคืนด้วย fire-backup.gs
   const b = WmsTx.backupState(SUM.backup, Date.now());
   if (b.days === null) return `<span class="pill warn">⚠️ ยังไม่ได้ตั้ง Backup</span>`;
   if (!b.ok) return `<span class="pill warn">⚠️ Backup ล่าสุด ${b.days} วันก่อน</span>`;

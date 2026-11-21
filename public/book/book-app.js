@@ -12,7 +12,7 @@
  *   คิดจากสำเนาในเครื่อง ไม่อ่านฐานเพิ่ม ยกเว้นหัวหน้าเปิดหน้าวันนี้: xfer/log กับ arch/index อย่างละ 1 ครั้ง (เก็บไว้ 10 นาที)
  *
  * ระบบเดิม (Apps Script) ไม่ใช้ไฟล์นี้ หน้าเหมือนเดิมทุกอย่าง (แผนถอยกลับ)
- * ใช้ตัวแปรและฟังก์ชันของสคริปต์ในหน้า (FIRE USER MODE PENDING FILES MERGED SEEN BSTATE BKBUSY esc f table isHead setMode render
+ * ใช้ตัวแปรและฟังก์ชันของสคริปต์ในหน้า (FIRE USER MODE PENDING FILES MERGED SEEN BKBUSY esc f table isHead setMode render
  * voidDoc copyText) กับ BookGrid BookFireSet BookFireTrc ตอนถูกเรียกเท่านั้น ไฟล์นี้โหลดก่อนสคริปต์ในหน้า เปิดเป็น window.BookApp
  */
 (function () {
@@ -21,7 +21,6 @@
   var ON = !!window.BookFire;
   var Q_KEY = 'wms:book:app:q';
   var HX_MS = 600000;         // ข้อมูลหัวหน้าของหน้าวันนี้ (ชีตเดิม ปิดเดือน) เก็บไว้กี่ ms
-  var XFER_DAYS = 35;         // ช่วงเปลี่ยนผ่าน: นับจากวันลงยอดยกมา
   var TRC_OLD = 7;            // ยอด TRcloud เก่ากว่านี้ (วัน) เตือนหัวหน้า
   var ROWS_MAX = 500;         // แถวต่อตารางในหน้าดูทีละใบ
 
@@ -122,15 +121,15 @@
     });
     return out;
   }
+  /**
+   * วันที่ยังไม่วางลงชีตเดิม · หน้ารายงานอ่านจากระบบใหม่แล้ว (wms-fire-src.js) การวางชีตเดิมไม่บังคับ
+   * เตือนเฉพาะตอนยังวางกันอยู่ (มีวันที่กด ✓ วางแล้ว ใน 10 วันล่าสุด) ไม่เคยวาง = ไม่เตือน
+   */
   function xferLeft() {
     if (!HX || !HX.xfer) return [];
-    var op = BSTATE && BSTATE.open, from = op ? String(op.at || '').slice(0, 10) : '';
     var day = FIRE.home() ? FIRE.home().day : '';
-    if (!from || !day || C().dayNo(day) - C().dayNo(from) > XFER_DAYS) {
-      /* หลังช่วงเปลี่ยนผ่าน: เตือนเฉพาะตอนยังวางกันอยู่ (มีวันที่วางแล้วใน 10 วันล่าสุด) */
-      var recent = HX.xfer.some(function (d) { return d.done && day && C().dayNo(day) - C().dayNo(d.day) <= 10; });
-      if (!recent) return [];
-    }
+    var recent = HX.xfer.some(function (d) { return d.done && day && C().dayNo(day) - C().dayNo(d.day) <= 10; });
+    if (!recent) return [];
     return HX.xfer.filter(function (d) { return (!d.done || d.more) && d.day < day; });
   }
   function archDue() { return HX && HX.arch && HX.arch.next && HX.arch.next.m ? HX.arch.next : null; }
@@ -243,7 +242,7 @@
     }
     if (head()) {
       var xl = xferLeft();
-      if (xl.length) out.push({ tone: 'warn', n: xl.length, title: 'วางแถวลงชีตเดิม', sub: 'ช่วงเปลี่ยนผ่าน · ' + xl.slice(0, 3).map(function (d) { return dmy(d.day); }).join(', ') + (xl.length > 3 ? ' …' : ''), go: 'close', sec: 'xfer', act: 'คัดลอก' });
+      if (xl.length) out.push({ tone: 'warn', n: xl.length, title: 'วางแถวลงชีตเดิม', sub: 'ยังวางกันอยู่ · ' + xl.slice(0, 3).map(function (d) { return dmy(d.day); }).join(', ') + (xl.length > 3 ? ' …' : ''), go: 'close', sec: 'xfer', act: 'คัดลอก' });
       var ad = archDue();
       if (ad) out.push({ tone: 'info', title: 'ปิดเดือน ' + ad.label + ' ได้แล้ว', sub: f(ad.docs) + ' เอกสาร · เครื่องใหม่โหลดเร็วขึ้น ประหยัดโควตา', go: 'close', sec: 'arch', act: 'ปิดเดือน' });
       if (h.open) {

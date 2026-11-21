@@ -10,17 +10,18 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadBook, fifoFromBook } from '../dev/fake-gas.js';
+import { loadBook, fifoFromBook, txFromBook } from '../dev/fake-gas.js';
 
 const read = (f) => fs.readFileSync(path.resolve(__dirname, '../../public', f), 'utf8');
 
-let B, C, W, S, TR, DOC, PR, IT;
+let B, C, W, S, TR, DOC, PR, IT, TX;
 beforeAll(() => {
   const win = {};
-  ['wms-book.js', 'wms-fire-core.js', 'wms-fire-trc.js', 'wms-fire-docs.js', 'wms-fire-item.js', 'wms-fire-print.js', 'wms-fire.js', 'wms-stocktake.js'].forEach((f) => new Function('window', read(f))(win));
+  ['wms-book.js', 'wms-fire-core.js', 'wms-fire-trc.js', 'wms-fire-docs.js', 'wms-fire-item.js', 'wms-fire-tx.js', 'wms-fire-print.js', 'wms-fire.js', 'wms-stocktake.js'].forEach((f) => new Function('window', read(f))(win));
   B = win.WmsBook;
   PR = win.WmsFirePrint;
   IT = win.WmsFireItem;
+  TX = win.WmsFireTx;
   C = win.WmsFireCore;
   TR = win.WmsFireTrc;
   DOC = win.WmsFireDocs;
@@ -2370,5 +2371,239 @@ describe('หน้า สินค้า / โล: อยู่โลไหน 
     const src = read('wms-fire-item.js') + ui;
     expect(src).not.toMatch(/AIza[0-9A-Za-z_-]{20,}|firebaseapp\.com|script\.google\.com|apiKey\s*:/);
     expect(src).not.toMatch(/\.get\(|\.commit\(|store\./);                                  // ไม่อ่านไม่เขียนฐาน คิดจากสำเนาในเครื่อง
+  });
+});
+
+describe('หน้ารายงานอ่านจากระบบใหม่ (wms-fire-tx.js · wms-fire-src.js)', () => {
+  /** สมุดที่มีครบทุกแบบ: ยอดยกมา ขาย ย้าย รับของ แปลง ปรับยอด แถวขายแก้มือ รับคืน ยกเลิก (ทั้งสองระบบได้ชุดเดียวกัน) */
+  async function busyBook() {
+    const x = await both();
+    await x.open();
+    await x.same('me', 'bk-cut', cutBody('c-1', [saleLine('1', 2), saleLine('2', 1)]));
+    const mv = ['AAA001', 'AAA0000000001', '8', 'P1', 'R01-01-01', 'A-01-01', 4, 'เบิก', 'โอนย้าย', 'เปิด'];
+    await x.same('me', 'bk-move', body('m-1', [mv, Object.assign(mv.slice(), { 6: 1, 5: 'QA', 8: 'โอนย้าย QA', 9: '' })]));
+    await x.same('me', 'bk-gr', body('g-1', [['AAA001', 'AAA0000000001', '10', 'P9', '', 'R01-02-01', 3, 'รับ', 'GR 09-11-26', '', 'GR6911-0001']]));
+    await x.same('me', 'bk-conv', body('v-1', [
+      ['BBB002', 'BBB0000000002', '7', 'P5', 'A-03-01', '', 2, 'เบิก', 'แปลงสินค้า', '', 'MR6911-0001'],
+      ['CCC004', 'CCC0000000004', '7', 'P5', '', 'A-03-01', 2, 'รับ', 'แปลงสินค้า', 'เปิด', 'GR6911-0002'],
+    ]));
+    await x.same('head', 'bk-adj', body('a-2', [['AAA001', 'AAA0000000001', '8', 'P1', 'A-01-01', '', 2, 'เบิก', 'ปรับยอด หาย', '']],
+      { lines: [{ loc: 'A-01-01', sku: 'AAA0000000001', lot: '8', po: 'P1', have: 21, count: 19 }] }));
+    await x.same('head', 'bk-rows', body('r-1', [['BBB002', 'BBB0000000002', '7', 'P5', 'A-03-01', '', 1, 'ขาย', '2026-11-09', ''],
+      ['AAA001', 'AAA0000000001', '0', '0', '', 'RIB', 1, 'รับ', 'RETURN', '']], { ref: 'แก้มือ' }));
+    await x.same('me', 'bk-cut', cutBody('c-2', [saleLine('3', 1, 'A-01-02', '9', 'P2')]));
+    await x.same('head', 'bk-void', { doc: 'T2611-0008', why: 'ตัดผิด' });
+    await x.head.sync();
+    expect(x.head.local().docs.map((d) => d.type)).toEqual(['ยอดยกมา', 'ตัดขาย', 'ย้าย', 'รับของ', 'แปลง', 'ปรับยอด', 'ตารางเดิม', 'ตัดขาย', 'กลับรายการ']);
+    return x;
+  }
+  const noDoc = (h) => ({ ...h, items: h.items.map(({ doc, ...it }) => it) });
+
+  it('tx-summary tx-daily tx-history คิดจากสำเนาในเครื่อง = tx-api.gs อ่านแท็บ Transaction ของสมุดใหม่ ทุกช่อง', async () => {
+    const x = await busyBook();
+    const local = x.head.local(), now = Date.now();   // tx-api.gs ใช้วันที่จริงของเครื่อง
+    const tx = (p) => txFromBook(x.gas.ss, p, { nameInL: true });   // ชื่อคนบันทึกอยู่ช่อง L แบบชีตเดิม
+    /* สมุดใหม่ช่อง L ว่าง: tx-api.gs อ่านตรง ๆ จะว่าทุกแถวไม่มีชื่อคนกรอก ระบบใหม่รู้คนบันทึกทุกใบ */
+    expect(txFromBook(x.gas.ss, { api: 'tx-summary' }).issues.counts.incomplete).toBe(TX.rows(local).length);
+    expect(TX.summary(local, now).issues.counts.incomplete).toBeUndefined();
+    expect([...new Set(TX.rows(local).map((r) => r.who))].sort()).toEqual(['ทดลอง', 'หัวหน้าทดลอง']);
+    const gs = tx({ api: 'tx-summary' }), fs_ = TX.summary(local, now);
+    for (const k of ['rows', 'lastRow', 'lastDate', 'saleDays', 'sold', 'skus', 'locs', 'keys', 'issues', 'sup']) expect(fs_[k], k).toEqual(gs[k]);
+    expect(fs_).toMatchObject({ app: 'transaction', fire: 1, sheet: null, backup: null });
+    expect(fs_.keys.length).toBeGreaterThan(5);
+    expect(fs_.sold.length).toBeGreaterThan(0);
+
+    const gd = tx({ api: 'tx-daily', from: '2026-11-01', to: '2026-11-30' }), fd = TX.daily(local, now, '2026-11-01', '2026-11-30');
+    for (const k of ['from', 'to', 'last', 'noDate', 'noSku', 'future', 'badQty', 'skus', 'days', 'cells', 'locs', 'whos', 'lines', 'convert', 'sup']) expect(fd[k], k).toEqual(gd[k]);
+    expect(fd.days).toEqual(['2026-11-09', '2026-11-10']);
+    const g1 = tx({ api: 'tx-daily', from: '2026-11-10', to: '2026-11-10' }), f1 = TX.daily(local, now, '2026-11-10', '2026-11-10');
+    for (const k of ['days', 'cells', 'lines', 'last']) expect(f1[k], k).toEqual(g1[k]);
+
+    for (const sku of ['AAA001', 'BBB0000000002', 'NOPE']) {
+      const gh = tx({ api: 'tx-history', sku }), fh = TX.history(local, sku);
+      expect({ ...noDoc(fh), sheet: undefined, fire: undefined }).toEqual({ ...gh, sheet: undefined, fire: undefined });
+    }
+    const h = TX.history(local, 'AAA001');
+    expect(h.items[0].doc).toMatch(/^T2611-/);                                         // ระบบใหม่บอกเลขที่เอกสารด้วย
+    expect(TX.history(local, '')).toEqual({ error: 'ไม่ได้ระบุ SKU' });
+  });
+
+  it('MASTER ที่นำเข้าในระบบใหม่ (แปลงสินค้า · PO. Truck) ขึ้นใน tx-daily / tx-summary รูปเดียวกับแท็บในชีต', async () => {
+    const x = await busyBook();
+    const local = { ...x.head.local(), master: {
+      conv: { tab: 'MASTER แปลงสินค้า', cols: ['SKU หลังแปลง', 'SKU ตอนซื้อ'], blank: 1, rows: C.enc([['CCC0000000004', 'BBB0000000002'], ['ccc0000000004', 'BBB0000000002'], ['X', 'X']]) },
+      sup: { tab: 'PO. Truck', dup: ['P9'], rows: C.enc([['p1', 'โรงงานสมมติ ก'], ['P9', 'โรงงานสมมติ ข']]) },
+    } };
+    const d = TX.daily(local, NOW, '', '');
+    expect(d.convert).toEqual({ tab: 'MASTER แปลงสินค้า', cols: ['SKU หลังแปลง', 'SKU ตอนซื้อ'], pairs: [['CCC0000000004', 'BBB0000000002', 'ท็อปเปอร์สมมติ 2']], blank: 1 });
+    expect(d.sup).toEqual({ tab: 'PO. Truck', rows: [['P1', 'โรงงานสมมติ ก'], ['P9', 'โรงงานสมมติ ข']], dup: ['P9'], missing: '' });
+    expect(TX.summary(local, NOW).sup).toEqual(d.sup);
+    /* ตรงกับ tx-fifo ของระบบใหม่ (หน้าอื่นใช้ convert / sup จาก tx-fifo) */
+    const f = C.fifo(local, NOW);
+    expect(d.convert.pairs).toEqual(f.convert.pairs);
+    expect(d.sup.rows).toEqual(f.sup.rows);
+  });
+
+  /* ── wms-fire-src.js: หน้ารายงานส่ง URL 'fire:tx' ผ่าน WmsGas / WmsShared ── */
+
+  function fakeFire(local, o = {}) {
+    const st = { snaps: 0, changed: false, user: 'user' in o ? o.user : { who: 'หัวหน้าทดลอง', email: HEAD_EMAIL }, signed: [] };
+    return {
+      st, mode: o.mode || 'dev', label: 'ฐานทดลอง', pick: o.pick !== false,
+      accounts: () => [{ email: HEAD_EMAIL, name: 'หัวหน้าทดลอง' }],
+      restore: async () => st.user,
+      signIn: async (e) => { st.signed.push(e === undefined ? 'google' : e); return o.signErr ? { error: o.signErr } : { who: 'x', email: e }; },
+      snap: async () => { st.snaps++; return { local, now: NOW }; },
+      changed: async () => st.changed,
+    };
+  }
+  /** หน้ารายงานจำลอง: wms-settings (URL เดิม) → wms-gas → wms-shared → BookFire → wms-fire-src */
+  function page(fire, oldUrl = '') {
+    const calls = [];
+    const node = () => ({ className: '', innerHTML: '', id: '', setAttribute() {}, addEventListener(t, f) { this.click = f; } });
+    const body = { firstChild: null, insertBefore(n) { this.bar = n; } };
+    const doc = { readyState: 'complete', body, head: { appendChild() {} }, createElement: node, getElementById: () => null, addEventListener() {} };
+    const win = { WmsSettings: { txUrl: () => oldUrl }, WmsFireCore: C, WmsFireTx: TX, BookFire: fire };
+    new Function('window', read('wms-gas.js'))(win);
+    const realJson = win.WmsGas.json, realPost = win.WmsGas.post;
+    win.WmsGas.json = (url, api, op) => (String(url).startsWith('fire:') ? realJson(url, api, op) : (calls.push(['get', url, api]), Promise.resolve({ app: 'transaction', old: 1 })));
+    win.WmsGas.post = (url, b, op) => (String(url).startsWith('fire:') ? realPost(url, b, op) : (calls.push(['post', url, b.op]), Promise.resolve({ app: 'transaction', old: 1 })));
+    new Function('window', 'localStorage', read('wms-shared.js'))(win, memLS());
+    const loc = { reloads: 0, reload() { this.reloads++; } };
+    new Function('window', 'document', 'location', read('wms-fire-src.js'))(win, doc, loc);
+    const click = (attr, val) => body.bar.click({ target: { closest: () => ({ hasAttribute: (a) => a === attr, getAttribute: () => val }) } });
+    return { win, calls, bar: () => body.bar, loc, click, url: () => win.WmsSettings.txUrl() };
+  }
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  it('ระบบใหม่เปิด: URL ของหน้า = fire:tx · tx-fifo tx-summary tx-daily tx-history ได้คำตอบจากสำเนาในเครื่อง (อ่าน กดดึงใหม่ ประวัติ)', async () => {
+    const x = await busyBook();
+    const local = x.head.local(), fire = fakeFire(local), p = page(fire, 'https://old.example/exec');
+    const { WmsGas: G, WmsShared: SH, WmsFireSrc: F } = p.win;
+    expect(p.url()).toBe('fire:tx');
+    expect(F.oldUrl()).toBe('https://old.example/exec');
+    expect(await SH.read(p.url(), 'tx-fifo', {})).toEqual(C.fifo(local, NOW));
+    expect(await SH.press(p.url(), 'tx-fifo', null, {})).toEqual(C.fifo(local, NOW));
+    expect(await G.json(p.url(), 'tx-summary&shared=1', {})).toEqual(TX.summary(local, NOW));
+    expect(await SH.press(p.url(), 'tx-summary', null, {})).toEqual(TX.summary(local, NOW));
+    expect(await SH.read(p.url(), 'tx-daily&from=2026-11-01&to=2026-11-30', {})).toEqual(TX.daily(local, NOW, '2026-11-01', '2026-11-30'));
+    expect(await SH.press(p.url(), 'tx-daily', { from: '2026-11-10', to: '2026-11-10' }, {})).toEqual(TX.daily(local, NOW, '2026-11-10', '2026-11-10'));
+    expect(await G.json(p.url() + '?sku=' + encodeURIComponent('AAA001'), 'tx-history', {})).toEqual(TX.history(local, 'AAA001'));
+    expect(fire.st.snaps).toBe(7);                      // ทุกครั้งดึงเอกสารใหม่ก่อนคิด
+    expect(p.calls).toEqual([]);                        // ไม่แตะสคริปต์เดิมเลย
+    let said = -1;
+    await G.json(p.url(), 'tx-fifo', { onProgress: (s) => { said = s; } });
+    expect(said).toBe(0);
+    expect(p.bar().className).toBe('fsrc');
+    expect(p.bar().innerHTML).toContain('อ่านจากระบบใหม่');
+    expect(p.bar().innerHTML).toContain('หัวหน้าทดลอง');
+    expect(p.bar().innerHTML).toContain('ไม่ใช่ข้อมูลจริง');
+  });
+
+  it('ป้ายข้อมูลกลาง: มีเอกสารใหม่หลังโหลด = ทุกชุดที่หน้าโหลดไว้ขึ้นว่ามีชุดใหม่ (ช่วงวันที่ตรง) · โหลดแล้วหาย', async () => {
+    const x = await busyBook();
+    const fire = fakeFire(x.head.local()), p = page(fire);
+    const { WmsShared: SH } = p.win;
+    let st = await SH.status(p.url());
+    expect(SH.knows(st, 'transaction')).toBe(true);
+    expect(st.shared).toEqual({});
+    const fifo = await SH.read(p.url(), 'tx-fifo', {});
+    const per = { from: '2026-11-01', to: '2026-11-30' };
+    const daily = await SH.read(p.url(), 'tx-daily&from=2026-11-01&to=2026-11-30', {});
+    st = await SH.status(p.url());
+    expect(SH.newer(st, 'tx-fifo', fifo)).toBe(false);
+    fire.st.changed = true;
+    st = await SH.status(p.url());
+    expect(SH.newer(st, 'tx-fifo', fifo)).toBe(true);
+    expect(SH.newer(st, 'tx-daily', daily, per)).toBe(true);
+    expect(SH.newer(st, 'tx-daily', daily, { from: '2026-10-01', to: '2026-10-31' })).toBe(false);
+    expect(SH.running(st, 'tx-fifo')).toBeNull();
+    fire.st.changed = false;
+    const again = await SH.read(p.url(), 'tx-fifo', {});   // หน้าโหลดชุดใหม่แล้ว
+    st = await SH.status(p.url());
+    expect(SH.newer(st, 'tx-fifo', again)).toBe(false);
+    expect(SH.newer(st, 'tx-daily', daily, per)).toBe(true);   // ชุดที่ยังไม่โหลดยังรออยู่
+  });
+
+  it('ยังไม่เข้าระบบ: คำตอบบอกให้เข้าก่อน · แถบมีปุ่ม → เลือกบัญชี (ทดลอง) / Google (ระบบจริง) → โหลดหน้าใหม่ · เข้าไม่ได้บอกเหตุ', async () => {
+    const fire = fakeFire({ docs: [], meta: {} }, { user: null }), p = page(fire);
+    const r = await p.win.WmsGas.json(p.url(), 'tx-fifo', {});
+    expect(r).toMatchObject({ login: 1 });
+    expect(r.error).toContain('เข้าสู่ระบบ');
+    expect(fire.st.snaps).toBe(0);
+    expect(await p.win.WmsShared.status(p.url())).toMatchObject({ shared: {} });
+    expect(p.bar().className).toBe('fsrc need');
+    expect(p.bar().innerHTML).toContain('data-fsrc-in');
+    p.click('data-fsrc-in');
+    expect(p.bar().innerHTML).toContain(`data-fsrc-acc="${HEAD_EMAIL}"`);
+    p.click('data-fsrc-acc', HEAD_EMAIL);
+    await flush();
+    expect(fire.st.signed).toEqual([HEAD_EMAIL]);
+    expect(p.loc.reloads).toBe(1);
+
+    const live = fakeFire({ docs: [], meta: {} }, { user: null, pick: false, mode: 'live', signErr: 'x@gmail.test ไม่ใช่อีเมลบริษัท' }), q = page(live);
+    await q.win.WmsFireSrc.ready();
+    expect(q.bar().innerHTML).toContain('เข้าสู่ระบบด้วย Google');
+    expect(q.bar().innerHTML).not.toContain('ไม่ใช่ข้อมูลจริง');
+    q.click('data-fsrc-in');
+    await flush();
+    expect(live.st.signed).toEqual(['google']);
+    expect(q.loc.reloads).toBe(0);
+    expect(q.bar().innerHTML).toContain('ไม่ใช่อีเมลบริษัท');
+  });
+
+  it('ส่วนที่ยังอยู่สคริปต์เดิม (นับสต๊อกรายวัน) ส่งต่อไป URL เดิมของเครื่อง · ไม่มี URL บอกตรง ๆ · ระบบใหม่ปิด = ไม่เปลี่ยนอะไร', async () => {
+    const fire = fakeFire({ docs: [], meta: {} });
+    const p = page(fire, 'https://old.example/exec');
+    expect(await p.win.WmsGas.json(p.url(), 'tx-count&peek=1', {})).toEqual({ app: 'transaction', old: 1 });
+    expect(await p.win.WmsGas.post(p.url(), { op: 'count-save', items: [] }, {})).toEqual({ app: 'transaction', old: 1 });
+    expect(p.calls).toEqual([['get', 'https://old.example/exec', 'tx-count&peek=1'], ['post', 'https://old.example/exec', 'count-save']]);
+    const q = page(fakeFire({ docs: [], meta: {} }));
+    expect((await q.win.WmsGas.json(q.url(), 'tx-count', {})).error).toContain('สคริปต์เดิม');
+    expect((await q.win.WmsGas.post(q.url(), { op: 'count-add' }, {})).error).toContain('สคริปต์เดิม');
+    expect(q.calls).toEqual([]);
+    const off = page(null, 'https://old.example/exec');
+    expect(off.win.WmsFireSrc).toBeNull();
+    expect(off.url()).toBe('https://old.example/exec');
+    expect(off.bar()).toBeUndefined();
+  });
+
+  it('หน้ารายงาน 8 หน้าโหลด config → book-fire → wms-fire-src หลัง wms-shared ก่อนสคริปต์ในหน้า · นับสต๊อกใหญ่ / ลิงก์แชร์ยังเหมือนเดิม', () => {
+    const pages = ['balance/index.html', 'fifo/index.html', 'lot-po/index.html', 'dashboard/index.html', 'putaway/index.html', 'stock-location/index.html', 'mfg/index.html', 'cut-check/index.html'];
+    for (const f of pages) {
+      const s = read(f), at = (t) => s.indexOf(t);
+      expect(at('<script src="../wms-settings.js"></script>'), f).toBeGreaterThan(0);
+      expect(at('<script src="../wms-shared.js"></script>'), f).toBeGreaterThan(at('<script src="../wms-gas.js"></script>'));
+      expect(at('<script src="../wms-fire-config.js"></script>'), f).toBeGreaterThan(at('<script src="../wms-shared.js"></script>'));
+      expect(at('<script src="../book/book-fire.js"></script>'), f).toBeGreaterThan(at('<script src="../wms-fire-config.js"></script>'));
+      expect(at('<script src="../wms-fire-src.js"></script>'), f).toBeGreaterThan(at('<script src="../book/book-fire.js"></script>'));
+      expect(s.match(/wms-fire-src\.js/g), f).toHaveLength(1);
+      expect(s, f).not.toContain('WMS_GATE_OFF');            // ป้ายรหัสเครื่องยังอยู่
+    }
+    /* นับสต๊อกใหญ่ 19–20 ธ.ค. และไฟล์ตั้งต้นสมุดยังอ่านสมุดเดิม · ลิงก์ไม่ต้องเข้าระบบ (ขั้น 2) ยังไม่แตะ */
+    for (const f of ['stocktake/index.html', 'fifo/share.html', 'mfg/boss.html', 'book/index.html']) expect(read(f), f).not.toContain('wms-fire-src.js');
+    const bf = read('book/book-fire.js');
+    expect(bf.indexOf("script('../wms-fire-tx.js')")).toBeGreaterThan(bf.indexOf("script('../wms-fire-item.js')"));
+    expect(bf.indexOf("script('../wms-fire-tx.js')")).toBeLessThan(bf.indexOf("script('../wms-fire.js')"));
+    expect(bf).toMatch(/snap: async function \(\) \{\s+await ready;\s+await fire\.sync\(\);/);
+    const gas = read('wms-gas.js');
+    expect(gas).toContain('if (fire(url)) return window.WmsFireSrc.json(url, api, o);');
+    expect(gas).toContain('if (fire(url)) return window.WmsFireSrc.post(url, payload, o);');
+    /* ระบบใหม่ไม่มี Backup ของชีตเดิม: ไม่ขึ้นเตือน installBackup */
+    expect(read('stock-location/index.html')).toContain("if (RAW.fire) return '';");
+    expect(read('dashboard/index.html')).toContain("if (!SUM || SUM.fire) return '';");
+    /* วางชีตเดิมไม่บังคับแล้ว: หน้า วันนี้ เตือนเฉพาะตอนยังวางกันอยู่ (ไม่มีช่วงเปลี่ยนผ่านบังคับ 35 วัน) */
+    const app = read('book/book-app.js');
+    expect(app).not.toContain('XFER_DAYS');
+    expect(app).toMatch(/function xferLeft\(\) \{\s+if \(!HX \|\| !HX\.xfer\) return \[\];\s+var day = [^\n]+\n\s+var recent = [^\n]+\n\s+if \(!recent\) return \[\];/);
+    expect(read('book/book-fire-set.js')).toContain("xfer: 'ไม่บังคับ: หน้ารายงาน");
+    /* ยังไม่มีตาราง MASTER: ระบบใหม่บอกให้นำเข้าที่หน้า TRcloud ไม่ใช่เพิ่มแท็บในชีตเดิม */
+    for (const f of ['wms-sup.js', 'balance/index.html', 'lot-po/index.html', 'putaway/index.html']) {
+      expect(read(f), f).toContain('ระบบใหม่ยังไม่ได้นำเข้าตาราง');
+      expect(read(f), f).toContain('สมุดสต๊อก → TRcloud → นำเข้า');
+    }
+    const src = read('wms-fire-src.js') + read('wms-fire-tx.js');
+    expect(src).not.toMatch(/AIza[0-9A-Za-z_-]{20,}|firebaseapp\.com|script\.google\.com|apiKey\s*:/);
+    expect(src).not.toMatch(/\.commit\(|store\.|\.patch\(/);   // อ่านอย่างเดียว ไม่เขียนฐาน
   });
 });

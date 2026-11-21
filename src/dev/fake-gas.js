@@ -320,7 +320,13 @@ const TX_GS = path.resolve(HERE, '../../apps-script/tx-api.gs');
  * รัน tx-api.gs ตัวจริงกับไฟล์ที่มีแท็บนั้นแท็บเดียว เหมือนตอนตัดรอบที่เปลี่ยน IMPORTRANGE ในไฟล์สำเนาไปอ่านสมุดใหม่
  * แท็บถูกห่อให้อ่านได้อย่างเดียว ถ้าสคริปต์เผลอเขียนจะ error
  */
-export function fifoFromBook(bookSs) {
+export function fifoFromBook(bookSs) { return txFromBook(bookSs, { api: 'tx-fifo' }); }
+
+/**
+ * แบบเดียวกับ fifoFromBook แต่ส่งคำขออื่นได้ เช่น { api: 'tx-summary' } { api: 'tx-daily', from, to } { api: 'tx-history', sku }
+ * nameInL: ให้ tx-api.gs เห็นชื่อคนบันทึกในช่อง L แบบชีต Transaction เดิม (สมุดใหม่เก็บ NAME ไว้ช่อง M · L ว่าง)
+ */
+export function txFromBook(bookSs, parameter, { nameInL = false } = {}) {
   const tx = bookSs.getSheetByName('Transaction');
   const shown = (v) => (v instanceof Date ? formatDate(v, '', 'dd/MM/yyyy') : String(v ?? ''));
   const ro = tx && {
@@ -329,8 +335,13 @@ export function fifoFromBook(bookSs) {
     getLastRow: () => tx.getLastRow(),
     getLastColumn: () => tx.getLastColumn(),
     getRange: (r, c, nr = 1, nc = 1) => {
-      const g = tx.getRange(r, c, nr, nc);
-      return { getValues: () => g.getValues(), getDisplayValues: () => g.getValues().map((x) => x.map(shown)) };
+      const vals = () => {
+        const g = tx.getRange(r, c, nr, nc).getValues();
+        if (!nameInL || c > 12 || c + nc - 1 < 12) return g;
+        const m = tx.getRange(r, 13, nr, 1).getValues();
+        return g.map((row, i) => { const x = row.slice(); x[12 - c] = r + i === 1 ? 'NAME' : m[i][0]; return x; });
+      };
+      return { getValues: vals, getDisplayValues: () => vals().map((x) => x.map(shown)) };
     },
   };
   const ss = {
@@ -353,7 +364,7 @@ export function fifoFromBook(bookSs) {
   };
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(TX_GS, 'utf8'), ctx);
-  return JSON.parse(ctx.doGet({ parameter: { api: 'tx-fifo' } }).text);
+  return JSON.parse(ctx.doGet({ parameter }).text);
 }
 
 /* ── ชีตสต๊อก TRcloud สมมติ (apps-script/stock-api.gs) ───────────────────── */

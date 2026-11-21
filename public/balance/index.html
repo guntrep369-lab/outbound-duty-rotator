@@ -170,6 +170,9 @@
 <script src="../wms-settings.js"></script>
 <script src="../wms-gas.js"></script>
 <script src="../wms-shared.js"></script>
+<script src="../wms-fire-config.js"></script>
+<script src="../book/book-fire.js"></script>
+<script src="../wms-fire-src.js"></script>
 <script src="../wms-sup.js"></script>
 <script src="../wms-fifo.js"></script>
 <script src="../wms-lotpo.js"></script>
@@ -461,7 +464,7 @@ function convNote(t) {
   const tab = '<b>MASTER แปลงสินค้า</b>';
   const still = 'SKU ที่แปลงแล้วยังแยกบรรทัดอยู่ ยังไม่ได้รวมยอดคืนเข้า SKU ตอนซื้อ';
   if (c === undefined) return `<div class="tx-warn">${still} — สคริปต์ tx-api.gs ยังเป็นรุ่นที่ไม่ส่งแท็บ ${tab} มากับข้อมูลชุดนี้ ให้วางโค้ดใหม่ Deploy เป็น New version แล้วกด 🔄 ดึงใหม่</div>`;
-  if (!c) return `<div class="tx-note">${still} — ไฟล์สมุด Transaction ยังไม่มีแท็บ ${tab}</div>`;
+  if (!c) return `<div class="tx-note">${still} — ${window.WmsFireSrc ? `ระบบใหม่ยังไม่ได้นำเข้าตาราง ${tab} (สมุดสต๊อก → TRcloud → นำเข้า)` : `ไฟล์สมุด Transaction ยังไม่มีแท็บ ${tab}`}</div>`;
   if (!c.pairs.length) return `<div class="tx-warn">แท็บ ${tab} ยังไม่มีคู่ SKU — แถวแรกเป็นหัวตาราง ใส่ SKU ตอนซื้อกับ SKU หลังแปลงตั้งแต่แถวที่ 2</div>`;
   const many = t.many.lines ? ` · <span class="tx-mid">${f(t.many.lines)} บรรทัดยังไม่แปลง เพราะ MASTER ให้ SKU ตอนซื้อไว้หลายตัว</span>` : '';
   return `<div class="tx-note">รวมยอด SKU ที่แปลงคืนเข้า SKU ตอนซื้อตามแท็บ ${tab} (${f(c.pairs.length)} คู่)
