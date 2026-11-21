@@ -243,11 +243,16 @@ Query scope = **Collection** · ติ๊กออกทุกช่อง (Asce
 
 ทำตามหัวไฟล์ `apps-script/fire-backup.gs` (ใช้บัญชี Owner ของโปรเจกต์)
 
-1. script.google.com → โปรเจกต์ใหม่ (ไม่ผูกชีต) → วางไฟล์ทั้งไฟล์ → ตั้ง appsscript.json ตามหัวไฟล์
-2. ใส่ `FIREBASE_PROJECT_ID` = Project ID จากข้อ 1.6
-3. เรียกใช้ `installBackup` → อนุญาตสิทธิ์ → Google Drive ต้องมีโฟลเดอร์ **WMS ระบบใหม่ สำรอง**
+1. script.google.com → โปรเจกต์ใหม่ (ไม่ผูกชีต) → วางไฟล์ทั้งไฟล์
+2. **ห้ามข้าม** ⚙️ (เมนูซ้าย การตั้งค่าโปรเจกต์) → ติ๊ก **แสดงไฟล์ Manifest "appsscript.json" ในเครื่องมือแก้ไข**
+   → กลับไป `< >` เครื่องมือแก้ไข → เปิดไฟล์ `appsscript.json` → ลบของเดิมทั้งหมด วางก้อน `{ … }` จากหัวไฟล์สคริปต์ (ต้องมีบรรทัด `auth/datastore`) → Ctrl+S
+3. ใส่ `FIREBASE_PROJECT_ID` = Project ID จากข้อ 1.6 → Ctrl+S
+4. เรียกใช้ `installBackup` → อนุญาตสิทธิ์ (ขึ้น *Google ยังไม่ได้ยืนยันแอปนี้* → ขั้นสูง → ไปที่ … ) → Google Drive ต้องมีโฟลเดอร์ **WMS ระบบใหม่ สำรอง**
 
 สคริปต์อ่านอย่างเดียว ไม่เปิดชีตใดเลย
+
+ขึ้น `Firestore 403` + `ACCESS_TOKEN_SCOPE_INSUFFICIENT` = ข้าม appsscript.json (ข้อ 2) → ทำข้อ 2 แล้วเรียกใช้ `installBackup` ใหม่ จะมีหน้าต่างขออนุญาตเพิ่ม กดอนุญาต (ตั้งเวลาซ้ำไม่ได้ สคริปต์ลบของเดิมก่อนเอง)
+ขึ้น `403` แบบอื่น เช่น `PERMISSION_DENIED` ไม่มีคำว่า SCOPE = บัญชีที่รันไม่ใช่ Owner / Editor ของโปรเจกต์ Firebase
 
 ---
 
