@@ -155,6 +155,8 @@
     },
   };
 
+  // A page with its own sign-in (the stock book on the new system: company Google login) sets WMS_GATE_OFF before this script.
+  if (window.WMS_GATE_OFF) return;
   if (readSession()) return; // already signed in — no intro, straight to work
 
   // Hide the app immediately, before it has a chance to paint behind the gate.

@@ -50,6 +50,9 @@ export const MODULES = [
   /* นับสต๊อกใหญ่อยู่นอกหมวด (ผู้ใช้ขอ พ.ย. 2026) — เป็นงานใหญ่ทั้งคลังที่ทุกทีมเข้ามาช่วงนับ
      ไม่ใช่หน้าที่เปิดดูประจำแบบหน้าอื่นในสินค้าคงคลัง ให้กดเข้าได้ทันทีไม่ต้องกางหมวดก่อน */
   { id: 'stocktake', label: 'นับสต๊อกใหญ่', labelEn: 'Stocktake', path: 'stocktake/', icon: 'listChecks' },
+  /* สมุดสต๊อกแทนชีต Transaction (ผู้ใช้ขอ 2026-11-18) · เมนูเดี่ยวนอกหมวด (ผู้ใช้ขอ 2026-11-21): เป็นแอปของทีม Inventory
+     ใช้ทั้งวัน ระบบใหม่เปิดแล้วหน้านี้มีเมนูของตัวเอง (วันนี้ ขาเข้า ขาออก คุมยอด เอกสาร) ไม่ต้องกางหมวด */
+  { id: 'book', label: 'สมุดสต๊อก', labelEn: 'Stock Book', path: 'book/', icon: 'bookOpen' },
   { id: 'history', label: 'ย้อนหลัง', labelEn: 'History', path: 'history/', icon: 'history', hidden: true },
   { id: 'order', label: 'เทียบ Order', labelEn: 'Order Compare', path: 'order-compare/', icon: 'clipboard', group: 'order' },
   { id: 'lookup', label: 'ค้นหาออเดอร์', labelEn: 'Order Lookup', path: 'order-lookup/', icon: 'search', group: 'order' },
@@ -62,8 +65,6 @@ export const MODULES = [
   /* ภาพรวมอยู่หัวหมวด หัวหน้าเปิดหน้านี้ก่อนแล้วกดต่อไปหน้าที่มีเรื่องต้องดู */
   { id: 'dashboard', label: 'ภาพรวมสต๊อก', labelEn: 'Stock Overview', path: 'dashboard/', icon: 'gauge', group: 'inventory' },
   { id: 'txstock', label: 'สต๊อกราย Location', labelEn: 'Stock by Location', path: 'stock-location/', icon: 'mapPin', group: 'inventory' },
-  /* สมุดสต๊อกแทนชีต Transaction ทีละประเภท ขั้น 1 = ตัดขายจากไฟล์ออเดอร์ (ผู้ใช้ขอ 2026-11-18) */
-  { id: 'book', label: 'สมุดสต๊อก', labelEn: 'Stock Book', path: 'book/', icon: 'notebook', group: 'inventory' },
   { id: 'cutcheck', label: 'เช็คตัดสต๊อก', labelEn: 'Stock Cut Check', path: 'cut-check/', icon: 'scale', group: 'inventory' },
   { id: 'lotpo', label: 'LOT/PO ขายออก', labelEn: 'Lot & PO Out', path: 'lot-po/', icon: 'sheet', group: 'inventory' },
   /* ต่อจาก LOT / PO เพราะใช้ไฟล์ที่โหลดจากหน้านั้นมาจับคู่กับเลขที่เอกสารของบัญชี */
@@ -144,6 +145,8 @@ export const ICON_PATHS = {
     '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h2"/><path d="M14 13h2"/><path d="M8 17h2"/><path d="M14 17h2"/>',
   receipt:
     '<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 17.5v-11"/>',
+  bookOpen:
+    '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>',
   notebook:
     '<path d="M13.4 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7.4"/><path d="M2 6h4"/><path d="M2 10h4"/><path d="M2 14h4"/><path d="M2 18h4"/><path d="M21.378 5.626a1 1 0 1 0-3.004-3.004l-5.01 5.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z"/>',
   settings:

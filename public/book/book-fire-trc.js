@@ -471,6 +471,10 @@
   window.BookFireTrc = {
     render: render,
     opened: function () { LIST_AT = 0; R_AT = 0; need(); },
+    /** เปิดส่วนนี้ไว้ก่อนสลับหน้า (การ์ดในหน้าวันนี้) */
+    pick: function (s) { if (secs().some(function (x) { return x[0] === s; })) { SEC = s; NOTE = null; try { localStorage.setItem(SEC_KEY, s); } catch (e) {} } },
+    /** ใส่เลข TRcloud จากหน้าเอกสารแล้ว: รายการรอลงต้องโหลดใหม่ตอนเปิดแท็บ */
+    stale: function () { LIST = null; },
     /** Ctrl+V ในแท็บ TRcloud = ตารางยอด TRcloud หรือตารางหลัก (หัวหน้า) */
     paste: function (text) {
       if (!head()) return;

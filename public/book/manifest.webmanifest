@@ -1,0 +1,16 @@
+{
+  "id": "./",
+  "name": "สมุดสต๊อก · Inventory",
+  "short_name": "สมุดสต๊อก",
+  "description": "สมุดสต๊อกของทีม Inventory: ตัดขาย รับของ ย้าย คืน แปลง ปรับยอด TRcloud ค้นเอกสาร",
+  "lang": "th",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F1F5F9",
+  "theme_color": "#4F46E5",
+  "icons": [
+    { "src": "../wms-logo.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "../wms-logo-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

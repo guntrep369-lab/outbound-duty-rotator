@@ -599,6 +599,8 @@
     /** หลังยกเลิกชุดคืน ชิ้นที่คืนแล้วเปลี่ยน ต้องหาใหม่ */
     forget: function () { LOOK = { found: {}, miss: {} }; if (S.ret) findSoon(0); },
     pending: function (mode) { return !!(KEY[mode] && state(mode).pending); },
+    /** แถวในร่างที่ยังไม่บันทึก (ไม่นับแถวว่าง) หน้าวันนี้ใช้เตือนร่างค้าง */
+    filled: function (mode) { return KEY[mode] ? state(mode).rows.filter(function (r) { return !blank(r); }).length : 0; },
     retry: retry,
     modes: function () { return Object.keys(KEY); },
     act: function (mode) { renderAct(mode); },

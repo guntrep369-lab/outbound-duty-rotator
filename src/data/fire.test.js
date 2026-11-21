@@ -14,18 +14,20 @@ import { loadBook, fifoFromBook } from '../dev/fake-gas.js';
 
 const read = (f) => fs.readFileSync(path.resolve(__dirname, '../../public', f), 'utf8');
 
-let B, C, W, S, TR;
+let B, C, W, S, TR, DOC;
 beforeAll(() => {
   const win = {};
-  ['wms-book.js', 'wms-fire-core.js', 'wms-fire-trc.js', 'wms-fire.js', 'wms-stocktake.js'].forEach((f) => new Function('window', read(f))(win));
+  ['wms-book.js', 'wms-fire-core.js', 'wms-fire-trc.js', 'wms-fire-docs.js', 'wms-fire.js', 'wms-stocktake.js'].forEach((f) => new Function('window', read(f))(win));
   B = win.WmsBook;
   C = win.WmsFireCore;
   TR = win.WmsFireTrc;
+  DOC = win.WmsFireDocs;
   W = win.WmsFire;
   S = win.WmsStocktake;
   /* wms-fire.js เรียก window.WmsFireTrc ตอนใช้งาน: ฟังก์ชันขั้น 3 ต้องเห็นตัวเดียวกัน */
   globalThis.window = globalThis.window || win;
   globalThis.window.WmsFireTrc = TR;
+  globalThis.window.WmsFireCore = globalThis.window.WmsFireCore || C;
 });
 
 const NOW = Date.UTC(2026, 10, 10, 3, 0, 0);   // 10 พ.ย. 2569 10:00 เวลาไทย
@@ -1726,5 +1728,178 @@ describe('WmsFire เลขเอกสารคร่อมเที่ยง�
     expect(rules).toContain('monthOk(m.month) && d.no ==');
     expect(rules).toContain('monthOk(d.month) && d.month >= prevMonth && d.next == prevNext + 1');
     expect(rules).not.toMatch(/thaiMonth\(\)/);
+  });
+});
+
+describe('แอปสมุดสต๊อก: หน้าวันนี้ ค้นเอกสาร ดูทีละใบ (wms-fire-docs.js)', () => {
+  /* T2611-0001 ยอดยกมา · 0002 ย้าย · 0003 เข้า QA · 0004 รับของ ไม่มีเลข · 0005 รับของ มีเลข · 0006 ตัดขาย · 0007 ปรับยอด */
+  async function ready() {
+    const x = await both();
+    await x.open();
+    ok(await x.staff.post('bk-move', body('m-1', [mv3()])));
+    ok(await x.staff.post('bk-move', body('m-2', [QA_MV])));
+    ok(await x.staff.post('bk-gr', body('g-1', [GR3])));
+    ok(await x.staff.post('bk-gr', body('g-2', [[...GR3, 'GR6911-0001']])));
+    ok(await x.staff.post('bk-cut', cutBody('c-1', [saleLine('77', 1)])));
+    ok(await x.head.post('bk-adj', body('a-1', [ADJ3], { lines: ADJ_LINES })));
+    await x.head.sync();
+    return x;
+  }
+
+  it('สรุปทุกใบ ใหม่สุดก่อน พร้อมสถานะ TRcloud จำนวนออเดอร์ และคำไว้ค้น', async () => {
+    const x = await ready();
+    const list = DOC.index(x.head.local());
+    expect(list.map((d) => d.no)).toEqual(['T2611-0007', 'T2611-0006', 'T2611-0005', 'T2611-0004', 'T2611-0003', 'T2611-0002', 'T2611-0001']);
+    expect(list.map((d) => d.state)).toEqual(['wait', 'none', 'done', 'wait', 'wait', 'none', 'none']);
+    const sale = list.find((d) => d.no === 'T2611-0006');
+    expect(sale).toMatchObject({ type: 'ตัดขาย', name: 'ทดลอง', by: STAFF_EMAIL, rows: 1, qty: 1, orders: 1, voided: null, link: '' });
+    expect(sale.text).toContain('on77');
+    expect(sale.text).toContain('th77');
+    expect(list.find((d) => d.no === 'T2611-0005').text).toContain('gr6911-0001');
+  });
+
+  it('ค้น: ทุกคำต้องเจอ · ประเภท · รอลง TRcloud · ของฉัน · ช่วงวัน · นับต่อชิปให้ถูก', async () => {
+    const x = await ready();
+    const list = DOC.index(x.head.local());
+    const q = (o) => DOC.search(list, o, NOW);
+    expect(q({ text: 'TH77' }).list.map((d) => d.no)).toEqual(['T2611-0006']);
+    expect(q({ text: 'r01-02-01 p9' }).list.map((d) => d.no)).toEqual(['T2611-0005', 'T2611-0004']);
+    expect(q({ text: 'r01-02-01 gr6911' }).list.map((d) => d.no)).toEqual(['T2611-0005']);
+    expect(q({ text: 'ไม่มีคำนี้' }).total).toBe(0);
+    expect(q({ type: 'รับของ' }).list.map((d) => d.no)).toEqual(['T2611-0005', 'T2611-0004']);
+    expect(q({ status: 'wait' }).list.map((d) => d.no)).toEqual(['T2611-0007', 'T2611-0004', 'T2611-0003']);
+    expect(q({ status: 'mine', email: HEAD_EMAIL }).list.map((d) => d.no)).toEqual(['T2611-0007', 'T2611-0001']);
+    const all = q({ status: 'wait' });
+    expect(all.types).toEqual({ 'ปรับยอด': 1, 'รับของ': 1, 'ย้าย': 1 });
+    expect(all.states).toEqual({ wait: 3, void: 0, mine: 0 });
+    expect(q({ type: 'รับของ', email: STAFF_EMAIL }).states).toEqual({ wait: 1, void: 0, mine: 2 });
+    /* ช่วงวันดูวันที่ของเอกสาร (ชุดนี้ลงวันที่ 10 พ.ย.) */
+    expect(q({ range: 'today' }).total).toBe(7);
+    expect(q({ range: 'today' }).from).toBe('2026-11-10');
+    expect(DOC.search(list, { range: 'today' }, NOW + 2 * DAY).total).toBe(0);
+    expect(DOC.search(list, { range: 'd7' }, NOW + 2 * DAY).total).toBe(7);
+    expect(DOC.rangeOf('month', NOW)).toEqual(['2026-11-01', '2026-11-10']);
+    expect(DOC.rangeOf('d30', NOW)).toEqual(['2026-10-12', '2026-11-10']);
+    expect(DOC.rangeOf('all', NOW)).toEqual(['', '']);
+    expect(DOC.search(list, { max: 2 }, NOW)).toMatchObject({ total: 7, all: 7 });
+    expect(DOC.search(list, { max: 2 }, NOW).list).toHaveLength(2);
+  });
+
+  it('ดูทีละใบ: ขั้นตอน ประวัติ สิ่งที่ต้องทำใน TRcloud · ยกเลิกแล้วเห็นใบกลับรายการ และใบกลับรายการชี้กลับใบเดิม', async () => {
+    const x = await ready();
+    const gr = DOC.view(x.head.local(), 'T2611-0004');
+    expect(gr).toMatchObject({ type: 'รับของ', state: 'wait', kind: 'number', canVoid: true, voided: null, back: null, orig: null });
+    expect(gr.need).toMatch(/สร้าง GR ใน TRcloud/);
+    expect(gr.steps.map((s) => [s.k, s.state])).toEqual([['save', 'done'], ['tr', 'now']]);
+    expect(gr.rows).toHaveLength(1);
+    expect(DOC.view(x.head.local(), 'T2611-0006').steps.map((s) => s.k)).toEqual(['save']);   // ตัดขายไม่เกี่ยวกับ TRcloud ของคลัง
+    expect(DOC.view(x.head.local(), 'T2611-0006').lines[0]).toMatchObject({ order: '77', ref: 'ON77', track: 'TH77' });
+    expect(DOC.view(x.head.local(), 'T2611-0001')).toMatchObject({ open: true, canVoid: false });
+    expect(DOC.view(x.head.local(), 'T2611-9999')).toBe(null);
+
+    x.tick(60000);
+    ok(await x.staff.trSave([{ no: 'T2611-0004', tr: 'GR6911-0002', state: 'done' }]));
+    ok(await x.head.post('bk-void', { doc: 'T2611-0004', why: 'รับผิด PO' }));   // 0008
+    await x.head.sync();
+    const v = DOC.view(x.head.local(), 'T2611-0004');
+    expect(v).toMatchObject({ state: 'done', tr: 'GR6911-0002', canVoid: false, back: { no: 'T2611-0008', name: 'หัวหน้าทดลอง' } });
+    expect(v.voided).toMatchObject({ by: 'หัวหน้าทดลอง', why: 'รับผิด PO', link: 'T2611-0008' });
+    expect(v.steps.map((s) => [s.k, s.state])).toEqual([['save', 'done'], ['tr', 'done'], ['void', 'void']]);
+    expect(v.steps[1]).toMatchObject({ tr: 'GR6911-0002', who: STAFF_EMAIL });
+    expect(v.history.map((h) => h.what)).toEqual(['บันทึกรับของ · 1 แถว 3 ชิ้น', 'ใส่เลข TRcloud GR6911-0002', 'ยกเลิก · รับผิด PO']);
+    expect(v.history[2]).toMatchObject({ link: 'T2611-0008', linkTh: 'ลงกลับเป็น' });
+    expect(v.history[1].at).toBe(C.stamp(NOW + 60000));
+    const r = DOC.view(x.head.local(), 'T2611-0008');
+    expect(r).toMatchObject({ rev: true, canVoid: false, state: 'wait', kind: 'number', orig: { no: 'T2611-0004', type: 'รับของ' } });
+    expect(r.need).toMatch(/สร้าง GR/);
+    expect(r.steps[0].label).toBe('ลงกลับ');
+    expect(r.history[0]).toMatchObject({ what: 'ลงกลับรายการ · รับผิด PO · 1 แถว 3 ชิ้น', link: 'T2611-0004', linkTh: 'ของ' });
+    /* หน้าวันนี้: ใบที่ยกเลิกไม่นับในงานของประเภทนั้น (นับแยก) */
+    expect(DOC.home(x.head.local(), NOW + 60000, HEAD_EMAIL).types['รับของ']).toEqual({ n: 1, qty: 3, void: 1 });
+    /* ในรายการ: ใบเดิมมีป้ายยกเลิก ใบกลับรายการมีลิงก์ใบเดิม · ชิปยกเลิกแล้วนับถูก */
+    const list = DOC.index(x.head.local());
+    expect(list.find((d) => d.no === 'T2611-0004').voided.link).toBe('T2611-0008');
+    expect(list.find((d) => d.no === 'T2611-0008').link).toBe('T2611-0004');
+    expect(DOC.search(list, { status: 'void' }, NOW).list.map((d) => d.no)).toEqual(['T2611-0004']);
+    expect(DOC.search(list, { text: 'T2611-0004' }, NOW).list.map((d) => d.no)).toEqual(['T2611-0008', 'T2611-0004']);
+  });
+
+  it('หน้าวันนี้: ใบที่บันทึกวันนี้ต่อประเภท ของฉัน รอลง TRcloud เก่าสุดกี่วัน ไม่นับยอดยกมา', async () => {
+    const x = await ready();
+    const h = DOC.home(x.head.local(), NOW, STAFF_EMAIL);
+    expect(h).toMatchObject({ day: '2026-11-10', total: 6, mine: 5, open: true, trcDay: '' });
+    expect(h.types).toEqual({ 'ย้าย': { n: 2, qty: 2, void: 0 }, 'รับของ': { n: 2, qty: 6, void: 0 }, 'ตัดขาย': { n: 1, qty: 1, void: 0 }, 'ปรับยอด': { n: 1, qty: 2, void: 0 } });
+    expect(h.wait).toEqual({ n: 3, oldest: '2026-11-10', days: 0, file: 2, number: 1 });
+    expect(h.last.map((d) => d.no)).toEqual(['T2611-0007', 'T2611-0006', 'T2611-0005', 'T2611-0004', 'T2611-0003', 'T2611-0002']);
+    const later = DOC.home(x.head.local(), NOW + 3 * DAY, HEAD_EMAIL);
+    expect(later).toMatchObject({ total: 0, mine: 0, last: [] });
+    expect(later.wait).toMatchObject({ n: 3, days: 3 });
+  });
+
+  it('BookFire โหลด wms-fire-docs.js ก่อน wms-fire.js และเปิด home / docs / doc ให้หน้าแอป', () => {
+    const js = read('book/book-fire.js');
+    expect(js.indexOf("script('../wms-fire-docs.js')")).toBeGreaterThan(js.indexOf("script('../wms-fire-trc.js')"));
+    expect(js.indexOf("script('../wms-fire-docs.js')")).toBeLessThan(js.indexOf("script('../wms-fire.js')"));
+    for (const k of ['home: function', 'docs: function', 'doc: function']) expect(js).toContain(k);
+  });
+});
+
+describe('แอปสมุดสต๊อก: หน้าเว็บ เมนูของแอป ป้ายรหัสเครื่อง ติดตั้งเป็นแอป', () => {
+  const html = () => read('book/index.html');
+  const head = () => html().split('</head>')[0];
+
+  it('ระบบใหม่ข้ามป้ายรหัสเครื่อง (เข้าด้วย Google แทน) · ระบบเดิมยังมีป้ายเหมือนเดิม', () => {
+    const h = head();
+    const at = (s) => h.indexOf(s);
+    expect(at('<script src="../wms-fire-config.js"></script>')).toBeGreaterThan(0);
+    expect(at('<script src="../wms-fire-config.js"></script>')).toBeLessThan(at('<script src="book-fire.js"></script>'));
+    expect(at('<script src="book-fire.js"></script>')).toBeLessThan(at('window.WMS_GATE_OFF = 1'));
+    expect(at('window.WMS_GATE_OFF = 1')).toBeLessThan(at('<script src="../wms-gate.js"></script>'));
+    expect(h).toContain("<script>if (window.BookFire) { window.WMS_GATE_OFF = 1; document.documentElement.classList.add('bk-app'); }</script>");
+    /* โหลดครั้งเดียว ไม่ซ้ำในท้ายหน้า */
+    expect(html().match(/book-fire\.js/g)).toHaveLength(1);
+    expect(html().match(/wms-fire-config\.js/g)).toHaveLength(1);
+    /* ป้ายรหัสเครื่องหยุดก่อนล็อกหน้า เฉพาะหน้าที่ตั้ง WMS_GATE_OFF */
+    const gate = read('wms-gate.js');
+    expect(gate.indexOf('if (window.WMS_GATE_OFF) return;')).toBeGreaterThan(0);
+    expect(gate.indexOf('if (window.WMS_GATE_OFF) return;')).toBeLessThan(gate.indexOf("classList.add('wms-locked')"));
+    const others = ['stock-location/index.html', 'fifo/index.html', 'cut-check/index.html'];
+    for (const p of others) expect(read(p), p).not.toContain('WMS_GATE_OFF');
+  });
+
+  it('สคริปต์ของแอปโหลดหลังแท็บ TRcloud ก่อนสคริปต์ในหน้า · เมนูของแอปมีที่วาง · หน้าเดิมใช้แท็บเดิมเมื่อไม่ใช่ระบบใหม่', () => {
+    const s = html();
+    expect(s.indexOf('<script src="book-fire-trc.js"></script>')).toBeLessThan(s.indexOf('<script src="book-app.js"></script>'));
+    expect(s.indexOf('<script src="book-app.js"></script>')).toBeLessThan(s.indexOf('const $ = id =>'));
+    expect(s).toContain('<nav class="bk-nav" id="bkNav" hidden aria-label="เมนูสมุดสต๊อก"></nav>');
+    expect(s).toContain("const APP = window.BookApp && window.BookApp.on ? window.BookApp : null;");
+    expect(s).toContain('if (APP) return APP.tabs();');
+    const app = read('book/book-app.js');
+    expect(app).toContain('var ON = !!window.BookFire;');
+    /* เมนูของหัวหน้า */
+    for (const k of ["{ k: 'adj', t: 'ปรับยอด', head: 1 }", "{ k: 'rows', t: 'ตารางแบบเดิม', head: 1 }", "{ k: 'close', t: 'ปิดวัน / เดือน', head: 1 }"]) expect(app).toContain(k);
+    /* ปิดวัน / เดือน = ตรวจยอด ชีตเดิม ปิดเดือน · ตั้งค่าไม่มีสามอย่างนี้แล้ว */
+    const set = read('book/book-fire-set.js');
+    expect(set).toContain("[['check', '① ตรวจยอด'], ['xfer', '② วางชีตเดิม'], ['arch', '③ ปิดเดือน']]");
+    expect(set).toContain("[['users', '👥 คนใช้และสิทธิ์'], ['open', '📥 ยอดยกมา'], ['backup', '💾 สำรอง'], ['quota', '📊 โควตาฟรี']]");
+  });
+
+  it('ติดตั้งเป็นแอปได้: manifest ชี้ไอคอน 192 กับ 512 ที่มีจริง เปิดแบบหน้าต่างแอปในขอบเขตหน้าสมุด', () => {
+    expect(head()).toContain('<link rel="manifest" href="manifest.webmanifest">');
+    const m = JSON.parse(read('book/manifest.webmanifest'));
+    expect(m).toMatchObject({ start_url: './', scope: './', display: 'standalone', short_name: 'สมุดสต๊อก' });
+    expect(m.icons.map((i) => i.sizes).sort()).toEqual(['192x192', '512x512']);
+    for (const i of m.icons) {
+      const f = path.resolve(__dirname, '../../public/book', i.src);
+      expect(fs.existsSync(f), i.src).toBe(true);
+      const b = fs.readFileSync(f);
+      expect(`${b.readUInt32BE(16)}x${b.readUInt32BE(20)}`, i.src).toBe(i.sizes);
+    }
+  });
+
+  it('ไฟล์ใหม่ของแอปไม่มี URL key หรือ config ของ Firebase จริง', () => {
+    const src = read('wms-fire-docs.js') + read('book/book-app.js');
+    expect(src).not.toMatch(/AIza[0-9A-Za-z_-]{20,}|firebaseapp\.com|script\.google\.com|apiKey\s*:/);
+    expect(src.match(/https?:\/\/[^'"\s)]+/g) || []).toEqual([]);
   });
 });

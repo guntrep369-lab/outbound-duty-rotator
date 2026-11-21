@@ -37,6 +37,16 @@ describe('เมนูข้าง', () => {
     expect(inGroups).not.toContain('data-mod="stocktake"');
   });
 
+  it('สมุดสต๊อกเป็นเมนูเดี่ยวของทีม Inventory ต่อจากนับสต๊อกใหญ่ ไอคอนไม่ซ้ำสมุดกะ', () => {
+    const html = sidebarHTML('stock', '../');
+    expect(mods(html).slice(0, 3)).toEqual(['shiftlog', 'stocktake', 'book']);
+    expect(html).toMatch(/data-mod="book"[^>]*><svg class="sysmod-ic"/);
+    const inGroups = [...html.matchAll(/<div class="sysgrp-items"[^>]*>(.*?)<\/div>/g)].map((m) => m[1]).join('');
+    expect(inGroups).not.toContain('data-mod="book"');
+    const book = MODULES.find((m) => m.id === 'book'), log = MODULES.find((m) => m.id === 'shiftlog');
+    expect(book.icon).not.toBe(log.icon);
+  });
+
   it('เปิดหน้าที่ซ่อนอยู่ — เมนูยังโชว์หน้านั้นเป็นหน้าปัจจุบัน', () => {
     const html = sidebarHTML('summary', '../');
     expect(mods(html)).toContain('summary');
@@ -68,7 +78,7 @@ describe('หมวดในเมนูพับเก็บได้', () => {
     const g = groups(html);
     expect(Object.keys(g)).toEqual(['order', 'warehouse', 'inventory', 'transport', 'system']);
     expect(g.inventory).toMatchObject({ open: true, here: true, expanded: true, hidden: false });
-    expect(g.inventory.items).toEqual(['dashboard', 'txstock', 'book', 'cutcheck', 'lotpo', 'invmatch', 'fifo', 'balance', 'mfg']);
+    expect(g.inventory.items).toEqual(['dashboard', 'txstock', 'cutcheck', 'lotpo', 'invmatch', 'fifo', 'balance', 'mfg']);
     for (const id of ['order', 'warehouse', 'transport', 'system']) {
       expect(g[id], id).toMatchObject({ open: false, here: false, expanded: false, hidden: true });
     }

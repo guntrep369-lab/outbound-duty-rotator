@@ -177,6 +177,7 @@
   var ready = (async function () {
     await script('../wms-fire-core.js');
     await script('../wms-fire-trc.js');
+    await script('../wms-fire-docs.js');
     await script('../wms-fire.js');
     if (MODE === 'live') await startLive(window.WmsFire);
     else await startLocal(window.WmsFire);
@@ -224,6 +225,15 @@
     }
     lsSet(NO, String(n));
     return out.join('\n');
+  }
+
+  /* หน้า เอกสาร: สรุปทุกใบคิดใหม่เมื่อสำเนาในเครื่องเปลี่ยน (เอกสารใหม่ เลข TRcloud ใหม่) */
+  var IDX = { key: '', list: [] }, trVer = 0;
+  function docList() {
+    if (!fire || !window.WmsFireDocs) return [];
+    var l = fire.local(), k = l.seq + ':' + l.docs.length + ':' + (l.trAt || 0) + ':' + (l.tv || 0) + ':' + trVer;
+    if (k !== IDX.key) IDX = { key: k, list: window.WmsFireDocs.index(l) };
+    return IDX.list;
   }
 
   window.BookFire = {
@@ -298,7 +308,7 @@
     usage: function () { return fire ? fire.usage() : null; },
     /* ขั้น 3 */
     trList: async function () { await ready; return fire.trList(); },
-    trSave: async function (items) { await ready; return fire.trSave(items); },
+    trSave: async function (items) { await ready; var r = await fire.trSave(items); trVer++; return r; },
     trFile: function (nos) { return fire.trFile(nos); },
     trc: async function () { await ready; return fire.trc(); },
     trcSave: async function (parsed, day, files) { await ready; return fire.trcSave(parsed, day, files); },
@@ -308,6 +318,10 @@
     xferText: function (day, after) { return fire.xferText(day, after); },
     xferMark: async function (day, info) { await ready; return fire.xferMark(day, info); },
     backup: async function () { await ready; return fire.backup(); },
+    /* แอปสมุดสต๊อก: หน้า วันนี้ / เอกสาร คิดจากสำเนาในเครื่อง ไม่อ่านฐาน (ยังไม่พร้อม = null / []) */
+    home: function () { return fire && window.WmsFireDocs ? window.WmsFireDocs.home(fire.local(), clockNow(), (fire.user() || {}).email || '') : null; },
+    docs: function (q) { return window.WmsFireDocs ? window.WmsFireDocs.search(docList(), Object.assign({ email: fire && fire.user() ? fire.user().email : '' }, q || {}), clockNow()) : null; },
+    doc: function (no) { return fire && window.WmsFireDocs ? window.WmsFireDocs.view(fire.local(), no) : null; },
     archInfo: async function () { await ready; return fire.archInfo(); },
     archClose: async function () { await ready; return fire.archClose(); },
     /**

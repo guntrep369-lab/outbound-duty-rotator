@@ -7,7 +7,14 @@
 <link rel="icon" type="image/png" sizes="32x32" href="../wms-icon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="../wms-logo.png">
 <link rel="apple-touch-icon" href="../wms-icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#4F46E5">
 <link rel="stylesheet" href="../wms-theme.css">
+<link rel="stylesheet" href="book-app.css">
+<!-- ระบบใหม่เลือกโหมดตอนโหลด: เปิดอยู่ = แอปสมุดสต๊อกของทีม Inventory (เข้าด้วย Google ของบริษัท ไม่ใช้ป้ายรหัสเครื่อง) -->
+<script src="../wms-fire-config.js"></script>
+<script src="book-fire.js"></script>
+<script>if (window.BookFire) { window.WMS_GATE_OFF = 1; document.documentElement.classList.add('bk-app'); }</script>
 <link rel="stylesheet" href="../wms-gate.css">
 <script src="../wms-gate.js"></script>
 <style>
@@ -224,6 +231,7 @@ select.fs-in{min-width:110px;cursor:pointer}
 
 <div class="wms-shell">
 <div data-wms-shell="book" data-root="../"></div>
+<nav class="bk-nav" id="bkNav" hidden aria-label="เมนูสมุดสต๊อก"></nav>
 <div class="wms-main">
 
   <div class="mod-head">
@@ -258,10 +266,9 @@ select.fs-in{min-width:110px;cursor:pointer}
 <script src="../wms-book.js"></script>
 <script src="book-grid.js"></script>
 <script src="book-set.js"></script>
-<script src="../wms-fire-config.js"></script>
-<script src="book-fire.js"></script>
 <script src="book-fire-set.js"></script>
 <script src="book-fire-trc.js"></script>
+<script src="book-app.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -277,7 +284,10 @@ const MODE_KEY = 'wms:book:draft:mode';   // แท็บที่เปิด�
 const MODES = [['cut', 'ตัดขาย'], ['gr', 'รับของ'], ['move', 'ย้าย / เติม / QA'], ['ret', 'คืนของ'], ['conv', 'แปลงสินค้า'],
   ['adj', 'ปรับยอด'], ['rows', 'ตารางแบบเดิม'], ['trc', '🔁 TRcloud'], ['set', '⚙️ สมุดใหม่']];
 const HEAD_ONLY = { adj: 1, rows: 1, set: 1 };   // แท็บของหัวหน้ากับรองหัวหน้า
-let MODE = (() => { try { const m = localStorage.getItem(MODE_KEY); return MODES.some((x) => x[0] === m) ? m : 'cut'; } catch (e) { return 'cut'; } })();
+/* ระบบใหม่ = แอปสมุดสต๊อก (book-app.js): เมนูของแอปแทนแท็บ มีหน้า วันนี้ เอกสาร ปิดวัน/เดือน เพิ่ม · เปิดมาเจอหน้าวันนี้ */
+const APP = window.BookApp && window.BookApp.on ? window.BookApp : null;
+const APP_PAGES = { home: 1, docs: 1, close: 1 };   // หน้าของแอปที่ไม่ใช่งานลงรายการ
+let MODE = APP ? APP.start() : (() => { try { const m = localStorage.getItem(MODE_KEY); return MODES.some((x) => x[0] === m) ? m : 'cut'; } catch (e) { return 'cut'; } })();
 const RETRY_MS = 30000;   // ชุดที่ส่งไม่สำเร็จเพราะเน็ต ส่งซ้ำเองทุกเท่านี้
 
 const FIRE = window.BookFire;   // ระบบใหม่ (live สวิตช์เปิด · demo โหมดซ้อม · dev ลองบน localhost) ไม่งั้น null = Apps Script เดิม
@@ -399,6 +409,7 @@ function bookUrl() { return FIRE ? 'fire:dev' : WmsSettings.bookUrl(); }
 function bookMode() { return !!(BSTATE && BSTATE.mode === 'book'); }
 function isHead() { return !!(USER && USER.role === HEAD_ROLE); }
 function tabs() {
+  if (APP) return APP.tabs();
   /* ระบบใหม่: แท็บตั้งค่าเห็นทุกคน (คนลงรายการเห็นตัวนับโควตาและสำเนาเครื่องตัวเอง) */
   /* แท็บ TRcloud (รอลง กระทบยอด นำเข้า) มีเฉพาะระบบใหม่ เห็นทุกคน */
   return MODES.filter((m) => (m[0] !== 'trc' || FIRE) && (!HEAD_ONLY[m[0]] || isHead() || (FIRE && m[0] === 'set')))
@@ -524,6 +535,7 @@ async function afterLogin(r) {
   render();
   await loadFire(false);
   await refreshState();
+  if (APP) APP.opened(MODE);   // หน้าวันนี้ของหัวหน้า: เช็ควางชีตเดิม / ปิดเดือน
   await refreshDocs();
   await refreshSeen();
   if (pendingCount()) queueRetry(1000);
@@ -699,7 +711,8 @@ function delHint(d, doc) {
 
 async function voidDoc(doc) {
   if (!USER || USER.role !== HEAD_ROLE) return;
-  const d = DOCS.find((x) => x.doc === doc);
+  const v = !DOCS.some((x) => x.doc === doc) && FIRE && FIRE.doc ? FIRE.doc(doc) : null;   // หน้าเอกสาร: ใบเก่ากว่า 3 วัน
+  const d = DOCS.find((x) => x.doc === doc) || (v ? { doc, type: v.type, book: true } : null);
   const type = d ? d.type : '';
   const book = !!(d && d.book);
   const ns = delHint(d, doc);
@@ -834,7 +847,8 @@ function renderSrc() {
     if (USER) {
       const n = pendingCount();
       if (n) html += `<span class="pill warn" title="ส่งไม่สำเร็จ ระบบส่งซ้ำเองทุก 30 วินาที">⏳ รอส่ง <b>${n}</b> ชุด</span>`;
-      html += `<span class="pill ok" title="${esc(USER.email)}">👤 <b>${esc(USER.who)}</b> · ${esc(USER.role)}</span><button id="bkOut">ออก</button>`;
+      /* แอป: ชื่อคนกับปุ่มออกอยู่ท้ายเมนูของแอป แถบบนเหลือแต่สต๊อก */
+      if (!APP) html += `<span class="pill ok" title="${esc(USER.email)}">👤 <b>${esc(USER.who)}</b> · ${esc(USER.role)}</span><button id="bkOut">ออก</button>`;
     }
   } else if (!url || SETURL) {
     html += `<span class="pill">สมุดสต๊อก</span><input class="bk-field bk-url" id="bkUrl" placeholder="Apps Script URL ของ book-api.gs" value="${esc(url)}">` +
@@ -1032,10 +1046,15 @@ function renderBody() {
 /* ── ชุดที่บันทึก ─────────────────────────────────────────────────────── */
 
 function renderDocs() {
-  if (!USER || !DOCS.length) { $('docs').innerHTML = ''; return; }
+  if (!USER || !DOCS.length || (APP && (APP_PAGES[MODE] || MODE === 'set' || MODE === 'trc'))) { $('docs').innerHTML = ''; return; }
+  /* แอป: เฉพาะเอกสารของแท็บนี้ (กับใบกลับรายการของมัน) · ดูทุกใบที่หน้าเอกสาร */
+  const want = APP ? APP.typeOf(MODE) : '';
+  const mine = want ? new Set(DOCS.filter((d) => d.type === want).map((d) => d.doc)) : null;
+  const list = mine ? DOCS.filter((d) => mine.has(d.doc) || (d.type === 'กลับรายการ' && mine.has(d.link))) : DOCS;
+  if (!list.length) { $('docs').innerHTML = ''; return; }
   const done = new Set(REF.done.map((d) => d.doc)), wait = new Set(REF.wait.map((d) => d.doc));
   const head = USER.role === HEAD_ROLE;
-  const rows = DOCS.map((d) => {
+  const rows = list.map((d) => {
     const v = d.status === 'ยกเลิก';
     const open = d.type === 'ยอดยกมา';
     const rev = d.type === 'กลับรายการ';
@@ -1050,15 +1069,19 @@ function renderDocs() {
     const voidBtn = head && !open && !rev && (!d.book || bookMode())
       ? ` <button class="bk-btn x" data-void="${esc(d.doc)}" ${d.book ? 'title="ลงแถวกลับในสมุดใหม่"' : ''}>${d.book ? '↩ ยกเลิก' : 'ยกเลิก'}</button>` : '';
     const type = rev && d.link ? `${esc(d.type)} <span class="c-sub">↩ ${esc(d.link)}</span>` : esc(d.type);
-    return `<tr${v ? ' class="r-void"' : ''}><td class="c-sku">${esc(d.doc)}</td><td>${type}</td><td>${esc(dm(d.date))}</td><td>${esc(d.who)}</td>` +
+    const no = APP ? `<td class="c-act"><button type="button" class="ba-no" data-doc="${esc(d.doc)}">${esc(d.doc)}</button></td>` : `<td class="c-sku">${esc(d.doc)}</td>`;
+    return `<tr${v ? ' class="r-void"' : ''}>${no}<td>${type}</td><td>${esc(dm(d.date))}</td><td>${esc(d.who)}</td>` +
       `<td class="c-sub">${esc(String(d.at).slice(5, 16))}</td><td class="c-sub">${esc(d.tr || '')}</td><td class="num">${f(d.rows)}</td><td class="num">${f(d.qty)}</td><td class="num">${d.orders ? f(d.orders) : ''}</td>` +
       `<td>${st}</td><td class="c-act">${v ? '' : copyBtn + voidBtn}</td></tr>`;
   });
-  $('docs').innerHTML = `<div class="bk-dh"><b>ชุดที่บันทึก</b> 3 วันล่าสุด ทุกแท็บ · ${FIRE ? 'หัวหน้ากด ↩ ยกเลิก = ลงกลับเป็นเอกสารใหม่' : bookMode() ?'โหมดบันทึก ทุกชุดลงไฟล์ WMS สมุดสต๊อก แล้ว' : 'ในสมุด = เห็นแถวในสต๊อกที่ดึงมาแล้ว'}</div>` +
+  $('docs').innerHTML = APP ? `<div class="bk-dh"><b>${esc(want || 'ชุดที่บันทึก')}</b> 3 วันล่าสุด · กดเลขที่ดูทีละใบ · หัวหน้ากด ↩ ยกเลิก = ลงกลับเป็นเอกสารใหม่ <button type="button" class="bk-link" data-mode="docs">ค้นทุกใบ ›</button></div>` +
+    table([['เลขที่'], ['ประเภท'], ['วันที่'], ['ผู้ลง'], ['บันทึกเมื่อ'], ['เลข TRcloud'], ['แถว', 'num'], ['ชิ้น', 'num'], ['ออเดอร์', 'num'], ['ในสมุด'], ['', 'c-act']], rows)
+    : `<div class="bk-dh"><b>ชุดที่บันทึก</b> 3 วันล่าสุด ทุกแท็บ · ${FIRE ? 'หัวหน้ากด ↩ ยกเลิก = ลงกลับเป็นเอกสารใหม่' : bookMode() ?'โหมดบันทึก ทุกชุดลงไฟล์ WMS สมุดสต๊อก แล้ว' : 'ในสมุด = เห็นแถวในสต๊อกที่ดึงมาแล้ว'}</div>` +
     table([['เลขที่'], ['ประเภท'], ['วันที่'], ['ผู้ลง'], ['บันทึกเมื่อ'], ['เลข TRcloud'], ['แถว', 'num'], ['ชิ้น', 'num'], ['ออเดอร์', 'num'], ['ในสมุด'], ['', 'c-act']], rows);
 }
 
 function renderTabs() {
+  if (APP) { $('tabs').innerHTML = ''; return; }   // แอป: เมนูอยู่แถบซ้าย / ☰ บนมือถือ
   $('tabs').innerHTML = tabs().map(([k, t]) => {
     const dot = (k === 'cut' ? !!PENDING : BookGrid.pending(k)) ? '<span class="dot" title="มีชุดที่ส่งค้าง"></span>' : '';
     return `<button class="bk-tab${MODE === k ? ' on' : ''}" role="tab" aria-selected="${MODE === k}" data-mode="${k}">${t}${dot}</button>`;
@@ -1066,11 +1089,14 @@ function renderTabs() {
 }
 
 function render() {
-  if (!tabs().some((m) => m[0] === MODE)) MODE = 'cut';   // ออกจากระบบหรือไม่ใช่หัวหน้า แท็บของหัวหน้าหายไป
+  if (!tabs().some((m) => m[0] === MODE)) MODE = APP ? 'home' : 'cut';   // ออกจากระบบหรือไม่ใช่หัวหน้า แท็บของหัวหน้าหายไป
   renderSrc();
+  if (APP) APP.nav();
   if (FIRE && !USER) { renderLogin(); return; }
   renderTabs();
-  if (MODE === 'set') {
+  if (APP && (MODE === 'home' || MODE === 'docs')) {
+    APP.render(MODE);
+  } else if (MODE === 'set' || MODE === 'close') {
     if (FIRE) BookFireSet.render(); else BookSet.render();
   } else if (MODE === 'trc') {
     BookFireTrc.render();
@@ -1092,8 +1118,9 @@ function setMode(m) {
   LAST = null; MSG = null;
   $('body').innerHTML = '';
   $('sum').innerHTML = '';
+  if (APP) APP.opened(m);
   render();
-  if (m === 'set') refreshState().then(() => { render(); if (FIRE) BookFireSet.opened(); });
+  if (m === 'set' || m === 'close') refreshState().then(() => { render(); if (FIRE) BookFireSet.opened(); });
   if (m === 'trc') BookFireTrc.opened();
 }
 
@@ -1175,6 +1202,7 @@ document.addEventListener('paste', (e) => {
   if (!text || !text.trim()) return;
   e.preventDefault();
   if (FIRE && !USER) return;
+  if (APP_PAGES[MODE]) return;   // หน้าวันนี้ เอกสาร ปิดวัน ไม่มีตารางให้วาง
   if (MODE === 'set') { if (FIRE) BookFireSet.paste(text); return; }
   if (MODE === 'trc') { BookFireTrc.paste(text); return; }
   if (MODE !== 'cut') { BookGrid.pasteAppend(MODE, text); return; }

@@ -9,6 +9,9 @@
  *   🗄️ ปิดเดือน (หัวหน้า)       รวมเอกสารของเดือนที่จบแล้วเป็นก้อน เครื่องใหม่ / โหลดใหม่ทั้งหมด อ่านไม่กี่ก้อนแทนทีละเอกสาร
  *   📊 โควตาฟรี                อ่าน/เขียนวันนี้ของเครื่องนี้และทุกเครื่องที่ส่งยอดมา
  *
+ * แอปสมุดสต๊อก: แยกเป็นสองเมนู
+ *   🌙 ปิดวัน / เดือน (หัวหน้า)  ① ตรวจยอด ② วางชีตเดิม ③ ปิดเดือน — งานประจำวันและต้นเดือน
+ *   ⚙️ ตั้งค่า                  คนใช้และสิทธิ์ ยอดยกมา สำรอง โควตาฟรี (คนลงรายการ: สำเนาเครื่องนี้ โควตาฟรี)
  * ใช้ตัวแปรและฟังก์ชันของสคริปต์ในหน้า (FIRE USER BSTATE BKBUSY RES esc f table isHead bookPost refreshState refreshDocs compute render xlsxLib)
  * ตอนถูกเรียกเท่านั้น ไฟล์นี้โหลดก่อนสคริปต์ในหน้า เปิดเป็น window.BookFireSet
  */
@@ -16,7 +19,8 @@
   'use strict';
 
   var SEC_KEY = 'wms:book:fire:sec';
-  var SEC = (function () { try { return localStorage.getItem(SEC_KEY) || ''; } catch (e) { return ''; } })();
+  var KEYS = { set: SEC_KEY, close: SEC_KEY + ':close' };
+  var SECS = { set: lsGet(KEYS.set), close: lsGet(KEYS.close) };   // ส่วนที่เปิดค้างต่อเมนู
   var NOTE = null;        // { kind: ok|bad|warn, html }
   var BUSY = '';
   var USERS = null, USERS_FOR = '';
@@ -29,24 +33,29 @@
   var ADD = { name: '', email: '', role: 'staff' };
   var ROLE_TH = { head: 'หัวหน้า', staff: 'ลงรายการ', viewer: 'ดูอย่างเดียว' };
 
+  function lsGet(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
   function $(id) { return document.getElementById(id); }
   function head() { return isHead(); }
+  /** เมนูที่เปิดอยู่: close = ปิดวัน / เดือน · set = ตั้งค่า */
+  function grp() { return typeof MODE !== 'undefined' && MODE === 'close' ? 'close' : 'set'; }
   function C() { return window.WmsFireCore; }
   function when(ms) {
     return ms ? new Date(ms).toLocaleString('th-TH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
   }
   function hm(ms) { return new Date(ms).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }); }
-  function secs() {
-    return head() ? [['users', '👥 คนใช้และสิทธิ์'], ['open', '📥 ยอดยกมา'], ['check', '🔍 ตรวจยอด'], ['xfer', '📋 ชีตเดิม'], ['backup', '💾 สำรอง'], ['arch', '🗄️ ปิดเดือน'], ['quota', '📊 โควตาฟรี']]
+  function secs(g) {
+    if ((g || grp()) === 'close') return head() ? [['check', '① ตรวจยอด'], ['xfer', '② วางชีตเดิม'], ['arch', '③ ปิดเดือน']] : [['check', '🔍 สำเนาเครื่องนี้']];
+    return head() ? [['users', '👥 คนใช้และสิทธิ์'], ['open', '📥 ยอดยกมา'], ['backup', '💾 สำรอง'], ['quota', '📊 โควตาฟรี']]
       : [['check', '🔍 สำเนาเครื่องนี้'], ['quota', '📊 โควตาฟรี']];
   }
   function sec() {
-    if (!secs().some(function (s) { return s[0] === SEC; })) SEC = head() ? (BSTATE && BSTATE.open ? 'users' : 'open') : 'quota';
-    return SEC;
+    var g = grp();
+    if (!secs(g).some(function (s) { return s[0] === SECS[g]; })) SECS[g] = g === 'close' ? 'check' : head() ? (BSTATE && BSTATE.open ? 'users' : 'open') : 'quota';
+    return SECS[g];
   }
+  function keepSec(g, s) { SECS[g] = s; try { localStorage.setItem(KEYS[g], s); } catch (e) {} }
   function setSec(s) {
-    SEC = s; NOTE = null;
-    try { localStorage.setItem(SEC_KEY, s); } catch (e) {}
+    keepSec(grp(), s); NOTE = null;
     renderAll();
     need();
   }
@@ -123,7 +132,7 @@
     }).join('');
     var tip = s === 'quota' && Q ? 'ฟรีวันละ อ่าน ' + f(Q.limits.reads) + ' · เขียน ' + f(Q.limits.writes) + '\nรีเซ็ตทุกวันเวลา ' + hm(Q.resetAt) + ' น. (เที่ยงคืนเวลาแปซิฟิก)\n' +
       'ทุกเครื่องส่งยอดของตัวเองชั่วโมงละครั้ง ตัวเลขรวมจึงช้ากว่าจริงได้ถึงหนึ่งชั่วโมง\nเครื่องที่ยังไม่ได้เปิดวันนี้ไม่มีในรายการ · ตัวเลขจริงทั้งระบบดูที่ Firebase console › Usage' : TIPS[s];
-    $('inp').innerHTML = '<div class="bk-top"><span class="bk-h">ตั้งค่า</span>' + chips +
+    $('inp').innerHTML = '<div class="bk-top"><span class="bk-h">' + (grp() === 'close' ? 'ปิดวัน / เดือน' : 'ตั้งค่า') + '</span>' + chips +
       (tip ? '<button type="button" class="g-tip" title="' + esc(tip) + '" aria-label="คำอธิบาย">ⓘ</button>' : '') +
       '<span class="sp"></span>' + (BUSY ? '<span>⏳ ' + esc(BUSY) + '</span>' : '<button class="tx-opt" id="fsRefresh">🔄</button>') + '</div>';
   }
@@ -550,7 +559,7 @@
 
   /* ── ปุ่มและช่อง (ทำงานเฉพาะแท็บตั้งค่าของระบบใหม่) ── */
 
-  function active() { return typeof MODE !== 'undefined' && MODE === 'set' && window.BookFire && USER; }
+  function active() { return typeof MODE !== 'undefined' && (MODE === 'set' || MODE === 'close') && window.BookFire && USER; }
 
   document.addEventListener('click', function (e) {
     if (!active()) return;
@@ -606,19 +615,21 @@
 
   window.BookFireSet = {
     render: render,
+    /** เปิดส่วนของเมนูนั้นไว้ก่อนสลับหน้า (การ์ดในหน้าวันนี้) g = set | close */
+    pick: function (g, s) { if (KEYS[g] && secs(g).some(function (x) { return x[0] === s; })) { keepSec(g, s); NOTE = null; } },
     /** เปิดแท็บ (หลังอ่านสถานะใหม่): โหลดส่วนที่ต้องใช้ */
     opened: function () { if (sec() === 'quota') Q = null; need(); },
     /** Ctrl+V ในแท็บตั้งค่า = ตารางยอดตั้งต้น (หัวหน้า) */
     paste: function (text) {
       if (!head()) return;
-      if (sec() !== 'open') { SEC = 'open'; try { localStorage.setItem(SEC_KEY, 'open'); } catch (e) {} }
+      if (sec() !== 'open') keepSec('set', 'open');
       var now = new Date();
       useGrid(WmsBook.gridOf(text), 'วางจากคลิปบอร์ด ' + now.getHours() + ':' + String(now.getMinutes()).padStart(2, '0'));
     },
     /** ลากไฟล์มาวางในแท็บตั้งค่า = ไฟล์ยอดตั้งต้น (หัวหน้า) */
     files: function (list) {
       if (!head() || !list.length) return;
-      if (sec() !== 'open') { SEC = 'open'; try { localStorage.setItem(SEC_KEY, 'open'); } catch (e) {} }
+      if (sec() !== 'open') keepSec('set', 'open');
       readFile(list[0]);
     },
   };
