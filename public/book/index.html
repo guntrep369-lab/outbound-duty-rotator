@@ -960,7 +960,12 @@ function actTail() {
   if (REF.wait.length && USER) {
     html += `<span title="บันทึกแล้วแต่ยังไม่เห็นแถวในสต๊อกที่ดึงมา คิดกองให้แล้วเหมือนวางแล้ว ถ้ายังไม่ได้วางในชีต ให้กดคัดลอกที่ตารางชุดด้านล่าง">⏳ ยังไม่เห็นในสมุด ${REF.wait.map((d) => esc(d.doc)).join(', ')} (คิดให้แล้ว)</span>`;
   }
-  if (LAST && LAST.book && FIRE) {
+  if (LAST && LAST.book && FIRE && APP && APP.okMode(MODE)) {
+    /* ใบย้าย / แปลง: พิมพ์ใบให้คนตรวจเซ็น แล้วตรวจ / อนุมัติในระบบตามหลัง */
+    html += `<div class="bk-msg ok">✅ บันทึก <b>${esc(LAST.doc)}</b> แล้ว ${f(LAST.copy.length)} แถว · ยอดเปลี่ยนแล้ว ` +
+      `<button class="bk-btn" data-print="${esc(LAST.doc)}">🖨 พิมพ์ใบ</button> <button class="bk-btn" data-doc="${esc(LAST.doc)}">เปิดใบ</button>` +
+      `<br><span class="c-sub">ต่อไป: ให้คนอื่นเช็คของจริงแล้วกด ตรวจแล้ว · หัวหน้ากด อนุมัติ (เมนูเอกสาร › รอตรวจ)</span></div>`;
+  } else if (LAST && LAST.book && FIRE) {
     html += `<div class="bk-msg ok">✅ บันทึก <b>${esc(LAST.doc)}</b> แล้ว ${f(LAST.copy.length)} แถว · ทุกเครื่องเห็นยอดใหม่ในหนึ่งนาที</div>`;
   } else if (LAST && LAST.book) {
     html += `<div class="bk-msg ok">✅ ลง <b>${esc(LAST.doc)}</b> ในสมุดแล้ว ${f(LAST.copy.length)} แถว (แท็บ Transaction แถว ${f(LAST.txAt)}${LAST.copy.length > 1 ? `–${f(LAST.txAt + LAST.copy.length - 1)}` : ''}) ไม่ต้องคัดลอก</div>`;
@@ -1058,10 +1063,11 @@ function renderDocs() {
     const v = d.status === 'ยกเลิก';
     const open = d.type === 'ยอดยกมา';
     const rev = d.type === 'กลับรายการ';
+    let okx = null;
     /* ชุดในสมุดใหม่ที่ยกเลิกแล้ว แถวยังอยู่ ถูกหักด้วยชุดกลับรายการ (ชุดที่เกี่ยว) */
     const st = v ? `<span class="c-sub" title="${esc(d.why)}">ยกเลิกโดย ${esc(d.voidBy)}${d.link ? ` · กลับด้วย ${esc(d.link)}` : ''}</span>`
       : open ? '<span class="c-sub">จุดเริ่มสมุดใหม่</span>'
-      : FIRE ? '<span class="c-ok">✓ บันทึกแล้ว</span>'
+      : FIRE ? (APP && FIRE.okOf && (okx = FIRE.okOf(d.doc)) && okx.ok ? APP.okChip(okx) : '<span class="c-ok">✓ บันทึกแล้ว</span>')
       : d.book ?(wait.has(d.doc) ? '<span class="c-ok" title="ลงไฟล์ WMS สมุดสต๊อก แล้ว สต๊อกที่ดึงมายังไม่เห็น คิดกองให้แล้ว">📗 ลงแล้ว · ⏳ รอสต๊อก</span>' : '<span class="c-ok">📗 ลงสมุดใหม่แล้ว</span>')
       : done.has(d.doc) ? '<span class="c-ok">✓ วางแล้ว</span>' : wait.has(d.doc) ? '<span class="c-warn">⏳ ยังไม่เห็น</span>' : '<span class="c-sub">—</span>';
     const copyBtn = open || FIRE || (d.book && !head) ? '' :`<button class="bk-btn" data-copy="${esc(d.doc)}" ${d.book ? 'title="ใช้ตอนถอยกลับไปชีตเดิมเท่านั้น"' : ''}>📋 คัดลอก</button>`;
@@ -1069,10 +1075,11 @@ function renderDocs() {
     const voidBtn = head && !open && !rev && (!d.book || bookMode())
       ? ` <button class="bk-btn x" data-void="${esc(d.doc)}" ${d.book ? 'title="ลงแถวกลับในสมุดใหม่"' : ''}>${d.book ? '↩ ยกเลิก' : 'ยกเลิก'}</button>` : '';
     const type = rev && d.link ? `${esc(d.type)} <span class="c-sub">↩ ${esc(d.link)}</span>` : esc(d.type);
+    const printBtn = APP && FIRE && (d.type === 'ย้าย' || d.type === 'แปลง') ? `<button class="bk-btn" data-print="${esc(d.doc)}" title="พิมพ์ใบ A5 แบบเอกสารคลังสินค้า">🖨</button> ` : '';
     const no = APP ? `<td class="c-act"><button type="button" class="ba-no" data-doc="${esc(d.doc)}">${esc(d.doc)}</button></td>` : `<td class="c-sku">${esc(d.doc)}</td>`;
     return `<tr${v ? ' class="r-void"' : ''}>${no}<td>${type}</td><td>${esc(dm(d.date))}</td><td>${esc(d.who)}</td>` +
       `<td class="c-sub">${esc(String(d.at).slice(5, 16))}</td><td class="c-sub">${esc(d.tr || '')}</td><td class="num">${f(d.rows)}</td><td class="num">${f(d.qty)}</td><td class="num">${d.orders ? f(d.orders) : ''}</td>` +
-      `<td>${st}</td><td class="c-act">${v ? '' : copyBtn + voidBtn}</td></tr>`;
+      `<td>${st}</td><td class="c-act">${printBtn}${v ? '' : copyBtn + voidBtn}</td></tr>`;
   });
   $('docs').innerHTML = APP ? `<div class="bk-dh"><b>${esc(want || 'ชุดที่บันทึก')}</b> 3 วันล่าสุด · กดเลขที่ดูทีละใบ · หัวหน้ากด ↩ ยกเลิก = ลงกลับเป็นเอกสารใหม่ <button type="button" class="bk-link" data-mode="docs">ค้นทุกใบ ›</button></div>` +
     table([['เลขที่'], ['ประเภท'], ['วันที่'], ['ผู้ลง'], ['บันทึกเมื่อ'], ['เลข TRcloud'], ['แถว', 'num'], ['ชิ้น', 'num'], ['ออเดอร์', 'num'], ['ในสมุด'], ['', 'c-act']], rows)

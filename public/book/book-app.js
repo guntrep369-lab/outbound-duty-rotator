@@ -6,6 +6,8 @@
  *   🏠 วันนี้              การ์ดงานค้าง (ชุดรอส่ง รอลง TRcloud ยอดยกมา วางชีตเดิม ปิดเดือน ร่างค้าง) · งานประจำวัน · ใบล่าสุดของวันนี้
  *   🔎 เอกสาร             ค้นทุกใบในสำเนาเครื่องนี้ · กดเลขที่ = ดูทีละใบ: ขั้นตอน ประวัติ แถว ออเดอร์
  *                          ใส่เลข TRcloud · ยกเลิก (หัวหน้า) · ใบเดิม ↔ ใบกลับรายการ ลิงก์ถึงกัน · ลิงก์ #doc=เลขที่ ส่งต่อได้
+ *   ✓ ตรวจ / อนุมัติ       ใบย้ายกับแปลง: ผู้จัดทำ → ผู้ตรวจสอบ (ไม่ใช่คนทำ) → ผู้อนุมัติ (หัวหน้า) ทีละใบหรือติ๊กหลายใบ
+ *   🖨 พิมพ์ใบ              ใบย้าย / แปลง พิมพ์เป็นใบโอน / ใบขอแปลง A5 แบบเอกสารคลังสินค้าเดิม (wms-fire-print.js) ใบอื่นพิมพ์หน้าจอ
  *   คิดจากสำเนาในเครื่อง ไม่อ่านฐานเพิ่ม ยกเว้นหัวหน้าเปิดหน้าวันนี้: xfer/log กับ arch/index อย่างละ 1 ครั้ง (เก็บไว้ 10 นาที)
  *
  * ระบบเดิม (Apps Script) ไม่ใช้ไฟล์นี้ หน้าเหมือนเดิมทุกอย่าง (แผนถอยกลับ)
@@ -70,11 +72,14 @@
   var DOC = docFromHash();    // เลขที่ที่เปิดดูอยู่ ('' = รายการ)
   var NOTE = null;            // { kind, html } ของหน้าเอกสาร
   var BUSY = '';
+  var SEL = {};               // ใบที่ติ๊กไว้ตรวจ / อนุมัติ { เลขที่: 1 }
   var TYPING = null;
 
   function $(id) { return document.getElementById(id); }
   function head() { return isHead(); }
   function viewer() { return !USER || USER.role === 'ดูอย่างเดียว'; }
+  /** บัญชีที่เข้าอยู่ { email, name, role: head | staff | viewer } (สิทธิ์แบบที่ระบบใหม่ใช้) */
+  function me() { return (FIRE && FIRE.user && FIRE.user()) || { email: '', role: 'viewer' }; }
   function C() { return window.WmsFireCore; }
   function docFromHash() { var m = /^#doc=([A-Za-z0-9-]{1,20})$/.exec(location.hash || ''); return m ? m[1].toUpperCase() : ''; }
   function saveQ() { try { localStorage.setItem(Q_KEY, JSON.stringify({ type: Q.type, status: Q.status, range: Q.range })); } catch (e) {} }
@@ -147,8 +152,12 @@
   }
   function title(k) { var n = NAV.filter(function (x) { return x.k === k; })[0]; return n ? n.t : ''; }
 
+  /** ใบที่รอเรา: ตรวจได้ (คนอื่นทำ) + อนุมัติได้ (หัวหน้า) */
+  function okTodo(h) { return h && h.ok && !viewer() ? h.ok.toCheck + (head() ? h.ok.approve : 0) : 0; }
+
   function badge(k, h, mine) {
     if (k === 'trc' && h && h.wait.n && !viewer()) return '<span class="bn-n' + (h.wait.days >= 2 ? ' bad' : '') + '" title="รอลง TRcloud">' + f(h.wait.n) + '</span>';
+    if (k === 'docs' && okTodo(h)) return '<span class="bn-n' + (h.ok.days >= 2 ? ' bad' : '') + '" title="รอตรวจ / อนุมัติ">' + f(okTodo(h)) + '</span>';
     if (k === 'close') { var n = closeDue(); return n ? '<span class="bn-n">' + f(n) + '</span>' : ''; }
     var p = mine.filter(function (x) { return x.k === k; })[0];
     if (p) return '<span class="bn-dot' + (p.sent ? ' bad' : '') + '" title="' + (p.sent ? 'มีชุดรอส่ง' : 'มีร่างยังไม่บันทึก') + '"></span>';
@@ -188,11 +197,20 @@
 
   /* ── สถานะเอกสาร (ชิป) ───────────────────────────────────────────────── */
 
+  /** ชิปตรวจ / อนุมัติ (x.ok จาก brief หรือ view) */
+  function okChip(x) {
+    if (!x || !x.ok) return '';
+    if (x.ok === 'check') return '<span class="ba-st wait">รอตรวจ</span>';
+    if (x.ok === 'approve') return '<span class="ba-st apv" title="ตรวจโดย ' + esc(x.ck && x.ck.name !== undefined ? x.ck.name : x.ck || '') + '">รออนุมัติ</span>';
+    return '<span class="ba-st ok" title="อนุมัติโดย ' + esc(x.ap && x.ap.name !== undefined ? x.ap.name : x.ap || '') + '">✓ อนุมัติแล้ว</span>';
+  }
+
   function stChips(x) {
     var out = '';
     if (x.voided) out += '<span class="ba-st void" title="' + esc((x.voided.by || '') + ' · ' + (x.voided.why || '')) + '">ยกเลิกแล้ว' + (x.voided.link ? ' → ' + esc(x.voided.link) : '') + '</span>';
     if (x.link) out += '<span class="ba-st rev" title="ใบนี้ลงกลับรายการของ ' + esc(x.link) + '">↩ ' + esc(x.link) + '</span>';
     if (x.type === 'ยอดยกมา') out += '<span class="ba-st sub">จุดเริ่มสมุด</span>';
+    out += okChip(x);
     if (x.state === 'wait') out += '<span class="ba-st wait">รอลง TRcloud</span>';
     else if (x.state === 'done') out += '<span class="ba-st ok" title="เลข TRcloud">TRcloud ' + esc(x.tr) + '</span>';
     if (!out) out = '<span class="ba-st okk">✓ บันทึกแล้ว</span>';
@@ -207,6 +225,13 @@
     mine.filter(function (p) { return p.sent; }).forEach(function (p) {
       out.push({ tone: 'bad', title: 'ชุดรอส่ง · ' + p.t, sub: 'ส่งไม่สำเร็จ ระบบส่งซ้ำเองทุก 30 วินาที ไม่บันทึกซ้ำ', go: p.k, act: 'ไปดู' });
     });
+    if (h.ok && h.ok.toCheck && !viewer()) {
+      out.push({ tone: 'warn', n: h.ok.toCheck, title: 'รอตรวจ', sub: 'ใบย้าย / แปลง ที่คนอื่นทำ · เช็คของจริงแล้วกด ตรวจแล้ว', go: 'docs', sec: 'check', act: 'ตรวจ' });
+    }
+    if (h.ok && h.ok.approve && head()) {
+      out.push({ tone: h.ok.days >= 2 ? 'bad' : 'warn', n: h.ok.approve, title: 'รออนุมัติ',
+        sub: 'ตรวจแล้ว รอหัวหน้ากด อนุมัติ · เก่าสุด ' + (h.ok.days ? h.ok.days + ' วันก่อน' : 'วันนี้'), go: 'docs', sec: 'approve', act: 'อนุมัติ' });
+    }
     if (head() && !h.open) out.push({ tone: 'bad', title: 'ยังไม่ลงยอดยกมา', sub: 'ลงก่อนเริ่มใช้สมุด · ไฟล์จากหน้านับสต๊อกใหญ่', go: 'set', sec: 'open', act: 'ลงยอด' });
     if (h.wait.n && !viewer()) {
       out.push({ tone: h.wait.days >= 2 ? 'bad' : 'warn', n: h.wait.n, title: 'รอลง TRcloud',
@@ -302,24 +327,101 @@
       TYPES.filter(function (t) { return r.types[t] || Q.type === t; }).map(function (t) {
         return '<button type="button" class="bk-chip' + (Q.type === t ? ' on' : '') + '" data-qt="' + esc(t) + '">' + esc(t) + ' <b>' + f(r.types[t] || 0) + '</b></button>';
       }).join('');
-    var st = [['wait', 'รอลง TRcloud', 'c-warn'], ['void', 'ยกเลิกแล้ว', 'c-red'], ['mine', 'ของฉัน', '']];
+    var st = [['check', 'รอตรวจ', 'c-warn'], ['approve', 'รออนุมัติ', 'c-warn'], ['wait', 'รอลง TRcloud', 'c-warn'], ['void', 'ยกเลิกแล้ว', 'c-red'], ['mine', 'ของฉัน', '']];
     var stChipsHtml = st.map(function (s) {
       var n = r.states[s[0]] || 0;
       return '<button type="button" class="bk-chip ' + s[2] + (Q.status === s[0] ? ' on' : '') + (n || Q.status === s[0] ? '' : ' zero') + '" data-qs="' + s[0] + '">' + s[1] + ' <b>' + f(n) + '</b></button>';
     }).join('');
     $('sum').innerHTML = typeChips + '<span class="bk-sep"></span>' + stChipsHtml;
+    /* ตัวกรอง รอตรวจ / รออนุมัติ: ติ๊กหลายใบแล้วกดทีเดียว (เฉพาะใบที่เรากดได้) */
+    var u = me(), pick = Q.status === 'check' || Q.status === 'approve';
+    var mayOk = function (x) {
+      if (x.ok !== Q.status || viewer()) return false;
+      return Q.status === 'check' ? x.by !== u.email : head();
+    };
+    var can = pick ? r.list.filter(mayOk) : [];
+    Object.keys(SEL).forEach(function (no) { if (!can.some(function (x) { return x.no === no; })) delete SEL[no]; });
+    renderOkBar(can, r);
     if (!r.total) {
-      $('body').innerHTML = '<div class="tx-empty">' + (r.all ? 'ไม่มีเอกสารตรงกับตัวกรอง' : Q.text ? 'ไม่พบ <b>' + esc(Q.text) + '</b> ในช่วงนี้ ลองเลือก ทั้งหมด' : 'ช่วงนี้ยังไม่มีเอกสาร') + '</div>';
+      $('body').innerHTML = '<div class="tx-empty">' + (pick && !Q.text ? (Q.status === 'check' ? '✓ ไม่มีใบรอตรวจ' : '✓ ไม่มีใบรออนุมัติ') + (Q.range !== 'all' ? ' ในช่วงนี้ ลองเลือก ทั้งหมด' : '')
+        : r.all ? 'ไม่มีเอกสารตรงกับตัวกรอง' : Q.text ? 'ไม่พบ <b>' + esc(Q.text) + '</b> ในช่วงนี้ ลองเลือก ทั้งหมด' : 'ช่วงนี้ยังไม่มีเอกสาร') + '</div>';
       return;
     }
     var rows = r.list.map(function (x) {
       var at = String(x.stamp || '').slice(0, 10) === x.date ? hm(x.stamp) : when(x.stamp);   // บันทึกวันเดียวกับวันที่เอกสาร = เวลาอย่างเดียว
-      return '<tr' + (x.voided ? ' class="r-void"' : '') + '><td class="c-act">' + docBtn(x.no) + '</td><td>' + esc(dmy(x.date)) + '</td><td class="c-sub">' + esc(at) + '</td>' +
+      var box = !can.length ? '' : '<td class="c-act">' + (mayOk(x)
+        ? '<input type="checkbox" class="ba-ck" data-sel="' + esc(x.no) + '"' + (SEL[x.no] ? ' checked' : '') + ' aria-label="เลือก ' + esc(x.no) + '">'
+        : '<span class="c-sub" title="' + (x.by === u.email ? 'ใบของคุณ ให้คนอื่นตรวจ' : '') + '">—</span>') + '</td>';
+      return '<tr' + (x.voided ? ' class="r-void"' : SEL[x.no] ? ' class="r-sel"' : '') + '>' + box + '<td class="c-act">' + docBtn(x.no) + '</td><td>' + esc(dmy(x.date)) + '</td><td class="c-sub">' + esc(at) + '</td>' +
         '<td>' + esc(x.type) + '</td><td>' + esc(x.name) + '</td><td class="num">' + f(x.rows) + '</td><td class="num">' + f(x.qty) + '</td>' +
         '<td class="num">' + (x.orders ? f(x.orders) : '') + '</td><td class="c-act">' + stChips(x) + '</td></tr>';
     });
-    $('body').innerHTML = table([['เลขที่'], ['วันที่'], ['บันทึกเมื่อ'], ['ประเภท'], ['ผู้ลง'], ['แถว', 'num'], ['ชิ้น', 'num'], ['ออเดอร์', 'num'], ['สถานะ']], rows,
+    var cols = [['เลขที่'], ['วันที่'], ['บันทึกเมื่อ'], ['ประเภท'], ['ผู้ลง'], ['แถว', 'num'], ['ชิ้น', 'num'], ['ออเดอร์', 'num'], ['สถานะ']];
+    if (can.length) cols.unshift(['', 'c-act']);
+    $('body').innerHTML = table(cols, rows,
       r.total > r.list.length ? '<div class="bk-more">แสดง ' + f(r.list.length) + ' จาก ' + f(r.total) + ' ใบ · พิมพ์ค้นให้แคบลง</div>' : '');
+  }
+
+  /** แถบตรวจ / อนุมัติหลายใบ (หน้าเอกสาร ตัวกรอง รอตรวจ / รออนุมัติ) */
+  function renderOkBar(can, r) {
+    var n = Object.keys(SEL).length, out = '';
+    if (Q.status === 'check' || Q.status === 'approve') {
+      if (can.length) {
+        var all = n === can.length;
+        out += '<button type="button" class="tx-opt" id="baSelAll">' + (all ? 'ไม่เลือก' : 'เลือกทั้งหมด ' + f(can.length) + ' ใบ') + '</button>';
+        if (Q.status === 'check') {
+          out += '<button type="button" class="bk-save" data-ok="check"' + (n && !BUSY ? '' : ' disabled') + '>' + (BUSY ? esc(BUSY) : '✓ ตรวจแล้ว ' + f(n) + ' ใบ') + '</button>';
+          if (head()) out += '<button type="button" class="bk-btn" data-ok="both"' + (n && !BUSY ? '' : ' disabled') + ' title="หัวหน้าตรวจและอนุมัติในครั้งเดียว">✓ ตรวจ + อนุมัติ</button>';
+        } else {
+          out += '<button type="button" class="bk-save" data-ok="approve"' + (n && !BUSY ? '' : ' disabled') + '>' + (BUSY ? esc(BUSY) : '✓ อนุมัติ ' + f(n) + ' ใบ') + '</button>';
+        }
+        out += '<span class="c-sub">' + (Q.status === 'check' ? 'ติ๊กใบที่เช็คของจริงแล้ว · ใบที่ตัวเองทำ ให้คนอื่นตรวจ' : 'ติ๊กใบที่ตรวจแล้วและยอดถูก') + '</span>';
+      } else if (r.total) {
+        out += '<span class="c-sub">' + (viewer() ? 'บัญชีนี้ดูได้อย่างเดียว' : Q.status === 'check' ? 'ใบที่เหลือเป็นของคุณ ให้คนอื่นตรวจ' : 'รอหัวหน้าอนุมัติ') + '</span>';
+      }
+    }
+    if (NOTE) out += '<div class="bk-msg ' + NOTE.kind + '">' + NOTE.html + '</div>';
+    $('act').innerHTML = out ? '<div class="ba-okbar">' + out + '</div>' : '';
+  }
+
+  /** ตรวจ / อนุมัติ nos ทีเดียว (ส่งทีละ 10 ใบต่อกัน) */
+  async function okRun(nos, act) {
+    if (!nos.length || BUSY) return;
+    var word = act === 'check' ? 'ตรวจ' : act === 'approve' ? 'อนุมัติ' : 'ตรวจและอนุมัติ';
+    if (nos.length > 1 && !confirm(word + ' ' + nos.length + ' ใบ ในชื่อ ' + (USER.who || '') + '?')) return;
+    BUSY = 'กำลัง' + word + '…'; NOTE = null; render();
+    var r;
+    try { r = await FIRE.okSave(nos, act); } catch (e) { r = { saved: 0, error: e.message }; }
+    BUSY = '';
+    SEL = {};
+    NOTE = r.error
+      ? { kind: 'bad', html: (r.saved ? word + 'แล้ว ' + f(r.saved) + ' ใบ · ' : '') + 'ที่เหลือทำไม่ได้: ' + esc(r.error) }
+      : { kind: 'ok', html: '✓ ' + word + 'แล้ว ' + f(r.saved) + ' ใบ' + (nos.length === 1 ? ' (' + esc(nos[0]) + ')' : '') };
+    render();
+  }
+
+  /* ── 🖨 พิมพ์ใบ ─────────────────────────────────────────────────────── */
+
+  /** ใบย้าย / แปลง = ใบพิมพ์ A5 แบบเอกสารคลังสินค้า (iframe ซ่อน) · ใบอื่น = พิมพ์หน้าจอนี้ */
+  function printDoc(no) {
+    var P = window.WmsFirePrint, v = FIRE.doc(no);
+    if (!v || !P || !P.can(v)) { window.print(); return; }
+    var logo = '';
+    try { logo = window.WmsSettings && WmsSettings.logo ? WmsSettings.logo() || '' : ''; } catch (e) {}
+    var html = P.html(v, { logo: logo, printed: when(C().stamp(Date.now())) });
+    var fr = $('baFrame');
+    if (fr) fr.remove();
+    fr = document.createElement('iframe');
+    fr.id = 'baFrame';
+    fr.title = 'ใบพิมพ์ ' + v.no;
+    fr.setAttribute('aria-hidden', 'true');
+    fr.tabIndex = -1;
+    fr.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden';
+    fr.onload = function () {
+      try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch (e) { window.print(); }
+    };
+    document.body.appendChild(fr);
+    fr.srcdoc = html;
   }
 
   /* ── 🔎 เอกสาร: ดูทีละใบ ─────────────────────────────────────────────── */
@@ -349,12 +451,18 @@
     $('inp').innerHTML = '<div class="bk-top"><button type="button" class="tx-opt" id="baBack">‹ กลับไปรายการ</button>' +
       '<span class="bk-h">' + esc(v.no) + '</span><span class="ba-ty">' + esc(v.type) + '</span>' +
       '<span>วันที่ ' + esc(dmy(v.date)) + ' · ' + esc(v.name) + ' · บันทึก ' + esc(when(v.stamp)) + '</span><span class="sp"></span>' +
-      '<button type="button" class="tx-opt" id="baPrint" title="พิมพ์ใบนี้">🖨 พิมพ์</button></div>';
-    $('sum').innerHTML = stChips({ voided: v.voided, link: v.rev ? (v.orig && v.orig.no) : '', type: v.type, state: v.state, tr: v.tr }) +
+      '<button type="button" class="tx-opt" id="baPrint" title="' + (window.WmsFirePrint && WmsFirePrint.can(v) ? 'พิมพ์ใบ' + (v.type === 'แปลง' ? 'ขอแปลงรหัสสินค้า' : 'โอนย้ายสินค้า') + ' A5' : 'พิมพ์หน้านี้') + '">🖨 พิมพ์ใบ</button></div>';
+    $('sum').innerHTML = stChips({ voided: v.voided, link: v.rev ? (v.orig && v.orig.no) : '', type: v.type, state: v.state, tr: v.tr, ok: v.ok, ck: v.ck, ap: v.ap }) +
       '<span class="bk-chip">แถว <b>' + f(v.rows.length) + '</b></span><span class="bk-chip">ชิ้น <b>' + f(v.qty) + '</b></span>' +
       (v.orders ? '<span class="bk-chip">ออเดอร์ <b>' + f(v.orders) + '</b></span>' : '');
 
     var act = '<button type="button" class="tx-opt" id="baCopy">📋 คัดลอกแถว</button>';
+    var oc = window.WmsFireDocs ? WmsFireDocs.okCan(v, me()) : {};
+    if (oc.check || oc.approve) {
+      act += '<span class="bk-sep"></span>' + (oc.check ? '<button type="button" class="bk-save" data-ok1="check"' + (BUSY ? ' disabled' : '') + '>✓ ตรวจแล้ว</button>' : '') +
+        (oc.both ? '<button type="button" class="bk-btn" data-ok1="both"' + (BUSY ? ' disabled' : '') + ' title="หัวหน้าตรวจและอนุมัติในครั้งเดียว">✓ ตรวจ + อนุมัติ</button>' : '') +
+        (oc.approve ? '<button type="button" class="bk-save" data-ok1="approve"' + (BUSY ? ' disabled' : '') + '>✓ อนุมัติ</button>' : '');
+    } else if (oc.why && v.ok && v.ok !== 'done') act += '<span class="bk-sep"></span><span class="c-sub">' + esc(oc.why) + '</span>';
     if (v.state === 'wait' && !viewer()) {
       act += '<span class="bk-sep"></span><input class="bk-field ba-tr" id="baTr" placeholder="เลข TRcloud" aria-label="เลข TRcloud" maxlength="100" autocomplete="off">' +
         '<button type="button" class="bk-save" id="baTrSave" ' + (BUSY ? 'disabled' : '') + '>' + (BUSY ? esc(BUSY) : 'บันทึกเลข') + '</button>' +
@@ -441,6 +549,13 @@
     if (t.dataset.mode && NAV_OPEN) { NAV_OPEN = false; renderNav(); }   // เลือกเมนูแล้วพับ (หน้าเปลี่ยนตาม data-mode ของหน้า)
     if (t.dataset.mode === 'docs' && MODE === 'docs' && DOC) { openDoc(''); return; }
     if (t.dataset.doc) { e.preventDefault(); openDoc(t.dataset.doc); return; }
+    if (t.dataset.go === 'docs') {
+      /* การ์ด รอตรวจ / รออนุมัติ: เปิดรายการตัวกรองนั้น ทุกช่วงวัน */
+      Q.status = t.dataset.sec || ''; Q.type = ''; Q.text = ''; if (Q.status) Q.range = 'all';
+      saveQ(); SEL = {}; NOTE = null;
+      if (DOC) openDoc(''); else if (MODE === 'docs') render(); else setMode('docs');
+      return;
+    }
     if (t.dataset.go) {
       var sec = t.dataset.sec || '';
       if (sec && (t.dataset.go === 'set' || t.dataset.go === 'close') && window.BookFireSet && BookFireSet.pick) BookFireSet.pick(t.dataset.go, sec);
@@ -450,13 +565,30 @@
     }
     if (t.id === 'baRefresh') { loadHx(true); render(); return; }
     if (t.id === 'baBack') { openDoc(''); return; }
-    if (t.id === 'baPrint') { window.print(); return; }
+    if (t.id === 'baPrint') { printDoc(DOC); return; }
+    if (t.dataset.print) { printDoc(t.dataset.print); return; }
+    if (t.dataset.ok) { okRun(Object.keys(SEL), t.dataset.ok); return; }
+    if (t.dataset.ok1) { if (DOC) okRun([DOC], t.dataset.ok1); return; }
+    if (t.id === 'baSelAll') {
+      var boxes = Array.prototype.slice.call(document.querySelectorAll('.ba-ck'));
+      var on = boxes.some(function (b) { return !b.checked; });
+      SEL = {};
+      if (on) boxes.forEach(function (b) { SEL[b.dataset.sel] = 1; });
+      renderDocList();
+      return;
+    }
     if (t.id === 'baCopy') { copyRows(); return; }
     if (t.id === 'baTrSave') { saveTr('done'); return; }
     if (t.id === 'baTrNone') { if (confirm('ตั้งว่า ' + DOC + ' ไม่ต้องลง TRcloud?')) saveTr('none'); return; }
     if (t.dataset.qr) { Q.range = t.dataset.qr; saveQ(); renderDocsPage(); return; }
     if (t.dataset.qt !== undefined) { Q.type = t.dataset.qt; saveQ(); renderDocList(); return; }
-    if (t.dataset.qs) { Q.status = Q.status === t.dataset.qs ? '' : t.dataset.qs; saveQ(); renderDocList(); return; }
+    if (t.dataset.qs) { Q.status = Q.status === t.dataset.qs ? '' : t.dataset.qs; SEL = {}; NOTE = null; saveQ(); renderDocList(); return; }
+  });
+
+  document.addEventListener('change', function (e) {
+    if (!active() || !e.target.classList || !e.target.classList.contains('ba-ck')) return;
+    if (e.target.checked) SEL[e.target.dataset.sel] = 1; else delete SEL[e.target.dataset.sel];
+    renderDocList();
   });
 
   document.addEventListener('input', function (e) {
@@ -502,5 +634,8 @@
     /** ประเภทเอกสารของแท็บงาน (ตารางชุดที่บันทึกด้านล่างแสดงเฉพาะของแท็บนั้น) */
     typeOf: function (mode) { return TYPE_OF[mode] || ''; },
     openDoc: openDoc,
+    okChip: okChip,
+    /** แท็บนี้มีใบพิมพ์ + ตรวจ / อนุมัติไหม (ย้าย / เติม / QA · แปลงสินค้า) */
+    okMode: function (mode) { return !!(window.WmsFireCore && WmsFireCore.OK_TYPES.indexOf(TYPE_OF[mode] || '') >= 0); },
   };
 })();

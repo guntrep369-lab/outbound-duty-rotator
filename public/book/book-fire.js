@@ -178,6 +178,7 @@
     await script('../wms-fire-core.js');
     await script('../wms-fire-trc.js');
     await script('../wms-fire-docs.js');
+    await script('../wms-fire-print.js');
     await script('../wms-fire.js');
     if (MODE === 'live') await startLive(window.WmsFire);
     else await startLocal(window.WmsFire);
@@ -228,12 +229,18 @@
   }
 
   /* หน้า เอกสาร: สรุปทุกใบคิดใหม่เมื่อสำเนาในเครื่องเปลี่ยน (เอกสารใหม่ เลข TRcloud ใหม่) */
-  var IDX = { key: '', list: [] }, trVer = 0;
+  var IDX = { key: '', list: [], by: null }, trVer = 0;
   function docList() {
     if (!fire || !window.WmsFireDocs) return [];
-    var l = fire.local(), k = l.seq + ':' + l.docs.length + ':' + (l.trAt || 0) + ':' + (l.tv || 0) + ':' + trVer;
-    if (k !== IDX.key) IDX = { key: k, list: window.WmsFireDocs.index(l) };
+    var l = fire.local(), k = l.seq + ':' + l.docs.length + ':' + (l.trAt || 0) + ':' + (l.okAt || 0) + ':' + (l.tv || 0) + ':' + (l.ov || 0) + ':' + trVer;
+    if (k !== IDX.key) IDX = { key: k, list: window.WmsFireDocs.index(l), by: null };
     return IDX.list;
+  }
+  /** สรุปของเลขที่นี้ (brief: ok ck ap state …) · ไม่พบ = null */
+  function briefOf(no) {
+    var list = docList();
+    if (!IDX.by) { IDX.by = {}; list.forEach(function (x) { IDX.by[x.no] = x; }); }
+    return IDX.by[no] || null;
   }
 
   window.BookFire = {
@@ -309,7 +316,24 @@
     /* ขั้น 3 */
     trList: async function () { await ready; return fire.trList(); },
     trSave: async function (items) { await ready; var r = await fire.trSave(items); trVer++; return r; },
+    /**
+     * ตรวจ / อนุมัติ nos = [เลขที่] act = check | approve | both · ส่งทีละ OK_MAX ใบ (Rules) ต่อกันจนครบ
+     * พลาดกลางทาง = หยุดตรงนั้น บอกว่าทำไปแล้วกี่ใบ → { saved, error? }
+     */
+    okSave: async function (nos, act) {
+      await ready;
+      var max = window.WmsFireCore.OK_MAX, saved = 0;
+      for (var i = 0; i < nos.length; i += max) {
+        var r = await fire.okSave(nos.slice(i, i + max), act);
+        trVer++;
+        if (r.error) return { saved: saved, error: r.error, bad: r.bad };
+        saved += r.saved || 0;
+      }
+      return { saved: saved };
+    },
     trFile: function (nos) { return fire.trFile(nos); },
+    /** สถานะตรวจ / อนุมัติของเลขที่นี้ { ok, ck, ap } (ชุดในตารางชุดที่บันทึก) */
+    okOf: function (no) { var x = briefOf(no); return x ? { ok: x.ok, ck: x.ck, ap: x.ap } : null; },
     trc: async function () { await ready; return fire.trc(); },
     trcSave: async function (parsed, day, files) { await ready; return fire.trcSave(parsed, day, files); },
     masterSave: async function (kind, part) { await ready; return fire.masterSave(kind, part); },

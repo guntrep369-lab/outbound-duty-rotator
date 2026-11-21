@@ -36,7 +36,7 @@
   var MASTER_MAX = 20000;
   var DOC_BYTES = 900000;         // trc / master เอกสารเดียว (Firestore รับ 1 MiB)
   var FILE_TYPES = [C.TYPE_MOVE, C.TYPE_ADJ, C.TYPE_ROWS];   // คลังเปลี่ยน → ไฟล์ปรับยอด · ที่เหลือทีมสร้างใน TRcloud แล้วใส่เลข
-  var TIME_KEYS = ['at', 'trAt', 'last'];
+  var TIME_KEYS = ['at', 'trAt', 'last', 'ckAt', 'apAt', 'okAt'];   // ตรงกับ fire-backup.gs
   var BACKUP_KIND = 'wms-fire-backup';
   var THAI = /[฀-๿]/;
 
@@ -95,7 +95,8 @@
 
   /**
    * รายการหน้ารอลง TRcloud ใหม่สุดก่อน: รอลงทั้งหมด + ลงแล้ว / ไม่ต้องลง ย้อน TR_DAYS วัน (ไม่นับตัดขายกับยอดยกมา)
-   * [{id, no, type, date, stamp, name, n, qty, tr, state, kind, voided, link, wh: [[SKU, คลัง, ±ชิ้น]], skus, trBy, trAt, rows}]
+   * [{id, no, type, date, stamp, name, n, qty, tr, state, kind, voided, link, wh: [[SKU, คลัง, ±ชิ้น]], skus, trBy, trAt, rows, ok}]
+   * ok = ตรวจ / อนุมัติ (okState) ใบย้ายที่ยังไม่อนุมัติ ออกไฟล์ปรับยอดไม่ได้
    */
   function trList(local, now, days) {
     var st = trStates(local), vd = C.voids(local), by = byNo(local);
@@ -110,6 +111,7 @@
         id: d.id, no: d.no, type: d.type, date: d.date, stamp: d.stamp, name: d.name, n: d.n, qty: d.qty, tr: d.tr || '',
         state: st[d.no], kind: kindOf(d, by), voided: !!vd[d.no], link: d.type === C.TYPE_REV ? d.link : (vd[d.no] && vd[d.no].link) || '',
         wh: C.whLines(d.rows), skus: Object.keys(skus), trBy: d.trBy || '', trAt: d.trAt || 0, rows: d.rows,
+        ok: C.okState(d, vd),
       };
     });
   }
@@ -140,19 +142,21 @@
   /**
    * ไฟล์ปรับยอดลง TRcloud ของเอกสารที่เลือก (เฉพาะชนิด file) แถวละ SKU + คลัง ต่อเอกสาร
    * เพิ่ม = ช่องจำนวนที่เพิ่มขึ้น · ลด = ช่องจำนวนที่ลดลง · ออเดอร์ = เลขที่เอกสาร (ตามกลับได้) · วันที่ = วันที่ของเอกสาร
-   * → { name, aoa, widths, docs, skip, lines }
+   * ใบย้ายที่ยังไม่อนุมัติ (รอตรวจ / รออนุมัติ) ไม่ลงไฟล์ → hold
+   * → { name, aoa, widths, docs, skip, hold, lines }
    */
   function trFile(local, nos) {
-    var by = byNo(local), rows = [], used = [], skip = [];
+    var by = byNo(local), vd = C.voids(local), rows = [], used = [], skip = [], hold = [];
     (nos || []).forEach(function (no) {
       var d = by[no];
       if (!d) return;
-      var lines = C.whLines(d.rows);
+      var lines = C.whLines(d.rows), os = C.okState(d, vd);
       if (kindOf(d, by) !== 'file' || !lines.length) { skip.push(no); return; }
+      if (os === C.OK_CHECK || os === C.OK_APPROVE) { hold.push(no); return; }
       lines.forEach(function (l) { rows.push([l[0], d.date, l[2] > 0 ? l[2] : '', l[2] < 0 ? -l[2] : '', '', '', d.no, TRC_DEPT, l[1], '']); });
       used.push(no);
     });
-    return { name: 'TRcloud', aoa: [TRC_HEAD.slice()].concat(rows), widths: TRC_WIDTHS.slice(), docs: used, skip: skip, lines: rows.length };
+    return { name: 'TRcloud', aoa: [TRC_HEAD.slice()].concat(rows), widths: TRC_WIDTHS.slice(), docs: used, skip: skip, hold: hold, lines: rows.length };
   }
 
   /* ── อ่านไฟล์จาก TRcloud และตารางหลัก ───────────────────────────────── */
@@ -633,8 +637,9 @@
    * แผนปิดเดือน → { m, entry, chunks: [[path, data]], ov: [[path, data]], index } หรือ { error }
    * arch/{ปปดด}-{k} = { m, k, n, t: JSON [[{id, data}, …ส่วนแยก], …] } · เอกสารใหญ่เกินก้อน = skip (เครื่องใหม่อ่านทีละเอกสาร)
    * arch/ov-{k} = เลข TRcloud ที่ใส่หลังปิดเดือนก่อน ๆ [[id, tr, trState, trBy, trAt], …] เขียนใหม่ทุกครั้งที่ปิด
-   * arch/index = { v, months: [{m, from, to, docs, n, skip, bytes, at, by, trAt}], ov: {n, fix, trAt, at} } เขียนสุดท้าย (จุดยืนยัน)
-   * trAt = เวลาเซิร์ฟเวอร์ล่าสุดที่เครื่องหัวหน้าเห็นเลข TRcloud (เครื่องใหม่ดึงเลขที่ใส่หลังจากนี้)
+   *              ใบที่ตรวจ / อนุมัติหลังปิดเดือนนั้น ต่อท้าย [.., ck, ckName, ckAt, ap, apName, apAt, okAt]
+   * arch/index = { v, months: [{m, from, to, docs, n, skip, bytes, at, by, trAt, okAt}], ov: {n, fix, trAt, okAt, at} } เขียนสุดท้าย (จุดยืนยัน)
+   * trAt / okAt = เวลาเซิร์ฟเวอร์ล่าสุดที่เครื่องหัวหน้าเห็นเลข TRcloud / การตรวจอนุมัติ (เครื่องใหม่ดึงที่แก้หลังจากนี้)
    */
   function archPlan(local, idx, now, opt) {
     opt = opt || {};
@@ -648,27 +653,32 @@
       bytes += C.byteLen(t);
       return ['arch/' + nx.m + '-' + (i + 1), { m: nx.m, k: i + 1, n: c.length, t: t }];
     });
-    var trAt = +local.trAt || 0;
+    var trAt = +local.trAt || 0, okAt = +local.okAt || 0;
     var entry = {
       m: nx.m, from: nx.from, to: nx.to, docs: nx.docs.length, n: chunks.length,
-      skip: packed.big.map(function (g) { return g[0].id; }), bytes: bytes, at: now, by: opt.by || '', trAt: trAt,
+      skip: packed.big.map(function (g) { return g[0].id; }), bytes: bytes, at: now, by: opt.by || '', trAt: trAt, okAt: okAt,
     };
     /* เลข TRcloud ของเดือนที่ปิดไปแล้วที่ใส่หลังวันปิด (ก้อนเก่ายังเป็นค่าตอนปิด) */
     var fix = [];
     if (months.length) {
       var lastTo = +months[months.length - 1].to;
       (local.docs || []).forEach(function (d) {
-        if (d.seq > lastTo || !(d.trAt > 0)) return;
+        if (d.seq > lastTo || !(d.trAt > 0 || d.okAt > 0)) return;
         var mo = null;
         for (var i = 0; i < months.length && !mo; i++) if (d.seq >= months[i].from && d.seq <= months[i].to) mo = months[i];
-        if (mo && d.trAt > (+mo.trAt || 0) - TR_MARGIN) fix.push([d.id, d.tr || '', d.trState || '', d.trBy || '', d.trAt]);
+        if (!mo) return;
+        var tr = d.trAt > 0 && d.trAt > (+mo.trAt || 0) - TR_MARGIN, ok = d.okAt > 0 && d.okAt > (+mo.okAt || 0) - TR_MARGIN;
+        if (!tr && !ok) return;
+        var e = [d.id, d.tr || '', d.trState || '', d.trBy || '', d.trAt || 0];
+        if (ok) e.push(d.ck || '', d.ckName || '', d.ckAt || 0, d.ap || '', d.apName || '', d.apAt || 0, d.okAt);
+        fix.push(e);
       });
     }
     var ovp = pack(fix, limit);
     if (ovp.big.length) return { error: 'รายการเลข TRcloud ยาวผิดปกติ ' + ovp.big[0][0] };
     var ov = ovp.chunks.map(function (c, i) { return ['arch/ov-' + (i + 1), { k: i + 1, n: c.length, t: JSON.stringify(c) }]; });
     months.push(entry);
-    var index = { v: 1, months: months, ov: { n: ov.length, fix: fix.length, trAt: trAt, at: now } };
+    var index = { v: 1, months: months, ov: { n: ov.length, fix: fix.length, trAt: trAt, okAt: okAt, at: now } };
     return { m: nx.m, entry: entry, chunks: chunks, ov: ov, index: index };
   }
 
@@ -693,15 +703,16 @@
     if (!Array.isArray(a)) return null;
     try { return a.map(groupDoc); } catch (e) { return null; }
   }
-  /** ก้อนเลข TRcloud → [[id, tr, trState, trBy, trAt]] */
+  /** ก้อนเลข TRcloud → [[id, tr, trState, trBy, trAt (, ck, ckName, ckAt, ap, apName, apAt, okAt)]] */
   function archFix(chunk) {
     try { var a = JSON.parse(chunk && chunk.t); return Array.isArray(a) ? a : []; } catch (e) { return []; }
   }
-  /** จุดเริ่มดึงเลข TRcloud หลังอ่านก้อน (ms) · ยังไม่เคยปิด = null */
-  function archFloor(idx) {
+  /** จุดเริ่มดึงเลข TRcloud (key trAt) / การตรวจอนุมัติ (key okAt) หลังอ่านก้อน (ms) · ยังไม่เคยปิด = null */
+  function archFloor(idx, key) {
     var ms = (idx && idx.months) || [];
+    key = key || 'trAt';
     if (!ms.length) return null;
-    var w = idx.ov && idx.ov.trAt !== undefined ? +idx.ov.trAt : +ms[ms.length - 1].trAt;
+    var w = idx.ov && idx.ov[key] !== undefined ? +idx.ov[key] : +ms[ms.length - 1][key];
     return (w || 0) - TR_MARGIN;
   }
 

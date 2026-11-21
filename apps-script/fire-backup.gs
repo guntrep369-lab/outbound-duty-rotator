@@ -24,7 +24,7 @@
  *  5. เปิด Google Drive ต้องมีโฟลเดอร์ BACKUP_FOLDER และไฟล์ wms-fire-backup-….json
  *
  * ── แต่ละคืน ──
- *  คืนแรก = ทุกอย่าง · คืนต่อไป = เฉพาะเอกสารใหม่ + เอกสารที่ลงเลข TRcloud ใหม่ + meta/head คนใช้ ตารางหลัก
+ *  คืนแรก = ทุกอย่าง · คืนต่อไป = เฉพาะเอกสารใหม่ + เอกสารที่ลงเลข TRcloud ใหม่ + ใบที่ตรวจ / อนุมัติใหม่ + meta/head คนใช้ ตารางหลัก
  *  ยอด TRcloud ล่าสุด และบันทึกการวางชีตเดิม (อ่านไม่กี่สิบครั้ง ไม่กินโควตาฟรี)
  *  สคริปต์ล้ม Google ส่งอีเมลแจ้งเจ้าของสคริปต์เอง · เกิน 4 นาทีครึ่ง หยุดเองแล้วทำต่อคืนถัดไป
  *  อยากได้ไฟล์ทั้งหมดอีกชุด (เช่น ก่อนนับสต๊อกใหญ่): เรียกใช้ backupFull (อ่านเท่าจำนวนเอกสาร ทำนอกเวลางาน)
@@ -48,7 +48,7 @@ var BACKUP_HOUR = 2;            // ตี 2 ทุกคืน
 var TZ = 'Asia/Bangkok';
 
 var KIND = 'wms-fire-backup';
-var TIME_KEYS = ['at', 'trAt', 'last'];   // ช่องเวลาเซิร์ฟเวอร์ระดับบนของเอกสาร (ในไฟล์เก็บเป็นมิลลิวินาที)
+var TIME_KEYS = ['at', 'trAt', 'last', 'ckAt', 'apAt', 'okAt'];   // ช่องเวลาเซิร์ฟเวอร์ระดับบนของเอกสาร (ในไฟล์เก็บเป็นมิลลิวินาที)
 var PATH_OK = /^(docs|meta|users|master|trc|xfer)\/[^/]+$/;
 var PAGE = 40;                  // เอกสารต่อหน้าเวลาอ่าน (เอกสารใหญ่ได้ถึง 700 KB)
 var STOP_MS = 270000;           // 4 นาทีครึ่ง (Apps Script ให้รันได้ 6 นาที)
@@ -80,37 +80,42 @@ function stopBackup() {
 function backupNightly() {
   need_(FIREBASE_PROJECT_ID, 'ใส่ FIREBASE_PROJECT_ID ก่อน');
   var props = PropertiesService.getScriptProperties();
-  var seq = +props.getProperty('fb.seq') || 0, tr = +props.getProperty('fb.tr') || 0;
-  return backup_(seq, tr, seq ? 'nightly' : 'full');
+  var seq = +props.getProperty('fb.seq') || 0, tr = +props.getProperty('fb.tr') || 0, ok = +props.getProperty('fb.ok') || 0;
+  return backup_(seq, tr, seq ? 'nightly' : 'full', ok);
 }
 
 /** สำรองทุกเอกสารอีกชุด (อ่านเท่าจำนวนเอกสาร) */
 function backupFull() {
   need_(FIREBASE_PROJECT_ID, 'ใส่ FIREBASE_PROJECT_ID ก่อน');
-  return backup_(0, 0, 'full');
+  return backup_(0, 0, 'full', 0);
 }
 
-function backup_(since, trSince, from) {
+function backup_(since, trSince, from, okSince) {
   var t0 = Date.now(), p = FIREBASE_PROJECT_ID, props = PropertiesService.getScriptProperties();
   var meta = get_(p, 'meta/head');
   if (!meta) { log_('ยังไม่มี meta/head ในโปรเจกต์ ' + p + ' (ยังไม่ได้ลงยอดยกมา) ไม่มีอะไรให้สำรอง'); return { empty: true }; }
   var data = {}, reads = 1;
   data['meta/head'] = meta;
 
-  // เอกสารที่ลงเลข TRcloud หลังครั้งก่อน (เอกสารเดิมที่เปลี่ยนได้มีแค่ช่อง TRcloud)
-  var trMax = trSince;
+  // เอกสารเดิมที่แก้หลังครั้งก่อน (แก้ได้แค่ช่อง TRcloud กับการตรวจ / อนุมัติ) ดึงตามเวลาที่แก้
+  var trMax = trSince, okMax = okSince || 0;
   if (from !== 'full') {
-    var trs = pages_(p, 'trAt', { timestampValue: iso_(Math.max(0, trSince - TR_MARGIN)) }, 'GREATER_THAN_OR_EQUAL', t0);
-    reads += trs.reads;
-    trs.docs.forEach(function (d) {
-      data[d.path] = d.data;
-      if (typeof d.data.trAt === 'number' && d.data.trAt > trMax) trMax = d.data.trAt;
-      // เอกสารใหญ่: ส่วนแยกไม่มีช่อง trAt ดึงตามมาด้วย ไฟล์นี้จะได้มีเอกสารครบทุกส่วน
-      for (var i = 2; i <= (+d.data.part || 1); i++) {
-        var pp = d.path + '~' + i, pd = get_(p, pp);
-        reads++;
-        if (pd) data[pp] = pd;
-      }
+    [['trAt', trSince], ['okAt', okMax]].forEach(function (f) {
+      var got = pages_(p, f[0], { timestampValue: iso_(Math.max(0, f[1] - TR_MARGIN)) }, 'GREATER_THAN_OR_EQUAL', t0);
+      reads += got.reads;
+      got.docs.forEach(function (d) {
+        var had = !!data[d.path];
+        data[d.path] = d.data;
+        if (typeof d.data.trAt === 'number' && d.data.trAt > trMax) trMax = d.data.trAt;
+        if (typeof d.data.okAt === 'number' && d.data.okAt > okMax) okMax = d.data.okAt;
+        if (had) return;
+        // เอกสารใหญ่: ส่วนแยกไม่มีช่องเวลาที่แก้ ดึงตามมาด้วย ไฟล์นี้จะได้มีเอกสารครบทุกส่วน
+        for (var i = 2; i <= (+d.data.part || 1); i++) {
+          var pp = d.path + '~' + i, pd = get_(p, pp);
+          reads++;
+          if (pd) data[pp] = pd;
+        }
+      });
     });
   }
 
@@ -123,6 +128,7 @@ function backup_(since, trSince, from) {
     if (d.path.indexOf('~') < 0) docs++;
     if (+d.data.seq > seqMax) seqMax = +d.data.seq;
     if (typeof d.data.trAt === 'number' && d.data.trAt > trMax) trMax = d.data.trAt;
+    if (typeof d.data.okAt === 'number' && d.data.okAt > okMax) okMax = d.data.okAt;
   });
   // หยุดกลางทาง: seq สุดท้ายอาจยังได้ส่วนแยกไม่ครบ คืนถัดไปอ่าน seq นั้นใหม่
   var nextSeq = got.more ? Math.max(since, seqMax - 1) : seqMax;
@@ -156,6 +162,7 @@ function backup_(since, trSince, from) {
   folder_(true).createFile(name, JSON.stringify(file), 'application/json');
   props.setProperty('fb.seq', String(nextSeq));
   props.setProperty('fb.tr', String(trMax));
+  props.setProperty('fb.ok', String(okMax));
   log_('สำรอง ' + name + ' · เอกสารใหม่ ' + docs + ' ใบ · ทั้งไฟล์ ' + Object.keys(data).length + ' รายการ · อ่าน ' + reads + ' ครั้ง' +
     (got.more ? ' · ยังไม่ครบ (เกินเวลา) คืนถัดไปทำต่อจาก seq ' + nextSeq : ''));
   return { name: name, docs: docs, items: Object.keys(data).length, reads: reads, more: got.more, seq: nextSeq };

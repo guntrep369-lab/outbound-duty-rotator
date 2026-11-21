@@ -72,6 +72,20 @@
   var WH_MAIN = 'WH-02';
   var WH_QA = 'WH-QA';
 
+  /*
+   * ตรวจ / อนุมัติหลังบันทึก (ผู้จัดทำ → ผู้ตรวจสอบ → ผู้อนุมัติ) ผู้ใช้ตัดสิน 2026-11-21
+   * ยอดเปลี่ยนตั้งแต่บันทึก (ของย้ายจริงแล้ว ตัดขายไม่สะดุด) ช่องพวกนี้บอกว่าใครตรวจ ใครอนุมัติ เมื่อไร
+   * ผู้ตรวจต้องไม่ใช่คนทำ · ผู้อนุมัติ = หัวหน้า หลังมีผู้ตรวจ (หัวหน้าอนุมัติใบที่ตัวเองทำได้) ตรงกับ okUpdate ใน firestore.rules
+   * okAt = เวลาเซิร์ฟเวอร์ที่แก้ล่าสุด เครื่องอื่นดึงตามช่องนี้ (แบบ trAt ของเลข TRcloud)
+   */
+  var OK_TYPES = [TYPE_MOVE, TYPE_CONV];   // ทุกใบในเมนู ย้าย / เติม / QA กับ แปลงสินค้า
+  var OK_KEYS = ['ck', 'ckName', 'ckAt', 'ap', 'apName', 'apAt', 'okAt'];
+  var OK_MAX = 10;                        // ใบต่อคำขอ (Rules อ่าน users ทีละเอกสาร รวม meta ต้องไม่เกิน 20)
+  var OK_CHECK = 'check';                 // รอตรวจ
+  var OK_APPROVE = 'approve';             // ตรวจแล้ว รออนุมัติ
+  var OK_DONE = 'done';                   // อนุมัติแล้ว
+  var OK_ACTS = ['check', 'approve', 'both'];
+
   /** op ของหน้าเว็บ → ประเภทเอกสาร และใครลงได้ */
   var OPS = {
     'bk-cut': { type: TYPE_SALE, head: false },
@@ -601,6 +615,7 @@
       trBy: d.trBy || '', trAt: typeof d.trAt === 'number' ? d.trAt : 0,
       rows: rowsIn(rows), names: decMap(d.names), lines: linesIn(orders), part: +d.part || 1,
     };
+    okIn(out, d);
     if (sorted.length) out.cut = cutOf(d, sorted);
     var w = widthOf(rows);
     if (w) out.w = w;
@@ -626,7 +641,16 @@
       orders: d.lines && d.lines.length ? linesOut(d.lines) : '', part: 1,
     };
     if (d.trBy) { o.trBy = d.trBy; o.trAt = d.trAt; }
+    okIn(o, d);
     return o;
+  }
+
+  /** ช่องตรวจ / อนุมัติ จาก src ไป out เฉพาะที่มี (เอกสารที่ไม่เคยตรวจไม่มีช่องพวกนี้ รูปเดิมไม่เปลี่ยน) */
+  function okIn(out, src) {
+    if (src.ck) { out.ck = String(src.ck); out.ckName = String(src.ckName || ''); out.ckAt = typeof src.ckAt === 'number' ? src.ckAt : 0; }
+    if (src.ap) { out.ap = String(src.ap); out.apName = String(src.apName || ''); out.apAt = typeof src.apAt === 'number' ? src.apAt : 0; }
+    if (typeof src.okAt === 'number' && src.okAt > 0) out.okAt = src.okAt;
+    return out;
   }
 
   /** สถานะยกเลิกของทุกเอกสาร { เลขที่: {status, voidBy, voidAt, why, link} } จากเอกสารกลับรายการ และยอดยกมาที่ถูกลงใหม่ */
@@ -639,6 +663,51 @@
       }
     });
     return out;
+  }
+
+  /**
+   * สถานะตรวจ / อนุมัติ: '' ไม่ต้อง (ประเภทอื่น · ใบที่ยกเลิกก่อนอนุมัติ) · check รอตรวจ · approve รออนุมัติ · done อนุมัติแล้ว
+   * vd = voids(local) (ส่งมาเมื่อคิดหลายใบ)
+   */
+  function okState(d, vd) {
+    if (!d || OK_TYPES.indexOf(d.type) < 0) return '';
+    if (d.ap) return OK_DONE;
+    if (vd && vd[d.no]) return '';
+    return d.ck ? OK_APPROVE : OK_CHECK;
+  }
+
+  /**
+   * ตรวจ / อนุมัติ nos = [เลขที่] ไม่เกิน OK_MAX · act = check ตรวจ | approve อนุมัติ | both หัวหน้าตรวจและอนุมัติในครั้งเดียว
+   * → { writes: [[path, ช่องที่แก้]] } หรือ { error, bad: [{no, why}] } (ใบไหนทำไม่ได้ ไม่เขียนสักใบ)
+   */
+  function okSet(local, nos, user, act) {
+    if (!user || (user.role !== 'head' && user.role !== 'staff')) return { error: 'บัญชีนี้ดูได้อย่างเดียว' };
+    if (OK_ACTS.indexOf(act) < 0) return { error: 'ไม่รู้จักคำสั่ง ' + act };
+    if (act !== 'check' && user.role !== 'head') return { error: 'อนุมัติได้เฉพาะหัวหน้า' };
+    if (!Array.isArray(nos) || !nos.length) return { error: 'ยังไม่ได้เลือกเอกสาร' };
+    if (nos.length > OK_MAX) return { error: 'ตรวจ / อนุมัติได้ครั้งละไม่เกิน ' + OK_MAX + ' ใบ' };
+    var vd = voids(local), by = {}, seen = {}, bad = [], writes = [];
+    var name = String(user.name || user.email).slice(0, 60);
+    (local.docs || []).forEach(function (d) { by[d.no] = d; });
+    nos.forEach(function (raw) {
+      var no = text(raw), d = by[no], st = d ? okState(d, vd) : '';
+      var why = !d ? 'ไม่พบเลขที่นี้' : seen[no] ? 'ซ้ำในรายการ'
+        : OK_TYPES.indexOf(d.type) < 0 ? d.type + 'ไม่ต้องตรวจ / อนุมัติ'
+        : !st ? 'ใบนี้ยกเลิกแล้ว'
+        : st === OK_DONE ? 'อนุมัติแล้ว'
+        : act === 'approve' && st === OK_CHECK ? 'ยังไม่มีผู้ตรวจ'
+        : act !== 'approve' && st === OK_APPROVE ? 'ตรวจแล้ว'
+        : act !== 'approve' && d.by === user.email ? 'คนทำตรวจใบของตัวเองไม่ได้' : '';
+      if (why) { bad.push({ no: no, why: why }); return; }
+      seen[no] = 1;
+      var w = {};
+      if (act !== 'approve') { w.ck = user.email; w.ckName = name; w.ckAt = TIME; }
+      if (act !== 'check') { w.ap = user.email; w.apName = name; w.apAt = TIME; }
+      w.okAt = TIME;
+      writes.push(['docs/' + d.id, w]);
+    });
+    if (bad.length) return { error: (nos.length > 1 ? bad.length + ' ใบทำไม่ได้ · ' : '') + bad[0].no + ' ' + bad[0].why, bad: bad };
+    return { writes: writes };
   }
 
   /** เอกสารที่ยังนับ (หลังยอดยกมาล่าสุด) */
@@ -908,6 +977,7 @@
     var seq = (+meta.seq || 0) + 1;
     var newMeta = { v: V, seq: seq, month: month, next: nextNo + 1, last: P.batch, rows: rowAt - 2 + rows.length, open: open, mv: +meta.mv || 0, tv: +meta.tv || 0, at: TIME };
     if (meta.trc) newMeta.trc = meta.trc;   // ยอด TRcloud ล่าสุดที่หัวหน้านำเข้า (Rules บังคับให้คงไว้)
+    if (+meta.ov) newMeta.ov = +meta.ov;    // รุ่นการตรวจ / อนุมัติ (Rules บังคับให้คงไว้)
     /* สถานะลง TRcloud: ใส่เลขมาตอนบันทึก = ลงแล้ว · กลับรายการคิดจากชุดเดิมในเครื่อง (trStates) จึงเก็บว่าง */
     var tr = trOf(rows);
     var trState = P.op === 'bk-void' ? '' : trNeed(P.type, rows) ? (tr ? TR_DONE : TR_WAIT) : TR_NONE;
@@ -1214,6 +1284,8 @@
     HEAD_TYPES: HEAD_TYPES, STAFF_TYPES: STAFF_TYPES, TYPE_OPEN: TYPE_OPEN, TYPE_REV: TYPE_REV, TYPE_SALE: TYPE_SALE, TYPE_RET: TYPE_RET,
     TYPE_MOVE: TYPE_MOVE, TYPE_GR: TYPE_GR, TYPE_CONV: TYPE_CONV, TYPE_ADJ: TYPE_ADJ, TYPE_ROWS: TYPE_ROWS,
     TR_WAIT: TR_WAIT, TR_DONE: TR_DONE, TR_NONE: TR_NONE, TR_STATES: TR_STATES, WH_MAIN: WH_MAIN, WH_QA: WH_QA,
+    OK_TYPES: OK_TYPES, OK_KEYS: OK_KEYS, OK_MAX: OK_MAX, OK_CHECK: OK_CHECK, OK_APPROVE: OK_APPROVE, OK_DONE: OK_DONE, OK_ACTS: OK_ACTS,
+    okState: okState, okSet: okSet, okIn: okIn,
     whOf: whOf, whLines: whLines, trNeed: trNeed, docOut: docOut, round3: round3, code: code, dayNo: dayNo, grDay: grDay,
     text: text, up: up, today: today, stamp: stamp, yymm: yymm, monthsOk: monthsOk, MONTH_TOL: MONTH_TOL, period: period, prevYm: prevYm, monthsBack: monthsBack,
     byteLen: byteLen, enc: enc, dec: dec, encMap: encMap, decMap: decMap, rowsIn: rowsIn, linesOut: linesOut,

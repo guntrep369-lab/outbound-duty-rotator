@@ -9,9 +9,10 @@ rules_version = '2';
 // ที่เก็บ
 //   users/{อีเมลตัวเล็ก}  {name, role: head | staff | viewer, active, last, by, at}  หัวหน้าเพิ่มชื่อในหน้าตั้งค่า
 //   use/{วันแปซิฟิก}      {รหัสเครื่อง: {r, w, by}}  ตัวนับโควตา แต่ละเครื่องส่งยอดของตัวเองชั่วโมงละครั้ง
-//   meta/head            {v, seq, month, next, last, rows, open, mv, tv, trc, at}  ทุกการบันทึกเขียนตัวนี้ จึงเรียงกันทีละชุด
-//                        tv = รุ่นเลข TRcloud (ใส่เลขแล้ว +1) · trc = 'วันที่#รุ่น' ยอด TRcloud ล่าสุด · mv = รุ่นตารางหลัก
-//   docs/{รหัสชุด}         กดบันทึก 1 ครั้ง = 1 เอกสาร สร้างได้อย่างเดียว แก้ได้เฉพาะเลข TRcloud (tr trState trBy trAt) ลบไม่ได้
+//   meta/head            {v, seq, month, next, last, rows, open, mv, tv, ov, trc, at}  ทุกการบันทึกเขียนตัวนี้ จึงเรียงกันทีละชุด
+//                        tv = รุ่นเลข TRcloud (ใส่เลขแล้ว +1) · ov = รุ่นการตรวจ / อนุมัติ (กดแล้ว +1) · trc = 'วันที่#รุ่น' ยอด TRcloud ล่าสุด · mv = รุ่นตารางหลัก
+//   docs/{รหัสชุด}         กดบันทึก 1 ครั้ง = 1 เอกสาร สร้างได้อย่างเดียว แก้ได้เฉพาะเลข TRcloud (tr trState trBy trAt)
+//                        และการตรวจ / อนุมัติของใบย้ายกับแปลง (ck ckName ckAt ap apName apAt okAt) ลบไม่ได้
 //   docs/{รหัสชุด}~2, ~3  ส่วนแยกของเอกสารใหญ่ ต้องมาในคำขอเดียวกับเอกสารหลัก
 //   master/{conv|sup|cap} ตารางแปลงสินค้า Supplier ความจุ หัวหน้าแก้
 //   trc/{วันที่}           ยอดคงเหลือ TRcloud ที่นำเข้า (Stock WH-Loss ราคาทุน) หัวหน้าแก้
@@ -24,7 +25,7 @@ rules_version = '2';
 // และ 20 ครั้งต่อ transaction หรือ batch นับรวมทุกเอกสาร จึงออกแบบให้ใช้น้อย:
 //   docs สร้างใหม่ (หลักหรือส่วนแยก)  2  = users + getAfter(meta/head)
 //   meta/head seq +1                2  = users + getAfter(docs/{last})
-//   อื่น ๆ                           1  = users (ใส่เลข TRcloud ครั้งละไม่เกิน 10 เอกสาร + meta = 11)
+//   อื่น ๆ                           1  = users (ใส่เลข TRcloud / ตรวจ / อนุมัติ ครั้งละไม่เกิน 10 เอกสาร + meta = 11)
 //   บันทึกหนึ่งชุด = 4 + 2 ต่อส่วนแยก แอปจำกัดไม่เกิน 7 ส่วน (PARTS_MAX) = 16
 
 service cloud.firestore {
@@ -84,10 +85,28 @@ service cloud.firestore {
         && d.trAt == request.time && d.trState in ['wait', 'done', 'none'] && d.tr is string && d.tr.size() <= 100;
     }
 
+    /**
+     * ตรวจ / อนุมัติทีหลัง (ใบย้ายกับแปลง ยอดเปลี่ยนตั้งแต่บันทึก): ผู้ตรวจไม่ใช่คนทำ · ผู้อนุมัติเป็นหัวหน้า หลังมีผู้ตรวจ
+     * (ตรวจกับอนุมัติในคำขอเดียวกันได้ · หัวหน้าอนุมัติใบที่ตัวเองทำได้) ตั้งแล้วแก้ไม่ได้ เวลาเป็นของเซิร์ฟเวอร์
+     * okAt = เวลาแก้ล่าสุด เครื่องอื่นดึงตามช่องนี้ · ตรงกับ okSet ใน public/wms-fire-core.js
+     */
+    function okUpdate(d, old, u) {
+      let keys = d.diff(old).affectedKeys();
+      let ck = keys.hasAny(['ck', 'ckName', 'ckAt']);
+      let ap = keys.hasAny(['ap', 'apName', 'apAt']);
+      return isStaff(u) && old.type in ['ย้าย', 'แปลง'] && (ck || ap)
+        && keys.hasOnly(['ck', 'ckName', 'ckAt', 'ap', 'apName', 'apAt', 'okAt']) && d.okAt == request.time
+        && (!ck || (old.get('ck', '') == '' && d.ck == email() && d.ck != old.by && d.ckAt == request.time
+          && d.ckName is string && d.ckName.size() <= 60))
+        && (!ap || (isHead(u) && old.get('ap', '') == '' && d.ap == email() && d.get('ck', '') != '' && d.apAt == request.time
+          && d.apName is string && d.apName.size() <= 60));
+    }
+    function docUpdate(d, old, u) { return trUpdate(d, old, u) || okUpdate(d, old, u); }
+
     match /docs/{id} {
       allow read: if signedIn() && isActive(profile());
       allow create: if signedIn() && docCreate(id, request.resource.data, profile(), metaAfter());
-      allow update: if signedIn() && trUpdate(request.resource.data, resource.data, profile());
+      allow update: if signedIn() && docUpdate(request.resource.data, resource.data, profile());
     }
 
     /* ── meta/head ── */
@@ -101,6 +120,7 @@ service cloud.firestore {
         && monthOk(d.month) && d.month >= prevMonth && d.next == prevNext + 1
         && d.get('mv', 0) == (old == null ? 0 : old.get('mv', 0))
         && d.get('tv', 0) == (old == null ? 0 : old.get('tv', 0))
+        && d.get('ov', 0) == (old == null ? 0 : old.get('ov', 0))
         && d.get('trc', '') == (old == null ? '' : old.get('trc', ''))
         && getAfter(/databases/$(database)/documents/docs/$(d.last)).data.seq == d.seq;
     }
@@ -112,6 +132,10 @@ service cloud.firestore {
     function metaTv(d, old, u) {
       return isStaff(u) && d.diff(old).affectedKeys().hasOnly(['tv']) && d.tv == (('tv' in old) ? old.tv : 0) + 1;
     }
+    /** ตรวจ / อนุมัติแล้ว ov +1 ให้เครื่องอื่นดึงการตรวจ / อนุมัติใหม่ (แยกจาก tv: เครื่องอื่นไม่ต้องดึงเลข TRcloud ซ้ำ) */
+    function metaOv(d, old, u) {
+      return isStaff(u) && d.diff(old).affectedKeys().hasOnly(['ov']) && d.ov == (('ov' in old) ? old.ov : 0) + 1;
+    }
 
     match /meta/{id} {
       allow read: if signedIn() && isActive(profile());
@@ -119,7 +143,8 @@ service cloud.firestore {
       allow update: if signedIn() && id == 'head'
         && (request.resource.data.seq != resource.data.seq
           ? metaBump(request.resource.data, resource.data, profile())
-          : (metaTv(request.resource.data, resource.data, profile()) || metaMv(request.resource.data, resource.data, profile())));
+          : (metaTv(request.resource.data, resource.data, profile()) || metaOv(request.resource.data, resource.data, profile())
+            || metaMv(request.resource.data, resource.data, profile())));
     }
 
     /* ── รายชื่อ ตารางหลัก ไฟล์ TRcloud ── */

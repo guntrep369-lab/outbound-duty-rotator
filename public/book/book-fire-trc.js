@@ -82,11 +82,13 @@
   function shown() {
     return (LIST || []).filter(function (x) { return (SHOW === 'all' || x.state === SHOW) && (!TYPE || x.type === TYPE); });
   }
-  /** ติ๊กไว้ หรือไม่ได้ติ๊กเลย = ทุกใบที่รอลงและออกไฟล์ได้ในหน้าที่แสดง */
+  /** ใบย้ายที่ยังไม่อนุมัติ: ยอดในสมุดเปลี่ยนแล้ว แต่ยังไม่ออกไฟล์ปรับยอด TRcloud */
+  function held(x) { return x.kind === 'file' && (x.ok === 'check' || x.ok === 'approve'); }
+  /** ติ๊กไว้ หรือไม่ได้ติ๊กเลย = ทุกใบที่รอลงและออกไฟล์ได้ในหน้าที่แสดง (ไม่รวมใบที่ยังไม่อนุมัติ) */
   function fileDocs() {
-    var picked = (LIST || []).filter(function (x) { return PICK[x.no] && x.kind === 'file' && x.wh.length; });
+    var picked = (LIST || []).filter(function (x) { return PICK[x.no] && x.kind === 'file' && x.wh.length && !held(x); });
     if (picked.length) return picked;
-    return shown().filter(function (x) { return x.kind === 'file' && x.state === 'wait' && x.wh.length; });
+    return shown().filter(function (x) { return x.kind === 'file' && x.state === 'wait' && x.wh.length && !held(x); });
   }
   function whSum(x) {
     var by = {};
@@ -123,6 +125,8 @@
     if (Object.keys(PICK).length) html += '<button class="bk-link" id="ttPickX">ไม่ติ๊ก</button>';
     if (viewer()) html += '<span class="g-hint">ดูอย่างเดียว ใส่เลขไม่ได้</span>';
     else html += '<span class="g-hint">พิมพ์เลข TRcloud แล้ว Enter · ติ๊ก ☐ เลือกใบที่จะทำไฟล์</span>';
+    var nh = shown().filter(function (x) { return held(x) && x.state === 'wait' && x.wh.length; }).length;
+    if (nh) html += '<span class="g-hint c-warn">' + f(nh) + ' ใบยังไม่อนุมัติ ออกไฟล์ได้หลังหัวหน้าอนุมัติ</span>';
     return html;
   }
   function stSel(x, c) {
@@ -149,9 +153,11 @@
       var c = cur(x), ed = EDIT[x.no] && (c.tr !== x.tr || c.state !== x.state);
       var todo = x.kind === 'file' ? (x.wh.length ? 'ไฟล์ปรับยอด <span class="tt-wh">' + whSum(x) + '</span>' : 'ไม่เปลี่ยนคลัง')
         : esc(NEED[x.type] || 'สร้างใน TRcloud');
+      if (x.ok === 'check' || x.ok === 'approve') todo = '<span class="ba-st ' + (x.ok === 'check' ? 'wait' : 'apv') + '">' + (x.ok === 'check' ? 'รอตรวจ' : 'รออนุมัติ') + '</span>' + todo;
       var tag = x.type === 'กลับรายการ' ? ' <span class="c-sub">ของ ' + esc(x.link) + '</span>' : x.voided ? ' <span class="c-sub">ยกเลิกแล้ว ' + esc(x.link) + '</span>' : '';
       rows.push('<tr class="' + (x.voided ? 'r-void' : '') + (ed ? ' r-add' : '') + '">' +
-        '<td style="text-align:center">' + (x.kind === 'file' && x.wh.length ? '<input type="checkbox" data-tpick="' + esc(x.no) + '"' + (PICK[x.no] ? ' checked' : '') + ' aria-label="เลือก ' + esc(x.no) + '">' : '') + '</td>' +
+        '<td style="text-align:center">' + (x.kind === 'file' && x.wh.length && !held(x) ? '<input type="checkbox" data-tpick="' + esc(x.no) + '"' + (PICK[x.no] ? ' checked' : '') + ' aria-label="เลือก ' + esc(x.no) + '">'
+          : held(x) && x.wh.length ? '<span class="c-sub" title="ยังไม่อนุมัติ ออกไฟล์ปรับยอดไม่ได้">🔒</span>' : '') + '</td>' +
         '<td><button class="tt-no" data-topen="' + esc(x.no) + '">' + esc(x.no) + '</button></td>' +
         '<td>' + esc(x.type) + tag + '</td><td class="c-sub">' + esc(x.date) + '</td><td class="c-sub">' + esc(x.name) + '</td>' +
         '<td class="num">' + f(x.qty) + '</td><td style="white-space:normal">' + todo + '</td>' +
@@ -195,7 +201,8 @@
       var days = list.map(function (x) { return x.date; }).sort();
       X.writeFile(wb, 'ปรับยอดTRcloud_' + days[0] + (days[days.length - 1] !== days[0] ? '_ถึง_' + days[days.length - 1] : '') + '.xlsx');
       NOTE = { kind: 'ok', html: 'ดาวน์โหลดแล้ว ' + f(r.lines) + ' แถว จาก ' + f(r.docs.length) + ' ใบ (' + esc(r.docs.join(', ')) + ') · นำเข้า TRcloud แล้วพิมพ์เลขเอกสารของ TRcloud ในช่องของแต่ละใบ' +
-        (r.skip.length ? ' · ข้าม ' + esc(r.skip.join(', ')) + ' (ไม่ใช่งานไฟล์ปรับยอด)' : '') };
+        (r.skip.length ? ' · ข้าม ' + esc(r.skip.join(', ')) + ' (ไม่ใช่งานไฟล์ปรับยอด)' : '') +
+        (r.hold && r.hold.length ? ' · ข้าม ' + esc(r.hold.join(', ')) + ' (ยังไม่อนุมัติ)' : '') };
     } catch (e) {
       NOTE = { kind: 'bad', html: 'ทำไฟล์ไม่ได้: ' + esc(e.message) };
     }

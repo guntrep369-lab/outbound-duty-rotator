@@ -100,6 +100,11 @@
       if (col === 'docs') {
         if (old) {
           var changed = Object.keys(d).concat(Object.keys(old)).filter(function (k) { return JSON.stringify(d[k]) !== JSON.stringify(old[k]); });
+          if (changed.length && changed.every(function (k) { return C.OK_KEYS.indexOf(k) >= 0; })) {
+            var okWhy = okRule(d, old, changed, email, head);
+            if (okWhy) return okWhy;
+            continue;
+          }
           if (changed.some(function (k) { return TR_KEYS.indexOf(k) < 0; }) || d.trBy !== email) return 'เอกสารแก้ได้เฉพาะเลข TRcloud';
           if (C.TR_STATES.indexOf(d.trState) < 0 || d.trAt !== C.TIME || typeof d.tr !== 'string' || d.tr.length > 100) return 'สถานะ TRcloud ไม่ถูก';
           continue;
@@ -134,8 +139,9 @@
           if (d.month < pm) return 'เดือนของเลขเอกสารย้อนเดือนเดิมไม่ได้';
           if (d.next !== (mb && pm === d.month ? +mb.next || 1 : 1) + 1) return 'เลขถัดไปใน meta ไม่ถูก';
           if (d.at !== C.TIME) return 'at ต้องเป็นเวลาเซิร์ฟเวอร์';
-          if ((+d.mv || 0) !== (mb ? +mb.mv || 0 : 0) || (+d.tv || 0) !== (mb ? +mb.tv || 0 : 0) || (d.trc || '') !== (mb ? mb.trc || '' : '')) {
-            return 'บันทึกเอกสารต้องคง mv tv trc ของ meta เดิม';
+          if ((+d.mv || 0) !== (mb ? +mb.mv || 0 : 0) || (+d.tv || 0) !== (mb ? +mb.tv || 0 : 0) || (+d.ov || 0) !== (mb ? +mb.ov || 0 : 0) ||
+            (d.trc || '') !== (mb ? mb.trc || '' : '')) {
+            return 'บันทึกเอกสารต้องคง mv tv ov trc ของ meta เดิม';
           }
           continue;
         }
@@ -143,6 +149,11 @@
         /* ใส่เลข TRcloud: tv +1 ให้เครื่องอื่นรู้ว่าต้องดึงเลขใหม่ (ทุกคนที่ลงรายการได้) */
         if (diff.length === 1 && diff[0] === 'tv') {
           if (d.tv !== (+mb.tv || 0) + 1) return 'tv ต้องเพิ่มทีละ 1';
+          continue;
+        }
+        /* ตรวจ / อนุมัติ: ov +1 (แยกจาก tv เครื่องอื่นดึงเฉพาะของที่เปลี่ยน) */
+        if (diff.length === 1 && diff[0] === 'ov') {
+          if (d.ov !== (+mb.ov || 0) + 1) return 'ov ต้องเพิ่มทีละ 1';
           continue;
         }
         if (!head) return 'meta เขียนได้เฉพาะตอนบันทึกเอกสาร';
@@ -153,6 +164,29 @@
     }
     var cap = writes.length > 1 ? RULE_CALLS_MANY : RULE_CALLS_ONE;
     if (calls > cap) return 'Rules อ่านเอกสารประกอบ ' + calls + ' ครั้ง เกิน ' + cap + ' ต่อคำขอ';
+    return '';
+  }
+
+  /** ตรวจ / อนุมัติทีหลัง แบบ okUpdate ใน firestore.rules (คนเรียกเช็คแล้วว่าเป็นคนลงรายการได้) */
+  function okRule(d, old, changed, email, head) {
+    var ck = ['ck', 'ckName', 'ckAt'].some(function (k) { return changed.indexOf(k) >= 0; });
+    var ap = ['ap', 'apName', 'apAt'].some(function (k) { return changed.indexOf(k) >= 0; });
+    if (C.OK_TYPES.indexOf(old.type) < 0) return 'ตรวจ / อนุมัติได้เฉพาะใบย้ายกับแปลง';
+    if (!ck && !ap) return 'ไม่มีการตรวจหรืออนุมัติ';
+    if (d.okAt !== C.TIME) return 'okAt ต้องเป็นเวลาเซิร์ฟเวอร์';
+    if (ck) {
+      if (old.ck) return 'ใบนี้ตรวจแล้ว';
+      if (d.ck !== email) return 'ผู้ตรวจต้องเป็นคนที่ล็อกอิน';
+      if (d.ck === old.by) return 'คนทำตรวจใบของตัวเองไม่ได้';
+      if (d.ckAt !== C.TIME || typeof d.ckName !== 'string' || d.ckName.length > 60) return 'ช่องผู้ตรวจไม่ถูก';
+    }
+    if (ap) {
+      if (!head) return 'อนุมัติได้เฉพาะหัวหน้า';
+      if (old.ap) return 'ใบนี้อนุมัติแล้ว';
+      if (d.ap !== email) return 'ผู้อนุมัติต้องเป็นคนที่ล็อกอิน';
+      if (!d.ck) return 'ต้องมีผู้ตรวจก่อนอนุมัติ';
+      if (d.apAt !== C.TIME || typeof d.apName !== 'string' || d.apName.length > 60) return 'ช่องผู้อนุมัติไม่ถูก';
+    }
     return '';
   }
 
@@ -226,6 +260,13 @@
         /** เอกสารที่แก้เลข TRcloud ตั้งแต่เวลา ms (trAt >= ms) [{id, data}] */
         trAfter: function (ms) {
           var list = Object.keys(docs).filter(function (p) { return p.indexOf('docs/') === 0 && typeof docs[p].d.trAt === 'number' && docs[p].d.trAt >= ms; });
+          counts.reads += Math.max(1, list.length);
+          own.reads += Math.max(1, list.length);
+          return Promise.resolve(list.map(function (p) { return { id: p.slice(5), data: clone(docs[p].d) }; }));
+        },
+        /** เอกสารที่ตรวจ / อนุมัติตั้งแต่เวลา ms (okAt >= ms) [{id, data}] */
+        okAfter: function (ms) {
+          var list = Object.keys(docs).filter(function (p) { return p.indexOf('docs/') === 0 && typeof docs[p].d.okAt === 'number' && docs[p].d.okAt >= ms; });
           counts.reads += Math.max(1, list.length);
           own.reads += Math.max(1, list.length);
           return Promise.resolve(list.map(function (p) { return { id: p.slice(5), data: clone(docs[p].d) }; }));
@@ -354,6 +395,13 @@
           return s.docs.map(function (x) { return { id: x.id, data: out(x) }; });
         });
       },
+      okAfter: function (ms) {
+        var q = F.query(F.collection(db, 'docs'), F.where('okAt', '>=', F.Timestamp.fromMillis(ms)));
+        return F.getDocs(q).then(function (s) {
+          if (!s.size) counts.reads++;
+          return s.docs.map(function (x) { return { id: x.id, data: out(x) }; });
+        });
+      },
       tx: function (fn) {
         counts.tx++;
         return F.runTransaction(db, function (t) {
@@ -437,8 +485,9 @@
 
   /* ── สำเนาในเครื่อง ──────────────────────────────────────────────────── */
 
-  /* tv = รุ่นเลข TRcloud ที่เครื่องนี้ดึงแล้ว (null = ยังไม่เคย) · trAt = เวลาแก้เลข TRcloud ล่าสุดที่เห็น · trc = ยอด TRcloud ล่าสุด {key, id, data} */
-  function emptyLocal() { return { v: C.V, seq: 0, meta: null, docs: [], piles: {}, master: {}, mv: -1, tv: null, trAt: 0, trc: null }; }
+  /* tv = รุ่นเลข TRcloud ที่เครื่องนี้ดึงแล้ว (null = ยังไม่เคย) · trAt = เวลาแก้เลข TRcloud ล่าสุดที่เห็น · trc = ยอด TRcloud ล่าสุด {key, id, data}
+     ov / okAt = รุ่นการตรวจ / อนุมัติที่ดึงแล้ว / เวลาตรวจ / อนุมัติล่าสุดที่เห็น */
+  function emptyLocal() { return { v: C.V, seq: 0, meta: null, docs: [], piles: {}, master: {}, mv: -1, tv: null, ov: null, trAt: 0, okAt: 0, trc: null }; }
 
   function memCache() {
     var saved = null;
@@ -478,7 +527,7 @@
         var d = await db(), tx = d.transaction(['docs', 'kv'], 'readwrite'), ds = tx.objectStore('docs');
         (added || local.docs).forEach(function (x) { ds.put(x); });
         tx.objectStore('kv').put({ v: local.v, seq: local.seq, meta: local.meta, piles: local.piles, master: local.master, mv: local.mv,
-          tv: local.tv === undefined ? null : local.tv, trAt: local.trAt || 0, trc: local.trc || null }, 'state');
+          tv: local.tv === undefined ? null : local.tv, ov: local.ov === undefined ? null : local.ov, trAt: local.trAt || 0, okAt: local.okAt || 0, trc: local.trc || null }, 'state');
         return done(tx);
       },
       clear: async function () {
@@ -568,12 +617,13 @@
         return { seq: 0, added: 0 };
       }
       if (meta.v !== C.V || local.v !== C.V || meta.seq < local.seq) { local = emptyLocal(); try { await cache.clear(); } catch (e) {} }
-      var fresh = !local.seq, trFrom = local.trAt || 0, trFloor = null;
+      var fresh = !local.seq, trFrom = local.trAt || 0, okFrom = local.okAt || 0, trFloor = null, okFloor = null;
       /* เครื่องใหม่ / ตามหลังมาก: อ่านเดือนที่ปิดแล้วเป็นก้อน (ทีละไม่กี่ร้อย KB) แทนทีละเอกสาร */
       if ((fresh || meta.seq - local.seq > ARCH_GAP) && window.WmsFireTrc) {
         var ar = await fromArch();
         added = added.concat(ar.added);
         trFloor = ar.floor;
+        okFloor = ar.okFloor === undefined ? null : ar.okFloor;
       }
       var guard = 0;
       while (local.seq < meta.seq && guard++ < 10000) {
@@ -597,6 +647,7 @@
           added.push(d);
           local.seq = Math.max(local.seq, d.seq);
           if (d.trAt > (local.trAt || 0)) local.trAt = d.trAt;
+          if (d.okAt > (local.okAt || 0)) local.okAt = d.okAt;
         }
         if (!mains.length) break;
       }
@@ -604,11 +655,15 @@
        * เลข TRcloud ที่มีคนใส่ทีหลัง (แก้เอกสารเก่า seq ไม่เปลี่ยน): tv ใน meta เปลี่ยน = ดึงเอกสารที่ trAt ใหม่กว่าที่เคยเห็น
        * นับจากก่อนดึงรอบนี้ (เอกสารใหม่ในรอบนี้อาจมี trAt ใหม่กว่าเอกสารเก่าที่เพิ่งแก้) · อ่านก้อนปิดเดือน = ดึงตั้งแต่วันปิดล่าสุด
        */
-      var tv = +meta.tv || 0;
+      var tv = +meta.tv || 0, ov = +meta.ov || 0, byId = null;
+      var ids = function () {
+        if (!byId) { byId = {}; local.docs.forEach(function (x) { byId[x.id] = x; }); }
+        return byId;
+      };
       if (local.tv === null || local.tv === undefined) local.tv = fresh && trFloor === null ? tv : -1;
+      if (local.ov === null || local.ov === undefined) local.ov = fresh && trFloor === null ? ov : -1;
       if (local.tv !== tv || trFloor !== null) {
-        var byId = {};
-        local.docs.forEach(function (x) { byId[x.id] = x; });
+        ids();
         var floor = trFloor === null ? trFrom : fresh ? trFloor : Math.min(trFloor, trFrom);
         (await store.trAfter(floor)).forEach(function (x) {
           var d = byId[x.id];
@@ -621,6 +676,21 @@
           if (added.indexOf(d) < 0) added.push(d);
         });
         local.tv = tv;
+      }
+      /* ตรวจ / อนุมัติที่มีคนกดทีหลัง (ov ใน meta +1) ดึงตาม okAt แบบเดียวกับเลข TRcloud · อ่านก้อนปิดเดือน = ดึงตั้งแต่วันปิดล่าสุด */
+      if (store.okAfter && (local.ov !== ov || trFloor !== null)) {
+        ids();
+        var of = okFloor === null ? trFloor : okFloor;
+        var oFloor = trFloor === null ? okFrom : fresh ? of : Math.min(of, okFrom);
+        (await store.okAfter(oFloor)).forEach(function (x) {
+          var d = byId[x.id];
+          if (!d || x.data.of) return;
+          C.OK_KEYS.forEach(function (k) { delete d[k]; });
+          C.okIn(d, x.data);
+          if (d.okAt > (local.okAt || 0)) local.okAt = d.okAt;
+          if (added.indexOf(d) < 0) added.push(d);
+        });
+        local.ov = ov;
       }
       /* ยอด TRcloud ล่าสุดที่หัวหน้านำเข้า (meta.trc = 'วันที่#รุ่น') ดึงเมื่อเปลี่ยน */
       if (meta.trc && (!local.trc || local.trc.key !== meta.trc)) {
@@ -693,12 +763,17 @@
         (await store.getMany(ovIds)).forEach(function (c) {
           T().archFix(c).forEach(function (e) {
             var d = byId[e[0]];
-            if (!d || +e[4] < (d.trAt || 0)) return;
-            d.tr = e[1] || ''; d.trState = e[2] || ''; d.trBy = e[3] || ''; d.trAt = +e[4] || 0;
+            if (!d) return;
+            if (+e[4] >= (d.trAt || 0)) { d.tr = e[1] || ''; d.trState = e[2] || ''; d.trBy = e[3] || ''; d.trAt = +e[4] || 0; }
+            /* ตรวจ / อนุมัติหลังปิดเดือน [.., ck, ckName, ckAt, ap, apName, apAt, okAt] */
+            if (e.length > 5 && +e[11] >= (d.okAt || 0)) {
+              C.OK_KEYS.forEach(function (k) { delete d[k]; });
+              C.okIn(d, { ck: e[5], ckName: e[6], ckAt: +e[7] || 0, ap: e[8], apName: e[9], apAt: +e[10] || 0, okAt: +e[11] || 0 });
+            }
           });
         });
       }
-      return { added: added, floor: T().archFloor(idx) };
+      return { added: added, floor: T().archFloor(idx), okFloor: T().archFloor(idx, 'okAt') };
     }
 
     function sync() {
@@ -877,6 +952,36 @@
       try { await cache.put(local, changed); } catch (e) {}
       tally();
       return reply({ saved: changed.length, states: T().trStates(local) });
+    }
+
+    /**
+     * ตรวจ / อนุมัติ nos = [เลขที่] ไม่เกิน OK_MAX · act = check | approve | both
+     * transaction เดียว: แก้ช่องตรวจ / อนุมัติของเอกสาร + meta.ov +1 (เครื่องอื่นเห็นในรอบดึงถัดไป ดึงเฉพาะการตรวจ / อนุมัติ)
+     */
+    async function okSave(nos, act) {
+      if (!user) return fail('ยังไม่ได้ล็อกอิน');
+      if (user.role === 'viewer') return fail('บัญชีนี้ดูได้อย่างเดียว');
+      await sync();
+      var chk = C.okSet(local, nos, user, act);
+      if (chk.error) return reply(chk);
+      try {
+        await store.tx(async function (t) {
+          var meta = await t.get('meta/head');
+          if (!meta) throw new Error('ยังไม่มีสมุด');
+          chk.writes.forEach(function (w) { t.patch(w[0], w[1]); });
+          t.patch('meta/head', { ov: (+meta.ov || 0) + 1 });
+        });
+      } catch (e) { return fail(errOf(e)); }
+      var at = now(), changed = [];
+      chk.writes.forEach(function (w) {
+        var d = local.docs.filter(function (x) { return 'docs/' + x.id === w[0]; })[0];
+        if (!d) return;
+        Object.keys(w[1]).forEach(function (k) { d[k] = w[1][k] === C.TIME ? at : w[1][k]; });
+        changed.push(d);
+      });
+      try { await cache.put(local, changed); } catch (e) {}
+      tally();
+      return reply({ saved: changed.length });
     }
 
     /** ไฟล์ปรับยอดลง TRcloud ของเอกสารที่เลือก */
@@ -1130,7 +1235,7 @@
       store: store, auth: auth, domain: domain,
       login: login, restore: restore, logout: logout, sync: sync, post: post,
       users: users, saveUser: saveUser, quota: quota, reload: reload,
-      trList: trList, trSave: trSave, trFile: trFile, trc: trc, trcSave: trcSave, masterSave: masterSave, masters: masters,
+      trList: trList, trSave: trSave, okSave: okSave, trFile: trFile, trc: trc, trcSave: trcSave, masterSave: masterSave, masters: masters,
       xferDays: xferDays, xferText: xferText, xferMark: xferMark, backup: backup, archInfo: archInfo, archClose: archClose,
       user: function () { return user; },
       local: function () { return local; },

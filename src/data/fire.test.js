@@ -14,11 +14,12 @@ import { loadBook, fifoFromBook } from '../dev/fake-gas.js';
 
 const read = (f) => fs.readFileSync(path.resolve(__dirname, '../../public', f), 'utf8');
 
-let B, C, W, S, TR, DOC;
+let B, C, W, S, TR, DOC, PR;
 beforeAll(() => {
   const win = {};
-  ['wms-book.js', 'wms-fire-core.js', 'wms-fire-trc.js', 'wms-fire-docs.js', 'wms-fire.js', 'wms-stocktake.js'].forEach((f) => new Function('window', read(f))(win));
+  ['wms-book.js', 'wms-fire-core.js', 'wms-fire-trc.js', 'wms-fire-docs.js', 'wms-fire-print.js', 'wms-fire.js', 'wms-stocktake.js'].forEach((f) => new Function('window', read(f))(win));
   B = win.WmsBook;
+  PR = win.WmsFirePrint;
   C = win.WmsFireCore;
   TR = win.WmsFireTrc;
   DOC = win.WmsFireDocs;
@@ -771,11 +772,14 @@ describe('WmsFire ขั้น 3: รอลง TRcloud', () => {
     const v = ok(await (await x.device(VIEW_EMAIL)).trList());
     expect(v.list.find((d) => d.no === 'T2611-0004').tr).toBe('GR6911-0002');
 
-    /* Rules: tv เพิ่มทีละ 1 เท่านั้น */
+    /* Rules: tv / ov เพิ่มทีละ 1 เท่านั้น ทีละตัว */
     x.store.setUser({ email: STAFF_EMAIL, verified: true });
     const m = x.store.dump()['meta/head'];
     await expect(x.store.commit([['meta/head', { ...m, tv: 5 }]])).rejects.toThrow(/tv ต้องเพิ่มทีละ 1/);
     await expect(x.store.commit([['meta/head', { ...m, tv: 2 }]])).resolves.toBeUndefined();
+    await expect(x.store.commit([['meta/head', { ...m, tv: 2, ov: 3 }]])).rejects.toThrow(/ov ต้องเพิ่มทีละ 1/);
+    await expect(x.store.commit([['meta/head', { ...m, tv: 3, ov: 1 }]])).rejects.toThrow(/เฉพาะตอนบันทึกเอกสาร/);
+    await expect(x.store.commit([['meta/head', { ...m, tv: 2, ov: 1 }]])).resolves.toBeUndefined();
   });
 
   it('ยกเลิก: ก่อนลง TRcloud ไม่ต้องลงทั้งคู่ · หลังลงแล้ว เอกสารกลับรายการรอลง (ชนิดเดียวกับเอกสารเดิม)', async () => {
@@ -808,6 +812,12 @@ describe('WmsFire ขั้น 3: รอลง TRcloud', () => {
     const line = (src) => /var TRC_HEAD = (\[[^\]]+\]);/.exec(src)[1];
     expect(line(read('wms-cut.js'))).toBe(line(read('wms-fire-trc.js')));
     await x.staff.trList();   // หน้ารอลงดึงของใหม่ก่อน (ปรับยอดของหัวหน้า) ไฟล์คิดจากสำเนาในเครื่อง
+    /* ใบย้ายเข้า QA ที่ยังไม่อนุมัติ: ยอดในสมุดเปลี่ยนแล้ว แต่ยังไม่ลงไฟล์ปรับยอด (ปุ่มติ๊กล็อก) */
+    expect((await x.staff.trList()).list.find((d) => d.no === 'T2611-0003').ok).toBe('check');
+    const h = x.staff.trFile(['T2611-0003', 'T2611-0007']);
+    expect([h.docs, h.hold]).toEqual([['T2611-0007'], ['T2611-0003']]);
+    ok(await x.head.okSave(['T2611-0003'], 'both'));   // staff ทำ หัวหน้าตรวจ + อนุมัติ
+    expect((await x.staff.trList()).list.find((d) => d.no === 'T2611-0003').ok).toBe('done');
     const f = x.staff.trFile(['T2611-0003', 'T2611-0007', 'T2611-0004', 'T2611-0002', 'T2611-0099']);
     expect(f.aoa[0]).toEqual(S.TRC_HEAD);
     expect(f.aoa.slice(1)).toEqual([
@@ -817,6 +827,7 @@ describe('WmsFire ขั้น 3: รอลง TRcloud', () => {
     expect(f.aoa.slice(1, 3).map((r) => [r[2], r[3], r[8]]).sort()).toEqual([['', 1, 'WH-02'], [1, '', 'WH-QA']]);
     expect(f.docs).toEqual(['T2611-0003', 'T2611-0007']);
     expect(f.skip).toEqual(['T2611-0004', 'T2611-0002']);   // รับของ = ใส่เลข · ย้ายในคลังไม่เปลี่ยนคลัง
+    expect(f.hold).toEqual([]);
     expect(f.widths).toHaveLength(10);
   });
 });
@@ -970,7 +981,7 @@ describe('WmsFire ขั้น 3: วางแถวลงชีต Transaction 
 });
 
 /* Firestore REST จำลอง (ไม่ต่อเน็ต) สำหรับ apps-script/fire-backup.gs */
-const TIME3 = ['at', 'trAt', 'last'];
+const TIME3 = ['at', 'trAt', 'last', 'ckAt', 'apAt', 'okAt'];   // = TIME_KEYS ของ fire-backup.gs
 function toRest(v, key) {
   if (v === null || v === undefined) return { nullValue: null };
   if (typeof v === 'boolean') return { booleanValue: v };
@@ -1184,6 +1195,29 @@ describe('WmsFire ขั้น 3: สำรองและกู้คืน', (
     expect(g.logs.join('\n')).toMatch(/เอกสารใหม่ 1 ใบ/);
   });
 
+  it('fire-backup.gs: ตรวจ / อนุมัติทีหลัง คืนถัดไปเก็บใบนั้น (ดึงตาม okAt จำไว้ที่ fb.ok) · กู้คืนได้ช่องตรวจ / อนุมัติเป็น timestamp', async () => {
+    const x = await filled();
+    const g = fakeGcp();
+    expect(g.GS).toContain(`var TIME_KEYS = ${JSON.stringify(TR.TIME_KEYS).replace(/,/g, ', ').replace(/"/g, "'")};`);
+    g.mirror(x.store.dump());
+    const gs = g.load();
+    gs.backupNightly();   // คืนแรก ทั้งหมด
+    expect(g.props['fb.ok']).toBe('0');
+    x.tick(DAY);
+    ok(await x.head.okSave(['T2611-0003'], 'both'));   // ใบย้ายเข้า QA ของคนลงรายการ หัวหน้าตรวจ + อนุมัติ
+    g.mirror(x.store.dump());
+    expect(gs.backupNightly()).toMatchObject({ docs: 0, more: false });
+    const f2 = g.files()[1];
+    const id = Object.keys(x.store.dump()).find((k) => x.store.dump()[k].no === 'T2611-0003');
+    expect(f2.b.data[id]).toMatchObject({ ck: HEAD_EMAIL, ckName: 'หัวหน้าทดลอง', ap: HEAD_EMAIL, ckAt: NOW + DAY, apAt: NOW + DAY, okAt: NOW + DAY });
+    expect(+g.props['fb.ok']).toBe(NOW + DAY);
+    /* กู้คืน: ไฟล์หลังทับไฟล์ก่อน ได้เท่าฐานเดิมทุกช่อง เวลาตรวจ / อนุมัติเป็น timestamp */
+    expect(gs.restoreAll('demo-ok')).toMatchObject({ ok: true, files: 2 });
+    expect(g.plain('demo-ok')).toEqual(noUse(x.store.dump()));
+    for (const k of ['ckAt', 'apAt', 'okAt']) expect(Object.keys(g.projects['demo-ok'][id][k]), k).toEqual(['timestampValue']);
+    await sameAfterRestore(x, g.plain('demo-ok'));
+  });
+
   it('fire-backup.gs กู้คืน: รวมทุกไฟล์ลงโปรเจกต์ว่าง ได้ข้อมูลเท่าฐานเดิมทุกช่อง (เวลาเป็น timestamp) · มีข้อมูลแล้วไม่ทับ · เกินเวลาทำต่อได้', async () => {
     const x = await filled();
     const g = fakeGcp();
@@ -1265,6 +1299,8 @@ describe('wms-fire-core.js', () => {
     /* ขั้น 3: เลข TRcloud สถานะต้องถูก · tv เพิ่มทีละ 1 · หัวหน้าแก้ได้แค่ mv trc · xfer/log เติมทีละวัน */
     expect(rules).toContain("d.trState in ['wait', 'done', 'none']");
     expect(rules).toContain("d.tv == (('tv' in old) ? old.tv : 0) + 1");
+    expect(rules).toContain("d.ov == (('ov' in old) ? old.ov : 0) + 1");
+    expect(rules).toContain("&& d.get('ov', 0) == (old == null ? 0 : old.get('ov', 0))");
     expect(rules).toContain("hasOnly(['mv', 'trc'])");
     expect(rules).toMatch(/match \/xfer\/\{id\}[\s\S]*id == 'log'[\s\S]*affectedKeys\(\)\.size\(\) == 1/);
     expect(C.TR_STATES).toEqual(['wait', 'done', 'none']);
@@ -1547,8 +1583,8 @@ describe('WmsFire ปิดเดือน', () => {
 
     const fr = await freshDevice(x);
     await sameCopy(fr.f, full.f);
-    /* meta + index + 1 ก้อน + เอกสาร พ.ย. 2 + เลข TRcloud หลังปิด (ว่าง) + ตารางหลัก 3 */
-    expect(fr.reads).toBe(1 + 1 + 1 + 2 + 1 + 3);
+    /* meta + index + 1 ก้อน + เอกสาร พ.ย. 2 + เลข TRcloud หลังปิด (ว่าง) + ตรวจ / อนุมัติหลังปิด (ว่าง) + ตารางหลัก 3 */
+    expect(fr.reads).toBe(1 + 1 + 1 + 2 + 1 + 1 + 3);
     expect(fr.reads).toBeLessThan(full.reads);
     expect(fr.f.local().docs.find((d) => d.id === 'big').cut.length).toBeGreaterThan(1);   // แยกส่วนตรงกับในฐาน (ไฟล์สำรองยังตรง)
     expect(TR.backupOf(fr.f.local(), {}, NOW).data['docs/big~2']).toEqual(x.store.dump()['docs/big~2']);
@@ -1589,6 +1625,35 @@ describe('WmsFire ปิดเดือน', () => {
     expect(['T2610-0004', 'T2610-0005', 'T2611-0002'].map((no) => list.find((d) => d.no === no).state)).toEqual(['done', 'done', 'wait']);
   });
 
+  it('ตรวจ / อนุมัติหลังปิดเดือน: เครื่องใหม่เห็นครบ (ดึงหลังวันปิด + ก้อนของที่แก้หลังปิดเดือนก่อน ๆ) เท่ากับดึงทีละเอกสาร', async () => {
+    const x = await octNov();
+    ok(await x.head.archClose());                                       // ปิด ต.ค.
+    x.tick(MIN);
+    const T1 = OCT + 16 * DAY + MIN;
+    ok(await x.head.okSave(['T2610-0003'], 'check'));                  // ใบในก้อน ต.ค. ตรวจหลังปิด
+    const st = (f, no) => C.okState(f.local().docs.find((d) => d.no === no), C.voids(f.local()));
+    const full = await plainDevice(x);
+    const a = await freshDevice(x);
+    await sameCopy(a.f, full);
+    expect(st(a.f, 'T2610-0003')).toBe('approve');
+
+    x.tick(28 * DAY);   // 3 ธ.ค.
+    ok(await x.staff.post('bk-move', body('m-4', [mv3()], at('2026-12-03'))));   // T2612-0001
+    const c = ok(await x.head.archClose());                             // ปิด พ.ย.
+    expect(c).toMatchObject({ closed: '2611', docs: 2, fix: 1 });
+    /* ก้อนของที่แก้หลังปิด: ใบที่ตรวจหลังปิด ต.ค. ต่อท้ายช่องตรวจ / อนุมัติ (ไม่มีเลข TRcloud ใหม่ = ช่อง TRcloud ค่าเดิม) */
+    expect(JSON.parse(x.store.dump()['arch/ov-1'].t)).toEqual([['m-1', '', 'wait', '', 0, HEAD_EMAIL, 'หัวหน้าทดลอง', T1, '', '', 0, T1]]);
+    expect(x.store.dump()['arch/index'].ov).toMatchObject({ n: 1, fix: 1, okAt: T1 });
+    x.tick(MIN);
+    ok(await x.head.okSave(['T2610-0003'], 'approve'));                // อนุมัติหลังปิด พ.ย.
+    ok(await x.head.okSave(['T2611-0001'], 'both'));
+    await full.sync();
+    const b = await freshDevice(x);
+    await sameCopy(b.f, full);
+    expect(['T2610-0003', 'T2610-0007', 'T2611-0001', 'T2612-0001'].map((no) => st(b.f, no))).toEqual(['done', 'check', 'done', 'check']);
+    expect(b.f.local().docs.find((d) => d.no === 'T2610-0003')).toMatchObject({ ck: HEAD_EMAIL, ckAt: T1, ap: HEAD_EMAIL, apAt: T1 + 28 * DAY + MIN });
+  });
+
   it('ดึงเลข TRcloud นับจากก่อนดึงรอบนี้: เอกสารเก่าที่ใส่เลขก่อนเอกสารใหม่ที่ใส่เลขทีหลัง ไม่หลุด', async () => {
     const x = await octNov({ stopOct: true });
     const v = await x.device(VIEW_EMAIL);
@@ -1624,10 +1689,10 @@ describe('WmsFire ปิดเดือน', () => {
     const full = await plainDevice(x);
     const fr = await freshDevice(x);
     await sameCopy(fr.f, full);
-    /* meta + index + ก้อน + เอกสารใหญ่ (หลัก + ส่วนแยก) + เอกสาร พ.ย. 2 + เลข TRcloud หลังปิด + ตารางหลัก 3 */
+    /* meta + index + ก้อน + เอกสารใหญ่ (หลัก + ส่วนแยก) + เอกสาร พ.ย. 2 + เลข TRcloud หลังปิด + ตรวจ / อนุมัติหลังปิด + ตารางหลัก 3 */
     const parts = Object.keys(x.store.dump()).filter((p) => p.startsWith('docs/big~')).length;
     expect(parts).toBeGreaterThan(0);
-    expect(fr.reads).toBe(1 + 1 + c.chunks + 1 + parts + 2 + 1 + 3);
+    expect(fr.reads).toBe(1 + 1 + c.chunks + 1 + parts + 2 + 1 + 1 + 3);
   });
 
   it('เอกสารที่หัวหน้าบันทึกจากเครื่องตัวเอง (สำเนาตอนบันทึกใช้เวลาเครื่อง) ก่อนรวมก้อนดึงจากฐานใหม่ ก้อนตรงกับในฐาน', async () => {
@@ -1771,8 +1836,8 @@ describe('แอปสมุดสต๊อก: หน้าวันนี้ �
     expect(q({ status: 'mine', email: HEAD_EMAIL }).list.map((d) => d.no)).toEqual(['T2611-0007', 'T2611-0001']);
     const all = q({ status: 'wait' });
     expect(all.types).toEqual({ 'ปรับยอด': 1, 'รับของ': 1, 'ย้าย': 1 });
-    expect(all.states).toEqual({ wait: 3, void: 0, mine: 0 });
-    expect(q({ type: 'รับของ', email: STAFF_EMAIL }).states).toEqual({ wait: 1, void: 0, mine: 2 });
+    expect(all.states).toEqual({ wait: 3, check: 2, approve: 0, void: 0, mine: 0 });   // ใบย้าย 2 ใบยังไม่มีใครตรวจ
+    expect(q({ type: 'รับของ', email: STAFF_EMAIL }).states).toEqual({ wait: 1, check: 0, approve: 0, void: 0, mine: 2 });
     /* ช่วงวันดูวันที่ของเอกสาร (ชุดนี้ลงวันที่ 10 พ.ย.) */
     expect(q({ range: 'today' }).total).toBe(7);
     expect(q({ range: 'today' }).from).toBe('2026-11-10');
@@ -1899,6 +1964,249 @@ describe('แอปสมุดสต๊อก: หน้าเว็บ เม�
 
   it('ไฟล์ใหม่ของแอปไม่มี URL key หรือ config ของ Firebase จริง', () => {
     const src = read('wms-fire-docs.js') + read('book/book-app.js');
+    expect(src).not.toMatch(/AIza[0-9A-Za-z_-]{20,}|firebaseapp\.com|script\.google\.com|apiKey\s*:/);
+    expect(src.match(/https?:\/\/[^'"\s)]+/g) || []).toEqual([]);
+  });
+});
+
+/* ── ตรวจ / อนุมัติ ใบย้าย / แปลง · ใบพิมพ์ ─────────────────────────────── */
+
+describe('ตรวจ / อนุมัติ ใบย้าย / แปลง (ผู้จัดทำ → ผู้ตรวจสอบ → ผู้อนุมัติ) · ใบพิมพ์ A5', () => {
+  const CONV2 = [
+    ['BBB002', 'BBB0000000002', '7', 'P5', 'A-03-01', '', 2, 'เบิก', 'แปลงสินค้า', '', 'MR6911-0001'],
+    ['CCC004', 'CCC0000000004', '7', 'P5', '', 'A-03-01', 2, 'รับ', 'แปลงสินค้า', 'เปิด', 'GR6911-0002'],
+  ];
+  /* T2611-0001 ยอดยกมา · 0002 เข้า QA (คนลงรายการ) · 0003 แปลง (คนลงรายการ) · 0004 รับของ · 0005 ย้าย (หัวหน้า) */
+  async function ready() {
+    const x = await both();
+    await x.open();
+    ok(await x.staff.post('bk-move', body('m-1', [QA_MV])));
+    ok(await x.staff.post('bk-conv', body('v-1', CONV2)));
+    ok(await x.staff.post('bk-gr', body('g-1', [GR3])));
+    ok(await x.head.post('bk-move', body('m-2', [mv3()])));
+    return x;
+  }
+  const raw = (x, no) => Object.values(x.store.dump()).find((d) => d && d.no === no);
+  const pathOf = (x, no) => Object.keys(x.store.dump()).find((k) => x.store.dump()[k] && x.store.dump()[k].no === no);
+  const stOf = async (f, no) => { await f.sync(); return C.okState(f.local().docs.find((d) => d.no === no), C.voids(f.local())); };
+  const err = async (f, nos, act) => (await f.okSave(nos, act)).error;
+
+  it('ยอดเปลี่ยนตั้งแต่บันทึก · คนทำตรวจใบตัวเองไม่ได้ · อนุมัติเฉพาะหัวหน้าหลังมีผู้ตรวจ · หัวหน้าอนุมัติใบที่ตัวเองทำได้ · ใบอื่นไม่ต้องตรวจ', async () => {
+    const x = await ready();
+    await x.head.sync();
+    expect(Object.values(C.allPiles(x.head.local())).find((p) => p.loc === 'QA' && p.long === 'AAA0000000001').qty).toBe(1);   // ยังไม่ตรวจ ยอดก็เปลี่ยนแล้ว
+    expect(await Promise.all(['T2611-0001', 'T2611-0002', 'T2611-0003', 'T2611-0004', 'T2611-0005'].map((n) => stOf(x.head, n)))).toEqual(['', 'check', 'check', '', 'check']);
+    expect(await err(x.staff, ['T2611-0002'], 'check')).toBe('T2611-0002 คนทำตรวจใบของตัวเองไม่ได้');
+    expect(await err(x.staff, ['T2611-0005'], 'approve')).toBe('อนุมัติได้เฉพาะหัวหน้า');
+    expect(await err(x.staff, ['T2611-0005'], 'both')).toBe('อนุมัติได้เฉพาะหัวหน้า');
+    expect(await err(await x.device(VIEW_EMAIL), ['T2611-0002'], 'check')).toMatch(/ดูได้อย่างเดียว/);
+    expect(await err(x.head, ['T2611-0002'], 'approve')).toBe('T2611-0002 ยังไม่มีผู้ตรวจ');
+    expect(await err(x.head, ['T2611-0004'], 'check')).toBe('T2611-0004 รับของไม่ต้องตรวจ / อนุมัติ');
+    expect(await err(x.head, ['T2611-0005'], 'check')).toBe('T2611-0005 คนทำตรวจใบของตัวเองไม่ได้');
+    expect(await err(x.head, ['T2611-0002', 'T2611-0002'], 'check')).toBe('1 ใบทำไม่ได้ · T2611-0002 ซ้ำในรายการ');
+    expect(await err(x.head, ['T2611-0002', 'T2611-9999'], 'check')).toBe('1 ใบทำไม่ได้ · T2611-9999 ไม่พบเลขที่นี้');
+    expect(await err(x.head, Array.from({ length: 11 }, () => 'T2611-0002'), 'check')).toMatch(/ไม่เกิน 10 ใบ/);
+    expect(await err(x.head, ['T2611-0002'], 'ok')).toMatch(/ไม่รู้จักคำสั่ง/);
+    expect(x.store.dump()['meta/head'].ov || 0).toBe(0);   // ใบไหนไม่ผ่าน ไม่เขียนสักใบ
+
+    x.tick(60000);
+    expect(ok(await x.head.okSave(['T2611-0002'], 'check')).saved).toBe(1);   // หัวหน้าตรวจใบของคนลงรายการ
+    expect(raw(x, 'T2611-0002')).toMatchObject({ ck: HEAD_EMAIL, ckName: 'หัวหน้าทดลอง', ckAt: NOW + 60000, okAt: NOW + 60000 });
+    expect(raw(x, 'T2611-0002').ap).toBeUndefined();
+    expect(x.store.dump()['meta/head'].ov).toBe(1);   // ov ของการตรวจ / อนุมัติ แยกจาก tv ของเลข TRcloud
+    expect(x.store.dump()['meta/head'].tv || 0).toBe(0);
+    expect(await stOf(x.staff, 'T2611-0002')).toBe('approve');
+    expect(await err(x.staff, ['T2611-0002'], 'check')).toBe('T2611-0002 ตรวจแล้ว');
+    ok(await x.head.okSave(['T2611-0002'], 'approve'));   // หัวหน้าคนเดียวกันตรวจแล้วอนุมัติได้
+    expect(raw(x, 'T2611-0002')).toMatchObject({ ck: HEAD_EMAIL, ap: HEAD_EMAIL, apName: 'หัวหน้าทดลอง', apAt: NOW + 60000 });
+    expect(await stOf(x.head, 'T2611-0002')).toBe('done');
+    expect(await err(x.head, ['T2611-0002'], 'approve')).toBe('T2611-0002 อนุมัติแล้ว');
+    /* ใบของหัวหน้า: คนอื่นตรวจ แล้วหัวหน้าอนุมัติเองได้ */
+    ok(await x.staff.okSave(['T2611-0005'], 'check'));
+    ok(await x.head.okSave(['T2611-0005'], 'approve'));
+    expect(raw(x, 'T2611-0005')).toMatchObject({ ck: STAFF_EMAIL, ckName: 'ทดลอง', ap: HEAD_EMAIL });
+    /* หัวหน้าตรวจ + อนุมัติในครั้งเดียว */
+    ok(await x.head.okSave(['T2611-0003'], 'both'));
+    expect(raw(x, 'T2611-0003')).toMatchObject({ ck: HEAD_EMAIL, ap: HEAD_EMAIL, ckAt: NOW + 60000, apAt: NOW + 60000, okAt: NOW + 60000 });
+    expect(x.store.dump()['meta/head'].ov).toBe(5);
+    /* ยกเลิกก่อนอนุมัติ = ไม่ต้องตรวจแล้ว (ใบกลับรายการก็ไม่ต้อง) · ยกเลิกหลังอนุมัติ ยังเห็นว่าอนุมัติแล้ว */
+    ok(await x.staff.post('bk-move', body('m-3', [mv3()])));                 // T2611-0006
+    ok(await x.head.post('bk-void', { doc: 'T2611-0006', why: 'ลงผิด' }));   // 0007
+    ok(await x.head.post('bk-void', { doc: 'T2611-0002', why: 'ย้ายผิด' })); // 0008
+    expect(await Promise.all(['T2611-0006', 'T2611-0007', 'T2611-0002', 'T2611-0008'].map((n) => stOf(x.head, n)))).toEqual(['', '', 'done', '']);
+    expect(await err(x.head, ['T2611-0006'], 'check')).toBe('T2611-0006 ใบนี้ยกเลิกแล้ว');
+    /* ยอดไม่เปลี่ยนเพราะการตรวจ / อนุมัติ */
+    expect((await x.head.post('bk-rebuild', {})).same).toBe(true);
+  });
+
+  it('Rules: ช่องตรวจ / อนุมัติแก้ได้ตามขั้น เฉพาะใบย้าย / แปลง · ปนกับช่องอื่นไม่ได้ · firestore.rules ตรงกัน', async () => {
+    const x = await ready();
+    const as = (email) => { x.store.setUser({ email, verified: true }); return x.store; };
+    const d2 = raw(x, 'T2611-0002'), p2 = pathOf(x, 'T2611-0002');
+    const ck = (email, name = 'x') => ({ ck: email, ckName: name, ckAt: C.TIME, okAt: C.TIME });
+    const ap = (email, name = 'x') => ({ ap: email, apName: name, apAt: C.TIME, okAt: C.TIME });
+    await expect(as(STAFF_EMAIL).commit([[p2, { ...d2, ...ck(STAFF_EMAIL) }]])).rejects.toThrow(/คนทำตรวจใบของตัวเองไม่ได้/);
+    await expect(as(HEAD_EMAIL).commit([[p2, { ...d2, ...ck(STAFF_EMAIL) }]])).rejects.toThrow(/ผู้ตรวจต้องเป็นคนที่ล็อกอิน/);
+    await expect(as(HEAD_EMAIL).commit([[p2, { ...d2, ...ck(HEAD_EMAIL), ckAt: 5 }]])).rejects.toThrow(/ช่องผู้ตรวจไม่ถูก/);
+    await expect(as(HEAD_EMAIL).commit([[p2, { ...d2, ...ck(HEAD_EMAIL, 'ก'.repeat(61)) }]])).rejects.toThrow(/ช่องผู้ตรวจไม่ถูก/);
+    await expect(as(HEAD_EMAIL).commit([[p2, { ...d2, ...ck(HEAD_EMAIL), okAt: 5 }]])).rejects.toThrow(/okAt ต้องเป็นเวลาเซิร์ฟเวอร์/);
+    await expect(as(HEAD_EMAIL).commit([[p2, { ...d2, ...ap(HEAD_EMAIL) }]])).rejects.toThrow(/ต้องมีผู้ตรวจก่อนอนุมัติ/);
+    await expect(as(HEAD_EMAIL).commit([[p2, { ...d2, ...ck(HEAD_EMAIL), tr: 'ADJ-1' }]])).rejects.toThrow(/แก้ได้เฉพาะเลข TRcloud/);
+    await expect(as(HEAD_EMAIL).commit([[p2, { ...d2, ...ck(HEAD_EMAIL), qty: 99 }]])).rejects.toThrow(/แก้ได้เฉพาะเลข TRcloud/);
+    await expect(as(VIEW_EMAIL).commit([[p2, { ...d2, ...ck(VIEW_EMAIL) }]])).rejects.toThrow(/ดูได้อย่างเดียว/);
+    const g = raw(x, 'T2611-0004');
+    await expect(as(HEAD_EMAIL).commit([[pathOf(x, 'T2611-0004'), { ...g, ...ck(HEAD_EMAIL) }]])).rejects.toThrow(/เฉพาะใบย้ายกับแปลง/);
+    /* คนลงรายการตรวจได้ อนุมัติไม่ได้ · ตรวจแล้วเปลี่ยนผู้ตรวจไม่ได้ */
+    await expect(as(STAFF_EMAIL).commit([[pathOf(x, 'T2611-0005'), { ...raw(x, 'T2611-0005'), ...ck(STAFF_EMAIL), ...ap(STAFF_EMAIL) }]])).rejects.toThrow(/อนุมัติได้เฉพาะหัวหน้า/);
+    await expect(as(HEAD_EMAIL).commit([[p2, { ...d2, ...ck(HEAD_EMAIL), ...ap(HEAD_EMAIL) }]])).resolves.toBeUndefined();   // หัวหน้าตรวจ + อนุมัติคำขอเดียว
+    const d2b = raw(x, 'T2611-0002');
+    await expect(as(HEAD_EMAIL).commit([[p2, { ...d2b, ...ck(HEAD_EMAIL, 'ใหม่') }]])).rejects.toThrow(/ใบนี้ตรวจแล้ว/);
+    await expect(as(HEAD_EMAIL).commit([[p2, { ...d2b, ...ap(HEAD_EMAIL, 'ใหม่') }]])).rejects.toThrow(/ใบนี้อนุมัติแล้ว/);
+    /* เลข TRcloud ยังใส่ได้หลังอนุมัติ (คนละช่องกัน) */
+    await expect(as(STAFF_EMAIL).commit([[p2, { ...d2b, tr: 'ADJ-1', trState: 'done', trBy: STAFF_EMAIL, trAt: C.TIME }]])).resolves.toBeUndefined();
+    /* firestore.rules: ประเภท ช่อง และขั้นเดียวกับ store จำลอง */
+    const rules = fs.readFileSync(path.resolve(__dirname, '../../firebase/firestore.rules'), 'utf8');
+    const fn = /function okUpdate\(d, old, u\) \{([\s\S]*?)\n  \}/.exec(rules)[1];
+    expect(fn).toContain(`old.type in [${C.OK_TYPES.map((t) => `'${t}'`).join(', ')}]`);
+    expect(fn).toContain(`keys.hasOnly([${C.OK_KEYS.map((k) => `'${k}'`).join(', ')}])`);
+    for (const k of ["d.ck != old.by", "d.ck == email()", "isHead(u)", "d.get('ck', '') != ''", "old.get('ck', '') == ''", "old.get('ap', '') == ''", 'd.okAt == request.time', 'd.ckName.size() <= 60', 'd.apName.size() <= 60'])
+      expect(fn, k).toContain(k);
+    expect(rules).toMatch(/allow update: if signedIn\(\) && docUpdate\(request\.resource\.data, resource\.data, profile\(\)\);/);
+    expect(rules).toContain('function docUpdate(d, old, u) { return trUpdate(d, old, u) || okUpdate(d, old, u); }');
+  });
+
+  it('เครื่องอื่นเห็นการตรวจ / อนุมัติในรอบดึงถัดไป (tv + okAt) · อ่านเพิ่มแค่ใบที่เปลี่ยน · เลข TRcloud กับการอนุมัติไม่ทับกัน', async () => {
+    const x = await ready();
+    const v = await x.device(VIEW_EMAIL);
+    await v.sync();
+    x.tick(60000);
+    ok(await x.staff.trSave([{ no: 'T2611-0002', tr: 'ADJ-1', state: 'done' }]));
+    x.tick(60000);
+    ok(await x.head.okSave(['T2611-0002', 'T2611-0003'], 'both'));
+    const r0 = x.store.stats().reads;
+    await v.sync();
+    expect(x.store.stats().reads - r0).toBe(1 + 1 + 2);   // meta + เลข TRcloud 1 ใบ + ตรวจ / อนุมัติ 2 ใบ
+    const d = v.local().docs.find((y) => y.no === 'T2611-0002');
+    expect(d).toMatchObject({ tr: 'ADJ-1', trState: 'done', ck: HEAD_EMAIL, ap: HEAD_EMAIL, okAt: NOW + 120000 });
+    expect(v.local().okAt).toBe(NOW + 120000);
+    /* ไม่มีอะไรเปลี่ยน = อ่าน meta อย่างเดียว */
+    const r1 = x.store.stats().reads;
+    await v.sync();
+    expect(x.store.stats().reads - r1).toBe(1);
+    /* ตรวจ / อนุมัติอย่างเดียว: เครื่องอื่นดึงเฉพาะการตรวจ / อนุมัติ ไม่ดึงเลข TRcloud ซ้ำ (ov แยกจาก tv) */
+    x.tick(60000);
+    ok(await x.staff.okSave(['T2611-0005'], 'check'));
+    const r2 = x.store.stats().reads;
+    await v.sync();
+    expect(x.store.stats().reads - r2).toBe(1 + 3);   // meta + ตรวจ / อนุมัติ (2 ใบรอบก่อน ย้อนเวลาเดิม + 1 ใบใหม่) · ไม่ดึงเลข TRcloud
+    x.tick(60000);
+    ok(await x.staff.trSave([{ no: 'T2611-0003', tr: 'MR-1', state: 'done' }]));
+    const r3 = x.store.stats().reads;
+    await v.sync();
+    expect(x.store.stats().reads - r3).toBe(1 + 2);   // meta + เลข TRcloud (1 ใบรอบก่อน + 1 ใบใหม่) · ไม่ดึงการตรวจ / อนุมัติ
+    /* เครื่องใหม่ได้ช่องตรวจ / อนุมัติมากับเอกสารเลย · หน้าเอกสารเห็นขั้น ผู้ตรวจ ผู้อนุมัติ */
+    const n = await x.device(VIEW_EMAIL);
+    await n.sync();
+    expect(n.local().docs.find((y) => y.no === 'T2611-0003')).toMatchObject({ ck: HEAD_EMAIL, ap: HEAD_EMAIL });
+    const view = DOC.view(n.local(), 'T2611-0002');
+    expect(view).toMatchObject({ ok: 'done', okTh: 'อนุมัติแล้ว', ck: { email: HEAD_EMAIL, name: 'หัวหน้าทดลอง' }, ap: { email: HEAD_EMAIL, name: 'หัวหน้าทดลอง' } });
+    expect(view.steps.map((s) => [s.k, s.state])).toEqual([['save', 'done'], ['check', 'done'], ['approve', 'done'], ['tr', 'done']]);
+    expect(view.history.map((h) => h.what).slice(1)).toEqual(['ใส่เลข TRcloud ADJ-1', 'ตรวจแล้ว', 'อนุมัติ']);   // เรียงตามเวลา
+    expect(n.local().ov).toBe(2);
+    expect(v.local().ov).toBe(2);
+  });
+
+  it('หน้าเอกสาร: ชิป รอตรวจ / รออนุมัติ นับถูก · ปุ่มของแต่ละคน (okCan ตรงกับ okSet) · หน้าวันนี้นับงานรอตรวจทุกวัน', async () => {
+    const x = await ready();
+    ok(await x.staff.okSave(['T2611-0005'], 'check'));
+    await x.head.sync();
+    const l = x.head.local(), list = DOC.index(l);
+    expect(list.filter((d) => d.ok).map((d) => [d.no, d.ok])).toEqual([['T2611-0005', 'approve'], ['T2611-0003', 'check'], ['T2611-0002', 'check']]);
+    const r = DOC.search(list, { email: STAFF_EMAIL }, NOW);
+    expect(r.states).toMatchObject({ check: 2, approve: 1 });
+    expect(DOC.search(list, { status: 'check' }, NOW).list.map((d) => d.no)).toEqual(['T2611-0003', 'T2611-0002']);
+    expect(DOC.search(list, { status: 'approve' }, NOW).list.map((d) => d.no)).toEqual(['T2611-0005']);
+    expect(DOC.search(list, { text: 'ทดลอง', status: 'approve' }, NOW).list.map((d) => d.no)).toEqual(['T2611-0005']);   // ค้นชื่อผู้ตรวจได้
+    const staff = { email: STAFF_EMAIL, role: 'staff' }, head = { email: HEAD_EMAIL, role: 'head' }, viewer = { email: VIEW_EMAIL, role: 'viewer' };
+    const can = (no, u) => DOC.okCan(DOC.view(l, no), u);
+    expect(can('T2611-0002', staff)).toMatchObject({ check: false, both: false, why: 'คนทำตรวจใบของตัวเองไม่ได้ ให้คนอื่นตรวจ' });
+    expect(can('T2611-0002', head)).toMatchObject({ check: true, both: true, approve: false });
+    expect(can('T2611-0005', staff)).toMatchObject({ approve: false, why: 'รอหัวหน้าอนุมัติ' });
+    expect(can('T2611-0005', head)).toMatchObject({ approve: true, check: false });
+    expect(can('T2611-0002', viewer)).toMatchObject({ check: false, why: 'บัญชีนี้ดูได้อย่างเดียว' });
+    expect(can('T2611-0004', head)).toEqual({ check: false, approve: false, both: false, why: '' });   // รับของ ไม่มีปุ่ม
+    /* okCan บอกว่ากดได้ = okSet ผ่านจริง */
+    const users = { staff: [staff, x.staff], head: [head, x.head] };
+    for (const no of ['T2611-0002', 'T2611-0003', 'T2611-0005']) for (const who of ['staff', 'head']) {
+      const c = can(no, users[who][0]);
+      for (const act of ['check', 'approve', 'both']) expect(!C.okSet(l, [no], { ...users[who][0], name: 'x' }, act).error, `${no} ${who} ${act}`).toBe(!!c[act]);
+    }
+    /* หน้าวันนี้: รอตรวจ (คนอื่นทำ = เราตรวจได้) รออนุมัติ นับทุกวัน ไม่ใช่แค่วันนี้ */
+    const h = DOC.home(l, NOW + 3 * DAY, HEAD_EMAIL);
+    expect(h.ok).toEqual({ check: 2, toCheck: 2, approve: 1, oldest: '2026-11-10', days: 3 });
+    expect(DOC.home(l, NOW, STAFF_EMAIL).ok).toMatchObject({ check: 2, toCheck: 0, approve: 1 });
+  });
+
+  it('ใบพิมพ์ A5 แบบเอกสารคลังสินค้า: หัวใบ ตาราง ช่องเซ็น 3 ช่องตามขั้น · แถวเกินขึ้นแผ่นใหม่ · ใบยกเลิกมีตรา · ไม่มีไฟล์ภายนอก', async () => {
+    const x = await ready();
+    /* ใบย้าย 23 แถว = 3 แผ่น (แผ่นละ 10) */
+    const many = Array.from({ length: 23 }, () => mv3({ 6: 0.25 }));
+    ok(await x.staff.post('bk-move', body('m-9', many)));                  // T2611-0006
+    await x.head.sync();
+    const l = x.head.local();
+    const mv = DOC.view(l, 'T2611-0006');
+    expect(PR.can(mv)).toBe(true);
+    expect(PR.pages(mv).map((p) => p.length)).toEqual([10, 10, 3]);
+    const h1 = PR.html(mv, { logo: '', printed: '10/11/69 10:00' });
+    expect(h1).toMatch(/^<!doctype html>/);
+    expect(h1.match(/<section class="pg">/g)).toHaveLength(3);
+    expect(h1).toContain('Transfer Request Form');
+    expect(h1).toContain('( ใบโอนย้ายสินค้า )');
+    expect(h1.match(/>ผู้จัดทำ</g)).toHaveLength(3);   // ช่องเซ็นซ้ำทุกแผ่น
+    for (const k of ['>ผู้ตรวจสอบ<', '>ผู้อนุมัติ<', 'ทดลอง · 10/11/69 10:00', 'แผ่น 3/3', 'ยกไปแผ่นถัดไป', '>รวม<', '5.75', 'ที่นอนสมมติ 1', 'โอนข้าม Location', '@page{size:210mm 148mm']) expect(h1, k).toContain(k);
+    expect(h1).toContain('รอตรวจ');
+    expect(h1).not.toMatch(/https?:\/\/|<script|<link/);   // พิมพ์จาก iframe ไม่ต้องโหลดอะไร
+    /* ใบเข้า QA: จุดประสงค์ QA จาก / ไป คลัง · ตรวจ + อนุมัติแล้ว ชื่อและเวลาขึ้นในช่องเซ็น */
+    x.tick(60000);
+    ok(await x.head.okSave(['T2611-0002'], 'both'));
+    await x.head.sync();
+    const qa = DOC.view(x.head.local(), 'T2611-0002');
+    const h2 = PR.html(qa, {});
+    for (const k of ['ตรวจสอบสินค้า (QA)', 'WH-02', 'WH-QA', 'หัวหน้าทดลอง · 10/11/69 10:01', 'อนุมัติแล้ว', 'แผ่น 1/1']) expect(h2, k).toContain(k);
+    expect(h2).not.toContain('( .............................. )');   // ครบสามช่อง ไม่เหลือช่องว่าง
+    /* ใบแปลง: คู่ เบิก → รับ เป็นแถวเดียว แผ่นละ 9 คู่ */
+    const cv = DOC.view(x.head.local(), 'T2611-0003');
+    expect(PR.items(cv)).toEqual([{ sku: 'BBB002', name: 'ท็อปเปอร์สมมติ 2', sku2: 'CCC004', name2: 'หมอนสมมติ 4', lot: '7', po: 'P5', loc: 'A-03-01', qty: 2 }]);
+    const h3 = PR.html(cv, {});
+    for (const k of ['Code Conversion', '( ใบขอแปลงรหัสสินค้า )', 'MR6911-0001', 'SKU ปลายทาง']) expect(h3, k).toContain(k);
+    expect(h3.match(/<td class="no">/g)).toHaveLength(9);
+    /* ใบยกเลิก: ตรา ยกเลิก + เลขใบกลับรายการ · ใบกลับรายการ / ตัดขาย ไม่มีใบพิมพ์ */
+    ok(await x.head.post('bk-void', { doc: 'T2611-0006', why: 'ลงผิด' }));   // 0007
+    await x.head.sync();
+    const vd = DOC.view(x.head.local(), 'T2611-0006');
+    expect(PR.html(vd, {})).toContain('<div class="stamp">ยกเลิก</div>');
+    expect(PR.html(vd, {})).toContain('(ลงกลับเป็น T2611-0007)');
+    expect(PR.can(DOC.view(x.head.local(), 'T2611-0007'))).toBe(false);
+    expect(PR.can(DOC.view(x.head.local(), 'T2611-0004'))).toBe(false);
+    expect(PR.html(DOC.view(x.head.local(), 'T2611-0004'), {})).toBe('');
+    /* ชื่อสินค้าที่มีอักษรพิเศษไม่ทำหน้าพัง */
+    expect(PR.html({ ...qa, names: { AAA0000000001: '<b>"x"</b>' } }, {})).toContain('&lt;b&gt;&quot;x&quot;&lt;/b&gt;');
+  });
+
+  it('หน้าแอปต่อสาย: โหลดใบพิมพ์ก่อน wms-fire.js · ปุ่มตรวจ / อนุมัติเรียก okSave ทีละไม่เกิน 10 ใบ · พิมพ์ผ่าน iframe · หน้ารอลง TRcloud ล็อกใบที่ยังไม่อนุมัติ', () => {
+    const bf = read('book/book-fire.js');
+    expect(bf.indexOf("script('../wms-fire-print.js')")).toBeGreaterThan(bf.indexOf("script('../wms-fire-docs.js')"));
+    expect(bf.indexOf("script('../wms-fire-print.js')")).toBeLessThan(bf.indexOf("script('../wms-fire.js')"));
+    expect(bf).toContain('okSave: async function (nos, act)');
+    expect(bf).toContain('i += max');
+    expect(bf).toContain('okOf: function (no)');
+    const app = read('book/book-app.js');
+    for (const k of ['FIRE.okSave(nos, act)', 'WmsFireDocs.okCan(v, me())', 'P.html(v, {', 'fr.srcdoc = html', "['check', 'รอตรวจ', 'c-warn']", "['approve', 'รออนุมัติ', 'c-warn']"]) expect(app, k).toContain(k);
+    expect(read('book/index.html')).toContain('data-print="${esc(LAST.doc)}"');
+    expect(read('book/index.html')).toContain('APP.okMode(MODE)');
+    expect(read('book/book-fire-trc.js')).toContain("function held(x) { return x.kind === 'file' && (x.ok === 'check' || x.ok === 'approve'); }");
+    expect(read('book/index.html')).toContain('../wms-settings.js');   // โลโก้ของใบพิมพ์มาจากหน้าตั้งค่า
+    const src = read('wms-fire-print.js');
     expect(src).not.toMatch(/AIza[0-9A-Za-z_-]{20,}|firebaseapp\.com|script\.google\.com|apiKey\s*:/);
     expect(src.match(/https?:\/\/[^'"\s)]+/g) || []).toEqual([]);
   });

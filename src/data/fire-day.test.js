@@ -6,6 +6,7 @@
  *   12 เครื่อง (หัวหน้า 2 ลงรายการ 8 ดูอย่างเดียว 2) เปิดหน้าคนละ 3 รอบ ทุกเครื่องเปิดค้างฟังการบันทึกทั้งวัน (เผื่อสูงกว่าจริงที่ ~60%)
  *   ตัดขาย 6 รอบ × 500 บรรทัด (3,000 บรรทัดออเดอร์) ย้าย/เติม 40 เข้า QA 5 รับของ 12 คืน 15 แปลง 2 ปรับยอด 4
  *   หัวหน้า: รอลง TRcloud + ใส่เลข 5 รอบ วางชีตเดิม 1 ครั้ง ดูโควตา 3 ครั้ง ดูรายชื่อ ดาวน์โหลดสำรอง
+ *   ตรวจ / อนุมัติใบย้าย / แปลงของวัน: ลงรายการคนอื่นตรวจ 7 รอบ หัวหน้าอนุมัติ 7 รอบ (รอบสุดท้ายก่อนกลับ) (รอบละไม่เกิน 3 ครั้ง × 10 ใบ)
  *   เครื่องใหม่ 1 เครื่องโหลดประวัติทั้งหมด (โทรศัพท์ใหม่ / ล้างเบราว์เซอร์)
  * ปิดเดือน: ประวัติ 61 วัน (21 ธ.ค. – 19 ก.พ.) หัวหน้าปิด ธ.ค. กับ ม.ค. แล้วเครื่องใหม่อ่านก้อน อ่านน้อยลงมาก สำเนาเท่าเดิมทุกช่อง
  * เป้าวันปกติทั้งบริษัท: อ่าน < 15,000 เขียน < 2,000 · วันแคมเปญ (งาน × 3) ต้องไม่เกินโควตาฟรี อ่าน 50,000 เขียน 20,000
@@ -164,6 +165,28 @@ async function trRound(f, per, rounds) {
   }
 }
 
+/**
+ * ตรวจ / อนุมัติใบย้าย / แปลงของวันนี้ ทีละไม่เกิน 10 ใบ ไม่เกิน 3 ครั้งต่อรอบ
+ * check: พนักงาน 8 ตรวจ (ใบที่พนักงาน 8 ทำเอง ให้พนักงาน 7 ตรวจ) · approve: หัวหน้า 1 อนุมัติ
+ */
+async function okRound(env, day, act) {
+  const ymd = C.today(day);
+  const who = act === 'check' ? [`staff8@${DOMAIN}`, `staff7@${DOMAIN}`] : [`head1@${DOMAIN}`];
+  let calls = 0;
+  for (const email of who) {
+    const f = env.by(email).fire;
+    await f.sync();   // หน้าเห็นของที่คนอื่นเพิ่งตรวจ (ฟัง meta อยู่แล้ว ปกติอ่านแค่ meta)
+    while (calls < 3) {
+      const l = f.local(), vd = C.voids(l), want = act === 'check' ? C.OK_CHECK : C.OK_APPROVE;
+      const list = l.docs.filter((d) => (d.stamp || '').slice(0, 10) === ymd && C.okState(d, vd) === want && (act !== 'check' || d.by !== email)).slice(0, C.OK_MAX);
+      if (!list.length) break;
+      ok(await f.okSave(list.map((d) => d.no), act));
+      calls++;
+    }
+  }
+  return calls;
+}
+
 /** วันทำงานหนึ่งวัน คืนยอดอ่าน/เขียนทั้งระบบ แยกส่วน */
 async function workDay(env, day, k) {
   const before = env.store.stats();
@@ -175,6 +198,8 @@ async function workDay(env, day, k) {
   const jobs = plan(day, k, 500, rnd(99 + k));
   const extra = [
     ...[1.5, 4, 6.5, 8.5, 9.5].map((h) => ({ at: day + h * HOUR, kind: 'tr' })),
+    ...[1, 2.5, 4.2, 5.8, 7.5, 9.3, 9.95].map((h) => ({ at: day + h * HOUR, kind: 'check' })),
+    ...[1.2, 3, 4.6, 6.2, 8, 9.4, 9.97].map((h) => ({ at: day + h * HOUR, kind: 'approve' })),
     { at: day + 9.6 * HOUR, kind: 'xfer' },
     ...[2, 6, 9.7].map((h) => ({ at: day + h * HOUR, kind: 'quota' })),
     { at: day + 3 * HOUR, kind: 'users' },
@@ -200,6 +225,9 @@ async function workDay(env, day, k) {
       const h = env.by(`head2@${DOMAIN}`).fire;
       await trRound(h, 10, 1);
       mark('หัวหน้า: รอลง + ใส่เลข TRcloud', s0);
+    } else if (e.kind === 'check' || e.kind === 'approve') {
+      await okRound(env, day, e.kind);
+      mark('ตรวจ / อนุมัติใบย้าย แปลง', s0);
     } else if (e.kind === 'xfer') {
       const h = env.by(`head1@${DOMAIN}`).fire;
       const ds = ok(await h.xferDays()).days;
@@ -240,6 +268,12 @@ describe('ระบบใหม่ ขั้น 4: ซ้อมทั้งว�
 
     const day = GO_LIVE + 30 * DAY;   // 20 ม.ค. 2570
     const r = await workDay(env, day, 1);
+    /* ใบย้าย / แปลงของวันนี้ตรวจ + อนุมัติครบทุกใบ */
+    const hl = env.by(`head1@${DOMAIN}`).fire;
+    await hl.sync();
+    const todays = hl.local().docs.filter((d) => (d.stamp || '').slice(0, 10) === C.today(day) && C.OK_TYPES.includes(d.type));
+    expect(todays.length).toBeGreaterThan(40);
+    expect(todays.filter((d) => C.okState(d, C.voids(hl.local())) !== C.OK_DONE).map((d) => d.no)).toEqual([]);
     console.log('วันปกติ', JSON.stringify({ reads: r.reads, writes: r.writes, saves: r.saves, freshDocs: r.part.freshDocs }),
       '\n' + Object.entries(r.part).filter(([k]) => k !== 'freshDocs').map(([k, v]) => `  ${k}: อ่าน ${v.r} เขียน ${v.w}`).join('\n'));
     expect(r.saves).toBe(6 + 40 + 5 + 12 + 15 + 2 + 4);

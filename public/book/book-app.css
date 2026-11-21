@@ -60,6 +60,11 @@ html.bk-app.bk-in .mod-head{display:none}
 .ba-st.void{background:#FFE4E6;color:#BE123C}
 .ba-st.rev{background:#EDE9FE;color:#5B21B6}
 .ba-st.sub{background:var(--wms-surface2);color:var(--wms-muted)}
+.ba-st.apv{background:#E0F2FE;color:#075985}
+/* ตรวจ / อนุมัติหลายใบ */
+.ba-okbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;width:100%}
+.ba-ck{width:17px;height:17px;margin:0;accent-color:var(--wms-primary);cursor:pointer;vertical-align:middle}
+.bk-xl tr.r-sel td{background:#EEF2FF}
 .ba-no{padding:0;border:0;background:none;font-family:var(--wms-font);font-size:13px;font-weight:700;color:var(--wms-primary-dark);white-space:nowrap;
   text-decoration:underline;text-decoration-color:rgba(79,70,229,.35);text-underline-offset:3px;cursor:pointer}
 .ba-no:hover{color:var(--wms-primary);text-decoration-color:currentColor}
