@@ -268,7 +268,8 @@
     var last = R && R.trc;
     html += '<span class="bk-chip' + (last ? '' : ' zero') + '">ยอด TRcloud ล่าสุด <b>' + (last ? esc(last.day) : '—') + '</b>' + (last ? ' ' + f(last.n) + ' SKU' : '') + '</span>' +
       '<span class="bk-chip' + (m.sup ? '' : ' zero') + '" title="' + esc(m.sup ? m.sup.tab + ' · ' + m.sup.name + ' ' + when(m.sup.at) : '') + '">PO → Supplier <b>' + f(m.sup ? m.sup.n : 0) + '</b> PO</span>' +
-      '<span class="bk-chip' + (m.conv ? '' : ' zero') + '" title="' + esc(m.conv ? m.conv.tab + ' · ' + m.conv.name + ' ' + when(m.conv.at) : '') + '">แปลงสินค้า <b>' + f(m.conv ? m.conv.n : 0) + '</b> คู่</span>';
+      '<span class="bk-chip' + (m.conv ? '' : ' zero') + '" title="' + esc(m.conv ? m.conv.tab + ' · ' + m.conv.name + ' ' + when(m.conv.at) : '') + '">แปลงสินค้า <b>' + f(m.conv ? m.conv.n : 0) + '</b> คู่</span>' +
+      '<span class="bk-chip' + (m.cap ? '' : ' zero') + '" title="' + esc(m.cap ? m.cap.tab + ' · ' + m.cap.name + ' ' + when(m.cap.at) : '') + '">ความจุพาเลท <b>' + f(m.cap ? m.cap.n : 0) + '</b> SKU</span>';
     if (IMP) {
       var p = IMP.parsed;
       html += '<span class="bk-sep"></span><span>อ่านจาก <b>' + esc(IMP.files) + '</b>:</span>' +
@@ -277,6 +278,7 @@
         (p.cost ? '<span class="bk-chip">ราคาทุน <b>' + f(p.cost.list.length) + '</b></span>' : '') +
         (p.sup ? '<span class="bk-chip c-ok">PO. Truck <b>' + f(p.sup.rows.length) + '</b>' + (p.sup.dup.length ? ' · ซ้ำ ' + f(p.sup.dup.length) : '') + '</span>' : '') +
         (p.conv ? '<span class="bk-chip c-ok">แปลงสินค้า <b>' + f(p.conv.pairs.length) + '</b> คู่</span>' : '') +
+        (p.cap ? '<span class="bk-chip c-ok">ความจุพาเลท <b>' + f(p.cap.rows.length) + '</b> SKU</span>' : '') +
         (p.bad.length ? '<span class="bk-chip c-red">อ่านไม่ได้ <b>' + f(p.bad.length) + '</b></span>' : '') +
         (p.skipped.length ? '<span class="bk-chip zero" title="' + esc(p.skipped.join(', ')) + '">ข้ามชีต <b>' + f(p.skipped.length) + '</b></span>' : '');
     }
@@ -285,7 +287,7 @@
   function impAct() {
     var dis = BUSY ? ' disabled' : '', html = '';
     html += '<button class="tx-opt' + (IMP ? '' : ' p') + '" id="tiPick"' + dis + '>📂 เลือกไฟล์</button><input type="file" class="bk-file" id="tiFile" accept=".xlsx,.xls,.csv" multiple>';
-    if (!IMP) return html + '<span class="g-hint">หรือลากไฟล์มาวาง · ไฟล์จาก TRcloud (ชีต Stock, WH-Loss, ราคาทุน) หรือตารางหลัก (PO. Truck, MASTER แปลงสินค้า)</span>';
+    if (!IMP) return html + '<span class="g-hint">หรือลากไฟล์มาวาง · ไฟล์จาก TRcloud (ชีต Stock, WH-Loss, ราคาทุน) หรือตารางหลัก (PO. Truck, MASTER แปลงสินค้า, ความจุต่อพาเลท)</span>';
     var p = IMP.parsed;
     if (p.stock) {
       html += '<label class="g-hint">ยอดของวันที่ <input type="date" class="bk-date" id="tiDay" value="' + esc(IMP.day) + '"></label>' +
@@ -293,23 +295,24 @@
     }
     if (p.sup) html += '<button class="bk-save" id="tiSup"' + dis + '>💾 PO → Supplier ' + f(p.sup.rows.length) + ' PO</button>';
     if (p.conv) html += '<button class="bk-save" id="tiConv"' + dis + '>💾 แปลงสินค้า ' + f(p.conv.pairs.length) + ' คู่</button>';
+    if (p.cap) html += '<button class="bk-save" id="tiCap"' + dis + '>💾 ความจุพาเลท ' + f(p.cap.rows.length) + ' SKU</button>';
     html += '<button class="bk-link" id="tiX">ไม่ใช้</button>';
     return html;
   }
   function impBody() {
     if (!IMP) {
       return '<div class="tx-empty">ยอดคงเหลือจาก TRcloud: export รายงานสินค้าคงเหลือ (ต้องมีคอลัมน์ SKU / รหัสสินค้า และ NEW WH, QA) ' +
-        'ใส่ชีต WH-Loss กับ ราคาทุน ในไฟล์เดียวกันได้<br>ตารางหลัก: ชีต PO. Truck (PO. กับ Truck/Supplier) · MASTER แปลงสินค้า (SKU ตอนซื้อ กับ SKU หลังแปลง)</div>';
+        'ใส่ชีต WH-Loss กับ ราคาทุน ในไฟล์เดียวกันได้<br>ตารางหลัก: ชีต PO. Truck (PO. กับ Truck/Supplier) · MASTER แปลงสินค้า (SKU ตอนซื้อ กับ SKU หลังแปลง) · ความจุต่อพาเลท (SKU หรือ Product ID กับ STD / pallet)</div>';
     }
     var p = IMP.parsed, rows = [];
-    var kinds = [['stock', 'ยอดคงเหลือ (Stock)'], ['loss', 'WH-Loss'], ['cost', 'ราคาทุน'], ['sup', 'PO → Supplier'], ['conv', 'แปลงสินค้า']];
+    var kinds = [['stock', 'ยอดคงเหลือ (Stock)'], ['loss', 'WH-Loss'], ['cost', 'ราคาทุน'], ['sup', 'PO → Supplier'], ['conv', 'แปลงสินค้า'], ['cap', 'ความจุต่อพาเลท']];
     kinds.forEach(function (k) {
       var x = p[k[0]];
       if (!x) return;
-      var n = k[0] === 'sup' ? x.rows.length : k[0] === 'conv' ? x.pairs.length : x.list.length;
-      var cols = k[0] === 'stock' ? x.cols.filter(Boolean).join(' · ') : k[0] === 'conv' ? x.cols.join(' → ') : x.col || '';
+      var n = k[0] === 'sup' || k[0] === 'cap' ? x.rows.length : k[0] === 'conv' ? x.pairs.length : x.list.length;
+      var cols = k[0] === 'stock' || k[0] === 'cap' ? x.cols.filter(Boolean).join(' · ') : k[0] === 'conv' ? x.cols.join(' → ') : x.col || '';
       var note = k[0] === 'sup' && x.dup.length ? 'PO ซ้ำต่าง Supplier ' + x.dup.slice(0, 5).join(', ') + (x.dup.length > 5 ? ' …' : '') + ' (ใช้แถวแรก)'
-        : k[0] === 'conv' && x.blank ? 'แถวช่องว่าง ' + x.blank : '';
+        : k[0] === 'conv' && x.blank ? 'แถวช่องว่าง ' + x.blank : k[0] === 'cap' && x.blank ? 'ช่องความจุว่าง ' + x.blank + ' แถว (ข้าม)' : '';
       rows.push('<tr><td>' + esc(x.tab) + '</td><td>' + k[1] + '</td><td class="num">' + f(n) + '</td><td class="c-sub">' + esc(cols) + '</td><td class="c-sub">' + esc(note) + '</td></tr>');
     });
     p.bad.forEach(function (b) { rows.push('<tr class="r-bad"><td>' + esc(b.tab) + '</td><td>—</td><td></td><td></td><td class="c-red">' + esc(b.why) + '</td></tr>'); });
@@ -363,13 +366,13 @@
     R = { trc: r.trc, cmp: r.cmp }; R_AT = Date.now();
     var t = r.cmp.tot;
     NOTE = { kind: t.diff ? 'warn' : 'ok', html: '✅ บันทึกยอด TRcloud ' + esc(day) + ' แล้ว ' + f(r.n) + ' SKU · ตรง ' + f(t.ok) + ' · ต่าง ' + f(t.diff) + ' SKU (ดู ⚖️ กระทบยอด)' };
-    if (!IMP.parsed.sup && !IMP.parsed.conv) IMP = null;
+    if (!IMP.parsed.sup && !IMP.parsed.conv && !IMP.parsed.cap) IMP = null;
     else IMP.parsed.stock = null;
     renderAll();
   }
   async function saveMaster(kind) {
     var part = IMP.parsed[kind];
-    var label = kind === 'sup' ? 'PO → Supplier ' + f(part.rows.length) + ' PO' : 'แปลงสินค้า ' + f(part.pairs.length) + ' คู่';
+    var label = kind === 'sup' ? 'PO → Supplier ' + f(part.rows.length) + ' PO' : kind === 'cap' ? 'ความจุต่อพาเลท ' + f(part.rows.length) + ' SKU' : 'แปลงสินค้า ' + f(part.pairs.length) + ' คู่';
     if (!confirm('บันทึก ' + label + ' แทนของเดิม?')) return;
     BUSY = 'กำลังบันทึก…'; NOTE = null; renderAll();
     var r = await FIRE.masterSave(kind, part);
@@ -377,7 +380,7 @@
     if (r.error) { NOTE = { kind: 'bad', html: 'บันทึกไม่ได้: ' + esc(r.error) }; renderAll(); return; }
     NOTE = { kind: 'ok', html: '✅ บันทึก ' + esc(label) + ' แล้ว · ทุกเครื่องดึงตารางใหม่ในรอบถัดไป' };
     IMP.parsed[kind] = null;
-    if (!IMP.parsed.stock && !IMP.parsed.sup && !IMP.parsed.conv) IMP = null;
+    if (!IMP.parsed.stock && !IMP.parsed.sup && !IMP.parsed.conv && !IMP.parsed.cap) IMP = null;
     R_AT = 0;
     renderAll();
   }
@@ -437,6 +440,7 @@
     else if (t.id === 'tiTrc') saveTrc();
     else if (t.id === 'tiSup') saveMaster('sup');
     else if (t.id === 'tiConv') saveMaster('conv');
+    else if (t.id === 'tiCap') saveMaster('cap');
   });
 
   document.addEventListener('input', function (e) {

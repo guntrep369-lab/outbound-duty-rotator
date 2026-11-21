@@ -178,6 +178,7 @@
     await script('../wms-fire-core.js');
     await script('../wms-fire-trc.js');
     await script('../wms-fire-docs.js');
+    await script('../wms-fire-item.js');
     await script('../wms-fire-print.js');
     await script('../wms-fire.js');
     if (MODE === 'live') await startLive(window.WmsFire);
@@ -346,6 +347,10 @@
     home: function () { return fire && window.WmsFireDocs ? window.WmsFireDocs.home(fire.local(), clockNow(), (fire.user() || {}).email || '') : null; },
     docs: function (q) { return window.WmsFireDocs ? window.WmsFireDocs.search(docList(), Object.assign({ email: fire && fire.user() ? fire.user().email : '' }, q || {}), clockNow()) : null; },
     doc: function (no) { return fire && window.WmsFireDocs ? window.WmsFireDocs.view(fire.local(), no) : null; },
+    /** หน้า สินค้า / โล: สต๊อกการ์ดของ SKU (opt.loc เฉพาะโล · opt.sku รหัสสั้น) · ยังไม่พร้อม = null */
+    card: function (code, opt) { return fire && window.WmsFireItem ? window.WmsFireItem.card(fire.local(), code, opt) : null; },
+    /** วันนี้ตามนาฬิกาที่ระบบใช้ (เวลาเว็บเมื่อเครื่องคลาด) */
+    today: function () { return window.WmsFireCore ? window.WmsFireCore.today(clockNow()) : ''; },
     archInfo: async function () { await ready; return fire.archInfo(); },
     archClose: async function () { await ready; return fire.archClose(); },
     /**

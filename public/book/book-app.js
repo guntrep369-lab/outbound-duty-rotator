@@ -4,6 +4,7 @@
  *   เมนูของแอปแทนเมนู WMS   วันนี้ · ขาออก · ขาเข้า · ในคลัง · คุมยอด · ค้นหา · ตั้งค่า พร้อมตัวเลขงานค้าง
  *                          จอกว้าง = แถบซ้าย · มือถือ = แถบบน กด ☰ เปิดเมนู
  *   🏠 วันนี้              การ์ดงานค้าง (ชุดรอส่ง รอลง TRcloud ยอดยกมา วางชีตเดิม ปิดเดือน ร่างค้าง) · งานประจำวัน · ใบล่าสุดของวันนี้
+ *   📦 สินค้า / โล         อยู่โลไหน คงเหลือ ลำดับตัด วันรับ Supplier ความจุพาเลท คู่แปลง สต๊อกการ์ด (book-item.js)
  *   🔎 เอกสาร             ค้นทุกใบในสำเนาเครื่องนี้ · กดเลขที่ = ดูทีละใบ: ขั้นตอน ประวัติ แถว ออเดอร์
  *                          ใส่เลข TRcloud · ยกเลิก (หัวหน้า) · ใบเดิม ↔ ใบกลับรายการ ลิงก์ถึงกัน · ลิงก์ #doc=เลขที่ ส่งต่อได้
  *   ✓ ตรวจ / อนุมัติ       ใบย้ายกับแปลง: ผู้จัดทำ → ผู้ตรวจสอบ (ไม่ใช่คนทำ) → ผู้อนุมัติ (หัวหน้า) ทีละใบหรือติ๊กหลายใบ
@@ -36,6 +37,7 @@
     adj: '<path d="M12 3v18"/><path d="M5 21h14"/><path d="M3 7h18"/><path d="m6 7-3 7a3 3 0 0 0 6 0z"/><path d="m18 7-3 7a3 3 0 0 0 6 0z"/>',
     rows: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16"/>',
     close: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
+    item: '<path d="M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14"/><path d="m7.5 4.27 9 5.15"/><path d="M3.29 7 12 12l8.71-5"/><path d="M12 22V12"/><circle cx="18.5" cy="15.5" r="2.5"/><path d="M20.27 17.27 22 19"/>',
     docs: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h5"/><path d="M14 3v5h5"/><path d="M19 8v3"/><circle cx="16.5" cy="16.5" r="3"/><path d="m21 21-2.4-2.4"/>',
     set: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
     wms: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
@@ -54,7 +56,7 @@
     { g: 'ในคลัง' }, { k: 'move', t: 'ย้าย / เติม / QA' }, { k: 'conv', t: 'แปลงสินค้า' },
     { g: 'คุมยอด' }, { k: 'trc', t: 'TRcloud' }, { k: 'adj', t: 'ปรับยอด', head: 1 }, { k: 'rows', t: 'ตารางแบบเดิม', head: 1 },
     { k: 'close', t: 'ปิดวัน / เดือน', head: 1 },
-    { g: 'ค้นหา' }, { k: 'docs', t: 'เอกสาร' },
+    { g: 'ค้นหา' }, { k: 'item', t: 'สินค้า / โล' }, { k: 'docs', t: 'เอกสาร' },
     { g: '' }, { k: 'set', t: 'ตั้งค่า' },
   ];
   var TYPE_OF = { cut: 'ตัดขาย', gr: 'รับของ', move: 'ย้าย', ret: 'คืน', conv: 'แปลง', adj: 'ปรับยอด', rows: 'ตารางเดิม' };
@@ -73,6 +75,7 @@
   var NOTE = null;            // { kind, html } ของหน้าเอกสาร
   var BUSY = '';
   var SEL = {};               // ใบที่ติ๊กไว้ตรวจ / อนุมัติ { เลขที่: 1 }
+  var BACK = '';              // เปิดใบมาจากหน้า สินค้า / โล: ‹ กลับ = กลับไปหน้านั้น
   var TYPING = null;
 
   function $(id) { return document.getElementById(id); }
@@ -443,12 +446,12 @@
     var v = CUR = FIRE.doc(DOC);
     $('docs').innerHTML = '';
     if (!v) {
-      $('inp').innerHTML = '<div class="bk-top"><button type="button" class="tx-opt" id="baBack">‹ กลับไปรายการ</button><span class="bk-h">' + esc(DOC) + '</span></div>';
+      $('inp').innerHTML = '<div class="bk-top"><button type="button" class="tx-opt" id="baBack">' + (BACK ? '‹ กลับไปหน้าสินค้า' : '‹ กลับไปรายการ') + '</button><span class="bk-h">' + esc(DOC) + '</span></div>';
       $('sum').innerHTML = ''; $('act').innerHTML = '';
       $('body').innerHTML = '<div class="tx-empty">' + (FIRE.home() ? 'ไม่พบเลขที่ <b>' + esc(DOC) + '</b> ในสำเนาเครื่องนี้<br>เอกสารใหม่จากเครื่องอื่น กด 🔄 ดึงสต๊อกใหม่ ที่แถบบน' : 'กำลังเปิดสมุด…') + '</div>';
       return;
     }
-    $('inp').innerHTML = '<div class="bk-top"><button type="button" class="tx-opt" id="baBack">‹ กลับไปรายการ</button>' +
+    $('inp').innerHTML = '<div class="bk-top"><button type="button" class="tx-opt" id="baBack">' + (BACK ? '‹ กลับไปหน้าสินค้า' : '‹ กลับไปรายการ') + '</button>' +
       '<span class="bk-h">' + esc(v.no) + '</span><span class="ba-ty">' + esc(v.type) + '</span>' +
       '<span>วันที่ ' + esc(dmy(v.date)) + ' · ' + esc(v.name) + ' · บันทึก ' + esc(when(v.stamp)) + '</span><span class="sp"></span>' +
       '<button type="button" class="tx-opt" id="baPrint" title="' + (window.WmsFirePrint && WmsFirePrint.can(v) ? 'พิมพ์ใบ' + (v.type === 'แปลง' ? 'ขอแปลงรหัสสินค้า' : 'โอนย้ายสินค้า') + ' A5' : 'พิมพ์หน้านี้') + '">🖨 พิมพ์ใบ</button></div>';
@@ -505,6 +508,16 @@
   function openDoc(no) {
     no = String(no || '').toUpperCase();
     NOTE = null;
+    if (!no && BACK && MODE === 'docs') {
+      var b = BACK, bh = window.BookItem ? BookItem.hash() : '';
+      BACK = ''; DOC = '';
+      try { history.pushState(null, '', bh || location.pathname + location.search); } catch (e) { location.hash = bh; }
+      setMode(b);
+      window.scrollTo(0, 0);
+      return;
+    }
+    if (no && MODE === 'item') BACK = 'item';
+    else if (no && MODE !== 'docs') BACK = '';
     DOC = no;
     var h = no ? '#doc=' + no : '';
     if (location.hash !== h) {
@@ -621,14 +634,16 @@
     on: ON,
     tabs: tabs,
     /** หน้าแรกตอนเปิดแอป: ลิงก์ #doc= = หน้าเอกสาร · ไม่งั้น วันนี้ */
-    start: function () { return DOC ? 'docs' : 'home'; },
+    start: function () { return DOC ? 'docs' : window.BookItem && BookItem.fromHash() ? 'item' : 'home'; },
     nav: renderNav,
     render: function (mode) {
       if (mode === 'home') renderHome();
       else if (mode === 'docs') renderDocsPage();
+      else if (mode === 'item' && window.BookItem) BookItem.render();
     },
     opened: function (mode) {
       if (mode === 'home') loadHx(false);
+      if (mode !== 'docs') BACK = '';
       if (mode !== 'docs' && DOC) { DOC = ''; NOTE = null; }
     },
     /** ประเภทเอกสารของแท็บงาน (ตารางชุดที่บันทึกด้านล่างแสดงเฉพาะของแท็บนั้น) */

@@ -1015,7 +1015,7 @@
       return r.error ? r : reply({ saved: day, n: made.data.n, trc: r.trc, cmp: r.cmp });
     }
 
-    /** หัวหน้านำเข้าตารางหลัก kind = sup (PO → Supplier) | conv (MASTER แปลงสินค้า) + meta.mv +1 ให้ทุกเครื่องดึงใหม่ */
+    /** หัวหน้านำเข้าตารางหลัก kind = sup (PO → Supplier) | conv (MASTER แปลงสินค้า) | cap (ความจุต่อพาเลท) + meta.mv +1 ให้ทุกเครื่องดึงใหม่ */
     async function masterSave(kind, part) {
       if (!user || user.role !== 'head') return fail('แก้ตารางหลักได้เฉพาะหัวหน้า');
       if (MASTERS.indexOf(kind) < 0) return fail('ไม่รู้จักตาราง ' + kind);

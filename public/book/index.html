@@ -269,6 +269,7 @@ select.fs-in{min-width:110px;cursor:pointer}
 <script src="book-fire-set.js"></script>
 <script src="book-fire-trc.js"></script>
 <script src="book-app.js"></script>
+<script src="book-item.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -286,7 +287,7 @@ const MODES = [['cut', 'ตัดขาย'], ['gr', 'รับของ'], ['mo
 const HEAD_ONLY = { adj: 1, rows: 1, set: 1 };   // แท็บของหัวหน้ากับรองหัวหน้า
 /* ระบบใหม่ = แอปสมุดสต๊อก (book-app.js): เมนูของแอปแทนแท็บ มีหน้า วันนี้ เอกสาร ปิดวัน/เดือน เพิ่ม · เปิดมาเจอหน้าวันนี้ */
 const APP = window.BookApp && window.BookApp.on ? window.BookApp : null;
-const APP_PAGES = { home: 1, docs: 1, close: 1 };   // หน้าของแอปที่ไม่ใช่งานลงรายการ
+const APP_PAGES = { home: 1, docs: 1, item: 1, close: 1 };   // หน้าของแอปที่ไม่ใช่งานลงรายการ
 let MODE = APP ? APP.start() : (() => { try { const m = localStorage.getItem(MODE_KEY); return MODES.some((x) => x[0] === m) ? m : 'cut'; } catch (e) { return 'cut'; } })();
 const RETRY_MS = 30000;   // ชุดที่ส่งไม่สำเร็จเพราะเน็ต ส่งซ้ำเองทุกเท่านี้
 
@@ -1101,7 +1102,7 @@ function render() {
   if (APP) APP.nav();
   if (FIRE && !USER) { renderLogin(); return; }
   renderTabs();
-  if (APP && (MODE === 'home' || MODE === 'docs')) {
+  if (APP && (MODE === 'home' || MODE === 'docs' || MODE === 'item')) {
     APP.render(MODE);
   } else if (MODE === 'set' || MODE === 'close') {
     if (FIRE) BookFireSet.render(); else BookSet.render();

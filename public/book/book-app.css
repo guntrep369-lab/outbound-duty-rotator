@@ -134,6 +134,22 @@ html.bk-app.bk-in .mod-head{display:none}
 .ba-hist b{color:var(--wms-text)}
 .ba-ref{font-size:12.5px}
 
+/* ── 📦 สินค้า / โล ── */
+.it-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin:2px 0 8px;font-size:13.5px;font-weight:700;color:var(--wms-text)}
+.it-h span{font-size:12px;font-weight:500;color:var(--wms-muted)}
+.it-h ~ .bk-wrap{margin-bottom:16px}
+.it-nm{font-size:13.5px;font-weight:600;color:var(--wms-text)}
+.it-page .bk-wrap{max-height:min(62vh,560px)}
+.it-page .ba-sec h3{flex-wrap:wrap}
+.it-page .ba-sec h3 span b{color:var(--wms-text)}
+.it-page .ba-sec h3 .bk-chip{font-size:12px}
+.bk-xl .it-in{color:#047857;font-weight:700}
+.bk-xl .it-out{color:#BE123C;font-weight:700}
+.bk-xl .it-move{color:var(--wms-muted)}
+.bk-xl .it-note{max-width:220px;overflow:hidden;text-overflow:ellipsis}
+.it-cb{padding:2px 10px;font-size:12px}
+.it-cb.on{border-color:var(--wms-primary);background:var(--wms-primary-light);color:var(--wms-primary-dark)}
+
 @media (max-width:760px){ .ba-dtop{grid-template-columns:1fr} }
 @media (max-width:640px){
   .ba-cards{grid-template-columns:1fr}
@@ -146,7 +162,8 @@ html.bk-app.bk-in .mod-head{display:none}
 @media (prefers-reduced-motion:reduce){ .bn-it,.ba-card,.ba-tile{transition:none} }
 @media print{
   .bk-nav,.tx-src,.bk-act,.bk-docs,#baBack,#baPrint{display:none !important}
-  .bk-wrap{max-height:none;overflow:visible}
+  .bk-wrap,.it-page .bk-wrap{max-height:none;overflow:visible}
+  #itBack,#itCopy,.it-cb{display:none !important}
 }
 
 /* แท็บงานในแอป: หัวตารางชุดที่บันทึกขึ้นบรรทัดใหม่ได้บนจอแคบ */

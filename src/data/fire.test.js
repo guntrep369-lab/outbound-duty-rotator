@@ -14,12 +14,13 @@ import { loadBook, fifoFromBook } from '../dev/fake-gas.js';
 
 const read = (f) => fs.readFileSync(path.resolve(__dirname, '../../public', f), 'utf8');
 
-let B, C, W, S, TR, DOC, PR;
+let B, C, W, S, TR, DOC, PR, IT;
 beforeAll(() => {
   const win = {};
-  ['wms-book.js', 'wms-fire-core.js', 'wms-fire-trc.js', 'wms-fire-docs.js', 'wms-fire-print.js', 'wms-fire.js', 'wms-stocktake.js'].forEach((f) => new Function('window', read(f))(win));
+  ['wms-book.js', 'wms-fire-core.js', 'wms-fire-trc.js', 'wms-fire-docs.js', 'wms-fire-item.js', 'wms-fire-print.js', 'wms-fire.js', 'wms-stocktake.js'].forEach((f) => new Function('window', read(f))(win));
   B = win.WmsBook;
   PR = win.WmsFirePrint;
+  IT = win.WmsFireItem;
   C = win.WmsFireCore;
   TR = win.WmsFireTrc;
   DOC = win.WmsFireDocs;
@@ -886,6 +887,27 @@ describe('WmsFire ขั้น 3: นำเข้ายอด TRcloud ตาร�
     expect(f.sup.rows).toEqual([['P1', 'ผู้ผลิตสมมติ ก'], ['P5', 'ผู้ผลิตสมมติ ข']]);
     expect(f.convert.pairs).toEqual([['BBB0000000002', 'BBB0000000001', '']]);
     expect(x.staff.masters()).toMatchObject({ sup: { n: 2, tab: 'PO. Truck', dup: 1 }, conv: { n: 1, blank: 1 } });
+  });
+
+  it('ความจุต่อพาเลท: ชื่อชีตหรือหัวตาราง · ช่องว่างนับไว้ · หัวหน้านำเข้า ทุกเครื่องได้ใน fifo() · หน้า สินค้า / โล เห็นความจุ', async () => {
+    const CAP = [['ตารางความจุ (สมมติ)'], ['SKU', 'Product ID', 'STD / pallet'], ['AAA001', 'AAA0000000001', 10], ['BBB002', '', ''], ['', 'CCC0000000004', 0], ['AAA001', 'AAA0000000001', 12]];
+    const p = TR.readSheets([{ name: 'ความจุต่อพาเลท', grid: CAP }]);
+    expect(p.cap).toMatchObject({ rows: [['AAA001', 'AAA0000000001', 10], ['', 'CCC0000000004', 0]], blank: 1, cols: ['SKU', 'Product ID', 'STD / pallet'], tab: 'ความจุต่อพาเลท' });
+    expect(TR.readSheets([{ name: 'Sheet1', grid: CAP.slice(1) }]).cap.rows).toHaveLength(2);           // ชื่อชีตอื่น ดูจากหัวตาราง
+    expect(TR.readSheets([{ name: 'ความจุต่อพาเลท', grid: [['SKU', 'จำนวน']] }]).error).toMatch(/STD \/ pallet/);
+    expect(TR.masterDoc('cap', null, {}).error).toMatch(/ความจุต่อพาเลท/);
+    const x = await both();
+    await x.open();
+    expect((await x.staff.masterSave('cap', p.cap)).error).toMatch(/เฉพาะหัวหน้า/);
+    ok(await x.head.masterSave('cap', p.cap));
+    await x.staff.sync();
+    const f = x.staff.fifo();
+    expect(f.cap.rows).toEqual([['AAA001', 'AAA0000000001', 10], ['', 'CCC0000000004', 0]]);
+    expect(x.staff.masters()).toMatchObject({ cap: { n: 2, tab: 'ความจุต่อพาเลท', blank: 1 } });
+    const st = B.stock(f), ix = IT.index(st, '2026-11-10');
+    expect(IT.detail(ix, f, st, 'AAA001')).toMatchObject({ cap: 10, pallets: 3.6 });
+    expect(IT.detail(ix, f, st, 'CCC004')).toMatchObject({ cap: 0, pallets: null });
+    expect(IT.detail(ix, f, st, 'BBB002').cap).toBeNull();
   });
 
   it('กระทบยอด: ยอดระบบ ณ สิ้นวันของไฟล์ · จับคู่ SKU แปลง · ตรง ต่าง ไม่มีใน TRcloud TRcloud มีระบบไม่มี · มูลค่าต่าง · เอกสารรอลง', async () => {
@@ -2209,5 +2231,144 @@ describe('ตรวจ / อนุมัติ ใบย้าย / แปลง
     const src = read('wms-fire-print.js');
     expect(src).not.toMatch(/AIza[0-9A-Za-z_-]{20,}|firebaseapp\.com|script\.google\.com|apiKey\s*:/);
     expect(src.match(/https?:\/\/[^'"\s)]+/g) || []).toEqual([]);
+  });
+});
+
+describe('หน้า สินค้า / โล: อยู่โลไหน คงเหลือ สต๊อกการ์ด (wms-fire-item.js)', () => {
+  /* T2611-0001 ยอดยกมา · 0002 ย้าย R01-01-01 → A-01-01 · 0003 เข้า QA · 0004 รับของ R01-02-01 · 0005 ตัดขาย A-01-01 · 0006 ปรับยอด A-01-01 −2 */
+  async function ready() {
+    const x = await both();
+    await x.open();
+    ok(await x.staff.post('bk-move', body('m-1', [mv3()])));
+    ok(await x.staff.post('bk-move', body('m-2', [QA_MV])));
+    ok(await x.staff.post('bk-gr', body('g-1', [GR3])));
+    ok(await x.staff.post('bk-cut', cutBody('c-1', [saleLine('77', 1)])));
+    ok(await x.head.post('bk-adj', body('a-1', [ADJ3], { lines: ADJ_LINES })));
+    await x.head.sync();
+    const res = x.head.fifo();
+    res.cap = { rows: [['AAA001', '', 10]] };
+    res.convert = { pairs: [['BBB0000000002', 'AAA0000000001', 'ที่นอนสมมติ 1']] };   // BBB แปลงมาจาก AAA
+    res.sup = { rows: [['P1', 'ผู้ขายสมมติ ก']] };
+    const st = B.stock(res);
+    return { x, res, st, ix: IT.index(st, '2026-11-10') };
+  }
+  const item = (ix, long) => ix.list.find((it) => it.long === long);
+
+  it('ทุก SKU: รวม เปิดขาย สำรอง QA โลที่มีของ Supplier วันรับเก่าสุด · ชิปนับถูก', async () => {
+    const { ix } = await ready();
+    expect(ix.list.map((it) => it.sku)).toEqual(['AAA001', 'BBB002', 'CCC004']);
+    expect(item(ix, 'AAA0000000001')).toMatchObject({
+      name: 'ที่นอนสมมติ 1', total: 36, have: 36, open: 24, reserve: 11, qa: 1, neg: 0, nNeg: 0,
+      openLocs: ['A-01-01', 'A-01-02'], sups: ['ผู้ขายสมมติ ก'], first: '2026-10-02', age: 39,
+    });
+    expect(item(ix, 'AAA0000000001').locs.sort()).toEqual(['A-01-01', 'A-01-02', 'QA', 'R01-01-01', 'R01-02-01']);
+    expect(item(ix, 'CCC0000000004')).toMatchObject({ total: 3, qa: 3, open: 0 });
+    expect(ix.skus).toBe(3);
+    const r = IT.search(ix, '', 'have');
+    expect(r.counts).toEqual({ have: 3, open: 2, qa: 2, neg: 0, zero: 0, all: 3 });
+    expect(IT.search(ix, '', 'qa').list.map((it) => it.sku)).toEqual(['AAA001', 'CCC004']);
+    expect(IT.search(ix, '', 'แปลก').chip).toBe('have');
+  });
+
+  it('ค้น: ทุกคำต้องเจอ · LOT พิมพ์ lot10 · ชื่อ · Supplier · ชื่อโล = ของในโลนั้น (ตรงตัว หรือต้นชื่อที่มี -)', async () => {
+    const { ix } = await ready();
+    const skus = (q, chip = 'all') => IT.search(ix, q, chip).list.map((it) => it.sku);
+    expect(skus('ท็อปเปอร์')).toEqual(['BBB002']);
+    expect(skus('lot10')).toEqual(['AAA001']);
+    expect(skus('ผู้ขายสมมติ')).toEqual(['AAA001']);
+    expect(skus('ที่นอน a-03')).toEqual([]);
+    expect(skus('a-01-02')).toEqual(['AAA001']);
+    const qa = IT.search(ix, 'qa', 'all').loc;
+    expect(qa).toMatchObject({ q: 'QA', locs: ['QA'], total: 4 });
+    expect(qa.piles.map((p) => [p.s, p.qty, p.st])).toEqual([[0, 1, 'qa'], [2, 3, 'qa']]);
+    const r01 = IT.search(ix, 'R01', 'all').loc;
+    expect(r01).toBeNull();                                                                   // ไม่มี - ไม่เดาเป็นต้นชื่อโล
+    const r0 = IT.search(ix, 'r01-0', 'all').loc;
+    expect(r0.locs).toEqual(['R01-01-01', 'R01-02-01']);
+    expect(r0.total).toBe(11);
+    expect(IT.search(ix, 'a-01 ที่นอน', 'all').loc).toBeNull();                                // หลายคำ = ค้น SKU
+  });
+
+  it('SKU เดียว: ลำดับตัด FIFO ตัดก่อน วันรับ อายุ Supplier ความจุต่อพาเลท คู่แปลงพร้อมยอด', async () => {
+    const { ix, res, st } = await ready();
+    const d = IT.detail(ix, res, st, 'AAA001');
+    expect(d).toMatchObject({ sku: 'AAA001', long: 'AAA0000000001', total: 36, cap: 10, pallets: 3.6 });
+    expect(d.piles.map((p) => p.loc + '|' + p.lot + '|' + p.po)).toEqual(st.all[0].map((p) => p.loc + '|' + p.lot + '|' + p.po));   // ลำดับตัดเดียวกับหน้าตัดขาย
+    const a = d.piles.find((p) => p.loc === 'A-01-01');
+    expect(a).toMatchObject({ lot: '8', po: 'P1', qty: 18, st: 'open', first: '2026-10-02', age: 39, sup: 'ผู้ขายสมมติ ก' });
+    expect(d.piles.find((p) => p.loc === 'R01-02-01')).toMatchObject({ qty: 3, st: 'reserve', first: '2026-11-09', age: 1 });
+    expect(d.piles.find((p) => p.loc === 'QA')).toMatchObject({ qty: 1, st: 'qa' });
+    expect(d.piles[d.next].st).toBe('open');
+    expect(d.piles.slice(0, d.next).every((p) => p.st !== 'open')).toBe(true);
+    expect(d.from).toEqual([]);
+    expect(d.to).toEqual([{ code: 'BBB0000000002', s: 1, sku: 'BBB002', name: 'ท็อปเปอร์สมมติ 2', total: 4 }]);
+    const b = IT.detail(ix, res, st, 'BBB0000000002');
+    expect(b.from).toEqual([{ code: 'AAA0000000001', s: 0, sku: 'AAA001', name: 'ที่นอนสมมติ 1', total: 36 }]);
+    expect(b.cap).toBeNull();
+    expect(IT.detail(ix, res, st, 'ZZZ999')).toBeNull();
+  });
+
+  it('สต๊อกการ์ด: ทุกแถวตั้งแต่ยอดยกมา คงเหลือสุดท้ายเท่ายอดรวม · เฉพาะโล · ใบที่ยกเลิกกับใบกลับรายการหักล้างกัน', async () => {
+    const { x, ix } = await ready();
+    const c = IT.card(x.head.local(), 'AAA0000000001', { sku: 'AAA001' });
+    expect(c.rows.map((r) => [r.no, r.kind, r.delta, r.bal])).toEqual([
+      ['T2611-0001', 'in', 20, 20], ['T2611-0001', 'in', 10, 30], ['T2611-0001', 'in', 6, 36],
+      ['T2611-0002', 'move', 0, 36], ['T2611-0003', 'move', 0, 36], ['T2611-0004', 'in', 3, 39],
+      ['T2611-0005', 'out', -1, 38], ['T2611-0006', 'out', -2, 36],
+    ]);
+    expect(c.bal).toBe(item(ix, 'AAA0000000001').total);
+    expect([c.inQ, c.outQ]).toEqual([39, 3]);
+    expect(c.rows[3]).toMatchObject({ type: 'ย้าย', from: 'R01-01-01', to: 'A-01-01', qty: 1, open: true, who: 'ทดลอง', date: '2026-11-10' });
+    const r = IT.card(x.head.local(), 'AAA0000000001', { loc: 'r01-01-01' });
+    expect(r.loc).toBe('R01-01-01');
+    expect(r.rows.map((y) => [y.no, y.kind, y.delta, y.bal])).toEqual([['T2611-0001', 'in', 10, 10], ['T2611-0002', 'out', -1, 9], ['T2611-0003', 'out', -1, 8]]);
+    expect(IT.card(x.head.local(), 'AAA0000000001', { loc: 'A-01-01' }).bal).toBe(18);
+    expect(IT.card(x.head.local(), 'AAA0000000001', { loc: 'QA' }).rows.map((y) => [y.kind, y.bal])).toEqual([['in', 1]]);
+    expect(IT.card(x.head.local(), 'CCC0000000004').bal).toBe(3);
+
+    ok(await x.head.post('bk-void', { doc: 'T2611-0006', why: 'ลงผิด' }));
+    const v = IT.card(x.head.local(), 'AAA0000000001');
+    expect(v.rows.slice(-2).map((y) => [y.no, y.voided, y.rev, y.delta, y.bal])).toEqual([['T2611-0006', true, false, -2, 36], ['T2611-0007', false, true, 2, 38]]);
+    const res = x.head.fifo();
+    expect(IT.index(B.stock(res), '2026-11-10').list[0].total).toBe(38);
+  });
+
+  it('กองติดลบนับในยอดรวม (เท่าการ์ด) · ชิปติดลบ / หมดแล้ว · SKU ที่ไม่มีของ', () => {
+    const p = (o) => Object.assign({ s: 0, lot: '1', po: 'P', loc: 'A-01', qty: 5, open: true, first: '2026-11-01', sup: '' }, o);
+    const st = {
+      skus: [['X1', 'X0000000001', 'สินค้า X'], ['Y2', 'Y0000000002', 'สินค้า Y'], ['Z3', 'Z0000000003', 'สินค้า Z']],
+      all: { 0: [p({}), p({ loc: 'R01-01', open: false, qty: 7, first: '' })] },
+      neg: [p({ s: 1, loc: 'A-02', qty: -2 })],
+      code: (c) => ({ X1: 0, X0000000001: 0, Y2: 1, Z3: 2 }[String(c).toUpperCase()] ?? -1),
+    };
+    const ix = IT.index(st, '2026-11-10');
+    expect(ix.by[0]).toMatchObject({ total: 12, open: 5, reserve: 7, age: 9, first: '2026-11-01' });
+    expect(ix.by[0].piles[1].age).toBeNull();
+    expect(ix.by[1]).toMatchObject({ total: -2, have: 0, neg: -2, nNeg: 1, locs: ['A-02'] });
+    expect(ix.by[2]).toMatchObject({ total: 0, have: 0, nNeg: 0 });
+    expect(IT.search(ix, '', 'have').counts).toEqual({ have: 1, open: 1, qa: 0, neg: 1, zero: 1, all: 3 });
+    expect(IT.search(ix, '', 'zero').list.map((it) => it.sku)).toEqual(['Z3']);
+    expect(IT.search(ix, 'a-02', 'all').loc.piles.map((x) => [x.s, x.qty, x.st])).toEqual([[1, -2, 'neg']]);
+    const d = IT.detail(ix, {}, st, 'Y2');
+    expect(d.piles.map((x) => x.st)).toEqual(['neg']);
+    expect(d.next).toBe(-1);
+    expect(d.pallets).toBeNull();
+  });
+
+  it('แอป: เมนู สินค้า / โล ทุกคนเห็น · BookFire โหลด wms-fire-item.js และเปิด card · ลิงก์ #sku= · ‹ กลับ จากใบที่เปิดจากการ์ด', () => {
+    const app = read('book/book-app.js'), bf = read('book/book-fire.js'), page = read('book/index.html'), ui = read('book/book-item.js');
+    expect(app).toContain("{ k: 'item', t: 'สินค้า / โล' }");
+    expect(app).not.toMatch(/k: 'item'[^}]*head/);
+    expect(bf.indexOf("script('../wms-fire-item.js')")).toBeGreaterThan(bf.indexOf("script('../wms-fire-docs.js')"));
+    expect(bf.indexOf("script('../wms-fire-item.js')")).toBeLessThan(bf.indexOf("script('../wms-fire.js')"));
+    expect(bf).toContain('window.WmsFireItem.card(fire.local(), code, opt)');
+    expect(page.indexOf('<script src="book-item.js"></script>')).toBeGreaterThan(page.indexOf('<script src="book-app.js"></script>'));
+    expect(page).toContain("const APP_PAGES = { home: 1, docs: 1, item: 1, close: 1 }");
+    expect(app).toContain("if (no && MODE === 'item') BACK = 'item';");
+    expect(app).toContain("BookItem.fromHash() ? 'item' : 'home'");
+    for (const k of ['#sku=', 'FIRE.card(d.long || d.sku, { sku: d.sku, loc: S.loc })', 'data-doc="', 'copyText(']) expect(ui, k).toContain(k);
+    const src = read('wms-fire-item.js') + ui;
+    expect(src).not.toMatch(/AIza[0-9A-Za-z_-]{20,}|firebaseapp\.com|script\.google\.com|apiKey\s*:/);
+    expect(src).not.toMatch(/\.get\(|\.commit\(|store\./);                                  // ไม่อ่านไม่เขียนฐาน คิดจากสำเนาในเครื่อง
   });
 });

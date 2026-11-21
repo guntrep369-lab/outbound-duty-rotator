@@ -197,12 +197,14 @@
     if (k === key('ราคาทุน') || /^cost/.test(k)) return 'cost';
     if (/^potruck$/.test(k)) return 'sup';
     if (k === key('MASTER แปลงสินค้า')) return 'conv';
+    if (k === key('ความจุต่อพาเลท')) return 'cap';
     var has = function (re) { return head.some(function (h) { return re.test(h); }); };
     if (has(/new.*wh|^wh-?02$/i)) return 'stock';
     if (has(/ราคาทุน|^cost/i)) return 'cost';
     if (has(/loss/i)) return 'loss';
     if (has(/truck|supplier/i) && has(/^po/i)) return 'sup';
     if (has(/ซื้อ/) && has(/แปลง|ขาย/)) return 'conv';
+    if (has(/std|pallet|พาเลท|ความจุ/i) && has(/^sku$|^รหัสสินค้า$|product\s*id|รหัสยาว/i)) return 'cap';
     return '';
   }
 
@@ -287,26 +289,59 @@
   }
 
   /**
+   * แท็บ ความจุต่อพาเลท → { rows: [[SKU, Product ID, ชิ้นต่อพาเลท]], cols, blank } แบบ WmsPutaway.capFromRows
+   * หัวตารางอยู่ใน 10 แถวแรก: SKU หรือ Product ID + STD / pallet · ช่องความจุว่าง / ไม่ใช่ตัวเลข นับใน blank · 0 เก็บไว้
+   */
+  function readCap(grid) {
+    var g = (grid || []).filter(function (r) { return Array.isArray(r); });
+    if (!g.length) return { error: 'ชีตว่าง' };
+    var hi = -1, c = null;
+    for (var i = 0; i < Math.min(g.length, 10) && hi < 0; i++) {
+      var x = { sku: -1, pid: -1, cap: -1 };
+      g[i].forEach(function (v, j) {
+        var h = text(v);
+        if (x.cap < 0 && /std|pallet|พาเลท|ความจุ/i.test(h)) x.cap = j;
+        else if (x.pid < 0 && /product\s*id|รหัสยาว/i.test(h)) x.pid = j;
+        else if (x.sku < 0 && /^sku$|^รหัสสินค้า$/i.test(h)) x.sku = j;
+      });
+      if (x.cap >= 0 && (x.sku >= 0 || x.pid >= 0)) { hi = i; c = x; }
+    }
+    if (hi < 0) return { error: 'หาหัวตาราง SKU กับ STD / pallet ไม่เจอ' };
+    var rows = [], blank = 0, seen = {};
+    g.slice(hi + 1).forEach(function (r) {
+      var sku = c.sku >= 0 ? up(r[c.sku]).replace(/\s+/g, '') : '', pid = c.pid >= 0 ? up(r[c.pid]).replace(/\s+/g, '') : '';
+      if (!sku && !pid) return;
+      if (!isNum(r[c.cap]) || numOf(r[c.cap]) < 0) { blank++; return; }
+      var k = sku + '|' + pid;
+      if (seen[k]) return;
+      seen[k] = 1;
+      rows.push([sku, pid, numOf(r[c.cap])]);
+    });
+    var head = g[hi].map(text);
+    return { rows: rows, cols: [c.sku >= 0 ? head[c.sku] : '', c.pid >= 0 ? head[c.pid] : '', head[c.cap]].filter(Boolean), blank: blank };
+  }
+
+  /**
    * ชีตจากไฟล์ที่วาง [{name, grid}] (ไฟล์เดียวหลายชีต หรือหลายไฟล์) → แยกตามชนิด
-   * { stock, loss, cost, sup, conv, tabs: {ชนิด: ชื่อชีต}, skipped: [ชื่อชีต], bad: [{tab, why}] } ไม่มีอะไรใช้ได้ = { error }
+   * { stock, loss, cost, sup, conv, cap, tabs: {ชนิด: ชื่อชีต}, skipped: [ชื่อชีต], bad: [{tab, why}] } ไม่มีอะไรใช้ได้ = { error }
    */
   function readSheets(sheets) {
-    var out = { stock: null, loss: null, cost: null, sup: null, conv: null, tabs: {}, skipped: [], bad: [] };
+    var out = { stock: null, loss: null, cost: null, sup: null, conv: null, cap: null, tabs: {}, skipped: [], bad: [] };
     (sheets || []).forEach(function (s) {
       var t = tabRows(s.grid), kind = sheetKind(s.name, t.head);
       if (!kind || out[kind]) { out.skipped.push(s.name); return; }
       var r = kind === 'stock' ? readStock(t)
         : kind === 'loss' ? readSide(t, [/loss/i, /คงเหลือ|จำนวน|qty|total|ยอด/i], true)
         : kind === 'cost' ? readSide(t, [/ราคาทุน|ทุน|cost/i, /ราคา|price/i], false)
-        : kind === 'sup' ? readSup(s.grid) : readConv(s.grid);
+        : kind === 'sup' ? readSup(s.grid) : kind === 'cap' ? readCap(s.grid) : readConv(s.grid);
       if (r.error) { out.bad.push({ tab: s.name, why: r.error }); return; }
       r.tab = s.name;
       out[kind] = r;
       out.tabs[kind] = s.name;
     });
     if (out.stock && out.stock.list.length > TRC_MAX) return { error: 'ยอด TRcloud ต้องมีไม่เกิน ' + TRC_MAX + ' SKU' };
-    if (!out.stock && !out.loss && !out.cost && !out.sup && !out.conv) {
-      return { error: out.bad.length ? out.bad.map(function (b) { return b.tab + ': ' + b.why; }).join(' · ') : 'ไม่เจอชีต Stock, WH-Loss, ราคาทุน, PO. Truck หรือ MASTER แปลงสินค้า' };
+    if (!out.stock && !out.loss && !out.cost && !out.sup && !out.conv && !out.cap) {
+      return { error: out.bad.length ? out.bad.map(function (b) { return b.tab + ': ' + b.why; }).join(' · ') : 'ไม่เจอชีต Stock, WH-Loss, ราคาทุน, PO. Truck, MASTER แปลงสินค้า หรือ ความจุต่อพาเลท' };
     }
     return out;
   }
@@ -346,15 +381,15 @@
       stock: stock, loss: side(d.loss, d.hasLoss), cost: side(d.cost, d.hasCost) };
   }
 
-  /** PO → Supplier / MASTER แปลงสินค้า ที่อ่านแล้ว → เอกสาร master/sup, master/conv (รูปที่ fifo() อ่าน) */
+  /** PO → Supplier / MASTER แปลงสินค้า / ความจุต่อพาเลท ที่อ่านแล้ว → เอกสาร master/sup, master/conv, master/cap (รูปที่ fifo() อ่าน) */
   function masterDoc(kind, part, info) {
-    if (!part) return { error: kind === 'sup' ? 'ไม่มีชีต PO. Truck' : 'ไม่มีชีต MASTER แปลงสินค้า' };
-    var list = kind === 'sup' ? part.rows : part.pairs;
+    if (!part) return { error: kind === 'sup' ? 'ไม่มีชีต PO. Truck' : kind === 'cap' ? 'ไม่มีชีต ความจุต่อพาเลท' : 'ไม่มีชีต MASTER แปลงสินค้า' };
+    var list = kind === 'conv' ? part.pairs : part.rows;
     if (!list.length) return { error: 'ชีต ' + part.tab + ' ไม่มีแถวที่ใช้ได้' };
     if (list.length > MASTER_MAX) return { error: 'ตารางหลักต้องมีไม่เกิน ' + MASTER_MAX + ' แถว' };
     var d = kind === 'sup'
       ? { tab: part.tab, rows: C.enc(list), dup: part.dup.slice(0, 200), n: list.length }
-      : { tab: part.tab, cols: part.cols, rows: C.enc(list), blank: part.blank, n: list.length };
+      : { tab: part.tab, cols: part.cols, rows: C.enc(list), blank: part.blank, n: list.length };   // conv · cap
     d.by = info.by || '';
     d.name = info.name || '';
     d.at = C.TIME;
