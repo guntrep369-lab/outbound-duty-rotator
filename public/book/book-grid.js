@@ -162,7 +162,10 @@
     var p = mode === 'move' ? B.planMoves(g.rows, ST) : mode === 'rows' ? B.planRows(g.rows, ST, { date: g.date })
       : mode === 'gr' ? B.planGr(g.rows, ST, { date: g.date }) : mode === 'conv' ? B.planConv(g.rows, ST)
       : mode === 'adj' ? B.planAdj(g.rows, ST) : B.planReturns(g.rows, LOOK, ST);
-    return B.trApply(p, mode, { tr: g.tr, mr: g.mr, gr: g.gr });
+    p = B.trApply(p, mode, { tr: g.tr, mr: g.mr, gr: g.gr });
+    /* ระบบใหม่: เทียบข้อมูลหลัก (Location / SKU / กลุ่มสินค้า) ไม่มีตาราง = ไม่เปลี่ยนอะไร */
+    var su = window.BookFire && window.WmsFireSetup && window.BookFire.setup ? window.BookFire.setup() : null;
+    return su ? window.WmsFireSetup.check(p, mode, su.ix) : p;
   }
 
   /** แผน → แถวที่ส่งให้สคริปต์ */

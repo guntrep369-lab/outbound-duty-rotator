@@ -181,6 +181,7 @@
     await script('../wms-fire-item.js');
     await script('../wms-fire-tx.js');
     await script('../wms-fire-print.js');
+    await script('../wms-fire-setup.js');
     await script('../wms-fire.js');
     if (MODE === 'live') await startLive(window.WmsFire);
     else await startLocal(window.WmsFire);
@@ -244,6 +245,8 @@
     if (!IDX.by) { IDX.by = {}; list.forEach(function (x) { IDX.by[x.no] = x; }); }
     return IDX.by[no] || null;
   }
+
+  var SETUP_C = null, STOCK_C = null;   // ข้อมูลหลักที่อ่านแล้ว (คิดใหม่เมื่อตารางเปลี่ยน) · ยอดต่อโล / SKU (คิดใหม่เมื่อมีเอกสารใหม่)
 
   window.BookFire = {
     ready: ready,
@@ -347,6 +350,26 @@
     trcSave: async function (parsed, day, files) { await ready; return fire.trcSave(parsed, day, files); },
     masterSave: async function (kind, part) { await ready; return fire.masterSave(kind, part); },
     masters: function () { return fire ? fire.masters() : {}; },
+    /* ข้อมูลหลัก Location / SKU / กลุ่มสินค้า (wms-fire-setup.js) จากสำเนาในเครื่อง ไม่อ่านฐาน */
+    /** { t: ตารางทั้งสาม, ix: ตัวค้น } เก็บผลไว้จนตารางในเครื่องเปลี่ยน (meta.mv) · ยังไม่พร้อม = ตารางว่าง (ไม่เตือนอะไร) */
+    setup: function () {
+      var S = window.WmsFireSetup, l = fire ? fire.local() : null, m = l ? l.master : null;
+      if (!S) return null;
+      if (!SETUP_C || SETUP_C.m !== m || SETUP_C.l !== l) { var t = S.read(l); SETUP_C = { m: m, l: l, t: t, ix: S.index(t) }; }
+      return SETUP_C;
+    },
+    /** ยอดในเครื่องต่อโล / ต่อ SKU { loc, sku } */
+    setupStock: function () {
+      var S = window.WmsFireSetup, l = fire ? fire.local() : null;
+      if (!S || !l) return { loc: {}, sku: {} };
+      if (!STOCK_C || STOCK_C.l !== l || STOCK_C.seq !== l.seq) STOCK_C = { l: l, seq: l.seq, st: S.stockOf(l) };
+      return STOCK_C.st;
+    },
+    /** Location / SKU ที่มีในสมุดแต่ยังไม่มีใน list */
+    setupFound: function (kind, list) { var l = fire ? fire.local() : null; return window.WmsFireSetup && l ? window.WmsFireSetup.found(kind, list, l) : []; },
+    setupSave: async function (kind, rows, opt) { await ready; return fire.setupSave(kind, rows, opt); },
+    /** ดึงเอกสาร / ตารางใหม่จากฐาน (ตารางที่คนอื่นเพิ่งบันทึก) */
+    sync: async function () { await ready; await fire.sync(); },
     xferDays: async function () { await ready; return fire.xferDays(); },
     xferText: function (day, after) { return fire.xferText(day, after); },
     xferMark: async function (day, info) { await ready; return fire.xferMark(day, info); },

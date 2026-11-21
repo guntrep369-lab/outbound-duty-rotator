@@ -1606,8 +1606,8 @@ describe('WmsFire ปิดเดือน', () => {
 
     const fr = await freshDevice(x);
     await sameCopy(fr.f, full.f);
-    /* meta + index + 1 ก้อน + เอกสาร พ.ย. 2 + เลข TRcloud หลังปิด (ว่าง) + ตรวจ / อนุมัติหลังปิด (ว่าง) + ตารางหลัก 3 */
-    expect(fr.reads).toBe(1 + 1 + 1 + 2 + 1 + 1 + 3);
+    /* meta + index + 1 ก้อน + เอกสาร พ.ย. 2 + เลข TRcloud หลังปิด (ว่าง) + ตรวจ / อนุมัติหลังปิด (ว่าง) + ตารางหลัก 6 (นำเข้า 3 + ข้อมูลหลัก 3) */
+    expect(fr.reads).toBe(1 + 1 + 1 + 2 + 1 + 1 + 6);
     expect(fr.reads).toBeLessThan(full.reads);
     expect(fr.f.local().docs.find((d) => d.id === 'big').cut.length).toBeGreaterThan(1);   // แยกส่วนตรงกับในฐาน (ไฟล์สำรองยังตรง)
     expect(TR.backupOf(fr.f.local(), {}, NOW).data['docs/big~2']).toEqual(x.store.dump()['docs/big~2']);
@@ -1712,10 +1712,10 @@ describe('WmsFire ปิดเดือน', () => {
     const full = await plainDevice(x);
     const fr = await freshDevice(x);
     await sameCopy(fr.f, full);
-    /* meta + index + ก้อน + เอกสารใหญ่ (หลัก + ส่วนแยก) + เอกสาร พ.ย. 2 + เลข TRcloud หลังปิด + ตรวจ / อนุมัติหลังปิด + ตารางหลัก 3 */
+    /* meta + index + ก้อน + เอกสารใหญ่ (หลัก + ส่วนแยก) + เอกสาร พ.ย. 2 + เลข TRcloud หลังปิด + ตรวจ / อนุมัติหลังปิด + ตารางหลัก 6 */
     const parts = Object.keys(x.store.dump()).filter((p) => p.startsWith('docs/big~')).length;
     expect(parts).toBeGreaterThan(0);
-    expect(fr.reads).toBe(1 + 1 + c.chunks + 1 + parts + 2 + 1 + 1 + 3);
+    expect(fr.reads).toBe(1 + 1 + c.chunks + 1 + parts + 2 + 1 + 1 + 6);
   });
 
   it('เอกสารที่หัวหน้าบันทึกจากเครื่องตัวเอง (สำเนาตอนบันทึกใช้เวลาเครื่อง) ก่อนรวมก้อนดึงจากฐานใหม่ ก้อนตรงกับในฐาน', async () => {
@@ -2364,7 +2364,7 @@ describe('หน้า สินค้า / โล: อยู่โลไหน 
     expect(bf.indexOf("script('../wms-fire-item.js')")).toBeLessThan(bf.indexOf("script('../wms-fire.js')"));
     expect(bf).toContain('window.WmsFireItem.card(fire.local(), code, opt)');
     expect(page.indexOf('<script src="book-item.js"></script>')).toBeGreaterThan(page.indexOf('<script src="book-app.js"></script>'));
-    expect(page).toContain("const APP_PAGES = { home: 1, docs: 1, item: 1, close: 1 }");
+    expect(page).toContain("const APP_PAGES = { home: 1, docs: 1, item: 1, close: 1, master: 1 }");
     expect(app).toContain("if (no && MODE === 'item') BACK = 'item';");
     expect(app).toContain("BookItem.fromHash() ? 'item' : 'home'");
     for (const k of ['#sku=', 'FIRE.card(d.long || d.sku, { sku: d.sku, loc: S.loc })', 'data-doc="', 'copyText(']) expect(ui, k).toContain(k);

@@ -21,6 +21,7 @@
   var STALE_TRIES = 4;    // สำเนาในเครื่องตามไม่ทันระหว่างบันทึก ดึงใหม่แล้วลองกี่ครั้ง
   var PAGE = 300;         // เอกสารต่อการดึงหนึ่งครั้ง
   var MASTERS = ['conv', 'sup', 'cap'];
+  var SETUP = ['loc', 'sku', 'grp'];   // ข้อมูลหลักที่หัวหน้าแก้ในหน้า ข้อมูลหลัก (wms-fire-setup.js)
   var ROLE_TH = { head: C.ROLE_HEAD, staff: C.ROLE_USER, viewer: C.ROLE_VIEW };
   var NO_RIGHT = 'บัญชีนี้ยังไม่มีสิทธิ์ ติดต่อหัวหน้า Inventory ให้เพิ่มชื่อในหน้าตั้งค่า';
   var ROLES = ['head', 'staff', 'viewer'];
@@ -699,9 +700,10 @@
         local.trc = td ? { key: meta.trc, id: id, data: td } : null;
       }
       if ((+meta.mv || 0) !== local.mv) {
-        var ms = await store.getMany(MASTERS.map(function (n) { return 'master/' + n; }));
+        var all = MASTERS.concat(SETUP);
+        var ms = await store.getMany(all.map(function (n) { return 'master/' + n; }));
         local.master = {};
-        MASTERS.forEach(function (n, j) { if (ms[j]) local.master[n] = ms[j]; });
+        all.forEach(function (n, j) { if (ms[j]) local.master[n] = ms[j]; });
         local.mv = +meta.mv || 0;
       }
       local.meta = meta;
@@ -1033,6 +1035,33 @@
       return reply({ saved: kind, n: made.data.n });
     }
 
+    /**
+     * หัวหน้าบันทึกข้อมูลหลักทั้งตาราง kind = loc | sku | grp · rows = แถวแบบวัตถุ (WmsFireSetup.rowIn)
+     * opt = { base: รุ่นที่เริ่มแก้, strict } · รุ่นในฐานไม่ตรง base = มีคนบันทึกก่อน ไม่เขียนทับ
+     */
+    async function setupSave(kind, rows, opt) {
+      opt = opt || {};
+      if (!user || user.role !== 'head') return fail('แก้ข้อมูลหลักได้เฉพาะหัวหน้า');
+      if (SETUP.indexOf(kind) < 0) return fail('ไม่รู้จักตาราง ' + kind);
+      var S = window.WmsFireSetup;
+      if (!S) return fail('ยังไม่ได้โหลด wms-fire-setup.js');
+      var made = null;
+      try {
+        await store.tx(async function (t) {
+          var meta = await t.get('meta/head');
+          if (!meta) throw new Error('ลงยอดยกมาก่อน แล้วค่อยตั้งข้อมูลหลัก');
+          var cur = await t.get('master/' + kind);
+          made = S.docOf(kind, rows, { by: user.email, name: user.name, at: now(), strict: opt.strict, base: opt.base }, cur);
+          if (made.error) return;
+          t.set('master/' + kind, made.data);
+          t.patch('meta/head', { mv: (+meta.mv || 0) + 1 });
+        });
+      } catch (e) { return fail(errOf(e)); }
+      if (made && made.error) return reply({ error: made.error });
+      await sync();
+      return reply({ saved: kind, n: made.data.n, ver: made.data.ver, text: made.data.hist[0].text });
+    }
+
     /** ตารางหลักที่มีอยู่ { sup: {n, tab, at, name}, conv: {…} } */
     function masters() {
       var out = {};
@@ -1235,7 +1264,7 @@
       store: store, auth: auth, domain: domain,
       login: login, restore: restore, logout: logout, sync: sync, post: post,
       users: users, saveUser: saveUser, quota: quota, reload: reload,
-      trList: trList, trSave: trSave, okSave: okSave, trFile: trFile, trc: trc, trcSave: trcSave, masterSave: masterSave, masters: masters,
+      trList: trList, trSave: trSave, okSave: okSave, trFile: trFile, trc: trc, trcSave: trcSave, masterSave: masterSave, masters: masters, setupSave: setupSave,
       xferDays: xferDays, xferText: xferText, xferMark: xferMark, backup: backup, archInfo: archInfo, archClose: archClose,
       user: function () { return user; },
       local: function () { return local; },
