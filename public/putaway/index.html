@@ -412,7 +412,7 @@ function renderCap() {
   if (!c) {
     const why = RES && RES.cap === undefined ? 'สคริปต์ tx-api.gs รุ่นนี้ยังไม่อ่านแท็บความจุ ให้วางโค้ดใหม่แล้ว Deploy เป็น New version'
       : RES && RES.cap && RES.cap.missing ? `แท็บ ${RES.cap.tab}: ${RES.cap.missing}`
-      : window.WmsFireSrc ? 'ระบบใหม่ยังไม่ได้นำเข้าตาราง ความจุต่อพาเลท (สมุดสต๊อก → TRcloud → นำเข้า) หรือลากไฟล์มาวางตรงนี้'
+      : window.WmsFireSrc ? 'ระบบใหม่ยังไม่ได้นำเข้าตาราง ความจุต่อพาเลท (สมุดสต๊อก → ข้อมูลหลัก) หรือลากไฟล์มาวางตรงนี้'
       : 'เพิ่มแท็บ ความจุต่อพาเลท (หัวตาราง SKU, Product ID, STD / pallet) ในไฟล์ชีต Transaction แล้วกดดึงสต๊อกใหม่ หรือลากไฟล์มาวางตรงนี้';
     box.innerHTML = `<span class="warn" title="${esc(why)}">⚠️ ยังไม่มีความจุต่อพาเลท แบ่งพาเลทไม่ได้</span> · <button class="pw-link" data-capfile>เลือกไฟล์ความจุ</button>`;
     return;
@@ -434,7 +434,7 @@ function renderSup() {
   const sp = RES.sup;
   if (!sp || sp.missing || !(sp.rows && sp.rows.length)) {
     const why = sp === undefined ? 'สคริปต์ tx-api.gs รุ่นนี้ยังไม่อ่านแท็บ PO. Truck ให้วางโค้ดใหม่แล้ว Deploy เป็น New version'
-      : !sp ? (window.WmsFireSrc ? 'ระบบใหม่ยังไม่ได้นำเข้าตาราง PO. Truck (สมุดสต๊อก → TRcloud → นำเข้า)' : 'ยังไม่มีแท็บ PO. Truck (หัวตาราง Truck, PO.) ในไฟล์ชีต Transaction')
+      : !sp ? (window.WmsFireSrc ? 'ระบบใหม่ยังไม่ได้นำเข้าตาราง PO. Truck (สมุดสต๊อก → ข้อมูลหลัก)' : 'ยังไม่มีแท็บ PO. Truck (หัวตาราง Truck, PO.) ในไฟล์ชีต Transaction')
       : `แท็บ ${sp.tab}: ${sp.missing || 'ยังไม่มีข้อมูล'}`;
     box.innerHTML = `<span class="warn" title="${esc(why)} · ตอนนี้รู้ Supplier แค่ของรถที่เข้า (ช่อง Truck)">⚠️ ยังไม่รู้ Supplier ของโลเปิด</span>`;
     return;

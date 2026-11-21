@@ -246,7 +246,7 @@
     return IDX.by[no] || null;
   }
 
-  var SETUP_C = null, STOCK_C = null;   // ข้อมูลหลักที่อ่านแล้ว (คิดใหม่เมื่อตารางเปลี่ยน) · ยอดต่อโล / SKU (คิดใหม่เมื่อมีเอกสารใหม่)
+  var SETUP_C = null, STOCK_C = null, NAMES_C = null;   // ข้อมูลหลักที่อ่านแล้ว (คิดใหม่เมื่อตารางเปลี่ยน) · ยอดต่อโล / SKU (คิดใหม่เมื่อมีเอกสารใหม่)
 
   window.BookFire = {
     ready: ready,
@@ -358,15 +358,22 @@
       if (!SETUP_C || SETUP_C.m !== m || SETUP_C.l !== l) { var t = S.read(l); SETUP_C = { m: m, l: l, t: t, ix: S.index(t) }; }
       return SETUP_C;
     },
-    /** ยอดในเครื่องต่อโล / ต่อ SKU { loc, sku } */
+    /** ยอดในเครื่องต่อโล / ต่อ SKU / ต่อ PO { loc, sku, po } */
     setupStock: function () {
       var S = window.WmsFireSetup, l = fire ? fire.local() : null;
-      if (!S || !l) return { loc: {}, sku: {} };
+      if (!S || !l) return { loc: {}, sku: {}, po: {} };
       if (!STOCK_C || STOCK_C.l !== l || STOCK_C.seq !== l.seq) STOCK_C = { l: l, seq: l.seq, st: S.stockOf(l) };
       return STOCK_C.st;
     },
-    /** Location / SKU ที่มีในสมุดแต่ยังไม่มีใน list */
-    setupFound: function (kind, list) { var l = fire ? fire.local() : null; return window.WmsFireSetup && l ? window.WmsFireSetup.found(kind, list, l) : []; },
+    /** Location / SKU / PO ที่มีในสมุดแต่ยังไม่มีใน list (cap: skus = แถวตาราง SKU) */
+    setupFound: function (kind, list, skus) { var l = fire ? fire.local() : null; return window.WmsFireSetup && l ? window.WmsFireSetup.found(kind, list, l, skus) : []; },
+    /** ชื่อสินค้าจากเอกสารในสมุด { รหัส: ชื่อ } */
+    setupNames: function () {
+      var S = window.WmsFireSetup, l = fire ? fire.local() : null;
+      if (!S || !l) return {};
+      if (!NAMES_C || NAMES_C.l !== l || NAMES_C.seq !== l.seq) NAMES_C = { l: l, seq: l.seq, m: S.namesOf(l) };
+      return NAMES_C.m;
+    },
     setupSave: async function (kind, rows, opt) { await ready; return fire.setupSave(kind, rows, opt); },
     /** ดึงเอกสาร / ตารางใหม่จากฐาน (ตารางที่คนอื่นเพิ่งบันทึก) */
     sync: async function () { await ready; await fire.sync(); },

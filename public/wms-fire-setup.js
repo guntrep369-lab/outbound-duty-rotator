@@ -1,11 +1,15 @@
 /**
- * @file wms-fire-setup.js — ระบบใหม่ ข้อมูลหลัก ขั้น ก: Location · SKU · กลุ่มสินค้า (ตรรกะล้วน ไม่แตะฐาน ไม่แตะหน้าจอ)
+ * @file wms-fire-setup.js — ระบบใหม่ ข้อมูลหลัก (ตรรกะล้วน ไม่แตะฐาน ไม่แตะหน้าจอ)
+ *   ขั้น ก: Location · SKU · กลุ่มสินค้า · ขั้น ข: แปลงสินค้า · Supplier (PO) · SKU : Pallet (ตารางหลักที่เดิมนำเข้าในหน้า TRcloud)
  *
- * ที่เก็บ master/{loc|sku|grp} หัวหน้าแก้ทั้งตารางแล้วบันทึกทีละครั้ง (แบบตารางหลักเดิม · meta.mv +1 ทุกเครื่องดึงใหม่)
+ * ที่เก็บ master/{kind} หัวหน้าแก้ทั้งตารางแล้วบันทึกทีละครั้ง (meta.mv +1 ทุกเครื่องดึงใหม่)
  *   {tab, cols, rows TSV, n, strict, ver, hist, by, name, at}
  *   loc  rows = [Location, จุ (พาเลท), ใช้งาน 1|0, หมายเหตุ]
  *   sku  rows = [SKU, SKU เต็ม, ชื่อสินค้า, รหัสกลุ่ม, ของแถม 1|'', สุญญากาศ 1|'', ใช้งาน 1|0]
  *   grp  rows = [รหัสกลุ่ม, ชื่อกลุ่ม, สี, ขึ้นแร็ค yes|no, ชั้นแร็ค 1|2+|all|'', เศษ / ไม่ขึ้นแร็ค ไปที่, หมายเหตุ]
+ *   conv rows = [SKU หลังแปลง, SKU ตอนซื้อ]      + cols, blank   รูปเดิมของ masterDoc (fifo / รายงาน / ชุดแชร์ อ่านเหมือนเดิม)
+ *   sup  rows = [PO, Supplier]                   + dup
+ *   cap  rows = [SKU, Product ID, ชิ้นต่อพาเลท]    + cols, blank
  *   strict  1 = ใบที่ใช้ Location / SKU ที่ไม่มีในตาราง (หรือปิดใช้) บันทึกไม่ได้ · 0 = เตือนอย่างเดียว (ค่าเริ่ม)
  *   ver     รุ่นของตาราง: บันทึกได้เมื่อรุ่นในฐานยังเป็นรุ่นที่เริ่มแก้ (สองคนแก้พร้อมกัน คนหลังต้องโหลดใหม่)
  *   hist    ประวัติ HIST_MAX ครั้งล่าสุด ใหม่สุดก่อน [{at, by, name, text}]
@@ -13,7 +17,8 @@
  * ยังไม่บันทึกตาราง loc / sku = ไม่เตือนอะไรตอนบันทึกใบ (ขึ้นระบบได้ก่อนตั้งข้อมูลหลักครบ)
  * กลุ่มสินค้ายังไม่บันทึก = ใช้ค่าเริ่มตามกติกาที่เก็บของหัวหน้าคลัง 9 พ.ย. (เหมือน wms-putaway.js)
  *
- *   read(local)              ตารางทั้งสามจากสำเนาในเครื่อง
+ *   read(local)              ทุกตารางจากสำเนาในเครื่อง
+ *   fromParsed(kind, part)   แถวจากไฟล์ที่อ่านด้วย WmsFireTrc.readSheets (PO. Truck · MASTER แปลงสินค้า · ความจุต่อพาเลท)
  *   index(tables)            ตัวค้นเร็ว (โล SKU สั้น/เต็ม กลุ่ม) + สวิตช์ห้าม
  *   validate(kind, list, t)  เตือนรายแถว (ซ้ำ ว่าง รูปแบบ แร็คเกิน 1 พาเลท ปิดใช้แต่มีของ ไม่มีกลุ่ม …)
  *   found(kind, list, local) Location / SKU ที่มีในสมุดแต่ยังไม่มีในตาราง (เติมตอนตั้งครั้งแรก)
@@ -25,12 +30,17 @@
 (function () {
   'use strict';
 
-  var KINDS = ['loc', 'sku', 'grp'];
-  var TAB = { loc: 'Location', sku: 'SKU', grp: 'กลุ่มสินค้า' };
+  var KINDS = ['loc', 'sku', 'grp', 'conv', 'sup', 'cap'];
+  var IMPORTED = ['conv', 'sup', 'cap'];   // ตารางหลักเดิม: เก็บรูปเดิม ไม่มีสวิตช์ห้าม
+  var TAB = { loc: 'Location', sku: 'SKU', grp: 'กลุ่มสินค้า', conv: 'แปลงสินค้า', sup: 'Supplier (PO)', cap: 'SKU : Pallet' };
+  /* ชื่อชีตเดิมของตารางหลัก (รายงานแสดงว่ามาจากตารางไหน) */
+  var SHEET = { conv: 'MASTER แปลงสินค้า', sup: 'PO. Truck', cap: 'ความจุต่อพาเลท' };
   var COLS = {
     loc: ['Location', 'จุ (พาเลท)', 'ใช้งาน', 'หมายเหตุ'],
     sku: ['SKU', 'SKU เต็ม', 'ชื่อสินค้า', 'กลุ่มสินค้า', 'ของแถม', 'สุญญากาศ', 'ใช้งาน'],
     grp: ['รหัส', 'กลุ่ม', 'สี', 'ขึ้นแร็ค', 'ชั้นแร็ค', 'เศษ / ไม่ขึ้นแร็ค ไปที่', 'หมายเหตุ'],
+    conv: ['SKU ตอนซื้อ', 'SKU หลังแปลง'],
+    cap: ['SKU', 'Product ID', 'STD / pallet'],
   };
   var ROWS_MAX = 20000;        // แถวต่อตาราง (แบบ MASTER_MAX ของตารางหลักเดิม)
   var DOC_BYTES = 900000;      // เอกสารเดียวไม่เกินนี้ (Firestore รับ 1 MiB)
@@ -77,18 +87,39 @@
 
   /* ── แถว ↔ วัตถุ ───────────────────────────────────────────────────── */
 
+  function code(v) { return up(v).replace(/\s+/g, ''); }
+  function isNum(v) { var s = text(v).replace(/,/g, ''); return s !== '' && !isNaN(+s); }
+
   function rowIn(kind, r) {
     r = r || [];
+    if (kind === 'conv') return { after: code(r[0]), buy: code(r[1]) };
+    if (kind === 'sup') return { po: code(r[0]), sup: text(r[1]) };
+    if (kind === 'cap') return { sku: code(r[0]), pid: code(r[1]), cap: text(r[2]) };
     if (kind === 'loc') return { code: up(r[0]), pal: text(r[1]), on: text(r[2]) !== '0', note: text(r[3]) };
     if (kind === 'sku') return { sku: up(r[0]), long: up(r[1]), name: text(r[2]), grp: text(r[3]), gift: flag(r[4]), vac: flag(r[5]), on: text(r[6]) !== '0' };
     return { id: text(r[0]), name: text(r[1]), c: text(r[2]) || PALETTE[0], rack: text(r[3]) === 'no' ? 'no' : 'yes', lv: text(r[4]), rest: text(r[5]), note: text(r[6]) };
   }
   function rowOut(kind, o) {
+    if (kind === 'conv') return [code(o.after), code(o.buy)];
+    if (kind === 'sup') return [code(o.po), text(o.sup)];
+    if (kind === 'cap') return [code(o.sku), code(o.pid), text(o.cap)];
     if (kind === 'loc') return [up(o.code), text(o.pal), o.on === false ? '0' : '1', text(o.note)];
     if (kind === 'sku') return [up(o.sku), up(o.long), text(o.name), text(o.grp), o.gift ? '1' : '', o.vac ? '1' : '', o.on === false ? '0' : '1'];
     return [text(o.id), text(o.name), text(o.c), o.rack === 'no' ? 'no' : 'yes', text(o.lv), text(o.rest), text(o.note)];
   }
-  function keyOf(kind, o) { return kind === 'loc' ? up(o.code) : kind === 'sku' ? up(o.long) || up(o.sku) : text(o.id); }
+  function keyOf(kind, o) {
+    if (kind === 'conv') return code(o.after) && code(o.buy) ? code(o.after) + '|' + code(o.buy) : '';
+    if (kind === 'sup') return code(o.po);
+    if (kind === 'cap') return code(o.sku) || code(o.pid) ? code(o.sku) + '|' + code(o.pid) : '';
+    return kind === 'loc' ? up(o.code) : kind === 'sku' ? up(o.long) || up(o.sku) : text(o.id);
+  }
+  /** แถวว่างทั้งแถว (ไม่บันทึก ไม่เตือน) */
+  function isBlank(kind, o) {
+    if (kind === 'loc') return !up(o.code) && !text(o.pal) && !text(o.note);
+    if (kind === 'sku') return !up(o.sku) && !up(o.long) && !text(o.name) && !text(o.grp);
+    if (kind === 'grp') return !text(o.name) && !text(o.note);
+    return rowOut(kind, o).every(function (v) { return v === ''; });
+  }
   function blank(kind) { return rowIn(kind, []); }
   function defaults() { return GROUPS.map(function (g) { return rowIn('grp', g); }); }
   /**
@@ -114,7 +145,14 @@
     return 'g' + n;
   }
 
-  /** ตารางทั้งสามจากสำเนาในเครื่อง → { loc, sku, grp } ตัวละ { saved, rows, strict, ver, hist, at, name, n } */
+  /** แถวจากไฟล์ที่อ่านแล้ว (WmsFireTrc.readSheets: sup.rows · conv.pairs · cap.rows) → แถวของตาราง */
+  function fromParsed(kind, part) {
+    if (!part) return [];
+    var list = kind === 'conv' ? part.pairs : part.rows;
+    return (list || []).map(function (r) { return rowIn(kind, r); });
+  }
+
+  /** ทุกตารางจากสำเนาในเครื่อง → { loc, sku, grp, conv, sup, cap } ตัวละ { saved, rows, strict, ver, hist, at, name, n } */
   function read(local) {
     var m = (local && local.master) || {}, out = {};
     KINDS.forEach(function (k) {
@@ -141,16 +179,30 @@
     return ix;
   }
 
-  /** ยอดในเครื่องต่อโล / ต่อ SKU (กองที่ยังมีของ) */
+  /** ยอดในเครื่องต่อโล / ต่อ SKU / ต่อ PO (กองที่ยังมีของ) */
   function stockOf(local) {
-    var loc = {}, sku = {};
+    var loc = {}, sku = {}, po = {};
+    var add = function (m, k, q) { m[k] = Math.round(((m[k] || 0) + q) * 1000) / 1000; };
     Object.keys((local && local.piles) || {}).forEach(function (k) {
       var p = local.piles[k];
       if (!p || Math.abs(+p.qty || 0) <= 1e-9) return;
-      loc[p.loc] = Math.round(((loc[p.loc] || 0) + p.qty) * 1000) / 1000;
-      [p.long, p.sku].forEach(function (c) { if (c) sku[c] = Math.round(((sku[c] || 0) + p.qty) * 1000) / 1000; });
+      add(loc, p.loc, p.qty);
+      [p.long, p.sku].forEach(function (c) { if (c) add(sku, c, p.qty); });
+      var P = code(p.po);
+      if (P && P !== '0') add(po, P, p.qty);
     });
-    return { loc: loc, sku: sku };
+    return { loc: loc, sku: sku, po: po };
+  }
+
+  /** ชื่อสินค้าจากเอกสารในสมุด (รหัสเต็มและรหัสสั้น → ชื่อ) */
+  function namesOf(local) {
+    var out = {};
+    ((local && local.docs) || []).forEach(function (d) {
+      var nm = d.names || {};
+      Object.keys(nm).forEach(function (k) { if (nm[k]) out[up(k)] = nm[k]; });
+      (d.rows || []).forEach(function (r) { var n = nm[r[1]] || nm[r[0]]; if (n && r[0] && !out[up(r[0])]) out[up(r[0])] = n; });
+    });
+    return out;
   }
 
   /* ── ตรวจตาราง ─────────────────────────────────────────────────────── */
@@ -160,7 +212,7 @@
    * t = ตารางทั้งสาม (ชื่อกลุ่ม) · stock = stockOf(local) (ปิดใช้แต่ยังมีของ)
    */
   function validate(kind, list, t, stock) {
-    stock = stock || { loc: {}, sku: {} };
+    stock = stock || { loc: {}, sku: {}, po: {} };
     var out = list.map(function () { return []; });
     var seen = {};
     function dupOf(k, i) { if (!k) return; (seen[k] || (seen[k] = [])).push(i); }
@@ -194,6 +246,41 @@
         var have = stock.sku[up(r.long)] || stock.sku[up(r.sku)];
         if (!r.on && have) w.push(W('warn', 'ปิดใช้ แต่ยังมีของ ' + have + ' ชิ้น'));
       });
+    } else if (IMPORTED.indexOf(kind) >= 0) {
+      var known = null;
+      if (t && t.sku && t.sku.rows && t.sku.rows.length) {
+        known = {};
+        t.sku.rows.forEach(function (x) { if (up(x.sku)) known[up(x.sku)] = 1; if (up(x.long)) known[up(x.long)] = 1; });
+      }
+      var spell = {};
+      list.forEach(function (r, i) {
+        dupOf(keyOf(kind, r), i);
+        if (kind === 'sup' && text(r.sup)) { var n = code(r.sup); (spell[n] || (spell[n] = {}))[text(r.sup)] = 1; }
+      });
+      list.forEach(function (r, i) {
+        var w = out[i], k = keyOf(kind, r);
+        if (isBlank(kind, r)) return;
+        if (kind === 'conv') {
+          if (!code(r.after) || !code(r.buy)) { w.push(W('red', 'ใส่ทั้ง SKU หลังแปลง และ SKU ตอนซื้อ')); return; }
+          if (code(r.after) === code(r.buy)) w.push(W('red', 'SKU เดียวกันทั้งสองช่อง'));
+          if (seen[k].length > 1) w.push(W('red', 'คู่นี้ซ้ำกับแถวอื่น'));
+          if (known) [r.after, r.buy].forEach(function (c) { if (!known[code(c)]) w.push(W('info', 'ไม่มี ' + code(c) + ' ในตาราง SKU')); });
+        } else if (kind === 'sup') {
+          if (!code(r.po)) { w.push(W('red', 'ยังไม่ใส่ PO')); return; }
+          if (seen[k].length > 1) w.push(W('red', 'PO ซ้ำกับแถวอื่น'));
+          if (!text(r.sup)) w.push(W('warn', 'ยังไม่ใส่ Supplier (ไม่บันทึกแถวนี้)'));
+          else {
+            var alt = Object.keys(spell[code(r.sup)] || {}).filter(function (x) { return x !== text(r.sup); });
+            if (alt.length) w.push(W('info', 'Supplier เขียนต่างกัน: ' + alt.slice(0, 2).join(' / ')));
+          }
+        } else {
+          if (!k) { w.push(W('red', 'ใส่ SKU หรือ Product ID')); return; }
+          if (seen[k].length > 1) w.push(W('red', 'SKU นี้ซ้ำกับแถวอื่น'));
+          if (text(r.cap) === '') w.push(W('warn', 'ยังไม่ใส่ชิ้นต่อพาเลท (ไม่บันทึกแถวนี้)'));
+          else if (!isNum(r.cap) || +text(r.cap).replace(/,/g, '') < 0) w.push(W('red', 'ชิ้นต่อพาเลทต้องเป็นตัวเลข'));
+          if (known && !known[code(r.sku)] && !known[code(r.pid)]) w.push(W('info', 'ไม่มีในตาราง SKU'));
+        }
+      });
     } else {
       var names = {}, ids = {}, used = {};
       list.forEach(function (g, i) { var n = up(g.name); if (n) (names[n] || (names[n] = [])).push(i); if (g.id) (ids[g.id] || (ids[g.id] = [])).push(i); });
@@ -221,8 +308,9 @@
    * Location / SKU ที่มีในสมุด (เอกสารตั้งแต่ยอดยกมา ไม่นับใบที่ยกเลิกกับใบกลับรายการ) แต่ยังไม่มีในตาราง
    * loc → [{code, qty}] · sku → [{sku, long, name, qty}] เรียงตามรหัส
    */
-  function found(kind, list, local) {
-    if (!local || kind === 'grp') return [];
+  function found(kind, list, local, skus) {
+    if (!local || kind === 'grp' || kind === 'conv') return [];
+    if (kind === 'sup' || kind === 'cap') return foundMore(kind, list, local, skus);
     var have = {}, out = {}, st = stockOf(local), vd = C().voids(local);
     (list || []).forEach(function (r) {
       if (kind === 'loc') { if (up(r.code)) have[up(r.code)] = 1; }
@@ -247,6 +335,48 @@
       .sort(function (a, b) { return nat(a.code || a.sku || a.long, b.code || b.sku || b.long); });
   }
 
+  /**
+   * sup → PO ในสมุด (ไม่นับ 0 ใบยกเลิก ใบกลับรายการ) ที่ยังไม่มี Supplier [{po, qty}]
+   * cap → SKU ที่ใช้งานในตาราง SKU (ยังไม่ตั้งตาราง = SKU ที่มีของ) ที่ยังไม่มีความจุ [{sku, pid, name, qty}]
+   */
+  function foundMore(kind, list, local, skus) {
+    var st = stockOf(local), out = [], have = {};
+    if (kind === 'sup') {
+      (list || []).forEach(function (r) { if (code(r.po)) have[code(r.po)] = 1; });
+      var vd = C().voids(local), seenPo = {};
+      C().liveDocs(local).forEach(function (d) {
+        if (d.type === C().TYPE_REV || vd[d.no]) return;
+        (d.rows || []).forEach(function (r) {
+          var P = code(r[3]);
+          if (!P || P === '0' || have[P] || seenPo[P]) return;
+          seenPo[P] = 1;
+          out.push({ po: P, qty: st.po[P] || 0 });
+        });
+      });
+      return out.sort(function (a, b) { return nat(a.po, b.po); });
+    }
+    (list || []).forEach(function (r) { if (code(r.sku)) have[code(r.sku)] = 1; if (code(r.pid)) have[code(r.pid)] = 1; });
+    var names = namesOf(local), cand = [];
+    if (skus && skus.length) {
+      cand = skus.filter(function (x) { return x.on !== false; }).map(function (x) { return { sku: up(x.sku), long: up(x.long), name: x.name }; });
+    } else {
+      var by = {};
+      Object.keys(local.piles || {}).forEach(function (k) {
+        var p = local.piles[k];
+        if (!p || !(+p.qty > 1e-9)) return;
+        var key = up(p.long) || up(p.sku);
+        if (key && !by[key]) { by[key] = 1; cand.push({ sku: up(p.sku), long: up(p.long), name: '' }); }
+      });
+    }
+    cand.forEach(function (x) {
+      if ((x.sku && have[x.sku]) || (x.long && have[x.long])) return;
+      if (x.sku) have[x.sku] = 1;
+      if (x.long) have[x.long] = 1;
+      out.push({ sku: x.sku || x.long, pid: x.long, name: x.name || names[x.long] || names[x.sku] || '', qty: st.sku[x.long] || st.sku[x.sku] || 0 });
+    });
+    return out.sort(function (a, b) { return nat(a.sku, b.sku); });
+  }
+
   /* ── บันทึก ─────────────────────────────────────────────────────────── */
 
   /** เทียบตารางเดิมกับตารางใหม่ → { add, del, chg, keys: [รหัสที่เปลี่ยน], text } */
@@ -259,7 +389,12 @@
       else if (rowOut(kind, a[k]).join('\t') !== rowOut(kind, b[k]).join('\t')) chg.push(k);
     });
     Object.keys(a).forEach(function (k) { if (!b[k]) del.push(k); });
-    var label = function (k) { return kind === 'grp' ? (b[k] || a[k]).name || k : k; };
+    var label = function (k) {
+      if (kind === 'grp') return (b[k] || a[k]).name || k;
+      if (kind === 'conv') return k.replace('|', ' ← ');
+      if (kind === 'cap') return k.split('|')[0] || k.split('|')[1];
+      return k;
+    };
     var part = function (word, list) {
       if (!list.length) return '';
       var show = list.slice(0, HIST_SHOW).map(label).join(', ');
@@ -280,30 +415,50 @@
     if (now !== (+opt.base || 0)) {
       return { error: 'มีคนบันทึกตาราง ' + TAB[kind] + ' ก่อนแล้ว' + (cur && cur.name ? ' (' + cur.name + ')' : '') + ' · โหลดตารางใหม่แล้วแก้อีกครั้ง' };
     }
-    list = (list || []).filter(function (r) { return keyOf(kind, r) || (kind === 'grp' && text(r.name)); });
+    var imp = IMPORTED.indexOf(kind) >= 0;
+    list = (list || []).filter(function (r) { return imp ? !isBlank(kind, r) : keyOf(kind, r) || (kind === 'grp' && text(r.name)); });
     if (list.length > ROWS_MAX) return { error: 'ตาราง ' + TAB[kind] + ' ต้องมีไม่เกิน ' + ROWS_MAX + ' แถว' };
     var v = validate(kind, list, null, null);
     var red = v.rows.map(function (w, i) { return w.some(function (x) { return x.lv === 'red'; }) ? i : -1; }).filter(function (i) { return i >= 0; });
     if (red.length) {
       var r0 = list[red[0]], w0 = v.rows[red[0]].filter(function (x) { return x.lv === 'red'; })[0];
-      return { error: 'แก้แถวสีแดง ' + red.length + ' แถวก่อน เช่น ' + (keyOf(kind, r0) || text(r0.name) || 'แถวว่าง') + ': ' + w0.t };
+      var who = keyOf(kind, r0).replace('|', ' ').trim() || text(r0.name) || text(r0.after || r0.buy || r0.po || r0.sku || r0.pid) || 'แถวว่าง';
+      return { error: 'แก้แถวสีแดง ' + red.length + ' แถวก่อน เช่น ' + who + ': ' + w0.t };
+    }
+    /* Supplier / ความจุ ที่ยังไม่ใส่ = ไม่บันทึกแถวนั้น (แบบนำเข้าไฟล์ที่ข้ามแถวว่าง) */
+    var skip = 0;
+    if (kind === 'sup' || kind === 'cap') {
+      list = list.filter(function (r) { var ok = kind === 'sup' ? !!text(r.sup) : text(r.cap) !== ''; if (!ok) skip++; return ok; });
     }
     var before = cur && cur.rows ? dec(cur.rows).map(function (r) { return rowIn(kind, r); }) : (kind === 'grp' ? defaults() : []);
     var dd = diff(kind, before, list);
-    var strict = opt.strict ? 1 : 0, was = cur ? +cur.strict || 0 : 0;
+    var hasStrict = kind === 'loc' || kind === 'sku';
+    var strict = hasStrict && opt.strict ? 1 : 0, was = cur ? +cur.strict || 0 : 0;
     var words = [];
     if (dd.text) words.push(dd.text);
-    if (strict !== was && kind !== 'grp') words.push(strict ? 'ตั้งให้ ห้ามบันทึกใบที่ไม่มีในตาราง' : 'ตั้งให้ เตือนอย่างเดียว');
+    if (strict !== was && hasStrict) words.push(strict ? 'ตั้งให้ ห้ามบันทึกใบที่ไม่มีในตาราง' : 'ตั้งให้ เตือนอย่างเดียว');
     if (!cur) words.unshift('ตั้งตารางครั้งแรก ' + list.length + ' แถว');
-    if (!words.length) return { error: 'ไม่มีอะไรเปลี่ยน' };
+    if (!words.length) return { error: 'ไม่มีอะไรเปลี่ยน' + (skip ? ' (ข้าม ' + skip + ' แถวที่ยังไม่ครบ)' : '') };
+    if (skip) words.push('ข้าม ' + skip + ' แถวที่ยังไม่ครบ');
     var hist = [{ at: +opt.at || 0, by: text(opt.by), name: text(opt.name), text: words.join(' · ').slice(0, 600) }]
       .concat(Array.isArray(cur && cur.hist) ? cur.hist : []).slice(0, HIST_MAX);
-    var d = {
-      tab: TAB[kind], cols: COLS[kind], rows: enc(list.map(function (r) { return rowOut(kind, r); })), n: list.length,
-      strict: kind === 'grp' ? 0 : strict, ver: now + 1, hist: hist, by: text(opt.by), name: text(opt.name), at: C().TIME,
-    };
+    var rows = list.map(function (r) {
+      var o = rowOut(kind, r);
+      if (kind === 'cap') o[2] = +text(o[2]).replace(/,/g, '');
+      return o;
+    });
+    var d;
+    if (imp) {
+      /* รูปเดิมของ masterDoc (WmsFireTrc) + รุ่น ประวัติ: fifo / รายงาน / ชุดแชร์ อ่านได้เหมือนเดิม */
+      d = { tab: (cur && cur.tab) || SHEET[kind], rows: enc(rows), n: rows.length };
+      if (kind === 'sup') d.dup = [];
+      else { d.cols = cur && Array.isArray(cur.cols) && cur.cols.length ? cur.cols : COLS[kind]; d.blank = 0; }
+    } else {
+      d = { tab: TAB[kind], cols: COLS[kind], rows: enc(rows), n: rows.length, strict: kind === 'grp' ? 0 : strict };
+    }
+    d.ver = now + 1; d.hist = hist; d.by = text(opt.by); d.name = text(opt.name); d.at = C().TIME;
     if (C().byteLen(JSON.stringify(d)) > DOC_BYTES) return { error: 'ตาราง ' + TAB[kind] + ' ใหญ่เกินที่เก็บได้' };
-    return { data: d, diff: dd };
+    return { data: d, diff: dd, skip: skip };
   }
 
   /* ── ตอนลงรายการ (แท็บรับของ ย้าย คืน แปลง ปรับยอด ตารางเดิม) ─────────── */
@@ -367,9 +522,10 @@
   }
 
   window.WmsFireSetup = {
-    KINDS: KINDS, TAB: TAB, COLS: COLS, REST: REST, LV: LV, PALETTE: PALETTE, SPECIAL: SPECIAL, ROWS_MAX: ROWS_MAX, HIST_MAX: HIST_MAX,
+    KINDS: KINDS, IMPORTED: IMPORTED, SHEET: SHEET, TAB: TAB, COLS: COLS, REST: REST, LV: LV, PALETTE: PALETTE, SPECIAL: SPECIAL, ROWS_MAX: ROWS_MAX, HIST_MAX: HIST_MAX,
     locKind: locKind, rowIn: rowIn, rowOut: rowOut, keyOf: keyOf, blank: blank, defaults: defaults, newGroupId: newGroupId, guessGroup: guessGroup,
-    read: read, index: index, stockOf: stockOf, validate: validate, found: found, diff: diff, docOf: docOf,
+    read: read, index: index, stockOf: stockOf, namesOf: namesOf, validate: validate, found: found, diff: diff, docOf: docOf,
+    isBlank: isBlank, fromParsed: fromParsed, isNum: isNum, code: code,
     rackRule: rackRule, check: check,
   };
 })();

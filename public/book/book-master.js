@@ -1,12 +1,14 @@
 /**
- * book-master.js — หน้า 🗂 ข้อมูลหลัก ของแอปสมุดสต๊อก (ระบบใหม่เท่านั้น) ขั้น ก
+ * book-master.js — หน้า 🗂 ข้อมูลหลัก ของแอปสมุดสต๊อก (ระบบใหม่เท่านั้น)
  *
- *   แท็บ Location · SKU · กลุ่มสินค้า = ตารางเดียวแก้ได้แบบ Excel (หัวหน้า) · คนอื่นดูอย่างเดียว
+ *   แท็บ Location · SKU · กลุ่มสินค้า (ขั้น ก) · แปลงสินค้า · Supplier (PO) · SKU : Pallet (ขั้น ข)
+ *   = ตารางเดียวแก้ได้แบบ Excel (หัวหน้า) · คนอื่นดูอย่างเดียว
+ *   📂 นำเข้าไฟล์ / ลากไฟล์มาวาง: ชีต PO. Truck · MASTER แปลงสินค้า · ความจุต่อพาเลท แทนตารางในร่าง (ตรวจก่อนบันทึก)
  *   ชิปกรอง + ช่องค้น · ⚠ เตือนรายแถว (แดง = บันทึกไม่ได้) · พบในสมุดแต่ยังไม่มีในตาราง → + เพิ่มทั้งหมด
  *   ⚡ สร้างหลายช่อง (แร็ค R) · Ctrl+V วางจาก Excel (ในช่อง = ทับจากช่องนั้นลงไป · นอกช่อง = เพิ่ม / อัปเดตตามรหัส)
  *   📋 คัดลอกไป Excel · ใบที่ไม่มีในตาราง: เตือน | ห้ามบันทึก (ต่อตาราง) · 🕘 ประวัติ
- *   ร่างค้างในเครื่องนี้จนกด 💾 บันทึก หรือ ยกเลิกที่แก้ · บันทึกทั้งตาราง (BookFire.setupSave → master/{loc|sku|grp})
- * ตรรกะอยู่ใน wms-fire-setup.js · ใช้ตัวแปรของสคริปต์ในหน้า (FIRE USER MODE esc f isHead copyText) ตอนถูกเรียกเท่านั้น
+ *   ร่างค้างในเครื่องนี้จนกด 💾 บันทึก หรือ ยกเลิกที่แก้ · บันทึกทั้งตาราง (BookFire.setupSave → master/{kind})
+ * ตรรกะอยู่ใน wms-fire-setup.js · ใช้ตัวแปรของสคริปต์ในหน้า (FIRE USER MODE esc f isHead copyText xlsxLib) ตอนถูกเรียกเท่านั้น
  * เปิดเป็น window.BookMaster
  */
 (function () {
@@ -17,11 +19,15 @@
   var STEP = 300;                         // แถวที่วาดต่อครั้ง (กด แสดงเพิ่ม)
   var DRAFT_KEY = 'wms:book:master:';     // + kind (+ :ns ของโหมดซ้อม / ทดลอง)
   var KIND_KEY = 'wms:book:master:kind';
-  var KINDS = [['loc', 'Location'], ['sku', 'SKU'], ['grp', 'กลุ่มสินค้า']];
+  var KINDS = [['loc', 'Location'], ['sku', 'SKU'], ['grp', 'กลุ่มสินค้า'], ['conv', 'แปลงสินค้า'], ['sup', 'Supplier'], ['cap', 'SKU : Pallet']];
+  var IMP = { conv: 1, sup: 1, cap: 1 };   // ตารางหลักเดิม (นำเข้าไฟล์ได้ ไม่มีสวิตช์ห้าม)
   var CHIPS = {
     loc: [['all', 'ทั้งหมด'], ['R', 'แร็ค R'], ['F', 'พื้น A–D'], ['S', 'ชั้นวาง S'], ['X', 'อื่น ๆ'], ['off', 'ปิดใช้'], ['fix', '⚠ ต้องแก้']],
     sku: [['all', 'ทั้งหมด'], ['nogrp', 'ยังไม่มีกลุ่ม'], ['gift', 'ของแถม'], ['vac', 'สุญญากาศ'], ['off', 'ปิดใช้'], ['fix', '⚠ ต้องแก้']],
     grp: [],
+    conv: [['all', 'ทั้งหมด'], ['fix', '⚠ ต้องแก้']],
+    sup: [['all', 'ทั้งหมด'], ['stock', 'มีของ'], ['fix', '⚠ ต้องแก้']],
+    cap: [['all', 'ทั้งหมด'], ['stock', 'มีของ'], ['fix', '⚠ ต้องแก้']],
   };
   /* ช่องที่แก้ได้ เรียงตามคอลัมน์ (วาง / คัดลอก Excel ใช้ลำดับเดียวกัน ยกเว้นสี) */
   var COLS = {
@@ -48,6 +54,19 @@
       { k: 'rest', t: 'เศษ / ไม่ขึ้นแร็ค ไปที่', sel: 'rest' },
       { k: 'note', t: 'หมายเหตุ', w: 26 },
     ],
+    conv: [
+      { k: 'buy', t: 'SKU ตอนซื้อ', w: 16, up: 1 },
+      { k: 'after', t: 'SKU หลังแปลง', w: 16, up: 1 },
+    ],
+    sup: [
+      { k: 'po', t: 'PO', w: 14, up: 1 },
+      { k: 'sup', t: 'Supplier', w: 26 },
+    ],
+    cap: [
+      { k: 'sku', t: 'SKU', w: 12, up: 1 },
+      { k: 'pid', t: 'Product ID', w: 18, up: 1 },
+      { k: 'cap', t: 'ชิ้นต่อพาเลท', w: 6, num: 1 },
+    ],
   };
   var TIP = {
     loc: 'ทุกโลในคลัง · แร็ค R ช่องละ 1 พาเลท (รูปแบบ R00-00-0) · พื้น A–D (A-00-00) · ชั้นวาง S (S-00-00) · ชื่อพิเศษ RIB QA IQA DOCKLOAD ORDER OB …\n' +
@@ -59,18 +78,25 @@
     grp: 'กติกาที่เก็บของแต่ละกลุ่ม ค่าเริ่มมาจากกติกาหัวหน้าคลัง 9 พ.ย.\n' +
       'ตอนลงใบ ถ้าวางของเข้าแร็ค R ผิดกติกา ระบบเตือน (ไม่ห้าม)\n' +
       'ขั้นต่อไป: ระบบเลือกแร็คให้เองตามกลุ่มนี้',
+    conv: 'SKU ที่แปลงแล้ว (เช่นแพ็กใหม่) ผูกกลับไปที่ SKU ตอนซื้อ 1 ต่อ 1 · รายงาน LOT/PO, FIFO, กระทบยอด TRcloud ใช้ตารางนี้รวมยอด\n' +
+      'แทนชีต MASTER แปลงสินค้า เดิม · นำเข้าไฟล์ได้ (📂) หรือวางจาก Excel: SKU ตอนซื้อ · SKU หลังแปลง',
+    sup: 'PO ไหนมาจาก Supplier ไหน (แทนชีต PO. Truck) · รายงานและหน้าจัดที่เก็บใช้ดูว่า SKU หนึ่งเปิดกี่ Supplier\n' +
+      'PO ที่ยังไม่ใส่ Supplier ไม่บันทึก · นำเข้าไฟล์ได้ (📂) หรือวางจาก Excel: PO · Supplier',
+    cap: 'SKU หนึ่งวางได้กี่ชิ้นต่อพาเลท (แทนชีต ความจุต่อพาเลท) · หน้าจัดที่เก็บกับหน้า สินค้า / โล ใช้คิดจำนวนพาเลท\n' +
+      'ช่องว่าง = ไม่บันทึกแถวนั้น · นำเข้าไฟล์ได้ (📂) หรือวางจาก Excel: SKU · Product ID · ชิ้นต่อพาเลท',
   };
 
   var S = {
-    kind: (function () { try { var k = localStorage.getItem(KIND_KEY); return /^(loc|sku|grp)$/.test(k || '') ? k : 'loc'; } catch (e) { return 'loc'; } })(),
+    kind: (function () { try { var k = localStorage.getItem(KIND_KEY); return /^(loc|sku|grp|conv|sup|cap)$/.test(k || '') ? k : 'loc'; } catch (e) { return 'loc'; } })(),
     chip: 'all', q: '', more: STEP, msg: null, busy: false, hist: false, gen: null, showFound: false,
   };
   var D = {};                 // ร่างต่อตาราง { base, strict, rows, dirty, fresh: {รหัส: 1} แถวใหม่ }
-  var GEN = { loc: 0, sku: 0, grp: 0 };   // เปลี่ยนทุกครั้งที่แก้ (ตรวจใหม่)
+  var GEN = { loc: 0, sku: 0, grp: 0, conv: 0, sup: 0, cap: 0 };   // เปลี่ยนทุกครั้งที่แก้ (ตรวจใหม่)
   var VAL = {};               // ผลตรวจที่เก็บไว้ { kind: { g, v } }
   var FOUND = {};             // พบในสมุด { kind: { key, list } }
   var VIS = [];               // ลำดับแถว (index ในร่าง) ที่แสดงอยู่
-  var SAVE_T = null, CHECK_T = null, TYPING = null;
+  var SAVE_T = {}, CHECK_T = null, TYPING = null;   // SAVE_T ต่อตาราง (นำเข้าไฟล์เปลี่ยนหลายตารางพร้อมกัน)
+  var NAMES = null;           // ชื่อสินค้า { รหัส: ชื่อ } จากตาราง SKU (ร่าง) + เอกสารในสมุด
 
   function $(id) { return document.getElementById(id); }
   function X() { return window.WmsFireSetup; }
@@ -99,8 +125,8 @@
     } catch (e) { return null; }
   }
   function keep(kind) {
-    clearTimeout(SAVE_T);
-    SAVE_T = setTimeout(function () {
+    clearTimeout(SAVE_T[kind]);
+    SAVE_T[kind] = setTimeout(function () {
       var d = D[kind];
       try {
         if (!d || !d.dirty) localStorage.removeItem(DRAFT_KEY + kind + ns());
@@ -122,13 +148,23 @@
     try { localStorage.removeItem(DRAFT_KEY + kind + ns()); } catch (e) {}
   }
 
+  function hasStrict(kind) { return kind === 'loc' || kind === 'sku'; }
+  /** แถวที่จะส่งไปบันทึก (ตัดแถวว่าง) · kept = เฉพาะที่จะเก็บจริง (Supplier / ความจุ ที่ยังไม่ใส่ ไม่เก็บ) */
+  function sendRows(kind, rows, kept) {
+    return rows.filter(function (r) {
+      if (!IMP[kind]) return X().keyOf(kind, r) || (kind === 'grp' && txt(r.name));
+      if (X().isBlank(kind, r)) return false;
+      if (kept && kind === 'sup') return !!X().keyOf(kind, r) && !!txt(r.sup);
+      if (kept && kind === 'cap') return !!X().keyOf(kind, r) && txt(r.cap) !== '';
+      return true;
+    });
+  }
   /** ที่เปลี่ยนจากตารางที่บันทึก { n, text, strict } */
   function changes(kind) {
     var d = draft(kind), t = table(kind);
     if (!d.dirty) return { n: 0, text: '' };
-    var rows = d.rows.filter(function (r) { return X().keyOf(kind, r) || (kind === 'grp' && txt(r.name)); });
-    var dd = X().diff(kind, t.rows, rows);
-    var st = kind !== 'grp' && !!d.strict !== !!t.strict;
+    var dd = X().diff(kind, t.rows, sendRows(kind, d.rows, true));
+    var st = hasStrict(kind) && !!d.strict !== !!t.strict;
     return { n: dd.add + dd.chg + dd.del + (st ? 1 : 0), text: [dd.text, st ? (d.strict ? 'ห้ามบันทึกใบที่ไม่มีในตาราง' : 'เตือนอย่างเดียว') : ''].filter(Boolean).join(' · ') };
   }
 
@@ -137,18 +173,18 @@
     return { grp: { rows: draft('grp').rows }, sku: { saved: draft('sku').rows.length > 0, rows: draft('sku').rows } };
   }
   function val(kind) {
-    var c = VAL[kind], g = GEN.loc + '|' + GEN.sku + '|' + GEN.grp, st = FIRE.setupStock();
+    var c = VAL[kind], g = KINDS.map(function (k) { return GEN[k[0]]; }).join('|'), st = FIRE.setupStock();
     if (c && c.g === g && c.d === draft(kind) && c.st === st) return c.v;
     var v = X().validate(kind, draft(kind).rows, checkTables(), st);
     VAL[kind] = { g: g, d: draft(kind), st: st, v: v };
     return v;
   }
   function found(kind) {
-    if (kind === 'grp') return [];
-    var key = GEN[kind] + '|' + draft(kind).rows.length, st = FIRE.setupStock();
+    if (kind === 'grp' || kind === 'conv') return [];
+    var key = GEN[kind] + '|' + draft(kind).rows.length + (kind === 'cap' ? '|' + GEN.sku : ''), st = FIRE.setupStock();
     var c = FOUND[kind];
     if (c && c.key === key && c.st === st) return c.list;
-    var list = FIRE.setupFound(kind, draft(kind).rows);
+    var list = FIRE.setupFound(kind, draft(kind).rows, kind === 'cap' ? draft('sku').rows : null);
     FOUND[kind] = { key: key, st: st, list: list };
     return list;
   }
@@ -156,7 +192,21 @@
     var st = FIRE.setupStock();
     if (kind === 'loc') return st.loc[up(r.code)] || 0;
     if (kind === 'sku') return st.sku[up(r.long)] || st.sku[up(r.sku)] || 0;
+    if (kind === 'cap') return st.sku[up(r.pid)] || st.sku[up(r.sku)] || 0;
+    if (kind === 'sup') return (st.po && st.po[up(r.po)]) || 0;
+    if (kind === 'conv') return st.sku[up(r.after)] || 0;
     return 0;
+  }
+  /** ชื่อสินค้าของรหัส (ตาราง SKU ที่กำลังแก้ก่อน แล้วชื่อในเอกสาร) */
+  function nameOf(code) {
+    var g = GEN.sku, base = FIRE.setupNames ? FIRE.setupNames() : {};
+    if (!NAMES || NAMES.g !== g || NAMES.base !== base) {
+      var m = {};
+      Object.keys(base).forEach(function (k) { m[k] = base[k]; });
+      draft('sku').rows.forEach(function (x) { if (x.name) { if (x.sku) m[up(x.sku)] = x.name; if (x.long) m[up(x.long)] = x.name; } });
+      NAMES = { g: g, base: base, m: m };
+    }
+    return NAMES.m[up(code)] || '';
   }
   function skuCount() {
     var n = {};
@@ -175,6 +225,8 @@
       if (!r.grp) out.nogrp = 1;
       if (r.gift) out.gift = 1;
       if (r.vac) out.vac = 1;
+    } else if (kind === 'sup' || kind === 'cap') {
+      if (stockOf(kind, r) > 0) out.stock = 1;
     }
     if (r.on === false) out.off = 1;
     if (w && w.some(function (x) { return x.lv === 'red' || x.lv === 'warn'; })) out.fix = 1;
@@ -182,7 +234,9 @@
   }
   function hit(kind, r, q) {
     if (!q) return true;
-    var hay = (kind === 'loc' ? [r.code, r.note] : kind === 'sku' ? [r.sku, r.long, r.name] : [r.name, r.note, r.rest]).join(' ').toUpperCase();
+    var hay = (kind === 'loc' ? [r.code, r.note] : kind === 'sku' ? [r.sku, r.long, r.name]
+      : kind === 'conv' ? [r.buy, r.after, nameOf(r.buy), nameOf(r.after)] : kind === 'sup' ? [r.po, r.sup]
+        : kind === 'cap' ? [r.sku, r.pid, nameOf(r.pid) || nameOf(r.sku)] : [r.name, r.note, r.rest]).join(' ').toUpperCase();
     return q.split(/\s+/).every(function (w) { return hay.indexOf(w) >= 0; });
   }
 
@@ -215,12 +269,18 @@
     }).join('');
     var info = t.saved
       ? 'บันทึก ' + esc(when(t.at)) + (t.name ? ' · ' + esc(t.name) : '') + ' · ' + f(t.n || t.rows.length) + ' แถว'
-      : S.kind === 'grp' ? 'ใช้ค่าเริ่ม ยังไม่บันทึก' : 'ยังไม่ได้ตั้ง';
+      : S.kind === 'grp' ? 'ใช้ค่าเริ่ม ยังไม่บันทึก' : IMP[S.kind] ? 'ยังไม่ได้นำเข้า' : 'ยังไม่ได้ตั้ง';
     $('inp').innerHTML = '<div class="bk-top"><span class="bk-h">ข้อมูลหลัก</span><span class="md-tabs" role="tablist">' + tabs + '</span>' +
       '<button type="button" class="g-tip" aria-label="คำอธิบาย" title="' + esc(TIP[S.kind]) + '">ⓘ</button>' +
       '<span class="sp"></span><span class="c-sub md-info">' + info + '</span>' +
       (t.hist.length ? '<button type="button" class="tx-opt md-sm' + (S.hist ? ' on' : '') + '" id="mdHist">🕘 ประวัติ ' + f(t.hist.length) + '</button>' : '') +
       '</div>' + (d.dirty && d.base !== t.ver ? conflictHtml(t) : '');
+    /* จอแคบ แท็บเลื่อนข้างได้: ให้แท็บที่เปิดอยู่เห็นเสมอ */
+    var box = document.querySelector('.md-tabs'), cur = box && box.querySelector('.md-tab.on');
+    if (box && cur && box.scrollWidth > box.clientWidth) {
+      var br = box.getBoundingClientRect(), cr = cur.getBoundingClientRect();
+      if (cr.left < br.left || cr.right > br.right) box.scrollLeft += cr.left - br.left - 8;
+    }
   }
   function conflictHtml(t) {
     return '<div class="bk-warn">มีคนบันทึกตาราง <b>' + esc(X().TAB[S.kind]) + '</b> หลังคุณเริ่มแก้' + (t.name ? ' (' + esc(t.name) + ' ' + esc(when(t.at)) + ')' : '') +
@@ -243,7 +303,7 @@
     }
     if (kind !== 'grp') {
       html += '<input class="bk-field md-q" id="mdQ" type="search" autocomplete="off" spellcheck="false" aria-label="ค้นหา" placeholder="ค้น ' +
-        (kind === 'loc' ? 'Location · หมายเหตุ' : 'SKU · ชื่อ') + '" value="' + esc(S.q) + '">';
+        (kind === 'loc' ? 'Location · หมายเหตุ' : kind === 'sup' ? 'PO · Supplier' : 'SKU · ชื่อ') + '" value="' + esc(S.q) + '">';
     }
     $('sum').innerHTML = html;
   }
@@ -254,10 +314,14 @@
     if (edit) {
       html += '<button type="button" class="tx-opt" id="mdAdd">+ แถว</button>';
       if (kind === 'loc') html += '<button type="button" class="tx-opt' + (S.gen ? ' on' : '') + '" id="mdGen">⚡ สร้างหลายช่อง</button>';
+      if (IMP[kind]) {
+        html += '<button type="button" class="tx-opt" id="mdPick" title="' + esc('ไฟล์ Excel ที่มีชีต PO. Truck · MASTER แปลงสินค้า · ความจุต่อพาเลท (ชีตไหนมี ตารางนั้นเปลี่ยน)\nแทนตารางในร่างทั้งตาราง · ตรวจแล้วกด 💾 บันทึก · ลากไฟล์มาวางก็ได้') + '">📂 นำเข้าไฟล์</button>' +
+          '<input type="file" class="bk-file" id="mdFile" accept=".xlsx,.xls,.csv" multiple hidden>';
+      }
       html += '<button type="button" class="g-tip md-paste" title="' + esc('Ctrl+V ตรงไหนก็ได้ (ไม่อยู่ในช่อง) = เพิ่มแถว / อัปเดตแถวที่รหัสตรง\nวางในช่อง = ทับจากช่องนั้นลงไปแบบ Excel') + '" aria-label="วิธีวาง">📋</button>';
     }
     html += '<button type="button" class="tx-opt" id="mdCopy">คัดลอกไป Excel</button>';
-    if (kind !== 'grp') {
+    if (hasStrict(kind)) {
       var tip = 'ใบ รับของ ย้าย คืน แปลง ปรับยอด ที่ใช้ ' + (kind === 'loc' ? 'โล' : 'SKU') + ' ที่ไม่มีในตารางนี้ (หรือปิดใช้)\nเตือน = บันทึกได้ ขึ้นสีส้ม · ห้ามบันทึก = แถวแดง ต้องแก้ก่อน\nแนะนำ: เตือนไปก่อนจนตารางครบ แล้วค่อยเปลี่ยนเป็นห้าม';
       html += '<span class="md-seg" title="' + esc(tip) + '"><span class="c-sub">ไม่มีในตาราง:</span>' +
         '<button type="button" class="tx-opt' + (!d.strict ? ' on' : '') + '" data-ms="0"' + (edit ? '' : ' disabled') + '>เตือน</button>' +
@@ -280,12 +344,14 @@
     if (S.gen && kind === 'loc' && canEdit()) html += genHtml();
     var fd = found(kind);
     if (fd.length) {
-      var word = kind === 'loc' ? 'โล' : 'SKU';
-      html += '<div class="bk-warn md-found">พบในสมุด <b>' + f(fd.length) + ' ' + word + '</b> ที่ยังไม่มีในตาราง' +
+      var head = kind === 'sup' ? 'PO ในสมุด <b>' + f(fd.length) + ' PO</b> ยังไม่มี Supplier'
+        : kind === 'cap' ? 'SKU <b>' + f(fd.length) + ' ตัว</b> ยังไม่มีชิ้นต่อพาเลท'
+          : 'พบในสมุด <b>' + f(fd.length) + ' ' + (kind === 'loc' ? 'โล' : 'SKU') + '</b> ที่ยังไม่มีในตาราง';
+      html += '<div class="bk-warn md-found">' + head +
         (canEdit() ? ' <button type="button" class="tx-opt md-sm" id="mdFoundAdd">+ เพิ่มทั้งหมด</button>' : '') +
         ' <button type="button" class="bk-link" id="mdFoundShow">' + (S.showFound ? 'ซ่อน' : 'ดูรายชื่อ') + '</button>' +
         (S.showFound ? '<div class="md-fl">' + fd.slice(0, 60).map(function (x) {
-          return '<span>' + esc(x.code || x.sku || x.long) + (x.name ? ' <i>' + esc(x.name) + '</i>' : '') + (x.qty ? ' · ' + f(x.qty) : '') + '</span>';
+          return '<span>' + esc(x.code || x.po || x.sku || x.long) + (x.name ? ' <i>' + esc(x.name) + '</i>' : '') + (x.qty ? ' · ' + f(x.qty) : '') + '</span>';
         }).join('') + (fd.length > 60 ? '<span>… อีก ' + f(fd.length - 60) + '</span>' : '') + '</div>' : '') + '</div>';
     }
     html += tableHtml();
@@ -364,7 +430,21 @@
     if (w && w.some(function (x) { return x.lv === 'warn'; })) return 'r-warn';
     return '';
   }
-  function extraHtml(kind, r, cnt) {
+  function palOf(r) {
+    var qc = stockOf('cap', r), cap = X().isNum(r.cap) ? +txt(r.cap).replace(/,/g, '') : 0;
+    return qc && cap > 0 ? f(Math.ceil(qc / cap)) : '';
+  }
+  function extraHtml(kind, r, cnt, i) {
+    if (kind === 'conv') {
+      var nm = nameOf(r.after) || nameOf(r.buy), qa = stockOf(kind, r);
+      return '<td class="c-nm md-nm" title="' + esc(nm) + '">' + esc(nm) + '</td><td class="num">' + (qa ? f(qa) : '') + '</td>';
+    }
+    if (kind === 'sup') { var qp = stockOf(kind, r); return '<td class="num">' + (qp ? f(qp) : '') + '</td>'; }
+    if (kind === 'cap') {
+      var nc = nameOf(r.pid) || nameOf(r.sku), qc = stockOf(kind, r);
+      return '<td class="c-nm md-nm" title="' + esc(nc) + '">' + esc(nc) + '</td><td class="num">' + (qc ? f(qc) : '') + '</td>' +
+        '<td class="num" id="mp-' + i + '">' + palOf(r) + '</td>';
+    }
     if (kind === 'loc') {
       var k = X().locKind(r.code), q = stockOf(kind, r);
       var label = !k ? '?' : k.t === 'R' ? 'แร็ค ชั้น ' + k.lv : k.t === 'F' ? 'พื้น ' + k.zone : k.t === 'S' ? 'ชั้นวาง' : 'พิเศษ';
@@ -383,18 +463,26 @@
       VIS.push(i);
     });
     if (!d.rows.length) {
+      if (IMP[kind]) {
+        var none = kind === 'conv' ? 'ยังไม่มีคู่แปลงสินค้า' : kind === 'sup' ? 'ยังไม่มี PO → Supplier' : 'ยังไม่มีชิ้นต่อพาเลท';
+        var sheet = X().SHEET[kind];
+        return '<div class="tx-empty">' + none + (edit ? '<br>กด <b>📂 นำเข้าไฟล์</b> (ชีต ' + esc(sheet) + ') หรือลากไฟล์มาวาง · วางจาก Excel (Ctrl+V)' +
+          (kind !== 'conv' ? ' · หรือ <b>+ เพิ่มทั้งหมด</b> ด้านบน' : '') : '') + '</div>';
+      }
       return '<div class="tx-empty">' + (kind === 'loc' ? 'ยังไม่มี Location' : 'ยังไม่มี SKU') + (edit ? '<br>กด <b>+ เพิ่มทั้งหมด</b> (ด้านบน) เพื่อเติมจากสมุด · วางจาก Excel (Ctrl+V)' + (kind === 'loc' ? ' · หรือ <b>⚡ สร้างหลายช่อง</b>' : '') : '') + '</div>';
     }
     if (!VIS.length) return '<div class="tx-empty">ไม่มีแถวที่ตรงกับที่เลือก</div>';
     var cols = COLS[kind];
-    var extra = kind === 'loc' ? '<th>ชนิด</th><th class="num">ของตอนนี้</th>' : kind === 'sku' ? '<th class="num">ของตอนนี้</th>' : '<th class="num">SKU</th>';
+    var extra = kind === 'loc' ? '<th>ชนิด</th><th class="num">ของตอนนี้</th>' : kind === 'sku' || kind === 'sup' ? '<th class="num">ของตอนนี้</th>'
+      : kind === 'conv' ? '<th>ชื่อสินค้า</th><th class="num" title="ของตอนนี้ของ SKU หลังแปลง">ของ (หลังแปลง)</th>'
+        : kind === 'cap' ? '<th>ชื่อสินค้า</th><th class="num">ของตอนนี้</th><th class="num" title="ของตอนนี้ ÷ ชิ้นต่อพาเลท ปัดขึ้น">≈ พาเลท</th>' : '<th class="num">SKU</th>';
     var html = '<div class="bk-wrap md-wrap"><table class="bk-xl g-xl md-xl" id="mdTbl"><thead><tr><th class="c-no">#</th>' +
       cols.map(function (c) { return '<th' + (c.num ? ' class="num"' : '') + '>' + esc(c.t) + '</th>'; }).join('') + extra + '<th>⚠</th>' + (edit ? '<th class="c-act"></th>' : '') + '</tr></thead><tbody>';
     VIS.slice(0, S.more).forEach(function (i, n) {
       var r = d.rows[i], w = v.rows[i], k = X().keyOf(kind, r);
-      var lock = edit && (kind === 'grp' ? cnt[r.id] > 0 : stockOf(kind, r) > 0);
+      var lock = edit && (kind === 'grp' ? cnt[r.id] > 0 : !IMP[kind] && stockOf(kind, r) > 0);
       html += '<tr class="' + rowCls(w) + (d.fresh[k] || r._new ? ' md-new' : '') + '" data-row="' + i + '"><td class="c-no">' + (n + 1) + '</td>' +
-        cols.map(function (c) { return cellHtml(kind, c, r, i, edit); }).join('') + extraHtml(kind, r, cnt) +
+        cols.map(function (c) { return cellHtml(kind, c, r, i, edit); }).join('') + extraHtml(kind, r, cnt, i) +
         '<td class="g-out md-w" id="mw-' + i + '">' + warnHtml(w) + '</td>' +
         (edit ? '<td class="c-act"><button type="button" class="bk-x" data-mdel="' + i + '"' +
           (lock ? ' disabled title="' + (kind === 'grp' ? 'มี SKU ในกลุ่มนี้ ย้าย SKU ไปกลุ่มอื่นก่อน' : 'ยังมีของอยู่ เอาติ๊ก ใช้งาน ออกแทน') + '"' : ' title="ลบแถว"') + ' aria-label="ลบแถว">✕</button></td>' : '') + '</tr>';
@@ -411,6 +499,7 @@
       var cell = $('mw-' + i);
       if (!cell) return;
       cell.innerHTML = warnHtml(v.rows[i]);
+      if (kind === 'cap' && $('mp-' + i)) $('mp-' + i).innerHTML = palOf(draft(kind).rows[i]);
       var tr = cell.parentNode;
       tr.classList.remove('r-bad', 'r-warn');
       var c = rowCls(v.rows[i]);
@@ -481,14 +570,26 @@
   function gridOf(text) {
     return String(text || '').replace(/\r/g, '').split('\n').filter(function (l) { return l.trim() !== ''; }).map(function (l) { return l.split('\t'); });
   }
-  var HEAD_RE = /^(LOCATION|โล|SKU|รหัส|กลุ่ม|ชื่อกลุ่ม)/i;
+  var HEAD_RE = /^(LOCATION|โล|SKU|รหัส|กลุ่ม|ชื่อกลุ่ม)|^(PO\.?|PO\s*NO\.?|เลข\s*PO|TRUCK|SUPPLIER|PRODUCT\s*ID)$/i;
+
+  /** วางตารางหลักที่มีหัวตาราง (เช่นคัดลอกทั้งชีต PO. Truck): อ่านตามหัวแบบนำเข้าไฟล์ → แถว | null */
+  function parsedPaste(kind, g) {
+    var T = window.WmsFireTrc;
+    if (!IMP[kind] || !T || !g.length || !HEAD_RE.test(txt(g[0][0])) && !g[0].some(function (v) { return /truck|supplier|std|pallet|ซื้อ/i.test(txt(v)); })) return null;
+    var p = T.readSheets([{ name: X().SHEET[kind], grid: g }]);
+    return p && !p.error && p[kind] ? X().fromParsed(kind, p[kind]) : null;
+  }
 
   /** วางนอกช่อง: รหัสที่มีแล้ว = อัปเดตช่องที่วางมา (ไม่ว่าง) · ไม่มี = เพิ่มแถวบนสุด */
   function paste(text) {
     if (!on()) return;
     if (!canEdit()) { S.msg = { kind: 'warn', html: 'แก้ข้อมูลหลักได้เฉพาะหัวหน้า' }; renderAct(); return; }
     var kind = S.kind, g = gridOf(text), cols = pasteCols(kind);
-    if (g.length && HEAD_RE.test(txt(g[0][0]))) g.shift();
+    var pre = parsedPaste(kind, g);
+    if (pre) {
+      /* อ่านตามหัวตารางแล้ว: เป็นแถวของช่องตามลำดับ cols */
+      g = pre.map(function (r) { return cols.map(function (c) { return r[c.k]; }); });
+    } else if (g.length && HEAD_RE.test(txt(g[0][0]))) g.shift();
     if (!g.length) return;
     var d = draft(kind), by = {}, add = [], upd = 0;
     d.rows.forEach(function (r, i) { var k = X().keyOf(kind, r) || (kind === 'grp' ? up(r.name) : ''); if (k) by[k] = i; if (kind === 'grp' && up(r.name)) by[up(r.name)] = i; });
@@ -496,9 +597,7 @@
       var r = newRow(kind);
       cols.forEach(function (c, j) { if (j < cells.length) r[c.k] = parseCell(kind, c, cells[j]); });
       var k = kind === 'grp' ? up(r.name) : X().keyOf(kind, r);
-      if (kind === 'sku' && !k) return;
-      if (kind === 'loc' && !k) return;
-      if (kind === 'grp' && !k) return;
+      if (!k) return;
       var at = by[k];
       if (at === undefined && kind === 'sku' && up(r.sku)) {
         /* วางมาแค่ SKU สั้น: ตรงกับแถวที่มี SKU สั้นเดียวกัน */
@@ -548,12 +647,78 @@
     var rows = fd.map(function (x) {
       var r = newRow(kind);
       if (kind === 'loc') { r.code = x.code; var k = X().locKind(x.code); if (k && k.t === 'R') r.pal = '1'; }
+      else if (kind === 'sup') r.po = x.po;
+      else if (kind === 'cap') { r.sku = x.sku || x.pid; r.pid = x.pid && x.pid !== r.sku ? x.pid : ''; }
       else { r.sku = x.sku || x.long; r.long = x.long || ''; r.name = x.name || ''; r.grp = guess(r); r.gift = r.grp === 'gf'; }
       return r;
     });
     addRows(kind, rows, true);
     S.chip = 'all'; S.q = ''; S.showFound = false;
-    S.msg = { kind: 'ok', html: 'เพิ่ม <b>' + f(rows.length) + '</b> แถวจากสมุด (แถบฟ้าด้านซ้าย)' + (kind === 'sku' ? ' · กลุ่มเดาจากชื่อ ช่วยตรวจ' : '') + ' · ตรวจแล้วกด 💾 บันทึก' };
+    var next = kind === 'sup' ? ' · ใส่ Supplier (แถวที่ยังว่างไม่บันทึก)' : kind === 'cap' ? ' · ใส่ชิ้นต่อพาเลท (แถวที่ยังว่างไม่บันทึก)' : kind === 'sku' ? ' · กลุ่มเดาจากชื่อ ช่วยตรวจ' : '';
+    S.msg = { kind: 'ok', html: 'เพิ่ม <b>' + f(rows.length) + '</b> แถวจากสมุด (แถบฟ้าด้านซ้าย)' + next + ' · ตรวจแล้วกด 💾 บันทึก' };
+    render();
+  }
+
+  /* ── 📂 นำเข้าไฟล์ (ตารางหลักเดิม) ─────────────────────────────────── */
+
+  function sheetsOf(XL, wb, file) {
+    var base = file.name.replace(/\.[^.]+$/, '');
+    return wb.SheetNames.map(function (n) {
+      var name = wb.SheetNames.length === 1 && /^(sheet\d*|แผ่นงาน\d*)$/i.test(n.trim()) ? base : n;
+      return { name: name, grid: XL.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: '', raw: true }) };
+    });
+  }
+  async function readFiles(list) {
+    if (!canEdit()) { S.msg = { kind: 'warn', html: 'แก้ข้อมูลหลักได้เฉพาะหัวหน้า' }; renderAct(); return; }
+    S.msg = { kind: 'warn', html: 'กำลังอ่านไฟล์…' }; renderAct();
+    try {
+      var XL = await xlsxLib(), sheets = [];
+      for (var i = 0; i < list.length; i++) {
+        var wb = XL.read(await list[i].arrayBuffer(), { type: 'array', cellDates: false });
+        sheets = sheets.concat(sheetsOf(XL, wb, list[i]));
+      }
+      take(window.WmsFireTrc.readSheets(sheets), list.map(function (x) { return x.name; }).join(', '));
+    } catch (e) {
+      S.msg = { kind: 'bad', html: 'อ่านไฟล์ไม่ได้: ' + esc(e && e.message || e) };
+      render();
+    }
+  }
+  /**
+   * ไฟล์ที่อ่านแล้ว (WmsFireTrc.readSheets) → แทนร่างของตารางที่มีในไฟล์ (sup · conv · cap) ยังไม่บันทึก
+   * ชีต Stock / WH-Loss / ราคาทุน = ยอด TRcloud ใช้หน้า TRcloud → นำเข้า
+   */
+  function take(p, files) {
+    if (!canEdit()) { S.msg = { kind: 'warn', html: 'แก้ข้อมูลหลักได้เฉพาะหัวหน้า' }; render(); return; }
+    if (!p || p.error) { S.msg = { kind: 'bad', html: esc(files || '') + ': ' + esc(p ? p.error : 'อ่านไฟล์ไม่ได้') }; render(); return; }
+    var got = [];
+    ['sup', 'conv', 'cap'].forEach(function (k) {
+      var part = p[k];
+      if (!part) return;
+      var rows = X().fromParsed(k, part), d = draft(k), saved = {};
+      table(k).rows.forEach(function (r) { var key = X().keyOf(k, r); if (key) saved[key] = 1; });
+      d.rows = rows;
+      d.fresh = {};
+      rows.forEach(function (r) { var key = X().keyOf(k, r); if (key && !saved[key]) d.fresh[key] = 1; });
+      touch(k);
+      var dd = X().diff(k, table(k).rows, rows);
+      var note = k === 'sup' && part.dup && part.dup.length ? 'PO ซ้ำต่าง Supplier ' + part.dup.length + ' (ใช้แถวแรก)'
+        : part.blank ? (k === 'cap' ? 'ช่องความจุว่าง ' : 'แถวไม่ครบ ') + part.blank + ' (ข้าม)' : '';
+      got.push({ k: k, n: rows.length, dd: dd, note: note });
+    });
+    var trc = p.stock || p.loss || p.cost;
+    if (!got.length) {
+      S.msg = trc ? { kind: 'warn', html: 'ไฟล์นี้เป็นยอด TRcloud (ชีต Stock / WH-Loss / ราคาทุน) · นำเข้าที่หน้า TRcloud → นำเข้า' }
+        : { kind: 'bad', html: 'ไม่เจอชีต PO. Truck · MASTER แปลงสินค้า · ความจุต่อพาเลท' };
+      render();
+      return;
+    }
+    if (!got.some(function (x) { return x.k === S.kind; })) { S.kind = got[0].k; try { localStorage.setItem(KIND_KEY, S.kind); } catch (e) {} }
+    S.chip = 'all'; S.q = ''; S.more = STEP; S.hist = false; S.showFound = false; S.gen = null;
+    var unit = { sup: 'PO', conv: 'คู่', cap: 'SKU' };
+    S.msg = { kind: 'ok', html: '📂 ' + esc(files || 'ไฟล์') + ' → ' + got.map(function (x) {
+      var dd = [x.dd.add ? 'เพิ่ม ' + f(x.dd.add) : '', x.dd.chg ? 'แก้ ' + f(x.dd.chg) : '', x.dd.del ? 'ลบ ' + f(x.dd.del) : ''].filter(Boolean).join(' ');
+      return '<b>' + esc(X().TAB[x.k]) + '</b> ' + f(x.n) + ' ' + unit[x.k] + (dd ? ' (' + dd + ')' : ' (เหมือนเดิม)') + (x.note ? ' · ' + esc(x.note) : '');
+    }).join(' · ') + ' · แทนตารางเดิมในร่าง ยังไม่บันทึก · ตรวจแล้วกด 💾 บันทึก ทีละแท็บ' + (trc ? ' · ชีตยอด TRcloud ในไฟล์นี้นำเข้าที่หน้า TRcloud' : '') };
     render();
   }
 
@@ -578,7 +743,7 @@
   async function save() {
     var kind = S.kind, d = draft(kind);
     if (S.busy || !canEdit()) return;
-    var rows = d.rows.filter(function (r) { return X().keyOf(kind, r) || (kind === 'grp' && txt(r.name)); });
+    var rows = sendRows(kind, d.rows, false);
     if (kind !== 'grp') rows = rows.slice().sort(function (a, b) { return String(X().keyOf(kind, a)).localeCompare(String(X().keyOf(kind, b)), 'en', { numeric: true }); });
     S.busy = true; S.msg = null; renderAct();
     var r;
@@ -642,6 +807,7 @@
         render(); return;
       }
       case 'mdCopy': copyAll(); return;
+      case 'mdPick': if ($('mdFile')) $('mdFile').click(); return;
       case 'mdHist': S.hist = !S.hist; render(); return;
       case 'mdFoundAdd': if (canEdit()) addFound(); return;
       case 'mdFoundShow': S.showFound = !S.showFound; render(); return;
@@ -681,6 +847,7 @@
   document.addEventListener('change', function (e) {
     if (!on()) return;
     var el = e.target;
+    if (el.id === 'mdFile') { if (el.files && el.files.length) readFiles(Array.prototype.slice.call(el.files)); el.value = ''; return; }
     if (!el.dataset || el.dataset.mf === undefined || !canEdit()) return;
     var kind = S.kind, c = COLS[kind].filter(function (x) { return x.k === el.dataset.mf; })[0];
     if (!c) return;
@@ -717,6 +884,10 @@
   window.BookMaster = {
     render: render,
     paste: paste,
+    /** ลากไฟล์มาวางในหน้า ข้อมูลหลัก (หัวหน้า) */
+    files: function (list) { if (on() && list && list.length) readFiles(list); },
+    /** ไฟล์ที่อ่านแล้วจากหน้า TRcloud → นำเข้า (ส่งต่อมาตรวจที่นี่) */
+    take: take,
     /** เปิดหน้า: ดึงตารางใหม่จากฐาน (คนอื่นเพิ่งบันทึก) แล้ววาดใหม่ */
     opened: function () {
       S.msg = null;

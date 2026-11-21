@@ -1238,6 +1238,7 @@ document.addEventListener('drop', (e) => {
   if (FIRE && !USER) return;
   if (FIRE && MODE === 'set') { BookFireSet.files([...e.dataTransfer.files]); return; }   // ไฟล์ยอดตั้งต้น
   if (FIRE && MODE === 'trc') { BookFireTrc.files([...e.dataTransfer.files]); return; }   // ไฟล์ยอด TRcloud / ตารางหลัก
+  if (FIRE && MODE === 'master') { if (window.BookMaster) BookMaster.files([...e.dataTransfer.files]); return; }   // ตารางหลัก PO. Truck · แปลงสินค้า · ความจุ
   if (MODE !== 'cut') setMode('cut');   // ไฟล์ออเดอร์ใช้กับแท็บตัดขายเท่านั้น
   readFiles([...e.dataTransfer.files]);
 });

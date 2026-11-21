@@ -1,5 +1,6 @@
 /**
- * ระบบใหม่ ข้อมูลหลัก ขั้น ก: public/wms-fire-setup.js (Location · SKU · กลุ่มสินค้า) + setupSave ของ wms-fire.js กับ store จำลอง
+ * ระบบใหม่ ข้อมูลหลัก: public/wms-fire-setup.js + setupSave ของ wms-fire.js กับ store จำลอง
+ * ขั้น ก Location · SKU · กลุ่มสินค้า · ขั้น ข แปลงสินค้า · Supplier (PO) · SKU : Pallet (รูปเก็บเดิม fifo อ่านเหมือนเดิม)
  * ตรวจตาราง · บันทึกทั้งตาราง (รุ่น ประวัติ สองคนแก้พร้อมกัน) · พบในสมุดแต่ยังไม่มีในตาราง · เตือน / ห้าม ตอนลงใบ
  * ข้อมูลทั้งหมดสมมติขึ้น repo นี้เป็นสาธารณะ ไม่มีการเรียก Firebase จริง
  */
@@ -9,7 +10,7 @@ import path from 'node:path';
 
 const read = (f) => fs.readFileSync(path.resolve(__dirname, '../../public', f), 'utf8');
 
-let B, C, W, SU;
+let B, C, W, SU, TR;
 beforeAll(() => {
   const win = {};
   ['wms-book.js', 'wms-fire-core.js', 'wms-fire-trc.js', 'wms-fire-setup.js', 'wms-fire.js'].forEach((f) => new Function('window', read(f))(win));
@@ -17,6 +18,7 @@ beforeAll(() => {
   C = win.WmsFireCore;
   W = win.WmsFire;
   SU = win.WmsFireSetup;
+  TR = win.WmsFireTrc;
   /* wms-fire-setup.js กับ wms-fire.js เรียก window.WmsFireCore / WmsFireSetup ตอนใช้งาน */
   globalThis.window = globalThis.window || win;
   globalThis.window.WmsFireCore = globalThis.window.WmsFireCore || C;
@@ -295,6 +297,124 @@ describe('ตอนลงใบ (ผลท้ายแถว)', () => {
   });
 });
 
+describe('ขั้น ข: แปลงสินค้า · Supplier (PO) · SKU : Pallet', () => {
+  const opt = (base, extra = {}) => ({ by: HEAD, name: 'หัวหน้าทดลอง', at: NOW, base, ...extra });
+  const conv = (after, buy) => ({ after, buy });
+  const sup = (po, s) => ({ po, sup: s });
+  const cap = (s, pid, n) => ({ sku: s, pid, cap: n });
+
+  it('แถว ↔ วัตถุ: รูปเดียวกับไฟล์นำเข้า · รหัสตัดช่องว่าง ตัวใหญ่', () => {
+    expect(SU.rowOut('conv', SU.rowIn('conv', ['BBB0000000002', 'BBB0000000001']))).toEqual(['BBB0000000002', 'BBB0000000001']);
+    expect(SU.rowOut('sup', SU.rowIn('sup', [' p 1 ', ' ผู้ผลิตสมมติ ก ']))).toEqual(['P1', 'ผู้ผลิตสมมติ ก']);
+    expect(SU.rowOut('cap', SU.rowIn('cap', ['aaa001', 'AAA0000000001', 10]))).toEqual(['AAA001', 'AAA0000000001', '10']);
+    expect(SU.isBlank('sup', sup('', ''))).toBe(true);
+    expect(SU.isBlank('cap', cap('', '', '3'))).toBe(false);
+  });
+
+  it('ตรวจ แปลงสินค้า: ไม่ครบ / SKU เดียวกัน / คู่ซ้ำ = แดง · ไม่มีในตาราง SKU = ข้อมูล · แถวว่างไม่เตือน', () => {
+    const t = { sku: { rows: [sku('AAA001', 'AAA0000000001', '', 'm6'), sku('BBB001', '', '', 'tp')] } };
+    const v = SU.validate('conv', [conv('AAA0000000001', 'BBB001'), conv('aaa0000000001', 'bbb001'), conv('CCC1', ''), conv('DDD1', 'DDD1'), conv('', '')], t);
+    expect(v.rows[0]).toEqual([{ lv: 'red', t: 'คู่นี้ซ้ำกับแถวอื่น' }]);
+    expect(v.rows[2]).toEqual([{ lv: 'red', t: 'ใส่ทั้ง SKU หลังแปลง และ SKU ตอนซื้อ' }]);
+    expect(v.rows[3].map((w) => w.lv)).toEqual(['red', 'info', 'info']);
+    expect(v.rows[4]).toEqual([]);
+    expect([v.bad, v.warn]).toEqual([4, 0]);
+  });
+
+  it('ตรวจ Supplier: PO ซ้ำ / ไม่มี PO = แดง · ไม่ใส่ Supplier = ส้ม (ไม่บันทึก) · ชื่อเขียนต่างกัน = ข้อมูล', () => {
+    const v = SU.validate('sup', [sup('P1', 'ผู้ผลิตสมมติ ก'), sup('p1', 'อื่น'), sup('P2', ''), sup('', 'ผู้ผลิตสมมติ ข'), sup('P3', 'ผู้ผลิตสมมติก')]);
+    expect(v.rows[0].map((w) => w.lv)).toEqual(['red', 'info']);
+    expect(v.rows[1][0].t).toBe('PO ซ้ำกับแถวอื่น');
+    expect(v.rows[2]).toEqual([{ lv: 'warn', t: 'ยังไม่ใส่ Supplier (ไม่บันทึกแถวนี้)' }]);
+    expect(v.rows[3]).toEqual([{ lv: 'red', t: 'ยังไม่ใส่ PO' }]);
+    expect(v.rows[4]).toEqual([{ lv: 'info', t: 'Supplier เขียนต่างกัน: ผู้ผลิตสมมติ ก' }]);
+  });
+
+  it('ตรวจ ความจุ: ไม่มีรหัส / ซ้ำ / ไม่ใช่ตัวเลข = แดง · ว่าง = ส้ม (ไม่บันทึก)', () => {
+    const v = SU.validate('cap', [cap('AAA001', 'AAA0000000001', '10'), cap('BBB002', '', ''), cap('CCC004', '', 'สิบ'), cap('', '', '5'), cap('DDD009', '', '1,200'), cap('aaa001', 'aaa0000000001', '12')]);
+    expect(v.rows[0][0]).toEqual({ lv: 'red', t: 'SKU นี้ซ้ำกับแถวอื่น' });
+    expect(v.rows[1]).toEqual([{ lv: 'warn', t: 'ยังไม่ใส่ชิ้นต่อพาเลท (ไม่บันทึกแถวนี้)' }]);
+    expect(v.rows[2]).toEqual([{ lv: 'red', t: 'ชิ้นต่อพาเลทต้องเป็นตัวเลข' }]);
+    expect(v.rows[3]).toEqual([{ lv: 'red', t: 'ใส่ SKU หรือ Product ID' }]);
+    expect(v.rows[4]).toEqual([]);
+  });
+
+  it('เอกสาร: รูปเดิมของ masterDoc + รุ่น ประวัติ · ไม่มีสวิตช์ห้าม · Supplier / ความจุว่าง ไม่บันทึก', () => {
+    const c = SU.docOf('conv', [conv('BBB0000000002', 'BBB0000000001'), conv('', '')], opt(0, { strict: true }), null);
+    expect(c.data).toMatchObject({ tab: 'MASTER แปลงสินค้า', cols: ['SKU ตอนซื้อ', 'SKU หลังแปลง'], blank: 0, n: 1, ver: 1 });
+    expect(c.data.strict).toBeUndefined();
+    expect(C.dec(c.data.rows)).toEqual([['BBB0000000002', 'BBB0000000001']]);
+    expect(c.data.hist[0].text).toBe('ตั้งตารางครั้งแรก 1 แถว · เพิ่ม 1 (BBB0000000002 ← BBB0000000001)');
+    expect(SU.docOf('conv', [conv('BBB1', '')], opt(0), null).error).toMatch(/^แก้แถวสีแดง 1 แถวก่อน เช่น BBB1: ใส่ทั้ง/);
+
+    const s2 = SU.docOf('sup', [sup('P1', 'ผู้ผลิตสมมติ ก'), sup('P2', '')], opt(0), null);
+    expect(s2.data).toMatchObject({ tab: 'PO. Truck', dup: [], n: 1 });
+    expect(s2.data.cols).toBeUndefined();
+    expect(s2.data.hist[0].text).toBe('ตั้งตารางครั้งแรก 1 แถว · เพิ่ม 1 (P1) · ข้าม 1 แถวที่ยังไม่ครบ');
+    expect(SU.docOf('sup', [sup('P1', 'ผู้ผลิตสมมติ ก'), sup('P2', '')], opt(1), s2.data).error).toBe('ไม่มีอะไรเปลี่ยน (ข้าม 1 แถวที่ยังไม่ครบ)');
+
+    /* ตารางที่นำเข้าไฟล์ไว้แบบเดิม (ไม่มีรุ่น) แก้ต่อได้ เก็บชื่อชีต / หัวคอลัมน์เดิม */
+    const old = { tab: 'ความจุ (ไฟล์สมมติ)', cols: ['SKU', 'Product ID', 'STD / pallet'], rows: C.enc([['AAA001', 'AAA0000000001', 10]]), blank: 2, n: 1 };
+    const k = SU.docOf('cap', [cap('AAA001', 'AAA0000000001', '1,200'), cap('BBB002', '', '')], opt(0), old);
+    expect(k.data).toMatchObject({ tab: 'ความจุ (ไฟล์สมมติ)', cols: ['SKU', 'Product ID', 'STD / pallet'], blank: 0, n: 1, ver: 1 });
+    expect(C.dec(k.data.rows)).toEqual([['AAA001', 'AAA0000000001', '1200']]);
+    expect(k.data.hist[0].text).toBe('แก้ 1 (AAA001) · ข้าม 1 แถวที่ยังไม่ครบ');
+  });
+
+  it('ไฟล์ที่อ่านแล้ว → แถวของตาราง', () => {
+    const p = TR.readSheets([
+      { name: 'PO. Truck', grid: [['Truck', 'PO.'], ['ผู้ผลิตสมมติ', 'p 9']] },
+      { name: 'MASTER แปลงสินค้า', grid: [['SKU ตอนซื้อ', 'SKU หลังแปลง'], ['BBB0000000001', 'BBB0000000002']] },
+      { name: 'ความจุต่อพาเลท', grid: [['SKU', 'Product ID', 'STD / pallet'], ['AAA001', 'AAA0000000001', 10]] },
+    ]);
+    expect(SU.fromParsed('sup', p.sup)).toEqual([sup('P9', 'ผู้ผลิตสมมติ')]);
+    expect(SU.fromParsed('conv', p.conv)).toEqual([conv('BBB0000000002', 'BBB0000000001')]);
+    expect(SU.fromParsed('cap', p.cap)).toEqual([cap('AAA001', 'AAA0000000001', '10')]);
+    expect(SU.fromParsed('sup', null)).toEqual([]);
+  });
+
+  it('บันทึกผ่านหน้า ข้อมูลหลัก → fifo() / masters() อ่านได้เหมือนนำเข้าไฟล์ · นำเข้าไฟล์ทับ = รุ่นใหม่ เก็บประวัติ', async () => {
+    const x = await opened();
+    ok(await x.head.setupSave('sup', [sup('P1', 'ผู้ผลิตสมมติ ก'), sup('P5', 'ผู้ผลิตสมมติ ข'), sup('P7', '')], { base: 0 }));
+    ok(await x.head.setupSave('conv', [conv('BBB0000000002', 'BBB0000000001')], { base: 0 }));
+    ok(await x.head.setupSave('cap', [cap('AAA001', 'AAA0000000001', '10')], { base: 0 }));
+    expect((await x.staff.setupSave('cap', [cap('AAA001', '', '9')], { base: 1 })).error).toMatch(/เฉพาะหัวหน้า/);
+    await x.staff.sync();
+    const f = x.staff.fifo();
+    expect(f.sup.rows).toEqual([['P1', 'ผู้ผลิตสมมติ ก'], ['P5', 'ผู้ผลิตสมมติ ข']]);
+    expect(f.convert.pairs).toEqual([['BBB0000000002', 'BBB0000000001', '']]);
+    expect(f.cap.rows).toEqual([['AAA001', 'AAA0000000001', 10]]);
+    expect(x.staff.masters()).toMatchObject({ sup: { n: 2, tab: 'PO. Truck', dup: 0 }, conv: { n: 1, blank: 0 }, cap: { n: 1, tab: 'ความจุต่อพาเลท' } });
+    expect(SU.read(x.staff.local()).sup).toMatchObject({ saved: true, ver: 1, n: 2 });
+
+    /* หน้า TRcloud แบบเดิม (masterSave) ทับทั้งตาราง: รุ่น +1 ประวัติต่อจากเดิม · ร่างที่เริ่มจากรุ่นเก่าบันทึกไม่ผ่าน */
+    ok(await x.head.masterSave('sup', TR.readSheets([{ name: 'PO. Truck', grid: [['Truck', 'PO.'], ['ผู้ผลิตสมมติ ค', 'P8']] }]).sup));
+    await x.head.sync();
+    const t = SU.read(x.head.local()).sup;
+    expect(t.ver).toBe(2);
+    expect(t.hist.map((h) => h.text)).toEqual(['นำเข้าไฟล์ PO. Truck 1 แถว (แทนทั้งตาราง)', 'ตั้งตารางครั้งแรก 2 แถว · เพิ่ม 2 (P1, P5) · ข้าม 1 แถวที่ยังไม่ครบ']);
+    expect((await x.head.setupSave('sup', [sup('P1', 'ผู้ผลิตสมมติ ก')], { base: 1 })).error).toMatch(/มีคนบันทึกตาราง Supplier \(PO\) ก่อนแล้ว/);
+    ok(await x.head.setupSave('sup', [sup('P8', 'ผู้ผลิตสมมติ ค'), sup('P1', 'ผู้ผลิตสมมติ ก')], { base: 2 }));
+  });
+
+  it('พบในสมุด: PO ที่ยังไม่มี Supplier · SKU ที่ยังไม่มีความจุ (ตาราง SKU ก่อน ไม่มี = SKU ที่มีของ)', async () => {
+    const x = await opened();
+    await x.head.sync();
+    const L = x.head.local();
+    expect(SU.found('sup', [], L)).toEqual([{ po: 'P1', qty: 30 }, { po: 'P5', qty: 4 }]);
+    expect(SU.found('sup', [sup('p1', '')], L).map((o) => o.po)).toEqual(['P5']);
+    expect(SU.found('cap', [], L).map((o) => [o.sku, o.pid, o.name, o.qty])).toEqual([
+      ['AAA001', 'AAA0000000001', 'ที่นอนสมมติ 6 ฟุต', 30],
+      ['BBB002', 'BBB0000000002', 'ท็อปเปอร์สมมติ 5FT', 4],
+      ['CCC004', 'CCC0000000004', 'แถมหมอนสมมติ', 3],
+    ]);
+    const skus = [sku('AAA001', 'AAA0000000001', 'ก', 'm6'), sku('DDD009', '', 'ง', 'pl'), sku('EEE001', '', 'เลิกขาย', 'pl', false)];
+    expect(SU.found('cap', [cap('AAA001', '', '10')], L, skus)).toEqual([{ sku: 'DDD009', pid: '', name: 'ง', qty: 0 }]);
+    expect(SU.found('conv', [], L)).toEqual([]);
+    expect(SU.stockOf(L).po).toEqual({ P1: 30, P5: 4 });
+  });
+});
+
 describe('ต่อสายในหน้า', () => {
   it('โหลด wms-fire-setup.js ก่อน wms-fire.js · หน้า ข้อมูลหลัก อยู่ในเมนูและแอป', () => {
     const bf = read('book/book-fire.js');
@@ -311,7 +431,21 @@ describe('ต่อสายในหน้า', () => {
     expect(read('wms-fire.js')).toMatch(/var SETUP = \['loc', 'sku', 'grp'\]/);
   });
 
+  it('ขั้น ข: หน้า TRcloud ส่งตารางหลักไปตรวจที่ ข้อมูลหลัก · ลากไฟล์มาวางในหน้า ข้อมูลหลัก', () => {
+    expect(read('wms-fire.js')).toContain('SETUP.indexOf(kind) < 0 && MASTERS.indexOf(kind) < 0');
+    const trc = read('book/book-fire-trc.js');
+    ['tiSup', 'tiConv', 'tiCap', 'saveMaster'].forEach((w) => expect(trc, w).not.toContain(w));
+    expect(trc).toContain('id="tiMaster"');
+    expect(trc).toContain("setMode('master');");
+    expect(trc).toContain('window.BookMaster.take(part, files);');
+    expect(read('book/index.html')).toContain("if (FIRE && MODE === 'master') { if (window.BookMaster) BookMaster.files([...e.dataTransfer.files]); return; }");
+    const bm = read('book/book-master.js');
+    expect(bm).toContain("['conv', 'แปลงสินค้า'], ['sup', 'Supplier'], ['cap', 'SKU : Pallet']");
+    expect(bm).toContain('window.WmsFireTrc.readSheets(sheets)');
+    expect(read('book/book-fire.js')).toContain('window.WmsFireSetup.found(kind, list, l, skus)');
+  });
+
   it('ไม่มีอักษรลาว', () => {
-    ['wms-fire-setup.js', 'book/book-master.js'].forEach((f) => expect(/[\u0E80-\u0EFF]/.test(read(f)), f).toBe(false));
+    ['wms-fire-setup.js', 'book/book-master.js', 'book/book-fire-trc.js'].forEach((f) => expect(/[\u0E80-\u0EFF]/.test(read(f)), f).toBe(false));
   });
 });

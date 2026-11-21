@@ -21,7 +21,7 @@
   var STALE_TRIES = 4;    // สำเนาในเครื่องตามไม่ทันระหว่างบันทึก ดึงใหม่แล้วลองกี่ครั้ง
   var PAGE = 300;         // เอกสารต่อการดึงหนึ่งครั้ง
   var MASTERS = ['conv', 'sup', 'cap'];
-  var SETUP = ['loc', 'sku', 'grp'];   // ข้อมูลหลักที่หัวหน้าแก้ในหน้า ข้อมูลหลัก (wms-fire-setup.js)
+  var SETUP = ['loc', 'sku', 'grp'];   // ข้อมูลหลักที่หัวหน้าแก้ในหน้า ข้อมูลหลัก (wms-fire-setup.js) · MASTERS ก็แก้ที่หน้านั้นด้วย (ขั้น ข)
   var ROLE_TH = { head: C.ROLE_HEAD, staff: C.ROLE_USER, viewer: C.ROLE_VIEW };
   var NO_RIGHT = 'บัญชีนี้ยังไม่มีสิทธิ์ ติดต่อหัวหน้า Inventory ให้เพิ่มชื่อในหน้าตั้งค่า';
   var ROLES = ['head', 'staff', 'viewer'];
@@ -1027,6 +1027,11 @@
         await store.tx(async function (t) {
           var meta = await t.get('meta/head');
           if (!meta) throw new Error('ลงยอดยกมาก่อน แล้วค่อยนำเข้าตารางหลัก');
+          /* นำเข้าทั้งไฟล์ = รุ่นใหม่ของตาราง เก็บประวัติเดิมไว้ (หน้า ข้อมูลหลัก ที่แก้ค้างจะรู้ว่ามีคนบันทึกก่อน) */
+          var cur = await t.get('master/' + kind);
+          made.data.ver = (+(cur && cur.ver) || 0) + 1;
+          made.data.hist = [{ at: now(), by: user.email, name: user.name, text: 'นำเข้าไฟล์ ' + (made.data.tab || '') + ' ' + made.data.n + ' แถว (แทนทั้งตาราง)' }]
+            .concat(Array.isArray(cur && cur.hist) ? cur.hist : []).slice(0, 60);
           t.set('master/' + kind, made.data);
           t.patch('meta/head', { mv: (+meta.mv || 0) + 1 });
         });
@@ -1036,13 +1041,13 @@
     }
 
     /**
-     * หัวหน้าบันทึกข้อมูลหลักทั้งตาราง kind = loc | sku | grp · rows = แถวแบบวัตถุ (WmsFireSetup.rowIn)
+     * หัวหน้าบันทึกข้อมูลหลักทั้งตาราง kind = loc | sku | grp | conv | sup | cap · rows = แถวแบบวัตถุ (WmsFireSetup.rowIn)
      * opt = { base: รุ่นที่เริ่มแก้, strict } · รุ่นในฐานไม่ตรง base = มีคนบันทึกก่อน ไม่เขียนทับ
      */
     async function setupSave(kind, rows, opt) {
       opt = opt || {};
       if (!user || user.role !== 'head') return fail('แก้ข้อมูลหลักได้เฉพาะหัวหน้า');
-      if (SETUP.indexOf(kind) < 0) return fail('ไม่รู้จักตาราง ' + kind);
+      if (SETUP.indexOf(kind) < 0 && MASTERS.indexOf(kind) < 0) return fail('ไม่รู้จักตาราง ' + kind);
       var S = window.WmsFireSetup;
       if (!S) return fail('ยังไม่ได้โหลด wms-fire-setup.js');
       var made = null;

@@ -2597,10 +2597,10 @@ describe('หน้ารายงานอ่านจากระบบให�
     expect(app).not.toContain('XFER_DAYS');
     expect(app).toMatch(/function xferLeft\(\) \{\s+if \(!HX \|\| !HX\.xfer\) return \[\];\s+var day = [^\n]+\n\s+var recent = [^\n]+\n\s+if \(!recent\) return \[\];/);
     expect(read('book/book-fire-set.js')).toContain("xfer: 'ไม่บังคับ: หน้ารายงาน");
-    /* ยังไม่มีตาราง MASTER: ระบบใหม่บอกให้นำเข้าที่หน้า TRcloud ไม่ใช่เพิ่มแท็บในชีตเดิม */
+    /* ยังไม่มีตาราง MASTER: ระบบใหม่บอกให้ตั้งที่หน้า ข้อมูลหลัก ไม่ใช่เพิ่มแท็บในชีตเดิม */
     for (const f of ['wms-sup.js', 'balance/index.html', 'lot-po/index.html', 'putaway/index.html']) {
       expect(read(f), f).toContain('ระบบใหม่ยังไม่ได้นำเข้าตาราง');
-      expect(read(f), f).toContain('สมุดสต๊อก → TRcloud → นำเข้า');
+      expect(read(f), f).toContain('สมุดสต๊อก → ข้อมูลหลัก');
     }
     const src = read('wms-fire-src.js') + read('wms-fire-tx.js');
     expect(src).not.toMatch(/AIza[0-9A-Za-z_-]{20,}|firebaseapp\.com|script\.google\.com|apiKey\s*:/);

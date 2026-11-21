@@ -287,22 +287,24 @@
   function impAct() {
     var dis = BUSY ? ' disabled' : '', html = '';
     html += '<button class="tx-opt' + (IMP ? '' : ' p') + '" id="tiPick"' + dis + '>📂 เลือกไฟล์</button><input type="file" class="bk-file" id="tiFile" accept=".xlsx,.xls,.csv" multiple>';
-    if (!IMP) return html + '<span class="g-hint">หรือลากไฟล์มาวาง · ไฟล์จาก TRcloud (ชีต Stock, WH-Loss, ราคาทุน) หรือตารางหลัก (PO. Truck, MASTER แปลงสินค้า, ความจุต่อพาเลท)</span>';
+    if (!IMP) return html + '<span class="g-hint">หรือลากไฟล์มาวาง · ไฟล์จาก TRcloud (ชีต Stock, WH-Loss, ราคาทุน) · ตารางหลัก (PO. Truck, MASTER แปลงสินค้า, ความจุต่อพาเลท) ส่งไปตรวจที่หน้า ข้อมูลหลัก</span>';
     var p = IMP.parsed;
     if (p.stock) {
       html += '<label class="g-hint">ยอดของวันที่ <input type="date" class="bk-date" id="tiDay" value="' + esc(IMP.day) + '"></label>' +
         '<button class="bk-save" id="tiTrc"' + dis + '>💾 บันทึกยอด TRcloud ' + f(p.stock.list.length) + ' SKU</button>';
     }
-    if (p.sup) html += '<button class="bk-save" id="tiSup"' + dis + '>💾 PO → Supplier ' + f(p.sup.rows.length) + ' PO</button>';
-    if (p.conv) html += '<button class="bk-save" id="tiConv"' + dis + '>💾 แปลงสินค้า ' + f(p.conv.pairs.length) + ' คู่</button>';
-    if (p.cap) html += '<button class="bk-save" id="tiCap"' + dis + '>💾 ความจุพาเลท ' + f(p.cap.rows.length) + ' SKU</button>';
+    if (p.sup || p.conv || p.cap) {
+      /* ตารางหลักแก้ / บันทึกที่หน้า ข้อมูลหลัก (ตรวจก่อน เห็นที่เปลี่ยน มีประวัติ) */
+      var what = [p.sup ? 'Supplier ' + f(p.sup.rows.length) + ' PO' : '', p.conv ? 'แปลงสินค้า ' + f(p.conv.pairs.length) + ' คู่' : '', p.cap ? 'ความจุ ' + f(p.cap.rows.length) + ' SKU' : ''].filter(Boolean).join(' · ');
+      html += '<button class="tx-opt p" id="tiMaster"' + dis + ' title="เปิดหน้า ข้อมูลหลัก พร้อมตารางจากไฟล์นี้ ตรวจที่เปลี่ยนแล้วกด 💾 บันทึกที่นั่น">🗂 ตรวจใน ข้อมูลหลัก: ' + what + '</button>';
+    }
     html += '<button class="bk-link" id="tiX">ไม่ใช้</button>';
     return html;
   }
   function impBody() {
     if (!IMP) {
       return '<div class="tx-empty">ยอดคงเหลือจาก TRcloud: export รายงานสินค้าคงเหลือ (ต้องมีคอลัมน์ SKU / รหัสสินค้า และ NEW WH, QA) ' +
-        'ใส่ชีต WH-Loss กับ ราคาทุน ในไฟล์เดียวกันได้<br>ตารางหลัก: ชีต PO. Truck (PO. กับ Truck/Supplier) · MASTER แปลงสินค้า (SKU ตอนซื้อ กับ SKU หลังแปลง) · ความจุต่อพาเลท (SKU หรือ Product ID กับ STD / pallet)</div>';
+        'ใส่ชีต WH-Loss กับ ราคาทุน ในไฟล์เดียวกันได้<br>ตารางหลัก: ชีต PO. Truck (PO. กับ Truck/Supplier) · MASTER แปลงสินค้า (SKU ตอนซื้อ กับ SKU หลังแปลง) · ความจุต่อพาเลท (SKU หรือ Product ID กับ STD / pallet) → ตรวจและบันทึกที่หน้า 🗂 ข้อมูลหลัก</div>';
     }
     var p = IMP.parsed, rows = [];
     var kinds = [['stock', 'ยอดคงเหลือ (Stock)'], ['loss', 'WH-Loss'], ['cost', 'ราคาทุน'], ['sup', 'PO → Supplier'], ['conv', 'แปลงสินค้า'], ['cap', 'ความจุต่อพาเลท']];
@@ -370,19 +372,16 @@
     else IMP.parsed.stock = null;
     renderAll();
   }
-  async function saveMaster(kind) {
-    var part = IMP.parsed[kind];
-    var label = kind === 'sup' ? 'PO → Supplier ' + f(part.rows.length) + ' PO' : kind === 'cap' ? 'ความจุต่อพาเลท ' + f(part.rows.length) + ' SKU' : 'แปลงสินค้า ' + f(part.pairs.length) + ' คู่';
-    if (!confirm('บันทึก ' + label + ' แทนของเดิม?')) return;
-    BUSY = 'กำลังบันทึก…'; NOTE = null; renderAll();
-    var r = await FIRE.masterSave(kind, part);
-    BUSY = '';
-    if (r.error) { NOTE = { kind: 'bad', html: 'บันทึกไม่ได้: ' + esc(r.error) }; renderAll(); return; }
-    NOTE = { kind: 'ok', html: '✅ บันทึก ' + esc(label) + ' แล้ว · ทุกเครื่องดึงตารางใหม่ในรอบถัดไป' };
-    IMP.parsed[kind] = null;
-    if (!IMP.parsed.stock && !IMP.parsed.sup && !IMP.parsed.conv && !IMP.parsed.cap) IMP = null;
-    R_AT = 0;
-    renderAll();
+  /** ตารางหลักในไฟล์ → หน้า ข้อมูลหลัก (แทนร่างของตารางนั้น ตรวจแล้วบันทึกที่นั่น) · ยอด TRcloud ในไฟล์เดียวกันค้างไว้ที่นี่ */
+  function toMaster() {
+    if (!IMP || !window.BookMaster || typeof setMode !== 'function') return;
+    var p = IMP.parsed, part = { sup: p.sup, conv: p.conv, cap: p.cap };
+    var files = IMP.files;
+    p.sup = p.conv = p.cap = null;
+    if (!p.stock) IMP = null;
+    NOTE = null;
+    setMode('master');
+    window.BookMaster.take(part, files);
   }
 
   /* ── วาด ── */
@@ -392,7 +391,7 @@
       'ย้ายเข้า/ออก QA และปรับยอด: ติ๊กแล้วกด ไฟล์ปรับยอด นำเข้า TRcloud แล้วพิมพ์เลข\nไม่ต้องลง: เลือกในช่องสถานะ (เช่น ลงไปแล้วด้วยวิธีอื่น)\n' +
       'ยกเลิกเอกสารก่อนลง TRcloud = ไม่ต้องลงทั้งคู่ · ยกเลิกหลังลงแล้ว = ใบกลับรายการขึ้นรอลง',
     recon: 'หัวหน้านำเข้ายอดคงเหลือจาก TRcloud (แท็บ นำเข้า)\nเทียบกับยอดในระบบ ณ สิ้นวันของไฟล์ ราย SKU\nQA, IQA = WH-QA ที่เหลือ (รวม RIB) = WH-02\n* = รวม SKU ที่แปลงแล้วเข้า SKU ตอนซื้อ',
-    imp: 'ยอดคงเหลือ TRcloud: ไฟล์ export ที่มีคอลัมน์ SKU (หรือ รหัสสินค้า) NEW WH และ QA ชื่อรายงานด้านบนได้\nชีต WH-Loss กับ ราคาทุน ในไฟล์เดียวกันจะเก็บไว้ด้วย\nPO. Truck = PO กับ Supplier · MASTER แปลงสินค้า = SKU ตอนซื้อกับ SKU หลังแปลง (บันทึกแทนของเดิมทั้งตาราง)',
+    imp: 'ยอดคงเหลือ TRcloud: ไฟล์ export ที่มีคอลัมน์ SKU (หรือ รหัสสินค้า) NEW WH และ QA ชื่อรายงานด้านบนได้\nชีต WH-Loss กับ ราคาทุน ในไฟล์เดียวกันจะเก็บไว้ด้วย\nPO. Truck = PO กับ Supplier · MASTER แปลงสินค้า = SKU ตอนซื้อกับ SKU หลังแปลง · ความจุต่อพาเลท\nตารางหลักส่งไปตรวจที่หน้า ข้อมูลหลัก (เห็นที่เปลี่ยน มีประวัติ) แล้วบันทึกที่นั่น',
   };
   function renderIn() {
     var s = sec();
@@ -438,9 +437,7 @@
     else if (t.id === 'tiPick') $('tiFile').click();
     else if (t.id === 'tiX') { IMP = null; NOTE = null; renderAll(); }
     else if (t.id === 'tiTrc') saveTrc();
-    else if (t.id === 'tiSup') saveMaster('sup');
-    else if (t.id === 'tiConv') saveMaster('conv');
-    else if (t.id === 'tiCap') saveMaster('cap');
+    else if (t.id === 'tiMaster') toMaster();
   });
 
   document.addEventListener('input', function (e) {
