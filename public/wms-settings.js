@@ -28,6 +28,7 @@
     stUrl:          'wms:st:url',
     stToken:        'wms:st:token',
     bookUrl:        'wms:book:url',
+    shareUrl:       'wms:fire:share-url',
     me:             'wms:me',
   };
 
@@ -119,6 +120,13 @@
      */
     bookUrl: function () { return read(KEYS.bookUrl); },
     setBookUrl: function (v) { return write(KEYS.bookUrl, v); },
+
+    /**
+     * URL เว็บแอปของ apps-script/fire-backup.gs (ระบบใหม่) ที่ลิงก์ Supply chain ใช้ อ่านได้แค่ชุดแชร์ของรายงาน FIFO
+     * ตั้งที่ ⚙ ข้างปุ่ม 🔗 ลิงก์ Supply chain ในหน้า FIFO สต๊อก เฉพาะเครื่องคนที่ส่งลิงก์
+     */
+    shareUrl: function () { return read(KEYS.shareUrl); },
+    setShareUrl: function (v) { return write(KEYS.shareUrl, v); },
 
     /**
      * ชื่อคนที่ใช้เครื่องนี้ — ติดไปกับไฟล์ที่บันทึกขึ้นส่วนกลาง

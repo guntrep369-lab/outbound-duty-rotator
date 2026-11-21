@@ -11,10 +11,12 @@
 <link rel="stylesheet" href="../wms-theme.css">
 <link rel="stylesheet" href="fifo.css">
 <!--
-  ลิงก์ Supply chain: เปิดจากลิงก์ที่ทีม Outbound ส่งให้ (ปุ่ม 🔗 ลิงก์ Supply chain ในหน้า FIFO สต๊อก)
+  ลิงก์ Supply chain: เปิดจากลิงก์ที่ทีมส่งให้ (ปุ่ม 🔗 ลิงก์ Supply chain ในหน้า FIFO สต๊อก)
   ไม่มีหน้าเข้าระบบและเมนูของ WMS เพราะคนเปิดไม่ได้ใช้แอป
-  ลิงก์มี URL สคริปต์ Transaction (tx-api.gs) อยู่หลัง # ไม่ส่งไปกับการเปิดหน้า
-  อ่านชุดข้อมูลกลาง (tx-fifo shared) อย่างเดียว ไม่มีปุ่มดึงใหม่ ไม่มีลิงก์ไปชีต ดาวน์โหลด Excel สี่ชีตชุดเดียวกับหน้าในแอปได้
+  ลิงก์มี URL สคริปต์อยู่หลัง # ไม่ส่งไปกับการเปิดหน้า
+    ระบบใหม่: เว็บแอปของ fire-backup.gs ตอบชุดแชร์ที่ทำทุก 2 ชั่วโมง → wms-fire-share.js คิด FIFO ด้วย wms-fire-core.js
+    ระบบเดิม: สคริปต์ Transaction (tx-api.gs) ตอบชุดข้อมูลกลาง (tx-fifo shared)
+  อ่านอย่างเดียว ไม่มีปุ่มดึงใหม่ ไม่มีลิงก์ไปชีต ดาวน์โหลด Excel สี่ชีตชุดเดียวกับหน้าในแอปได้
   หน้าตาและตัวเลขมาจาก fifo.css กับ fifo-page.js ไฟล์เดียวกับหน้าในแอป
 -->
 <style>
@@ -36,7 +38,7 @@
     <img src="../icons/package.png" alt="">
     <div class="tt">
       <h1>รายงาน FIFO สต๊อก</h1>
-      <p>สำหรับ Supply chain · ดูอย่างเดียว · ข้อมูลอัปเดตเองทุก 2 ชั่วโมงในเวลางาน</p>
+      <p>สำหรับ Supply chain · ดูอย่างเดียว · ข้อมูลอัปเดตเองทุก 2 ชั่วโมง</p>
     </div>
   </div>
 
@@ -51,6 +53,8 @@
 <script src="../wms-shared.js"></script>
 <script src="../wms-sup.js"></script>
 <script src="../wms-fifo.js"></script>
+<script src="../wms-fire-core.js"></script>
+<script src="../wms-fire-share.js"></script>
 <script src="fifo-page.js"></script>
 </body>
 </html>

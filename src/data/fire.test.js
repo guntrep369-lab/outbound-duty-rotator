@@ -10,7 +10,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadBook, fifoFromBook, txFromBook } from '../dev/fake-gas.js';
+import { loadBook, fifoFromBook, txFromBook, fakeFireGcp } from '../dev/fake-gas.js';
 
 const read = (f) => fs.readFileSync(path.resolve(__dirname, '../../public', f), 'utf8');
 
@@ -2580,7 +2580,7 @@ describe('หน้ารายงานอ่านจากระบบให�
       expect(s.match(/wms-fire-src\.js/g), f).toHaveLength(1);
       expect(s, f).not.toContain('WMS_GATE_OFF');            // ป้ายรหัสเครื่องยังอยู่
     }
-    /* นับสต๊อกใหญ่ 19–20 ธ.ค. และไฟล์ตั้งต้นสมุดยังอ่านสมุดเดิม · ลิงก์ไม่ต้องเข้าระบบ (ขั้น 2) ยังไม่แตะ */
+    /* นับสต๊อกใหญ่ 19–20 ธ.ค. และไฟล์ตั้งต้นสมุดยังอ่านสมุดเดิม · ลิงก์ไม่ต้องเข้าระบบอ่านชุดแชร์ของ fire-backup.gs (ไม่ใช้ wms-fire-src) */
     for (const f of ['stocktake/index.html', 'fifo/share.html', 'mfg/boss.html', 'book/index.html']) expect(read(f), f).not.toContain('wms-fire-src.js');
     const bf = read('book/book-fire.js');
     expect(bf.indexOf("script('../wms-fire-tx.js')")).toBeGreaterThan(bf.indexOf("script('../wms-fire-item.js')"));
@@ -2605,5 +2605,199 @@ describe('หน้ารายงานอ่านจากระบบให�
     const src = read('wms-fire-src.js') + read('wms-fire-tx.js');
     expect(src).not.toMatch(/AIza[0-9A-Za-z_-]{20,}|firebaseapp\.com|script\.google\.com|apiKey\s*:/);
     expect(src).not.toMatch(/\.commit\(|store\.|\.patch\(/);   // อ่านอย่างเดียว ไม่เขียนฐาน
+  });
+});
+
+describe('ลิงก์ Supply chain อ่านชุดแชร์ของระบบใหม่ (fire-backup.gs shareRefresh · doGet · wms-fire-share.js)', () => {
+  let SH;
+  beforeAll(() => {
+    const win = { WmsFireCore: C };
+    new Function('window', read('wms-fire-share.js'))(win);
+    SH = win.WmsFireShare;
+  });
+
+  /** สมุดสมมติ: ยอดยกมา ขายใบใหญ่ (แยกส่วน ~2 ~3) ย้ายเข้า QA รับของ ตารางหลักครบสามตาราง */
+  async function shareBook() {
+    const x = await both({ partBytes: 3000 });
+    await x.open();
+    ok(await x.staff.post('bk-cut', cutBody('big', Array.from({ length: 40 }, (_, i) => saleLine(String(5000 + i), 0.25)))));
+    ok(await x.staff.post('bk-move', body('m-1', [QA_MV])));
+    ok(await x.staff.post('bk-gr', body('g-1', [GR3])));
+    ok(await x.head.masterSave('sup', TR.readSheets([{ name: 'PO. Truck', grid: [['Truck', 'PO.'], ['ผู้ผลิตสมมติ', 'P1'], ['ผู้ผลิตสมมติ 2', 'P9']] }]).sup));
+    ok(await x.head.masterSave('conv', TR.readSheets([{ name: 'MASTER แปลงสินค้า', grid: [['SKU ตอนซื้อ', 'SKU หลังแปลง'], ['BBB0000000001', 'BBB0000000002']] }]).conv));
+    ok(await x.head.masterSave('cap', TR.readSheets([{ name: 'ความจุต่อพาเลท', grid: [['SKU', 'Product ID', 'STD / pallet'], ['AAA001', 'AAA0000000001', 10]] }]).cap));
+    expect(Object.keys(x.store.dump()).filter((k) => /^docs\/big~\d$/.test(k)).length).toBeGreaterThan(0);
+    return x;
+  }
+  /** ชุดแชร์ที่หน้าแชร์คิดได้ = fifo() ของเครื่องหัวหน้าทุกช่อง (ไม่นับเวลา: ชุดแชร์ใช้เวลาที่ทำชุด) */
+  async function sameAsApp(x, g) {
+    await x.head.sync();
+    const res = g.get({ api: 'tx-fifo', shared: '1' });
+    expect(res).toMatchObject({ app: 'fire-share', v: 1 });
+    const got = await SH.fifo(res), want = x.head.fifo();
+    expect(got.error).toBeUndefined();
+    expect(got).toMatchObject({ app: 'transaction', fire: 1, sheet: null, shared: { at: res.made, auto: 1 } });
+    ['skus', 'pos', 'locs', 'days', 'rows', 'cgr', 'cq', 'last', 'convert', 'sup', 'cap'].forEach((k) => expect(got[k], k).toEqual(want[k]));
+    return { res, got };
+  }
+  /** แตกชุดแชร์ในไฟล์ดูข้างใน */
+  async function snapOf(res) { return JSON.parse(await SH.unzip(res.gz)); }
+
+  it('installShare: ตั้งเวลาทุก 2 ชั่วโมง ทำชุดแรกทันที · หน้าแชร์คิด FIFO ได้เท่าหน้าในแอปทุกช่อง · ชุดแชร์ไม่มีชื่อคน อีเมล ออเดอร์', async () => {
+    const x = await shareBook();
+    const g = fakeFireGcp();
+    expect(g.get({ api: 'tx-fifo' })).toEqual({ app: 'fire-share', error: 'ข้อมูลยังไม่พร้อม แจ้งคนที่ส่งลิงก์ให้' });
+    expect(g.get({ api: 'shared-at' })).toEqual({ app: 'transaction', fire: 1, shared: {}, run: {} });
+    expect(g.gs.shareRefresh()).toEqual({ empty: true });   // ยังไม่มีอะไรในฐาน
+    g.mirror(x.store.dump());
+    g.triggers.push({ h: 'shareRefresh', getHandlerFunction: () => 'shareRefresh' });   // ตั้งไว้แล้วรอบก่อน: ไม่ซ้อน
+    g.triggers.push({ h: 'backupNightly', getHandlerFunction: () => 'backupNightly' });
+    const r = g.gs.installShare();
+    expect(g.triggers.map((t) => [t.h, t.hours])).toEqual([['backupNightly', undefined], ['shareRefresh', 2]]);
+    expect(r).toMatchObject({ added: 4, docs: 4, more: false });
+    expect(g.folders.map((f) => f.name)).toEqual(['WMS ระบบใหม่ สำรอง']);
+    expect(g.folders[0].files.map((f) => f.name)).toEqual(['wms-fire-share.txt']);
+    const { res } = await sameAsApp(x, g);
+    expect(g.get({ api: 'shared-at' })).toEqual({ app: 'transaction', fire: 1, shared: { 'tx-fifo': { at: res.made, auto: 1 } }, run: {} });
+    expect(+g.props['fs.made']).toBe(res.made);
+
+    const snap = await snapOf(res);
+    expect(snap).toMatchObject({ kind: 'wms-fire-share', v: 1, project: 'demo-src', seq: 4, upto: 4, open: 1 });
+    Object.values(snap.docs).forEach((d) => expect(Object.keys(d).sort()).toEqual(['names', 'row', 'rows', 'seq', 'type']));
+    Object.values(snap.master).forEach((m) => expect(Object.keys(m).every((k) => ['tab', 'cols', 'rows', 'dup', 'blank', 'n'].includes(k))).toBe(true));
+    expect(Object.keys(snap.master).sort()).toEqual(['cap', 'conv', 'sup']);
+    const text = JSON.stringify(snap);
+    for (const s of ['@example.test', 'หัวหน้าทดลอง', 'TH5000', 'ON5000']) expect(text).not.toContain(s);
+    /* ใบใหญ่ต่อส่วนแยกครบ: แถวเท่าในเครื่อง */
+    const big = x.head.local().docs.find((d) => d.type === 'ตัดขาย');
+    expect(snap.docs[big.id].rows.split('\n')).toHaveLength(big.rows.length);
+    expect(g.logs.join('\n')).toMatch(/เอกสารใหม่ 4 ใบ/);
+  });
+
+  it('รอบต่อไปอ่านเฉพาะของใหม่ · ไม่มีอะไรใหม่อ่าน 1 ครั้ง · ตารางหลักเปลี่ยนอ่านตารางหลักใหม่ · ลงยอดยกมาใหม่ตัดเอกสารเก่าออก', async () => {
+    const x = await shareBook();
+    const g = fakeFireGcp();
+    g.mirror(x.store.dump());
+    g.gs.shareRefresh();
+    let before = g.calls.length;
+    expect(g.gs.shareRefresh()).toMatchObject({ same: true, docs: 4, reads: 1 });
+    expect(g.calls.length - before).toBe(1);
+    const file = g.folders[0].files[0], writes = file.writes;
+
+    x.tick(DAY);
+    ok(await x.staff.post('bk-move', body('m-2', [mv3()], { date: '2026-11-11' })));
+    ok(await x.staff.post('bk-cut', cutBody('c-2', [saleLine('7001', 1, 'A-01-02', '9', 'P2')], '2026-11-11')));
+    g.mirror(x.store.dump());
+    before = g.calls.length;
+    expect(g.gs.shareRefresh()).toMatchObject({ added: 2, docs: 6, more: false });
+    expect(g.calls.length - before).toBe(2);   // meta/head + เอกสารใหม่ (ตารางหลักเดิม ไม่อ่าน)
+    expect(file.writes).toBe(writes + 1);       // ไฟล์เดิม เขียนทับ ไม่สร้างใหม่
+    expect(g.folders[0].files).toHaveLength(1);
+    await sameAsApp(x, g);
+
+    ok(await x.head.masterSave('sup', TR.readSheets([{ name: 'PO. Truck', grid: [['Truck', 'PO.'], ['ผู้ผลิตใหม่สมมติ', 'P2']] }]).sup));
+    g.mirror(x.store.dump());
+    before = g.calls.length;
+    expect(g.gs.shareRefresh()).toMatchObject({ added: 0, docs: 6 });
+    expect(g.calls.slice(before).map((c) => c[2].split('?')[0])).toEqual(['/meta/head', ':runQuery', '/master']);
+    const { got } = await sameAsApp(x, g);
+    expect(got.sup.rows).toEqual([['P2', 'ผู้ผลิตใหม่สมมติ']]);
+
+    /* ลงยอดยกมาใหม่ (ลงผิด ลงใหม่ก่อนมีเอกสารอื่น): ยอดยกมาใบเก่าไม่นับในหน้ารายงาน ชุดแชร์ก็ตัดออก */
+    const y = await both();
+    await y.open();
+    const g2 = fakeFireGcp();
+    g2.mirror(y.store.dump());
+    expect(g2.gs.shareRefresh()).toMatchObject({ added: 1, docs: 1 });
+    ok(await y.head.post('bk-open', { batch: 'o-2', asOf: 900, rows: OPEN.slice(0, 2), replace: true }));
+    g2.mirror(y.store.dump());
+    expect(g2.gs.shareRefresh()).toMatchObject({ added: 1, docs: 1 });
+    const again = await sameAsApp(y, g2);
+    expect(again.got.rows).toHaveLength(2);
+    expect((await snapOf(again.res)).open).toBe(2);
+  });
+
+  it('เกินเวลา: หยุดกลางทางแล้วรอบหน้าทำต่อ ใบใหญ่ไม่เข้าชุดครึ่งใบ · ไฟล์เสียทำใหม่ทั้งหมด · โปรเจกต์อื่นไม่ปน', async () => {
+    const x = await shareBook();
+    /* หน้าละ (ส่วนของใบใหญ่ + 1) แบบของจริง (หน้าละ 40 > 7 ส่วน): ทุกหน้าได้ใบใหม่อย่างน้อยหนึ่งใบ */
+    const parts = Object.keys(x.store.dump()).filter((k) => /^docs\/big(~\d+)?$/.test(k)).length;
+    const g = fakeFireGcp({ over: { STOP_MS: -1, PAGE: parts + 1 } });
+    g.mirror(x.store.dump());
+    const runs = [];
+    let r = g.gs.shareRefresh();
+    runs.push(r);
+    while (r.more) { r = g.gs.shareRefresh(); runs.push(r); }
+    expect(runs.length).toBeGreaterThan(2);
+    expect(r).toMatchObject({ docs: 4, more: false, seq: 4 });
+    const big = x.head.local().docs.find((d) => d.type === 'ตัดขาย');
+    /* ทุกรอบระหว่างทาง: ใบใหญ่ไม่มีก็มีครบ ไม่มีครึ่งใบ */
+    expect(runs.every((y) => y.seq <= 4)).toBe(true);
+    const { res } = await sameAsApp(x, g);
+    expect((await snapOf(res)).docs[big.id].rows.split('\n')).toHaveLength(big.rows.length);
+
+    /* ไฟล์ชุดแชร์เสีย (มีคนแก้ใน Drive) → รอบหน้าทำใหม่ทั้งหมด */
+    const g2 = fakeFireGcp();
+    g2.mirror(x.store.dump());
+    g2.gs.shareRefresh();
+    g2.folders[0].files[0].setContent('{"app":"fire-share","gz":"เสีย"}');
+    x.tick(DAY);
+    ok(await x.staff.post('bk-move', body('m-2', [mv3()], { date: '2026-11-11' })));
+    g2.mirror(x.store.dump());
+    expect(g2.gs.shareRefresh()).toMatchObject({ added: 5, docs: 5 });
+    expect(g2.logs.join('\n')).toMatch(/อ่านชุดแชร์เดิมไม่ได้/);
+    await sameAsApp(x, g2);
+    const bad = await SH.fifo({ app: 'fire-share', v: 1, made: 1, gz: Buffer.from('ไม่ใช่ gzip').toString('base64') });
+    expect(bad.error).toMatch(/ลิงก์นี้ใช้ไม่ได้/);
+    expect((await SH.fifo({ app: 'transaction' })).error).toMatch(/ลิงก์นี้ใช้ไม่ได้/);
+    expect((await SH.fifo({ app: 'fire-share', error: 'ข้อมูลยังไม่พร้อม แจ้งคนที่ส่งลิงก์ให้' })).error).toMatch(/ยังไม่พร้อม/);
+
+    /* เปลี่ยน FIREBASE_PROJECT_ID (กู้ไปโปรเจกต์ใหม่): ชุดแชร์ของโปรเจกต์เดิมไม่ปน */
+    const g3 = fakeFireGcp({ project: 'demo-new' });
+    Object.assign(g3.props, g2.props);
+    g3.folders.push(...g2.folders);
+    g3.files.push(...g2.files);
+    g3.mirror(x.store.dump());
+    expect(g3.gs.shareRefresh()).toMatchObject({ added: 5, docs: 5 });
+  });
+
+  it('เว็บแอปตอบแค่ชุดแชร์: คำสั่งอื่นไม่รู้จัก · กู้คืนข้ามไฟล์ชุดแชร์ · ไม่มีชีต ไม่มี URL อื่น · ค่าตั้งว่างใน repo', async () => {
+    const x = await shareBook();
+    const g = fakeFireGcp();
+    g.mirror(x.store.dump());
+    g.gs.backupNightly();
+    g.gs.shareRefresh();
+    for (const api of ['', 'tx-summary', 'backup', 'restore', 'st-boss']) expect(g.get({ api }), api).toEqual({ error: 'ไม่รู้จักคำสั่งนี้' });
+    expect(g.get({ api: 'tx-fifo' })).toMatchObject({ app: 'fire-share', v: 1 });
+    expect(g.gs.restoreAll('demo-copy')).toMatchObject({ ok: true, files: 1 });
+    expect(g.logs.join('\n')).not.toMatch(/ข้าม wms-fire-share/);
+
+    const gs = read('../apps-script/fire-backup.gs');
+    expect(gs).toContain("var FIREBASE_PROJECT_ID = '';");
+    expect(gs).toContain("var SHARE_FILE = 'wms-fire-share.txt';");
+    expect(gs).not.toMatch(/SpreadsheetApp|openById|openByUrl|doPost/);
+    const body = /function doGet\(e\) \{[\s\S]*?\n\}\n/.exec(gs.replace(/\r\n/g, '\n'))[0] + /function shareGet_\(api\) \{[\s\S]*?\n\}\n/.exec(gs.replace(/\r\n/g, '\n'))[0];
+    expect(body).not.toMatch(/shareRefresh|backup_|restoreAll|rest_\(|setContent|createFile|setProperty/);   // อ่านอย่างเดียว
+    expect(body).toContain('shared-at');
+    const page = read('wms-fire-share.js');
+    expect(page).not.toMatch(/AIza[0-9A-Za-z_-]{20,}|firebaseapp\.com|script\.google\.com|localStorage|fetch\(/);
+  });
+
+  it('หน้าแชร์โหลด wms-fire-core → wms-fire-share ก่อน fifo-page (ไม่ต้องเข้าระบบ) · หน้า FIFO ระบบใหม่ทำลิงก์จาก URL เว็บแอปที่ตั้งไว้', () => {
+    const s = read('fifo/share.html'), at = (t) => s.indexOf(t);
+    expect(at('<script src="../wms-fire-core.js"></script>')).toBeGreaterThan(at('<script src="../wms-fifo.js"></script>'));
+    expect(at('<script src="../wms-fire-share.js"></script>')).toBeGreaterThan(at('<script src="../wms-fire-core.js"></script>'));
+    expect(at('<script src="fifo-page.js"></script>')).toBeGreaterThan(at('<script src="../wms-fire-share.js"></script>'));
+    for (const t of ['wms-fire-src.js', 'book-fire.js', 'wms-fire-config.js', 'wms-gate.js']) expect(s, t).not.toContain(t);
+    const fp = read('fifo/fifo-page.js');
+    expect(fp).toContain('if (window.WmsFireShare && WmsFireShare.owns(res)) res = await WmsFireShare.fifo(res);');
+    expect(fp).toContain("const FIRE = () => !SHARE && !!(window.WmsFireSrc && window.WmsFireSrc.owns(WmsSettings.txUrl()));");
+    expect(fp).toContain('const base = FIRE() ? WmsSettings.shareUrl() : txUrl();');
+    expect(fp).toMatch(/st\.app !== 'transaction' \|\| !st\.fire/);   // URL สคริปต์ Transaction เดิมใช้ทำลิงก์ระบบใหม่ไม่ได้
+    const w = { localStorage: memLS() };
+    new Function('window', 'localStorage', read('wms-settings.js'))(w, w.localStorage);
+    expect(w.WmsSettings.KEYS.shareUrl).toBe('wms:fire:share-url');
+    expect(w.WmsSettings.setShareUrl(' https://example.test/exec ')).toBe(true);
+    expect(w.WmsSettings.shareUrl()).toBe('https://example.test/exec');
+    expect(w.WmsSettings.kindOf('wms:fire:share-url')).toBe('key');   // อยู่ไฟล์กุญแจ ไม่อยู่ไฟล์ข้อมูลที่ส่งต่อได้
   });
 });

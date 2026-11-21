@@ -3,6 +3,7 @@
  *   index.html — หน้าในแอป ดึงใหม่ได้ มีปุ่มคัดลอกลิงก์ Supply chain
  *   share.html — ลิงก์ Supply chain (body มี data-fifo-share) เปิดได้โดยไม่ต้องเข้าแอป
  *                อ่านชุดข้อมูลกลางอย่างเดียว ดาวน์โหลด Excel ได้ ไม่มีปุ่มดึงใหม่ ไม่มีลิงก์ไปชีต
+ *                ระบบใหม่: ลิงก์ชี้เว็บแอปของ fire-backup.gs ได้ชุดแชร์ แปลงด้วย wms-fire-share.js (คิด FIFO ในเครื่อง)
  * ตัวเลขทุกตัวคิดด้วย WmsFifo ชุดเดียวกัน สองหน้าจึงเห็นตรงกัน
  */
 const $ = id => document.getElementById(id);
@@ -33,6 +34,14 @@ const XLSX_LABEL = SHARE ? '⬇️ ดาวน์โหลด Excel' : '⬇️ 
 const SHARE_LABEL = '🔗 ลิงก์ Supply chain';
 /* share.html อยู่โฟลเดอร์เดียวกับไฟล์นี้ ใช้ที่อยู่ของสคริปต์ ไม่ใช้ของหน้า (เปิด /fifo ไม่มี / ท้ายจะชี้ผิดโฟลเดอร์) */
 const SHARE_PAGE = new URL('share.html', (document.currentScript && document.currentScript.src) || location.href).href;
+/*
+ * ระบบใหม่ (หน้าอ่านจาก wms-fire-src.js): ลิงก์ Supply chain ชี้เว็บแอปของ apps-script/fire-backup.gs ไม่ใช่ URL ของหน้า (fire:tx)
+ * URL เว็บแอปเก็บในเครื่องคนส่งลิงก์ (WmsSettings.shareUrl) ตั้งที่ ⚙ ข้างปุ่ม 🔗
+ */
+const FIRE = () => !SHARE && !!(window.WmsFireSrc && window.WmsFireSrc.owns(WmsSettings.txUrl()));
+let SHARE_SET = false;   // กล่องตั้ง URL เว็บแอปลิงก์แชร์ (ระบบใหม่)
+let SHARE_MSG = '';      // ผลทดสอบในกล่อง
+let SHARE_DRAFT = null;  // ที่พิมพ์ค้างในกล่อง (วาดแถบใหม่แล้วไม่หาย)
 
 /* แถวทั้งสมุดราวหนึ่งเมกะไบต์ เก็บแค่ในหน่วยความจำ ไม่ลงเครื่อง พื้นที่ในเครื่องใช้ร่วมกับหน้าอื่นที่เก็บของสำคัญกว่า */
 let RES = null;     // คำตอบ tx-fifo
@@ -109,6 +118,8 @@ async function load(fresh, quiet) {
     } else {
       res = await WmsShared.read(url, 'tx-fifo', opts);
     }
+    /* ลิงก์ Supply chain ของระบบใหม่: ชุดแชร์จาก fire-backup.gs คิด FIFO ในเครื่องด้วย wms-fire-core.js */
+    if (window.WmsFireShare && WmsFireShare.owns(res)) res = await WmsFireShare.fifo(res);
     if (res && res.busy && !res.rows) {
       WAIT = res.busy;
       WATCH.soon();
@@ -161,7 +172,8 @@ function renderSrc() {
     html += xlsx;
   } else if (url) {
     html += `<button id="loadBtn" class="${RES ? '' : 'p'}" ${BUSY || WAIT ? 'disabled' : ''}>${BUSY ? 'กำลังดึง…' : WAIT ? 'รอชุดใหม่…' : RES ? '🔄 ดึงใหม่' : '▶️ ดึงข้อมูล'}</button>`;
-    html += `<button id="shareBtn" title="คัดลอกลิงก์ให้ Supply chain เปิดดูรายงานนี้และดาวน์โหลด Excel เองได้ ไม่ต้องเข้าแอป — ใครได้ลิงก์ก็เปิดดูได้ ส่งเฉพาะทีม">${SHARE_LABEL}</button>`;
+    html += `<button id="shareBtn" title="คัดลอกลิงก์ให้ Supply chain เปิดดูรายงานนี้และดาวน์โหลด Excel เองได้ ไม่ต้องเข้าแอป — ใครได้ลิงก์ก็เปิดดูได้ ส่งเฉพาะทีม${FIRE() ? ' · ข้อมูลจากชุดแชร์ที่สคริปต์สำรองทำทุก 2 ชั่วโมง' : ''}">${SHARE_LABEL}</button>`;
+    if (FIRE()) html += `<button id="shareCfg" class="${SHARE_SET ? 'p' : ''}" title="URL เว็บแอปของสคริปต์สำรองระบบใหม่ (fire-backup.gs) ที่ลิงก์ Supply chain ใช้" aria-label="ตั้ง URL ลิงก์ Supply chain" aria-expanded="${SHARE_SET}">⚙</button>`;
     html += xlsx;
   } else if (SHARE) {
     html += '<span class="pill warn">ลิงก์ไม่ครบ — ขอลิงก์ใหม่จากคนที่ส่งให้</span>';
@@ -169,6 +181,7 @@ function renderSrc() {
     html += `<span class="pill">ยังไม่ได้ตั้ง Apps Script URL ของ Transaction — <a href="../settings/">ตั้งที่หน้าตั้งค่า</a></span>`;
   }
   if (ERR) html += `<div class="tx-err">ดึงข้อมูลไม่สำเร็จ: ${esc(ERR)}</div>`;
+  if (SHARE_SET && FIRE()) html += shareBox();
   $('src').innerHTML = html;
   const btn = $('loadBtn');
   if (btn) btn.onclick = () => load(!!RES);
@@ -176,6 +189,15 @@ function renderSrc() {
   if (x) x.onclick = downloadXlsx;
   const sh = $('shareBtn');
   if (sh) sh.onclick = copyShare;
+  const cfg = $('shareCfg');
+  if (cfg) cfg.onclick = () => { SHARE_SET = !SHARE_SET; SHARE_MSG = ''; SHARE_DRAFT = null; renderSrc(); if (SHARE_SET) $('shareUrl')?.focus(); };
+  const sv = $('shareSave');
+  if (sv) sv.onclick = saveShare;
+  const su = $('shareUrl');
+  if (su) {
+    su.oninput = () => { SHARE_DRAFT = su.value; };
+    su.onkeydown = (e) => { if (e.key === 'Enter') saveShare(); };
+  }
   const m = $('month');
   if (m) m.onchange = (e) => {
     MONTH = e.target.value;
@@ -574,14 +596,57 @@ async function downloadXlsx() {
 /**
  * ลิงก์ Supply chain: คัดลอกแล้วส่งทาง LINE หรืออีเมลได้เลย คนได้ลิงก์ดูรายงานและดาวน์โหลด Excel เองได้ อ่านอย่างเดียว
  * ลิงก์มี URL สคริปต์ Transaction ใครได้ไปก็อ่านข้อมูลสมุดได้ (แก้ชีตไม่ได้) จะตัดต้อง Deploy สคริปต์เป็น URL ใหม่
+ * ระบบใหม่: ลิงก์มี URL เว็บแอปของ fire-backup.gs (อ่านได้แค่ชุดแชร์) ยังไม่ได้ตั้ง = เปิดกล่องตั้ง URL
  */
 async function copyShare() {
   const btn = $('shareBtn');
-  const link = WmsFifo.shareLink(SHARE_PAGE, txUrl());
+  const base = FIRE() ? WmsSettings.shareUrl() : txUrl();
+  if (!base) {
+    SHARE_SET = true;
+    SHARE_MSG = 'ยังไม่ได้ตั้ง URL เว็บแอปของสคริปต์สำรอง วางแล้วกด ทดสอบและบันทึก ก่อนคัดลอกลิงก์';
+    renderSrc();
+    $('shareUrl')?.focus();
+    return;
+  }
+  const link = WmsFifo.shareLink(SHARE_PAGE, base);
   if (!(await copyText(link))) { prompt('คัดลอกลิงก์นี้ส่งให้ Supply chain', link); return; }
   btn.textContent = 'คัดลอกลิงก์แล้ว ส่งเฉพาะทีม Supply chain';
   window.WmsMotion?.saved(btn);
   setTimeout(() => { if (btn.isConnected) btn.textContent = SHARE_LABEL; }, 3000);
+}
+
+/** กล่องตั้ง URL เว็บแอปลิงก์แชร์ (ระบบใหม่) เต็มแถวใต้ปุ่ม */
+function shareBox() {
+  const v = SHARE_DRAFT ?? WmsSettings.shareUrl();
+  const bad = /^❌/.test(SHARE_MSG);
+  return `<div class="fi-shareset">
+    <label for="shareUrl"><b>URL ลิงก์ Supply chain</b> เว็บแอปของสคริปต์สำรอง fire-backup.gs (ลงท้าย /exec · คู่มือหัวข้อ 0.7)</label>
+    <div class="row"><input id="shareUrl" type="url" spellcheck="false" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(v)}">
+      <button id="shareSave" class="p">ทดสอบและบันทึก</button></div>
+    ${SHARE_MSG ? `<div class="msg${bad ? ' bad' : ''}" role="status">${esc(SHARE_MSG)}</div>` : ''}
+  </div>`;
+}
+
+/**
+ * ทดสอบก่อนบันทึก: ?api=shared-at ต้องตอบเป็นเว็บแอปของ fire-backup.gs (app transaction + fire)
+ * URL สคริปต์ Transaction เดิม (tx-api.gs) ไม่มี fire ไม่รับ ลิงก์ที่ได้จะไม่อ่านชีตเดิม
+ */
+async function saveShare() {
+  const u = ($('shareUrl')?.value || '').trim();
+  SHARE_DRAFT = u;
+  const say = (t) => { SHARE_MSG = t; renderSrc(); };
+  if (!/^https?:\/\/\S+$/.test(u)) { say('❌ ใส่ URL ของเว็บแอป (ขึ้นต้น https:// ลงท้าย /exec)'); return; }
+  say('⏳ กำลังทดสอบ…');
+  let st;
+  try { st = await WmsGas.json(u, 'shared-at', { retries: 0, timeoutMs: 30000 }); }
+  catch (e) { say(`❌ ต่อไม่ได้: ${e.message}`); return; }
+  if (!st || st.app !== 'transaction' || !st.fire) { say('❌ URL นี้ไม่ใช่เว็บแอปของ fire-backup.gs (สคริปต์สำรองระบบใหม่) — URL สคริปต์ Transaction เดิมใช้ไม่ได้'); return; }
+  if (!WmsSettings.setShareUrl(u)) { say('❌ บันทึกในเครื่องนี้ไม่ได้ (เบราว์เซอร์โหมดส่วนตัวหรือพื้นที่เต็ม)'); return; }
+  const at = st.shared && st.shared['tx-fifo'] && st.shared['tx-fifo'].at;
+  SHARE_DRAFT = null;
+  say(at
+    ? `✅ บันทึกแล้ว · ชุดแชร์ล่าสุด ${new Date(at).toLocaleString('th-TH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} · กด 🔗 คัดลอกลิงก์ส่งทีม`
+    : '⚠️ บันทึกแล้ว แต่สคริปต์ยังไม่มีชุดแชร์ — เรียกใช้ installShare ในสคริปต์หนึ่งครั้ง');
 }
 
 /* ── ปุ่มต่าง ๆ ────────────────────────────────────────────────────────── */

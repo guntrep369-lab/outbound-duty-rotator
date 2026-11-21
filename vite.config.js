@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { defineConfig } from 'vite';
-import { loadStocktake, fakeFifo, stocktakeMtime, loadStockApi, stockMtime, loadBook, bookMtime, fifoFromBook } from './src/dev/fake-gas.js';
+import { loadStocktake, fakeFifo, stocktakeMtime, loadStockApi, stockMtime, loadBook, bookMtime, fifoFromBook, fakeFireGcp, fireBackupMtime } from './src/dev/fake-gas.js';
 
 /**
  * GitHub Pages serves public/summary/index.html at /summary/, but Vite's dev
@@ -40,6 +40,10 @@ function folderIndex() {
  *   /__fake/book       รัน apps-script/book-api.gs ตัวจริงกับชีตในหน่วยความจำ (สมุดสต๊อก ตัดขาย)
  *                      คนสมมติ: ทดลอง รหัส 1111 (ลงรายการ) · หัวหน้าทดลอง รหัส 9999 (หัวหน้า) ข้อมูลหายเมื่อปิด dev server
  *                      ตั้งในหน้าสมุดสต๊อก ⚙️ = http://localhost:5173/__fake/book
+ *   /__fake/fire-share รัน apps-script/fire-backup.gs ตัวจริงกับ Firestore REST จำลอง (ลิงก์ Supply chain ของระบบใหม่)
+ *                      GET ?api=shared-at | tx-fifo = doGet ของเว็บแอป
+ *                      POST {op: 'dump', dump} = ใส่ฐานทดลอง (localStorage wms:fire:dev ของ ?fire=dev) แล้ว shareRefresh
+ *                      ตั้งที่ ⚙ ข้างปุ่ม 🔗 ในหน้า FIFO (?fire=dev) = http://localhost:5173/__fake/fire-share
  * ตั้งในหน้านับสต๊อกใหญ่: URL = http://localhost:5173/__fake/stocktake รหัส = demo-head
  * และ URL Transaction ในหน้าตั้งค่า = http://localhost:5173/__fake/tx
  */
@@ -53,6 +57,8 @@ function fakeGas() {
   let bk = null;
   let bkAt = 0;
   let bookLive = false;
+  let fsh = null;
+  let fshAt = 0;
   return {
     name: 'fake-gas',
     apply: 'serve',
@@ -129,6 +135,22 @@ function fakeGas() {
           let body = '';
           req.on('data', (c) => { body += c; });
           req.on('end', () => send(bk.post(JSON.parse(body || '{}'))));
+          return;
+        }
+        if (pathname === '/__fake/fire-share') {
+          /* แก้ .gs ระหว่างเปิด dev server = โหลดสคริปต์ใหม่ ข้อมูลกับไฟล์ชุดแชร์เดิมอยู่ครบ */
+          const mt = fireBackupMtime();
+          if (!fsh) { fsh = fakeFireGcp(); fshAt = mt; } else if (mt !== fshAt) { fsh.reload(); fshAt = mt; }
+          if (req.method !== 'POST') { res.setHeader('Content-Type', 'application/json; charset=utf-8'); return res.end(fsh.text(params)); }
+          let body = '';
+          req.on('data', (c) => { body += c; });
+          req.on('end', () => {
+            let b = {};
+            try { b = JSON.parse(body || '{}'); } catch (e) { b = {}; }
+            if (b.op !== 'dump' || !b.dump) return send({ error: 'ไม่รู้จักคำสั่งนี้' });
+            fsh.mirror(b.dump);
+            send(fsh.gs.shareRefresh());
+          });
           return;
         }
         if (pathname === '/__fake/stocktake') {

@@ -30,6 +30,15 @@
 .tx-src select{padding:4px 8px;border-radius:8px;border:1px solid var(--wms-border2);background:var(--wms-surface);
   font-family:var(--wms-font);font-size:13px;color:var(--wms-text)}
 .tx-err{width:100%;font-size:13px;color:#B91C1C;font-weight:600}
+/* กล่องตั้ง URL ลิงก์ Supply chain ของระบบใหม่ (⚙ ข้างปุ่ม 🔗) */
+.fi-shareset{width:100%;display:flex;flex-direction:column;gap:6px;padding:9px 11px;border:1px solid var(--wms-border);
+  border-radius:10px;background:var(--wms-surface);font-size:12px;color:var(--wms-muted)}
+.fi-shareset label b{color:var(--wms-text);font-weight:600}
+.fi-shareset .row{display:flex;gap:8px;align-items:center}
+.fi-shareset input{flex:1;min-width:0;padding:5px 10px;border-radius:8px;border:1px solid var(--wms-border2);
+  background:var(--wms-surface);font-family:var(--wms-font);font-size:13px;color:var(--wms-text)}
+.fi-shareset .msg{font-size:12px;color:var(--wms-text)}
+.fi-shareset .msg.bad{color:#B91C1C;font-weight:600}
 
 /* ── สรุปเดือน: ตารางเล็กสองตาราง แบบชีตสรุป (ผู้ใช้เลือกแบบนี้ 2026-11-17 แทนการ์ดสี่ใบ) ── */
 .fi-sum{display:flex;flex-wrap:wrap;align-items:flex-start;gap:10px 14px;padding:10px 20px;
@@ -202,6 +211,8 @@
   .tx-tabs{padding-left:12px;padding-right:12px}
   .tx-src button{min-height:44px;padding:0 16px}
   .tx-src select{min-height:44px;font-size:16px}
+  .fi-shareset .row{flex-wrap:wrap}
+  .fi-shareset input{flex:1 1 100%;min-height:44px;font-size:16px}
   .fi-mini{font-size:12px}
   .fi-mini th,.fi-mini td{padding:4px 7px}
   .fi-qc{min-height:36px;align-items:center}

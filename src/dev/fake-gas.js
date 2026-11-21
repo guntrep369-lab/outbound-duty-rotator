@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 import crypto from 'node:crypto';
+import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -431,4 +432,169 @@ export function fakeStockTabs() {
   stock.push(['ZZZ0000000001', 'สินค้าที่มีแต่ใน TRcloud สมมติ', 0, 4, 4]);
   loss.push(['YYY0000000001', 'ของค้างใน Loss สมมติ', 5]);
   return { Stock: stock, 'WH Loss': loss, ราคาทุน: cost };
+}
+
+/* ── สคริปต์สำรองระบบใหม่ (apps-script/fire-backup.gs) ──────────────────── */
+
+const FIRE_GS = path.resolve(HERE, '../../apps-script/fire-backup.gs');
+const FIRE_TIME = ['at', 'trAt', 'last', 'ckAt', 'apAt', 'okAt'];   // = TIME_KEYS ของ fire-backup.gs
+
+/** เวลาแก้ไฟล์ fire-backup.gs ล่าสุด dev server ใช้รู้ว่าต้องโหลดสคริปต์ใหม่ (ข้อมูลเดิมอยู่ครบ) */
+export function fireBackupMtime() {
+  try { return fs.statSync(FIRE_GS).mtimeMs; } catch (e) { return 0; }
+}
+
+/** ค่าธรรมดา (รูป memStore.dump) → ค่าของ Firestore REST (ช่องเวลาระดับบน → timestamp มีไมโครวินาทีแบบของจริง) */
+function fireRest(v, key) {
+  if (v === null || v === undefined) return { nullValue: null };
+  if (typeof v === 'boolean') return { booleanValue: v };
+  if (typeof v === 'number') {
+    if (key && FIRE_TIME.includes(key)) return { timestampValue: new Date(v).toISOString().replace('Z', '456Z') };
+    return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+  }
+  if (typeof v === 'string') return { stringValue: v };
+  if (Array.isArray(v)) return { arrayValue: { values: v.map((y) => fireRest(y)) } };
+  return { mapValue: { fields: Object.fromEntries(Object.entries(v).map(([k, y]) => [k, fireRest(y)])) } };
+}
+function firePlain(v) {
+  if ('stringValue' in v) return v.stringValue;
+  if ('integerValue' in v) return Number(v.integerValue);
+  if ('doubleValue' in v) return v.doubleValue;
+  if ('booleanValue' in v) return v.booleanValue;
+  if ('nullValue' in v) return null;
+  if ('timestampValue' in v) return Date.parse(v.timestampValue.replace(/(\.\d{3})\d+/, '$1'));
+  if ('arrayValue' in v) return (v.arrayValue.values || []).map(firePlain);
+  return Object.fromEntries(Object.entries(v.mapValue.fields || {}).map(([k, y]) => [k, firePlain(y)]));
+}
+
+/**
+ * โหลด fire-backup.gs ตัวจริงกับ Firestore REST จำลอง (ไม่ต่อเน็ต) และ Drive ในหน่วยความจำ ใช้สองที่
+ *   - เทสต์ชุดแชร์ (src/data/fire.test.js) · dev server /__fake/fire-share (ลองลิงก์ Supply chain ของระบบใหม่)
+ * project = รหัสโปรเจกต์ที่ใส่ใน FIREBASE_PROJECT_ID · over = ค่าคงที่ที่อยากเปลี่ยน เช่น { STOP_MS: -1 }
+ * คืน { gs: ฟังก์ชันของสคริปต์, mirror(dump), get(params) → JSON ของ doGet, calls, props, triggers, logs, folders, reload() }
+ * ห้ามเรียก URL อื่นนอกจาก Firestore REST จำลอง · ไม่มี SpreadsheetApp
+ */
+export function fakeFireGcp({ project = 'demo-src', over = {}, source } = {}) {
+  const projects = {}, calls = [];
+  const proj = (id) => projects[id] || (projects[id] = {});
+  const resp = (code, body) => ({ getResponseCode: () => code, getContentText: () => (body === undefined ? '' : JSON.stringify(body)) });
+  const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+  function fetch(url, opt) {
+    const m = /^https:\/\/firestore\.googleapis\.com\/v1\/projects\/([^/]+)\/databases\/\(default\)\/documents(.*)$/.exec(url);
+    if (!m) throw new Error('ห้ามเรียก ' + url);
+    const [, p, rest] = m;
+    if (opt.headers.Authorization !== 'Bearer token-ทดลอง' || opt.headers['X-Goog-User-Project'] !== p) return resp(403, { error: 'auth' });
+    calls.push([opt.method, p, rest]);
+    const db = proj(p), name = (x) => `projects/${p}/databases/(default)/documents/${x}`;
+    if (rest === ':commit') {
+      JSON.parse(opt.payload).writes.forEach((w) => { db[w.update.name.split('/documents/')[1]] = w.update.fields; });
+      return resp(200, { commitTime: 'x' });
+    }
+    if (rest === ':runQuery') {
+      const q = JSON.parse(opt.payload).structuredQuery, coll = q.from[0].collectionId;
+      let list = Object.keys(db).filter((k) => k.split('/')[0] === coll).map((k) => ({ path: k, f: db[k] }));
+      const f = q.where && q.where.fieldFilter, field = f ? f.field.fieldPath : '';
+      if (f) {
+        const want = firePlain(f.value);
+        list = list.filter((d) => d.f[field] && (f.op === 'GREATER_THAN' ? firePlain(d.f[field]) > want : firePlain(d.f[field]) >= want));
+        list.sort((a, b) => cmp(firePlain(a.f[field]), firePlain(b.f[field])) || cmp(name(a.path), name(b.path)));
+      } else list.sort((a, b) => cmp(a.path, b.path));
+      if (q.startAt) {
+        const [cv, cr] = q.startAt.values, c = firePlain(cv);
+        list = list.filter((d) => { const v = firePlain(d.f[field]); return v > c || (v === c && name(d.path) > cr.referenceValue); });
+      }
+      list = list.slice(0, q.limit || list.length);
+      return resp(200, list.length ? list.map((d) => ({ document: { name: name(d.path), fields: d.f }, readTime: 'x' })) : [{ readTime: 'x' }]);
+    }
+    const lm = /^\/([^/?]+)\?pageSize=(\d+)(?:&pageToken=(\d+))?$/.exec(rest);
+    if (lm) {
+      const all = Object.keys(db).filter((k) => k.split('/')[0] === lm[1]).sort(), from = +(lm[3] || 0), size = +lm[2];
+      const page = all.slice(from, from + size);
+      const out = { documents: page.map((k) => ({ name: name(k), fields: db[k] })) };
+      if (from + size < all.length) out.nextPageToken = String(from + size);
+      return resp(200, page.length ? out : {});
+    }
+    const docPath = rest.slice(1).split('/').map(decodeURIComponent).join('/');
+    return db[docPath] ? resp(200, { name: name(docPath), fields: db[docPath] }) : resp(404, { error: { code: 404 } });
+  }
+
+  /* Blob แบบ Apps Script เท่าที่สคริปต์ใช้ (ข้อความเป็น UTF-8) */
+  const blob = (data, type = '') => {
+    const bytes = Buffer.isBuffer(data) ? data : typeof data === 'string' ? Buffer.from(data, 'utf8') : Buffer.from(data);
+    return { bytes, getBytes: () => bytes, getContentType: () => type, getDataAsString: () => bytes.toString('utf8') };
+  };
+  const iter = (list) => { let i = 0; return { hasNext: () => i < list.length, next: () => list[i++] }; };
+  const folders = [], files = [];
+  let n = 0;
+  const mkFile = (fname, content, type) => {
+    const file = { id: 'file' + ++n, name: fname, content: String(content), type, writes: 1 };
+    Object.assign(file, {
+      getId: () => file.id, getName: () => file.name, isTrashed: () => false, getBlob: () => blob(file.content, file.type),
+      setContent: (c) => { file.content = String(c); file.writes++; return file; },
+    });
+    files.push(file);
+    return file;
+  };
+  const mkFolder = (fname) => {
+    const f = { id: 'folder' + ++n, name: fname, files: [] };
+    Object.assign(f, {
+      getId: () => f.id, isTrashed: () => false, getFiles: () => iter(f.files.slice()),
+      getFilesByName: (x) => iter(f.files.filter((y) => y.name === x)),
+      createFile: (x, content, type) => { const file = mkFile(x, content, type); f.files.push(file); return file; },
+    });
+    folders.push(f);
+    return f;
+  };
+  const props = {}, triggers = [], logs = [];
+  const ctx = {
+    UrlFetchApp: { fetch },
+    ScriptApp: {
+      getOAuthToken: () => 'token-ทดลอง',
+      getProjectTriggers: () => triggers.slice(),
+      deleteTrigger: (t) => triggers.splice(triggers.indexOf(t), 1),
+      newTrigger: (h) => {
+        const t = { h, getHandlerFunction: () => h };
+        const c = { timeBased: () => c, atHour: (x) => { t.hour = x; return c; }, everyDays: (x) => { t.days = x; return c; },
+          everyHours: (x) => { t.hours = x; return c; }, create: () => { triggers.push(t); return t; } };
+        return c;
+      },
+    },
+    DriveApp: {
+      getFolderById: (id) => { const f = folders.find((x) => x.id === id); if (!f) throw new Error('ไม่มีโฟลเดอร์'); return f; },
+      getFileById: (id) => { const f = files.find((x) => x.id === id); if (!f) throw new Error('ไม่มีไฟล์'); return f; },
+      getFoldersByName: (x) => iter(folders.filter((f) => f.name === x)),
+      createFolder: mkFolder,
+    },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null), setProperty: (k, v) => { props[k] = String(v); }, deleteProperty: (k) => { delete props[k]; } }) },
+    Utilities: {
+      formatDate,
+      newBlob: blob,
+      gzip: (b) => blob(zlib.gzipSync(b.bytes), 'application/x-gzip'),
+      ungzip: (b) => blob(zlib.gunzipSync(b.bytes)),
+      base64Encode: (x) => Buffer.from(x).toString('base64'),
+      base64Decode: (s) => Buffer.from(String(s), 'base64'),
+    },
+    ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (t) => ({ text: t, setMimeType() { return this; } }) },
+    Logger: { log: (s) => logs.push(String(s)) },
+  };
+  const NAMES = ['installBackup', 'stopBackup', 'backupNightly', 'backupFull', 'restoreAll', 'installShare', 'stopShare', 'shareRefresh', 'doGet'];
+  const out = { projects, calls, folders, files, props, triggers, logs, gs: null };
+  out.reload = () => {
+    let src = (source || fs.readFileSync(FIRE_GS, 'utf8')).replace("var FIREBASE_PROJECT_ID = '';", `var FIREBASE_PROJECT_ID = '${project}';`);
+    Object.entries(over).forEach(([k, v]) => { src = src.replace(new RegExp(`var ${k} = [^;]+;`), `var ${k} = ${v};`); });
+    const c = vm.createContext({ ...ctx });
+    vm.runInContext(src, c);
+    out.gs = Object.fromEntries(NAMES.map((k) => [k, c[k]]));
+    return out.gs;
+  };
+  /** ใส่ข้อมูลรูป memStore.dump() ลงโปรเจกต์ (ไม่เอาตัวนับการใช้ use/) แทนของเดิมทั้งหมด */
+  out.mirror = (dump) => {
+    projects[project] = Object.fromEntries(Object.entries(dump || {}).filter(([k]) => !k.startsWith('use/'))
+      .map(([k, d]) => [k, Object.fromEntries(Object.entries(d).map(([f, v]) => [f, fireRest(v, f)]))]));
+  };
+  /** doGet ของเว็บแอป → ข้อความที่ตอบ (JSON) */
+  out.text = (params = {}) => out.gs.doGet({ parameter: params }).text;
+  out.get = (params = {}) => JSON.parse(out.text(params));
+  out.reload();
+  return out;
 }

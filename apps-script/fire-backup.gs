@@ -1,5 +1,6 @@
 /**
- * fire-backup.gs — สำรองระบบใหม่ (Firebase) ลง Google Drive ทุกคืน และกู้คืนลงโปรเจกต์ใหม่ที่ว่าง
+ * fire-backup.gs — สำรองระบบใหม่ (Firebase) ลง Google Drive ทุกคืน กู้คืนลงโปรเจกต์ใหม่ที่ว่าง
+ *                  และทำชุดแชร์ให้ลิงก์ Supply chain (รายงาน FIFO ไม่ต้องเข้าระบบ) ทุก 2 ชั่วโมง
  *
  * Firebase แผนฟรี (Spark) ไม่มีระบบสำรองให้ สคริปต์นี้อ่านข้อมูลผ่าน Firestore REST ด้วยสิทธิ์ของบัญชีที่รัน
  * (ต้องเป็น Owner หรือ Editor ของโปรเจกต์ Firebase) ไม่ผ่าน Rules ของหน้าเว็บ
@@ -38,6 +39,15 @@
  *  4. ใส่ config ของโปรเจกต์ใหม่ในหน้าเว็บ ทุกเครื่องโหลดสำเนาใหม่เอง
  *  โปรเจกต์ที่มีเอกสารหรือ meta/head อยู่แล้ว สคริปต์ไม่เขียนทับ
  *
+ * ── ลิงก์ Supply chain (รายงาน FIFO ไม่ต้องเข้าระบบ แทนลิงก์เดิมที่อ่านชีต Transaction) ──
+ *  1. เลือกฟังก์ชัน installShare → เรียกใช้ ได้ตั้งเวลาทำชุดแชร์ทุก 2 ชั่วโมง + ทำครั้งแรกทันที
+ *     (ไฟล์ SHARE_FILE ในโฟลเดอร์เดียวกับไฟล์สำรอง ครั้งแรกอ่านเท่าจำนวนเอกสาร ครั้งต่อไปเฉพาะเอกสารใหม่)
+ *  2. ทำให้ (Deploy) → การทำให้ใช้งานได้รายการใหม่ (New deployment) → ประเภท เว็บแอป (Web app)
+ *     ดำเนินการในฐานะ: ฉัน (Me) · ผู้มีสิทธิ์เข้าถึง: ทุกคน (Anyone) → คัดลอก URL ของเว็บแอป (ลงท้าย /exec)
+ *  3. หน้า FIFO สต๊อก (ระบบใหม่) → ⚙ ข้างปุ่ม 🔗 ลิงก์ Supply chain → วาง URL → ทดสอบและบันทึก → กด 🔗 คัดลอกลิงก์ส่งทีม
+ *  ลิงก์หลุดไปคนนอก: จัดการการทำให้ใช้งานได้ → เก็บถาวรตัวเดิม → ทำรายการใหม่ ได้ URL ใหม่ → วางใหม่ในหน้า FIFO แล้วส่งลิงก์ใหม่
+ *  เว็บแอปตอบแค่ชุดแชร์ (doGet) ไม่มีคำสั่งเขียน ไม่ส่งไฟล์สำรอง ชุดแชร์ไม่มีชื่อคน อีเมล ออเดอร์
+ *
  * ไฟล์สำรองมีรายชื่อคนใช้และยอดสต๊อกทั้งหมด (ไม่มีรหัสผ่านหรือคีย์) เก็บโฟลเดอร์ไว้ในที่ที่คนนอกเข้าไม่ได้
  */
 
@@ -55,6 +65,12 @@ var STOP_MS = 270000;           // 4 นาทีครึ่ง (Apps Script �
 var TR_MARGIN = 600000;         // อ่านเลข TRcloud ย้อน 10 นาทีกันพลาด
 var WRITE_MAX = 300;            // เขียนต่อครั้ง (Firestore รับ 500)
 var WRITE_BYTES = 6000000;      // ขนาดต่อครั้ง (Firestore รับ 10 MiB)
+
+var SHARE_FILE = 'wms-fire-share.txt';   // ชุดแชร์ของลิงก์ Supply chain (ไม่ใช่ไฟล์สำรอง restoreAll ไม่อ่าน)
+var SHARE_KIND = 'wms-fire-share';
+var SHARE_HOURS = 2;                     // ทำชุดแชร์ทุก 2 ชั่วโมง (ไม่มีเอกสารใหม่ = อ่าน 1 ครั้ง)
+var SHARE_MASTERS = ['conv', 'sup', 'cap'];                          // ตารางหลักที่หน้า FIFO ใช้
+var SHARE_MASTER_KEYS = ['tab', 'cols', 'rows', 'dup', 'blank', 'n'];   // ไม่เอาชื่อ / อีเมลคนนำเข้า
 
 /* ── ตั้งเวลา ─────────────────────────────────────────────────────────── */
 
@@ -300,6 +316,162 @@ function empty_(p) {
   if (get_(p, 'meta/head')) return false;
   var res = rest_(p, 'post', base_(p) + ':runQuery', { structuredQuery: { from: [{ collectionId: 'docs' }], limit: 1 } }) || [];
   return !res.some(function (r) { return r.document; });
+}
+
+/* ── ลิงก์ไม่ต้องเข้าระบบ (รายงาน FIFO ของ Supply chain) ─────────────── */
+
+/*
+ * ชุดแชร์ = เอกสารที่ยังนับ (ตั้งแต่ยอดยกมาล่าสุด) เฉพาะช่องที่ใช้คิด FIFO + ตารางหลัก (แปลงสินค้า · PO. Truck · ความจุต่อพาเลท)
+ * ไม่มีชื่อคน อีเมล ออเดอร์ การตรวจ / อนุมัติ · เก็บเป็นไฟล์เดียว (บีบอัด) ในโฟลเดอร์สำรอง
+ * แต่ละรอบอ่านเฉพาะเอกสารใหม่ต่อจากรอบก่อน เอกสารเดิมแก้แถวไม่ได้ (ยกเลิก = เอกสารกลับรายการใบใหม่) ชุดแชร์จึงไม่ต้องอ่านซ้ำ
+ * หน้า fifo/share.html ขอผ่าน doGet แล้วคิดตัวเลขเองด้วย wms-fire-core.js ตัวเดียวกับหน้าในแอป (wms-fire-share.js)
+ */
+
+/** ตั้งเวลาทำชุดแชร์ทุก SHARE_HOURS ชั่วโมง แล้วทำครั้งแรกทันที */
+function installShare() {
+  need_(FIREBASE_PROJECT_ID, 'ใส่ FIREBASE_PROJECT_ID ก่อน');
+  stopShare();
+  ScriptApp.newTrigger('shareRefresh').timeBased().everyHours(SHARE_HOURS).create();
+  log_('ตั้งเวลาทำชุดแชร์ทุก ' + SHARE_HOURS + ' ชั่วโมงแล้ว');
+  return shareRefresh();
+}
+
+/** เลิกทำชุดแชร์อัตโนมัติ (ลิงก์ยังเปิดได้ เห็นชุดล่าสุดที่ทำไว้) */
+function stopShare() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'shareRefresh') ScriptApp.deleteTrigger(t);
+  });
+}
+
+/** ทำชุดแชร์จากของที่เพิ่มตั้งแต่รอบก่อน (ยังไม่มีไฟล์ = อ่านทั้งหมด) · เกินเวลาหยุดเอง รอบหน้าทำต่อ */
+function shareRefresh() {
+  need_(FIREBASE_PROJECT_ID, 'ใส่ FIREBASE_PROJECT_ID ก่อน');
+  var t0 = Date.now(), p = FIREBASE_PROJECT_ID;
+  var meta = get_(p, 'meta/head'), reads = 1;
+  if (!meta) { log_('ยังไม่มี meta/head ในโปรเจกต์ ' + p + ' (ยังไม่ได้ลงยอดยกมา) ยังไม่มีอะไรให้แชร์'); return { empty: true }; }
+  var seq = +meta.seq || 0, mv = +meta.mv || 0, open = meta.open ? +meta.open.seq || 0 : 0;
+  var cur = shareLoad_();
+  if (!cur || cur.project !== p) cur = { kind: SHARE_KIND, v: 1, project: p, upto: 0, seq: 0, mv: -1, open: 0, docs: {}, master: {} };
+  if (cur.upto >= seq && cur.mv === mv && cur.open === open) {
+    log_('ชุดแชร์เป็นปัจจุบันแล้ว (ไม่มีเอกสารใหม่) · อ่าน 1 ครั้ง');
+    return { same: true, docs: Object.keys(cur.docs).length, reads: reads };
+  }
+
+  /* เอกสารใหม่ตาม seq · เอกสารใหญ่ต่อแถวของส่วนแยก (~2 ~3) ท้ายเอกสารหลัก แบบ docIn ของหน้าเว็บ */
+  var got = pages_(p, 'seq', { integerValue: String(cur.upto) }, 'GREATER_THAN', t0);
+  reads += got.reads;
+  var seqMax = cur.upto, byId = {};
+  got.docs.forEach(function (d) {
+    var m = /^docs\/([^~]+)(?:~(\d+))?$/.exec(d.path);
+    if (!m) return;
+    if (+d.data.seq > seqMax) seqMax = +d.data.seq;
+    var e = byId[m[1]] || (byId[m[1]] = { parts: [] });
+    if (m[2]) e.parts.push({ i: +m[2], rows: d.data.rows || '' });
+    else e.main = d.data;
+  });
+  /* หยุดกลางทาง: ใบสุดท้ายอาจยังได้ส่วนแยกไม่ครบ ไม่ใส่ รอบหน้าอ่านใบนั้นใหม่ */
+  var upto = got.more ? Math.max(cur.upto, seqMax - 1) : seqMax, added = 0;
+  Object.keys(byId).forEach(function (id) {
+    var d = byId[id].main;
+    if (!d || +d.seq > upto) return;
+    var rows = d.rows || '';
+    byId[id].parts.sort(function (a, b) { return a.i - b.i; }).forEach(function (x) {
+      if (x.rows) rows = rows ? rows + '\n' + x.rows : x.rows;
+    });
+    cur.docs[id] = { seq: +d.seq || 0, row: +d.row || 0, type: d.type || '', rows: rows, names: d.names || '' };
+    added++;
+  });
+  /* ลงยอดยกมาใหม่ = เอกสารก่อนหน้าไม่นับแล้ว (แบบ liveDocs) */
+  Object.keys(cur.docs).forEach(function (id) { if (cur.docs[id].seq < open) delete cur.docs[id]; });
+
+  if (cur.mv !== mv) {
+    var ms = list_(p, 'master', 5);
+    reads += ms.reads;
+    cur.master = {};
+    ms.docs.forEach(function (d) {
+      var name = d.path.split('/')[1];
+      if (SHARE_MASTERS.indexOf(name) < 0) return;
+      var o = {};
+      SHARE_MASTER_KEYS.forEach(function (k) { if (d.data[k] !== undefined && d.data[k] !== null) o[k] = d.data[k]; });
+      cur.master[name] = o;
+    });
+    cur.mv = mv;
+  }
+  cur.seq = seq;
+  cur.open = open;
+  cur.upto = upto;
+  cur.made = Date.now();
+  shareSave_(cur);
+  PropertiesService.getScriptProperties().setProperty('fs.made', String(cur.made));
+  var docs = Object.keys(cur.docs).length;
+  log_('ชุดแชร์ ' + SHARE_FILE + ' · เอกสารใหม่ ' + added + ' ใบ · ทั้งชุด ' + docs + ' ใบ · อ่าน ' + reads + ' ครั้ง' +
+    (got.more ? ' · ยังไม่ครบ (เกินเวลา) รอบหน้าทำต่อจาก seq ' + upto : ''));
+  return { added: added, docs: docs, reads: reads, more: got.more, seq: upto };
+}
+
+/**
+ * เว็บแอป (ผู้มีสิทธิ์เข้าถึง: ทุกคน) ตอบหน้า fifo/share.html อย่างเดียว
+ *   ?api=shared-at  เวลาของชุดล่าสุด (หน้าแชร์ถามทุกนาที อ่านแค่ Script Properties ไม่เปิดไฟล์)
+ *   ?api=tx-fifo    ชุดแชร์ตามที่เก็บในไฟล์ {app: 'fire-share', v, made, gz}
+ * ไม่มีคำสั่งเขียน ไม่ส่งไฟล์สำรอง · ใครได้ URL ไปอ่านชุดแชร์ได้ ส่งเฉพาะทีมที่ใช้
+ */
+function doGet(e) {
+  var api = String((e && e.parameter && e.parameter.api) || '');
+  var text;
+  try { text = shareGet_(api); }
+  catch (err) { text = JSON.stringify({ error: String((err && err.message) || err) }); }
+  return ContentService.createTextOutput(text).setMimeType(ContentService.MimeType.JSON);
+}
+
+function shareGet_(api) {
+  var made = +PropertiesService.getScriptProperties().getProperty('fs.made') || 0;
+  if (api === 'shared-at') {
+    var shared = {};
+    if (made) shared['tx-fifo'] = { at: made, auto: 1 };
+    return JSON.stringify({ app: 'transaction', fire: 1, shared: shared, run: {} });
+  }
+  if (api !== 'tx-fifo') return JSON.stringify({ error: 'ไม่รู้จักคำสั่งนี้' });
+  var f = made ? shareFile_() : null;
+  if (!f) return JSON.stringify({ app: 'fire-share', error: 'ข้อมูลยังไม่พร้อม แจ้งคนที่ส่งลิงก์ให้' });
+  return f.getBlob().getDataAsString('UTF-8');
+}
+
+/** ชุดแชร์ที่ทำไว้ (แตกไฟล์แล้ว) · ไม่มีหรืออ่านไม่ได้ = null (รอบนี้ทำใหม่ทั้งหมด) */
+function shareLoad_() {
+  var f = shareFile_();
+  if (!f) return null;
+  try {
+    var w = JSON.parse(f.getBlob().getDataAsString('UTF-8'));
+    var gz = Utilities.newBlob(Utilities.base64Decode(w.gz), 'application/x-gzip');
+    var cur = JSON.parse(Utilities.ungzip(gz).getDataAsString('UTF-8'));
+    return cur && cur.kind === SHARE_KIND && +cur.v === 1 && cur.docs ? cur : null;
+  } catch (e) {
+    log_('อ่านชุดแชร์เดิมไม่ได้ (' + e.message + ') ทำใหม่ทั้งหมด');
+    return null;
+  }
+}
+
+/** เก็บชุดแชร์เป็นไฟล์ข้อความ JSON ที่ doGet ส่งต่อได้ทันที (gz = ชุดแชร์บีบอัดแล้วเข้ารหัส base64) */
+function shareSave_(cur) {
+  var gz = Utilities.gzip(Utilities.newBlob(JSON.stringify(cur), 'application/json'));
+  var text = JSON.stringify({ app: 'fire-share', v: 1, made: cur.made, gz: Utilities.base64Encode(gz.getBytes()) });
+  var f = shareFile_();
+  if (f) { f.setContent(text); return; }
+  f = folder_(true).createFile(SHARE_FILE, text, 'text/plain');
+  PropertiesService.getScriptProperties().setProperty('fs.file', f.getId());
+}
+
+/** ไฟล์ชุดแชร์ในโฟลเดอร์สำรอง (จำรหัสไว้) · ยังไม่มี = null */
+function shareFile_() {
+  var props = PropertiesService.getScriptProperties(), id = props.getProperty('fs.file'), f;
+  if (id) { try { f = DriveApp.getFileById(id); if (!f.isTrashed()) return f; } catch (e) {} }
+  var folder = folder_(false);
+  if (!folder) return null;
+  var it = folder.getFilesByName(SHARE_FILE);
+  if (!it.hasNext()) return null;
+  f = it.next();
+  props.setProperty('fs.file', f.getId());
+  return f;
 }
 
 /* ── Firestore REST ──────────────────────────────────────────────────── */
