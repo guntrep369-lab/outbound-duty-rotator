@@ -246,7 +246,7 @@
     return IDX.by[no] || null;
   }
 
-  var SETUP_C = null, STOCK_C = null, NAMES_C = null;   // ข้อมูลหลักที่อ่านแล้ว (คิดใหม่เมื่อตารางเปลี่ยน) · ยอดต่อโล / SKU (คิดใหม่เมื่อมีเอกสารใหม่)
+  var SETUP_C = null, STOCK_C = null, NAMES_C = null, OCC_C = null;   // ข้อมูลหลักที่อ่านแล้ว (คิดใหม่เมื่อตารางเปลี่ยน) · ยอดต่อโล / SKU · ของในแต่ละโล (คิดใหม่เมื่อมีเอกสารใหม่)
 
   window.BookFire = {
     ready: ready,
@@ -373,6 +373,18 @@
       if (!S || !l) return {};
       if (!NAMES_C || NAMES_C.l !== l || NAMES_C.seq !== l.seq) NAMES_C = { l: l, seq: l.seq, m: S.namesOf(l) };
       return NAMES_C.m;
+    },
+    /** ของในแต่ละโล { LOC: { q, piles } } (ระบบเลือกแร็คดูว่าช่องไหนว่าง) */
+    setupOcc: function () {
+      var S = window.WmsFireSetup, l = fire ? fire.local() : null;
+      if (!S || !l) return {};
+      if (!OCC_C || OCC_C.l !== l || OCC_C.seq !== l.seq) OCC_C = { l: l, seq: l.seq, occ: S.occOf(l) };
+      return OCC_C.occ;
+    },
+    /** ตัวเลือกแร็คใหม่ทุกครั้ง (จองช่องในตัวเอง) · t = ตาราง (ไม่ใส่ = ที่บันทึกแล้ว) · opt.over */
+    setupPicker: function (t, opt) {
+      var S = window.WmsFireSetup, B = window.BookFire, su = B.setup();
+      return S && su ? S.picker(t || su.t, B.setupOcc(), opt) : null;
     },
     setupSave: async function (kind, rows, opt) { await ready; return fire.setupSave(kind, rows, opt); },
     /** ดึงเอกสาร / ตารางใหม่จากฐาน (ตารางที่คนอื่นเพิ่งบันทึก) */

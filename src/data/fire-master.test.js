@@ -1,6 +1,7 @@
 /**
  * ระบบใหม่ ข้อมูลหลัก: public/wms-fire-setup.js + setupSave ของ wms-fire.js กับ store จำลอง
  * ขั้น ก Location · SKU · กลุ่มสินค้า · ขั้น ข แปลงสินค้า · Supplier (PO) · SKU : Pallet (รูปเก็บเดิม fifo อ่านเหมือนเดิม)
+ * ขั้น ค โซนแร็ค + ระบบเลือกแร็คตอนรับของ
  * ตรวจตาราง · บันทึกทั้งตาราง (รุ่น ประวัติ สองคนแก้พร้อมกัน) · พบในสมุดแต่ยังไม่มีในตาราง · เตือน / ห้าม ตอนลงใบ
  * ข้อมูลทั้งหมดสมมติขึ้น repo นี้เป็นสาธารณะ ไม่มีการเรียก Firebase จริง
  */
@@ -415,6 +416,191 @@ describe('ขั้น ข: แปลงสินค้า · Supplier (PO) · S
   });
 });
 
+describe('ขั้น ค: โซนแร็ค + ระบบเลือกแร็ค', () => {
+  const zr = (r1, r2, l1, l2, grp, note = '') => ({ r1, r2, l1, l2, grp, note });
+  const RLOCS = [];
+  [[1, 3], [2, 2]].forEach(([r, bays]) => {
+    for (let b = 1; b <= bays; b++) for (let l = 1; l <= 2; l++) RLOCS.push(loc(`R0${r}-0${b}-${l}`, '1'));
+  });
+  const tables = (zone = [zr('R02', '', '1', '1', 'm6')]) => ({
+    loc: { rows: RLOCS.concat([loc('R03-01-1', '1', false), loc('A-01-01', '4'), loc('A-01-02', '4'), loc('D-01-01')]) },
+    sku: { rows: [sku('AAA001', 'AAA0000000001', 'ที่นอน', 'm6'), sku('BBB002', '', 'ท็อป', 'tp'), sku('CCC004', '', 'แถม', 'gf'),
+      sku('EEE005', '', 'ที่นอน 3.5', 'm35'), sku('FFF006', '', 'โซฟา', 'sb'), sku('GGG007', '', 'ไม่มีกลุ่ม', '')] },
+    grp: { rows: SU.defaults() },
+    cap: { rows: [{ sku: 'AAA001', pid: 'AAA0000000001', cap: '10' }, { sku: 'BBB002', pid: '', cap: '20' }, { sku: 'FFF006', pid: '', cap: '1' }] },
+    zone: { rows: zone },
+  });
+  const OCC = {
+    'R01-01-1': { q: 10, piles: [{ sku: 'AAA001', long: 'AAA0000000001', lot: '8', po: 'P1', q: 10 }] },
+    'A-01-01': { q: 2, piles: [{ sku: 'FFF006', long: '', lot: '3', po: 'P9', q: 2 }] },
+  };
+  const go = (row, zone, opt) => SU.pick(SU.picker(tables(zone), OCC, opt), row);
+  const where = (r) => r.lines.map((l) => [l.loc, l.qty, l.tag]);
+  const said = (w) => w.map((x) => x.lv + ' ' + x.t).join(' | ');
+
+  it('ช่วงแร็ค: แร็คถึงว่าง = แร็คเดียว · ชั้นว่าง = ทุกชั้น · อ่านไม่ออกไม่เดา', () => {
+    expect(SU.rowOut('zone', SU.rowIn('zone', ['r1', '3', '', '', 'm6', 'x']))).toEqual(['R01', 'R03', '', '', 'm6', 'x']);
+    expect(SU.zoneLabel(zr('R1', '3', '', '', 'm6'))).toBe('R01–R03 · ทุกชั้น');
+    expect(SU.zoneLabel(zr('R08', '', '2', '', 'tp'))).toBe('R08 · ชั้น 2');
+    expect(SU.span(zr('R01', '', '', '3', 'tp'))).toMatchObject({ r1: 1, r2: 1, l1: 3, l2: 3, ok: true });
+    [zr('R01-R03', '', '', '', 'm6'), zr('R01', 'ท้ายแถว', '', '', 'm6'), zr('R01', '', '2-3', '', 'tp'), zr('R01', '', '0', '', 'tp')]
+      .forEach((z) => expect(SU.span(z).ok, JSON.stringify(z)).toBe(false));
+    expect(SU.rackText('R01-R03')).toBe('R01-R03');
+  });
+
+  it('ตรวจโซน: ช่วงผิด / กลุ่มไม่ขึ้นแร็ค = แดง · ผิดชั้น / ทับแถวบน = ส้ม', () => {
+    const list = [zr('R01', 'R03', '1', '1', 'm6'), zr('R02', 'R04', '1', '2', 'm5'), zr('R05', '', '2', '3', 'sb'), zr('', 'R06', '2', '3', 'm35'),
+      zr('R09', 'R07', '2', '3', 'm35'), zr('R10', '', '1', '1', 'm35'), zr('R11', 'R12', '', '', 'tp'), zr('R13', '', '', '', ''),
+      zr('', '', '', '', ''), zr('R14', '', '2', '3', 'xx'), zr('R15', 'ท้ายแถว', '', '', 'tp'), zr('R16', '', '2-3', '', 'tp')];
+    const v = SU.validate('zone', list, { grp: { rows: SU.defaults() }, loc: { rows: RLOCS } });
+    const w = v.rows.map(said);
+    expect(w[0]).toContain('info ทับกับ R02–R04');
+    expect(w[1]).toContain('warn ทับกับ R01–R03');
+    expect(w[1]).toContain('info ใช้แค่ชั้น 1');
+    expect(w[2]).toContain('red Sofa Bed ไม่ขึ้นแร็ค');
+    expect(w[3]).toContain('red ใส่แร็คจาก');
+    expect(w[4]).toContain('red แร็คจาก มากกว่า แร็คถึง');
+    expect(w[5]).toContain('warn ที่นอน 3.5 ฟุต ลงชั้น 1 ไม่ได้');
+    expect(w[6]).toBe('info ยังไม่มี Location แร็คในช่วงนี้');
+    expect(w[7]).toContain('red เลือกกลุ่ม');
+    expect(w[8]).toBe('');
+    expect(w[9]).toContain('warn ไม่มีกลุ่มนี้แล้ว');
+    expect(w[10]).toContain('red แร็คถึง ใส่แบบ R03');
+    expect(w[11]).toContain('red ชั้น ใส่เป็นตัวเลข');
+    expect([v.bad, v.warn]).toEqual([6, 3]);
+    const dup = SU.validate('zone', [zr('R01', 'R02', '1', '1', 'm6'), zr('r1', '2', '1', '', 'm5')]);
+    expect(dup.bad).toBe(2);
+  });
+
+  it('โซนทุกชั้น กินเฉพาะชั้นที่กลุ่มใส่ได้: สองกลุ่มคนละชั้นในแร็คเดียวกันไม่ทับกัน', () => {
+    const z = [zr('R02', '', '', '', 'm6'), zr('R02', '', '2', '', 'tp')];
+    expect(said(SU.validate('zone', z, { grp: { rows: SU.defaults() } }).rows[1])).not.toContain('ทับ');
+    const P = SU.picker(tables(z), {});
+    expect(SU.zoneAt(P.zx, 2, 1).g.id).toBe('m6');
+    expect(SU.zoneAt(P.zx, 2, 2).g.id).toBe('tp');
+    expect(SU.zoneAt(P.zx, 1, 1)).toBe(null);
+  });
+
+  it('เอกสาร: แถวว่างตัดทิ้ง · คงลำดับแถว · สลับแถว = เปลี่ยน · แถวแดงไม่บันทึก', () => {
+    const rows = [zr('R05', '', '', '', 'tp', 'ท็อป'), zr('', '', '', '', ''), zr('r1', '3', '1', '1', 'm6')];
+    const d = SU.docOf('zone', rows, { by: HEAD, at: NOW, base: 0 }, null).data;
+    expect(d).toMatchObject({ tab: 'โซนแร็ค', n: 2, strict: 0, ver: 1 });
+    expect(C.dec(d.rows)).toEqual([['R05', '', '', '', 'tp', 'ท็อป'], ['R01', 'R03', '1', '1', 'm6', '']]);
+    expect(SU.docOf('zone', [rows[0], rows[2]], { at: NOW, base: 1 }, d).error).toMatch(/ไม่มีอะไรเปลี่ยน/);
+    expect(SU.docOf('zone', [rows[2], rows[0]], { at: NOW, base: 1 }, d).data.hist[0].text).toContain('เรียงลำดับใหม่');
+    expect(SU.docOf('zone', [zr('', 'R02', '1', '1', 'm6')], { base: 0 }, null).error).toMatch(/แก้แถวสีแดง 1 แถว/);
+    expect(SU.found('zone', [], { piles: {}, docs: [] })).toEqual([]);
+  });
+
+  it('ลำดับช่อง: โซนตัวเอง → ไม่ระบุกลุ่ม · เศษลงช่องของตัวเอง', () => {
+    const r = go({ sku: 'AAA001', qty: '25' });
+    expect([r.pcs, r.full, r.rem]).toEqual([10, 2, 5]);
+    expect(where(r)).toEqual([['R02-01-1', 10, 1], ['R02-02-1', 10, 2], ['R01-02-1', 5, 3]]);
+    expect(r.lines[0].why).toBe('โซน ที่นอน 6 ฟุต · ชั้น 1');
+    expect(r.lines[2].why).toContain('ช่องไม่ระบุกลุ่ม');
+  });
+
+  it('ชั้น 2 ขึ้นไป เศษไป RIB · ไม่ขึ้นแร็คไปพื้นของกลุ่ม', () => {
+    expect(where(go({ sku: 'BBB002', qty: '50' }))).toEqual([['R01-01-2', 20, 1], ['R01-02-2', 20, 2], ['RIB', 10, 'rib']]);
+    expect(where(go({ sku: 'CCC004', qty: '3' }))).toEqual([['D-01-01', 3, 'flo']]);
+  });
+
+  it('ล้นไปโซนอื่นเมื่อจำเป็น · ปิดล้น = เหลือให้เลือกเอง · โล R ปิดใช้ / มีของ ไม่เลือก', () => {
+    const z = [zr('R02', '', '1', '1', 'm6'), zr('R01', '', '1', '1', 'm5')];
+    const r = go({ sku: 'AAA001', qty: '50' }, z);
+    expect(where(r)).toEqual([['R02-01-1', 10, 1], ['R02-02-1', 10, 2], ['R01-02-1', 10, 3], ['R01-03-1', 10, 4], ['', 10, 'man']]);
+    expect(r.lines[2].why).toContain('ล้นไปโซน ที่นอน 5 ฟุต');
+    expect(where(go({ sku: 'AAA001', qty: '40' }, z, { over: false }))).toEqual([['R02-01-1', 10, 1], ['R02-02-1', 10, 2], ['', 20, 'man']]);
+  });
+
+  it('พื้น: รวมเฉพาะ LOT / PO เดียวกัน · ไม่เกินจุ', () => {
+    const row = { sku: 'FFF006', lot: '3', po: 'P9' };
+    expect(where(go({ ...row, qty: '1' }))).toEqual([['A-01-01', 1, 'flo']]);
+    expect(where(go({ ...row, qty: '1', lot: '4' }))).toEqual([['A-01-02', 1, 'flo']]);
+    expect(where(go({ ...row, qty: '9' }))).toEqual([['A-01-01', 2, 'flo'], ['A-01-02', 4, 'flo'], ['', 3, 'man']]);
+  });
+
+  it('ข้อมูลไม่พอ = บอกว่าขาดอะไร ไม่เดา', () => {
+    expect(go({ sku: 'ZZZ', qty: '1' }).err).toBe('ไม่มี SKU ZZZ ในข้อมูลหลัก');
+    expect(go({ sku: 'GGG007', qty: '1' }).err).toContain('ยังไม่มีกลุ่มสินค้า');
+    expect(go({ sku: 'EEE005', qty: '1' }).err).toContain('ยังไม่ใส่ชิ้นต่อพาเลทของ EEE005');
+    expect(go({ sku: 'AAA001', qty: '0' }).err).toBe('ใส่จำนวนชิ้น');
+    expect(SU.pick(SU.picker({}, {}), { sku: 'AAA001', qty: '1' }).err).toContain('ยังไม่ได้ตั้งตาราง Location');
+  });
+
+  it('แท็บรับของ: แตกแถวต่อพาเลท · โลที่ใส่เองไม่เปลี่ยนและไม่ถูกเลือกซ้ำ', () => {
+    const rows = [{ sku: 'BBB002', lot: '5', po: 'P7', qty: '40', tr: 'GR-1' }, { sku: 'BBB002', qty: '20', to: 'r01-01-2' }, { sku: 'ZZZ', qty: '5' }, { to: 'R01-03-2' }, {}];
+    const before = JSON.stringify(rows);
+    const r = SU.pickRows(SU.picker(tables(), OCC), rows);
+    expect(r.rows.slice(0, 2)).toEqual([
+      { sku: 'BBB002', lot: '5', po: 'P7', qty: '20', tr: 'GR-1', to: 'R01-02-2' },
+      { sku: 'BBB002', lot: '5', po: 'P7', qty: '20', tr: 'GR-1', to: 'R02-01-2' },
+    ]);
+    expect(r.rows.slice(2)).toEqual(rows.slice(1));
+    expect([r.done, r.lines, r.man, r.err.length, r.err[0].i]).toEqual([1, 2, 0, 1, 2]);
+    expect(JSON.stringify(rows)).toBe(before);
+  });
+
+  it('รับของเข้า R: ช่องมีของแล้ว / ซ้ำในใบ = เตือน', () => {
+    const one = (n, to) => ({ n, st: 'ok', why: '', warn: [], take: [{ sku: 'AAA001', long: 'AAA0000000001', from: '', to }] });
+    const t = tables();
+    const ix = SU.index({ loc: { saved: true, rows: t.loc.rows }, sku: { saved: true, rows: t.sku.rows }, grp: t.grp });
+    const p = SU.check({ lines: [one(1, 'R01-01-1'), one(2, 'R02-01-1'), one(3, 'R02-01-1'), one(4, 'R02-02-1')], total: { ok: 4, bad: 0, warn: 0 } }, 'gr', ix, OCC);
+    expect(p.lines[0].warn.join()).toContain('มีของอยู่แล้ว (AAA001)');
+    expect(p.lines[2].warn.join()).toContain('ซ้ำกับแถว 2');
+    expect([p.lines[1].warn, p.lines[3].warn]).toEqual([[], []]);
+    expect(p.total).toMatchObject({ warn: 2, bad: 0 });
+    const m = SU.check({ lines: [one(1, 'R01-01-1')], total: { ok: 1, bad: 0, warn: 0 } }, 'move', ix, OCC);
+    expect(m.lines[0].warn).toEqual([]);
+  });
+
+  it('บันทึกโซนจริง (store จำลอง) → เครื่องอื่นเห็น · เลือกช่องจากยอดในสมุด', async () => {
+    const x = await opened();
+    ok(await x.head.setupSave('loc', [loc('R01-01-1', '1'), loc('R01-02-1', '1'), loc('R02-01-1', '1')], { base: 0 }));
+    ok(await x.head.setupSave('sku', [sku('AAA001', 'AAA0000000001', 'ที่นอนสมมติ 6 ฟุต', 'm6')], { base: 0 }));
+    ok(await x.head.setupSave('cap', [{ sku: 'AAA001', pid: 'AAA0000000001', cap: '10' }], { base: 0 }));
+    expect((await x.staff.setupSave('zone', [zr('R02', '', '', '', 'm6')], { base: 0 })).error).toMatch(/เฉพาะหัวหน้า/);
+    ok(await x.head.setupSave('zone', [zr('R02', '', '', '', 'm6')], { base: 0 }));
+    await x.staff.sync();
+    const l = x.staff.local();
+    expect(SU.read(l).zone).toMatchObject({ saved: true, ver: 1, n: 1 });
+    expect(SU.occOf(l)['R01-01-1']).toMatchObject({ q: 10 });
+    expect(where(SU.pick(SU.picker(SU.read(l), SU.occOf(l)), { sku: 'AAA001', qty: '20' }))).toEqual([['R02-01-1', 10, 1], ['R01-02-1', 10, 2]]);
+  });
+
+  it('สำเนาจากหน้ารุ่นเก่า (ยังไม่รู้จัก zone) = ดึงใหม่ครั้งเดียว แม้ mv เท่าเดิม', async () => {
+    const x = await opened();
+    ok(await x.head.setupSave('zone', [zr('R02', '', '', '', 'm6')], { base: 0 }));
+    const cache = W.memCache();
+    const open = async () => {
+      const f = W.open({ store: x.store.connect(), auth: W.fakeAuth(ACCOUNTS), cache, now: () => NOW });
+      ok(await f.login(STAFF));
+      await f.sync();
+      return f;
+    };
+    await open();
+    const old = await cache.load();
+    delete old.mk;
+    delete old.master.zone;
+    await cache.put(old);
+    const f = await open();
+    expect(f.local().master.zone).toBeTruthy();
+    expect((await cache.load()).mk).toContain('zone');
+    expect(read('wms-fire.js')).toContain("mk: local.mk || ''");   // IndexedDB ต้องเก็บด้วย ไม่งั้นดึงใหม่ทุกครั้งที่เปิดหน้า
+  });
+
+  it('ต่อสายในหน้า ข้อมูลหลัก และแท็บรับของ', () => {
+    const bm = read('book/book-master.js');
+    expect(bm).toContain("['zone', 'โซนแร็ค']");
+    expect(bm).toContain("kind !== 'grp' && kind !== 'zone') rows = rows.slice().sort");
+    expect(read('book/book-fire.js')).toContain('S.picker(t || su.t, B.setupOcc(), opt)');
+    const bg = read('book/book-grid.js');
+    expect(bg).toContain('id="gPick"');
+    expect(bg).toContain('X.pickRows(P, body)');
+    expect(bg).toContain('!ST ?');
+  });
+});
+
 describe('ต่อสายในหน้า', () => {
   it('โหลด wms-fire-setup.js ก่อน wms-fire.js · หน้า ข้อมูลหลัก อยู่ในเมนูและแอป', () => {
     const bf = read('book/book-fire.js');
@@ -427,8 +613,8 @@ describe('ต่อสายในหน้า', () => {
     const app = read('book/book-app.js');
     expect(app).toMatch(/\{ k: 'master', t: 'ข้อมูลหลัก' \}/);
     expect(app).toMatch(/\n {4}master: '</);
-    expect(read('book/book-grid.js')).toMatch(/WmsFireSetup\.check\(p, mode, su\.ix\)/);
-    expect(read('wms-fire.js')).toMatch(/var SETUP = \['loc', 'sku', 'grp'\]/);
+    expect(read('book/book-grid.js')).toMatch(/WmsFireSetup\.check\(p, mode, su\.ix, /);
+    expect(read('wms-fire.js')).toMatch(/var SETUP = \['loc', 'sku', 'grp', 'zone'\]/);
   });
 
   it('ขั้น ข: หน้า TRcloud ส่งตารางหลักไปตรวจที่ ข้อมูลหลัก · ลากไฟล์มาวางในหน้า ข้อมูลหลัก', () => {
@@ -446,6 +632,6 @@ describe('ต่อสายในหน้า', () => {
   });
 
   it('ไม่มีอักษรลาว', () => {
-    ['wms-fire-setup.js', 'book/book-master.js', 'book/book-fire-trc.js'].forEach((f) => expect(/[\u0E80-\u0EFF]/.test(read(f)), f).toBe(false));
+    ['wms-fire-setup.js', 'book/book-master.js', 'book/book-fire-trc.js', 'book/book-grid.js'].forEach((f) => expect(/[\u0E80-\u0EFF]/.test(read(f)), f).toBe(false));
   });
 });

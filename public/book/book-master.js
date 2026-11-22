@@ -1,8 +1,9 @@
 /**
  * book-master.js — หน้า 🗂 ข้อมูลหลัก ของแอปสมุดสต๊อก (ระบบใหม่เท่านั้น)
  *
- *   แท็บ Location · SKU · กลุ่มสินค้า (ขั้น ก) · แปลงสินค้า · Supplier (PO) · SKU : Pallet (ขั้น ข)
+ *   แท็บ Location · SKU · กลุ่มสินค้า (ขั้น ก) · แปลงสินค้า · Supplier (PO) · SKU : Pallet (ขั้น ข) · โซนแร็ค (ขั้น ค)
  *   = ตารางเดียวแก้ได้แบบ Excel (หัวหน้า) · คนอื่นดูอย่างเดียว
+ *   โซนแร็ค: ช่องว่างต่อโซน · 🎯 ลองเลือกแร็ค (SKU + ชิ้น → ช่องต่อพาเลท จากร่างทุกตาราง) · 🗺️ ผังแร็ค สีตามโซน
  *   📂 นำเข้าไฟล์ / ลากไฟล์มาวาง: ชีต PO. Truck · MASTER แปลงสินค้า · ความจุต่อพาเลท แทนตารางในร่าง (ตรวจก่อนบันทึก)
  *   ชิปกรอง + ช่องค้น · ⚠ เตือนรายแถว (แดง = บันทึกไม่ได้) · พบในสมุดแต่ยังไม่มีในตาราง → + เพิ่มทั้งหมด
  *   ⚡ สร้างหลายช่อง (แร็ค R) · Ctrl+V วางจาก Excel (ในช่อง = ทับจากช่องนั้นลงไป · นอกช่อง = เพิ่ม / อัปเดตตามรหัส)
@@ -19,7 +20,7 @@
   var STEP = 300;                         // แถวที่วาดต่อครั้ง (กด แสดงเพิ่ม)
   var DRAFT_KEY = 'wms:book:master:';     // + kind (+ :ns ของโหมดซ้อม / ทดลอง)
   var KIND_KEY = 'wms:book:master:kind';
-  var KINDS = [['loc', 'Location'], ['sku', 'SKU'], ['grp', 'กลุ่มสินค้า'], ['conv', 'แปลงสินค้า'], ['sup', 'Supplier'], ['cap', 'SKU : Pallet']];
+  var KINDS = [['loc', 'Location'], ['sku', 'SKU'], ['grp', 'กลุ่มสินค้า'], ['conv', 'แปลงสินค้า'], ['sup', 'Supplier'], ['cap', 'SKU : Pallet'], ['zone', 'โซนแร็ค']];
   var IMP = { conv: 1, sup: 1, cap: 1 };   // ตารางหลักเดิม (นำเข้าไฟล์ได้ ไม่มีสวิตช์ห้าม)
   var CHIPS = {
     loc: [['all', 'ทั้งหมด'], ['R', 'แร็ค R'], ['F', 'พื้น A–D'], ['S', 'ชั้นวาง S'], ['X', 'อื่น ๆ'], ['off', 'ปิดใช้'], ['fix', '⚠ ต้องแก้']],
@@ -28,6 +29,7 @@
     conv: [['all', 'ทั้งหมด'], ['fix', '⚠ ต้องแก้']],
     sup: [['all', 'ทั้งหมด'], ['stock', 'มีของ'], ['fix', '⚠ ต้องแก้']],
     cap: [['all', 'ทั้งหมด'], ['stock', 'มีของ'], ['fix', '⚠ ต้องแก้']],
+    zone: [],
   };
   /* ช่องที่แก้ได้ เรียงตามคอลัมน์ (วาง / คัดลอก Excel ใช้ลำดับเดียวกัน ยกเว้นสี) */
   var COLS = {
@@ -67,6 +69,14 @@
       { k: 'pid', t: 'Product ID', w: 18, up: 1 },
       { k: 'cap', t: 'ชิ้นต่อพาเลท', w: 6, num: 1 },
     ],
+    zone: [
+      { k: 'r1', t: 'แร็คจาก', w: 5, rack: 1 },
+      { k: 'r2', t: 'แร็คถึง', w: 5, rack: 1 },
+      { k: 'l1', t: 'ชั้นจาก', w: 3, num: 1 },
+      { k: 'l2', t: 'ชั้นถึง', w: 3, num: 1 },
+      { k: 'grp', t: 'โฟกัสกลุ่ม', sel: 'zgrp' },
+      { k: 'note', t: 'หมายเหตุ', w: 22 },
+    ],
   };
   var TIP = {
     loc: 'ทุกโลในคลัง · แร็ค R ช่องละ 1 พาเลท (รูปแบบ R00-00-0) · พื้น A–D (A-00-00) · ชั้นวาง S (S-00-00) · ชื่อพิเศษ RIB QA IQA DOCKLOAD ORDER OB …\n' +
@@ -77,21 +87,26 @@
       'วางจาก Excel ได้: SKU · SKU เต็ม · ชื่อ · กลุ่ม (ชื่อหรือรหัส) · ของแถม · สุญญากาศ · ใช้งาน · รหัสที่มีแล้ว = อัปเดตช่องที่วางมา',
     grp: 'กติกาที่เก็บของแต่ละกลุ่ม ค่าเริ่มมาจากกติกาหัวหน้าคลัง 9 พ.ย.\n' +
       'ตอนลงใบ ถ้าวางของเข้าแร็ค R ผิดกติกา ระบบเตือน (ไม่ห้าม)\n' +
-      'ขั้นต่อไป: ระบบเลือกแร็คให้เองตามกลุ่มนี้',
+      'ระบบเลือกแร็ค (แท็บ โซนแร็ค · ปุ่ม 🎯 ในแท็บรับของ) ใช้กติกาของกลุ่มนี้',
     conv: 'SKU ที่แปลงแล้ว (เช่นแพ็กใหม่) ผูกกลับไปที่ SKU ตอนซื้อ 1 ต่อ 1 · รายงาน LOT/PO, FIFO, กระทบยอด TRcloud ใช้ตารางนี้รวมยอด\n' +
       'แทนชีต MASTER แปลงสินค้า เดิม · นำเข้าไฟล์ได้ (📂) หรือวางจาก Excel: SKU ตอนซื้อ · SKU หลังแปลง',
     sup: 'PO ไหนมาจาก Supplier ไหน (แทนชีต PO. Truck) · รายงานและหน้าจัดที่เก็บใช้ดูว่า SKU หนึ่งเปิดกี่ Supplier\n' +
       'PO ที่ยังไม่ใส่ Supplier ไม่บันทึก · นำเข้าไฟล์ได้ (📂) หรือวางจาก Excel: PO · Supplier',
     cap: 'SKU หนึ่งวางได้กี่ชิ้นต่อพาเลท (แทนชีต ความจุต่อพาเลท) · หน้าจัดที่เก็บกับหน้า สินค้า / โล ใช้คิดจำนวนพาเลท\n' +
       'ช่องว่าง = ไม่บันทึกแถวนั้น · นำเข้าไฟล์ได้ (📂) หรือวางจาก Excel: SKU · Product ID · ชิ้นต่อพาเลท',
+    zone: 'ช่วงแร็คที่โฟกัสกลุ่มสินค้า: ระบบเลือกช่องในโซนของกลุ่มให้ก่อน → ช่องที่ไม่อยู่ในโซนไหน → โซนกลุ่มอื่น (ไม่ได้ห้าม)\n' +
+      'แร็คถึงว่าง = แร็คเดียว · ชั้นว่างทั้งสองช่อง = ทุกชั้น (ตามกติกาชั้นของกลุ่ม) · ทับกัน = แถวบนใช้ก่อน\n' +
+      'ช่องว่าง = โล R ที่ใช้งานในตาราง Location และไม่มีของ · พาเลทเต็มตาม SKU : Pallet · เศษตามกลุ่ม (RIB / ช่องตัวเอง / พื้น)\n' +
+      'วางจาก Excel ได้: แร็คจาก · แร็คถึง · ชั้นจาก · ชั้นถึง · กลุ่ม (ชื่อหรือรหัส) · หมายเหตุ',
   };
 
   var S = {
-    kind: (function () { try { var k = localStorage.getItem(KIND_KEY); return /^(loc|sku|grp|conv|sup|cap)$/.test(k || '') ? k : 'loc'; } catch (e) { return 'loc'; } })(),
+    kind: (function () { try { var k = localStorage.getItem(KIND_KEY); return /^(loc|sku|grp|conv|sup|cap|zone)$/.test(k || '') ? k : 'loc'; } catch (e) { return 'loc'; } })(),
     chip: 'all', q: '', more: STEP, msg: null, busy: false, hist: false, gen: null, showFound: false,
+    pk: { sku: '', qty: '', over: true }, map: true,   // แท็บโซนแร็ค: 🎯 ลองเลือกแร็ค · 🗺️ ผังแร็ค
   };
   var D = {};                 // ร่างต่อตาราง { base, strict, rows, dirty, fresh: {รหัส: 1} แถวใหม่ }
-  var GEN = { loc: 0, sku: 0, grp: 0, conv: 0, sup: 0, cap: 0 };   // เปลี่ยนทุกครั้งที่แก้ (ตรวจใหม่)
+  var GEN = { loc: 0, sku: 0, grp: 0, conv: 0, sup: 0, cap: 0, zone: 0 };   // เปลี่ยนทุกครั้งที่แก้ (ตรวจใหม่)
   var VAL = {};               // ผลตรวจที่เก็บไว้ { kind: { g, v } }
   var FOUND = {};             // พบในสมุด { kind: { key, list } }
   var VIS = [];               // ลำดับแถว (index ในร่าง) ที่แสดงอยู่
@@ -152,6 +167,7 @@
   /** แถวที่จะส่งไปบันทึก (ตัดแถวว่าง) · kept = เฉพาะที่จะเก็บจริง (Supplier / ความจุ ที่ยังไม่ใส่ ไม่เก็บ) */
   function sendRows(kind, rows, kept) {
     return rows.filter(function (r) {
+      if (kind === 'zone') return !X().isBlank(kind, r);
       if (!IMP[kind]) return X().keyOf(kind, r) || (kind === 'grp' && txt(r.name));
       if (X().isBlank(kind, r)) return false;
       if (kept && kind === 'sup') return !!X().keyOf(kind, r) && !!txt(r.sup);
@@ -168,9 +184,15 @@
     return { n: dd.add + dd.chg + dd.del + (st ? 1 : 0), text: [dd.text, st ? (d.strict ? 'ห้ามบันทึกใบที่ไม่มีในตาราง' : 'เตือนอย่างเดียว') : ''].filter(Boolean).join(' · ') };
   }
 
-  /** ตารางสำหรับตรวจ (ใช้ร่างของกลุ่ม / SKU ที่กำลังแก้) */
+  /** ตารางสำหรับตรวจ (ใช้ร่างของกลุ่ม / SKU / Location ที่กำลังแก้) */
   function checkTables() {
-    return { grp: { rows: draft('grp').rows }, sku: { saved: draft('sku').rows.length > 0, rows: draft('sku').rows } };
+    return { grp: { rows: draft('grp').rows }, sku: { saved: draft('sku').rows.length > 0, rows: draft('sku').rows }, loc: { rows: draft('loc').rows } };
+  }
+  /** ตารางทั้งหมดจากร่าง (ลองเลือกแร็คก่อนบันทึก) */
+  function draftTables() {
+    var t = {};
+    ['loc', 'sku', 'grp', 'cap', 'zone'].forEach(function (k) { t[k] = { rows: draft(k).rows }; });
+    return t;
   }
   function val(kind) {
     var c = VAL[kind], g = KINDS.map(function (k) { return GEN[k[0]]; }).join('|'), st = FIRE.setupStock();
@@ -180,7 +202,7 @@
     return v;
   }
   function found(kind) {
-    if (kind === 'grp' || kind === 'conv') return [];
+    if (kind === 'grp' || kind === 'conv' || kind === 'zone') return [];
     var key = GEN[kind] + '|' + draft(kind).rows.length + (kind === 'cap' ? '|' + GEN.sku : ''), st = FIRE.setupStock();
     var c = FOUND[kind];
     if (c && c.key === key && c.st === st) return c.list;
@@ -246,13 +268,13 @@
     if (!X()) { $('body').innerHTML = '<div class="tx-empty">กำลังเปิด…</div>'; return; }
     var a = document.activeElement, keepF = a && a.dataset && a.dataset.mf !== undefined && a.closest && a.closest('#mdTbl')
       ? { i: a.dataset.mi, k: a.dataset.mf, s: a.selectionStart, e: a.selectionEnd } : null;
-    var keepQ = a && a.id === 'mdQ' ? a.selectionStart : null;
+    var keepQ = a && /^(mdQ|mdPkS|mdPkQ)$/.test(a.id) ? { id: a.id, s: a.selectionStart } : null;
     renderTop();
     renderSum();
     renderAct();
     renderBody();
     $('docs').innerHTML = '';
-    if (keepQ !== null && $('mdQ')) { $('mdQ').focus(); try { $('mdQ').setSelectionRange(keepQ, keepQ); } catch (e) {} }
+    if (keepQ && $(keepQ.id)) { $(keepQ.id).focus(); try { $(keepQ.id).setSelectionRange(keepQ.s, keepQ.s); } catch (e) {} }
     if (keepF) {
       var el = document.querySelector('#mdTbl [data-mi="' + keepF.i + '"][data-mf="' + keepF.k + '"]');
       if (el) { el.focus(); try { if (keepF.s !== null) el.setSelectionRange(keepF.s, keepF.e); } catch (e) {} }
@@ -299,9 +321,9 @@
         return '<button type="button" class="bk-chip' + tone + (S.chip === c[0] ? ' on' : '') + (cnt || S.chip === c[0] ? '' : ' zero') + '" data-mc="' + c[0] + '">' + c[1] + ' <b>' + f(cnt) + '</b></button>';
       }).join('');
     } else {
-      html += '<span class="c-sub">' + f(rows.length) + ' กลุ่ม</span>';
+      html += '<span class="c-sub">' + f(rows.length) + (kind === 'zone' ? ' โซน' : ' กลุ่ม') + '</span>';
     }
-    if (kind !== 'grp') {
+    if (kind !== 'grp' && kind !== 'zone') {
       html += '<input class="bk-field md-q" id="mdQ" type="search" autocomplete="off" spellcheck="false" aria-label="ค้นหา" placeholder="ค้น ' +
         (kind === 'loc' ? 'Location · หมายเหตุ' : kind === 'sup' ? 'PO · Supplier' : 'SKU · ชื่อ') + '" value="' + esc(S.q) + '">';
     }
@@ -320,6 +342,7 @@
       }
       html += '<button type="button" class="g-tip md-paste" title="' + esc('Ctrl+V ตรงไหนก็ได้ (ไม่อยู่ในช่อง) = เพิ่มแถว / อัปเดตแถวที่รหัสตรง\nวางในช่อง = ทับจากช่องนั้นลงไปแบบ Excel') + '" aria-label="วิธีวาง">📋</button>';
     }
+    if (kind === 'zone') html += '<button type="button" class="tx-opt' + (S.map ? ' on' : '') + '" id="mdMap">🗺️ ผังแร็ค</button>';
     html += '<button type="button" class="tx-opt" id="mdCopy">คัดลอกไป Excel</button>';
     if (hasStrict(kind)) {
       var tip = 'ใบ รับของ ย้าย คืน แปลง ปรับยอด ที่ใช้ ' + (kind === 'loc' ? 'โล' : 'SKU') + ' ที่ไม่มีในตารางนี้ (หรือปิดใช้)\nเตือน = บันทึกได้ ขึ้นสีส้ม · ห้ามบันทึก = แถวแดง ต้องแก้ก่อน\nแนะนำ: เตือนไปก่อนจนตารางครบ แล้วค่อยเปลี่ยนเป็นห้าม';
@@ -355,7 +378,9 @@
         }).join('') + (fd.length > 60 ? '<span>… อีก ' + f(fd.length - 60) + '</span>' : '') + '</div>' : '') + '</div>';
     }
     html += tableHtml();
+    if (kind === 'zone') html += zoneHtml();
     $('body').innerHTML = html;
+    if (kind === 'zone') drawZone();
   }
 
   function histHtml() {
@@ -408,17 +433,18 @@
     if (c.ck) return '<td class="g-in md-ck"><input type="checkbox"' + at + (r[c.k] ? ' checked' : '') + ' aria-label="' + esc(c.t) + '"></td>';
     if (c.color) return '<td class="g-in md-ck"><input type="color" class="md-sw"' + at + ' value="' + esc(/^#[0-9a-f]{6}$/i.test(r.c) ? r.c : '#64748B') + '" aria-label="สี"></td>';
     if (c.sel) {
-      var opts = c.sel === 'grp' ? [['', '—']].concat(draft('grp').rows.filter(function (g) { return g.id; }).map(function (g) { return [g.id, g.name || g.id]; }))
+      var opts = c.sel === 'grp' || c.sel === 'zgrp'
+        ? [['', '—']].concat(draft('grp').rows.filter(function (g) { return g.id && (c.sel === 'grp' || g.rack !== 'no'); }).map(function (g) { return [g.id, g.name || g.id]; }))
         : c.sel === 'rack' ? [['yes', 'ขึ้นได้'], ['no', 'ไม่ขึ้น']]
           : c.sel === 'lv' ? [['', '—']].concat(X().LV)
             : [['', '—']].concat(X().REST.map(function (x) { return [x, x]; }));
-      var cur = txt(r[c.k]);
-      if (cur && !opts.some(function (o) { return o[0] === cur; })) opts.push([cur, cur + ' (ไม่มีแล้ว)']);
-      return '<td class="g-in"><select' + at + ' aria-label="' + esc(c.t) + '">' + opts.map(function (o) {
+      var cur = txt(r[c.k]), gz = c.sel === 'zgrp' ? grpOf(cur) : null;
+      if (cur && !opts.some(function (o) { return o[0] === cur; })) opts.push([cur, cur + (gz ? ' (ไม่ขึ้นแร็ค)' : ' (ไม่มีแล้ว)')]);
+      return '<td class="g-in"' + (gz ? ' style="box-shadow:inset 4px 0 0 ' + colorOf(gz.c) + '"' : '') + '><select' + at + ' aria-label="' + esc(c.t) + '">' + opts.map(function (o) {
         return '<option value="' + esc(o[0]) + '"' + (o[0] === cur ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
       }).join('') + '</select></td>';
     }
-    return '<td class="g-in' + (c.num ? ' num' : '') + (c.up ? ' md-mono' : '') + '"><input' + at.replace(' disabled', ' readonly') + ' size="' + c.w + '" maxlength="' + (c.k === 'name' || c.k === 'note' ? 120 : 40) +
+    return '<td class="g-in' + (c.num ? ' num' : '') + (c.up || c.rack ? ' md-mono' : '') + '"><input' + at.replace(' disabled', ' readonly') + ' size="' + c.w + '" maxlength="' + (c.k === 'name' || c.k === 'note' ? 120 : 40) +
       '" autocomplete="off" spellcheck="false" value="' + esc(r[c.k]) + '" aria-label="' + esc(c.t) + '"' + (c.num ? ' inputmode="decimal"' : '') + '></td>';
   }
   function warnHtml(w) {
@@ -434,6 +460,107 @@
     var qc = stockOf('cap', r), cap = X().isNum(r.cap) ? +txt(r.cap).replace(/,/g, '') : 0;
     return qc && cap > 0 ? f(Math.ceil(qc / cap)) : '';
   }
+  /* ── โซนแร็ค: ช่องว่างต่อโซน · 🎯 ลองเลือกแร็ค · 🗺️ ผังแร็ค (ใช้ร่างทุกตาราง ยังไม่บันทึกก็ลองได้) ── */
+
+  var TIP_PK = 'ระบบเลือกตามร่างตอนนี้ของทุกแท็บ (ยังไม่บันทึกก็ลองได้)\n' +
+    'กลุ่มของ SKU → ชั้นแร็ค · SKU : Pallet → พาเลทเต็ม + เศษ · โซนแร็ค → ลำดับช่อง (โซนตัวเอง → ไม่ระบุกลุ่ม → โซนอื่น)\n' +
+    'ช่องว่าง = โล R ในตาราง Location ที่ใช้งาน และไม่มีของในสมุด\n' +
+    'เศษตามกลุ่ม: RIB · ช่องของตัวเอง (แร็คเต็มลงพื้น A–C) · พื้น A–C · พื้น D · พื้นรวมกองเดิมได้เมื่อ SKU LOT PO เดียวกัน\n' +
+    'แท็บ รับของ กด 🎯 เลือกโลให้ = ใช้ตารางที่บันทึกแล้ว';
+  var ZP = null;              // ตัวเลือกแร็คจากร่าง (นับช่องว่างต่อโซน) { g, occ, P }
+  function grpOf(id) { return id ? draft('grp').rows.filter(function (g) { return g.id === id; })[0] || null : null; }
+  function colorOf(c) { return /^#[0-9a-f]{3,8}$/i.test(txt(c)) ? txt(c) : '#94A3B8'; }
+  function zp() {
+    var ks = ['loc', 'sku', 'grp', 'cap', 'zone'], ds = ks.map(draft), g = ks.map(function (k) { return GEN[k]; }).join('|'), occ = FIRE.setupOcc();
+    if (!ZP || ZP.g !== g || ZP.occ !== occ || ds.some(function (d, i) { return ZP.ds[i] !== d; })) ZP = { g: g, ds: ds, occ: occ, P: FIRE.setupPicker(draftTables(), {}) };
+    return ZP.P;
+  }
+  function slotText(r) {
+    var P = zp(), s = X().span(r), g = grpOf(r.grp), all = 0, free = 0;
+    if (!P || !s.ok) return '';
+    P.slots.forEach(function (x) {
+      if (x.k.rack < s.r1 || x.k.rack > s.r2 || x.k.lv < s.l1 || x.k.lv > s.l2 || (g && !X().lvOk(g.lv, x.k.lv))) return;
+      all++;
+      if (!(P.occ[x.code] && P.occ[x.code].q > 1e-9)) free++;
+    });
+    return all ? f(free) + ' / ' + f(all) : '<span class="c-sub">—</span>';
+  }
+  function zoneHtml() {
+    var p = S.pk;
+    var opts = draft('sku').rows.filter(function (s) { return s.sku || s.long; }).slice(0, 3000).map(function (s) {
+      return '<option value="' + esc(s.sku || s.long) + '">' + esc(s.name || s.long || '') + '</option>';
+    }).join('');
+    return '<div class="md-zone" id="mdZone"><div class="md-pk"><b>🎯 ลองเลือกแร็ค</b>' +
+      '<label>SKU <input class="bk-field md-pks" id="mdPkS" list="mdPkL" maxlength="40" autocomplete="off" spellcheck="false" value="' + esc(p.sku) + '"></label>' +
+      '<label>รับเข้า <input class="bk-field md-n" id="mdPkQ" inputmode="numeric" maxlength="8" placeholder="ชิ้น" value="' + esc(p.qty) + '"></label>' +
+      '<label class="md-ckl"><input type="checkbox" id="mdPkO"' + (p.over ? ' checked' : '') + '> ล้นไปโซนกลุ่มอื่นได้</label>' +
+      '<button type="button" class="g-tip" aria-label="คำอธิบาย" title="' + esc(TIP_PK) + '">ⓘ</button>' +
+      '<datalist id="mdPkL">' + opts + '</datalist></div><div id="mdPkR"></div><div id="mdMapBox"></div></div>';
+  }
+  /** ผลลองเลือก + ผังแร็ค (วาดใหม่เฉพาะสองส่วนนี้ ช่องที่พิมพ์ไม่หลุด) */
+  function drawZone() {
+    if (S.kind !== 'zone' || !$('mdZone')) return;
+    var p = S.pk, P = FIRE.setupPicker(draftTables(), { over: p.over }), res = null, picks = {};
+    if (!P) return;
+    if (txt(p.sku) || txt(p.qty)) res = X().pick(P, { sku: p.sku, qty: p.qty });
+    if (res && res.lines) res.lines.forEach(function (l) { if (typeof l.tag === 'number') picks[l.loc] = l.tag; });
+    $('mdPkR').innerHTML = pickHtml(res);
+    $('mdMapBox').innerHTML = S.map ? mapHtml(P, picks) : '';
+  }
+  function pickHtml(res) {
+    if (!res) return '<div class="c-sub md-pkh">ใส่ SKU กับจำนวนที่รับเข้า ระบบบอกว่าวางช่องไหน (ตามร่างตอนนี้)</div>';
+    if (res.err) return '<div class="bk-warn md-pkh">⚠ ' + esc(res.err) + '</div>';
+    var g = res.g;
+    var tag = function (t) {
+      return typeof t === 'number' ? '<span class="md-tag">' + t + '</span>' : t === 'rib' ? '<span class="md-tag rib">RIB</span>'
+        : t === 'man' ? '<span class="md-tag man">!</span>' : '<span class="md-tag flo">พื้น</span>';
+    };
+    return '<div class="md-pkr"><div class="md-pks2"><span class="md-gc" style="--c:' + colorOf(g.c) + '">' + esc(g.name) + '</span> ' +
+      (res.pcs ? f(res.pcs) + ' ชิ้น/พาเลท → เต็ม <b>' + f(res.full) + '</b> พาเลท' + (res.rem ? ' + เศษ <b>' + f(res.rem) + '</b> ชิ้น' : '') : 'ไม่ขึ้นแร็ค') + '</div>' +
+      '<table class="md-pt"><thead><tr><th></th><th>ไปที่</th><th class="num">ชิ้น</th><th>เหตุผล</th></tr></thead><tbody>' +
+      res.lines.map(function (l) {
+        return '<tr><td>' + tag(l.tag) + '</td><td class="md-l">' + (l.loc ? esc(l.loc) : '<span class="c-sub">—</span>') + '</td><td class="num">' + f(l.qty) + '</td><td class="c-sub">' + esc(l.why) + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+  function mapHtml(P, picks) {
+    var head = '<div class="md-mapt"><b>🗺️ ผังแร็ค</b> <span class="c-sub">สีตามโซน · สี่เหลี่ยมเล็ก = ช่อง (ทึบ = มีของ)</span></div>';
+    if (!P.slots.length) return '<div class="md-mapc">' + head + '<div class="tx-empty">ยังไม่มี Location แร็ค R ที่ใช้งาน · ตั้งในแท็บ Location (⚡ สร้างหลายช่อง)</div></div>';
+    var racks = [], lvs = [], by = {};
+    P.slots.forEach(function (x) {
+      var k = x.k.rack + '|' + x.k.lv;
+      if (racks.indexOf(x.k.rack) < 0) racks.push(x.k.rack);
+      if (lvs.indexOf(x.k.lv) < 0) lvs.push(x.k.lv);
+      (by[k] || (by[k] = [])).push(x);
+    });
+    racks.sort(function (a, b) { return a - b; });
+    lvs.sort(function (a, b) { return b - a; });
+    var full = function (x) { var o = P.occ[x.code]; return !!(o && o.q > 1e-9); };
+    var h = '<div class="md-mapw"><div class="md-map" style="grid-template-columns:48px repeat(' + racks.length + ',max-content)"><div></div>' +
+      racks.map(function (rk) { return '<div class="md-mh">R' + pad(rk, 2) + '</div>'; }).join('');
+    lvs.forEach(function (lv) {
+      h += '<div class="md-ml">ชั้น ' + lv + '</div>';
+      racks.forEach(function (rk) {
+        var cell = by[rk + '|' + lv];
+        if (!cell) { h += '<div class="md-mc none"></div>'; return; }
+        var g = cell[0].z ? cell[0].z.g : null, free = cell.filter(function (x) { return !full(x); }).length;
+        h += '<div class="md-mc' + (g ? '' : ' nz') + '" style="--c:' + (g ? colorOf(g.c) : '#94A3B8') + '" title="' +
+          esc('R' + pad(rk, 2) + ' ชั้น ' + lv + ' · ' + (g ? g.name : 'ไม่ระบุกลุ่ม') + ' · ว่าง ' + free + '/' + cell.length) + '">' +
+          '<div class="md-mt"><span>' + esc(g ? g.name : 'ไม่ระบุ') + '</span><span class="md-mf">' + free + '/' + cell.length + '</span></div><div class="md-bays">' +
+          cell.map(function (x) {
+            var o = P.occ[x.code], pk = picks[x.code];
+            var what = full(x) ? o.piles.map(function (q) { return q.sku || q.long; }).filter(function (v, j, a) { return a.indexOf(v) === j; }).join(', ') + ' ' + f(o.q) : 'ว่าง';
+            return '<i class="' + (pk ? 'pk' : full(x) ? 'oc' : '') + '" title="' + esc(x.code + ' · ' + what) + '">' + (pk || '') + '</i>';
+          }).join('') + '</div></div>';
+      });
+    });
+    h += '</div></div>';
+    var lg = draft('grp').rows.filter(function (g) { return g.id && g.rack !== 'no'; }).map(function (g) {
+      return '<span class="md-gc" style="--c:' + colorOf(g.c) + '">' + esc(g.name || g.id) + '</span>';
+    }).join('') + '<span class="md-gc nz">ไม่ระบุ</span><span class="md-lgi"><i class="oc"></i>มีของ</span><span class="md-lgi"><i></i>ว่าง</span>' +
+      (Object.keys(picks).length ? '<span class="md-lgi"><i class="pk">1</i>ระบบเลือก</span>' : '');
+    return '<div class="md-mapc">' + head + h + '<div class="md-lg">' + lg + '</div></div>';
+  }
+
   function extraHtml(kind, r, cnt, i) {
     if (kind === 'conv') {
       var nm = nameOf(r.after) || nameOf(r.buy), qa = stockOf(kind, r);
@@ -451,6 +578,7 @@
       return '<td class="c-sub">' + label + '</td><td class="num">' + (q ? f(q) : '') + '</td>';
     }
     if (kind === 'sku') { var s = stockOf(kind, r); return '<td class="num">' + (s ? f(s) : '') + '</td>'; }
+    if (kind === 'zone') return '<td class="num" id="mz-' + i + '">' + slotText(r) + '</td>';
     return '<td class="num">' + (cnt[r.id] ? f(cnt[r.id]) : '') + '</td>';
   }
   function tableHtml() {
@@ -463,6 +591,10 @@
       VIS.push(i);
     });
     if (!d.rows.length) {
+      if (kind === 'zone') {
+        return '<div class="tx-empty">ยังไม่มีโซนแร็ค · ไม่ตั้งก็ได้ ระบบเลือกช่องตามกติกาชั้นของกลุ่มอย่างเดียว' +
+          (edit ? '<br>กด <b>+ แถว</b> หรือวางจาก Excel (Ctrl+V): แร็คจาก · แร็คถึง · ชั้นจาก · ชั้นถึง · กลุ่ม · หมายเหตุ' : '') + '</div>';
+      }
       if (IMP[kind]) {
         var none = kind === 'conv' ? 'ยังไม่มีคู่แปลงสินค้า' : kind === 'sup' ? 'ยังไม่มี PO → Supplier' : 'ยังไม่มีชิ้นต่อพาเลท';
         var sheet = X().SHEET[kind];
@@ -475,7 +607,8 @@
     var cols = COLS[kind];
     var extra = kind === 'loc' ? '<th>ชนิด</th><th class="num">ของตอนนี้</th>' : kind === 'sku' || kind === 'sup' ? '<th class="num">ของตอนนี้</th>'
       : kind === 'conv' ? '<th>ชื่อสินค้า</th><th class="num" title="ของตอนนี้ของ SKU หลังแปลง">ของ (หลังแปลง)</th>'
-        : kind === 'cap' ? '<th>ชื่อสินค้า</th><th class="num">ของตอนนี้</th><th class="num" title="ของตอนนี้ ÷ ชิ้นต่อพาเลท ปัดขึ้น">≈ พาเลท</th>' : '<th class="num">SKU</th>';
+        : kind === 'cap' ? '<th>ชื่อสินค้า</th><th class="num">ของตอนนี้</th><th class="num" title="ของตอนนี้ ÷ ชิ้นต่อพาเลท ปัดขึ้น">≈ พาเลท</th>'
+          : kind === 'zone' ? '<th class="num" title="ช่อง R ในช่วงนี้ที่ไม่มีของ / ทั้งหมด (ตาราง Location ที่ใช้งาน)">ช่องว่าง</th>' : '<th class="num">SKU</th>';
     var html = '<div class="bk-wrap md-wrap"><table class="bk-xl g-xl md-xl" id="mdTbl"><thead><tr><th class="c-no">#</th>' +
       cols.map(function (c) { return '<th' + (c.num ? ' class="num"' : '') + '>' + esc(c.t) + '</th>'; }).join('') + extra + '<th>⚠</th>' + (edit ? '<th class="c-act"></th>' : '') + '</tr></thead><tbody>';
     VIS.slice(0, S.more).forEach(function (i, n) {
@@ -500,6 +633,7 @@
       if (!cell) return;
       cell.innerHTML = warnHtml(v.rows[i]);
       if (kind === 'cap' && $('mp-' + i)) $('mp-' + i).innerHTML = palOf(draft(kind).rows[i]);
+      if (kind === 'zone' && $('mz-' + i)) $('mz-' + i).innerHTML = slotText(draft(kind).rows[i]);
       var tr = cell.parentNode;
       tr.classList.remove('r-bad', 'r-warn');
       var c = rowCls(v.rows[i]);
@@ -508,6 +642,7 @@
     if (!(document.activeElement && document.activeElement.id === 'mdQ')) renderSum();
     renderAct();
     renderTop();
+    if (kind === 'zone') drawZone();
   }
   function soon() { clearTimeout(CHECK_T); CHECK_T = setTimeout(refresh, 150); }
 
@@ -552,8 +687,9 @@
       if (c.k === 'on') return !/^(0|N|NO|FALSE|ไม่|ปิด|✗|X)$/.test(u);
       return /^(1|Y|YES|TRUE|✓|ใช่)$/.test(u);
     }
+    if (c.rack) return X().rackText(s);
     if (c.up) return u;
-    if (c.sel === 'grp') {
+    if (c.sel === 'grp' || c.sel === 'zgrp') {
       if (!s) return '';
       var g = draft('grp').rows.filter(function (x) { return x.id === s || up(x.name) === u; })[0];
       return g ? g.id : s;
@@ -570,7 +706,7 @@
   function gridOf(text) {
     return String(text || '').replace(/\r/g, '').split('\n').filter(function (l) { return l.trim() !== ''; }).map(function (l) { return l.split('\t'); });
   }
-  var HEAD_RE = /^(LOCATION|โล|SKU|รหัส|กลุ่ม|ชื่อกลุ่ม)|^(PO\.?|PO\s*NO\.?|เลข\s*PO|TRUCK|SUPPLIER|PRODUCT\s*ID)$/i;
+  var HEAD_RE = /^(LOCATION|โล|SKU|รหัส|กลุ่ม|ชื่อกลุ่ม|แร็ค)|^(PO\.?|PO\s*NO\.?|เลข\s*PO|TRUCK|SUPPLIER|PRODUCT\s*ID)$/i;
 
   /** วางตารางหลักที่มีหัวตาราง (เช่นคัดลอกทั้งชีต PO. Truck): อ่านตามหัวแบบนำเข้าไฟล์ → แถว | null */
   function parsedPaste(kind, g) {
@@ -597,7 +733,7 @@
       var r = newRow(kind);
       cols.forEach(function (c, j) { if (j < cells.length) r[c.k] = parseCell(kind, c, cells[j]); });
       var k = kind === 'grp' ? up(r.name) : X().keyOf(kind, r);
-      if (!k) return;
+      if (!k) { if (kind === 'zone' && !X().isBlank(kind, r)) add.push(r); return; }   // ช่วงอ่านไม่ออก = เข้าเป็นแถวแดง ไม่หายเงียบ
       var at = by[k];
       if (at === undefined && kind === 'sku' && up(r.sku)) {
         /* วางมาแค่ SKU สั้น: ตรงกับแถวที่มี SKU สั้นเดียวกัน */
@@ -614,7 +750,7 @@
         add.push(r);
       }
     });
-    if (add.length) addRows(kind, add, true); else if (upd) touch(kind);
+    if (add.length) addRows(kind, add, kind !== 'zone'); else if (upd) touch(kind);
     S.chip = 'all'; S.q = '';
     S.msg = { kind: 'ok', html: 'วางแล้ว · เพิ่ม <b>' + f(add.length) + '</b> · อัปเดต <b>' + f(upd) + '</b> แถว · ตรวจแล้วกด 💾 บันทึก' };
     render();
@@ -730,7 +866,7 @@
       return cols.map(function (c) {
         var v = r[c.k];
         if (c.ck) return v ? '1' : (c.k === 'on' ? '0' : '');
-        if (c.sel === 'grp') return gname[v] || v || '';
+        if (c.sel === 'grp' || c.sel === 'zgrp') return gname[v] || v || '';
         return String(v === undefined || v === null ? '' : v).replace(/[\t\n]/g, ' ');
       }).join('\t');
     }));
@@ -744,7 +880,7 @@
     var kind = S.kind, d = draft(kind);
     if (S.busy || !canEdit()) return;
     var rows = sendRows(kind, d.rows, false);
-    if (kind !== 'grp') rows = rows.slice().sort(function (a, b) { return String(X().keyOf(kind, a)).localeCompare(String(X().keyOf(kind, b)), 'en', { numeric: true }); });
+    if (kind !== 'grp' && kind !== 'zone') rows = rows.slice().sort(function (a, b) { return String(X().keyOf(kind, a)).localeCompare(String(X().keyOf(kind, b)), 'en', { numeric: true }); });
     S.busy = true; S.msg = null; renderAct();
     var r;
     try { r = await FIRE.setupSave(kind, rows, { base: d.base, strict: d.strict }); }
@@ -791,10 +927,13 @@
       return;
     }
     switch (t.id) {
-      case 'mdAdd': addRows(S.kind, [newRow(S.kind)], true); S.chip = 'all'; S.q = ''; render();
-        var first = document.querySelector('#mdTbl tbody tr input:not([type=checkbox]):not([type=color])');
+      case 'mdAdd': {
+        var low = S.kind === 'zone';   // แถวบนใช้ก่อน: โซนใหม่ต่อท้าย ไม่แซงโซนเดิม
+        addRows(S.kind, [newRow(S.kind)], !low); S.chip = 'all'; S.q = ''; render();
+        var first = document.querySelector('#mdTbl tbody tr' + (low ? ':last-child' : '') + ' input:not([type=checkbox]):not([type=color])');
         if (first) first.focus();
         return;
+      }
       case 'mdGen':
         S.gen = S.gen ? null : { sample: genSample(), r1: '', r2: '', b1: '1', b2: '', l1: '1', l2: '' };
         render(); return;
@@ -807,6 +946,7 @@
         render(); return;
       }
       case 'mdCopy': copyAll(); return;
+      case 'mdMap': S.map = !S.map; renderAct(); drawZone(); return;
       case 'mdPick': if ($('mdFile')) $('mdFile').click(); return;
       case 'mdHist': S.hist = !S.hist; render(); return;
       case 'mdFoundAdd': if (canEdit()) addFound(); return;
@@ -830,6 +970,12 @@
       TYPING = setTimeout(function () { renderBody(); }, 160);
       return;
     }
+    if (el.id === 'mdPkS' || el.id === 'mdPkQ') {
+      S.pk[el.id === 'mdPkS' ? 'sku' : 'qty'] = el.value;
+      clearTimeout(TYPING);
+      TYPING = setTimeout(drawZone, 160);
+      return;
+    }
     if (el.dataset && el.dataset.mg) {
       if (!S.gen) return;
       S.gen[el.dataset.mg] = el.value;
@@ -848,12 +994,14 @@
     if (!on()) return;
     var el = e.target;
     if (el.id === 'mdFile') { if (el.files && el.files.length) readFiles(Array.prototype.slice.call(el.files)); el.value = ''; return; }
+    if (el.id === 'mdPkO') { S.pk.over = el.checked; drawZone(); return; }
     if (!el.dataset || el.dataset.mf === undefined || !canEdit()) return;
     var kind = S.kind, c = COLS[kind].filter(function (x) { return x.k === el.dataset.mf; })[0];
     if (!c) return;
-    var v = c.ck ? el.checked : c.up ? up(el.value) : el.type === 'color' ? el.value : txt(el.value);
-    if (c.up && el.value !== v) el.value = v;
+    var v = c.ck ? el.checked : c.rack ? X().rackText(el.value) : c.up ? up(el.value) : el.type === 'color' ? el.value : txt(el.value);
+    if ((c.up || c.rack) && el.value !== v) el.value = v;
     setField(kind, +el.dataset.mi, c.k, v);
+    if (kind === 'zone' && c.k === 'grp') { render(); return; }
     if (kind === 'grp' && c.k === 'rack' && v === 'no') { var r = draft('grp').rows[+el.dataset.mi]; if (r && r.lv) { r.lv = ''; render(); return; } }
     soon();
   });

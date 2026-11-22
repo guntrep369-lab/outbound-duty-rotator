@@ -21,7 +21,7 @@
   var STALE_TRIES = 4;    // สำเนาในเครื่องตามไม่ทันระหว่างบันทึก ดึงใหม่แล้วลองกี่ครั้ง
   var PAGE = 300;         // เอกสารต่อการดึงหนึ่งครั้ง
   var MASTERS = ['conv', 'sup', 'cap'];
-  var SETUP = ['loc', 'sku', 'grp'];   // ข้อมูลหลักที่หัวหน้าแก้ในหน้า ข้อมูลหลัก (wms-fire-setup.js) · MASTERS ก็แก้ที่หน้านั้นด้วย (ขั้น ข)
+  var SETUP = ['loc', 'sku', 'grp', 'zone'];   // ข้อมูลหลักที่หัวหน้าแก้ในหน้า ข้อมูลหลัก (wms-fire-setup.js) · MASTERS ก็แก้ที่หน้านั้นด้วย (ขั้น ข) · zone = โซนแร็ค (ขั้น ค)
   var ROLE_TH = { head: C.ROLE_HEAD, staff: C.ROLE_USER, viewer: C.ROLE_VIEW };
   var NO_RIGHT = 'บัญชีนี้ยังไม่มีสิทธิ์ ติดต่อหัวหน้า Inventory ให้เพิ่มชื่อในหน้าตั้งค่า';
   var ROLES = ['head', 'staff', 'viewer'];
@@ -527,7 +527,7 @@
       put: async function (local, added) {
         var d = await db(), tx = d.transaction(['docs', 'kv'], 'readwrite'), ds = tx.objectStore('docs');
         (added || local.docs).forEach(function (x) { ds.put(x); });
-        tx.objectStore('kv').put({ v: local.v, seq: local.seq, meta: local.meta, piles: local.piles, master: local.master, mv: local.mv,
+        tx.objectStore('kv').put({ v: local.v, seq: local.seq, meta: local.meta, piles: local.piles, master: local.master, mv: local.mv, mk: local.mk || '',
           tv: local.tv === undefined ? null : local.tv, ov: local.ov === undefined ? null : local.ov, trAt: local.trAt || 0, okAt: local.okAt || 0, trc: local.trc || null }, 'state');
         return done(tx);
       },
@@ -699,12 +699,14 @@
         var td = await store.get('trc/' + id);
         local.trc = td ? { key: meta.trc, id: id, data: td } : null;
       }
-      if ((+meta.mv || 0) !== local.mv) {
-        var all = MASTERS.concat(SETUP);
+      /* mk = ชนิดตารางที่สำเนานี้ดึงไว้: รุ่นหน้าใหม่มีชนิดเพิ่ม (เช่น zone) = ดึงใหม่ครั้งเดียว แม้ mv เท่าเดิม */
+      var all = MASTERS.concat(SETUP), mk = all.join(' '), mv = +meta.mv || 0;
+      if (mv !== local.mv || (mv > 0 && local.mk !== mk)) {
         var ms = await store.getMany(all.map(function (n) { return 'master/' + n; }));
         local.master = {};
         all.forEach(function (n, j) { if (ms[j]) local.master[n] = ms[j]; });
-        local.mv = +meta.mv || 0;
+        local.mv = mv;
+        local.mk = mk;
       }
       local.meta = meta;
       try { await cache.put(local, added); } catch (e) {}
@@ -1041,7 +1043,7 @@
     }
 
     /**
-     * หัวหน้าบันทึกข้อมูลหลักทั้งตาราง kind = loc | sku | grp | conv | sup | cap · rows = แถวแบบวัตถุ (WmsFireSetup.rowIn)
+     * หัวหน้าบันทึกข้อมูลหลักทั้งตาราง kind = loc | sku | grp | conv | sup | cap | zone · rows = แถวแบบวัตถุ (WmsFireSetup.rowIn)
      * opt = { base: รุ่นที่เริ่มแก้, strict } · รุ่นในฐานไม่ตรง base = มีคนบันทึกก่อน ไม่เขียนทับ
      */
     async function setupSave(kind, rows, opt) {

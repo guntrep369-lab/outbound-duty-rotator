@@ -93,7 +93,8 @@
     gr: 'กดส่งจากหน้าจัดที่เก็บ หรือคัดลอกตารางจากหน้าจัดที่เก็บ / แท็บ OUTPUT มาวาง (Ctrl+V) ระบบเรียงช่องให้เอง\n' +
       'หรือพิมพ์ / วางจาก Excel เรียงคอลัมน์ SKU · LOT · PO · โลที่วาง · ชิ้น\n' +
       'LOT = เดือนที่เห็นบนของ (1–12) ปีมาจากวันที่รับ · Note ลงเป็น GR วว-ดด-ปป ของวันที่ด้านบน\n' +
-      'เปิด? ว่าง = ตามโล (R QA RIB ทางเดิน ไม่เปิด) · แถว ย้ายจาก RIB ของหน้าจัดที่เก็บไปอยู่แท็บย้ายให้เอง',
+      'เปิด? ว่าง = ตามโล (R QA RIB ทางเดิน ไม่เปิด) · แถว ย้ายจาก RIB ของหน้าจัดที่เก็บไปอยู่แท็บย้ายให้เอง\n' +
+      '🎯 เลือกโลให้ (ระบบใหม่) = แถวที่ยังไม่มีโลที่วาง ระบบเลือกแร็คตามข้อมูลหลัก แตกเป็นแถวละพาเลท',
     conv: 'แปลงแบบสมุดเดิม: เบิก SKU ตอนซื้อออก รับ SKU ใหม่เข้าโลเดียวกัน LOT PO เดิม Note แปลงสินค้า\n' +
       'SKU ตอนซื้อว่าง = หาจาก MASTER แปลงสินค้า ตัวที่มีของพอ · โลว่าง = โลเปิดขายตาม FIFO แบ่งหลายกองให้เอง\n' +
       'MR = เลข TRcloud ฝั่งเบิก · GR = ฝั่งรับ (ช่องด้านบนใช้ทั้งชุด ช่องในแถวใช้แทนเฉพาะแถว)\n' +
@@ -165,7 +166,7 @@
     p = B.trApply(p, mode, { tr: g.tr, mr: g.mr, gr: g.gr });
     /* ระบบใหม่: เทียบข้อมูลหลัก (Location / SKU / กลุ่มสินค้า) ไม่มีตาราง = ไม่เปลี่ยนอะไร */
     var su = window.BookFire && window.WmsFireSetup && window.BookFire.setup ? window.BookFire.setup() : null;
-    return su ? window.WmsFireSetup.check(p, mode, su.ix) : p;
+    return su ? window.WmsFireSetup.check(p, mode, su.ix, mode === 'gr' ? window.BookFire.setupOcc() : null) : p;
   }
 
   /** แผน → แถวที่ส่งให้สคริปต์ */
@@ -284,6 +285,10 @@
     if (mode === 'ret') {
       html += '<button class="tx-opt' + (need ? ' p' : '') + '" id="gFind" ' + (FINDING || !need || !USER ? 'disabled' : '') + '>' +
         (FINDING ? 'กำลังหา…' : '🔍 หาออเดอร์' + (need ? ' ' + f(need) : '')) + '</button>';
+    }
+    if (mode === 'gr' && pickOn()) {
+      html += '<button type="button" class="tx-opt" id="gPick" title="' + esc('แถวที่มี SKU + ชิ้น แต่ยังไม่มีโลที่วาง → ระบบเลือกช่องให้ แตกเป็นแถวต่อพาเลท\n' +
+        'ตามข้อมูลหลักที่บันทึกแล้ว: กลุ่มสินค้า (ชั้นแร็ค · ที่เก็บเศษ) · SKU : Pallet · โซนแร็ค · Location ที่ว่าง\nแถวที่ใส่โลเองแล้วไม่เปลี่ยน · ลองก่อนได้ที่ ข้อมูลหลัก → โซนแร็ค') + '">🎯 เลือกโลให้</button>';
     }
     html += '<span class="sp"></span>' +
       (g.rows.length > 1 ? '<button class="bk-link" id="gClear">ล้างตาราง</button>' : '') +
@@ -430,6 +435,35 @@
     renderBody(mode, true);
     if (mode === 'ret') findSoon(0);
     return true;
+  }
+
+  /* ── 🎯 เลือกโลให้ (ระบบใหม่ · แท็บรับของ) ─────────────────────────── */
+
+  function pickOn() { return typeof FIRE !== 'undefined' && !!FIRE && !!FIRE.setupPicker && !!window.WmsFireSetup; }
+
+  /** แถวที่ยังไม่มีโลที่วาง → ระบบเลือกแร็คตามข้อมูลหลัก (กลุ่ม · SKU : Pallet · โซนแร็ค) แตกแถวต่อพาเลท · แถวที่มีโลแล้วไม่เปลี่ยน */
+  function pickLocs() {
+    var g = state('gr');
+    /* ชุดค้างส่ง = แถวล็อกแล้ว · สต๊อกยังไม่มา = ไม่รู้ว่าช่องไหนว่าง ห้ามเดา */
+    var stop = g.pending ? 'มีชุดที่ส่งค้าง รอให้ส่งเสร็จก่อน' : !ST ? 'รอสต๊อกก่อน ยังไม่รู้ว่าช่องไหนว่าง' : '';
+    if (stop) { MSG = { kind: 'warn', html: stop }; renderAct('gr'); return; }
+    var X = window.WmsFireSetup, P = pickOn() ? FIRE.setupPicker() : null;
+    if (!P) return;
+    var body = g.rows.filter(function (r) { return !blank(r); });
+    var need = body.filter(function (r) { return !String(r.to || '').trim() && String(r.sku || '').trim() && +String(r.qty || '').replace(/,/g, '') > 0; }).length;
+    if (!need) { MSG = { kind: 'warn', html: 'ไม่มีแถวที่มี SKU + ชิ้น แต่ยังไม่มีโลที่วาง' }; renderAct('gr'); return; }
+    var res = X.pickRows(P, body);
+    g.rows = res.rows;
+    tidy('gr');
+    keep('gr', true);
+    LAST = null;
+    var bad = res.err.slice(0, 3).map(function (e) { return esc((e.sku ? e.sku + ': ' : '') + e.t); }).join(' · ');
+    MSG = { kind: res.err.length || res.man ? 'warn' : 'ok',
+      html: '🎯 เลือกโลให้ ' + f(res.done) + ' แถว → ' + f(res.lines) + ' แถว (แถวละพาเลท)' +
+        (res.man ? ' · หาที่ไม่ได้ ' + f(res.man) + ' แถว (โลยังว่าง ใส่เอง)' : '') +
+        (res.err.length ? ' · ไม่ได้เลือก ' + f(res.err.length) + ' แถว: ' + bad + (res.err.length > 3 ? ' …' : '') : '') + ' · ตรวจก่อนบันทึก' };
+    renderIn('gr');
+    renderBody('gr', true);
   }
 
   function move(el, dr) {
@@ -583,6 +617,7 @@
     var g = state(mode);
     if (t.id === 'gSave') save(mode);
     else if (t.id === 'gFind') find();
+    else if (t.id === 'gPick') pickLocs();
     else if (t.id === 'gClear') {
       if (!confirm('ล้างทุกแถวในตาราง' + TITLE[mode] + '?')) return;
       g.rows = [{}]; LAST = null; MSG = null; keep(mode, true); render(mode);
