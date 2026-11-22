@@ -573,11 +573,15 @@ export function fakeFireGcp({ project = 'demo-src', over = {}, source } = {}) {
       ungzip: (b) => blob(zlib.gunzipSync(b.bytes)),
       base64Encode: (x) => Buffer.from(x).toString('base64'),
       base64Decode: (s) => Buffer.from(String(s), 'base64'),
+      DigestAlgorithm: { MD5: 'md5' },
+      Charset: { UTF_8: 'utf8' },
+      computeDigest: (algo, s, charset) => Array.from(crypto.createHash(algo).update(String(s), charset).digest(), (b) => (b > 127 ? b - 256 : b)),
     },
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: (t) => ({ text: t, setMimeType() { return this; } }) },
     Logger: { log: (s) => logs.push(String(s)) },
   };
-  const NAMES = ['installBackup', 'stopBackup', 'backupNightly', 'backupFull', 'restoreAll', 'installShare', 'stopShare', 'shareRefresh', 'doGet'];
+  const NAMES = ['installBackup', 'stopBackup', 'backupNightly', 'backupFull', 'restoreAll', 'installShare', 'stopShare', 'shareRefresh', 'doGet',
+    'installAudit', 'stopAudit', 'auditRefresh', 'auditSeen'];
   const out = { projects, calls, folders, files, props, triggers, logs, gs: null };
   out.reload = () => {
     let src = (source || fs.readFileSync(FIRE_GS, 'utf8')).replace("var FIREBASE_PROJECT_ID = '';", `var FIREBASE_PROJECT_ID = '${project}';`);

@@ -161,6 +161,7 @@ html.bk-app.bk-in .mod-head{display:none}
 .md-tab .n.bad{background:#FEE2E2;color:#B91C1C}
 .md-tab .dot{width:7px;height:7px;border-radius:50%;background:#F59E0B}
 .md-info{font-size:12px}
+.g-tip.md-pre{width:auto;padding:0 9px;border-color:#FDE68A;background:#FEF3C7;color:#92400E;white-space:nowrap}
 .tx-opt.md-sm{padding:3px 10px;font-size:12.5px}
 .tx-opt.on{border-color:var(--wms-primary);background:var(--wms-primary-light);color:var(--wms-primary-dark);font-weight:600}
 .md-q{width:min(240px,100%);margin-left:auto}
@@ -258,3 +259,8 @@ html.bk-app.bk-in .mod-head{display:none}
 /* แท็บงานในแอป: หัวตารางชุดที่บันทึกขึ้นบรรทัดใหม่ได้บนจอแคบ */
 html.bk-app .bk-dh{flex-wrap:wrap}
 html.bk-app .bk-dh b{white-space:nowrap}
+
+/* กล่อง ของ QA ที่รับแล้ว */
+.qa-pick{margin-top:6px}
+.qa-pick .bk-link[disabled]{color:var(--wms-muted);text-decoration:none;cursor:default}
+.qa-wait{margin-top:4px;font-size:12.5px}

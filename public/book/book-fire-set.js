@@ -31,8 +31,9 @@
   var CHECK = null, CHECK_AT = 0;
   var XFER = null, XFER_AT = 0;   // วันที่ต้องวางลงชีตเดิม
   var ARCH = null, ARCH_AT = 0;   // สรุปปิดเดือน { months, next, fix, fresh }
-  var ADD = { name: '', email: '', role: 'staff' };
+  var ADD = { name: '', email: '', role: 'staff', team: '' };
   var ROLE_TH = { head: 'หัวหน้า', staff: 'ลงรายการ', viewer: 'ดูอย่างเดียว' };
+  var TEAM_TH = { '': 'คลัง / Inbound', qa: 'QA' };
 
   function lsGet(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
   function $(id) { return document.getElementById(id); }
@@ -109,7 +110,7 @@
   /* ── วาด ───────────────────────────────────────────────────────────── */
 
   var TIPS = {
-    users: 'เข้าด้วย Google ของบริษัท ไม่มีรหัสให้จำ\nเพิ่มคน: ใส่ชื่อ อีเมลบริษัท เลือกสิทธิ์ แล้วกด เพิ่ม\nหัวหน้า = ทุกอย่าง + ยกเลิกเอกสาร ปรับยอด ยอดยกมา ตั้งค่า\nลงรายการ = ตัดขาย รับของ ย้าย คืน แปลง\nดูอย่างเดียว = ดูยอดได้ บันทึกไม่ได้\nคนที่ออก: เอาเครื่องหมายใช้งานออก (ไม่ลบ ชื่อในเอกสารเก่ายังอ่านได้)\nแก้แล้วบันทึกทันที',
+    users: 'เข้าด้วย Google ของบริษัท ไม่มีรหัสให้จำ\nเพิ่มคน: ใส่ชื่อ อีเมลบริษัท เลือกสิทธิ์ แล้วกด เพิ่ม\nหัวหน้า = ทุกอย่าง + ยกเลิกเอกสาร ปรับยอด ยอดยกมา ตั้งค่า\nลงรายการ = ตัดขาย รับของ ย้าย คืน แปลง\nดูอย่างเดียว = ดูยอดได้ บันทึกไม่ได้\nทีม (ใช้กับคนลงรายการ): คลัง / Inbound ทำใบโอนเข้า QA และรับใบออก · QA รับใบเข้า และทำใบออก · หัวหน้าทำแทนได้ทุกทีม\nคนทำใบรับใบของตัวเองไม่ได้ · เปลี่ยนทีมแล้วให้คนนั้นเข้าระบบใหม่\nคนที่ออก: เอาเครื่องหมายใช้งานออก (ไม่ลบ ชื่อในเอกสารเก่ายังอ่านได้)\nแก้แล้วบันทึกทันที',
     open: 'ลงยอดยกมา (วันเปิดระบบ)\n1 หน้านับสต๊อกใหญ่ › แท็บตั้งต้นสมุด › อนุมัติแล้วดาวน์โหลด Excel\n2 ลากไฟล์มาวางที่นี่ หรือเปิดชีต ยอดตั้งต้น คัดลอกทั้งตารางแล้วกด Ctrl+V\n3 ดูตัวเลข แถวผิดต้องเป็น 0 แล้วกด ลงยอดยกมา\n4 แท็บ ตรวจยอด ต้องขึ้น ✓\nลงใหม่ได้จนกว่าจะมีเอกสารอื่นต่อจากยอดยกมา หลังจากนั้นใช้ปรับยอดแทน',
     check: 'ตรวจยอด: คิดยอดใหม่จากเอกสารทุกใบในเครื่องนี้ เทียบกับยอดคงเหลือที่เครื่องเก็บไว้ ไม่ตรง = ซ่อมจากเอกสารให้เอง\nโหลดใหม่ทั้งหมด: ล้างสำเนาในเครื่องแล้วดึงเอกสารทุกใบจากฐานอีกครั้ง ใช้เมื่อสงสัยว่าเครื่องนี้ไม่ตรงกับเครื่องอื่น (อ่านเท่าจำนวนเอกสาร)',
     quota: '',
@@ -151,6 +152,8 @@
       var by = function (r) { return on.filter(function (u) { return u.role === r; }).length; };
       html = chip('c-ok', 'ใช้งาน', on.length, 'คน') + chip('', 'หัวหน้า', by('head')) + chip('', 'ลงรายการ', by('staff')) +
         chip('', 'ดูอย่างเดียว', by('viewer')) + chip('', 'ปิดแล้ว', USERS.length - on.length);
+      var qa = on.filter(function (u) { return u.role === 'staff' && u.team === 'qa'; }).length;
+      html += chip(qa ? '' : 'c-warn', 'ทีม QA', qa) + (qa ? '' : '<span class="c-warn">⚠ ยังไม่มีทีม QA: รับใบเข้า QA และทำใบออกได้เฉพาะหัวหน้า</span>');
     } else if (s === 'open') {
       var op = BSTATE && BSTATE.open;
       html = '<span>ยอดยกมาในระบบ: ' + (op ? '<b>' + esc(op.doc) + '</b> · ' + f(op.rows) + ' กอง · ' + f(op.qty) + ' ชิ้น · ' + esc(String(op.at).slice(5, 16)) + ' · ' + esc(op.who) : '<b>ยังไม่ลง</b>') +
@@ -228,6 +231,12 @@
     }).join('') + '</select>';
   }
 
+  function teamSel(attr, v) {
+    return '<select class="fs-in" ' + attr + ' aria-label="ทีม">' + ['', 'qa'].map(function (k) {
+      return '<option value="' + k + '"' + (k === v ? ' selected' : '') + '>' + TEAM_TH[k] + '</option>';
+    }).join('') + '</select>';
+  }
+
   function renderUsers() {
     if (!USERS) return BUSY ? '' : '<div class="tx-empty">ยังโหลดรายชื่อไม่ได้ กด 🔄</div>';
     var dom = FIRE.domain ? '@' + FIRE.domain : '';
@@ -235,6 +244,7 @@
       '<td class="fs-c"><input class="fs-in" id="fsAddName" placeholder="ชื่อ" value="' + esc(ADD.name) + '" autocomplete="off"></td>' +
       '<td class="fs-c"><input class="fs-in" id="fsAddMail" type="email" placeholder="ชื่อ' + esc(dom) + '" value="' + esc(ADD.email) + '" autocomplete="off" style="min-width:200px"></td>' +
       '<td class="fs-c">' + roleSel('id="fsAddRole"', ADD.role) + '</td>' +
+      '<td class="fs-c">' + teamSel('id="fsAddTeam"', ADD.team) + '</td>' +
       '<td colspan="3"><button class="bk-btn" id="fsAdd" ' + (BUSY ? 'disabled' : '') + '>+ เพิ่ม</button></td></tr>';
     var me = USER.email;
     var rows = USERS.map(function (u, i) {
@@ -243,10 +253,12 @@
         '<td class="fs-c"><input class="fs-in" data-u="' + esc(u.email) + '" data-k="name" value="' + esc(u.name) + '" autocomplete="off"></td>' +
         '<td class="c-sub">' + esc(u.email) + (self ? ' <b>(คุณ)</b>' : '') + '</td>' +
         '<td class="fs-c">' + (self ? '<span style="padding:0 8px">' + ROLE_TH[u.role] + '</span>' : roleSel('data-u="' + esc(u.email) + '" data-k="role"', u.role)) + '</td>' +
+        '<td class="fs-c">' + (u.role === 'staff' ? teamSel('data-u="' + esc(u.email) + '" data-k="team"', u.team || '')
+          : '<span class="c-sub" style="padding:0 8px">' + (u.role === 'head' ? 'ทุกทีม' : '—') + '</span>') + '</td>' +
         '<td style="text-align:center"><input type="checkbox" data-u="' + esc(u.email) + '" data-k="active"' + (u.active ? ' checked' : '') + (self ? ' disabled title="ปิดบัญชีตัวเองไม่ได้"' : '') + ' aria-label="ใช้งาน"></td>' +
         '<td class="c-sub">' + esc(when(u.last)) + '</td><td class="c-sub" title="' + esc(u.by) + '">' + esc(when(u.at)) + '</td></tr>';
     });
-    return table([['#', 'num'], ['ชื่อ'], ['อีเมล'], ['สิทธิ์'], ['ใช้งาน'], ['เข้าล่าสุด'], ['แก้ล่าสุด']], [add].concat(rows));
+    return table([['#', 'num'], ['ชื่อ'], ['อีเมล'], ['สิทธิ์'], ['ทีม'], ['ใช้งาน'], ['เข้าล่าสุด'], ['แก้ล่าสุด']], [add].concat(rows));
   }
 
   function renderOpen() {
@@ -366,7 +378,8 @@
       if (revert) revert();
     } else {
       Object.keys(r.user).forEach(function (k) { if (r.user[k] !== undefined && r.user[k] !== null) u[k] = r.user[k]; });
-      NOTE = { kind: 'ok', html: 'บันทึก <b>' + esc(u.name) + '</b> แล้ว · ' + ROLE_TH[u.role] + (u.active ? '' : ' · ปิดแล้ว เข้าระบบไม่ได้') };
+      NOTE = { kind: 'ok', html: 'บันทึก <b>' + esc(u.name) + '</b> แล้ว · ' + ROLE_TH[u.role] + (u.role === 'staff' ? ' · ทีม ' + TEAM_TH[u.team || ''] : '') +
+        (patch.team !== undefined ? ' (ให้คนนี้เข้าระบบใหม่)' : '') + (u.active ? '' : ' · ปิดแล้ว เข้าระบบไม่ได้') };
     }
     renderAll();
   }
@@ -375,13 +388,14 @@
     ADD.name = $('fsAddName').value.trim();
     ADD.email = $('fsAddMail').value.trim().toLowerCase();
     ADD.role = $('fsAddRole').value;
+    ADD.team = $('fsAddTeam').value;
     if (!ADD.name || !ADD.email) { NOTE = { kind: 'bad', html: 'ใส่ชื่อและอีเมลก่อน' }; renderAll(); return; }
     BUSY = 'กำลังเพิ่ม…'; NOTE = null; renderAll();
-    var r = await FIRE.saveUser(ADD.email, { name: ADD.name, role: ADD.role, active: true, add: true });
+    var r = await FIRE.saveUser(ADD.email, { name: ADD.name, role: ADD.role, team: ADD.role === 'staff' ? ADD.team : '', active: true, add: true });
     BUSY = '';
     if (r.error) { NOTE = { kind: 'bad', html: 'เพิ่มไม่ได้: ' + esc(r.error) }; renderAll(); return; }
     NOTE = { kind: 'ok', html: 'เพิ่ม <b>' + esc(r.user.name) + '</b> (' + esc(r.user.email) + ') เป็น' + ROLE_TH[r.user.role] + 'แล้ว · เข้าด้วย Google ของบริษัทได้เลย' };
-    ADD = { name: '', email: '', role: ADD.role };
+    ADD = { name: '', email: '', role: ADD.role, team: ADD.team };
     USERS_FOR = '';
     await loadUsers();
   }
@@ -603,6 +617,8 @@
       saveUser(email, { name: v });
     } else if (k === 'role') {
       saveUser(email, { role: el.value });
+    } else if (k === 'team') {
+      saveUser(email, { team: el.value });
     } else if (k === 'active') {
       if (!el.checked && !confirm('ปิดบัญชี ' + email + '?\nเข้าระบบไม่ได้จนกว่าจะเปิดอีกครั้ง ชื่อในเอกสารเก่ายังอยู่')) { el.checked = true; return; }
       saveUser(email, { active: el.checked }, function () { el.checked = !el.checked; });

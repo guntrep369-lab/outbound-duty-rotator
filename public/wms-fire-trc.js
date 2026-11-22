@@ -67,7 +67,17 @@
   }
 
   /**
+   * ล็อก TRcloud จนหัวหน้าอนุมัติ: ใบย้ายที่ต้องลง TRcloud ยังไม่อนุมัติ และใบกลับรายการของใบแบบนั้น
+   * (trUpdate ใน firestore.rules คุมใบย้ายเอง ใบกลับรายการคุมในแอป เพราะ Rules ไม่เห็นใบเดิม)
+   */
+  function trLocked(d, by) {
+    var o = d && d.type === C.TYPE_REV ? by[d.link] : d;
+    return !!o && o.type === C.TYPE_MOVE && !o.ap && baseState(o) === C.TR_WAIT;
+  }
+
+  /**
    * สถานะลง TRcloud ของทุกเอกสาร { เลขที่: wait | done | none }
+   * ยกเลิกก่อนอนุมัติ = ไม่ต้องลงทั้งคู่เสมอ
    * ยกเลิกก่อนลง TRcloud = ไม่ต้องลงทั้งคู่ · ยกเลิกหลังลงแล้ว = กลับรายการต้องลง (จนกว่าจะใส่เลขหรือกดไม่ต้องลง)
    */
   function trStates(local) {
@@ -76,11 +86,12 @@
       var s;
       if (d.type === C.TYPE_REV) {
         var o = by[d.link];
-        if (d.trBy && C.TR_STATES.indexOf(d.trState) >= 0) s = d.trState;
+        if (trLocked(d, by)) s = C.TR_NONE;
+        else if (d.trBy && C.TR_STATES.indexOf(d.trState) >= 0) s = d.trState;
         else s = o && baseState(o) === C.TR_DONE ? C.TR_WAIT : C.TR_NONE;
       } else {
         s = baseState(d);
-        if (vd[d.no] && s === C.TR_WAIT && !d.trBy) s = C.TR_NONE;
+        if (vd[d.no] && s === C.TR_WAIT && (!d.trBy || trLocked(d, by))) s = C.TR_NONE;
       }
       out[d.no] = s;
     });
@@ -95,8 +106,8 @@
 
   /**
    * รายการหน้ารอลง TRcloud ใหม่สุดก่อน: รอลงทั้งหมด + ลงแล้ว / ไม่ต้องลง ย้อน TR_DAYS วัน (ไม่นับตัดขายกับยอดยกมา)
-   * [{id, no, type, date, stamp, name, n, qty, tr, state, kind, voided, link, wh: [[SKU, คลัง, ±ชิ้น]], skus, trBy, trAt, rows, ok}]
-   * ok = ตรวจ / อนุมัติ (okState) ใบย้ายที่ยังไม่อนุมัติ ออกไฟล์ปรับยอดไม่ได้
+   * [{id, no, type, date, stamp, name, n, qty, tr, state, kind, voided, link, wh: [[SKU, คลัง, ±ชิ้น]], skus, trBy, trAt, rows, ok, xf, lock}]
+   * ok = ตรวจ / อนุมัติ (okState) · xf = ใบโอน QA (ตรวจ = รับ) · lock = ออกไฟล์ / ใส่เลข / เปลี่ยนสถานะไม่ได้ (trLocked)
    */
   function trList(local, now, days) {
     var st = trStates(local), vd = C.voids(local), by = byNo(local);
@@ -111,26 +122,29 @@
         id: d.id, no: d.no, type: d.type, date: d.date, stamp: d.stamp, name: d.name, n: d.n, qty: d.qty, tr: d.tr || '',
         state: st[d.no], kind: kindOf(d, by), voided: !!vd[d.no], link: d.type === C.TYPE_REV ? d.link : (vd[d.no] && vd[d.no].link) || '',
         wh: C.whLines(d.rows), skus: Object.keys(skus), trBy: d.trBy || '', trAt: d.trAt || 0, rows: d.rows,
-        ok: C.okState(d, vd),
+        ok: C.okState(d, vd), xf: C.xfKind(d), lock: trLocked(d, by),
       };
     });
   }
 
   /**
    * บันทึกเลข TRcloud / สถานะ (op bk-tr) items = [{no, tr, state}] → { writes: [[path, ช่องที่แก้]] } หรือ { error, bad }
-   * แก้ได้เฉพาะ tr trState trBy trAt (Rules บังคับ) ลงแล้วต้องมีเลข · ตัดขายกับยอดยกมาไม่เกี่ยวกับ TRcloud ของคลัง
+   * แก้ได้เฉพาะ tr trState trBy trAt และต่อประวัติ trLog (เติมใน transaction จากค่าในฐาน · Rules บังคับ) ลงแล้วต้องมีเลข · ตัดขายกับยอดยกมาไม่เกี่ยวกับ TRcloud ของคลัง
+   * ใบย้ายที่ต้องลง TRcloud แต่ยังไม่อนุมัติ = แก้ไม่ได้ (trLocked)
    */
   function trSet(local, items, user) {
     if (!Array.isArray(items) || !items.length) return { error: 'ไม่มีเอกสารที่จะบันทึก' };
     if (items.length > TR_MAX) return { error: 'บันทึกเลข TRcloud ได้ครั้งละไม่เกิน ' + TR_MAX + ' เอกสาร' };
-    var by = byNo(local), seen = {}, bad = [], writes = [];
+    var by = byNo(local), vd = C.voids(local), seen = {}, bad = [], writes = [];
     items.forEach(function (it) {
       it = it || {};
       var no = text(it.no), d = by[no], st = text(it.state), tr = C.plain(it.tr, 100);
       var why = !d ? 'ไม่พบเลขที่นี้' : seen[no] ? 'ซ้ำในรายการ'
         : d.type === C.TYPE_SALE || d.type === C.TYPE_OPEN ? d.type + 'ไม่ต้องลง TRcloud ของคลัง'
         : C.TR_STATES.indexOf(st) < 0 ? 'สถานะต้องเป็น รอลง ลงแล้ว หรือ ไม่ต้องลง'
-        : st === C.TR_DONE && !tr ? 'ลงแล้วต้องมีเลข TRcloud' : '';
+        : trLocked(d, by) ? (d.type === C.TYPE_REV || vd[d.no] ? 'ยกเลิกก่อนอนุมัติ ไม่ต้องลง TRcloud' : 'ยังไม่อนุมัติ ใส่เลข / เปลี่ยนสถานะ TRcloud ไม่ได้')
+        : st === C.TR_DONE && !tr ? 'ลงแล้วต้องมีเลข TRcloud'
+        : C.trLogFull(d) ? 'ประวัติเลข TRcloud เต็ม ' + C.TR_LOG_MAX + ' ครั้ง แก้อีกไม่ได้ แจ้งหัวหน้า' : '';
       if (why) { bad.push({ no: no, why: why }); return; }
       seen[no] = 1;
       writes.push(['docs/' + d.id, { tr: tr, trState: st, trBy: user.email, trAt: C.TIME }]);
@@ -142,7 +156,7 @@
   /**
    * ไฟล์ปรับยอดลง TRcloud ของเอกสารที่เลือก (เฉพาะชนิด file) แถวละ SKU + คลัง ต่อเอกสาร
    * เพิ่ม = ช่องจำนวนที่เพิ่มขึ้น · ลด = ช่องจำนวนที่ลดลง · ออเดอร์ = เลขที่เอกสาร (ตามกลับได้) · วันที่ = วันที่ของเอกสาร
-   * ใบย้ายที่ยังไม่อนุมัติ (รอตรวจ / รออนุมัติ) ไม่ลงไฟล์ → hold
+   * ใบย้ายที่ยังไม่อนุมัติ (รอรับ / ไม่รับ / รออนุมัติ) ไม่ลงไฟล์ → hold · ยกเลิกก่อนอนุมัติ กับใบกลับรายการของมัน → skip
    * → { name, aoa, widths, docs, skip, hold, lines }
    */
   function trFile(local, nos) {
@@ -150,9 +164,9 @@
     (nos || []).forEach(function (no) {
       var d = by[no];
       if (!d) return;
-      var lines = C.whLines(d.rows), os = C.okState(d, vd);
+      var lines = C.whLines(d.rows);
       if (kindOf(d, by) !== 'file' || !lines.length) { skip.push(no); return; }
-      if (os === C.OK_CHECK || os === C.OK_APPROVE) { hold.push(no); return; }
+      if (trLocked(d, by)) { (d.type === C.TYPE_REV || vd[d.no] ? skip : hold).push(no); return; }
       lines.forEach(function (l) { rows.push([l[0], d.date, l[2] > 0 ? l[2] : '', l[2] < 0 ? -l[2] : '', '', '', d.no, TRC_DEPT, l[1], '']); });
       used.push(no);
     });
@@ -290,6 +304,7 @@
 
   /**
    * แท็บ ความจุต่อพาเลท → { rows: [[SKU, Product ID, ชิ้นต่อพาเลท]], cols, blank } แบบ WmsPutaway.capFromRows
+   * มีคอลัมน์ ขึ้นแร็ค = เพิ่ม rack: [[SKU, Product ID, ที่พิมพ์]] (ไม่มีคอลัมน์ = ไม่มีคีย์ rack)
    * หัวตารางอยู่ใน 10 แถวแรก: SKU หรือ Product ID + STD / pallet · ช่องความจุว่าง / ไม่ใช่ตัวเลข นับใน blank · 0 เก็บไว้
    */
   function readCap(grid) {
@@ -297,28 +312,35 @@
     if (!g.length) return { error: 'ชีตว่าง' };
     var hi = -1, c = null;
     for (var i = 0; i < Math.min(g.length, 10) && hi < 0; i++) {
-      var x = { sku: -1, pid: -1, cap: -1 };
+      var x = { sku: -1, pid: -1, cap: -1, rack: -1 };
       g[i].forEach(function (v, j) {
         var h = text(v);
-        if (x.cap < 0 && /std|pallet|พาเลท|ความจุ/i.test(h)) x.cap = j;
+        if (/^ขึ้นแร็ค/.test(h)) { if (x.rack < 0) x.rack = j; }
+        else if (x.cap < 0 && /std|pallet|พาเลท|ความจุ/i.test(h)) x.cap = j;
         else if (x.pid < 0 && /product\s*id|รหัสยาว/i.test(h)) x.pid = j;
         else if (x.sku < 0 && /^sku$|^รหัสสินค้า$/i.test(h)) x.sku = j;
       });
       if (x.cap >= 0 && (x.sku >= 0 || x.pid >= 0)) { hi = i; c = x; }
     }
     if (hi < 0) return { error: 'หาหัวตาราง SKU กับ STD / pallet ไม่เจอ' };
-    var rows = [], blank = 0, seen = {};
+    var rows = [], blank = 0, seen = {}, rack = [], seenRack = {};
     g.slice(hi + 1).forEach(function (r) {
       var sku = c.sku >= 0 ? up(r[c.sku]).replace(/\s+/g, '') : '', pid = c.pid >= 0 ? up(r[c.pid]).replace(/\s+/g, '') : '';
       if (!sku && !pid) return;
-      if (!isNum(r[c.cap]) || numOf(r[c.cap]) < 0) { blank++; return; }
-      var k = sku + '|' + pid;
+      var k = sku + '|' + pid, rv = c.rack >= 0 ? text(r[c.rack]) : '';
+      if (rv && !seenRack[k]) { seenRack[k] = 1; rack.push([sku, pid, rv]); }
+      if (!isNum(r[c.cap]) || numOf(r[c.cap]) < 0) {
+        if (!rv || text(r[c.cap])) blank++;   // ตั้งขึ้นแร็คอย่างเดียว ไม่นับว่าช่องว่าง
+        return;
+      }
       if (seen[k]) return;
       seen[k] = 1;
       rows.push([sku, pid, numOf(r[c.cap])]);
     });
     var head = g[hi].map(text);
-    return { rows: rows, cols: [c.sku >= 0 ? head[c.sku] : '', c.pid >= 0 ? head[c.pid] : '', head[c.cap]].filter(Boolean), blank: blank };
+    var res = { rows: rows, cols: [c.sku >= 0 ? head[c.sku] : '', c.pid >= 0 ? head[c.pid] : '', head[c.cap]].filter(Boolean), blank: blank };
+    if (c.rack >= 0) res.rack = rack;
+    return res;
   }
 
   /**
@@ -522,7 +544,8 @@
       if (d.seq > x.lastSeq) { x.lastSeq = d.seq; x.last = d.no; }
     });
     return Object.keys(by).sort().reverse().map(function (k) {
-      var x = by[k], done = log && log[k] ? log[k] : null;
+      var x = by[k], e = log && Object.prototype.hasOwnProperty.call(log, k) ? log[k] : null;
+      var done = e && typeof e === 'object' ? { by: C.safeText(e.by), at: C.safeTime(e.at), n: C.safeNum(e.n), last: C.safeText(e.last) } : null;
       return { day: k, docs: x.docs, rows: x.rows, first: x.first, last: x.last, done: done, more: !!(done && done.last && done.last !== x.last) };
     });
   }
@@ -556,6 +579,7 @@
     Object.keys(local.master || {}).forEach(function (n) { data['master/' + n] = clone(local.master[n]); });
     (extra.users || []).forEach(function (u) {
       var o = { name: u.name, role: u.role, active: u.active === true };
+      if (u.team) o.team = u.team;
       if (u.by) o.by = u.by;
       if (u.at) o.at = u.at;
       if (u.last) o.last = u.last;
@@ -582,7 +606,7 @@
    * เอกสารหลักกับส่วนแยก (~2 ~3) ไปด้วยกัน: ไฟล์หลังมีเอกสารหลัก ส่วนแยกจากไฟล์ก่อนทิ้ง (แบบ restoreAll ของ fire-backup.gs)
    */
   function mergeBackups(list) {
-    var data = {}, partsOf = {};
+    var data = {}, partsOf = Object.create(null);   // รหัสชุดชนชื่อในตัวของ JS ได้
     list.slice().sort(function (a, b) { return (+a.made || 0) - (+b.made || 0); }).forEach(function (b) {
       Object.keys(b.data).forEach(function (p) {
         var m = /^docs\/([^~]+)$/.exec(p);
@@ -671,9 +695,11 @@
   /**
    * แผนปิดเดือน → { m, entry, chunks: [[path, data]], ov: [[path, data]], index } หรือ { error }
    * arch/{ปปดด}-{k} = { m, k, n, t: JSON [[{id, data}, …ส่วนแยก], …] } · เอกสารใหญ่เกินก้อน = skip (เครื่องใหม่อ่านทีละเอกสาร)
-   * arch/ov-{k} = เลข TRcloud ที่ใส่หลังปิดเดือนก่อน ๆ [[id, tr, trState, trBy, trAt], …] เขียนใหม่ทุกครั้งที่ปิด
+   * arch/ov-{ปปดด}-{k} = เลข TRcloud ที่ใส่หลังปิดเดือนก่อน ๆ [[id, tr, trState, trBy, trAt], …] ชุดใหม่ทุกครั้งที่ปิด (ชุดที่ยืนยันแล้ว Rules ไม่ให้ทับ)
    *              ใบที่ตรวจ / อนุมัติหลังปิดเดือนนั้น ต่อท้าย [.., ck, ckName, ckAt, ap, apName, apAt, okAt]
-   * arch/index = { v, months: [{m, from, to, docs, n, skip, bytes, at, by, trAt, okAt}], ov: {n, fix, trAt, okAt, at} } เขียนสุดท้าย (จุดยืนยัน)
+   *              ใบที่ไม่รับ ต่อท้ายอีก [.., rj, rjName, rjWhy]
+   *              ใบที่เคยเปลี่ยนเลข ช่องที่ 16 (ดัชนี 15) = trLog ช่องที่ไม่มีค่าเว้นว่าง
+   * arch/index = { v, months: [{m, from, to, docs, n, skip, bytes, at, by, trAt, okAt}], ov: {m, n, fix, trAt, okAt, at} } เขียนสุดท้าย (จุดยืนยัน)
    * trAt / okAt = เวลาเซิร์ฟเวอร์ล่าสุดที่เครื่องหัวหน้าเห็นเลข TRcloud / การตรวจอนุมัติ (เครื่องใหม่ดึงที่แก้หลังจากนี้)
    */
   function archPlan(local, idx, now, opt) {
@@ -706,14 +732,16 @@
         if (!tr && !ok) return;
         var e = [d.id, d.tr || '', d.trState || '', d.trBy || '', d.trAt || 0];
         if (ok) e.push(d.ck || '', d.ckName || '', d.ckAt || 0, d.ap || '', d.apName || '', d.apAt || 0, d.okAt);
+        if (ok && d.rj) e.push(d.rj, d.rjName || '', d.rjWhy || '');
+        if (tr && d.trLog && d.trLog.length) { while (e.length < 15) e.push(''); e.push(d.trLog); }
         fix.push(e);
       });
     }
     var ovp = pack(fix, limit);
     if (ovp.big.length) return { error: 'รายการเลข TRcloud ยาวผิดปกติ ' + ovp.big[0][0] };
-    var ov = ovp.chunks.map(function (c, i) { return ['arch/ov-' + (i + 1), { k: i + 1, n: c.length, t: JSON.stringify(c) }]; });
+    var ov = ovp.chunks.map(function (c, i) { return ['arch/ov-' + nx.m + '-' + (i + 1), { m: nx.m, k: i + 1, n: c.length, t: JSON.stringify(c) }]; });
     months.push(entry);
-    var index = { v: 1, months: months, ov: { n: ov.length, fix: fix.length, trAt: trAt, okAt: okAt, at: now } };
+    var index = { v: 1, months: months, ov: { m: nx.m, n: ov.length, fix: fix.length, trAt: trAt, okAt: okAt, at: now } };
     return { m: nx.m, entry: entry, chunks: chunks, ov: ov, index: index };
   }
 
@@ -738,7 +766,7 @@
     if (!Array.isArray(a)) return null;
     try { return a.map(groupDoc); } catch (e) { return null; }
   }
-  /** ก้อนเลข TRcloud → [[id, tr, trState, trBy, trAt (, ck, ckName, ckAt, ap, apName, apAt, okAt)]] */
+  /** ก้อนเลข TRcloud → [[id, tr, trState, trBy, trAt (, ck, ckName, ckAt, ap, apName, apAt, okAt (, rj, rjName, rjWhy))]] */
   function archFix(chunk) {
     try { var a = JSON.parse(chunk && chunk.t); return Array.isArray(a) ? a : []; } catch (e) { return []; }
   }
@@ -769,7 +797,7 @@
 
   window.WmsFireTrc = {
     TRC_HEAD: TRC_HEAD, TRC_DEPT: TRC_DEPT, TR_MAX: TR_MAX, TR_DAYS: TR_DAYS, FILE_TYPES: FILE_TYPES, TIME_KEYS: TIME_KEYS, BACKUP_KIND: BACKUP_KIND,
-    norm: norm, trStates: trStates, trList: trList, trSet: trSet, trFile: trFile, kindOf: kindOf,
+    norm: norm, trStates: trStates, trLocked: trLocked, trList: trList, trSet: trSet, trFile: trFile, kindOf: kindOf,
     tabRows: tabRows, sheetKind: sheetKind, readSheets: readSheets, trcDoc: trcDoc, trcIn: trcIn, masterDoc: masterDoc,
     pilesAsOf: pilesAsOf, trcCompare: trcCompare, trcBook: trcBook,
     sheetTsv: sheetTsv, xferDocs: xferDocs, xferDays: xferDays, xferText: xferText,

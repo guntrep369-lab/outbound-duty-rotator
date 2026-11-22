@@ -196,9 +196,11 @@
   /**
    * คำตอบ tx-fifo (+ แถวของชุดที่บันทึกหลังดึงสต๊อก) → กองต่อ SKU
    * extra = [[SKU, SKU เต็ม, LOT, PO, โลเบิก, โลรับ, ชิ้น, ประเภท, Note, Status]] แบบที่ book-api.gs เก็บ
+   * holds = ระบบใหม่ (รับก่อนใช้ต่อ): WmsFireCore.holdList() ชิ้นที่พักรอรับ → pile.hold กับ pile.wait [{no, rj}]
+   *         p.qty เป็นยอดจริงในโลเสมอ ชิ้นที่ใช้ต่อได้ = freeQty(p) · หน้าเดิมไม่ส่ง = คิดแบบเดิม
    * @returns {{skus, open:{s:[pile]}, reserve:{s:[pile]}, code(sku)→s|-1, supOf(po), unknown}}
    */
-  function stock(res, extra) {
+  function stock(res, extra, holds) {
     var skus = res.skus || [], pos = (res.pos || []).slice(), locs = (res.locs || []).slice(), days = res.days || [];
     var byCode = {}, poIdx = {}, locIdx = {}, supMap = {};
     skus.forEach(function (t, i) { [t[1], t[0]].forEach(function (k) { k = up(k); if (k && byCode[k] === undefined) byCode[k] = i; }); });
@@ -242,6 +244,17 @@
       apply(s, up(e[2]), idxOf(poIdx, pos, e[3]), from, to, +e[6] || 0, t, String(e[9] || '').trim() === 'เปิด', '');
     });
 
+    var held = {};
+    (holds || []).forEach(function (h) {
+      var s = byCode[up(h.long)] !== undefined ? byCode[up(h.long)] : byCode[up(h.sku)];
+      if (s === undefined) return;
+      var po = poIdx[up(h.po)], loc = locIdx[up(h.loc)];
+      if (po === undefined || loc === undefined) return;
+      var k = s + '|' + up(h.lot) + '|' + po + '|' + loc, e = held[k] || (held[k] = { qty: 0, docs: [] });
+      e.qty = round(e.qty + h.qty);
+      e.docs = e.docs.concat(h.docs || []);
+    });
+
     var open = {}, reserve = {}, all = {}, neg = [];
     Object.keys(bal).forEach(function (k) {
       var q = round(bal[k]);
@@ -253,6 +266,7 @@
         s: s, lot: p[1], po: po, loc: loc, qty: q, open: !!isOpen[k], first: first[s + '|' + p[1] + '|' + p[2]] || '',
         sup: supMap[basePo(po)] || '', id: k,
       };
+      if (held[k]) { pile.hold = Math.min(q, held[k].qty); pile.wait = held[k].docs; }
       (all[s] || (all[s] = [])).push(pile);
       if (/^(QA|IQA)\b/.test(L)) return;
       if (pile.open && cuttable(loc)) (open[s] || (open[s] = [])).push(pile);
@@ -265,7 +279,7 @@
     (res.locs || []).forEach(function (l) { knownLoc[up(l)] = 1; });
 
     return {
-      skus: skus, open: open, reserve: reserve, all: all, unknown: unknown, neg: neg,
+      skus: skus, open: open, reserve: reserve, all: all, unknown: unknown, neg: neg, xfer: !!holds,
       known: function (loc) { return !!knownLoc[up(loc)]; },
       code: function (sku) { var i = byCode[up(sku)]; return i === undefined ? -1 : i; },
       supOf: function (po) { return supMap[basePo(po)] || ''; },
@@ -275,6 +289,29 @@
   }
 
   function basePo(v) { var s = up(v); var m = /^(\d{6,})-\d{1,3}$/.exec(s); return m ? m[1] : s; }
+  /** ชิ้นที่ใช้ต่อได้ของกอง = ยอดในโล − ที่พักรอรับ */
+  function freeQty(p) { return p.hold ? Math.max(0, round(p.qty - p.hold)) : p.qty; }
+  /** ชิ้นที่พักรอรับในกองเหล่านี้ → { qty, docs: [{no, rj}] } ไม่มี = null */
+  function waitOf(piles) {
+    var out = { qty: 0, docs: [] }, seen = {};
+    (piles || []).forEach(function (p) {
+      if (!p.hold) return;
+      out.qty = round(out.qty + p.hold);
+      (p.wait || []).forEach(function (d) { if (!seen[d.no]) { seen[d.no] = 1; out.docs.push(d); } });
+    });
+    return out.qty ? out : null;
+  }
+  /** ต่อท้ายเหตุผลของแถวผิด: ของมีแต่ยังไม่รับ */
+  function waitText(piles) {
+    var w = waitOf(piles);
+    if (!w) return '';
+    var wait = w.docs.filter(function (d) { return !d.rj; }).map(function (d) { return d.no; });
+    var no = w.docs.filter(function (d) { return d.rj; }).map(function (d) { return d.no; });
+    return ' · อีก ' + w.qty + ' ชิ้นยังไม่รับ'
+      + (!w.docs.length ? ' (เพิ่งโอนในใบนี้ บันทึกแล้วกดรับก่อน)' : '')
+      + (wait.length ? ' ' + wait.slice(0, 3).join(', ') + ' กดรับก่อน' : '')
+      + (no.length ? ' ' + no.slice(0, 3).join(', ') + ' ไม่รับ รอหัวหน้ายกเลิก' : '');
+  }
   function lotNo(l) { var n = parseFloat(l); return isNaN(n) ? 1e9 : n; }
 
   /** ลำดับตัดของกองใน SKU เดียวกัน (ดูหัวไฟล์) */
@@ -316,12 +353,12 @@
       if (s < 0) { r.st = 'nosku'; return r; }
       var piles = st.open[s] || [];
       var have = 0;
-      piles.forEach(function (p) { have += left[p.id] === undefined ? p.qty : left[p.id]; });
+      piles.forEach(function (p) { have += left[p.id] === undefined ? freeQty(p) : left[p.id]; });
       if (round(have) < l.qty) { r.st = 'short'; return r; }
       var need = l.qty;
       for (var j = 0; j < piles.length && need > 1e-9; j++) {
         var p = piles[j];
-        var can = left[p.id] === undefined ? p.qty : left[p.id];
+        var can = left[p.id] === undefined ? freeQty(p) : left[p.id];
         if (!(can > 1e-9)) continue;
         var q = Math.min(can, need);
         left[p.id] = round(can - q);
@@ -363,12 +400,15 @@
       if (!e) {
         var sk = st.skus[r.s] || [];
         var openLeft = 0;
-        (st.open[r.s] || []).forEach(function (p) { openLeft += left[p.id] === undefined ? p.qty : left[p.id]; });
+        (st.open[r.s] || []).forEach(function (p) { openLeft += left[p.id] === undefined ? freeQty(p) : left[p.id]; });
         e = shortBy[r.s] = {
           s: r.s, sku: sk[0] || r.line.sku, long: sk[1] || r.line.sku, name: sk[2] || r.line.name, need: 0, lines: 0, left: round(openLeft),
-          reserve: (st.reserve[r.s] || []).slice(0, 4).map(function (p) { return { loc: p.loc, lot: p.lot, po: p.po, qty: p.qty, sup: p.sup }; }),
+          reserve: (st.reserve[r.s] || []).filter(function (p) { return freeQty(p) > 0; }).slice(0, 4)
+            .map(function (p) { return { loc: p.loc, lot: p.lot, po: p.po, qty: freeQty(p), sup: p.sup }; }),
           conv: convFrom(st, r.s, left),
         };
+        var wt = waitOf(((st.all || {})[r.s] || []).filter(function (p) { return !qaWh(p.loc); }));
+        if (wt) e.wait = wt;
         short.push(e);
       }
       e.need = round(e.need + r.line.qty);
@@ -408,7 +448,7 @@
       var b = st.code(p[1]);
       if (b < 0) return;
       var q = 0;
-      (st.open[b] || []).forEach(function (x) { q += left[x.id] === undefined ? x.qty : left[x.id]; });
+      (st.open[b] || []).forEach(function (x) { q += left[x.id] === undefined ? freeQty(x) : left[x.id]; });
       var sk = st.skus[b] || [];
       out.push({ sku: sk[0] || p[1], long: sk[1] || p[1], name: sk[2] || p[2] || '', open: round(q) });
     });
@@ -449,6 +489,14 @@
   /** โลที่ของวางรอ ไม่เปิดขาย: ชั้นวางสูง R, QA IQA RIB, ทางเดิน, หน้าโล */
   function shelfOnly(loc) { return /^(R|QA|IQA|RIB|WALKWAY|หน้า)/.test(up(loc)); }
   function qaLoc(loc) { return /^(QA|IQA|RIB)\b/.test(up(loc)); }
+  /* กติกา IQA ของระบบใหม่ (opt.iqa) หน้าเดิมไม่ส่ง = คิดแบบเดิม · โลแบบเดียวกับ WmsFireCore.iqaLoc */
+  function iqaLoc(loc) { return /^IQA(?![A-Z])/.test(up(loc)); }
+  function iqaRule(opt, loc) { return !!(opt && opt.iqa) && iqaLoc(loc); }
+  /* คลัง WH-QA แบบ WmsFireCore.whOf (RIB อยู่คลังขาย) ย้ายแถวที่แตะคลังนี้ = ใบโอน ต้องรับก่อนใช้ต่อ */
+  function qaWh(loc) { return /^I?QA(?![A-Z])/.test(up(loc)); }
+  var IQA_ASK = ' · เช็ค LOT / PO ถ้าถูกแล้ว แจ้ง Inbound ทำใบโอนเข้า อย่าปรับยอด';
+  var IQA_UP = 'เพิ่มยอดที่ IQA: ถ้าแค่ขาดใบโอนเข้า อย่าเพิ่ม ให้ Inbound ทำใบโอน ไม่งั้นใบโอนตามมาแล้วยอดซ้ำ';
+  var IQA_PICK = 'ออกจาก IQA ต้องใส่ LOT และ PO ของชิ้นที่ตรวจ ระบบไม่เลือกกองแทน';
   /** R ตามด้วยเลข = ชั้นวางสูงที่เก็บของสำรอง */
   function rackLoc(loc) { return /^R\d/.test(up(loc)); }
   /** Note ของแถวย้ายแบบที่ชีตเดิมใช้: เกี่ยวกับ QA IQA RIB = โอนย้าย QA */
@@ -472,6 +520,13 @@
     (st.open[s] || []).forEach(function (p) { if (p.sup && avail(p) > 1e-9 && out.indexOf(p.sup) < 0) out.push(p.sup); });
     return out;
   }
+  /** กองที่มีของรอรับของ SKU ที่โลนี้ */
+  function heldAt(st, s, loc, lot, po) {
+    var L = up(loc);
+    return ((st.all || {})[s] || []).filter(function (p) {
+      return p.hold && up(p.loc) === L && (!lot || up(p.lot) === up(lot)) && (!po || up(p.po) === up(po));
+    });
+  }
   function uniq(list) { return list.filter(function (x, k, a) { return x && a.indexOf(x) === k; }); }
 
   /**
@@ -479,13 +534,15 @@
    * จากว่าง = เติมจากของสำรองที่ R กองเก่าสุด Supplier เดียวกับที่เปิดขายอยู่ก่อน · ไปว่าง = โลที่ SKU นี้เปิดขายอยู่
    * LOT / PO ว่าง = เอากองที่โลต้นทางตามลำดับ FIFO แบ่งหลายกองได้
    * แถวก่อนหน้าในชุดเดียวกันหักกองไปแล้ว แถวหลังย้ายต่อจากโลที่เพิ่งย้ายเข้าได้
+   * (ระบบใหม่ st.xfer: ย้ายต่อได้เฉพาะเติมในคลังขาย ของที่โอนเข้า / ออก QA ต้องรับก่อน)
    * แถวผิดแถวเดียวก็บันทึกไม่ได้ทั้งชุด (หน้าเว็บบอกให้แก้หรือลบแถว)
    * @returns {{lines:[{n, in, st:'ok'|'bad'|'blank', why, warn:[], s, from, to, take:[row]}], rows:[row], total}}
    *   row = {n, s, sku, long, name, lot, po, from, to, qty, status, note, sup}
    */
-  function planMoves(input, st) {
+  function planMoves(input, st, opt) {
     var left = {}, virt = {}, lines = [], rows = [];
-    function avail(p) { return left[p.id] === undefined ? p.qty : left[p.id]; }
+    function avail(p) { return left[p.id] === undefined ? freeQty(p) : left[p.id]; }
+    function inLoc(p) { return avail(p) + (p.hold || 0); }   // เตือนสอง Supplier นับของรอรับด้วย
     function at(s, loc) {
       var L = up(loc);
       var list = (st.all[s] || []).filter(function (p) { return up(p.loc) === L; });
@@ -512,6 +569,7 @@
       var lot = up(r.lot), po = up(r.po), cand;
       if (o.from) {
         if (o.from === o.to) return bad('ต้นทางกับปลายทางเป็นที่เดียวกัน');
+        if (iqaRule(opt, o.from) && (!lot || !po)) return bad(IQA_PICK);
         cand = at(s, o.from);
       } else {
         o.autoFrom = true;
@@ -528,7 +586,9 @@
       cand.forEach(function (p) { have = round(have + avail(p)); });
       if (have < qty) {
         var what = [lot && 'LOT ' + lot, po].filter(Boolean).join(' ');
-        return bad(o.from ? 'ที่ ' + o.from + (what ? ' (' + what + ')' : '') + ' มี ' + have + ' ชิ้น'
+        var wait = waitText(cand);
+        if (wait) return bad((o.from ? 'ที่ ' + o.from : 'ของสำรองที่ R') + (what ? ' (' + what + ')' : '') + ' ใช้ได้ ' + have + ' ชิ้น' + wait);
+        return bad(o.from ? 'ที่ ' + o.from + (what ? ' (' + what + ')' : '') + ' มี ' + have + ' ชิ้น' + (iqaRule(opt, o.from) ? IQA_ASK : '')
           : have ? 'ของสำรองที่ R' + (what ? ' (' + what + ')' : '') + ' มี ' + have + ' ชิ้น' : 'ไม่มีของสำรองที่ R ใส่โลต้นทาง');
       }
       var status = statusOf(r.status, o.to), need = qty, sk = st.skus[s] || [];
@@ -546,12 +606,13 @@
         var vk = s + '|' + p.lot + '|' + p.po + '|' + o.to;
         var v = virt[vk] || (virt[vk] = { s: s, lot: p.lot, po: p.po, loc: o.to, qty: 0, open: status === 'เปิด', first: p.first, sup: p.sup, id: 'v|' + vk });
         v.qty = round(v.qty + q);
-        if (left[v.id] !== undefined) left[v.id] = round(left[v.id] + q);
+        if (st.xfer && (qaWh(from) || qaWh(o.to))) v.hold = round((v.hold || 0) + q);
+        else if (left[v.id] !== undefined) left[v.id] = round(left[v.id] + q);
       }
       if (!o.from) o.from = uniq(o.take.map(function (t) { return t.from; })).join(' + ');
       if (!st.known(o.to)) o.warn.push('โล ' + o.to + ' ไม่เคยมีในสมุด เช็คว่าพิมพ์ถูก');
       if (status === 'เปิด') {
-        var sups2 = uniq(openSups(st, s, avail).concat(o.take.map(function (t) { return t.sup; })));
+        var sups2 = uniq(openSups(st, s, inLoc).concat(o.take.map(function (t) { return t.sup; })));
         if (sups2.length > 1) o.warn.push('เปิดสอง Supplier พร้อมกัน (' + sups2.join(' / ') + ')');
       }
     });
@@ -843,7 +904,7 @@
       seeded[s] = 1;
       (st.all[s] || []).forEach(function (p) {
         var k = s + '|' + up(p.loc) + '|' + up(p.lot) + '|' + up(p.po);
-        bal[k] = { loc: up(p.loc), lot: up(p.lot), po: String(p.po), qty: (bal[k] ? bal[k].qty : 0) + p.qty };
+        bal[k] = { loc: up(p.loc), lot: up(p.lot), po: String(p.po), qty: (bal[k] ? bal[k].qty : 0) + freeQty(p) };
       });
     }
     function pilesAt(s, loc) {
@@ -883,16 +944,24 @@
       } else if (!note) return bad('ใส่ Note ว่าเป็นงานอะไร');
       if (t === 'รับ' && (!lot || !po)) return bad('แถวรับต้องใส่ LOT และ PO');
       if (t !== 'รับ') {
+        if (iqaRule(opt, from) && (!lot || !po)) return bad(IQA_PICK);
         if (!lot || !po) {
           var ps = pilesAt(s, from).filter(function (p) { return (!lot || p.lot === lot) && (!po || up(p.po) === po); });
-          if (!ps.length) return bad('โล ' + from + ' ไม่มี SKU นี้' + (lot || po ? ' (LOT/PO ที่ใส่)' : ''));
+          if (!ps.length) {
+            var wait0 = waitText(heldAt(st, s, from, lot, po));
+            return bad(wait0 ? 'โล ' + from + ' ใช้ได้ 0 ชิ้น' + wait0 : 'โล ' + from + ' ไม่มี SKU นี้' + (lot || po ? ' (LOT/PO ที่ใส่)' : ''));
+          }
           if (ps.length > 1) return bad('โล ' + from + ' มี SKU นี้ ' + ps.length + ' กอง ต้องใส่ LOT และ PO');
           lot = ps[0].lot;
           po = up(ps[0].po);
         }
         var h = have(s, from, lot, po);
-        if (h + 1e-9 < qty) return bad('กองไม่พอ: ' + from + ' LOT ' + lot + ' PO ' + po + ' มี ' + round(Math.max(0, h)));
+        if (h + 1e-9 < qty) {
+          var wait1 = waitText(heldAt(st, s, from, lot, po));
+          return bad('กองไม่พอ: ' + from + ' LOT ' + lot + ' PO ' + po + (wait1 ? ' ใช้ได้ ' : ' มี ') + round(Math.max(0, h)) + (wait1 || (iqaRule(opt, from) ? IQA_ASK : '')));
+        }
       }
+      if (t === 'รับ' && iqaRule(opt, to)) o.warn.push(IQA_UP);
       if (to && !st.known(to)) o.warn.push('โล ' + to + ' ไม่เคยมีในสมุด');
       var sk = st.skus[s] || [];
       o.row = {
@@ -1059,7 +1128,7 @@
    */
   function planConv(input, st) {
     var left = {}, lines = [], rows = [];
-    function avail(p) { return left[p.id] === undefined ? p.qty : left[p.id]; }
+    function avail(p) { return left[p.id] === undefined ? freeQty(p) : left[p.id]; }
     (input || []).forEach(function (r, i) {
       r = r || {};
       var o = { n: i + 1, in: r, st: 'ok', why: '', warn: [], take: [], buy: '', autoBuy: false };
@@ -1090,15 +1159,16 @@
         var list = from ? (st.all[b] || []).filter(function (p) { return up(p.loc) === from; }) : (st.open[b] || []);
         return list.filter(function (p) { return (!lot || up(p.lot) === lot) && (!po || up(p.po) === po); });
       }
-      var pick = -1, best = 0;
+      var pick = -1, best = 0, seenPiles = [];
       cands.forEach(function (b) {
-        var h = 0;
-        pilesOf(b).forEach(function (p) { h = round(h + avail(p)); });
+        var h = 0, ps = pilesOf(b);
+        seenPiles = seenPiles.concat(ps);
+        ps.forEach(function (p) { h = round(h + avail(p)); });
         if (pick < 0 && h + 1e-9 >= qty) pick = b;
         if (h > best) best = h;
       });
       var what = [lot && 'LOT ' + lot, po].filter(Boolean).join(' ');
-      if (pick < 0) return bad((from ? 'ที่ ' + from : 'โลเปิดขาย') + (what ? ' (' + what + ')' : '') + ' มี SKU ตอนซื้อ ' + best + ' ชิ้น');
+      if (pick < 0) return bad((from ? 'ที่ ' + from : 'โลเปิดขาย') + (what ? ' (' + what + ')' : '') + ' มี SKU ตอนซื้อ ' + best + ' ชิ้น' + waitText(seenPiles));
       var bsk = st.skus[pick] || [], need = qty, piles = pilesOf(pick);
       o.buy = bsk[0] || '';
       var name = ask[2] || (pairs[0] && pairs[0][2]) || '';
@@ -1134,7 +1204,7 @@
    * กองติดลบของสมุดเดิมปรับให้เท่ายอดนับได้ · check = ยอดที่เห็นตอนคิด สคริปต์ใช้เช็คว่าสมุดไม่เปลี่ยนระหว่างนั้น (โหมดบันทึก)
    * @returns {{lines:[{n, in, st:'ok'|'same'|'bad'|'blank', why, warn, have, count, diff, take}], rows, total, check:[{loc, sku, lot, po, have, count}]}}
    */
-  function planAdj(input, st) {
+  function planAdj(input, st, opt) {
     var used = {}, lines = [], rows = [], check = [];
     function pilesAt(s, loc) {
       var L = up(loc);
@@ -1157,7 +1227,10 @@
       var pile = null;
       if (lot && po) pile = ps[0] || null;
       else if (ps.length === 1) { pile = ps[0]; lot = up(pile.lot); po = up(pile.po); }
-      else if (!ps.length) return bad('โล ' + loc + ' ไม่มี SKU นี้' + (lot || po ? ' (LOT/PO ที่ใส่)' : '') + ' ของที่เจอใหม่ใส่ LOT และ PO');
+      else if (!ps.length) {
+        return bad('โล ' + loc + ' ไม่มี SKU นี้' + (lot || po ? ' (LOT/PO ที่ใส่)' : '') + (iqaRule(opt, loc)
+          ? ' ถ้าขาดใบโอนเข้า แจ้ง Inbound ทำใบโอน อย่าปรับยอด · เจอเพิ่มจริงค่อยใส่ LOT และ PO' : ' ของที่เจอใหม่ใส่ LOT และ PO'));
+      }
       else return bad('โล ' + loc + ' มี SKU นี้ ' + ps.length + ' กอง ใส่ LOT และ PO');
       var k = s + '|' + loc + '|' + lot + '|' + po;
       if (used[k]) return bad('กองนี้ซ้ำกับแถว ' + used[k]);
@@ -1166,9 +1239,13 @@
       o.have = have; o.count = count; o.diff = diff;
       check.push({ loc: loc, sku: up(sk[1] || sk[0]), lot: lot, po: po, have: have, count: count });
       if (!diff) { o.st = 'same'; return; }
+      if (pile && pile.hold && diff < 0 && -diff > freeQty(pile) + 1e-9) {
+        return bad('ปรับลดได้ไม่เกิน ' + freeQty(pile) + ' ชิ้น' + waitText([pile]) + ' · อย่าปรับยอด ของไม่มาจริงให้กด ไม่รับ แล้วหัวหน้ายกเลิกใบโอน');
+      }
       if (!why) return bad('ใส่เหตุผล เช่น ' + ADJ_WHY.join(' '));
       if (!pile) o.warn.push('กองใหม่ ไม่เคยมี LOT ' + lot + ' · ' + po + ' ที่โลนี้');
       if (have < 0) o.warn.push('กองนี้ติดลบ ' + have + ' ในสมุด');
+      if (diff > 0 && iqaRule(opt, loc)) o.warn.push(IQA_UP);
       var row = { n: o.n, s: s, sku: sk[0] || sku, long: sk[1] || sku, name: sk[2] || '', lot: lot, po: po,
         from: diff < 0 ? loc : '', to: diff > 0 ? loc : '', qty: Math.abs(diff), type: diff < 0 ? 'เบิก' : 'รับ', note: 'ปรับยอด ' + why,
         status: diff > 0 ? (pile ? (pile.open ? 'เปิด' : '') : statusOf('', loc)) : '' };
@@ -1194,11 +1271,16 @@
    * ใส่เลข TRcloud ให้แถวของแผน: ช่องในแถว (in.tr หรือ in.mr / in.gr ของแปลง) ก่อน ไม่มีใช้เลขของชุด (batch.tr หรือ batch.mr / batch.gr)
    * งานที่ควรมีเลขแต่ไม่มี = เตือน (ไม่ห้ามบันทึก) · แก้แผนในที่ คืนแผนเดิม
    */
-  function trApply(plan, mode, batch) {
+  function trApply(plan, mode, batch, after) {
     if (!plan) return plan;
     batch = batch || {};
     var need = TR_NEED[mode] || function () { return false; };
     plan.total.noTr = 0;
+    /* after = ระบบใหม่ แท็บย้าย: เลข TRcloud ใส่หลังหัวหน้าอนุมัติ ไม่อ่านช่องเลข ไม่เตือน */
+    if (after) {
+      plan.lines.forEach(function (o) { (o.take || []).forEach(function (r) { r.tr = ''; }); });
+      return plan;
+    }
     plan.lines.forEach(function (o) {
       if (o.st !== 'ok') return;
       var miss = false;
@@ -1306,7 +1388,7 @@
   window.WmsBook = {
     API_V: API_V,
     up: up, cuttable: cuttable, pickZone: pickZone, dateOf: dateOf, findHead: findHead, parseOrders: parseOrders, gridOf: gridOf,
-    key: key, merge: merge, mainDate: mainDate, stock: stock, fifo: fifo, allocate: allocate, copyRows: copyRows, cutLines: cutLines,
+    key: key, merge: merge, mainDate: mainDate, stock: stock, freeQty: freeQty, waitOf: waitOf, qaWh: qaWh, fifo: fifo, allocate: allocate, copyRows: copyRows, cutLines: cutLines,
     tsv: tsv, stampMs: stampMs, reflect: reflect, extraOf: extraOf, uuid: uuid, basePo: basePo, lastRow: lastRow,
     statusOf: statusOf, moveNote: moveNote, openLoc: openLoc, planMoves: planMoves, moveCopy: moveCopy,
     returnNote: returnNote, planReturns: planReturns, returnCopy: returnCopy, lookKeys: lookKeys,

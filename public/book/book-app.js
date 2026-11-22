@@ -8,6 +8,7 @@
  *   🔎 เอกสาร             ค้นทุกใบในสำเนาเครื่องนี้ · กดเลขที่ = ดูทีละใบ: ขั้นตอน ประวัติ แถว ออเดอร์
  *                          ใส่เลข TRcloud · ยกเลิก (หัวหน้า) · ใบเดิม ↔ ใบกลับรายการ ลิงก์ถึงกัน · ลิงก์ #doc=เลขที่ ส่งต่อได้
  *   ✓ ตรวจ / อนุมัติ       ใบย้ายกับแปลง: ผู้จัดทำ → ผู้ตรวจสอบ (ไม่ใช่คนทำ) → ผู้อนุมัติ (หัวหน้า) ทีละใบหรือติ๊กหลายใบ
+ *                          ใบโอน QA: ผู้จัดทำ → ผู้รับตามทีม (รับก่อนจึงใช้ของต่อได้ · ไม่รับมีเหตุผล) → ผู้อนุมัติ → TRcloud
  *   🖨 พิมพ์ใบ              ใบย้าย / แปลง พิมพ์เป็นใบโอน / ใบขอแปลง A5 แบบเอกสารคลังสินค้าเดิม (wms-fire-print.js) ใบอื่นพิมพ์หน้าจอ
  *   คิดจากสำเนาในเครื่อง ไม่อ่านฐานเพิ่ม ยกเว้นหัวหน้าเปิดหน้าวันนี้: xfer/log กับ arch/index อย่างละ 1 ครั้ง (เก็บไว้ 10 นาที)
  *
@@ -65,7 +66,7 @@
   var RANGES = [['today', 'วันนี้'], ['d7', '7 วัน'], ['d30', '30 วัน'], ['month', 'เดือนนี้'], ['all', 'ทั้งหมด']];
 
   var NAV_OPEN = false;
-  var HX = null, HX_AT = 0, HX_BUSY = false, HX_FOR = '';   // { xfer: [วัน] | null, arch: สรุปปิดเดือน | null }
+  var HX = null, HX_AT = 0, HX_BUSY = false, HX_FOR = '';   // { xfer: [วัน] | null, arch: สรุปปิดเดือน | null, audit: {audit} | {error} ผลตรวจแถว }
   var Q = (function () {
     var q = { text: '', type: '', status: '', range: 'd7' };
     try { var s = JSON.parse(localStorage.getItem(Q_KEY) || 'null'); if (s) { q.type = s.type || ''; q.status = s.status || ''; q.range = s.range || 'd7'; } } catch (e) {}
@@ -74,7 +75,8 @@
   var DOC = docFromHash();    // เลขที่ที่เปิดดูอยู่ ('' = รายการ)
   var NOTE = null;            // { kind, html } ของหน้าเอกสาร
   var BUSY = '';
-  var SEL = {};               // ใบที่ติ๊กไว้ตรวจ / อนุมัติ { เลขที่: 1 }
+  var SEL = {};               // ใบที่ติ๊กไว้รับ / ตรวจ / อนุมัติ { เลขที่: 1 }
+  var PICK_ST = ['recv', 'check', 'approve'];   // ตัวกรองที่ติ๊กหลายใบได้
   var BACK = '';              // เปิดใบมาจากหน้า สินค้า / โล: ‹ กลับ = กลับไปหน้านั้น
   var TYPING = null;
 
@@ -111,13 +113,13 @@
     NAV.forEach(function (n) {
       if (!TYPE_OF[n.k] || (n.head && !head())) return;
       if (n.k === 'cut') {
-        if (PENDING) out.push({ k: 'cut', t: n.t, sent: true, rows: PENDING.copy ? PENDING.copy.length : 0 });
+        if (PENDING) out.push({ k: 'cut', t: n.t, sent: true, held: isHeld(PENDING), rows: PENDING.copy ? PENDING.copy.length : 0 });
         else if (FILES.length) {
           /* ไฟล์ที่ลงสมุดแล้วยังค้างบนแท็บให้ดูผล: นับเฉพาะบรรทัดที่ยังไม่ตัด */
           var left = MERGED.lines.filter(function (l) { return !SEEN[l.key]; }).length;
           if (left) out.push({ k: 'cut', t: n.t, sent: false, rows: left, files: FILES.length });
         }
-      } else if (BookGrid.pending(n.k)) out.push({ k: n.k, t: n.t, sent: true, rows: 0 });
+      } else if (BookGrid.pending(n.k)) out.push({ k: n.k, t: n.t, sent: true, held: BookGrid.held(n.k), rows: 0 });
       else if (BookGrid.filled && BookGrid.filled(n.k)) out.push({ k: n.k, t: n.t, sent: false, rows: BookGrid.filled(n.k) });
     });
     return out;
@@ -141,10 +143,11 @@
     if (!head() || HX_BUSY) return;
     if (!force && HX && HX_FOR === USER.email && Date.now() - HX_AT < HX_MS) return;
     HX_BUSY = true;
-    var x = null, a = null;
+    var x = null, a = null, au = null;
     try { var r1 = await FIRE.xferDays(); if (!r1.error) x = r1.days; } catch (e) {}
+    try { var r3 = await FIRE.auditInfo(); au = r3.error ? { error: r3.error } : { audit: r3.audit }; } catch (e) { au = { error: String(e && e.message || e) }; }
     try { var r2 = await FIRE.archInfo(); if (!r2.error) a = r2; } catch (e) {}
-    HX = { xfer: x, arch: a }; HX_AT = Date.now(); HX_FOR = USER.email; HX_BUSY = false;
+    HX = { xfer: x, arch: a, audit: au }; HX_AT = Date.now(); HX_FOR = USER.email; HX_BUSY = false;
     if (window.render) window.render();
   }
 
@@ -155,12 +158,13 @@
   }
   function title(k) { var n = NAV.filter(function (x) { return x.k === k; })[0]; return n ? n.t : ''; }
 
-  /** ใบที่รอเรา: ตรวจได้ (คนอื่นทำ) + อนุมัติได้ (หัวหน้า) */
-  function okTodo(h) { return h && h.ok && !viewer() ? h.ok.toCheck + (head() ? h.ok.approve : 0) : 0; }
+  /** ใบที่รอเรา: รับได้ (ตามทีม) + ตรวจได้ (คนอื่นทำ) + อนุมัติได้ / ไม่รับที่ต้องยกเลิก (หัวหน้า) */
+  function okTodo(h) { return h && h.ok && !viewer() ? h.ok.toRecv + h.ok.toCheck + (head() ? h.ok.approve + h.ok.reject : 0) : 0; }
+  function okLate(h) { return h.ok.recvDays >= 1 || h.ok.days >= 2 || (head() && h.ok.reject > 0); }
 
   function badge(k, h, mine) {
     if (k === 'trc' && h && h.wait.n && !viewer()) return '<span class="bn-n' + (h.wait.days >= 2 ? ' bad' : '') + '" title="รอลง TRcloud">' + f(h.wait.n) + '</span>';
-    if (k === 'docs' && okTodo(h)) return '<span class="bn-n' + (h.ok.days >= 2 ? ' bad' : '') + '" title="รอตรวจ / อนุมัติ">' + f(okTodo(h)) + '</span>';
+    if (k === 'docs' && okTodo(h)) return '<span class="bn-n' + (okLate(h) ? ' bad' : '') + '" title="รอรับ / รอตรวจ / อนุมัติ">' + f(okTodo(h)) + '</span>';
     if (k === 'close') { var n = closeDue(); return n ? '<span class="bn-n">' + f(n) + '</span>' : ''; }
     var p = mine.filter(function (x) { return x.k === k; })[0];
     if (p) return '<span class="bn-dot' + (p.sent ? ' bad' : '') + '" title="' + (p.sent ? 'มีชุดรอส่ง' : 'มีร่างยังไม่บันทึก') + '"></span>';
@@ -194,17 +198,21 @@
       '</div>' +
       '<div class="bn-list" id="bnList">' + html +
         '<a class="bn-it bn-out" href="../">' + ic('wms') + '<span class="bn-t">เมนู WMS อื่น</span></a>' +
-        '<div class="bn-me" title="' + esc(USER.email || '') + '"><span><b>' + esc(USER.who) + '</b>' + esc(USER.role) + '</span><button type="button" class="bn-off" id="bkOut">ออก</button></div>' +
+        '<div class="bn-me" title="' + esc(USER.email || '') + '"><span><b>' + esc(USER.who) + '</b>' + esc(USER.role) + (me().team === 'qa' ? ' · ทีม QA' : '') + '</span><button type="button" class="bn-off" id="bkOut">ออก</button></div>' +
       '</div>';
   }
 
   /* ── สถานะเอกสาร (ชิป) ───────────────────────────────────────────────── */
 
-  /** ชิปตรวจ / อนุมัติ (x.ok จาก brief หรือ view) */
+  /** ชิปรับ / ตรวจ / อนุมัติ (x.ok จาก brief หรือ view) */
   function okChip(x) {
     if (!x || !x.ok) return '';
-    if (x.ok === 'check') return '<span class="ba-st wait">รอตรวจ</span>';
-    if (x.ok === 'approve') return '<span class="ba-st apv" title="ตรวจโดย ' + esc(x.ck && x.ck.name !== undefined ? x.ck.name : x.ck || '') + '">รออนุมัติ</span>';
+    if (x.ok === 'check') return x.xf ? '<span class="ba-st wait" title="ยังใช้ของต่อไม่ได้จนกว่าผู้รับกด รับ">รอรับ</span>' : '<span class="ba-st wait">รอตรวจ</span>';
+    if (x.ok === 'reject') {
+      var r = x.rj && x.rj.name !== undefined ? x.rj : { name: x.rj || '', why: x.rjWhy || '' };
+      return '<span class="ba-st void" title="' + esc(r.name + ' · ' + r.why + ' · ของยังล็อกจนหัวหน้ายกเลิกใบ') + '">ไม่รับ</span>';
+    }
+    if (x.ok === 'approve') return '<span class="ba-st apv" title="' + (x.xf ? 'รับ' : 'ตรวจ') + 'โดย ' + esc(x.ck && x.ck.name !== undefined ? x.ck.name : x.ck || '') + '">รออนุมัติ</span>';
     return '<span class="ba-st ok" title="อนุมัติโดย ' + esc(x.ap && x.ap.name !== undefined ? x.ap.name : x.ap || '') + '">✓ อนุมัติแล้ว</span>';
   }
 
@@ -214,7 +222,7 @@
     if (x.link) out += '<span class="ba-st rev" title="ใบนี้ลงกลับรายการของ ' + esc(x.link) + '">↩ ' + esc(x.link) + '</span>';
     if (x.type === 'ยอดยกมา') out += '<span class="ba-st sub">จุดเริ่มสมุด</span>';
     out += okChip(x);
-    if (x.state === 'wait') out += '<span class="ba-st wait">รอลง TRcloud</span>';
+    if (x.state === 'wait') out += x.lock ? '<span class="ba-st sub" title="ใส่เลขได้หลังหัวหน้าอนุมัติ">🔒 TRcloud</span>' : '<span class="ba-st wait">รอลง TRcloud</span>';
     else if (x.state === 'done') out += '<span class="ba-st ok" title="เลข TRcloud">TRcloud ' + esc(x.tr) + '</span>';
     if (!out) out = '<span class="ba-st okk">✓ บันทึกแล้ว</span>';
     return out;
@@ -223,11 +231,51 @@
 
   /* ── 🏠 วันนี้ ──────────────────────────────────────────────────────── */
 
+  /** แถวที่สคริปต์ตรวจว่าผิดกติกา (หัวหน้า) */
+  function auditList() {
+    var a = head() && HX && HX.audit && HX.audit.audit;
+    return a && +a.n > 0 && Array.isArray(a.list) ? a.list : [];
+  }
+  function auditSec() {
+    var list = auditList();
+    if (!list.length) return '';
+    return '<section class="ba-sec"><h3>เอกสารผิดกติกา <span>สคริปต์ตรวจเจอ</span></h3>' +
+      table([['เลขที่'], ['วันที่'], ['ประเภท'], ['ผู้ลง'], ['ผิดตรงไหน']], list.map(function (x) {
+        return '<tr><td class="c-act">' + (x.no ? docBtn(x.no) : '—') + '</td><td class="c-sub">' + esc(x.date ? dmy(x.date) : '') + '</td><td>' + esc(x.type || '') + '</td>' +
+          '<td>' + esc(x.name || '') + '</td><td>' + esc(x.why || '') + '</td></tr>';
+      })) + '</section>';
+  }
+
   function cards(h) {
     var out = [], mine = local();
+    if (head() && HX && HX.audit && window.WmsFireDocs) {
+      var ac = WmsFireDocs.auditCard({ audit: HX.audit.audit, error: HX.audit.error, open: h.open, now: Date.now(), practice: FIRE.mode !== 'live' }), bad1 = auditList()[0];
+      if (ac) {
+        ac.go = 'home';
+        ac.act = bad1 && bad1.no ? 'เปิดใบ' : 'เช็คใหม่';
+        if (bad1 && bad1.no) ac.doc = bad1.no;
+        out.push(ac);
+      }
+    }
     mine.filter(function (p) { return p.sent; }).forEach(function (p) {
-      out.push({ tone: 'bad', title: 'ชุดรอส่ง · ' + p.t, sub: 'ส่งไม่สำเร็จ ระบบส่งซ้ำเองทุก 30 วินาที ไม่บันทึกซ้ำ', go: p.k, act: 'ไปดู' });
+      out.push(p.held ? { tone: 'warn', title: 'ชุดพักส่ง · ' + p.t, sub: heldNote(), go: p.k, act: 'ไปดู' }
+        : { tone: 'bad', title: 'ชุดรอส่ง · ' + p.t, sub: 'ส่งไม่สำเร็จ ระบบส่งซ้ำเองทุก 30 วินาที ไม่บันทึกซ้ำ', go: p.k, act: 'ไปดู' });
     });
+    if (h.ok && !viewer()) {
+      var dayText = function (n) { return n ? n + ' วันก่อน' : 'วันนี้'; };
+      if (h.ok.reject) {
+        out.push({ tone: 'bad', n: h.ok.reject, title: 'ผู้รับไม่รับ', sub: head() ? 'ของยังล็อก · ยกเลิกใบ แล้วให้คนทำลงใบใหม่' : 'ของยังล็อก · แจ้งหัวหน้ายกเลิกใบ แล้วทำใบใหม่',
+          go: 'docs', sec: 'reject', act: head() ? 'ยกเลิกใบ' : 'ไปดู' });
+      }
+      if (h.ok.toRecv) {
+        out.push({ tone: h.ok.recvDays ? 'bad' : 'warn', n: h.ok.toRecv, title: h.ok.recvDays ? 'ค้างรับ' : 'รอรับ',
+          sub: 'นับของจริงแล้วกด รับ หรือ ไม่รับ · เก่าสุด ' + dayText(h.ok.recvDays), go: 'docs', sec: 'recv', act: 'รับ' });
+      }
+      if (h.ok.sent) {
+        out.push({ tone: h.ok.sentDays ? 'warn' : 'info', n: h.ok.sent, title: 'ใบโอนของฉันรอคนรับ',
+          sub: 'ของใช้ต่อไม่ได้จนกว่าผู้รับกด · เก่าสุด ' + dayText(h.ok.sentDays), go: 'docs', sec: 'recv', act: 'ไปดู' });
+      }
+    }
     if (h.ok && h.ok.toCheck && !viewer()) {
       out.push({ tone: 'warn', n: h.ok.toCheck, title: 'รอตรวจ', sub: 'ใบย้าย / แปลง ที่คนอื่นทำ · เช็คของจริงแล้วกด ตรวจแล้ว', go: 'docs', sec: 'check', act: 'ตรวจ' });
     }
@@ -235,7 +283,11 @@
       out.push({ tone: h.ok.days >= 2 ? 'bad' : 'warn', n: h.ok.approve, title: 'รออนุมัติ',
         sub: 'ตรวจแล้ว รอหัวหน้ากด อนุมัติ · เก่าสุด ' + (h.ok.days ? h.ok.days + ' วันก่อน' : 'วันนี้'), go: 'docs', sec: 'approve', act: 'อนุมัติ' });
     }
-    if (head() && !h.open) out.push({ tone: 'bad', title: 'ยังไม่ลงยอดยกมา', sub: 'ลงก่อนเริ่มใช้สมุด · ไฟล์จากหน้านับสต๊อกใหญ่', go: 'set', sec: 'open', act: 'ลงยอด' });
+    if (head() && !h.open) {
+      /* สวิตช์ยังปิด (?fire=live) = ช่วงเตรียม ไม่เร่งให้ลงยอดก่อนนับเสร็จ */
+      out.push({ tone: FIRE.override ? 'warn' : 'bad', title: 'ยังไม่ลงยอดยกมา',
+        sub: '🔒 ลงเอกสารยังล็อก · ลงยอดหลังนับใหญ่เสร็จเท่านั้น · ระหว่างรอ ตั้ง ข้อมูลหลัก ล่วงหน้าได้', go: 'set', sec: 'open', act: 'ลงยอด' });
+    }
     if (h.wait.n && !viewer()) {
       out.push({ tone: h.wait.days >= 2 ? 'bad' : 'warn', n: h.wait.n, title: 'รอลง TRcloud',
         sub: 'เก่าสุด ' + (h.wait.days ? h.wait.days + ' วันก่อน' : 'วันนี้') + (h.wait.file ? ' · ออกไฟล์ปรับยอด ' + f(h.wait.file) : '') + (h.wait.number ? ' · ใส่เลข ' + f(h.wait.number) : ''),
@@ -276,7 +328,7 @@
 
     var cs = cards(h);
     var cardHtml = cs.length ? cs.map(function (c) {
-      return '<button type="button" class="ba-card t-' + c.tone + '" data-go="' + c.go + '"' + (c.sec ? ' data-sec="' + c.sec + '"' : '') + '>' +
+      return '<button type="button" class="ba-card t-' + c.tone + '"' + (c.doc ? ' data-doc="' + esc(c.doc) + '"' : ' data-go="' + c.go + '"') + (c.sec ? ' data-sec="' + c.sec + '"' : '') + '>' +
         (c.n ? '<span class="ba-cn">' + f(c.n) + '</span>' : '<span class="ba-cn ba-ci">!</span>') +
         '<span class="ba-ct"><b>' + esc(c.title) + '</b><span>' + esc(c.sub) + '</span></span><span class="ba-cgo">' + esc(c.act) + ' ›</span></button>';
     }).join('') : '<div class="ba-clear"><b>✓ ไม่มีงานค้าง</b><span>ชุดที่บันทึกถึงฐานครบ' + (viewer() ? '' : ' · เลข TRcloud ครบ') + '</span></div>';
@@ -301,7 +353,7 @@
     })) : '<div class="ba-none">วันนี้ยังไม่มีเอกสาร</div>';
 
     $('body').innerHTML = '<div class="ba-home">' +
-      '<section class="ba-sec"><h3>งานค้าง</h3><div class="ba-cards">' + cardHtml + '</div></section>' +
+      '<section class="ba-sec"><h3>งานค้าง</h3><div class="ba-cards">' + cardHtml + '</div></section>' + auditSec() +
       '<section class="ba-sec"><h3>งานประจำวัน <span>กดเพื่อเริ่ม</span></h3><div class="ba-flow">' + flow + '</div></section>' +
       '<section class="ba-sec"><h3>บันทึกล่าสุดวันนี้ <button type="button" class="bk-link" data-mode="docs">ดูเอกสารทั้งหมด ›</button></h3>' + last + '</section>' +
       '</div>';
@@ -330,23 +382,25 @@
       TYPES.filter(function (t) { return r.types[t] || Q.type === t; }).map(function (t) {
         return '<button type="button" class="bk-chip' + (Q.type === t ? ' on' : '') + '" data-qt="' + esc(t) + '">' + esc(t) + ' <b>' + f(r.types[t] || 0) + '</b></button>';
       }).join('');
-    var st = [['check', 'รอตรวจ', 'c-warn'], ['approve', 'รออนุมัติ', 'c-warn'], ['wait', 'รอลง TRcloud', 'c-warn'], ['void', 'ยกเลิกแล้ว', 'c-red'], ['mine', 'ของฉัน', '']];
+    var st = [['recv', 'รอรับ', 'c-warn'], ['check', 'รอตรวจ', 'c-warn'], ['approve', 'รออนุมัติ', 'c-warn'], ['reject', 'ไม่รับ', 'c-red'], ['wait', 'รอลง TRcloud', 'c-warn'], ['void', 'ยกเลิกแล้ว', 'c-red'], ['mine', 'ของฉัน', '']];
     var stChipsHtml = st.map(function (s) {
       var n = r.states[s[0]] || 0;
       return '<button type="button" class="bk-chip ' + s[2] + (Q.status === s[0] ? ' on' : '') + (n || Q.status === s[0] ? '' : ' zero') + '" data-qs="' + s[0] + '">' + s[1] + ' <b>' + f(n) + '</b></button>';
     }).join('');
     $('sum').innerHTML = typeChips + '<span class="bk-sep"></span>' + stChipsHtml;
-    /* ตัวกรอง รอตรวจ / รออนุมัติ: ติ๊กหลายใบแล้วกดทีเดียว (เฉพาะใบที่เรากดได้) */
-    var u = me(), pick = Q.status === 'check' || Q.status === 'approve';
+    /* ตัวกรอง รอรับ / รอตรวจ / รออนุมัติ: ติ๊กหลายใบแล้วกดทีเดียว (เฉพาะใบที่เรากดได้) */
+    var u = me(), pick = PICK_ST.indexOf(Q.status) >= 0;
     var mayOk = function (x) {
-      if (x.ok !== Q.status || viewer()) return false;
-      return Q.status === 'check' ? x.by !== u.email : head();
+      if (!pick || viewer()) return false;
+      if (Q.status === 'approve') return x.ok === 'approve' && head();
+      if (x.ok !== 'check' || x.by === u.email) return false;
+      return Q.status === 'recv' ? !!x.xf && !C().takeWhy(x.xf, u) : !x.xf;
     };
     var can = pick ? r.list.filter(mayOk) : [];
     Object.keys(SEL).forEach(function (no) { if (!can.some(function (x) { return x.no === no; })) delete SEL[no]; });
     renderOkBar(can, r);
     if (!r.total) {
-      $('body').innerHTML = '<div class="tx-empty">' + (pick && !Q.text ? (Q.status === 'check' ? '✓ ไม่มีใบรอตรวจ' : '✓ ไม่มีใบรออนุมัติ') + (Q.range !== 'all' ? ' ในช่วงนี้ ลองเลือก ทั้งหมด' : '')
+      $('body').innerHTML = '<div class="tx-empty">' + (pick && !Q.text ? '✓ ไม่มีใบ' + { recv: 'รอรับ', check: 'รอตรวจ', approve: 'รออนุมัติ' }[Q.status] + (Q.range !== 'all' ? ' ในช่วงนี้ ลองเลือก ทั้งหมด' : '')
         : r.all ? 'ไม่มีเอกสารตรงกับตัวกรอง' : Q.text ? 'ไม่พบ <b>' + esc(Q.text) + '</b> ในช่วงนี้ ลองเลือก ทั้งหมด' : 'ช่วงนี้ยังไม่มีเอกสาร') + '</div>';
       return;
     }
@@ -354,9 +408,9 @@
       var at = String(x.stamp || '').slice(0, 10) === x.date ? hm(x.stamp) : when(x.stamp);   // บันทึกวันเดียวกับวันที่เอกสาร = เวลาอย่างเดียว
       var box = !can.length ? '' : '<td class="c-act">' + (mayOk(x)
         ? '<input type="checkbox" class="ba-ck" data-sel="' + esc(x.no) + '"' + (SEL[x.no] ? ' checked' : '') + ' aria-label="เลือก ' + esc(x.no) + '">'
-        : '<span class="c-sub" title="' + (x.by === u.email ? 'ใบของคุณ ให้คนอื่นตรวจ' : '') + '">—</span>') + '</td>';
+        : '<span class="c-sub" title="' + esc(x.by === u.email ? 'ใบของคุณ ให้คนอื่น' + (x.xf ? 'รับ' : 'ตรวจ') : x.xf ? C().takeWhy(x.xf, u) : '') + '">—</span>') + '</td>';
       return '<tr' + (x.voided ? ' class="r-void"' : SEL[x.no] ? ' class="r-sel"' : '') + '>' + box + '<td class="c-act">' + docBtn(x.no) + '</td><td>' + esc(dmy(x.date)) + '</td><td class="c-sub">' + esc(at) + '</td>' +
-        '<td>' + esc(x.type) + '</td><td>' + esc(x.name) + '</td><td class="num">' + f(x.rows) + '</td><td class="num">' + f(x.qty) + '</td>' +
+        '<td>' + esc(x.type) + (x.xf ? ' <span class="c-sub">' + esc(C().XF_TH[x.xf]) + '</span>' : '') + '</td><td>' + esc(x.name) + '</td><td class="num">' + f(x.rows) + '</td><td class="num">' + f(x.qty) + '</td>' +
         '<td class="num">' + (x.orders ? f(x.orders) : '') + '</td><td class="c-act">' + stChips(x) + '</td></tr>';
     });
     var cols = [['เลขที่'], ['วันที่'], ['บันทึกเมื่อ'], ['ประเภท'], ['ผู้ลง'], ['แถว', 'num'], ['ชิ้น', 'num'], ['ออเดอร์', 'num'], ['สถานะ']];
@@ -368,39 +422,52 @@
   /** แถบตรวจ / อนุมัติหลายใบ (หน้าเอกสาร ตัวกรอง รอตรวจ / รออนุมัติ) */
   function renderOkBar(can, r) {
     var n = Object.keys(SEL).length, out = '';
-    if (Q.status === 'check' || Q.status === 'approve') {
+    if (PICK_ST.indexOf(Q.status) >= 0) {
+      var take = Q.status === 'recv', verb = take ? 'รับ' : 'ตรวจ';
       if (can.length) {
         var all = n === can.length;
         out += '<button type="button" class="tx-opt" id="baSelAll">' + (all ? 'ไม่เลือก' : 'เลือกทั้งหมด ' + f(can.length) + ' ใบ') + '</button>';
-        if (Q.status === 'check') {
-          out += '<button type="button" class="bk-save" data-ok="check"' + (n && !BUSY ? '' : ' disabled') + '>' + (BUSY ? esc(BUSY) : '✓ ตรวจแล้ว ' + f(n) + ' ใบ') + '</button>';
-          if (head()) out += '<button type="button" class="bk-btn" data-ok="both"' + (n && !BUSY ? '' : ' disabled') + ' title="หัวหน้าตรวจและอนุมัติในครั้งเดียว">✓ ตรวจ + อนุมัติ</button>';
+        if (Q.status !== 'approve') {
+          out += '<button type="button" class="bk-save" data-ok="check"' + (n && !BUSY ? '' : ' disabled') + '>' + (BUSY ? esc(BUSY) : '✓ ' + (take ? 'รับ ' : 'ตรวจแล้ว ') + f(n) + ' ใบ') + '</button>';
+          if (head()) out += '<button type="button" class="bk-btn" data-ok="both"' + (n && !BUSY ? '' : ' disabled') + ' title="หัวหน้า' + verb + 'และอนุมัติในครั้งเดียว">✓ ' + verb + ' + อนุมัติ</button>';
         } else {
           out += '<button type="button" class="bk-save" data-ok="approve"' + (n && !BUSY ? '' : ' disabled') + '>' + (BUSY ? esc(BUSY) : '✓ อนุมัติ ' + f(n) + ' ใบ') + '</button>';
         }
-        out += '<span class="c-sub">' + (Q.status === 'check' ? 'ติ๊กใบที่เช็คของจริงแล้ว · ใบที่ตัวเองทำ ให้คนอื่นตรวจ' : 'ติ๊กใบที่ตรวจแล้วและยอดถูก') + '</span>';
+        out += '<span class="c-sub">' + (take ? 'ติ๊กใบที่นับของครบแล้ว · ของไม่ครบหรือผิด เปิดใบแล้วกด ไม่รับ'
+          : Q.status === 'check' ? 'ติ๊กใบที่เช็คของจริงแล้ว · ใบที่ตัวเองทำ ให้คนอื่นตรวจ' : 'ติ๊กใบที่รับ / ตรวจแล้วและยอดถูก') + '</span>';
       } else if (r.total) {
-        out += '<span class="c-sub">' + (viewer() ? 'บัญชีนี้ดูได้อย่างเดียว' : Q.status === 'check' ? 'ใบที่เหลือเป็นของคุณ ให้คนอื่นตรวจ' : 'รอหัวหน้าอนุมัติ') + '</span>';
+        out += '<span class="c-sub">' + (viewer() ? 'บัญชีนี้ดูได้อย่างเดียว' : take ? 'ใบที่เหลือเป็นของคุณ หรือเป็นของอีกทีมรับ'
+          : Q.status === 'check' ? 'ใบที่เหลือเป็นของคุณ ให้คนอื่นตรวจ' : 'รอหัวหน้าอนุมัติ') + '</span>';
       }
     }
     if (NOTE) out += '<div class="bk-msg ' + NOTE.kind + '">' + NOTE.html + '</div>';
     $('act').innerHTML = out ? '<div class="ba-okbar">' + out + '</div>' : '';
   }
 
-  /** ตรวจ / อนุมัติ nos ทีเดียว (ส่งทีละ 10 ใบต่อกัน) */
-  async function okRun(nos, act) {
+  /** รับ / ไม่รับ / ตรวจ / อนุมัติ nos ทีเดียว (ส่งทีละ 10 ใบต่อกัน) · why = เหตุผลที่ไม่รับ */
+  async function okRun(nos, act, why) {
     if (!nos.length || BUSY) return;
-    var word = act === 'check' ? 'ตรวจ' : act === 'approve' ? 'อนุมัติ' : 'ตรวจและอนุมัติ';
+    var verb = nos.every(function (no) { var o = FIRE.okOf(no); return o && o.xf; }) ? 'รับ' : 'ตรวจ';
+    var word = act === 'reject' ? 'ไม่รับ' : act === 'check' ? verb : act === 'approve' ? 'อนุมัติ' : verb + 'และอนุมัติ';
     if (nos.length > 1 && !confirm(word + ' ' + nos.length + ' ใบ ในชื่อ ' + (USER.who || '') + '?')) return;
     BUSY = 'กำลัง' + word + '…'; NOTE = null; render();
     var r;
-    try { r = await FIRE.okSave(nos, act); } catch (e) { r = { saved: 0, error: e.message }; }
+    try { r = await FIRE.okSave(nos, act, why); } catch (e) { r = { saved: 0, error: e.message }; }
     BUSY = '';
     SEL = {};
+    if (r.saved && window.stockNow) window.stockNow();   // ชิ้นที่ใช้ต่อได้เปลี่ยนเมื่อกดรับ
     NOTE = r.error
       ? { kind: 'bad', html: (r.saved ? word + 'แล้ว ' + f(r.saved) + ' ใบ · ' : '') + 'ที่เหลือทำไม่ได้: ' + esc(r.error) }
       : { kind: 'ok', html: '✓ ' + word + 'แล้ว ' + f(r.saved) + ' ใบ' + (nos.length === 1 ? ' (' + esc(nos[0]) + ')' : '') };
     render();
+  }
+
+  /** ไม่รับ: ต้องบอกเหตุผล คนทำใบกับหัวหน้าเห็น */
+  function askReject(no) {
+    var why = prompt('ไม่รับ ' + no + ' ทั้งใบ\nของจะล็อกไว้จนหัวหน้ายกเลิกใบ แล้วคนทำลงใบใหม่\n\nเหตุผล:');
+    if (why === null) return;
+    if (!why.trim()) { NOTE = { kind: 'bad', html: 'ไม่รับ ต้องใส่เหตุผล' }; render(); return; }
+    okRun([no], 'reject', why.trim());
   }
 
   /* ── 🖨 พิมพ์ใบ ─────────────────────────────────────────────────────── */
@@ -452,21 +519,26 @@
       return;
     }
     $('inp').innerHTML = '<div class="bk-top"><button type="button" class="tx-opt" id="baBack">' + (BACK ? '‹ กลับไปหน้าสินค้า' : '‹ กลับไปรายการ') + '</button>' +
-      '<span class="bk-h">' + esc(v.no) + '</span><span class="ba-ty">' + esc(v.type) + '</span>' +
+      '<span class="bk-h">' + esc(v.no) + '</span><span class="ba-ty">' + esc(v.xfTh || v.type) + '</span>' +
       '<span>วันที่ ' + esc(dmy(v.date)) + ' · ' + esc(v.name) + ' · บันทึก ' + esc(when(v.stamp)) + '</span><span class="sp"></span>' +
       '<button type="button" class="tx-opt" id="baPrint" title="' + (window.WmsFirePrint && WmsFirePrint.can(v) ? 'พิมพ์ใบ' + (v.type === 'แปลง' ? 'ขอแปลงรหัสสินค้า' : 'โอนย้ายสินค้า') + ' A5' : 'พิมพ์หน้านี้') + '">🖨 พิมพ์ใบ</button></div>';
-    $('sum').innerHTML = stChips({ voided: v.voided, link: v.rev ? (v.orig && v.orig.no) : '', type: v.type, state: v.state, tr: v.tr, ok: v.ok, ck: v.ck, ap: v.ap }) +
+    $('sum').innerHTML = stChips({ voided: v.voided, link: v.rev ? (v.orig && v.orig.no) : '', type: v.type, state: v.state, tr: v.tr, ok: v.ok, ck: v.ck, ap: v.ap, xf: v.xf, rj: v.rj, lock: v.lock }) +
       '<span class="bk-chip">แถว <b>' + f(v.rows.length) + '</b></span><span class="bk-chip">ชิ้น <b>' + f(v.qty) + '</b></span>' +
       (v.orders ? '<span class="bk-chip">ออเดอร์ <b>' + f(v.orders) + '</b></span>' : '');
 
     var act = '<button type="button" class="tx-opt" id="baCopy">📋 คัดลอกแถว</button>';
     var oc = window.WmsFireDocs ? WmsFireDocs.okCan(v, me()) : {};
     if (oc.check || oc.approve) {
-      act += '<span class="bk-sep"></span>' + (oc.check ? '<button type="button" class="bk-save" data-ok1="check"' + (BUSY ? ' disabled' : '') + '>✓ ตรวจแล้ว</button>' : '') +
-        (oc.both ? '<button type="button" class="bk-btn" data-ok1="both"' + (BUSY ? ' disabled' : '') + ' title="หัวหน้าตรวจและอนุมัติในครั้งเดียว">✓ ตรวจ + อนุมัติ</button>' : '') +
-        (oc.approve ? '<button type="button" class="bk-save" data-ok1="approve"' + (BUSY ? ' disabled' : '') + '>✓ อนุมัติ</button>' : '');
+      var verb = v.xf ? 'รับ' : 'ตรวจ', dis = BUSY ? ' disabled' : '';
+      act += '<span class="bk-sep"></span>' + (oc.check ? '<button type="button" class="bk-save" data-ok1="check"' + dis + '>✓ ' + (v.xf ? 'รับ' : 'ตรวจแล้ว') + '</button>' : '') +
+        (oc.both ? '<button type="button" class="bk-btn" data-ok1="both"' + dis + ' title="หัวหน้า' + verb + 'และอนุมัติในครั้งเดียว">✓ ' + verb + ' + อนุมัติ</button>' : '') +
+        (oc.reject ? '<button type="button" class="bk-btn x" data-rj1="1"' + dis + ' title="ของไม่มา ไม่ครบ หรือผิด SKU / LOT / PO">✕ ไม่รับ</button>' : '') +
+        (oc.approve ? '<button type="button" class="bk-save" data-ok1="approve"' + dis + '>✓ อนุมัติ</button>' : '') +
+        (oc.why ? '<span class="c-sub">' + esc(oc.why) + '</span>' : '');
     } else if (oc.why && v.ok && v.ok !== 'done') act += '<span class="bk-sep"></span><span class="c-sub">' + esc(oc.why) + '</span>';
-    if (v.state === 'wait' && !viewer()) {
+    if (v.state === 'wait' && v.lock) {
+      if (v.ok !== 'reject') act += '<span class="bk-sep"></span><span class="c-sub">🔒 ใส่เลข TRcloud หลังหัวหน้าอนุมัติ</span>';
+    } else if (v.state === 'wait' && !viewer()) {
       act += '<span class="bk-sep"></span><input class="bk-field ba-tr" id="baTr" placeholder="เลข TRcloud" aria-label="เลข TRcloud" maxlength="100" autocomplete="off">' +
         '<button type="button" class="bk-save" id="baTrSave" ' + (BUSY ? 'disabled' : '') + '>' + (BUSY ? esc(BUSY) : 'บันทึกเลข') + '</button>' +
         '<button type="button" class="bk-link" id="baTrNone">ไม่ต้องลง</button>' +
@@ -569,6 +641,7 @@
       if (DOC) openDoc(''); else if (MODE === 'docs') render(); else setMode('docs');
       return;
     }
+    if (t.dataset.go === 'home') { loadHx(true); render(); return; }
     if (t.dataset.go) {
       var sec = t.dataset.sec || '';
       if (sec && (t.dataset.go === 'set' || t.dataset.go === 'close') && window.BookFireSet && BookFireSet.pick) BookFireSet.pick(t.dataset.go, sec);
@@ -582,6 +655,7 @@
     if (t.dataset.print) { printDoc(t.dataset.print); return; }
     if (t.dataset.ok) { okRun(Object.keys(SEL), t.dataset.ok); return; }
     if (t.dataset.ok1) { if (DOC) okRun([DOC], t.dataset.ok1); return; }
+    if (t.dataset.rj1) { if (DOC) askReject(DOC); return; }
     if (t.id === 'baSelAll') {
       var boxes = Array.prototype.slice.call(document.querySelectorAll('.ba-ck'));
       var on = boxes.some(function (b) { return !b.checked; });

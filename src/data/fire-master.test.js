@@ -1,7 +1,7 @@
 /**
  * ระบบใหม่ ข้อมูลหลัก: public/wms-fire-setup.js + setupSave ของ wms-fire.js กับ store จำลอง
  * ขั้น ก Location · SKU · กลุ่มสินค้า · ขั้น ข แปลงสินค้า · Supplier (PO) · SKU : Pallet (รูปเก็บเดิม fifo อ่านเหมือนเดิม)
- * ขั้น ค โซนแร็ค + ระบบเลือกแร็คตอนรับของ
+ * ขั้น ค โซนแร็ค + ระบบเลือกแร็คตอนรับของ · ขึ้นแร็คราย SKU
  * ตรวจตาราง · บันทึกทั้งตาราง (รุ่น ประวัติ สองคนแก้พร้อมกัน) · พบในสมุดแต่ยังไม่มีในตาราง · เตือน / ห้าม ตอนลงใบ
  * ข้อมูลทั้งหมดสมมติขึ้น repo นี้เป็นสาธารณะ ไม่มีการเรียก Firebase จริง
  */
@@ -166,10 +166,10 @@ describe('เอกสารที่จะบันทึก', () => {
 });
 
 describe('บันทึกข้อมูลหลัก (store จำลอง)', () => {
-  it('เฉพาะหัวหน้า · ต้องมียอดยกมาก่อน', async () => {
+  it('เฉพาะหัวหน้า · ไม่ต้องรอยอดยกมา', async () => {
     const x = await setup();
     expect((await x.staff.setupSave('loc', [loc('A-01-01')], { base: 0 })).error).toMatch(/เฉพาะหัวหน้า/);
-    expect((await x.head.setupSave('loc', [loc('A-01-01')], { base: 0 })).error).toMatch(/ลงยอดยกมาก่อน/);
+    expect(ok(await x.head.setupSave('loc', [loc('A-01-01')], { base: 0 }))).toMatchObject({ saved: 'loc', ver: 1 });
     expect((await x.head.setupSave('xxx', [], { base: 0 })).error).toMatch(/ไม่รู้จักตาราง/);
   });
 
@@ -302,12 +302,12 @@ describe('ขั้น ข: แปลงสินค้า · Supplier (PO) · S
   const opt = (base, extra = {}) => ({ by: HEAD, name: 'หัวหน้าทดลอง', at: NOW, base, ...extra });
   const conv = (after, buy) => ({ after, buy });
   const sup = (po, s) => ({ po, sup: s });
-  const cap = (s, pid, n) => ({ sku: s, pid, cap: n });
+  const cap = (s, pid, n) => ({ sku: s, pid, cap: n, rack: '' });
 
   it('แถว ↔ วัตถุ: รูปเดียวกับไฟล์นำเข้า · รหัสตัดช่องว่าง ตัวใหญ่', () => {
     expect(SU.rowOut('conv', SU.rowIn('conv', ['BBB0000000002', 'BBB0000000001']))).toEqual(['BBB0000000002', 'BBB0000000001']);
     expect(SU.rowOut('sup', SU.rowIn('sup', [' p 1 ', ' ผู้ผลิตสมมติ ก ']))).toEqual(['P1', 'ผู้ผลิตสมมติ ก']);
-    expect(SU.rowOut('cap', SU.rowIn('cap', ['aaa001', 'AAA0000000001', 10]))).toEqual(['AAA001', 'AAA0000000001', '10']);
+    expect(SU.rowOut('cap', SU.rowIn('cap', ['aaa001', 'AAA0000000001', 10]))).toEqual(['AAA001', 'AAA0000000001', '10', '']);
     expect(SU.isBlank('sup', sup('', ''))).toBe(true);
     expect(SU.isBlank('cap', cap('', '', '3'))).toBe(false);
   });
@@ -601,6 +601,161 @@ describe('ขั้น ค: โซนแร็ค + ระบบเลือก�
   });
 });
 
+describe('ขึ้นแร็คราย SKU (แท็บ SKU : Pallet)', () => {
+  const g = (id) => SU.defaults().find((x) => x.id === id);
+  const c = (s, pid, n, rack = '') => ({ sku: s, pid, cap: n, rack });
+  const LOCS = ['R01-01-1', 'R01-01-2', 'R01-02-1', 'R01-02-2', 'R01-03-2', 'A-01-01', 'A-01-02', 'D-01-01', 'S-01-01'].map((x) => loc(x));
+  const SKUS = [
+    sku('AAA001', 'AAA0000000001', 'ที่นอนสมมติ 6 ฟุต', 'm6'), sku('BBB002', 'BBB0000000002', 'ท็อปเปอร์สมมติ', 'tp'),
+    sku('CCC004', 'CCC0000000004', 'แถมหมอนสมมติ', 'gf'), sku('EEE005', '', 'หมอนสมมติ', 'pl'), sku('GGG007', '', 'ไม่มีกลุ่ม', ''),
+  ];
+  const tb = (cap, grp) => ({ loc: { rows: LOCS }, sku: { rows: SKUS }, grp: { rows: grp || SU.defaults() }, cap: { rows: cap }, zone: { rows: [] } });
+  const put = (cap, row, grp) => SU.pick(SU.picker(tb(cap, grp), {}), row);
+  const where = (r) => r.lines.map((l) => [l.loc, l.qty, l.tag]);
+  const said = (w) => w.map((x) => x.lv + ' ' + x.t).join(' | ');
+  const opt = (base) => ({ by: HEAD, name: 'หัวหน้าทดลอง', at: NOW, base });
+
+  it('อ่านที่พิมพ์ / วาง: ตามกลุ่ม · ได้ · ไม่ได้ · อ่านไม่ออกไม่เดา', () => {
+    ['', ' ', '-', 'auto', 'ตามกลุ่ม', 'ตามกลุ่ม (ได้)', 'ตามกลุ่ม (ไม่ได้)'].forEach((v) => expect(SU.rackVal(v), v).toBe(''));
+    ['ได้', 'ขึ้นได้', 'yes', '1', 'Y', 'ขึ้นแร็ค'].forEach((v) => expect(SU.rackVal(v), v).toBe('yes'));
+    ['ไม่ได้', 'ไม่ ขึ้น', 'no', '0', 'ไม่ขึ้นแร็ค'].forEach((v) => expect(SU.rackVal(v), v).toBe('no'));
+    expect(SU.rackVal('แล้วแต่')).toBe('แล้วแต่');
+    expect(SU.rowOut('cap', SU.rowIn('cap', ['aaa001', '', 10, 'ไม่ได้']))).toEqual(['AAA001', '', '10', 'no']);
+  });
+
+  it('กติกาที่ใช้จริง = กลุ่ม + ราย SKU', () => {
+    expect(SU.effG(g('m6'), '')).toEqual(g('m6'));
+    expect(SU.effG(g('m6'), 'yes')).toEqual(g('m6'));
+    expect(SU.effG(g('sb'), 'no')).toEqual(g('sb'));
+    expect(SU.effG(g('m35'), 'no')).toMatchObject({ id: 'm35', rack: 'no', rest: 'พื้น A–C', own: 'no' });
+    expect(SU.effG({ ...g('tp'), rest: 'ชั้นวาง S' }, 'no').rest).toBe('ชั้นวาง S');
+    expect(SU.effG(g('gf'), 'yes')).toMatchObject({ id: 'gf', rack: 'yes', lv: 'all', rest: 'แร็คช่องตัวเอง', own: 'yes' });
+    expect(SU.effG(null, '')).toBe(null);
+  });
+
+  it('เลือกโล: ไม่ได้ = พื้นของกลุ่ม ไม่ต้องมีชิ้นต่อพาเลท', () => {
+    const r = put([c('EEE005', '', '', 'no')], { sku: 'EEE005', qty: '7' });
+    expect(where(r)).toEqual([['A-01-01', 7, 'flo']]);
+    expect(r.lines[0].why).toContain('ตั้งไม่ขึ้นแร็คในแท็บ SKU : Pallet → พื้น A–C');
+    const shelf = SU.defaults().map((x) => (x.id === 'tp' ? { ...x, rest: 'ชั้นวาง S' } : x));
+    expect(where(put([c('BBB002', '', '20', 'no')], { sku: 'BBB002', qty: '45' }, shelf))).toEqual([['S-01-01', 45, 'flo']]);
+    expect(where(put([c('BBB002', '', '20')], { sku: 'BBB002', qty: '20' }))).toEqual([['R01-01-2', 20, 1]]);
+  });
+
+  it('เลือกโล: ได้ ในกลุ่มที่ไม่ขึ้นแร็ค = ทุกชั้น เศษช่องของตัวเอง · ยังไม่ใส่ชิ้น = บอก', () => {
+    const r = put([c('CCC004', 'CCC0000000004', '10', 'yes')], { sku: 'CCC004', qty: '25' });
+    expect(where(r)).toEqual([['R01-01-1', 10, 1], ['R01-01-2', 10, 2], ['R01-02-1', 5, 3]]);
+    expect(r.g.own).toBe('yes');
+    expect(put([c('CCC004', '', '', 'yes')], { sku: 'CCC004', qty: '3' }).err).toContain('ยังไม่ใส่ชิ้นต่อพาเลทของ CCC004');
+    expect(where(put([], { sku: 'CCC004', qty: '3' }))).toEqual([['D-01-01', 3, 'flo']]);
+    expect(put([c('GGG007', '', '', 'no')], { sku: 'GGG007', qty: '1' }).err).toContain('ยังไม่มีกลุ่มสินค้า');
+  });
+
+  it('รหัส: SKU สั้นเดียวกันคนละรหัสเต็ม ไม่รับค่าของกันและกัน', () => {
+    const m = SU.rackMap([c('AAA001', 'AAA0000000001', '10', 'no'), c('AAA001', 'AAA0000000002', '10')]);
+    expect(SU.rackOf(m, 'AAA0000000001', 'AAA001')).toBe('no');
+    expect(SU.rackOf(m, 'AAA0000000002', 'AAA001')).toBe('');
+    expect(SU.rackOf(m, 'AAA0000000003', 'AAA001')).toBe('');
+    expect(SU.rackOf(m, '', 'AAA001')).toBe('no');
+    expect(SU.rackOf(m, 'AAA001', 'AAA001')).toBe('no');
+    expect(SU.rackOf(SU.rackMap([c('BBB002', '', '', 'no')]), 'BBB0000000002', 'BBB002')).toBe('no');
+  });
+
+  it('แท็บรับของ: 🎯 ใช้ค่าราย SKU', () => {
+    const r = SU.pickRows(SU.picker(tb([c('AAA001', 'AAA0000000001', '10', 'no')]), {}), [{ sku: 'AAA001', lot: '8', po: 'P1', qty: '30' }]);
+    expect(r.rows).toEqual([{ sku: 'AAA001', lot: '8', po: 'P1', qty: '30', to: 'A-01-01' }]);
+  });
+
+  it('ตรวจตาราง: อ่านไม่ออก = แดง · ได้ ไม่มีชิ้น = ส้ม · ไม่ได้ ไม่มีชิ้น = บันทึกได้', () => {
+    const list = [c('AAA001', '', '10', 'แล้วแต่'), c('BBB002', '', '', 'no'), c('CCC004', '', '', 'yes'), c('GGG007', '', '5', 'no'), c('EEE005', '', '')];
+    const v = SU.validate('cap', list, { grp: { rows: SU.defaults() }, sku: { rows: SKUS } });
+    const w = v.rows.map(said);
+    expect(w[0]).toContain('red ขึ้นแร็ค ใส่ ได้');
+    expect(w[1]).toBe('info ไม่ขึ้นแร็ค ไม่ต้องใส่ชิ้นก็บันทึกได้ | info ตั้งต่างจากกลุ่ม ท็อปเปอร์');
+    expect(w[2]).toContain('warn ขึ้นแร็ค ต้องใส่ชิ้นต่อพาเลท');
+    expect(w[2]).toContain('info ตั้งต่างจากกลุ่ม ของแถม');
+    expect(w[3]).toContain('info SKU ยังไม่มีกลุ่ม');
+    expect(w[4]).toBe('warn ยังไม่ใส่ชิ้นต่อพาเลท (ไม่บันทึกแถวนี้)');
+    expect([v.bad, v.warn]).toEqual([1, 2]);
+    const two = SU.validate('cap', [c('AAA001', 'AAA0000000001', '10'), c('AAA001', '', '', 'no')]);
+    expect(said(two.rows[1])).toContain('ตั้งขึ้นแร็คไม่ตรงกัน');
+    expect(SU.docOf('cap', [c('AAA001', '', '10', 'แล้วแต่')], opt(0), null).error).toMatch(/แก้แถวสีแดง 1 แถว/);
+  });
+
+  it('เอกสาร: rows ยังสามช่อง · ค่าราย SKU แยกใน rk · อ่านกลับเป็นแถวเดียว · แก้กลับเป็นตามกลุ่มได้', () => {
+    const list = [c('AAA001', 'AAA0000000001', '1,200', 'no'), c('BBB002', '', '20'), c('CCC004', '', '', 'no'), c('EEE005', '', '')];
+    const made = SU.docOf('cap', list, opt(0), null), d = made.data;
+    expect(C.dec(d.rows)).toEqual([['AAA001', 'AAA0000000001', '1200'], ['BBB002', '', '20']]);
+    expect(C.dec(d.rk)).toEqual([['AAA001', 'AAA0000000001', 'no'], ['CCC004', '', 'no']]);
+    expect([d.n, made.kept, made.skip]).toEqual([2, 3, 1]);
+
+    const back = SU.read({ master: { cap: d } }).cap;
+    expect(back.n).toBe(3);
+    expect(back.rows).toEqual([c('AAA001', 'AAA0000000001', '1200', 'no'), c('BBB002', '', '20'), c('CCC004', '', '', 'no')]);
+    expect(SU.docOf('cap', back.rows, opt(1), d).error).toMatch(/ไม่มีอะไรเปลี่ยน/);
+
+    const off = SU.docOf('cap', back.rows.map((r) => ({ ...r, rack: '' })), opt(1), d);
+    expect('rk' in off.data).toBe(false);
+    expect(off.data.hist[0].text).toContain('แก้ 1 (AAA001)');
+    expect(off.data.hist[0].text).toContain('ลบ 1 (CCC004)');
+    expect(C.dec(off.data.rows)).toEqual(C.dec(d.rows));
+  });
+
+  it('นำเข้าไฟล์: ไม่มีคอลัมน์ = คงค่าที่ตั้งไว้ · มีคอลัมน์ = ตามไฟล์', () => {
+    const old = [c('AAA001', '', '10', 'no'), c('BBB002', 'BBB0000000002', '20', 'no'), c('CCC004', '', '', 'yes'), c('EEE005', '', '4')];
+    const cap = (grid) => TR.readSheets([{ name: 'ความจุต่อพาเลท', grid }]).cap;
+    const plain = cap([['SKU', 'Product ID', 'STD / pallet'], ['AAA001', 'AAA0000000001', 12], ['BBB002', 'BBB0000000002', 24]]);
+    expect(plain.rack).toBeUndefined();
+    expect(SU.fromParsed('cap', plain, old)).toEqual([c('AAA001', 'AAA0000000001', '12', 'no'), c('BBB002', 'BBB0000000002', '24', 'no'), c('CCC004', '', '', 'yes')]);
+
+    const withCol = cap([['SKU', 'Product ID', 'ชิ้นต่อพาเลท', 'ขึ้นแร็ค'], ['AAA001', '', 12, 'ตามกลุ่ม'], ['BBB002', '', '', 'ไม่ได้'], ['EEE005', '', 4, ''], ['GGG007', '', '', '']]);
+    expect(withCol.rows).toEqual([['AAA001', '', 12], ['EEE005', '', 4]]);
+    expect(withCol.blank).toBe(1);
+    const got = SU.fromParsed('cap', withCol, old);
+    expect(got.map((r) => [r.sku, r.cap, r.rack])).toEqual([['AAA001', '12', ''], ['EEE005', '4', ''], ['BBB002', '', 'no']]);
+    expect(got[0].auto).toBe(1);
+  });
+
+  it('ตอนลงใบ: ตั้งไม่ขึ้นแร็คแต่วางเข้า R = เตือน · ตั้งได้ = ไม่เตือนกติกากลุ่ม · ปรับยอดไม่เตือน', () => {
+    const one = (s, l) => ({ n: 1, st: 'ok', why: '', warn: [], take: [{ sku: s, long: l, from: '', to: 'R01-01-1' }] });
+    const ix = (cap) => SU.index({ loc: { saved: true, rows: LOCS }, sku: { saved: true, rows: SKUS }, grp: { rows: SU.defaults() }, cap: { rows: cap } });
+    const warn = (cap, line, mode = 'move') => SU.check({ lines: [line], total: { ok: 1, bad: 0, warn: 0 } }, mode, ix(cap)).lines[0].warn;
+    expect(warn([], one('AAA001', 'AAA0000000001'))).toEqual([]);
+    expect(warn([c('AAA001', '', '', 'no')], one('AAA001', 'AAA0000000001'))).toEqual(['SKU นี้ตั้งไม่ขึ้นแร็ค (ปกติไป พื้น A–C)']);
+    expect(warn([c('AAA001', '', '', 'no')], one('AAA001', 'AAA0000000001'), 'adj')).toEqual([]);
+    expect(warn([], one('CCC004', 'CCC0000000004')).join()).toContain('ของแถม ไม่ขึ้นแร็ค');
+    expect(warn([c('CCC004', '', '5', 'yes')], one('CCC004', 'CCC0000000004'))).toEqual([]);
+  });
+
+  it('บันทึกจริง (store จำลอง): เครื่องอื่นเห็น · รายงานความจุเหมือนเดิม · นำเข้าแบบเดิมไม่ทับค่า', async () => {
+    const x = await opened();
+    const first = ok(await x.head.setupSave('cap', [c('CCC004', '', '', 'no')], { base: 0 }));
+    expect(first.n).toBe(1);
+    await x.staff.sync();
+    expect(x.staff.fifo().cap).toBeNull();   // ยังไม่มีความจุสักแถว = หน้าจัดที่เก็บยังเตือนว่าไม่มีตาราง
+    expect(SU.read(x.staff.local()).cap.rows).toEqual([c('CCC004', '', '', 'no')]);
+
+    ok(await x.head.setupSave('cap', [c('AAA001', '', '10', 'no'), c('CCC004', '', '', 'no')], { base: 1 }));
+    await x.staff.sync();
+    expect(x.staff.fifo().cap.rows).toEqual([['AAA001', '', 10]]);
+
+    ok(await x.head.masterSave('cap', TR.readSheets([{ name: 'ความจุต่อพาเลท', grid: [['SKU', 'STD / pallet'], ['AAA001', 12]] }]).cap));
+    await x.staff.sync();
+    expect(SU.read(x.staff.local()).cap.rows).toEqual([c('AAA001', '', '12', 'no'), c('CCC004', '', '', 'no')]);
+    expect(x.staff.fifo().cap.rows).toEqual([['AAA001', '', 12]]);
+  });
+
+  it('ชุดแชร์ Supply chain ไม่ส่ง rk · หน้าต่อสายครบ', () => {
+    const gs = fs.readFileSync(path.resolve(__dirname, '../../apps-script/fire-backup.gs'), 'utf8');
+    expect(gs.match(/var SHARE_MASTER_KEYS = \[[^\]]*\]/)[0]).not.toContain("'rk'");
+    const bm = read('book/book-master.js');
+    expect(bm).toContain("{ k: 'rack', t: 'ขึ้นแร็ค', sel: 'rack1' }");
+    expect(bm).toContain('X().fromParsed(k, part, d.rows)');
+    expect(bm).toContain("X().effG(g, txt(r.rack))");
+    expect(read('wms-fire.js')).toContain("made.data.rk = cur.rk");
+  });
+});
+
 describe('ต่อสายในหน้า', () => {
   it('โหลด wms-fire-setup.js ก่อน wms-fire.js · หน้า ข้อมูลหลัก อยู่ในเมนูและแอป', () => {
     const bf = read('book/book-fire.js');
@@ -632,6 +787,379 @@ describe('ต่อสายในหน้า', () => {
   });
 
   it('ไม่มีอักษรลาว', () => {
-    ['wms-fire-setup.js', 'book/book-master.js', 'book/book-fire-trc.js', 'book/book-grid.js'].forEach((f) => expect(/[\u0E80-\u0EFF]/.test(read(f)), f).toBe(false));
+    ['wms-fire-setup.js', 'wms-fire-trc.js', 'book/book-master.js', 'book/book-fire-trc.js', 'book/book-grid.js'].forEach((f) => expect(/[\u0E80-\u0EFF]/.test(read(f)), f).toBe(false));
+  });
+});
+
+describe('ตั้งข้อมูลหลักก่อนลงยอดยกมา', () => {
+  const OPENING = () => ({ batch: 'o-1', asOf: 900, rows: OPEN });
+  const KINDS = ['loc', 'sku', 'grp', 'conv', 'sup', 'cap', 'zone'];
+  /** ตารางครบเจ็ดชนิด (สมมติ) */
+  const full = () => ({
+    loc: [loc('A-01-01'), loc('R01-01-1', '1'), loc('R02-01-1', '1')],
+    sku: [sku('AAA001', 'AAA0000000001', 'ที่นอนสมมติ 6 ฟุต', 'm6')],
+    grp: SU.defaults().map((g, i) => (i ? g : { ...g, note: 'ตั้งล่วงหน้า' })),
+    conv: [SU.rowIn('conv', ['BBB0000000001', 'BBB0000000002'])],
+    sup: [SU.rowIn('sup', ['P1', 'ผู้ผลิตสมมติ ก'])],
+    cap: [SU.rowIn('cap', ['AAA001', 'AAA0000000001', '10', '']), SU.rowIn('cap', ['CCC004', '', '', 'no'])],
+    zone: [SU.rowIn('zone', ['R02', '', '', '', 'm6', ''])],
+  });
+  const sizes = (f) => { const t = SU.read(f.local()); return Object.fromEntries(KINDS.map((k) => [k, t[k].saved ? t[k].rows.length : 0])); };
+  const FULL = { loc: 3, sku: 1, grp: 8, conv: 1, sup: 1, cap: 2, zone: 1 };
+  async function prepared() {
+    const x = await setup();
+    const t = full();
+    for (const k of KINDS) ok(await x.head.setupSave(k, t[k], { base: 0 }));
+    return x;
+  }
+
+  it('บันทึกได้ครบเจ็ดตาราง · ไม่สร้างสมุด ไม่กินเลขเอกสาร · หัวหน้าอีกเครื่องเห็น', async () => {
+    const x = await prepared();
+    const db = x.store.dump();
+    expect(db['meta/head']).toBeUndefined();
+    expect(Object.keys(db).filter((p) => p.startsWith('docs/'))).toEqual([]);
+    expect(KINDS.map((k) => db['master/' + k].ver)).toEqual(KINDS.map(() => 1));
+    expect(sizes(x.head)).toEqual(FULL);
+    expect(x.head.local()).toMatchObject({ seq: 0, meta: null, mv: -1 });
+    expect(x.head.preOpen()).toBe(true);
+
+    const h2 = await x.device(HEAD2);
+    expect(h2.preOpen()).toBe(false);   // ยังไม่ได้ถามฐาน ยังไม่ขึ้นป้าย
+    await h2.sync();
+    expect(h2.preOpen()).toBe(true);
+    expect(sizes(h2)).toEqual(FULL);
+  });
+
+  it('คนลงรายการแก้ไม่ได้ ทั้งจากหน้าและเขียนตรง', async () => {
+    const x = await setup();
+    expect((await x.staff.setupSave('loc', [loc('A-01-01')], { base: 0 })).error).toMatch(/เฉพาะหัวหน้า/);
+    await expect(x.staff.store.tx(async (t) => { t.set('master/loc', { rows: 'A-01-01' }); })).rejects.toThrow(/เฉพาะหัวหน้า/);
+    expect(x.store.dump()['master/loc']).toBeUndefined();
+  });
+
+  it('ลงยอดยกมาแล้วใช้ต่อได้ทุกเครื่อง · เลขเอกสารเริ่ม 0001 · mv เริ่ม 0 แล้วบวกตามปกติ', async () => {
+    const x = await prepared();
+    await x.staff.sync();
+    expect(ok(await x.head.post('bk-open', OPENING())).doc).toBe('T2611-0001');
+    expect(x.head.preOpen()).toBe(false);   // เครื่องที่ลงยอด ไม่ต้องรอดึงรอบหน้า
+    expect(x.store.dump()['meta/head']).toMatchObject({ seq: 1, mv: 0 });
+    const late = await x.device(HEAD2);
+    for (const f of [x.head, x.staff, late]) {
+      await f.sync();
+      expect(sizes(f)).toEqual(FULL);
+      expect(f.local().mv).toBe(0);
+      expect(f.preOpen()).toBe(false);
+    }
+    const fifo = late.fifo();
+    expect(fifo.sup.rows).toEqual([['P1', 'ผู้ผลิตสมมติ ก']]);
+    expect(JSON.stringify(fifo.cap)).toContain('AAA001');
+
+    ok(await late.setupSave('sup', [SU.rowIn('sup', ['P1', 'ผู้ผลิตสมมติ ข'])], { base: 1 }));
+    expect(x.store.dump()['meta/head'].mv).toBe(1);
+    await x.staff.sync();
+    expect(x.staff.fifo().sup.rows).toEqual([['P1', 'ผู้ผลิตสมมติ ข']]);
+  });
+
+  it('แก้หลังเครื่องที่จะลงยอดดึงไปแล้ว = หลังลงยอดได้รุ่นล่าสุด', async () => {
+    const x = await prepared();
+    await x.staff.sync();
+    const h2 = await x.device(HEAD2);
+    await h2.sync();
+    ok(await h2.setupSave('loc', full().loc.concat(loc('B-01-01')), { base: 1 }));
+    expect(sizes(x.staff).loc).toBe(3);   // ยังไม่ได้ดึงรอบใหม่
+    ok(await x.head.post('bk-open', OPENING()));
+    for (const f of [x.staff, x.head]) {
+      await f.sync();
+      expect(sizes(f).loc).toBe(4);
+    }
+  });
+
+  it('ปิดหน้าไปก่อนยอดยกมา เปิดอีกทีหลังลงยอด = สำเนาในเครื่องตามทัน', async () => {
+    const x = await prepared();
+    const cache = W.memCache();
+    const open = async () => {
+      const f = W.open({ store: x.store.connect(), auth: W.fakeAuth(ACCOUNTS), cache, now: () => NOW });
+      ok(await f.login(HEAD2));
+      await f.sync();
+      return f;
+    };
+    expect(sizes(await open())).toEqual(FULL);
+    expect(await cache.load()).toMatchObject({ seq: 0, mv: -1, meta: null });
+    ok(await x.head.setupSave('loc', full().loc.concat(loc('B-01-01')), { base: 1 }));
+    ok(await x.head.post('bk-open', OPENING()));
+    expect(sizes(await open()).loc).toBe(4);
+  });
+
+  it('มีคนลงยอดยกมาแทรกระหว่างบันทึกตาราง = mv +1 ตาม เครื่องที่ดึงไปก่อนได้ตาราง', async () => {
+    const x = await setup();
+    const h2 = await x.device(HEAD2);
+    x.store.hook(async () => {
+      ok(await h2.post('bk-open', OPENING()));
+      await h2.sync();   // ดึงไปแล้วตอนตารางยังไม่ถึงฐาน
+      expect(sizes(h2).loc).toBe(0);
+      expect(h2.local().mv).toBe(0);
+    });
+    ok(await x.head.setupSave('loc', [loc('A-01-01')], { base: 0 }));
+    expect(x.store.dump()['meta/head']).toMatchObject({ seq: 1, mv: 1 });
+    await h2.sync();
+    expect(sizes(h2).loc).toBe(1);
+  });
+
+  it('ก่อนยอดยกมา transaction แตะเฉพาะ master (ทั้งบันทึกผ่านและชนรุ่น)', async () => {
+    const x = await setup();
+    const c = x.store.connect(), seen = [];
+    const spy = {
+      ...c,
+      tx: (fn) => c.tx((t) => fn({
+        get: (p) => { seen.push(p); return t.get(p); },
+        set: (p, d) => { seen.push(p); t.set(p, d); },
+        patch: (p, d) => { seen.push(p); t.patch(p, d); },
+      })),
+    };
+    const f = W.open({ store: spy, auth: W.fakeAuth(ACCOUNTS), now: () => NOW });
+    ok(await f.login(HEAD));
+    ok(await f.setupSave('loc', [loc('A-01-01')], { base: 0 }));
+    expect((await f.setupSave('loc', [loc('B-01-01')], { base: 0 })).error).toMatch(/มีคนบันทึก/);
+    expect([...new Set(seen)]).toEqual(['master/loc']);
+  });
+
+  it('สองหัวหน้าแก้ชนกัน = ไม่ทับ และได้รุ่นของอีกคนมาให้เลือก', async () => {
+    const x = await setup();
+    const h2 = await x.device(HEAD2);
+    await h2.sync();
+    ok(await x.head.setupSave('loc', [loc('A-01-01')], { base: 0 }));
+    expect((await h2.setupSave('loc', [loc('B-01-01')], { base: 0 })).error).toMatch(/มีคนบันทึกตาราง Location ก่อนแล้ว/);
+    const t = SU.read(h2.local()).loc;
+    expect(t.ver).toBe(1);
+    expect(t.rows.map((r) => r.code)).toEqual(['A-01-01']);
+    ok(await h2.setupSave('loc', [loc('B-01-01')], { base: t.ver }));
+  });
+
+  it('รอบดึงที่ค้างอยู่ตอนบันทึก ไม่ทำให้ตารางที่เพิ่งบันทึกหาย', async () => {
+    const x = await setup();
+    const c = x.store.connect();
+    let free, hold = new Promise((res) => { free = res; });
+    const slow = { ...c, getMany: async (ps) => { const r = await c.getMany(ps); await hold; return r; } };
+    const f = W.open({ store: slow, auth: W.fakeAuth(ACCOUNTS), now: () => NOW });
+    ok(await f.login(HEAD));
+    const before = f.sync();   // อ่านตารางว่างไปแล้ว คำตอบยังมาไม่ถึง
+    await new Promise((res) => setTimeout(res, 0));
+    const saving = f.setupSave('loc', [loc('A-01-01')], { base: 0 });
+    await new Promise((res) => setTimeout(res, 0));
+    free();
+    await before;
+    ok(await saving);
+    expect(sizes(f).loc).toBe(1);
+  });
+
+  it('การอ่าน: ก่อนลงยอด 8 ครั้งต่อการดึง · หลังลงยอดเหลือ 1', async () => {
+    const x = await prepared();
+    const h2 = await x.device(HEAD2);
+    const reads = async () => { const a = h2.store.mine().reads; await h2.sync(); return h2.store.mine().reads - a; };
+    await h2.sync();
+    expect(await reads()).toBe(8);
+    ok(await x.head.post('bk-open', OPENING()));
+    await h2.sync();
+    expect(await reads()).toBe(1);
+  });
+
+  it('ล้าง docs กับ meta ก่อนลงยอดจริง = สำเนาเก่าทิ้ง ตารางที่เตรียมไว้ยังอยู่', async () => {
+    const x = await prepared();
+    ok(await x.head.post('bk-open', OPENING()));
+    await x.head.sync();
+    const keep = Object.fromEntries(Object.entries(x.store.dump()).filter(([p]) => p !== 'meta/head' && !p.startsWith('docs/')));
+    x.store.replace(keep);
+    await x.head.sync();
+    expect(x.head.local()).toMatchObject({ seq: 0, meta: null, mv: -1, docs: [] });
+    expect(sizes(x.head)).toEqual(FULL);
+    expect(ok(await x.head.post('bk-open', { ...OPENING(), batch: 'o-real' })).doc).toBe('T2611-0001');
+  });
+
+  it('นำเข้าทางเดิม (masterSave) ก็ตั้งล่วงหน้าได้', async () => {
+    const x = await setup();
+    ok(await x.head.masterSave('sup', TR.readSheets([{ name: 'PO. Truck', grid: [['Truck', 'PO.'], ['ผู้ผลิตสมมติ ก', 'P1']] }]).sup));
+    expect(x.store.dump()['meta/head']).toBeUndefined();
+    expect(sizes(x.head).sup).toBe(1);
+  });
+
+  it('หน้า: ป้ายก่อนยอดยกมา · ช่วงเตรียมไม่เร่งให้ลงยอด · Rules เดิมรับได้', () => {
+    const bm = read('book/book-master.js');
+    expect(bm).toContain('⏳ ก่อนยอดยกมา');
+    expect(bm).toContain('ใช้ต่อได้เลยหลังลงยอดยกมา');
+    expect(read('book/book-fire.js')).toContain('preOpen: function () { return !!(fire && fire.preOpen()); }');
+    expect(read('book/book-app.js')).toContain("tone: FIRE.override ? 'warn' : 'bad', title: 'ยังไม่ลงยอดยกมา'");
+    const rules = fs.readFileSync(path.resolve(__dirname, '../../firebase/firestore.rules'), 'utf8');
+    expect(rules).toMatch(/match \/master\/\{n\} \{\s+allow read: if signedIn\(\) && isActive\(profile\(\)\);\s+allow write: if signedIn\(\) && isHead\(profile\(\)\);\s+\}/);
+    ['wms-fire.js', 'book/book-app.js', 'book/book-fire.js'].forEach((f) => expect(/[\u0E80-\u0EFF]/.test(read(f)), f).toBe(false));
+  });
+});
+
+describe('ล็อกการลงเอกสารจนกว่าจะลงยอดยกมา', () => {
+  const OPS = ['bk-cut', 'bk-move', 'bk-return', 'bk-gr', 'bk-conv', 'bk-rows', 'bk-adj', 'bk-void'];
+  const OPENING = () => ({ batch: 'o-1', asOf: 900, rows: OPEN });
+  const MOVE = () => ({ batch: 'm-1', date: '2026-11-22', base: 900, names: {},
+    copy: [['AAA001', 'AAA0000000001', '8', 'P1', 'A-01-01', 'B-05-05', 2, 'เบิก', 'โอนย้าย', 'เปิด']] });
+  const docsOf = (x) => Object.keys(x.store.dump()).filter((p) => p.startsWith('docs/'));
+
+  /** หน้ารุ่นก่อนล็อก (แท็บเก่าที่เปิดค้าง) ใช้สร้างฐานที่มีเอกสารหลงก่อนยอดยกมา */
+  function oldPage() {
+    const win = {};
+    new Function('window', read('wms-book.js'))(win);
+    const core = read('wms-fire-core.js');
+    const cut = core.replace('var lock = openLock(P.op, ctx.meta);', 'var lock = null;');
+    expect(cut).not.toBe(core);
+    new Function('window', cut.replace('openLock: openLock,', 'openLock: function () { return null; },'))(win);
+    new Function('window', read('wms-fire.js'))(win);
+    return win.WmsFire;
+  }
+  async function strayed() {
+    const x = await setup();
+    const f = oldPage().open({ store: x.store.connect(), auth: W.fakeAuth(ACCOUNTS), now: () => NOW });
+    ok(await f.login(STAFF));
+    const stray = ok(await f.post('bk-gr', { batch: 'g-0', date: '2026-11-22', base: 0, names: {},
+      copy: [['AAA001', 'AAA0000000001', '11', 'P9', '', 'A-01-01', 5, 'รับ', 'GR 22-11-26', '', '']] }));
+    return { ...x, stray };
+  }
+
+  it('ทุกคำสั่งที่สร้างเอกสารถูกปฏิเสธ ยกเว้นยอดยกมา · ไม่มีอะไรลงฐาน', async () => {
+    const x = await setup();
+    expect(Object.keys(C.OPS).filter((op) => op !== 'bk-open').sort()).toEqual(OPS.slice().sort());
+    for (const op of OPS) {
+      const r = await x.head.post(op, { ...MOVE(), doc: 'T2611-0001', why: 'ลอง' });
+      expect(r.noOpen, op).toBe(1);
+      expect(r.error, op).toMatch(/ยังไม่ลงยอดยกมา/);
+    }
+    expect((await x.staff.post('bk-move', MOVE())).noOpen).toBe(1);
+    expect(x.store.dump()['meta/head']).toBeUndefined();
+    expect(docsOf(x)).toEqual([]);
+  });
+
+  it('สิทธิ์เดิมตอบก่อนล็อก', async () => {
+    const x = await setup();
+    expect((await x.staff.post('bk-adj', {})).error).toBe('คำสั่งนี้ใช้ได้เฉพาะหัวหน้ากับรองหัวหน้า');
+  });
+
+  it('ตอบล็อกก่อนเช็ครูปข้อมูล ชุดค้างเก่าจึงไม่ถูกหน้าทิ้ง', async () => {
+    const x = await setup();
+    expect((await x.staff.post('bk-move', { ...MOVE(), date: '2026-01-05' })).noOpen).toBe(1);
+    expect((await x.staff.post('bk-cut', {})).noOpen).toBe(1);
+  });
+
+  it('ไม่เปิด transaction ตอนล็อก', async () => {
+    const x = await setup();
+    const c = x.store.connect();
+    let n = 0;
+    const f = W.open({ store: { ...c, tx: (fn) => { n++; return c.tx(fn); } }, auth: W.fakeAuth(ACCOUNTS), now: () => NOW });
+    ok(await f.login(STAFF));
+    expect((await f.post('bk-move', MOVE())).noOpen).toBe(1);
+    expect(n).toBe(0);
+  });
+
+  it('ยังไม่ล็อกข้อมูลหลัก · ลงยอดแล้วปลดเอง เลขเริ่มที่ยอดยกมา', async () => {
+    const x = await setup();
+    ok(await x.head.setupSave('loc', [loc('A-01-01'), loc('B-05-05')], { base: 0 }));
+    expect((await x.staff.post('bk-move', MOVE())).noOpen).toBe(1);
+    expect(x.staff.preOpen()).toBe(true);
+    expect(ok(await x.head.post('bk-open', OPENING())).doc).toBe('T2611-0001');
+    /* เครื่องที่ยังเห็นว่าล็อก กดลงได้เลย ไม่ต้องรอรอบดึง */
+    expect(ok(await x.staff.post('bk-move', MOVE())).doc).toBe('T2611-0002');
+    expect(x.staff.preOpen()).toBe(false);
+  });
+
+  it('รอบดึงที่ค้างอ่านก่อนลงยอด = เช็คใหม่ ไม่ล็อกผิด', async () => {
+    const x = await setup();
+    const c = x.store.connect();
+    let free;
+    const hold = new Promise((res) => { free = res; });
+    const slow = { ...c, getMany: async (ps) => { const r = await c.getMany(ps); await hold; return r; } };
+    const f = W.open({ store: slow, auth: W.fakeAuth(ACCOUNTS), now: () => NOW });
+    ok(await f.login(STAFF));
+    const early = f.sync();
+    await new Promise((res) => setTimeout(res, 0));
+    ok(await x.head.post('bk-open', OPENING()));
+    const saving = f.post('bk-move', MOVE());
+    free();
+    await early;
+    expect(ok(await saving).doc).toBe('T2611-0002');
+  });
+
+  it('แกนกลางกันซ้ำกับ meta ในฐาน (ไม่มี meta หรือมีแต่ยังไม่มี open)', () => {
+    for (const meta of [null, { seq: 2, rows: 4, open: null }]) {
+      expect(C.plan({ op: 'bk-move' }, { meta, now: NOW }).noOpen).toBe(1);
+      expect(C.openLock('bk-open', meta)).toBe(null);
+    }
+    expect(C.openLock('bk-cut', { open: { id: 'o-1', no: 'T2611-0001', seq: 1 } })).toBe(null);
+  });
+
+  it('มีเอกสารหลงจากหน้ารุ่นเก่า = ยังล็อก และบอกทางแก้ที่ทำได้จริง', async () => {
+    const x = await strayed();
+    expect(x.stray.doc).toBe('T2611-0001');
+    expect((await x.staff.post('bk-move', MOVE())).noOpen).toBe(1);
+    expect((await x.head.post('bk-void', { doc: x.stray.doc, why: 'ลงผิด' })).noOpen).toBe(1);
+    const r = await x.head.post('bk-open', OPENING());
+    expect(r.error).toMatch(/^มีเอกสารที่ลงก่อนยอดยกมา 1 ชุด \(T2611-0001\)/);
+    expect(r.error).toContain('อย่าลบ master');
+    expect(r.error).not.toContain('ปรับยอด');   // ล็อกอยู่ ปรับยอดไม่ได้
+    expect(docsOf(x)).toEqual(['docs/g-0']);
+  });
+
+  /** ตัวคุมชุดค้างของหน้า book/index.html */
+  function queue({ fire = true, locked = false, pending = null, grid = null } = {}) {
+    const html = read('book/index.html');
+    const src = html.slice(html.indexOf('function docsLocked()'), html.indexOf("window.addEventListener('online'"));
+    const log = { sent: [], drafts: 0, again: 0 };
+    const st = { locked };
+    const run = new Function('FIRE', 'log', 'pending', 'grid', `
+      let PENDING = pending, USER = { who: 'x' }, BKBUSY = '', DOCS_OK = true, RETRY_T = 0;
+      const RETRY_MS = 30000, navigator = { onLine: true };
+      const setTimeout = () => { log.again++; }, clearTimeout = () => {};
+      const esc = (s) => s, renderSrc = () => {}, saveDraft = () => { log.drafts++; };
+      const save = async () => { log.sent.push('cut'); };
+      const BookGrid = {
+        modes: () => ['move'], pending: () => !!grid, held: () => isHeld(grid),
+        hold: () => { if (grid) grid.held = 1; },
+        retry: async () => { if (grid && !isHeld(grid)) log.sent.push('move'); },
+      };
+      ${src}
+      return { retryAll, pendingPill, lockNote, heldNote };`);
+    const page = run(fire ? { preOpen: () => st.locked } : null, log, pending, grid);
+    return { ...page, log, st };
+  }
+
+  it('ชุดค้าง: ก่อนยอดยกมาพักไว้ ไม่ส่ง ไม่ทิ้ง · ลงยอดแล้วก็ไม่ไหลเข้าเอง', async () => {
+    const pending = { batch: 'c-1' }, grid = { batch: 'm-1' };
+    const q = queue({ locked: true, pending, grid });
+    await q.retryAll();
+    expect(q.log).toMatchObject({ sent: [], drafts: 1, again: 0 });
+    expect([pending.held, grid.held]).toEqual([1, 1]);
+    expect(q.pendingPill()).toContain('พักส่ง');
+    expect(q.lockNote()).toContain('🔒');
+    q.st.locked = false;
+    await q.retryAll();
+    expect(q.log.sent).toEqual([]);
+    expect(q.pendingPill()).toContain('พักส่ง');
+    expect(q.heldNote()).toContain('กดส่ง');
+    expect(q.lockNote()).toBe('');
+  });
+
+  it('ชุดค้าง: ระบบเดิมกับหลังลงยอดยังส่งซ้ำเองเหมือนเดิม', async () => {
+    const old = queue({ fire: false, pending: { batch: 'c-1', held: 1 }, grid: { batch: 'm-1', held: 1 } });
+    await old.retryAll();
+    expect(old.log.sent).toEqual(['cut', 'move']);
+    expect(old.lockNote()).toBe('');
+    const live = queue({ pending: { batch: 'c-2' } });
+    await live.retryAll();
+    expect(live.log.sent).toEqual(['cut']);
+    expect(live.pendingPill()).toContain('รอส่ง');
+  });
+
+  it('หน้า: ปุ่มบันทึกปิดทั้งตัดขายและตาราง · ชุดที่ถูกล็อกไม่ถูกล้าง', () => {
+    const html = read('book/index.html'), grid = read('book/book-grid.js');
+    expect(html).toContain('const can = !locked && USER');
+    expect(html).toContain('if (r.noOpen && resend) { holdPending(); render(); return; }');
+    expect(grid).toContain('return !!(!docsLocked() && USER');
+    expect(grid).toContain('if (r.noOpen && resend) { holdPending(); show(mode); return; }');
+    [html, grid].forEach((s) => expect(s).toContain("if (!USER || BKBUSY || docsLocked()) return;"));
+    ['book/index.html', 'wms-fire-core.js'].forEach((f) => expect(/[\u0E80-\u0EFF]/.test(read(f)), f).toBe(false));
   });
 });

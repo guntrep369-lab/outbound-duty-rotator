@@ -7,24 +7,32 @@ rules_version = '2';
 // วางใน Firebase Console > Firestore Database > Rules แล้วกด Publish
 //
 // ที่เก็บ
-//   users/{อีเมลตัวเล็ก}  {name, role: head | staff | viewer, active, last, by, at}  หัวหน้าเพิ่มชื่อในหน้าตั้งค่า
+//   users/{อีเมลตัวเล็ก}  {name, role: head | staff | viewer, team: '' คลัง / Inbound | qa, active, last, by, at}  หัวหน้าเพิ่มชื่อในหน้าตั้งค่า
 //   use/{วันแปซิฟิก}      {รหัสเครื่อง: {r, w, by}}  ตัวนับโควตา แต่ละเครื่องส่งยอดของตัวเองชั่วโมงละครั้ง
 //   meta/head            {v, seq, month, next, last, rows, open, mv, tv, ov, trc, at}  ทุกการบันทึกเขียนตัวนี้ จึงเรียงกันทีละชุด
 //                        tv = รุ่นเลข TRcloud (ใส่เลขแล้ว +1) · ov = รุ่นการตรวจ / อนุมัติ (กดแล้ว +1) · trc = 'วันที่#รุ่น' ยอด TRcloud ล่าสุด · mv = รุ่นตารางหลัก
-//   docs/{รหัสชุด}         กดบันทึก 1 ครั้ง = 1 เอกสาร สร้างได้อย่างเดียว แก้ได้เฉพาะเลข TRcloud (tr trState trBy trAt)
-//                        และการตรวจ / อนุมัติของใบย้ายกับแปลง (ck ckName ckAt ap apName apAt okAt) ลบไม่ได้
-//   docs/{รหัสชุด}~2, ~3  ส่วนแยกของเอกสารใหญ่ ต้องมาในคำขอเดียวกับเอกสารหลัก
+//                        open = ตัวชี้ยอดยกมา เปลี่ยนได้เฉพาะตอนหัวหน้าลงยอดยกมา · rows = แถวรวม เพิ่มเท่าจำนวนแถวของเอกสารใหม่
+//   docs/{รหัสชุด}         กดบันทึก 1 ครั้ง = 1 เอกสาร สร้างได้อย่างเดียว แก้ได้เฉพาะเลข TRcloud (tr trState trBy trAt + ประวัติ trLog ต่อท้ายอย่างเดียว)
+//                        และการตรวจ / อนุมัติของใบย้ายกับแปลง (ck ckName ckAt ap apName apAt rj rjName rjWhy okAt) ลบไม่ได้
+//                        ใบโอน QA (xf: in เข้า | out ออก | qa ใน QA): ck = ผู้รับ · rj = ไม่รับ · ยังไม่อนุมัติ ใส่เลข TRcloud ไม่ได้
+//                        รอรับแล้วใช้ต่อไม่ได้ กับอนุมัติใบเข้าก่อนใบออก คุมในแอป (Rules คิดยอดไม่ได้)
+//   docs/{รหัสชุด}~2, ~3  ส่วนแยกของเอกสารใหญ่ ต้องมาในคำขอเดียวกับเอกสารหลัก ไม่เกิน 7 ส่วน แก้ทีหลังไม่ได้
+//                        รหัสชุด = ตัวอักษรอังกฤษ ตัวเลข _ . - ไม่เกิน 60 ตัว · ใบกลับรายการ = rev|เลขที่ใบเดิม
 //   master/{conv|sup|cap} ตารางแปลงสินค้า Supplier ความจุ หัวหน้าแก้
 //   trc/{วันที่}           ยอดคงเหลือ TRcloud ที่นำเข้า (Stock WH-Loss ราคาทุน) หัวหน้าแก้
 //   xfer/log             {วันที่: {by, at, n, last}} วางแถวลงชีต Transaction เดิมแล้ว (ช่วงเปลี่ยนผ่าน) แก้ครั้งละวัน
 //   arch/index           ปิดเดือน: เดือนที่รวมเป็นก้อนแล้ว {v, months:[{m, from, to, docs, n, skip, ...}], ov}
-//   arch/{ปปดด}-{n}       ก้อนเอกสารของเดือนนั้น (JSON ของเอกสารเหมือนใน docs) · arch/ov-{n} เลข TRcloud ที่ใส่หลังปิดเดือน
+//   arch/{ปปดด}-{n}       ก้อนเอกสารของเดือนนั้น (JSON ของเอกสารเหมือนใน docs) · arch/ov-{ปปดด}-{n} เลข TRcloud ที่ใส่หลังปิดเดือนก่อน ๆ
+//                        เดือนที่อยู่ใน index แล้ว (ปิดแล้ว) เขียนทับไม่ได้ · index ต่อท้ายได้ครั้งละเดือน
+//   audit/last           ผลตรวจแถว (เสกยอด ติดลบ) ของ fire-backup.gs หัวหน้าอ่านอย่างเดียว
+//                        Rules อ่านแถวไม่ได้ จึงกันแถวปลอมไม่ได้ สคริปต์จับย้อนหลังทุกราว 2 ชั่วโมง
 //   ที่อื่นทั้งหมด = ปฏิเสธ
 //
 // Rules อ่านเอกสารประกอบ (get / getAfter / exists) ได้ไม่เกิน 10 ครั้งต่อการเขียนเอกสารเดียว
 // และ 20 ครั้งต่อ transaction หรือ batch นับรวมทุกเอกสาร จึงออกแบบให้ใช้น้อย:
 //   docs สร้างใหม่ (หลักหรือส่วนแยก)  2  = users + getAfter(meta/head)
 //   meta/head seq +1                2  = users + getAfter(docs/{last})
+//   arch ก้อนปิดเดือน                3  = users + exists + get(arch/index) แอปเขียนครั้งละไม่เกิน 6 ก้อน (ARCH_BATCH) = 18
 //   อื่น ๆ                           1  = users (ใส่เลข TRcloud / ตรวจ / อนุมัติ ครั้งละไม่เกิน 10 เอกสาร + meta = 11)
 //   บันทึกหนึ่งชุด = 4 + 2 ต่อส่วนแยก แอปจำกัดไม่เกิน 7 ส่วน (PARTS_MAX) = 16
 
@@ -60,6 +68,22 @@ service cloud.firestore {
         || m == thaiMonthOf(request.time - duration.value(10, 'm'))
         || m == thaiMonthOf(request.time + duration.value(10, 'm'));
     }
+    /** เดือนที่จบแล้ว (ปิดเดือนได้) */
+    function monthDone(m) {
+      return m is string && m.matches('[0-9]{4}') && m < thaiMonthOf(request.time + duration.value(10, 'm'));
+    }
+    function thaiDayOf(t) {
+      let x = t + duration.value(7, 'h');
+      return string(x.year()) + '-' + pad2(x.month()) + '-' + pad2(x.day());
+    }
+    /** วันที่เอกสาร ย้อนไม่เกิน 45 วัน ล่วงหน้าไม่เกิน 1 วัน แบบ dayError ของหน้าเว็บ เผื่อ 10 นาที (64810 = 45 วัน + 10 นาที · 1450 = 1 วัน + 10 นาที) */
+    function dayOk(s) {
+      return s is string && s.matches('[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])')
+        && s >= thaiDayOf(request.time - duration.value(64810, 'm'))
+        && s <= thaiDayOf(request.time + duration.value(1450, 'm'));
+    }
+    /** ชื่อที่ขึ้นในเอกสาร = ชื่อในรายชื่อ ไม่มีชื่อ = อีเมล */
+    function nameOf(u) { return u.get('name', '') != '' ? u.name : email(); }
 
     /* ── เอกสาร ── */
 
@@ -69,39 +93,110 @@ service cloud.firestore {
         && d.by == email() && d.at == request.time
         && ((d.type in ['ตารางเดิม', 'ยอดยกมา', 'ปรับยอด', 'กลับรายการ']) ? (u.role == 'head')
           : (d.type in ['ตัดขาย', 'ย้าย', 'คืน', 'รับของ', 'แปลง']))
-        && monthOk(m.month) && d.no == 'T' + m.month + '-' + pad4(m.next - 1);
+        && monthOk(m.month) && d.no == 'T' + m.month + '-' + pad4(m.next - 1)
+        && (d.type != 'ย้าย' || moveOk(d, u))
+        && newOk(d, u) && idOk(id, d) && shapeOk(d);
+    }
+    /** ใบใหม่: ไม่มีช่องรับ อนุมัติ หรือแก้เลขย้อนหลัง · ชื่อตรงรายชื่อ · วันที่อยู่ในช่วง */
+    function newOk(d, u) {
+      return d.keys().hasOnly(['v', 'no', 'seq', 'row', 'n', 'type', 'date', 'by', 'name', 'at', 'stamp', 'ref', 'link', 'why', 'qty', 'tr', 'trState', 'rows', 'names', 'orders', 'part', 'xf'])
+        && d.name == nameOf(u) && dayOk(d.date);
+    }
+    /**
+     * รหัสชุดแบบที่แอปออก (ID_RE ใน wms-fire-core.js) · ชื่อที่ชนช่องในตัวของ JavaScript ใช้ไม่ได้ (ทำหน้าเว็บล่ม)
+     * ใบกลับรายการ = rev|เลขที่ใบเดิม
+     */
+    function idOk(id, d) {
+      return d.type == 'กลับรายการ'
+        ? (d.link is string && id == 'rev|' + d.link)
+        : (id.matches('[A-Za-z0-9][A-Za-z0-9_.-]{0,59}')
+          && !(id in ['constructor', 'hasOwnProperty', 'isPrototypeOf', 'propertyIsEnumerable', 'toLocaleString', 'toString', 'valueOf']));
+    }
+    /** ชนิดของช่องหัวใบ (ช่องอื่นเทียบค่าตรงตัวแล้ว) · part = จำนวนส่วน เครื่องอื่นอ่านตามนี้ จึงไม่เกิน 7 (PARTS_MAX) */
+    function shapeOk(d) {
+      return d.v == 1 && d.part is int && d.part >= 1 && d.part <= 7 && d.qty is number
+        && d.stamp is string && d.ref is string && d.link is string && d.why is string && d.tr is string
+        && d.trState in ['', 'wait', 'done', 'none'] && d.get('xf', '') is string
+        && d.rows is string && d.names is string && d.orders is string;
+    }
+    /**
+     * ใบย้ายใหม่: ข้ามคลัง (xf in / out) เริ่มที่รอลง ไม่มีเลข · ในคลังเดียวกันไม่ต้องลง
+     * ทีม QA ทำใบออกกับใบใน QA ทีมคลัง / Inbound ทำใบเข้า หัวหน้าทำแทนได้
+     */
+    function moveOk(d, u) {
+      let x = d.get('xf', '');
+      let qa = u.get('team', '') == 'qa';
+      return ((x in ['in', 'out']) ? (d.trState == 'wait' && d.tr == '') : (x in ['', 'qa'] && d.trState == 'none'))
+        && (isHead(u) || x == '' || (x == 'in' ? !qa : qa));
+    }
+    /** ผู้รับ (หรือไม่รับ): เข้า QA กับใน QA = ทีม QA · ออกจาก QA = ทีมคลัง / Inbound · หัวหน้ารับแทนได้ */
+    function takeOk(old, u) {
+      let x = old.get('xf', '');
+      let qa = u.get('team', '') == 'qa';
+      return isHead(u) || x == '' || (x == 'out' ? !qa : qa);
     }
     /** ส่วนแยก: meta.at = เวลาของคำขอนี้ แปลว่า meta เพิ่ง seq +1 ในคำขอนี้ ไม่ใช่เติมส่วนให้เอกสารเก่าทีหลัง */
     function partOk(id, d, m) {
       return m.at == request.time && m.last == d.of && m.seq == d.seq && id == d.of + '~' + string(d.i)
-        && d.keys().hasOnly(['v', 'of', 'seq', 'i', 'rows', 'orders']);
+        && d.keys().hasOnly(['v', 'of', 'seq', 'i', 'rows', 'orders'])
+        && d.i is int && d.i >= 2 && d.i <= 7 && d.rows is string && d.orders is string;
     }
     function docCreate(id, d, u, m) {
       return isStaff(u) && (('of' in d) ? partOk(id, d, m) : mainOk(id, d, u, m));
     }
-    /** ใส่เลข TRcloud ทีหลัง: แก้ได้แค่ 4 ช่องนี้ เวลาเป็นของเซิร์ฟเวอร์ สถานะ รอลง / ลงแล้ว / ไม่ต้องลง */
+    /**
+     * ใส่เลข TRcloud ทีหลัง: แก้ได้แค่ 5 ช่องนี้ เวลาเป็นของเซิร์ฟเวอร์ สถานะ รอลง / ลงแล้ว / ไม่ต้องลง
+     * เปลี่ยนของเดิม = ต่อประวัติ trLog อีก 1 รายการ (เลขเดิม สถานะเดิม คนแก้ เวลา) ของเก่าในประวัติแก้ไม่ได้
+     * ใบย้ายที่รอลงและยังไม่อนุมัติ = คงรอลง ไม่มีเลข
+     */
     function trUpdate(d, old, u) {
-      return isStaff(u) && d.diff(old).affectedKeys().hasOnly(['tr', 'trState', 'trBy', 'trAt']) && d.trBy == email()
-        && d.trAt == request.time && d.trState in ['wait', 'done', 'none'] && d.tr is string && d.tr.size() <= 100;
+      return isStaff(u) && d.diff(old).affectedKeys().hasOnly(['tr', 'trState', 'trBy', 'trAt', 'trLog']) && d.trBy == email()
+        && d.trAt == request.time && d.trState in ['wait', 'done', 'none'] && d.tr is string && d.tr.size() <= 100
+        && (old.type != 'ย้าย' || old.get('trState', '') != 'wait' || old.get('ap', '') != '' || (d.trState == 'wait' && d.tr == ''))
+        && trLogOk(d, old);
+    }
+    /** ยังไม่เคยมีเลขหรือคนแก้ = ประวัติไม่เปลี่ยน · มีแล้ว = ของเดิมครบ + ค่าก่อนแก้ 1 รายการ (TR_LOG_MAX = 50) */
+    function trLogOk(d, old) {
+      let was = old.get('trLog', []);
+      let log = d.get('trLog', []);
+      return (old.get('trBy', '') == '' && old.get('tr', '') == '')
+        ? log == was
+        : (log is list && was.size() < 50 && log.size() == was.size() + 1
+          && log == was.concat([log[was.size()]]) && trWasOk(log[was.size()], old));
+    }
+    /** รายการประวัติ = ค่าก่อนแก้ · เวลาเป็นมิลลิวินาที เผื่อปัดเศษ 1 */
+    function trWasOk(e, old) {
+      let by = old.get('trBy', '');
+      let t = (by == '' ? old.at : old.trAt).toMillis();
+      return e.keys().hasOnly(['tr', 'state', 'by', 'at']) && e.tr == old.get('tr', '') && e.state == old.get('trState', '')
+        && e.by == (by == '' ? old.by : by) && e.at >= t - 1 && e.at <= t + 1;
     }
 
     /**
      * ตรวจ / อนุมัติทีหลัง (ใบย้ายกับแปลง ยอดเปลี่ยนตั้งแต่บันทึก): ผู้ตรวจไม่ใช่คนทำ · ผู้อนุมัติเป็นหัวหน้า หลังมีผู้ตรวจ
      * (ตรวจกับอนุมัติในคำขอเดียวกันได้ · หัวหน้าอนุมัติใบที่ตัวเองทำได้) ตั้งแล้วแก้ไม่ได้ เวลาเป็นของเซิร์ฟเวอร์
+     * ใบโอน QA: ตรวจ = รับ (ตามทีม) · ไม่รับ (rj มีเหตุผล) ก่อนรับเท่านั้น แล้วรับ / อนุมัติไม่ได้อีก
      * okAt = เวลาแก้ล่าสุด เครื่องอื่นดึงตามช่องนี้ · ตรงกับ okSet ใน public/wms-fire-core.js
      */
     function okUpdate(d, old, u) {
       let keys = d.diff(old).affectedKeys();
       let ck = keys.hasAny(['ck', 'ckName', 'ckAt']);
       let ap = keys.hasAny(['ap', 'apName', 'apAt']);
-      return isStaff(u) && old.type in ['ย้าย', 'แปลง'] && (ck || ap)
-        && keys.hasOnly(['ck', 'ckName', 'ckAt', 'ap', 'apName', 'apAt', 'okAt']) && d.okAt == request.time
+      let rj = keys.hasAny(['rj', 'rjName', 'rjWhy']);
+      return isStaff(u) && old.type in ['ย้าย', 'แปลง'] && (ck || ap || rj)
+        && keys.hasOnly(['ck', 'ckName', 'ckAt', 'ap', 'apName', 'apAt', 'rj', 'rjName', 'rjWhy', 'okAt']) && d.okAt == request.time
+        && old.get('rj', '') == ''
+        && ((!ck && !rj) || takeOk(old, u))
+        && (!rj || (!ck && !ap && old.type == 'ย้าย' && old.get('xf', '') != '' && old.get('ck', '') == ''
+          && d.rj == email() && d.rj != old.by && d.rjName is string && d.rjName.size() <= 60 && d.rjName == nameOf(u)
+          && d.rjWhy is string && d.rjWhy.size() > 0 && d.rjWhy.size() <= 200))
         && (!ck || (old.get('ck', '') == '' && d.ck == email() && d.ck != old.by && d.ckAt == request.time
-          && d.ckName is string && d.ckName.size() <= 60))
+          && d.ckName is string && d.ckName.size() <= 60 && d.ckName == nameOf(u)))
         && (!ap || (isHead(u) && old.get('ap', '') == '' && d.ap == email() && d.get('ck', '') != '' && d.apAt == request.time
-          && d.apName is string && d.apName.size() <= 60));
+          && d.apName is string && d.apName.size() <= 60 && d.apName == nameOf(u)));
     }
-    function docUpdate(d, old, u) { return trUpdate(d, old, u) || okUpdate(d, old, u); }
+    /** ส่วนแยกแก้ไม่ได้ (แก้ได้ = ทุกเครื่องอ่านส่วนนั้นซ้ำทุกครั้งที่มีคนแก้เลข) */
+    function docUpdate(d, old, u) { return !('of' in old) && (trUpdate(d, old, u) || okUpdate(d, old, u)); }
 
     match /docs/{id} {
       allow read: if signedIn() && isActive(profile());
@@ -116,13 +211,28 @@ service cloud.firestore {
       let prevSeq = old == null ? 0 : old.seq;
       let prevMonth = old == null ? '' : old.get('month', '');
       let prevNext = old != null && prevMonth == d.month ? old.next : 1;
+      let md = getAfter(/databases/$(database)/documents/docs/$(d.last)).data;
       return isStaff(u) && d.seq == prevSeq + 1 && d.at == request.time
         && monthOk(d.month) && d.month >= prevMonth && d.next == prevNext + 1
         && d.get('mv', 0) == (old == null ? 0 : old.get('mv', 0))
         && d.get('tv', 0) == (old == null ? 0 : old.get('tv', 0))
         && d.get('ov', 0) == (old == null ? 0 : old.get('ov', 0))
         && d.get('trc', '') == (old == null ? '' : old.get('trc', ''))
-        && getAfter(/databases/$(database)/documents/docs/$(d.last)).data.seq == d.seq;
+        && md.seq == d.seq && bookOk(d, old, md, u);
+    }
+    /**
+     * md = เอกสารใหม่ของคำขอนี้ · ตัวชี้ยอดยกมาเปลี่ยนได้เฉพาะเอกสารยอดยกมาของหัวหน้า และลงใหม่ได้จนกว่าจะมีเอกสารหลังยอด
+     * แถวรวมต่อจากของเดิม (ยอดยกมาเริ่มใหม่) · ไม่ได้บังคับว่าต้องมียอดยกมาก่อนบันทึก
+     */
+    function bookOk(d, old, md, u) {
+      let opening = md.type == 'ยอดยกมา';
+      let was = old == null ? null : old.get('open', null);
+      let base = (opening || old == null) ? 0 : old.get('rows', 0);
+      return d.v == 1 && d.keys().hasOnly(['v', 'seq', 'month', 'next', 'last', 'rows', 'open', 'mv', 'tv', 'ov', 'trc', 'at'])
+        && md.n is int && md.n >= 0 && md.n <= 40000 && d.rows == base + md.n && md.row == base + 2
+        && (opening
+          ? (isHead(u) && (was == null || old.seq == was.seq) && d.open == {'id': d.last, 'no': md.no, 'seq': d.seq})
+          : d.get('open', null) == was);
     }
     /** หัวหน้าเปลี่ยน master (mv +1) หรือนำเข้ายอด TRcloud (trc) ให้ทุกเครื่องดึงใหม่ แก้อย่างอื่นไม่ได้ */
     function metaMv(d, old, u) {
@@ -182,11 +292,37 @@ service cloud.firestore {
       allow update: if signedIn() && isStaff(profile()) && id == 'log'
         && request.resource.data.diff(resource.data).affectedKeys().size() == 1;
     }
+    /** ก้อนของเดือนที่จบแล้วและยังไม่อยู่ใน index (อยู่ใน index = ปิดแล้ว ทับไม่ได้) */
+    function archChunkOk(id, d) {
+      return monthDone(d.m) && id.matches('(ov-)?[0-9]{4}-[0-9]{1,3}')
+        && (id.split('-')[0] == d.m || id.split('-')[1] == d.m)
+        && (!exists(/databases/$(database)/documents/arch/index)
+          || d.m > lastMonth(get(/databases/$(database)/documents/arch/index).data.months));
+    }
+    function lastMonth(months) { return months[months.size() - 1].m; }
+    function archFirst(d) {
+      return d.keys().hasOnly(['v', 'months', 'ov']) && d.months is list && d.months.size() == 1
+        && monthDone(d.months[0].m) && d.ov.m == d.months[0].m;
+    }
+    /** ต่อท้ายครั้งละเดือน เดือนเดิมทุกช่องคงเดิม */
+    function archAdd(d, old) {
+      let n = old.months.size();
+      return d.keys().hasOnly(['v', 'months', 'ov']) && d.months is list && d.months.size() == n + 1
+        && d.months == old.months.concat([d.months[n]]) && d.months[n].m > old.months[n - 1].m
+        && monthDone(d.months[n].m) && d.ov.m == d.months[n].m;
+    }
     /** ปิดเดือน: ก้อนสำเนาของเอกสารเดือนที่จบแล้ว ให้เครื่องใหม่อ่านไม่กี่ครั้ง (ของจริงยังอยู่ใน docs ไม่ลบ ไม่แก้) หัวหน้าเขียน ลบไม่ได้ */
     match /arch/{id} {
       allow read: if signedIn() && isActive(profile());
-      allow create, update: if signedIn() && isHead(profile())
-        && (id == 'index' || id.matches('[0-9]{4}-[0-9]{1,3}') || id.matches('ov-[0-9]{1,3}'));
+      allow create: if signedIn() && isHead(profile())
+        && (id == 'index' ? archFirst(request.resource.data) : archChunkOk(id, request.resource.data));
+      allow update: if signedIn() && isHead(profile())
+        && (id == 'index' ? archAdd(request.resource.data, resource.data) : archChunkOk(id, request.resource.data));
+    }
+    /** ผลตรวจแถวของ fire-backup.gs (สิทธิ์เจ้าของโปรเจกต์ เขียนไม่ผ่าน Rules) */
+    match /audit/{id} {
+      allow read: if signedIn() && isHead(profile());
+      allow write: if false;
     }
   }
 }

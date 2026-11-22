@@ -75,12 +75,16 @@
       { k: 'tr', t: 'RUNNUMBER', w: 112, ph: 'เลขของชุด' },
     ],
   };
+  /* ระบบใหม่: เลข TRcloud ของใบย้าย ใส่หลังหัวหน้าอนุมัติ จึงไม่มีช่องเลขตอนบันทึก */
+  if (window.BookFire) COLS.move = COLS.move.filter(function (c) { return c !== TR; });
   var TITLE = { gr: 'รับของ', move: 'ย้าย / เติม / QA', ret: 'คืนของ', conv: 'แปลงสินค้า', adj: 'ปรับยอด', rows: 'ตารางแบบสมุดเดิม' };
   var TIP = {
     move: 'พิมพ์หรือวางจาก Excel เรียงคอลัมน์ SKU · จาก · ไป · ชิ้น · LOT · PO\n' +
       'จากว่าง = เติมจากของสำรองที่ R กองเก่าสุด (Supplier เดียวกับที่เปิดขายก่อน)\nไปว่าง = โลที่ SKU นี้เปิดขายอยู่\n' +
       'LOT / PO ว่าง = เอากองที่โลต้นทางตาม FIFO แบ่งหลายกองให้เอง\nเปิด? ว่าง = ตามโลปลายทาง (R QA RIB ทางเดิน ไม่เปิด) พิมพ์ - = ไม่เปิด\n' +
-      'ย้ายต่อจากโลที่เพิ่งย้ายเข้าในชุดเดียวกันได้ (QA → ORDER แล้ว ORDER → S)',
+      (window.BookFire ? 'เติม / ย้ายในคลัง: ย้ายต่อจากโลที่เพิ่งย้ายเข้าในชุดเดียวกันได้\n' +
+        'โอนเข้า QA · โอนออกจาก QA · ย้ายใน QA: แยกบันทึกคนละใบ ผู้รับกดรับก่อน ของจึงใช้ต่อได้ หัวหน้าอนุมัติแล้วจึงใส่เลข TRcloud'
+        : 'ย้ายต่อจากโลที่เพิ่งย้ายเข้าในชุดเดียวกันได้ (QA → ORDER แล้ว ORDER → S)'),
     ret: 'วางเลขออเดอร์ / เลขอ้างอิง (ออนไลน์) / เลขพัสดุ ทีละบรรทัด ระบบหาว่าตัดจากกองไหน แล้วคืนเข้า LOT / PO เดิม\n' +
       'ไม่ใส่ SKU = คืนทั้งออเดอร์ · ไม่ใส่ชิ้น = ชิ้นที่ยังไม่คืน\nไม่เจอ (ออเดอร์ที่ตัดด้วยมือในชีตเดิม) = ใส่ SKU กับชิ้น คืนเป็น LOT 0 / PO 0 แบบเดิม\n' +
       'โลที่วางว่าง = โลที่ SKU นี้เปิดขายอยู่ · ช่อง M/E ใส่เลข M/E-xxxxx ถ้าเป็นของ M/E',
@@ -104,7 +108,12 @@
       'เหตุผล: นับผิด ของเสีย หาย เจอเพิ่ม ลงผิด (พิมพ์เองได้) · เฉพาะหัวหน้ากับรองหัวหน้า\n' +
       'โหมดบันทึก: มีคนลงกองเดียวกันระหว่างนั้น ระบบไม่รับ ให้ดึงสต๊อกใหม่แล้วดูยอดอีกครั้ง',
   };
-  TIP.move += '\nTRcloud = เลขของแถว ว่าง = เลขของชุด (โอน QA ไม่มีเลขขึ้นเตือนสีส้ม)';
+  if (window.BookFire) {
+    TIP.move += '\nออกจาก IQA: ต้องใส่ LOT กับ PO (ระบบไม่เลือกกองแทน) · ไม่มียอด = แจ้ง Inbound ทำใบโอนเข้า อย่าปรับยอด · วันที่ออกต้องไม่ก่อนวันที่ของเข้า';
+    TIP.rows += '\nออกจาก IQA: ต้องใส่ LOT กับ PO ทุกแถว และวันที่ต้องไม่ก่อนวันที่ของเข้า';
+    TIP.adj += '\nIQA: ขาดใบโอนเข้า ให้ Inbound ทำใบโอน อย่าปรับเพิ่ม (ใบโอนตามมาแล้วยอดซ้ำ)';
+  }
+  if (!window.BookFire) TIP.move += '\nTRcloud = เลขของแถว ว่าง = เลขของชุด (โอน QA ไม่มีเลขขึ้นเตือนสีส้ม)';
   TIP.ret += '\nTRcloud = เลขของแถว ว่าง = เลขของชุด (คืนของ 2 เลขในชุดเดียว ใส่ในแถว) ไม่มีเลขขึ้นเตือนสีส้ม';
   var KEY = { gr: 'wms:book:draft:gr', move: 'wms:book:draft:move', ret: 'wms:book:draft:ret', conv: 'wms:book:draft:conv',
     adj: 'wms:book:draft:adj', rows: 'wms:book:draft:rows' };
@@ -124,6 +133,7 @@
   var S = {};                 // { move: {rows, date, pending, ref, tr, mr, gr}, ret: {...} } โหลดตอนใช้ครั้งแรก
   var LOOK = { found: {}, miss: {} };
   var PLAN = {};
+  var QA_OPEN = false;        // กล่อง ของ QA ที่รับแล้ว เปิดอยู่ไหม
   var DRAWN = null;           // ตารางที่วาดอยู่ { mode, n, res } เปลี่ยนเมื่อไรถึงวาดใหม่ทั้งตาราง
   var LISTS = null;           // RES ที่ใช้ทำ datalist ล่าสุด
   var FINDING = false, FIND_ERR = '', findTimer = 0, outTimer = 0, saveTimer = 0;
@@ -160,14 +170,20 @@
   function plan(mode) {
     if (!ST) return null;
     var g = state(mode), B = WmsBook;
-    var p = mode === 'move' ? B.planMoves(g.rows, ST) : mode === 'rows' ? B.planRows(g.rows, ST, { date: g.date })
+    var iqa = !!window.BookFire;   // กติกา IQA เฉพาะระบบใหม่
+    var p = mode === 'move' ? B.planMoves(g.rows, ST, { iqa: iqa }) : mode === 'rows' ? B.planRows(g.rows, ST, { date: g.date, iqa: iqa })
       : mode === 'gr' ? B.planGr(g.rows, ST, { date: g.date }) : mode === 'conv' ? B.planConv(g.rows, ST)
-      : mode === 'adj' ? B.planAdj(g.rows, ST) : B.planReturns(g.rows, LOOK, ST);
-    p = B.trApply(p, mode, { tr: g.tr, mr: g.mr, gr: g.gr });
+      : mode === 'adj' ? B.planAdj(g.rows, ST, { iqa: iqa }) : B.planReturns(g.rows, LOOK, ST);
+    p = B.trApply(p, mode, { tr: g.tr, mr: g.mr, gr: g.gr }, trAfter(mode));
     /* ระบบใหม่: เทียบข้อมูลหลัก (Location / SKU / กลุ่มสินค้า) ไม่มีตาราง = ไม่เปลี่ยนอะไร */
     var su = window.BookFire && window.WmsFireSetup && window.BookFire.setup ? window.BookFire.setup() : null;
-    return su ? window.WmsFireSetup.check(p, mode, su.ix, mode === 'gr' ? window.BookFire.setupOcc() : null) : p;
+    if (su) p = window.WmsFireSetup.check(p, mode, su.ix, mode === 'gr' ? window.BookFire.setupOcc() : null);
+    if (iqa && window.BookFire.iqaCheck && mode !== 'ret') p = window.BookFire.iqaCheck(p, g.date);
+    /* ใบโอน QA: ใบละแบบเดียว ตามทีมคนทำ · ตารางแบบเดิมโอน QA ไม่ได้ */
+    if (iqa && window.BookFire.xferCheck && (mode === 'move' || mode === 'rows')) p = window.BookFire.xferCheck(p, mode);
+    return p;
   }
+  function trAfter(mode) { return mode === 'move' && !!window.BookFire; }
 
   /** แผน → แถวที่ส่งให้สคริปต์ */
   function copyOf(mode, pl) {
@@ -281,7 +297,12 @@
     }
     /* เลข TRcloud ทั้งชุด (แปลง = MR ฝั่งเบิก GR ฝั่งรับ) ช่องในแถวใช้แทนเฉพาะแถว */
     if (mode === 'conv') html += field('gMr', 'mr', 150, 'เลข MR ทั้งชุด') + field('gGr', 'gr', 150, 'เลข GR ทั้งชุด');
-    else html += field('gTr', 'tr', 160, 'เลข TRcloud ทั้งชุด');
+    else if (!trAfter(mode)) html += field('gTr', 'tr', 160, 'เลข TRcloud ทั้งชุด');
+    var qa = mode === 'move' ? qaList() : null;
+    if (qa) {
+      html += '<button type="button" class="tx-opt' + (QA_OPEN ? ' on' : '') + '" id="gQa" aria-expanded="' + QA_OPEN + '">' +
+        'ของ QA ที่รับแล้ว <b>' + f(qa.piles.length) + '</b></button>';
+    }
     if (mode === 'ret') {
       html += '<button class="tx-opt' + (need ? ' p' : '') + '" id="gFind" ' + (FINDING || !need || !USER ? 'disabled' : '') + '>' +
         (FINDING ? 'กำลังหา…' : '🔍 หาออเดอร์' + (need ? ' ' + f(need) : '')) + '</button>';
@@ -293,9 +314,61 @@
     html += '<span class="sp"></span>' +
       (g.rows.length > 1 ? '<button class="bk-link" id="gClear">ล้างตาราง</button>' : '') +
       '<label for="gDate">วันที่ <input type="date" class="bk-date" id="gDate" value="' + esc(g.date) + '"></label></div>';
+    if (qa && QA_OPEN) html += qaBox(g, qa);
     if (FIND_ERR) html += '<div class="bk-warn">หาออเดอร์ไม่สำเร็จ: ' + esc(FIND_ERR) + '</div>';
     if (mode === 'ret' && !USER) html += '<div class="bk-warn">เข้าสมุดก่อน (มุมขวาบน) ถึงจะหาออเดอร์ที่ตัดได้</div>';
     $('inp').innerHTML = html;
+  }
+
+  /* ── ของ QA ที่รับแล้ว: เลือกมาทำใบโอนออก (ระบบใหม่) ── */
+
+  /** กองใน QA / IQA ที่ใช้ต่อได้ + ชิ้นที่ยังรอรับ · null = คนนี้ไม่ได้ทำใบออก */
+  function qaList() {
+    var B = WmsBook, C = window.WmsFireCore, u = window.BookFire && window.BookFire.user && window.BookFire.user();
+    if (!ST || !C || !u || u.role === 'viewer' || C.makeWhy('out', u)) return null;
+    var piles = [], wait = 0;
+    Object.keys(ST.all || {}).forEach(function (s) {
+      ST.all[s].forEach(function (p) {
+        if (!B.qaWh(p.loc)) return;
+        if (p.hold) wait += p.hold;
+        var free = B.freeQty(p);
+        if (!(free > 0)) return;
+        var t = ST.skus[p.s] || [], short = String(t[0] || '');
+        piles.push({ sku: short && ST.code(short) === p.s ? short : String(t[1] || short), name: t[2] || '', from: String(p.loc), lot: String(p.lot), po: String(p.po), qty: free, first: p.first || '' });
+      });
+    });
+    piles.sort(function (a, b) { return (a.first || '9').localeCompare(b.first || '9') || a.sku.localeCompare(b.sku); });
+    return { piles: piles, wait: Math.round(wait * 1000) / 1000 };
+  }
+  function qaKey(x) { return [x.sku, x.from, x.lot, x.po].map(function (v) { return String(v == null ? '' : v).trim().toUpperCase(); }).join('|'); }
+  function qaBox(g, qa) {
+    var wait = qa.wait ? '<div class="qa-wait c-warn">🔒 ยังรอรับ ' + f(qa.wait) + ' ชิ้น กดรับที่หน้าเอกสารก่อน จึงโอนออกได้</div>' : '';
+    if (!qa.piles.length) return '<div class="qa-pick"><div class="tx-empty">ยังไม่มีของ QA ที่รับแล้ว</div>' + wait + '</div>';
+    var used = {};
+    g.rows.forEach(function (r) { if (!blank(r)) used[qaKey(r)] = 1; });
+    var rows = qa.piles.map(function (x, i) {
+      var on = used[qaKey(x)];
+      return '<tr><td class="c-act"><button type="button" class="bk-link" data-gqa="' + i + '" data-qk="' + esc(qaKey(x)) + '"' + (on || g.pending ? ' disabled' : '') + '>' + (on ? 'ใส่แล้ว' : '+ โอนออก') + '</button></td>' +
+        '<td class="c-sku">' + esc(x.sku) + '</td><td>' + esc(x.from) + '</td><td>' + esc(x.lot) + '</td><td>' + esc(x.po) + '</td>' +
+        '<td class="num">' + f(x.qty) + '</td><td class="c-nm" title="' + esc(x.name) + '">' + esc(x.name) + '</td></tr>';
+    }).join('');
+    return '<div class="qa-pick"><div class="bk-wrap" style="max-height:220px"><table class="bk-xl"><thead><tr><th></th><th>SKU</th><th>โล</th><th>LOT</th><th>PO</th>' +
+      '<th class="num">ใช้ได้</th><th>ชื่อสินค้า</th></tr></thead><tbody>' + rows + '</tbody></table></div>' + wait + '</div>';
+  }
+  /** กด + โอนออก: เติมแถว (ไปโลไหน ใส่เองหรือว่างให้ระบบเลือก) · จำด้วยกุญแจกอง ยอดอาจเปลี่ยนระหว่างที่กล่องเปิดอยู่ */
+  function qaAdd(key) {
+    var g = state('move'), qa = qaList();
+    if (!qa || g.pending || g.rows.some(function (r) { return !blank(r) && qaKey(r) === key; })) return;
+    var x = qa.piles.filter(function (p) { return qaKey(p) === key; })[0];
+    if (x) {
+      append('move', [{ sku: x.sku, from: x.from, qty: String(x.qty), lot: x.lot, po: x.po }]);
+      LAST = null;
+    }
+    renderIn('move');
+    renderBody('move', true);
+    if (!x) return;
+    var el = document.querySelector('#gTable input[data-r="' + (g.rows.length - 2) + '"][data-c="to"]');
+    if (el) el.focus();
   }
 
   function renderSum(mode) {
@@ -314,14 +387,15 @@
 
   function canSave(mode) {
     var p = PLAN[mode];
-    return !!(USER && DOCS_OK && p && p.total.rows && !p.total.bad && !p.total.wait && !BKBUSY);
+    return !!(!docsLocked() && USER && DOCS_OK && p && p.total.rows && !p.total.bad && !p.total.wait && !BKBUSY);
   }
 
   function renderAct(mode) {
-    var g = state(mode), p = PLAN[mode], html = '';
+    var g = state(mode), p = PLAN[mode], locked = docsLocked(), html = lockNote();
     if (g.pending) {
-      html += '<button class="bk-save" id="gSave" ' + (!USER || BKBUSY ? 'disabled' : '') + '>' + (BKBUSY ? esc(BKBUSY) : '↻ ส่งอีกครั้ง') + '</button>' +
-        '<span>ชุดที่ส่งค้าง <b>' + f(g.pending.copy.length) + '</b> แถว ยังไม่รู้ว่าถึงสมุดไหม ระบบส่งซ้ำเองทุก 30 วินาที (กดเองก็ได้) ไม่บันทึกซ้ำ</span>' +
+      html += '<button class="bk-save" id="gSave" ' + (!USER || BKBUSY || locked ? 'disabled' : '') + '>' + (BKBUSY ? esc(BKBUSY) : '↻ ส่งอีกครั้ง') + '</button>' +
+        '<span>ชุดที่ส่งค้าง <b>' + f(g.pending.copy.length) + '</b> แถว ' +
+        (isHeld(g.pending) ? heldNote() : 'ยังไม่รู้ว่าถึงสมุดไหม ระบบส่งซ้ำเองทุก 30 วินาที (กดเองก็ได้) ไม่บันทึกซ้ำ') + '</span>' +
         '<button class="bk-link" id="gDrop">ทิ้งชุดนี้</button>';
     } else {
       var n = p ? p.total.rows : 0;
@@ -496,8 +570,9 @@
   /* ── บันทึก ───────────────────────────────────────────────────────── */
 
   async function save(mode) {
-    if (!USER || BKBUSY) return;
-    var g = state(mode), p = g.pending;
+    if (!USER || BKBUSY || docsLocked()) return;
+    var g = state(mode), p = g.pending, resend = !!p;
+    if (p && p.held) { delete p.held; keep(mode, true); }   // คนกดส่งเอง
     if (!p) {
       if (!canSave(mode)) return;
       var pl = PLAN[mode];
@@ -522,6 +597,7 @@
       return;
     }
     BKBUSY = '';
+    if (r.noOpen && resend) { holdPending(); show(mode); return; }
     if (r.error) {
       g.pending = null;
       keep(mode, true);
@@ -564,7 +640,8 @@
   async function retry() {
     var modes = Object.keys(KEY);
     for (var i = 0; i < modes.length; i++) {
-      if (state(modes[i]).pending && !BKBUSY && USER) await save(modes[i]);
+      var p = state(modes[i]).pending;
+      if (p && !isHeld(p) && !BKBUSY && USER) await save(modes[i]);
     }
   }
 
@@ -607,6 +684,7 @@
       state(mode).date = e.target.value;
       keep(mode, true);
       if (mode === 'ret') { LOOK = { found: {}, miss: {} }; findSoon(0); }
+      updateOut(mode);   // แผนขึ้นกับวันที่ (วันออกจาก IQA · Note วันรับ)
     }
   });
 
@@ -618,6 +696,8 @@
     if (t.id === 'gSave') save(mode);
     else if (t.id === 'gFind') find();
     else if (t.id === 'gPick') pickLocs();
+    else if (t.id === 'gQa') { QA_OPEN = !QA_OPEN; renderIn(mode); }
+    else if (t.dataset.qk !== undefined) qaAdd(t.dataset.qk);
     else if (t.id === 'gClear') {
       if (!confirm('ล้างทุกแถวในตาราง' + TITLE[mode] + '?')) return;
       g.rows = [{}]; LAST = null; MSG = null; keep(mode, true); render(mode);
@@ -640,6 +720,14 @@
     /** แถวในร่างที่ยังไม่บันทึก (ไม่นับแถวว่าง) หน้าวันนี้ใช้เตือนร่างค้าง */
     filled: function (mode) { return KEY[mode] ? state(mode).rows.filter(function (r) { return !blank(r); }).length : 0; },
     retry: retry,
+    held: function (mode) { return !!(KEY[mode] && isHeld(state(mode).pending)); },
+    /** พักทุกชุดที่ค้าง (ยังไม่มียอดยกมา) เก็บลงเครื่องทันที */
+    hold: function () {
+      Object.keys(KEY).forEach(function (mode) {
+        var p = state(mode).pending;
+        if (p && !p.held) { p.held = 1; keep(mode, true); }
+      });
+    },
     modes: function () { return Object.keys(KEY); },
     act: function (mode) { renderAct(mode); },
     /** เติมแถวต่อท้ายตารางของแท็บ (ปุ่ม แปลง ในแท็บตัดขาย) */

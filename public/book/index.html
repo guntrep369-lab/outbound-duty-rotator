@@ -102,6 +102,7 @@
 .bk-msg.ok{background:#ECFDF5;color:#065F46}
 .bk-msg.bad{background:#FEF2F2;color:#991B1B}
 .bk-msg.warn{background:#FEF3C7;color:#92400E}
+.g-tip.bk-lock{width:auto;height:auto;padding:3px 10px;font-family:inherit;font-size:12.5px;border-color:#FDE68A;background:#FEF3C7;color:#92400E;font-weight:600;text-align:left}
 .bk-msg b{color:inherit}
 .bk-msg ol{margin:4px 0 2px 20px}
 
@@ -341,8 +342,15 @@ function compute() {
   MERGED = B.merge(FILES);
   if (DATE_AUTO || !DATE) { DATE = B.mainDate(FILES) || today(); DATE_AUTO = true; }
   REF = RES ? B.reflect(RES, DOCS) : { done: [], wait: [] };
-  ST = RES ? B.stock(RES, B.extraOf(REF.wait)) : null;
+  ST = RES ? B.stock(RES, B.extraOf(REF.wait), FIRE && FIRE.holds ? FIRE.holds() : undefined) : null;
   CUT = ST ? B.allocate(MERGED.lines, ST, { seen: SEEN }) : null;
+}
+
+/** ระบบใหม่: มีคนกดรับ / ไม่รับในเครื่องนี้ ชิ้นที่ใช้ต่อได้เปลี่ยน คิดใหม่จากสำเนา ไม่อ่านฐาน */
+function stockNow() {
+  if (!FIRE || !RES) return;
+  RES = FIRE.fifoNow();
+  compute();
 }
 
 /* ── สต๊อกจาก tx-api (อ่านอย่างเดียว) ───────────────────────────────────── */
@@ -434,6 +442,34 @@ function shortList(r) {
     (r.short.length > 8 ? `<li>อีก ${f(r.short.length - 8)} แถว</li>` : '') + '</ol>';
 }
 
+/* ── ระบบใหม่ก่อนลงยอดยกมา: ล็อกการลงเอกสาร ─────────────────────────── */
+
+function docsLocked() { return !!(FIRE && FIRE.preOpen && FIRE.preOpen()); }
+/**
+ * ชุดพักไว้: ค้างมาตั้งแต่ก่อนยอดยกมา (ร่วมที่เก็บกับระบบเดิม) ไม่ส่งเอง ไม่ทิ้ง
+ * ลงยอดแล้วคนกดเอง เพราะยอดที่นับอาจรวมชุดนี้ไปแล้ว · ระบบเดิมไม่สน ส่งซ้ำเองตามเดิม
+ */
+function isHeld(p) { return !!(FIRE && p && (p.held || docsLocked())); }
+function holdPending() {
+  if (PENDING && !PENDING.held) { PENDING.held = 1; saveDraft(); }
+  BookGrid.hold();
+  if (USER) renderSrc();
+}
+function lockNote() {
+  if (!docsLocked()) return '';
+  const tip = 'กันเอกสารที่ทำให้ลงยอดยกมาไม่ได้ · ร่างที่วางไว้ไม่หาย · ตั้งข้อมูลหลักได้ตามเดิม · จะลองลงรายการใช้โหมดซ้อม ?fire=demo';
+  return `<button type="button" class="g-tip bk-lock" title="${esc(tip)}">🔒 ล็อกจนกว่าจะลงยอดยกมา ⓘ</button>`;
+}
+function heldNote() {
+  return docsLocked() ? 'พักไว้ ไม่ส่ง ไม่ทิ้ง'
+    : 'ค้างจากก่อนยอดยกมา ไม่ส่งเอง · ยอดยกมารวมแล้ว = ทิ้ง · ยังไม่รวม = กดส่ง';
+}
+function pendingPill() {
+  const n = pendingCount();
+  if (pendingAuto()) return `<span class="pill warn" title="ส่งไม่สำเร็จ ระบบส่งซ้ำเองทุก 30 วินาที">⏳ รอส่ง <b>${n}</b> ชุด</span>`;
+  return n ? `<span class="pill warn" title="ค้างจากก่อนยอดยกมา ไม่ส่งเอง ไม่ทิ้ง">⏸ พักส่ง <b>${n}</b> ชุด</span>` : '';
+}
+
 /** ชุดที่ค้าง (ส่งไม่สำเร็จเพราะเน็ต) ส่งซ้ำเองทุก RETRY_MS และตอนเน็ตกลับมา รหัสชุดเดิม = สคริปต์ไม่บันทึกซ้ำ */
 function queueRetry(ms) {
   clearTimeout(RETRY_T);
@@ -442,12 +478,16 @@ function queueRetry(ms) {
   if (USER) renderSrc();
 }
 function pendingCount() { return (PENDING ? 1 : 0) + BookGrid.modes().filter((m) => BookGrid.pending(m)).length; }
+function pendingAuto() { return (PENDING && !isHeld(PENDING) ? 1 : 0) + BookGrid.modes().filter((m) => BookGrid.pending(m) && !BookGrid.held(m)).length; }
 async function retryAll() {
   if (!pendingCount()) return;
+  if (docsLocked()) { holdPending(); return; }
+  if (!pendingAuto()) return;
   if (!USER || BKBUSY || !DOCS_OK || (navigator.onLine === false)) { queueRetry(); return; }
-  if (PENDING) await save();
+  if (PENDING && !isHeld(PENDING)) await save();
   await BookGrid.retry();
-  if (pendingCount()) queueRetry();
+  if (docsLocked()) holdPending();   // เพิ่งรู้ระหว่างส่งว่ายังไม่มียอดยกมา
+  else if (pendingAuto()) queueRetry();
   else renderSrc();
 }
 window.addEventListener('online', () => queueRetry(1000));
@@ -637,8 +677,10 @@ async function copyText(text) {
 const sumQty = (copy) => Math.round(copy.reduce((a, c) => a + (+c[6] || 0), 0) * 1000) / 1000;
 
 async function save() {
-  if (!USER || BKBUSY) return;
+  if (!USER || BKBUSY || docsLocked()) return;
   let p = PENDING;
+  const resend = !!p;
+  if (p && p.held) { delete p.held; saveDraft(); }   // คนกดส่งเอง
   if (!p) {
     if (!CUT || !CUT.total.ok || !seenReady()) return;
     if (RES && RES.last && RES.last >= DATE &&
@@ -660,6 +702,7 @@ async function save() {
     return;
   }
   BKBUSY = '';
+  if (r.noOpen && resend) { holdPending(); render(); return; }
   if (r.error) {
     PENDING = null;
     saveDraft();
@@ -847,8 +890,7 @@ function renderSrc() {
   if (FIRE) {
     /* ระบบใหม่: ยังไม่เข้า = การ์ดเข้าสู่ระบบในพื้นที่ทำงาน · เข้าแล้ว = ชื่อ สิทธิ์ อีเมล */
     if (USER) {
-      const n = pendingCount();
-      if (n) html += `<span class="pill warn" title="ส่งไม่สำเร็จ ระบบส่งซ้ำเองทุก 30 วินาที">⏳ รอส่ง <b>${n}</b> ชุด</span>`;
+      html += pendingPill();
       /* แอป: ชื่อคนกับปุ่มออกอยู่ท้ายเมนูของแอป แถบบนเหลือแต่สต๊อก */
       if (!APP) html += `<span class="pill ok" title="${esc(USER.email)}">👤 <b>${esc(USER.who)}</b> · ${esc(USER.role)}</span><button id="bkOut">ออก</button>`;
     }
@@ -938,14 +980,15 @@ function renderSum() {
 function renderAct() {
   if (MODE === 'set') return;
   if (MODE !== 'cut') { BookGrid.act(MODE); return; }
-  let html = '';
+  const locked = docsLocked();
+  let html = lockNote();
   if (PENDING) {
-    html += `<button class="bk-save" id="saveBtn" ${!USER || BKBUSY ? 'disabled' : ''}>${BKBUSY ? esc(BKBUSY) : '↻ ส่งอีกครั้ง'}</button>` +
-      `<span>ชุดที่ส่งค้าง <b>${f(PENDING.copy.length)}</b> แถว · ${f(sumQty(PENDING.copy))} ชิ้น ยังไม่รู้ว่าถึงสมุดไหม ระบบส่งซ้ำเองทุก 30 วินาที (กดเองก็ได้) ไม่บันทึกซ้ำ</span>` +
+    html += `<button class="bk-save" id="saveBtn" ${!USER || BKBUSY || locked ? 'disabled' : ''}>${BKBUSY ? esc(BKBUSY) : '↻ ส่งอีกครั้ง'}</button>` +
+      `<span>ชุดที่ส่งค้าง <b>${f(PENDING.copy.length)}</b> แถว · ${f(sumQty(PENDING.copy))} ชิ้น ${isHeld(PENDING) ? heldNote() : 'ยังไม่รู้ว่าถึงสมุดไหม ระบบส่งซ้ำเองทุก 30 วินาที (กดเองก็ได้) ไม่บันทึกซ้ำ'}</span>` +
       `<button class="bk-link" id="dropPending">ทิ้งชุดนี้</button>`;
   } else if (FILES.length) {
     const t = CUT ? CUT.total : null;
-    const can = USER && t && t.ok && !BKBUSY && seenReady();
+    const can = !locked && USER && t && t.ok && !BKBUSY && seenReady();
     html += `<button class="bk-save" id="saveBtn" ${can ? '' : 'disabled'}>${BKBUSY ? esc(BKBUSY) : `💾 ${bookMode() ? 'ลงสมุด' : 'บันทึก + คัดลอก'} ${t ? f(t.rows) : 0} แถว`}</button>`;
     if (t && t.ok) html += `<span><b>${f(t.okQty)}</b> ชิ้น · ${f(t.orders)} ออเดอร์ · วันที่ ${esc(dm(DATE))}</span>`;
     if (!USER) html += '<span>เข้าสมุดด้วยชื่อกับรหัสก่อน (มุมขวาบน)</span>';
@@ -963,10 +1006,15 @@ function actTail() {
     html += `<span title="บันทึกแล้วแต่ยังไม่เห็นแถวในสต๊อกที่ดึงมา คิดกองให้แล้วเหมือนวางแล้ว ถ้ายังไม่ได้วางในชีต ให้กดคัดลอกที่ตารางชุดด้านล่าง">⏳ ยังไม่เห็นในสมุด ${REF.wait.map((d) => esc(d.doc)).join(', ')} (คิดให้แล้ว)</span>`;
   }
   if (LAST && LAST.book && FIRE && APP && APP.okMode(MODE)) {
-    /* ใบย้าย / แปลง: พิมพ์ใบให้คนตรวจเซ็น แล้วตรวจ / อนุมัติในระบบตามหลัง */
+    /* ใบย้าย / แปลง: พิมพ์ใบให้คนตรวจเซ็น แล้วตรวจ / อนุมัติในระบบตามหลัง · ใบโอน QA: ผู้รับกดก่อนจึงใช้ต่อได้ */
+    const lx = FIRE.okOf && FIRE.okOf(LAST.doc), xf = lx ? lx.xf : '';
+    const next = xf === 'in' ? 'ส่งของพร้อมเลขที่ให้ QA · QA นับแล้วกด รับ จึงโอนออกได้ · หัวหน้าอนุมัติแล้วจึงลง TRcloud'
+      : xf === 'out' ? 'ปลายทางนับแล้วกด รับ จึงขาย / ย้ายต่อได้ · หัวหน้าอนุมัติแล้วจึงลง TRcloud'
+      : xf === 'qa' ? 'QA อีกคนหรือหัวหน้านับแล้วกด รับ จึงใช้ต่อได้ · หัวหน้ากด อนุมัติ'
+      : 'ให้คนอื่นเช็คของจริงแล้วกด ตรวจแล้ว · หัวหน้ากด อนุมัติ (เมนูเอกสาร › รอตรวจ)';
     html += `<div class="bk-msg ok">✅ บันทึก <b>${esc(LAST.doc)}</b> แล้ว ${f(LAST.copy.length)} แถว · ยอดเปลี่ยนแล้ว ` +
       `<button class="bk-btn" data-print="${esc(LAST.doc)}">🖨 พิมพ์ใบ</button> <button class="bk-btn" data-doc="${esc(LAST.doc)}">เปิดใบ</button>` +
-      `<br><span class="c-sub">ต่อไป: ให้คนอื่นเช็คของจริงแล้วกด ตรวจแล้ว · หัวหน้ากด อนุมัติ (เมนูเอกสาร › รอตรวจ)</span></div>`;
+      `<br><span class="c-sub">ต่อไป: ${next}</span></div>`;
   } else if (LAST && LAST.book && FIRE) {
     html += `<div class="bk-msg ok">✅ บันทึก <b>${esc(LAST.doc)}</b> แล้ว ${f(LAST.copy.length)} แถว · ทุกเครื่องเห็นยอดใหม่ในหนึ่งนาที</div>`;
   } else if (LAST && LAST.book) {
@@ -1020,7 +1068,8 @@ function renderBody() {
     box.innerHTML = table([['#', 'num'], ['SKU'], ['ชื่อสินค้า'], ['ขาด', 'num'], ['บรรทัด', 'num'], ['เปิดเหลือ', 'num'], ['ของสำรองที่มี'], ['แปลงจาก']],
       CUT.short.map((s, i) => `<tr>${no(i)}<td class="c-sku">${esc(s.sku)}</td><td class="c-nm" title="${esc(s.name)}">${esc(s.name)}</td>` +
         `<td class="num c-warn">${f(s.need)}</td><td class="num">${f(s.lines)}</td><td class="num">${f(s.left)}</td>` +
-        `<td class="c-sub">${s.reserve.length ? s.reserve.map((p) => `${esc(pileText(p))} = ${f(p.qty)}`).join(' · ') : '<span class="c-red">ไม่มีของในคลัง</span>'}</td>` +
+        `<td class="c-sub">${s.reserve.length ? s.reserve.map((p) => `${esc(pileText(p))} = ${f(p.qty)}`).join(' · ') : s.wait ? '' : '<span class="c-red">ไม่มีของในคลัง</span>'}` +
+        `${s.wait ? ` <span class="c-warn" title="${esc(s.wait.docs.map((d) => `${d.no}${d.rj ? ' ไม่รับ' : ''}`).join(', '))} · รับแล้วจึงขายได้">🔒 รอรับ ${f(s.wait.qty)}</span>` : ''}</td>` +
         `<td class="c-sub">${s.conv.map((c) => c.open > 0
           ? `<button class="bk-btn" data-conv="${esc(s.sku)}|${esc(c.sku)}|${Math.min(c.open, Math.max(0, Math.round((s.need - s.left) * 1000) / 1000))}" title="ไปแท็บแปลงสินค้า เติมแถวให้">🔁 แปลง ${esc(c.sku)}</button> เปิด ${f(c.open)}`
           : `${esc(c.sku)} เปิด 0`).join(' · ')}</td></tr>`),
@@ -1247,7 +1296,7 @@ document.addEventListener('drop', (e) => {
 
 async function checkShared() {
   if (FIRE) {
-    if (USER && !LOADING && !BKBUSY && !WmsShared.typing() && await FIRE.changed()) await load(false, true);
+    if (USER && !LOADING && !BKBUSY && !WmsShared.typing() && await FIRE.changed(true)) await load(false, true);
     return false;
   }
   const url = WmsSettings.txUrl();

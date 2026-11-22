@@ -83,7 +83,8 @@
     return (LIST || []).filter(function (x) { return (SHOW === 'all' || x.state === SHOW) && (!TYPE || x.type === TYPE); });
   }
   /** ใบย้ายที่ยังไม่อนุมัติ: ยอดในสมุดเปลี่ยนแล้ว แต่ยังไม่ออกไฟล์ปรับยอด TRcloud */
-  function held(x) { return x.kind === 'file' && (x.ok === 'check' || x.ok === 'approve'); }
+  function held(x) { return !!x.lock; }
+  function lockWhy(x) { return x.voided || x.type === 'กลับรายการ' ? 'ยกเลิกก่อนอนุมัติ ไม่ต้องลง TRcloud' : 'ยังไม่อนุมัติ ออกไฟล์ / ใส่เลขไม่ได้'; }
   /** ติ๊กไว้ หรือไม่ได้ติ๊กเลย = ทุกใบที่รอลงและออกไฟล์ได้ในหน้าที่แสดง (ไม่รวมใบที่ยังไม่อนุมัติ) */
   function fileDocs() {
     var picked = (LIST || []).filter(function (x) { return PICK[x.no] && x.kind === 'file' && x.wh.length && !held(x); });
@@ -126,11 +127,11 @@
     if (viewer()) html += '<span class="g-hint">ดูอย่างเดียว ใส่เลขไม่ได้</span>';
     else html += '<span class="g-hint">พิมพ์เลข TRcloud แล้ว Enter · ติ๊ก ☐ เลือกใบที่จะทำไฟล์</span>';
     var nh = shown().filter(function (x) { return held(x) && x.state === 'wait' && x.wh.length; }).length;
-    if (nh) html += '<span class="g-hint c-warn">' + f(nh) + ' ใบยังไม่อนุมัติ ออกไฟล์ได้หลังหัวหน้าอนุมัติ</span>';
+    if (nh) html += '<span class="g-hint c-warn">🔒 ' + f(nh) + ' ใบยังไม่อนุมัติ ออกไฟล์และใส่เลขได้หลังหัวหน้าอนุมัติ</span>';
     return html;
   }
   function stSel(x, c) {
-    return '<select class="fs-in" data-tst="' + esc(x.no) + '"' + (viewer() ? ' disabled' : '') + ' style="min-width:96px">' +
+    return '<select class="fs-in" data-tst="' + esc(x.no) + '"' + (viewer() || held(x) ? ' disabled' : '') + ' style="min-width:96px">' +
       ['wait', 'done', 'none'].map(function (s) { return '<option value="' + s + '"' + (c.state === s ? ' selected' : '') + '>' + ST_TH[s] + '</option>'; }).join('') + '</select>';
   }
   function detail(x) {
@@ -153,16 +154,18 @@
       var c = cur(x), ed = EDIT[x.no] && (c.tr !== x.tr || c.state !== x.state);
       var todo = x.kind === 'file' ? (x.wh.length ? 'ไฟล์ปรับยอด <span class="tt-wh">' + whSum(x) + '</span>' : 'ไม่เปลี่ยนคลัง')
         : esc(NEED[x.type] || 'สร้างใน TRcloud');
-      if (x.ok === 'check' || x.ok === 'approve') todo = '<span class="ba-st ' + (x.ok === 'check' ? 'wait' : 'apv') + '">' + (x.ok === 'check' ? 'รอตรวจ' : 'รออนุมัติ') + '</span>' + todo;
+      if (x.ok === 'check') todo = '<span class="ba-st wait">' + (x.xf ? 'รอรับ' : 'รอตรวจ') + '</span>' + todo;
+      else if (x.ok === 'approve') todo = '<span class="ba-st apv">รออนุมัติ</span>' + todo;
+      else if (x.ok === 'reject') todo = '<span class="ba-st void">ไม่รับ</span>รอหัวหน้ายกเลิกใบ';
       var tag = x.type === 'กลับรายการ' ? ' <span class="c-sub">ของ ' + esc(x.link) + '</span>' : x.voided ? ' <span class="c-sub">ยกเลิกแล้ว ' + esc(x.link) + '</span>' : '';
       rows.push('<tr class="' + (x.voided ? 'r-void' : '') + (ed ? ' r-add' : '') + '">' +
         '<td style="text-align:center">' + (x.kind === 'file' && x.wh.length && !held(x) ? '<input type="checkbox" data-tpick="' + esc(x.no) + '"' + (PICK[x.no] ? ' checked' : '') + ' aria-label="เลือก ' + esc(x.no) + '">'
-          : held(x) && x.wh.length ? '<span class="c-sub" title="ยังไม่อนุมัติ ออกไฟล์ปรับยอดไม่ได้">🔒</span>' : '') + '</td>' +
+          : held(x) && x.wh.length ? '<span class="c-sub" title="' + esc(lockWhy(x)) + '">🔒</span>' : '') + '</td>' +
         '<td><button class="tt-no" data-topen="' + esc(x.no) + '">' + esc(x.no) + '</button></td>' +
         '<td>' + esc(x.type) + tag + '</td><td class="c-sub">' + esc(x.date) + '</td><td class="c-sub">' + esc(x.name) + '</td>' +
         '<td class="num">' + f(x.qty) + '</td><td style="white-space:normal">' + todo + '</td>' +
-        '<td class="fs-c"><input class="fs-in tt-in" data-ttr="' + esc(x.no) + '" value="' + esc(c.tr) + '" placeholder="' + (x.kind === 'file' ? 'เลขหลังนำเข้า' : 'เลข TRcloud') + '"' +
-        (viewer() ? ' disabled' : '') + ' autocomplete="off"></td>' +
+        '<td class="fs-c"><input class="fs-in tt-in" data-ttr="' + esc(x.no) + '" value="' + esc(c.tr) + '" placeholder="' + (held(x) ? (x.state === 'wait' ? 'หลังอนุมัติ' : '') : x.kind === 'file' ? 'เลขหลังนำเข้า' : 'เลข TRcloud') + '"' +
+        (viewer() || held(x) ? ' disabled' : '') + ' autocomplete="off"></td>' +
         '<td class="fs-c">' + stSel(x, c) + '</td></tr>');
       if (OPEN === x.no) rows.push(detail(x));
     });

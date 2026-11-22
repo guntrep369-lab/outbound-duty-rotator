@@ -3,9 +3,10 @@
  *
  * เดินโค้ดจริงของ public/wms-fire.js กับ store จำลอง (นับอ่าน/เขียนแบบ Firestore รวมการฟัง meta/head)
  * ประวัติ 30 วันหลังขึ้นระบบ แล้วจำลองวันทำงานปกติ 08:00–18:00 ทั้งบริษัท:
- *   12 เครื่อง (หัวหน้า 2 ลงรายการ 8 ดูอย่างเดียว 2) เปิดหน้าคนละ 3 รอบ ทุกเครื่องเปิดค้างฟังการบันทึกทั้งวัน (เผื่อสูงกว่าจริงที่ ~60%)
- *   ตัดขาย 6 รอบ × 500 บรรทัด (3,000 บรรทัดออเดอร์) ย้าย/เติม 40 เข้า QA 5 รับของ 12 คืน 15 แปลง 2 ปรับยอด 4
+ *   18 เครื่อง (หัวหน้า 2 ลงรายการ 8 Inbound 3 QA 3 ดูอย่างเดียว 2) เปิดหน้าคนละ 3 รอบ ทุกเครื่องเปิดค้างฟังการบันทึกทั้งวัน (เผื่อสูงกว่าจริงที่ ~60%)
+ *   ตัดขาย 6 รอบ × 500 บรรทัด (3,000 บรรทัดออเดอร์) ย้าย/เติม 40 เข้า QA 5 ออก QA 5 รับของ 12 คืน 15 แปลง 2 ปรับยอด 4
  *   หัวหน้า: รอลง TRcloud + ใส่เลข 5 รอบ วางชีตเดิม 1 ครั้ง ดูโควตา 3 ครั้ง ดูรายชื่อ ดาวน์โหลดสำรอง
+ *   ใบโอน QA: ผู้รับกดรับทีละใบใน 20 นาที (เข้า = QA รับ · ออก = Inbound รับ) หัวหน้าอนุมัติแล้วจึงรอลง TRcloud
  *   ตรวจ / อนุมัติใบย้าย / แปลงของวัน: ลงรายการคนอื่นตรวจ 7 รอบ หัวหน้าอนุมัติ 7 รอบ (รอบสุดท้ายก่อนกลับ) (รอบละไม่เกิน 3 ครั้ง × 10 ใบ)
  *   เครื่องใหม่ 1 เครื่องโหลดประวัติทั้งหมด (โทรศัพท์ใหม่ / ล้างเบราว์เซอร์)
  * ปิดเดือน: ประวัติ 61 วัน (21 ธ.ค. – 19 ก.พ.) หัวหน้าปิด ธ.ค. กับ ม.ค. แล้วเครื่องใหม่อ่านก้อน อ่านน้อยลงมาก สำเนาเท่าเดิมทุกช่อง
@@ -51,6 +52,8 @@ function rnd(seed) {
 const USERS = [
   ...[1, 2].map((n) => ({ email: `head${n}@${DOMAIN}`, name: `หัวหน้าสมมติ ${n}`, role: 'head' })),
   ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => ({ email: `staff${n}@${DOMAIN}`, name: `พนักงานสมมติ ${n}`, role: 'staff' })),
+  ...[1, 2, 3].map((n) => ({ email: `inbound${n}@${DOMAIN}`, name: `Inbound สมมติ ${n}`, role: 'staff' })),
+  ...[1, 2, 3].map((n) => ({ email: `qa${n}@${DOMAIN}`, name: `QA สมมติ ${n}`, role: 'staff', team: 'qa' })),
   ...[1, 2].map((n) => ({ email: `view${n}@${DOMAIN}`, name: `ดูอย่างเดียวสมมติ ${n}`, role: 'viewer' })),
   { email: `newphone@${DOMAIN}`, name: 'เครื่องใหม่สมมติ', role: 'staff' },
 ];
@@ -62,7 +65,7 @@ async function setup() {
   const clock = () => t;
   const store = W.memStore({ now: clock, domain: DOMAIN });
   const data = {};
-  USERS.forEach((u) => { data['users/' + u.email] = { name: u.name, role: u.role, active: true }; });
+  USERS.forEach((u) => { data['users/' + u.email] = Object.assign({ name: u.name, role: u.role, active: true }, u.team ? { team: u.team } : {}); });
   store.seed(data);
   /* เครื่องหนึ่ง = สำเนาในเครื่อง (cache) + ตัวนับ (meter) ที่อยู่ข้ามการเปิดหน้า · เปิดหน้าใหม่ = connection ใหม่ */
   /* สำเนาในเครื่องเก็บแบบอ้างถึง (memCache คัดลอกทั้งก้อนทุกครั้ง ช้าเกินในเทสต์ยาว) ไม่กระทบยอดอ่าน/เขียน */
@@ -100,7 +103,14 @@ function plan(day, k, lines, r) {
   const row = (i, from, to, q, type, note, st, tr) => [short(i), long(i), '11', 'P' + i, from, to, q, type, note, st].concat(tr ? [tr] : []);
   const spread = (n, f) => { for (let j = 0; j < n; j++) f(j, at(0.2 + (9.5 * j) / n)); };
   spread(40 * k, (j, ms) => { const i = r(SKUS); jobs.push({ at: ms, who: 'staff' + (3 + (j % 4)), op: 'bk-move', body: { batch: `m-${ymd}-${j}`, date: ymd, base: 0, names: NAMES, copy: [row(i, resLoc(i), openLoc(i), 5, 'เบิก', 'โอนย้าย', 'เปิด')] } }); });
-  spread(5 * k, (j, ms) => { const i = r(SKUS); jobs.push({ at: ms, who: 'staff7', op: 'bk-move', body: { batch: `q-${ymd}-${j}`, date: ymd, base: 0, names: NAMES, copy: [row(i, openLoc(i), 'QA', 1, 'เบิก', 'โอนย้าย QA', '')] } }); });
+  /* เข้า QA ช่วงเช้า ออกช่วงบ่าย ของชิ้นเดียวกัน (รับก่อนใช้ต่อ) · ผู้รับกดรับใน 20 นาที */
+  for (let j = 0; j < 5 * k; j++) {
+    const i = r(SKUS), batch = `${ymd}-${j}`;
+    jobs.push({ at: at(0.2 + (4 * j) / (5 * k)), who: 'inbound' + (1 + (j % 2)), take: 'qa' + (1 + (j % 2)), op: 'bk-move',
+      body: { batch: 'q-' + batch, date: ymd, base: 0, names: NAMES, copy: [row(i, openLoc(i), 'QA', 1, 'เบิก', 'โอนย้าย QA', '')] } });
+    jobs.push({ at: at(5 + (4 * j) / (5 * k)), who: 'qa' + (1 + (j % 3)), take: 'inbound' + (1 + (j % 3)), op: 'bk-move',
+      body: { batch: 'o-' + batch, date: ymd, base: 0, names: NAMES, copy: [row(i, 'QA', openLoc(i), 1, 'เบิก', 'โอนย้าย QA', 'เปิด')] } });
+  }
   spread(12 * k, (j, ms) => {
     const i = r(SKUS);
     jobs.push({ at: ms, who: 'staff8', op: 'bk-gr', body: { batch: `g-${ymd}-${j}`, date: ymd, base: 0, names: NAMES,
@@ -138,6 +148,7 @@ async function runJob(env, f, job) {
 /** ยอดยกมาวันขึ้นระบบ + ประวัติ n วัน (เครื่องเดียวบันทึก ไม่นับ) แล้วทุกเครื่องมีสำเนาถึงเมื่อวาน */
 async function history(env, n) {
   const head = await env.openPage(env.by(`head1@${DOMAIN}`), false);
+  const head2 = await env.openPage(env.by(`head2@${DOMAIN}`), false);
   const rows = [];
   for (let i = 0; i < SKUS; i++) {
     rows.push([short(i), long(i), name(i), '11', 'P' + i, openLoc(i), 200000, 'เปิด', '2026-11-01', '']);
@@ -147,7 +158,15 @@ async function history(env, n) {
   const r = rnd(7);
   for (let d = 0; d < n; d++) {
     const day = GO_LIVE + d * DAY;
-    for (const job of plan(day, 1, 40, r)) { env.set(job.at); await runJob(env, head, job); }
+    for (const job of plan(day, 1, 40, r)) {
+      env.set(job.at);
+      const saved = await runJob(env, head, job);
+      if (!job.take) continue;
+      /* ใบโอน QA: หัวหน้าอีกคนรับ + อนุมัติ (คนทำรับเองไม่ได้ · รับก่อนจึงออกได้) */
+      await head2.sync();
+      ok(await head2.okSave([saved.doc], 'both'));
+      await head.sync();
+    }
     /* หัวหน้าใส่เลข TRcloud ท้ายวัน ให้รายการรอลงไม่พอกขึ้นเรื่อย ๆ */
     env.set(day + 9.8 * HOUR);
     await trRound(head, 10, 3);
@@ -159,7 +178,7 @@ async function history(env, n) {
 /** ใส่เลข TRcloud ครั้งละไม่เกิน 10 เอกสาร rounds รอบ */
 async function trRound(f, per, rounds) {
   for (let k = 0; k < rounds; k++) {
-    const list = ok(await f.trList()).list.filter((d) => d.state === 'wait').slice(0, per);
+    const list = ok(await f.trList()).list.filter((d) => d.state === 'wait' && !d.lock).slice(0, per);
     if (!list.length) return;
     ok(await f.trSave(list.map((d) => ({ no: d.no, tr: 'TR' + d.no.slice(1), state: 'done' }))));
   }
@@ -178,7 +197,7 @@ async function okRound(env, day, act) {
     await f.sync();   // หน้าเห็นของที่คนอื่นเพิ่งตรวจ (ฟัง meta อยู่แล้ว ปกติอ่านแค่ meta)
     while (calls < 3) {
       const l = f.local(), vd = C.voids(l), want = act === 'check' ? C.OK_CHECK : C.OK_APPROVE;
-      const list = l.docs.filter((d) => (d.stamp || '').slice(0, 10) === ymd && C.okState(d, vd) === want && (act !== 'check' || d.by !== email)).slice(0, C.OK_MAX);
+      const list = l.docs.filter((d) => (d.stamp || '').slice(0, 10) === ymd && C.okState(d, vd) === want && (act !== 'check' || (d.by !== email && !C.xfKind(d)))).slice(0, C.OK_MAX);
       if (!list.length) break;
       ok(await f.okSave(list.map((d) => d.no), act));
       calls++;
@@ -206,7 +225,9 @@ async function workDay(env, day, k) {
     { at: day + 9.9 * HOUR, kind: 'backup' },
     { at: day + 5 * HOUR, kind: 'fresh' },
   ];
-  const events = [...opens.map((at) => ({ at, kind: 'open' })), ...jobs.map((j) => ({ ...j, kind: 'job' })), ...extra].sort((a, b) => a.at - b.at);
+  const takes = jobs.filter((j) => j.take).map((j) => ({ at: j.at + 20 * MIN, kind: 'recv', who: j.take, from: j.body.batch }));
+  const doc = {};
+  const events = [...opens.map((at) => ({ at, kind: 'open' })), ...jobs.map((j) => ({ ...j, kind: 'job' })), ...takes, ...extra].sort((a, b) => a.at - b.at);
   let saves = 0;
   for (const e of events) {
     env.set(e.at);
@@ -218,9 +239,15 @@ async function workDay(env, day, k) {
     }
     if (e.kind === 'job') {
       const d = env.by(e.who + '@' + DOMAIN);
-      await runJob(env, d.fire, e);
+      const saved = await runJob(env, d.fire, e);
+      if (e.take) doc[e.body.batch] = saved.doc;
       saves++;
       mark('บันทึก (transaction)', s0);
+    } else if (e.kind === 'recv') {
+      const f = env.by(e.who + '@' + DOMAIN).fire;
+      await f.sync();
+      ok(await f.okSave([doc[e.from]], 'check'));
+      mark('ผู้รับกดรับใบโอน QA', s0);
     } else if (e.kind === 'tr') {
       const h = env.by(`head2@${DOMAIN}`).fire;
       await trRound(h, 10, 1);
@@ -260,7 +287,7 @@ async function workDay(env, day, k) {
 }
 
 describe('ระบบใหม่ ขั้น 4: ซ้อมทั้งวัน โควตาฟรีพอ', () => {
-  it('วันปกติหลังขึ้นระบบ 1 เดือน: 12 เครื่อง + เครื่องใหม่ อ่าน < 15,000 เขียน < 2,000 · วันแคมเปญ (งาน × 3) ไม่เกินโควตาฟรี', async () => {
+  it('วันปกติหลังขึ้นระบบ 1 เดือน: 18 เครื่อง + เครื่องใหม่ อ่าน < 15,000 เขียน < 2,000 · วันแคมเปญ (งาน × 3) ไม่เกินโควตาฟรี', async () => {
     const env = await setup();
     await history(env, 30);
     const docsBefore = env.by(`head1@${DOMAIN}`).fire.local().docs.length;
@@ -276,7 +303,8 @@ describe('ระบบใหม่ ขั้น 4: ซ้อมทั้งว�
     expect(todays.filter((d) => C.okState(d, C.voids(hl.local())) !== C.OK_DONE).map((d) => d.no)).toEqual([]);
     console.log('วันปกติ', JSON.stringify({ reads: r.reads, writes: r.writes, saves: r.saves, freshDocs: r.part.freshDocs }),
       '\n' + Object.entries(r.part).filter(([k]) => k !== 'freshDocs').map(([k, v]) => `  ${k}: อ่าน ${v.r} เขียน ${v.w}`).join('\n'));
-    expect(r.saves).toBe(6 + 40 + 5 + 12 + 15 + 2 + 4);
+    expect(r.saves).toBe(6 + 40 + 5 + 5 + 12 + 15 + 2 + 4);
+    expect(C.holdList(hl.local())).toEqual([]);   // ใบโอน QA รับครบ ไม่มีของค้างรอรับ
     expect(r.reads).toBeLessThan(15000);
     expect(r.writes).toBeLessThan(2000);
     expect(r.part.freshDocs).toBeGreaterThan(docsBefore);   // เครื่องใหม่ได้ประวัติครบ
@@ -313,7 +341,7 @@ describe('ระบบใหม่ ขั้น 4: ซ้อมทั้งว�
     expect((await head.archClose()).error).toMatch(/ก\.พ\. 70 ยังไม่จบ/);
     /* ใส่เลข TRcloud ให้เอกสารเก่าสุดที่ยังรอ (อยู่ในก้อนแล้ว) */
     env.tick(MIN);
-    const waits = ok(await head.trList()).list.filter((d) => d.state === 'wait').slice(-10);
+    const waits = ok(await head.trList()).list.filter((d) => d.state === 'wait' && !d.lock).slice(-10);
     expect(waits.some((d) => d.no.startsWith('T2612-') || d.no.startsWith('T2701-'))).toBe(true);
     ok(await head.trSave(waits.map((d) => ({ no: d.no, tr: 'TR' + d.no.slice(1), state: 'done' }))));
 

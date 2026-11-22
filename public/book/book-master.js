@@ -3,11 +3,13 @@
  *
  *   แท็บ Location · SKU · กลุ่มสินค้า (ขั้น ก) · แปลงสินค้า · Supplier (PO) · SKU : Pallet (ขั้น ข) · โซนแร็ค (ขั้น ค)
  *   = ตารางเดียวแก้ได้แบบ Excel (หัวหน้า) · คนอื่นดูอย่างเดียว
+ *   SKU : Pallet: ชิ้นต่อพาเลท + ขึ้นแร็คราย SKU (ตามกลุ่ม · ได้ · ไม่ได้) → ช่อง ระบบวางที่ บอกผล
  *   โซนแร็ค: ช่องว่างต่อโซน · 🎯 ลองเลือกแร็ค (SKU + ชิ้น → ช่องต่อพาเลท จากร่างทุกตาราง) · 🗺️ ผังแร็ค สีตามโซน
  *   📂 นำเข้าไฟล์ / ลากไฟล์มาวาง: ชีต PO. Truck · MASTER แปลงสินค้า · ความจุต่อพาเลท แทนตารางในร่าง (ตรวจก่อนบันทึก)
  *   ชิปกรอง + ช่องค้น · ⚠ เตือนรายแถว (แดง = บันทึกไม่ได้) · พบในสมุดแต่ยังไม่มีในตาราง → + เพิ่มทั้งหมด
  *   ⚡ สร้างหลายช่อง (แร็ค R) · Ctrl+V วางจาก Excel (ในช่อง = ทับจากช่องนั้นลงไป · นอกช่อง = เพิ่ม / อัปเดตตามรหัส)
  *   📋 คัดลอกไป Excel · ใบที่ไม่มีในตาราง: เตือน | ห้ามบันทึก (ต่อตาราง) · 🕘 ประวัติ
+ *   ตั้งก่อนลงยอดยกมาได้ (ป้าย ⏳ ก่อนยอดยกมา)
  *   ร่างค้างในเครื่องนี้จนกด 💾 บันทึก หรือ ยกเลิกที่แก้ · บันทึกทั้งตาราง (BookFire.setupSave → master/{kind})
  * ตรรกะอยู่ใน wms-fire-setup.js · ใช้ตัวแปรของสคริปต์ในหน้า (FIRE USER MODE esc f isHead copyText xlsxLib) ตอนถูกเรียกเท่านั้น
  * เปิดเป็น window.BookMaster
@@ -28,7 +30,7 @@
     grp: [],
     conv: [['all', 'ทั้งหมด'], ['fix', '⚠ ต้องแก้']],
     sup: [['all', 'ทั้งหมด'], ['stock', 'มีของ'], ['fix', '⚠ ต้องแก้']],
-    cap: [['all', 'ทั้งหมด'], ['stock', 'มีของ'], ['fix', '⚠ ต้องแก้']],
+    cap: [['all', 'ทั้งหมด'], ['rack', 'ขึ้นแร็ค'], ['norack', 'ไม่ขึ้นแร็ค'], ['stock', 'มีของ'], ['fix', '⚠ ต้องแก้']],
     zone: [],
   };
   /* ช่องที่แก้ได้ เรียงตามคอลัมน์ (วาง / คัดลอก Excel ใช้ลำดับเดียวกัน ยกเว้นสี) */
@@ -68,6 +70,7 @@
       { k: 'sku', t: 'SKU', w: 12, up: 1 },
       { k: 'pid', t: 'Product ID', w: 18, up: 1 },
       { k: 'cap', t: 'ชิ้นต่อพาเลท', w: 6, num: 1 },
+      { k: 'rack', t: 'ขึ้นแร็ค', sel: 'rack1' },
     ],
     zone: [
       { k: 'r1', t: 'แร็คจาก', w: 5, rack: 1 },
@@ -87,13 +90,17 @@
       'วางจาก Excel ได้: SKU · SKU เต็ม · ชื่อ · กลุ่ม (ชื่อหรือรหัส) · ของแถม · สุญญากาศ · ใช้งาน · รหัสที่มีแล้ว = อัปเดตช่องที่วางมา',
     grp: 'กติกาที่เก็บของแต่ละกลุ่ม ค่าเริ่มมาจากกติกาหัวหน้าคลัง 9 พ.ย.\n' +
       'ตอนลงใบ ถ้าวางของเข้าแร็ค R ผิดกติกา ระบบเตือน (ไม่ห้าม)\n' +
-      'ระบบเลือกแร็ค (แท็บ โซนแร็ค · ปุ่ม 🎯 ในแท็บรับของ) ใช้กติกาของกลุ่มนี้',
+      'ระบบเลือกแร็ค (แท็บ โซนแร็ค · ปุ่ม 🎯 ในแท็บรับของ) ใช้กติกาของกลุ่มนี้ · SKU ที่ต่างจากกลุ่มตั้งที่แท็บ SKU : Pallet ช่อง ขึ้นแร็ค',
     conv: 'SKU ที่แปลงแล้ว (เช่นแพ็กใหม่) ผูกกลับไปที่ SKU ตอนซื้อ 1 ต่อ 1 · รายงาน LOT/PO, FIFO, กระทบยอด TRcloud ใช้ตารางนี้รวมยอด\n' +
       'แทนชีต MASTER แปลงสินค้า เดิม · นำเข้าไฟล์ได้ (📂) หรือวางจาก Excel: SKU ตอนซื้อ · SKU หลังแปลง',
     sup: 'PO ไหนมาจาก Supplier ไหน (แทนชีต PO. Truck) · รายงานและหน้าจัดที่เก็บใช้ดูว่า SKU หนึ่งเปิดกี่ Supplier\n' +
       'PO ที่ยังไม่ใส่ Supplier ไม่บันทึก · นำเข้าไฟล์ได้ (📂) หรือวางจาก Excel: PO · Supplier',
     cap: 'SKU หนึ่งวางได้กี่ชิ้นต่อพาเลท (แทนชีต ความจุต่อพาเลท) · หน้าจัดที่เก็บกับหน้า สินค้า / โล ใช้คิดจำนวนพาเลท\n' +
-      'ช่องว่าง = ไม่บันทึกแถวนั้น · นำเข้าไฟล์ได้ (📂) หรือวางจาก Excel: SKU · Product ID · ชิ้นต่อพาเลท',
+      'ขึ้นแร็ค: ตามกลุ่ม = ค่าเริ่ม · เปลี่ยนเฉพาะ SKU ที่ต่างจากกลุ่มได้ (เช่น กล่องใหญ่เกินช่อง) · 🎯 เลือกโล และคำเตือนตอนลงใบใช้ค่านี้ก่อนกลุ่ม\n' +
+      'ไม่ได้ = ลงพื้น / ชั้นวางของกลุ่ม (กลุ่มตั้ง RIB / แร็ค = พื้น A–C) · ได้ ในกลุ่มที่ไม่ขึ้นแร็ค = ทุกชั้น เศษลงช่องของตัวเอง\n' +
+      'หน้าจัดที่เก็บยังไม่ใช้ช่องนี้\n' +
+      'ไม่ใส่ทั้งชิ้นและขึ้นแร็ค = ไม่บันทึกแถวนั้น · นำเข้าไฟล์ได้ (📂 ไฟล์ไม่มีคอลัมน์ ขึ้นแร็ค = คงค่าที่ตั้งไว้)\n' +
+      'วางจาก Excel: SKU · Product ID · ชิ้นต่อพาเลท · ขึ้นแร็ค (ได้ / ไม่ได้ / ตามกลุ่ม)',
     zone: 'ช่วงแร็คที่โฟกัสกลุ่มสินค้า: ระบบเลือกช่องในโซนของกลุ่มให้ก่อน → ช่องที่ไม่อยู่ในโซนไหน → โซนกลุ่มอื่น (ไม่ได้ห้าม)\n' +
       'แร็คถึงว่าง = แร็คเดียว · ชั้นว่างทั้งสองช่อง = ทุกชั้น (ตามกติกาชั้นของกลุ่ม) · ทับกัน = แถวบนใช้ก่อน\n' +
       'ช่องว่าง = โล R ที่ใช้งานในตาราง Location และไม่มีของ · พาเลทเต็มตาม SKU : Pallet · เศษตามกลุ่ม (RIB / ช่องตัวเอง / พื้น)\n' +
@@ -111,6 +118,7 @@
   var FOUND = {};             // พบในสมุด { kind: { key, list } }
   var VIS = [];               // ลำดับแถว (index ในร่าง) ที่แสดงอยู่
   var SAVE_T = {}, CHECK_T = null, TYPING = null;   // SAVE_T ต่อตาราง (นำเข้าไฟล์เปลี่ยนหลายตารางพร้อมกัน)
+  var SKU_C = null;           // SKU (ร่าง) ตามรหัส { g, d, m }
   var NAMES = null;           // ชื่อสินค้า { รหัส: ชื่อ } จากตาราง SKU (ร่าง) + เอกสารในสมุด
 
   function $(id) { return document.getElementById(id); }
@@ -119,6 +127,8 @@
   function canEdit() { return !!(USER && isHead()); }
   function up(v) { return String(v === null || v === undefined ? '' : v).trim().toUpperCase(); }
   function txt(v) { return String(v === null || v === undefined ? '' : v).trim(); }
+  var TIP_PRE = 'ยังไม่ลงยอดยกมา แต่ตั้งและบันทึกข้อมูลหลักได้ทุกแท็บ ใช้ต่อได้เลยหลังลงยอด\n• Location / SKU: วางจาก Excel หรือ ⚡ สร้างหลายช่อง · หลังลงยอดกด + เพิ่มทั้งหมด เก็บที่ตก\n• ของตอนนี้ยังเป็น 0 และทุกช่องแร็คนับเป็นว่าง จนกว่าจะลงยอด\n• คนอื่นบันทึก = เห็นเมื่อเปิดหน้านี้ใหม่\n• ยังไม่เข้าสำรองทุกคืน: ตั้งเสร็จกด คัดลอกไป Excel เก็บไว้ทีละแท็บ\n• ลงเอกสารล็อกไว้จนกว่าจะลงยอดยกมา · อย่าลงยอดยกมาก่อนนับใหญ่เสร็จ';
+  function pre() { return !!(FIRE.preOpen && FIRE.preOpen()); }
   function ns() { return FIRE && FIRE.ns ? ':' + FIRE.ns : ''; }
   function pad(n, w) { var s = String(n); while (s.length < w) s = '0' + s; return s; }
   function when(ms) {
@@ -171,7 +181,7 @@
       if (!IMP[kind]) return X().keyOf(kind, r) || (kind === 'grp' && txt(r.name));
       if (X().isBlank(kind, r)) return false;
       if (kept && kind === 'sup') return !!X().keyOf(kind, r) && !!txt(r.sup);
-      if (kept && kind === 'cap') return !!X().keyOf(kind, r) && txt(r.cap) !== '';
+      if (kept && kind === 'cap') return !!X().keyOf(kind, r) && (txt(r.cap) !== '' || !!txt(r.rack));
       return true;
     });
   }
@@ -230,6 +240,33 @@
     }
     return NAMES.m[up(code)] || '';
   }
+  /** แถวของ SKU : Pallet → กลุ่มของ SKU (ร่างตาราง SKU) */
+  function capGrp(r) {
+    var d = draft('sku');
+    if (!SKU_C || SKU_C.g !== GEN.sku || SKU_C.d !== d) {
+      var m = {};
+      d.rows.forEach(function (x) { [x.long, x.sku].forEach(function (c) { c = up(c); if (c && !m[c]) m[c] = x; }); });
+      SKU_C = { g: GEN.sku, d: d, m: m };
+    }
+    var s = SKU_C.m[up(r.pid)] || SKU_C.m[up(r.sku)];
+    return s ? grpOf(txt(s.grp)) : null;
+  }
+  function autoText(r) {
+    var g = capGrp(r);
+    return 'ตามกลุ่ม' + (g ? (g.rack === 'no' ? ' (ไม่ได้)' : ' (ได้)') : '');
+  }
+  /** กติกาที่ระบบใช้กับแถวนี้ · ยังไม่มีกลุ่ม = null */
+  function capRule(r) {
+    var g = capGrp(r);
+    return g ? X().effG(g, txt(r.rack)) : null;
+  }
+  function placeText(r) {
+    var g = capRule(r);
+    if (!g) return '';
+    if (g.rack === 'no') return g.rest || 'ยังไม่ตั้งที่เก็บ';
+    var lv = X().LV.filter(function (x) { return x[0] === g.lv; })[0];
+    return 'แร็ค ' + (lv ? lv[1] : 'ทุกชั้น') + ' · เศษ ' + (!g.rest || g.rest === 'แร็คช่องตัวเอง' ? 'ช่องตัวเอง' : g.rest);
+  }
   function skuCount() {
     var n = {};
     draft('sku').rows.forEach(function (s) { if (s.grp) n[s.grp] = (n[s.grp] || 0) + 1; });
@@ -249,6 +286,7 @@
       if (r.vac) out.vac = 1;
     } else if (kind === 'sup' || kind === 'cap') {
       if (stockOf(kind, r) > 0) out.stock = 1;
+      if (kind === 'cap') { var e = capRule(r); if (e) out[e.rack === 'no' ? 'norack' : 'rack'] = 1; }
     }
     if (r.on === false) out.off = 1;
     if (w && w.some(function (x) { return x.lv === 'red' || x.lv === 'warn'; })) out.fix = 1;
@@ -294,6 +332,7 @@
       : S.kind === 'grp' ? 'ใช้ค่าเริ่ม ยังไม่บันทึก' : IMP[S.kind] ? 'ยังไม่ได้นำเข้า' : 'ยังไม่ได้ตั้ง';
     $('inp').innerHTML = '<div class="bk-top"><span class="bk-h">ข้อมูลหลัก</span><span class="md-tabs" role="tablist">' + tabs + '</span>' +
       '<button type="button" class="g-tip" aria-label="คำอธิบาย" title="' + esc(TIP[S.kind]) + '">ⓘ</button>' +
+      (pre() ? '<button type="button" class="g-tip md-pre" title="' + esc(TIP_PRE) + '">⏳ ก่อนยอดยกมา</button>' : '') +
       '<span class="sp"></span><span class="c-sub md-info">' + info + '</span>' +
       (t.hist.length ? '<button type="button" class="tx-opt md-sm' + (S.hist ? ' on' : '') + '" id="mdHist">🕘 ประวัติ ' + f(t.hist.length) + '</button>' : '') +
       '</div>' + (d.dirty && d.base !== t.ver ? conflictHtml(t) : '');
@@ -436,10 +475,11 @@
       var opts = c.sel === 'grp' || c.sel === 'zgrp'
         ? [['', '—']].concat(draft('grp').rows.filter(function (g) { return g.id && (c.sel === 'grp' || g.rack !== 'no'); }).map(function (g) { return [g.id, g.name || g.id]; }))
         : c.sel === 'rack' ? [['yes', 'ขึ้นได้'], ['no', 'ไม่ขึ้น']]
+        : c.sel === 'rack1' ? [['', autoText(r)], ['yes', 'ได้'], ['no', 'ไม่ได้']]
           : c.sel === 'lv' ? [['', '—']].concat(X().LV)
             : [['', '—']].concat(X().REST.map(function (x) { return [x, x]; }));
       var cur = txt(r[c.k]), gz = c.sel === 'zgrp' ? grpOf(cur) : null;
-      if (cur && !opts.some(function (o) { return o[0] === cur; })) opts.push([cur, cur + (gz ? ' (ไม่ขึ้นแร็ค)' : ' (ไม่มีแล้ว)')]);
+      if (cur && !opts.some(function (o) { return o[0] === cur; })) opts.push([cur, cur + (gz ? ' (ไม่ขึ้นแร็ค)' : c.sel === 'rack1' ? ' (อ่านไม่ออก)' : ' (ไม่มีแล้ว)')]);
       return '<td class="g-in"' + (gz ? ' style="box-shadow:inset 4px 0 0 ' + colorOf(gz.c) + '"' : '') + '><select' + at + ' aria-label="' + esc(c.t) + '">' + opts.map(function (o) {
         return '<option value="' + esc(o[0]) + '"' + (o[0] === cur ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
       }).join('') + '</select></td>';
@@ -516,7 +556,8 @@
         : t === 'man' ? '<span class="md-tag man">!</span>' : '<span class="md-tag flo">พื้น</span>';
     };
     return '<div class="md-pkr"><div class="md-pks2"><span class="md-gc" style="--c:' + colorOf(g.c) + '">' + esc(g.name) + '</span> ' +
-      (res.pcs ? f(res.pcs) + ' ชิ้น/พาเลท → เต็ม <b>' + f(res.full) + '</b> พาเลท' + (res.rem ? ' + เศษ <b>' + f(res.rem) + '</b> ชิ้น' : '') : 'ไม่ขึ้นแร็ค') + '</div>' +
+      (res.pcs ? f(res.pcs) + ' ชิ้น/พาเลท → เต็ม <b>' + f(res.full) + '</b> พาเลท' + (res.rem ? ' + เศษ <b>' + f(res.rem) + '</b> ชิ้น' : '') : 'ไม่ขึ้นแร็ค') +
+      (g.own ? ' <span class="c-sub">(ตั้งราย SKU)</span>' : '') + '</div>' +
       '<table class="md-pt"><thead><tr><th></th><th>ไปที่</th><th class="num">ชิ้น</th><th>เหตุผล</th></tr></thead><tbody>' +
       res.lines.map(function (l) {
         return '<tr><td>' + tag(l.tag) + '</td><td class="md-l">' + (l.loc ? esc(l.loc) : '<span class="c-sub">—</span>') + '</td><td class="num">' + f(l.qty) + '</td><td class="c-sub">' + esc(l.why) + '</td></tr>';
@@ -570,7 +611,7 @@
     if (kind === 'cap') {
       var nc = nameOf(r.pid) || nameOf(r.sku), qc = stockOf(kind, r);
       return '<td class="c-nm md-nm" title="' + esc(nc) + '">' + esc(nc) + '</td><td class="num">' + (qc ? f(qc) : '') + '</td>' +
-        '<td class="num" id="mp-' + i + '">' + palOf(r) + '</td>';
+        '<td class="num" id="mp-' + i + '">' + palOf(r) + '</td><td class="c-nm md-nm" id="mr-' + i + '">' + esc(placeText(r)) + '</td>';
     }
     if (kind === 'loc') {
       var k = X().locKind(r.code), q = stockOf(kind, r);
@@ -607,7 +648,7 @@
     var cols = COLS[kind];
     var extra = kind === 'loc' ? '<th>ชนิด</th><th class="num">ของตอนนี้</th>' : kind === 'sku' || kind === 'sup' ? '<th class="num">ของตอนนี้</th>'
       : kind === 'conv' ? '<th>ชื่อสินค้า</th><th class="num" title="ของตอนนี้ของ SKU หลังแปลง">ของ (หลังแปลง)</th>'
-        : kind === 'cap' ? '<th>ชื่อสินค้า</th><th class="num">ของตอนนี้</th><th class="num" title="ของตอนนี้ ÷ ชิ้นต่อพาเลท ปัดขึ้น">≈ พาเลท</th>'
+        : kind === 'cap' ? '<th>ชื่อสินค้า</th><th class="num">ของตอนนี้</th><th class="num" title="ของตอนนี้ ÷ ชิ้นต่อพาเลท ปัดขึ้น">≈ พาเลท</th><th title="กติกากลุ่ม + ขึ้นแร็คราย SKU · ปุ่ม 🎯 เลือกโลให้ ใช้กติกานี้">ระบบวางที่</th>'
           : kind === 'zone' ? '<th class="num" title="ช่อง R ในช่วงนี้ที่ไม่มีของ / ทั้งหมด (ตาราง Location ที่ใช้งาน)">ช่องว่าง</th>' : '<th class="num">SKU</th>';
     var html = '<div class="bk-wrap md-wrap"><table class="bk-xl g-xl md-xl" id="mdTbl"><thead><tr><th class="c-no">#</th>' +
       cols.map(function (c) { return '<th' + (c.num ? ' class="num"' : '') + '>' + esc(c.t) + '</th>'; }).join('') + extra + '<th>⚠</th>' + (edit ? '<th class="c-act"></th>' : '') + '</tr></thead><tbody>';
@@ -632,7 +673,12 @@
       var cell = $('mw-' + i);
       if (!cell) return;
       cell.innerHTML = warnHtml(v.rows[i]);
-      if (kind === 'cap' && $('mp-' + i)) $('mp-' + i).innerHTML = palOf(draft(kind).rows[i]);
+      if (kind === 'cap' && $('mp-' + i)) {
+        var cr = draft(kind).rows[i], sel = document.querySelector('#mdTbl [data-mi="' + i + '"][data-mf="rack"]');
+        $('mp-' + i).innerHTML = palOf(cr);
+        if ($('mr-' + i)) $('mr-' + i).textContent = placeText(cr);
+        if (sel && sel.options.length) sel.options[0].text = autoText(cr);
+      }
       if (kind === 'zone' && $('mz-' + i)) $('mz-' + i).innerHTML = slotText(draft(kind).rows[i]);
       var tr = cell.parentNode;
       tr.classList.remove('r-bad', 'r-warn');
@@ -694,6 +740,7 @@
       var g = draft('grp').rows.filter(function (x) { return x.id === s || up(x.name) === u; })[0];
       return g ? g.id : s;
     }
+    if (c.sel === 'rack1') return X().rackVal(s);
     if (c.sel === 'rack') return /^(NO|N|0|ไม่|ไม่ขึ้น|ไม่ได้)/.test(u) ? 'no' : 'yes';
     if (c.sel === 'lv') return /ALL|ทุก/.test(u) ? 'all' : /2/.test(u) ? '2+' : /1/.test(u) ? '1' : '';
     if (c.sel === 'rest') {
@@ -715,6 +762,14 @@
     var p = T.readSheets([{ name: X().SHEET[kind], grid: g }]);
     return p && !p.error && p[kind] ? X().fromParsed(kind, p[kind]) : null;
   }
+  /** SKU : Pallet วางแค่ SKU + ขึ้นแร็ค (หัวตารางไม่มีชิ้นต่อพาเลท) → แถวตามลำดับคอลัมน์ในหน้า | null */
+  function rackPaste(kind, g) {
+    if (kind !== 'cap' || !g.length) return null;
+    var h = g[0].map(txt), at = function (re) { for (var j = 0; j < h.length; j++) if (re.test(h[j])) return j; return -1; };
+    var s = at(/^sku$|^รหัสสินค้า$/i), l = at(/product\s*id|รหัสยาว/i), k = at(/^ขึ้นแร็ค/);
+    if (k < 0 || (s < 0 && l < 0)) return null;
+    return g.slice(1).map(function (r) { return [s < 0 ? '' : txt(r[s]), l < 0 ? '' : txt(r[l]), '', txt(r[k])]; });
+  }
 
   /** วางนอกช่อง: รหัสที่มีแล้ว = อัปเดตช่องที่วางมา (ไม่ว่าง) · ไม่มี = เพิ่มแถวบนสุด */
   function paste(text) {
@@ -724,8 +779,11 @@
     var pre = parsedPaste(kind, g);
     if (pre) {
       /* อ่านตามหัวตารางแล้ว: เป็นแถวของช่องตามลำดับ cols */
-      g = pre.map(function (r) { return cols.map(function (c) { return r[c.k]; }); });
-    } else if (g.length && HEAD_RE.test(txt(g[0][0]))) g.shift();
+      g = pre.map(function (r) { return cols.map(function (c) { return c.k === 'rack' && r.auto ? 'ตามกลุ่ม' : r[c.k]; }); });
+    } else {
+      var only = rackPaste(kind, g);
+      if (only) g = only; else if (g.length && HEAD_RE.test(txt(g[0][0]))) g.shift();
+    }
     if (!g.length) return;
     var d = draft(kind), by = {}, add = [], upd = 0;
     d.rows.forEach(function (r, i) { var k = X().keyOf(kind, r) || (kind === 'grp' ? up(r.name) : ''); if (k) by[k] = i; if (kind === 'grp' && up(r.name)) by[up(r.name)] = i; });
@@ -739,14 +797,20 @@
         /* วางมาแค่ SKU สั้น: ตรงกับแถวที่มี SKU สั้นเดียวกัน */
         d.rows.forEach(function (x, i) { if (at === undefined && up(x.sku) === up(r.sku) && !up(r.long)) at = i; });
       }
+      if (at === undefined && kind === 'cap' && !(up(r.sku) && up(r.pid))) {
+        /* วางมารหัสเดียว: ตรงกับแถวเดิมแถวเดียว = อัปเดตแถวนั้น */
+        var code1 = up(r.sku) || up(r.pid), same = [];
+        d.rows.forEach(function (x, i) { if (up(x.sku) === code1 || up(x.pid) === code1) same.push(i); });
+        if (same.length === 1) at = same[0];
+      }
       if (at !== undefined) {
-        var cur = d.rows[at];
+        var cur = typeof at === 'number' ? d.rows[at] : at;   // ซ้ำในชุดที่วาง = แถวที่เพิ่งจะเพิ่ม
         cols.forEach(function (c, j) { if (j < cells.length && txt(cells[j]) !== '') cur[c.k] = parseCell(kind, c, cells[j]); });
         upd++;
       } else {
         if (kind === 'loc' && r.pal === '' && X().locKind(r.code) && X().locKind(r.code).t === 'R') r.pal = '1';
         if (kind === 'sku' && !r.grp) r.grp = guess(r);
-        by[k] = -1;
+        by[k] = r;
         add.push(r);
       }
     });
@@ -830,7 +894,8 @@
     ['sup', 'conv', 'cap'].forEach(function (k) {
       var part = p[k];
       if (!part) return;
-      var rows = X().fromParsed(k, part), d = draft(k), saved = {};
+      var d = draft(k), rows = X().fromParsed(k, part, d.rows), saved = {};
+      var held = k === 'cap' && !part.rack ? rows.filter(function (r) { return !!r.rack; }).length : 0;
       table(k).rows.forEach(function (r) { var key = X().keyOf(k, r); if (key) saved[key] = 1; });
       d.rows = rows;
       d.fresh = {};
@@ -839,6 +904,7 @@
       var dd = X().diff(k, table(k).rows, rows);
       var note = k === 'sup' && part.dup && part.dup.length ? 'PO ซ้ำต่าง Supplier ' + part.dup.length + ' (ใช้แถวแรก)'
         : part.blank ? (k === 'cap' ? 'ช่องความจุว่าง ' : 'แถวไม่ครบ ') + part.blank + ' (ข้าม)' : '';
+      if (held) note += (note ? ' · ' : '') + 'คงค่า ขึ้นแร็ค ที่ตั้งไว้ ' + held;
       got.push({ k: k, n: rows.length, dd: dd, note: note });
     });
     var trc = p.stock || p.loss || p.cost;
@@ -867,6 +933,7 @@
         var v = r[c.k];
         if (c.ck) return v ? '1' : (c.k === 'on' ? '0' : '');
         if (c.sel === 'grp' || c.sel === 'zgrp') return gname[v] || v || '';
+        if (c.sel === 'rack1') return v === 'yes' ? 'ได้' : v === 'no' ? 'ไม่ได้' : v || 'ตามกลุ่ม';
         return String(v === undefined || v === null ? '' : v).replace(/[\t\n]/g, ' ');
       }).join('\t');
     }));
@@ -892,7 +959,8 @@
       return;
     }
     drop(kind);
-    S.msg = { kind: 'ok', html: '✅ บันทึกตาราง ' + esc(X().TAB[kind]) + ' แล้ว · ' + f(r.n) + ' แถว' + (r.text ? ' · ' + esc(r.text) : '') + ' · ทุกเครื่องได้ตารางใหม่ตอนดึงรอบถัดไป' };
+    S.msg = { kind: 'ok', html: '✅ บันทึกตาราง ' + esc(X().TAB[kind]) + ' แล้ว · ' + f(r.n) + ' แถว' + (r.text ? ' · ' + esc(r.text) : '') +
+      (pre() ? ' · ใช้ต่อได้เลยหลังลงยอดยกมา' : ' · ทุกเครื่องได้ตารางใหม่ตอนดึงรอบถัดไป') };
     render();
   }
 

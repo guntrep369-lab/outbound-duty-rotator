@@ -5,6 +5,7 @@
  *   meta/head   {v, seq, month 'yyMM', next, last รหัสชุด, rows แถวรวม, open ยอดยกมาล่าสุด, mv เวอร์ชัน master, at}
  *   docs/{รหัสชุด}  กดบันทึก 1 ครั้ง = 1 เอกสาร สร้างได้อย่างเดียว ใหญ่เกิน PART_BYTES แยกเป็น {รหัสชุด}~2, ~3 (ไม่เกิน PARTS_MAX ส่วน)
  *               {v, no, seq, row แถวแรก, n, type, date, by, name, at, stamp, ref, link, why, qty, tr, trState, rows, names, orders, part}
+ *               ใบโอนเข้า / ออก QA มี xf: in | out | qa (Rules อ่านแถวไม่ได้ ใช้ช่องนี้เช็คทีม)
  *               rows   = TSV [SKU, SKU เต็ม, LOT, PO, โลเบิก, โลรับ, ชิ้น, ประเภท, Note, Status, เลข TRcloud]
  *               orders = TSV [ระบบ, ออเดอร์, SKU, ชิ้น, เลขอ้างอิง, เลขพัสดุ, กอง (โล|LOT|PO|ชิ้น; …), เลขที่ตัด]
  *               names  = TSV [SKU เต็ม หรือ SKU, ชื่อสินค้า]
@@ -52,6 +53,10 @@
   var SYSTEMS = ['JST', 'CRM'];
   var MOVE_NOTES = ['โอนย้าย', 'โอนย้าย QA'];
   var LINES_MAX = 8000;
+  var CELL_MAX = 300;        // ตัวอักษรต่อช่องที่อ่านจากฐาน (ช่องที่แอปบันทึกยาวสุดคือ ref ของใบยกเลิก กับเลข TRcloud)
+  /** รหัสชุดของเอกสารหลัก ตรงกับ idOk ใน firebase/firestore.rules */
+  var ID_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,59}$/;
+  var BARE = {};             // ชื่อในนี้ชนช่องในตัวของ JavaScript (constructor, toString, ...)
   var ROWS_MAX = 3000;
   var PILES_MAX = 20;
   var KEYS_MAX = 2000;
@@ -79,12 +84,40 @@
    * okAt = เวลาเซิร์ฟเวอร์ที่แก้ล่าสุด เครื่องอื่นดึงตามช่องนี้ (แบบ trAt ของเลข TRcloud)
    */
   var OK_TYPES = [TYPE_MOVE, TYPE_CONV];   // ทุกใบในเมนู ย้าย / เติม / QA กับ แปลงสินค้า
-  var OK_KEYS = ['ck', 'ckName', 'ckAt', 'ap', 'apName', 'apAt', 'okAt'];
+  var OK_KEYS = ['ck', 'ckName', 'ckAt', 'ap', 'apName', 'apAt', 'rj', 'rjName', 'rjWhy', 'okAt'];
   var OK_MAX = 10;                        // ใบต่อคำขอ (Rules อ่าน users ทีละเอกสาร รวม meta ต้องไม่เกิน 20)
   var OK_CHECK = 'check';                 // รอตรวจ
   var OK_APPROVE = 'approve';             // ตรวจแล้ว รออนุมัติ
   var OK_DONE = 'done';                   // อนุมัติแล้ว
-  var OK_ACTS = ['check', 'approve', 'both'];
+  var OK_REJECT = 'reject';               // ผู้รับกด ไม่รับ รอหัวหน้ายกเลิกใบ
+  var OK_ACTS = ['check', 'approve', 'both', 'reject'];
+  var WHY_MAX = 200;
+
+  /*
+   * ช่องที่เอกสารใหม่มีได้ (ตรงกับ newOk ใน firestore.rules) รับ อนุมัติ และแก้เลข TRcloud เติมได้ทีหลังเท่านั้น
+   * trLog = ค่าเลข TRcloud ก่อนแก้ทุกครั้ง [{tr, state, by, at}] เก่าสุดก่อน ต่อท้ายอย่างเดียว (trLogOk ใน firestore.rules)
+   */
+  var DOC_KEYS = ['v', 'no', 'seq', 'row', 'n', 'type', 'date', 'by', 'name', 'at', 'stamp', 'ref', 'link', 'why', 'qty', 'tr', 'trState', 'rows', 'names', 'orders', 'part', 'xf'];
+  var PART_KEYS = ['v', 'of', 'seq', 'i', 'rows', 'orders'];
+  var META_KEYS = ['v', 'seq', 'month', 'next', 'last', 'rows', 'open', 'mv', 'tv', 'ov', 'trc', 'at'];
+  var TR_LOG_MAX = 50;
+
+  /*
+   * ใบโอนเข้า / ออก QA และ IQA = รับก่อนใช้ต่อ (ผู้ใช้ตัดสิน 2026-11-22)
+   * ยอดย้ายตั้งแต่บันทึก แต่ชิ้นที่โอนไปพักไว้ที่ปลายทาง (รอรับ) จนผู้รับนับแล้วกดรับ (ช่อง ck) ขาย ย้ายต่อ แปลง ปรับลด ไม่ได้
+   * รับแล้วใช้ต่อได้เลย ไม่ต้องรอหัวหน้า · การอนุมัติคุมแค่ลง TRcloud · ไม่รับ (rj) = พักไว้จนหัวหน้ายกเลิกใบ
+   * ย้าย / เติมในคลังขายไม่ต้องรับ
+   *   in  เข้า QA         คนทำ = ทีมคลัง / Inbound    คนรับ = ทีม QA
+   *   out ออกจาก QA       คนทำ = ทีม QA               คนรับ = ทีมคลัง / Inbound
+   *   qa  ใน QA / IQA     คนทำ = ทีม QA               คนรับ = ทีม QA อีกคน
+   * หัวหน้าทำและรับแทนได้ทุกแบบ แต่คนทำรับใบตัวเองไม่ได้
+   */
+  var XF_IN = 'in', XF_OUT = 'out', XF_QA = 'qa';
+  var XF_KINDS = [XF_IN, XF_OUT, XF_QA];
+  var XF_TH = { '': 'ย้าย / เติมในคลัง', in: 'โอนเข้า QA', out: 'โอนออกจาก QA', qa: 'ย้ายใน QA / IQA' };
+  var TEAM_QA = 'qa';                     // users.team ว่าง = คลัง / Inbound
+  var TEAMS = ['', TEAM_QA];
+  var TEAM_TH = { '': 'คลัง / Inbound', qa: 'QA' };
 
   /** op ของหน้าเว็บ → ประเภทเอกสาร และใครลงได้ */
   var OPS = {
@@ -112,6 +145,21 @@
   }
   function num(v) { return typeof v === 'number' && isFinite(v) ? v : null; }
   function round3(n) { return Math.round(n * 1000) / 1000; }
+
+  /* ค่าจากฐานเชื่อไม่ได้ (Rules อ่านแถวไม่ได้ และอาจมีใบที่ลงก่อนกฎชุดนี้): ใบเดียวต้องทำทุกเครื่องล่มไม่ได้ */
+  function raw(v) { return typeof v === 'string' ? v : ''; }
+  /** ข้อความหนึ่งช่อง: ชนิดอื่น = ว่าง · ตัดที่ CELL_MAX · ชื่อชนช่องในตัวของ JS เป็นตัวพิมพ์ใหญ่ (ทุกหน้าใช้ค่าพวกนี้เป็นกุญแจ) */
+  function str(v, max) {
+    var s = typeof v === 'string' ? v : typeof v === 'number' && isFinite(v) ? String(v) : '';
+    if (s.length > (max || CELL_MAX)) s = s.slice(0, max || CELL_MAX);
+    return s && s.trim() in BARE ? s.toUpperCase() : s;
+  }
+  function fin(v) { var n = typeof v === 'number' || typeof v === 'string' ? +v : 0; return isFinite(n) ? n : 0; }
+  /** เวลา ms ที่แปลงเป็นวันที่ได้ (ถึงปี 2100) */
+  function timeIn(v) { return typeof v === 'number' && v > 0 && v < 4102444800000 ? v : 0; }
+  /** จำนวนส่วนที่ยอมอ่านตาม 1–PARTS_MAX */
+  function partsOf(v) { return Math.min(PARTS_MAX, Math.max(1, Math.floor(fin(v)))); }
+  function lineList(v, max) { var s = raw(v); return s ? s.split('\n', max) : []; }
   function pad2(n) { return (+n < 10 ? '0' : '') + (+n); }
   function pad4(n) { var s = String(n); while (s.length < 4) s = '0' + s; return s; }
 
@@ -148,6 +196,12 @@
     return '';
   }
 
+  /** วันที่ที่ฐานรับเมื่อเวลาเซิร์ฟเวอร์ = now แบบ dayOk ใน firestore.rules (เท่า dayError เผื่อ MONTH_TOL) */
+  function dayOk(day, now) {
+    if (typeof day !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(day)) return false;
+    return day >= today(now - BACK_DAYS * 86400000 - MONTH_TOL) && day <= today(now + 86400000 + MONTH_TOL);
+  }
+
   /* ── ไบต์ TSV ────────────────────────────────────────────────────────── */
 
   /** ไบต์ UTF-8 ของข้อความ (ขนาดแบบที่ Firestore นับ) */
@@ -169,21 +223,31 @@
   function encMap(m) { return enc(Object.keys(m).map(function (k) { return [k, m[k]]; })); }
   function decMap(s, numeric) {
     var m = {};
-    dec(s).forEach(function (r) { if (r[0]) m[r[0]] = numeric ? +r[1] || 0 : r[1] || ''; });
+    lineList(s, OPEN_MAX).forEach(function (l) {
+      var r = l.split('\t', 2);
+      if (r[0]) m[str(r[0])] = numeric ? fin(r[1]) : str(r[1]);
+    });
     return m;
   }
 
   /** แถว 11 ช่อง ⇄ TSV (ชิ้นเป็นตัวเลข) */
   function rowsIn(s) {
-    return dec(s).map(function (a) {
-      return [a[0] || '', a[1] || '', a[2] || '', a[3] || '', a[4] || '', a[5] || '', +a[6] || 0, a[7] || '', a[8] || '', a[9] || '', a[10] || ''];
+    return lineList(s, OPEN_MAX).map(function (l) {
+      var a = l.split('\t', 11);
+      return [str(a[0]), str(a[1]), str(a[2]), str(a[3]), str(a[4]), str(a[5]), fin(a[6]), str(a[7]), str(a[8]), str(a[9]), str(a[10])];
     });
   }
   /** บรรทัดออเดอร์ [ระบบ, ออเดอร์, SKU, ชิ้น, เลขอ้างอิง, เลขพัสดุ, กอง, เลขที่ตัด] */
   function linesIn(s) {
-    return dec(s).map(function (a) {
-      return { sys: a[0] || '', order: a[1] || '', sku: a[2] || '', qty: +a[3] || 0, ref: a[4] || '', track: a[5] || '', piles: a[6] || '', cut: a[7] || '' };
+    return lineList(s, LINES_MAX).map(function (l) {
+      var a = l.split('\t', 8);
+      return { sys: str(a[0]), order: str(a[1]), sku: str(a[2]), qty: fin(a[3]), ref: str(a[4]), track: str(a[5]), piles: pilesIn(a[6]), cut: str(a[7]) };
     });
+  }
+  /** กองของบรรทัดออเดอร์ ไม่เกิน PILES_MAX กอง */
+  function pilesIn(v) {
+    var s = str(v, PILES_MAX * CELL_MAX);
+    return s ? s.split(';', PILES_MAX).map(function (p) { return p.split('|', 4).map(function (x) { return str(x); }).join('|'); }).join(';') : '';
   }
   function linesOut(list) { return enc(list.map(function (l) { return [l.sys, l.order, l.sku, l.qty, l.ref, l.track, l.piles, l.cut || '']; })); }
 
@@ -233,6 +297,15 @@
 
   /** คลังของโล: QA, IQA (QA-01, IQA2 ก็ได้) = WH-QA นอกนั้น (รวม RIB) = WH-02 แบบ WmsStocktake.whOf */
   function whOf(loc) { return /^I?QA(?![A-Z])/.test(up(loc)) ? WH_QA : WH_MAIN; }
+  /** IQA (IQA-01, IQA2 ก็ได้) โลพักของสุ่มตรวจ: เข้าด้วยใบโอนของ Inbound ก่อนเสมอ */
+  function iqaLoc(loc) { return /^IQA(?![A-Z])/.test(up(loc)); }
+
+  /** แบบของแถวย้าย: '' ในคลังขาย · in เข้า QA · out ออกจาก QA · qa ใน QA / IQA */
+  function xferRow(r) {
+    if (!r[4] || !r[5] || r[7] !== 'เบิก') return '';
+    var a = whOf(r[4]) === WH_QA, b = whOf(r[5]) === WH_QA;
+    return a ? (b ? XF_QA : XF_OUT) : b ? XF_IN : '';
+  }
 
   /**
    * ยอดที่เปลี่ยนในแต่ละคลังของ TRcloud จากแถวของเอกสาร [[SKU เต็ม หรือ SKU, คลัง, +/− ชิ้น]] รวมต่อ SKU + คลัง ตัด 0 ทิ้ง
@@ -267,7 +340,13 @@
 
   function strictCheck(map, rows, at) {
     var short = applyRows(map, rows, at, true);
-    return short.length ? { error: 'ยอดในสมุดไม่พอ ' + short.length + ' แถว ต้องลงรับของ หรือให้หัวหน้าปรับยอดก่อน', short: short.slice(0, 50) } : null;
+    if (!short.length) return null;
+    var error = 'ยอดในสมุดไม่พอ ' + short.length + ' แถว ต้องลงรับของ หรือให้หัวหน้าปรับยอดก่อน';
+    /* ต่างจาก book-api.gs เฉพาะโล IQA: ขาดใบโอนเข้า ปรับยอดแล้วใบโอนตามมา ยอดซ้ำ */
+    var atIqa = short.filter(function (x) { return iqaLoc(x.loc); }).length;
+    if (atIqa === short.length) error = 'ยอดใน IQA ไม่พอ ' + short.length + ' แถว เช็ค LOT / PO ถ้าถูกแล้ว แจ้ง Inbound ทำใบโอนเข้าก่อน อย่าปรับยอด';
+    else if (atIqa) error += ' · ส่วน IQA ' + atIqa + ' แถว ให้แจ้ง Inbound ทำใบโอนเข้า อย่าปรับยอด';
+    return { error: error, short: short.slice(0, 50) };
   }
 
   function skuOfRow(r) { return r[1] || r[0]; }
@@ -354,9 +433,11 @@
   function batchOf(req) {
     var b = plain(req.batch, 60);
     if (!b) return { error: 'ไม่มีรหัสชุด' };
-    if (/[\/]|^\.\.?$|^__.*__$/.test(b)) return { error: 'รหัสชุดใช้ไม่ได้' };
+    if (!idOk(b)) return { error: 'รหัสชุดใช้ไม่ได้' };
     return { batch: b };
   }
+
+  function idOk(id) { return ID_RE.test(id) && !(id in BARE); }
 
   /** กองในบรรทัดออเดอร์ [[โล, lot, po, ชิ้น]] → 'โล|LOT|PO|ชิ้น; …' หรือ null */
   function pilesText(piles, needLotPo) {
@@ -594,28 +675,42 @@
 
   /* ── สำเนาในเครื่อง: เอกสาร สถานะ ค้นหา ─────────────────────────────── */
 
-  function lineCount(s) { return s ? String(s).split('\n').length : 0; }
+  function lineCount(v) {
+    var s = raw(v);
+    if (!s) return 0;
+    var n = 1, at = s.indexOf('\n');
+    while (at >= 0) { n++; at = s.indexOf('\n', at + 1); }
+    return n;
+  }
   /** จุดตัดส่วนของเอกสารใหญ่ [[บรรทัด rows, บรรทัด orders] ต่อส่วน] ไว้ทำไฟล์สำรองให้แยกส่วนตรงกับในฐาน */
   function cutOf(main, rest) {
     return [[lineCount(main.rows), lineCount(main.orders)]].concat(rest.map(function (p) { return [lineCount(p.rows), lineCount(p.orders)]; }));
   }
 
-  /** เอกสารจากฐาน (+ ส่วนที่แยก) → รูปที่ใช้ในเครื่อง */
+  /** เอกสารจากฐาน (+ ส่วนที่แยก) → รูปที่ใช้ในเครื่อง · ใช้เฉพาะส่วน 2..part ทุกเครื่องได้แถวเท่ากัน */
   function docIn(id, d, parts) {
-    var rows = d.rows || '', orders = d.orders || '';
-    var sorted = (parts || []).slice().sort(function (a, b) { return a.i - b.i; });
+    var rows = raw(d.rows), orders = raw(d.orders), part = partsOf(d.part), took = {};
+    var sorted = (parts || []).filter(function (p) {
+      if (!p || !Number.isInteger(p.i) || p.i < 2 || p.i > part || took[p.i]) return false;
+      took[p.i] = 1;
+      return true;
+    }).sort(function (a, b) { return a.i - b.i; });
     sorted.forEach(function (p) {
-      if (p.rows) rows = rows ? rows + '\n' + p.rows : p.rows;
-      if (p.orders) orders = orders ? orders + '\n' + p.orders : p.orders;
+      var pr = raw(p.rows), po = raw(p.orders);
+      if (pr) rows = rows ? rows + '\n' + pr : pr;
+      if (po) orders = orders ? orders + '\n' + po : po;
     });
     var out = {
-      id: id, no: d.no || '', seq: +d.seq || 0, row: +d.row || 0, n: +d.n || 0, type: d.type || '', date: d.date || '',
-      by: d.by || '', name: d.name || '', at: typeof d.at === 'number' ? d.at : 0, stamp: d.stamp || '',
-      ref: d.ref || '', link: d.link || '', why: d.why || '', qty: +d.qty || 0, tr: d.tr || '', trState: d.trState || '',
-      trBy: d.trBy || '', trAt: typeof d.trAt === 'number' ? d.trAt : 0,
-      rows: rowsIn(rows), names: decMap(d.names), lines: linesIn(orders), part: +d.part || 1,
+      id: id, no: str(d.no), seq: fin(d.seq), row: fin(d.row), n: fin(d.n), type: str(d.type), date: str(d.date),
+      by: str(d.by), name: str(d.name), at: timeIn(d.at), stamp: str(d.stamp),
+      ref: str(d.ref), link: str(d.link), why: str(d.why), qty: fin(d.qty), tr: str(d.tr), trState: str(d.trState),
+      trBy: str(d.trBy), trAt: timeIn(d.trAt),
+      rows: rowsIn(rows), names: decMap(d.names), lines: linesIn(orders), part: part,
     };
+    var xf = str(d.xf);
+    if (xf) out.xf = xf;
     okIn(out, d);
+    trLogIn(out, d);
     if (sorted.length) out.cut = cutOf(d, sorted);
     var w = widthOf(rows);
     if (w) out.w = w;
@@ -624,7 +719,7 @@
 
   /** จำนวนช่องของแถวที่เก็บ: 10 ทุกแถว = 0 (ไม่เก็บ) · เท่ากันทุกแถว = ตัวเลข · ปนกัน = รายแถว (docOut เขียนกลับได้ตรงทุกตัวอักษร) */
   function widthOf(s) {
-    var ws = s ? String(s).split('\n').map(function (l) { return l.split('\t').length; }) : [];
+    var ws = lineList(s, OPEN_MAX).map(function (l) { return l.split('\t', 12).length; });
     if (!ws.length || ws.every(function (x) { return x === 10; })) return 0;
     return ws.every(function (x) { return x === ws[0]; }) ? ws[0] : ws;
   }
@@ -641,19 +736,50 @@
       orders: d.lines && d.lines.length ? linesOut(d.lines) : '', part: 1,
     };
     if (d.trBy) { o.trBy = d.trBy; o.trAt = d.trAt; }
+    if (d.xf) o.xf = d.xf;
     okIn(o, d);
+    trLogIn(o, d);
     return o;
   }
 
   /** ช่องตรวจ / อนุมัติ จาก src ไป out เฉพาะที่มี (เอกสารที่ไม่เคยตรวจไม่มีช่องพวกนี้ รูปเดิมไม่เปลี่ยน) */
   function okIn(out, src) {
-    if (src.ck) { out.ck = String(src.ck); out.ckName = String(src.ckName || ''); out.ckAt = typeof src.ckAt === 'number' ? src.ckAt : 0; }
-    if (src.ap) { out.ap = String(src.ap); out.apName = String(src.apName || ''); out.apAt = typeof src.apAt === 'number' ? src.apAt : 0; }
-    if (typeof src.okAt === 'number' && src.okAt > 0) out.okAt = src.okAt;
+    var ck = str(src.ck), ap = str(src.ap), rj = str(src.rj), okAt = timeIn(src.okAt);
+    if (ck) { out.ck = ck; out.ckName = str(src.ckName); out.ckAt = timeIn(src.ckAt); }
+    if (ap) { out.ap = ap; out.apName = str(src.apName); out.apAt = timeIn(src.apAt); }
+    if (rj) { out.rj = rj; out.rjName = str(src.rjName); out.rjWhy = str(src.rjWhy); }
+    if (okAt) out.okAt = okAt;
     return out;
   }
 
+  /** ประวัติเลข TRcloud จาก src ไป out เฉพาะที่มี (ไม่เคยแก้ = ไม่มีช่องนี้) */
+  function trLogIn(out, src) {
+    if (Array.isArray(src.trLog) && src.trLog.length) {
+      out.trLog = src.trLog.slice(0, TR_LOG_MAX).map(function (e) { e = e || {}; return { tr: str(e.tr), state: str(e.state), by: str(e.by), at: timeIn(e.at) }; });
+    }
+    return out;
+  }
+
+  /** การแก้เลข TRcloud ของเอกสารนี้ต้องต่อประวัติไหม (มีเลขหรือเคยมีคนแก้แล้ว) และประวัติเต็มหรือยัง */
+  function trLogFull(d) { return !!(d.trBy || d.tr) && Array.isArray(d.trLog) && d.trLog.length >= TR_LOG_MAX; }
+  /** ประวัติหลังแก้ = ของเดิม + ค่าก่อนแก้ (d = เอกสารจากฐานก่อนแก้ เวลาเป็น ms) · แก้ครั้งแรก = null */
+  function trLogNext(d) {
+    if (!d.trBy && !d.tr) return null;
+    var log = Array.isArray(d.trLog) ? d.trLog.slice() : [];
+    log.push({ tr: d.tr || '', state: d.trState || '', by: d.trBy || d.by, at: Math.floor(+(d.trBy ? d.trAt : d.at) || 0) });
+    return log;
+  }
+
   /** สถานะยกเลิกของทุกเอกสาร { เลขที่: {status, voidBy, voidAt, why, link} } จากเอกสารกลับรายการ และยอดยกมาที่ถูกลงใหม่ */
+  /**
+   * ล็อกจนกว่าจะมียอดยกมา: ลงได้แต่ bk-open (เอกสารที่ลงก่อนทำให้ลงยอดยกมาไม่ได้ และยกเลิกก็ยังนับ)
+   * → คำตอบ error มี noOpen (หน้าเก็บชุดที่ค้างไว้ ไม่ทิ้ง) · ลงได้ = null
+   */
+  function openLock(op, meta) {
+    if (op === 'bk-open' || (meta && meta.open)) return null;
+    return { error: 'ยังไม่ลงยอดยกมา จึงยังลงเอกสารไม่ได้ (หัวหน้าลงยอดยกมาหลังนับใหญ่เสร็จ)', noOpen: 1 };
+  }
+
   function voids(local) {
     var out = {}, open = local.meta && local.meta.open;
     (local.docs || []).forEach(function (d) {
@@ -666,43 +792,59 @@
   }
 
   /**
-   * สถานะตรวจ / อนุมัติ: '' ไม่ต้อง (ประเภทอื่น · ใบที่ยกเลิกก่อนอนุมัติ) · check รอตรวจ · approve รออนุมัติ · done อนุมัติแล้ว
+   * สถานะตรวจ / อนุมัติ: '' ไม่ต้อง (ประเภทอื่น · ใบที่ยกเลิกก่อนอนุมัติ) · check รอตรวจ (ใบโอน QA = รอรับ) · reject ไม่รับ
+   *   approve รออนุมัติ · done อนุมัติแล้ว
    * vd = voids(local) (ส่งมาเมื่อคิดหลายใบ)
    */
   function okState(d, vd) {
     if (!d || OK_TYPES.indexOf(d.type) < 0) return '';
     if (d.ap) return OK_DONE;
     if (vd && vd[d.no]) return '';
+    if (d.rj) return OK_REJECT;
     return d.ck ? OK_APPROVE : OK_CHECK;
   }
 
   /**
-   * ตรวจ / อนุมัติ nos = [เลขที่] ไม่เกิน OK_MAX · act = check ตรวจ | approve อนุมัติ | both หัวหน้าตรวจและอนุมัติในครั้งเดียว
+   * ตรวจ / อนุมัติ nos = [เลขที่] ไม่เกิน OK_MAX · act = check ตรวจ (ใบโอน QA = รับ) | approve อนุมัติ
+   *   | both หัวหน้าตรวจและอนุมัติในครั้งเดียว | reject ไม่รับใบโอน QA (ต้องมี reason)
    * → { writes: [[path, ช่องที่แก้]] } หรือ { error, bad: [{no, why}] } (ใบไหนทำไม่ได้ ไม่เขียนสักใบ)
    */
-  function okSet(local, nos, user, act) {
+  function okSet(local, nos, user, act, reason) {
     if (!user || (user.role !== 'head' && user.role !== 'staff')) return { error: 'บัญชีนี้ดูได้อย่างเดียว' };
     if (OK_ACTS.indexOf(act) < 0) return { error: 'ไม่รู้จักคำสั่ง ' + act };
-    if (act !== 'check' && user.role !== 'head') return { error: 'อนุมัติได้เฉพาะหัวหน้า' };
+    var ck = act === 'check' || act === 'both', ap = act === 'approve' || act === 'both', rj = act === 'reject';
+    if (ap && user.role !== 'head') return { error: 'อนุมัติได้เฉพาะหัวหน้า' };
+    var note = rj ? plain(reason, WHY_MAX) : '';
+    if (rj && !note) return { error: 'ใส่เหตุผลที่ไม่รับ' };
     if (!Array.isArray(nos) || !nos.length) return { error: 'ยังไม่ได้เลือกเอกสาร' };
     if (nos.length > OK_MAX) return { error: 'ตรวจ / อนุมัติได้ครั้งละไม่เกิน ' + OK_MAX + ' ใบ' };
     var vd = voids(local), by = {}, seen = {}, bad = [], writes = [];
     var name = String(user.name || user.email).slice(0, 60);
     (local.docs || []).forEach(function (d) { by[d.no] = d; });
+    var picked = {};
+    if (ap) nos.forEach(function (raw) { picked[text(raw)] = 1; });
     nos.forEach(function (raw) {
-      var no = text(raw), d = by[no], st = d ? okState(d, vd) : '';
+      var no = text(raw), d = by[no], st = d ? okState(d, vd) : '', xf = d ? xfKind(d) : '';
       var why = !d ? 'ไม่พบเลขที่นี้' : seen[no] ? 'ซ้ำในรายการ'
         : OK_TYPES.indexOf(d.type) < 0 ? d.type + 'ไม่ต้องตรวจ / อนุมัติ'
         : !st ? 'ใบนี้ยกเลิกแล้ว'
         : st === OK_DONE ? 'อนุมัติแล้ว'
-        : act === 'approve' && st === OK_CHECK ? 'ยังไม่มีผู้ตรวจ'
-        : act !== 'approve' && st === OK_APPROVE ? 'ตรวจแล้ว'
-        : act !== 'approve' && d.by === user.email ? 'คนทำตรวจใบของตัวเองไม่ได้' : '';
+        : st === OK_REJECT ? 'ผู้รับไม่รับ ให้หัวหน้ายกเลิกใบแล้วทำใบใหม่'
+        : rj && !xf ? 'ไม่รับ ใช้กับใบโอนเข้า / ออก QA เท่านั้น'
+        : act === 'approve' && st === OK_CHECK ? (xf ? 'ยังไม่มีคนรับ' : 'ยังไม่มีผู้ตรวจ')
+        : (ck || rj) && st === OK_APPROVE ? (xf ? 'รับแล้ว' : 'ตรวจแล้ว')
+        : (ck || rj) && d.by === user.email ? (xf ? 'คนทำรับใบของตัวเองไม่ได้' : 'คนทำตรวจใบของตัวเองไม่ได้')
+        : ck || rj ? takeWhy(xf, user) : '';
+      if (!why && ap) {
+        var first = apFirst(local, d, vd, picked);
+        if (first) why = 'ต้องอนุมัติใบเข้า ' + first + ' ก่อน หรือเลือกพร้อมกัน';
+      }
       if (why) { bad.push({ no: no, why: why }); return; }
       seen[no] = 1;
       var w = {};
-      if (act !== 'approve') { w.ck = user.email; w.ckName = name; w.ckAt = TIME; }
-      if (act !== 'check') { w.ap = user.email; w.apName = name; w.apAt = TIME; }
+      if (ck) { w.ck = user.email; w.ckName = name; w.ckAt = TIME; }
+      if (ap) { w.ap = user.email; w.apName = name; w.apAt = TIME; }
+      if (rj) { w.rj = user.email; w.rjName = name; w.rjWhy = note; }
       w.okAt = TIME;
       writes.push(['docs/' + d.id, w]);
     });
@@ -714,6 +856,179 @@
   function liveDocs(local) {
     var open = local.meta && local.meta.open;
     return (local.docs || []).filter(function (d) { return !open || d.seq >= open.seq; });
+  }
+
+  /* ── ใบโอน QA: รับก่อนใช้ต่อ ─────────────────────────────────────────── */
+
+  var XF_SEEN = new WeakMap();
+  /** แถวโอนของใบย้าย { kind, legs: [แถว] } คิดจากแถวครั้งเดียวต่อชุด (ใบอื่น = ไม่มี) */
+  function xferOf(d) {
+    if (!d || d.type !== TYPE_MOVE || !d.rows) return { kind: '', legs: [] };
+    var got = XF_SEEN.get(d.rows);
+    if (got) return got;
+    var legs = d.rows.filter(function (r) { return !!xferRow(r); });
+    got = { kind: legs.length ? xferRow(legs[0]) : '', legs: legs };
+    XF_SEEN.set(d.rows, got);
+    return got;
+  }
+  function xfKind(d) { return xferOf(d).kind; }
+
+  /** คนนี้ทำใบแบบนี้ได้ไหม '' = ได้ (หัวหน้าทำแทนได้) */
+  function makeWhy(xf, user) {
+    if (!xf || !user || user.role !== 'staff') return '';
+    var qa = user.team === TEAM_QA;
+    if (xf === XF_IN) return qa ? 'ใบโอนเข้า QA ให้คลัง / Inbound ทำ ทีม QA เป็นคนรับ' : '';
+    return qa ? '' : XF_TH[xf] + ' ให้ทีม QA หรือหัวหน้าทำ';
+  }
+  /** คนนี้รับ / ไม่รับใบแบบนี้ได้ไหม '' = ได้ (หัวหน้ารับแทนได้ · ไม่รวมกติกาคนทำรับเองไม่ได้) */
+  function takeWhy(xf, user) {
+    if (!xf || !user || user.role !== 'staff') return '';
+    var qa = user.team === TEAM_QA;
+    if (xf === XF_OUT) return qa ? 'ใบโอนออกจาก QA ให้ปลายทาง (คลัง / Inbound) รับ' : '';
+    return qa ? '' : XF_TH[xf] + ' ให้ทีม QA หรือหัวหน้ารับ';
+  }
+
+  /** อนุมัติใบนี้ต้องรออนุมัติใบไหนก่อน: ใบที่เอาของเข้ากองต้นทาง รับแล้ว ยังไม่อนุมัติ และไม่ได้เลือกพร้อมกัน → เลขที่ | '' */
+  function apFirst(local, d, vd, picked) {
+    var mine = xferOf(d).legs, from = {}, any = false;
+    mine.forEach(function (r) {
+      if (whOf(r[4]) !== WH_QA) return;
+      from[pileKey(r[4], skuOfRow(r), r[2], r[3])] = 1;
+      any = true;
+    });
+    if (!any) return '';
+    var list = liveDocs(local);
+    for (var i = 0; i < list.length; i++) {
+      var o = list[i];
+      if (o.seq >= d.seq || !o.ck || o.ap || vd[o.no] || (picked && picked[o.no])) continue;
+      if (xferOf(o).legs.some(function (r) { return from[pileKey(r[5], skuOfRow(r), r[2], r[3])]; })) return o.no;
+    }
+    return '';
+  }
+
+  /** ชิ้นที่พักรอรับต่อกองปลายทาง { คีย์กอง: {loc, sku, long, lot, po, qty, docs: [{no, rj}]} } · skip = ใบที่กำลังยกเลิก */
+  function holds(local, skip) {
+    var out = {}, vd = null;
+    liveDocs(local).forEach(function (d) {
+      if (d.type !== TYPE_MOVE || d.ck || (skip && d.no === skip)) return;
+      var legs = xferOf(d).legs;
+      if (!legs.length) return;
+      if (!vd) vd = voids(local);
+      if (vd[d.no]) return;
+      legs.forEach(function (r) {
+        var k = pileKey(r[5], skuOfRow(r), r[2], r[3]);
+        var x = out[k] || (out[k] = { loc: up(r[5]), sku: up(r[0]), long: up(r[1]), lot: up(r[2]), po: up(r[3]), qty: 0, docs: [] });
+        x.qty = round3(x.qty + (+r[6] || 0));
+        if (!x.docs.some(function (e) { return e.no === d.no; })) x.docs.push({ no: d.no, rj: !!d.rj });
+      });
+    });
+    return out;
+  }
+  /** ของรอรับในรูปที่ WmsBook.stock(res, extra, holds) ใช้ (LOT / PO แบบเดียวกับ fifo) */
+  function holdList(local) {
+    var h = holds(local);
+    return Object.keys(h).map(function (k) {
+      var x = h[k];
+      return { loc: x.loc, sku: x.sku, long: x.long, lot: String(sheetNum(x.lot)), po: String(sheetNum(x.po)), qty: x.qty, docs: x.docs };
+    });
+  }
+
+  function holdWho(docs) {
+    if (!docs.length) return 'ของที่เพิ่งโอนในใบนี้ ต้องบันทึกแล้วกดรับก่อน';
+    var wait = docs.filter(function (e) { return !e.rj; }).map(function (e) { return e.no; });
+    var no = docs.filter(function (e) { return e.rj; }).map(function (e) { return e.no; });
+    return [wait.length ? 'รอรับ ' + wait.slice(0, 3).join(', ') + ' ต้องกดรับก่อน' : '',
+      no.length ? 'ไม่รับ ' + no.slice(0, 3).join(', ') + ' ให้หัวหน้ายกเลิกใบ' : ''].filter(Boolean).join(' · ');
+  }
+
+  /**
+   * แถวชุดนี้กินชิ้นที่พักรอรับไหม · map = ยอดหลังบันทึก (จาก strictCheck) · skip = ใบที่กำลังยกเลิก
+   * fresh = แถวนี้เป็นใบโอนใหม่ (ชิ้นที่เข้าปลายทางพักทันที จึงย้ายต่อในใบเดียวกันไม่ได้)
+   * → [{n, loc, sku, lot, po, have: ใช้ได้, need, docs}]
+   */
+  function holdShort(local, map, rows, fresh, skip) {
+    var outs = {}, keys = [];
+    rows.forEach(function (r, i) {
+      var q = +r[6] || 0;
+      if (!r[4] || !(q > 0) || (r[7] !== 'เบิก' && r[7] !== 'ขาย')) return;
+      var k = pileKey(r[4], skuOfRow(r), r[2], r[3]), x = outs[k];
+      if (!x) { x = outs[k] = { n: i + 1, loc: up(r[4]), sku: r[0] || r[1], lot: r[2], po: r[3], need: 0 }; keys.push(k); }
+      x.need = round3(x.need + q);
+    });
+    if (!keys.length) return [];
+    var held = holds(local, skip), add = {}, short = [];
+    if (fresh) {
+      rows.forEach(function (r) {
+        if (!xferRow(r)) return;
+        var k = pileKey(r[5], skuOfRow(r), r[2], r[3]);
+        add[k] = round3((add[k] || 0) + (+r[6] || 0));
+      });
+    }
+    keys.forEach(function (k) {
+      var h = held[k], keep = round3((h ? h.qty : 0) + (add[k] || 0));
+      if (!keep) return;
+      var x = outs[k], left = round3((map[k] ? map[k].qty : 0) - keep);
+      if (left + 1e-9 >= 0) return;
+      short.push({ n: x.n, loc: x.loc, sku: x.sku, lot: x.lot, po: x.po, have: Math.max(0, round3(left + x.need)), need: x.need, docs: h ? h.docs : [] });
+    });
+    return short;
+  }
+
+  /** ใบย้าย 1 ใบ = แบบเดียว (ทั้งใบมีผู้รับคนเดียว) และคนทำถูกทีม → { xf } | { error } */
+  function moveXfer(rows, user) {
+    var kinds = [];
+    rows.forEach(function (r) { var k = xferRow(r); if (kinds.indexOf(k) < 0) kinds.push(k); });
+    if (kinds.length > 1) {
+      return { error: '1 ใบโอนได้แบบเดียว ชุดนี้มี ' + kinds.map(function (k) { return XF_TH[k]; }).join(' กับ ') + ' แยกบันทึกคนละใบ' };
+    }
+    var xf = kinds[0] || '', why = makeWhy(xf, user);
+    if (why) return { error: why };
+    if (xf && xf !== XF_QA && trOf(rows)) return { error: 'ใบโอน QA ใส่เลข TRcloud หลังหัวหน้าอนุมัติ ที่หน้า TRcloud' };
+    return { xf: xf };
+  }
+
+  var GRID_XFER = 'โอนเข้า / ออก QA ใช้แท็บ ย้าย / เติม / QA (มีขั้นรับและอนุมัติ) ตารางแบบเดิมลงไม่ได้';
+  /** SKU ในตารางแบบเดิมที่เป็นการโอน QA: เบิกมีโลรับ หรือเบิกกับรับคนละคลังในชุดเดียว → { SKU: 1 } */
+  function gridXfer(rows) {
+    var out = {}, sign = {};
+    rows.forEach(function (r) { if (xferRow(r)) out[up(skuOfRow(r))] = 1; });
+    whLines(rows).forEach(function (l) {
+      var s = l[2] > 0 ? 1 : 2;
+      sign[l[0]] = (sign[l[0]] || 0) | s;
+      if (sign[l[0]] === 3) out[l[0]] = 1;
+    });
+    return out;
+  }
+
+  /** แผนของหน้า: ใบย้ายปนแบบ คนทำผิดทีม หรือโอน QA ในตารางแบบเดิม = แถวผิด (ตอนบันทึก plan ตรวจซ้ำ) · แก้แผนในที่ */
+  function xferCheck(p, user, mode) {
+    if (!p || !p.lines || (mode !== 'move' && mode !== 'rows')) return p;
+    var list = [], all = [];
+    p.lines.forEach(function (o) {
+      if (o.st !== 'ok') return;
+      var rs = (o.take || []).map(function (t) { return [up(t.sku), up(t.long), up(t.lot), up(t.po), up(t.from), up(t.to), t.qty, t.type || 'เบิก']; });
+      if (!rs.length) return;
+      list.push({ o: o, rows: rs });
+      all = all.concat(rs);
+    });
+    if (!list.length) return p;
+    var first = null, flag = mode === 'rows' ? gridXfer(all) : null;
+    list.forEach(function (e) {
+      var why = '';
+      if (flag) {
+        if (e.rows.some(function (r) { return flag[up(skuOfRow(r))]; })) why = GRID_XFER;
+      } else {
+        var k = xferRow(e.rows[0]);
+        if (first === null) first = k;
+        why = k !== first ? XF_TH[k] + ' แยกบันทึกคนละใบกับ ' + XF_TH[first] : makeWhy(k, user);
+      }
+      if (!why) return;
+      e.o.st = 'bad';
+      e.o.why = why;
+      p.total.bad = (p.total.bad || 0) + 1;
+      if (p.total.ok) p.total.ok--;
+    });
+    return p;
   }
 
   /** บรรทัดที่ตัดแล้วของเดือนนั้นกับเดือนก่อน { คีย์: เลขที่ } ไม่นับชุดที่ยกเลิก (แบบ cutKeys_) */
@@ -850,6 +1165,108 @@
     };
   }
 
+  /* ── IQA: วันที่ออกต้องไม่ก่อนวันที่ของเข้า ────────────────────────── */
+
+  /** แต่ละขาของแถวที่แตะ IQA → fn(คีย์กอง, ชิ้น + เข้า / − ออก, แถว, โล) กติกาเข้าออกแบบ applyRows */
+  function iqaLegs(rows, fn) {
+    (rows || []).forEach(function (r, i) {
+      if (!r[0] && !r[1]) return;
+      var q = +r[6] || 0;
+      if (r[5] && iqaLoc(r[5])) fn(pileKey(r[5], skuOfRow(r), r[2], r[3]), q, r, r[5], i);
+      if (r[4] && (r[7] === 'เบิก' || r[7] === 'ขาย') && iqaLoc(r[4])) fn(pileKey(r[4], skuOfRow(r), r[2], r[3]), -q, r, r[4], i);
+    });
+  }
+
+  var IQA_SEEN = new WeakMap();
+  /** ยอดสุทธิต่อกอง IQA ของเอกสารที่บันทึกแล้ว [[คีย์, ชิ้น]] คิดครั้งเดียวต่อชุด (แถวขายมีเป็นแสน หน้าคิดใหม่ทุกครั้งที่พิมพ์) */
+  function iqaNet(rows) {
+    var list = IQA_SEEN.get(rows);
+    if (list) return list;
+    var net = {};
+    iqaLegs(rows, function (k, q) { net[k] = round3((net[k] || 0) + q); });
+    list = Object.keys(net).map(function (k) { return [k, net[k]]; });
+    IQA_SEEN.set(rows, list);
+    return list;
+  }
+
+  /**
+   * กองใน IQA ที่แถวชุดนี้ทำให้ยอดติดลบ ณ วันใดวันหนึ่งตั้งแต่ day (คิดตามวันที่ของเอกสาร วันเดียวกันรวมกัน)
+   * ยอดยกมา = มีตั้งแต่ต้น · ชุดที่ยกเลิกไม่นับทั้งใบเดิมกับใบกลับรายการ
+   * drop = ชุดที่กำลังยกเลิก: ใช้แถวของชุดนั้น คิดเป็นเอาขาเข้าออกจากวันของชุด
+   * → [{ key, n, loc, sku, lot, po, need, have: มีให้ออกได้, from: ออกได้ตั้งแต่วัน, doc: ใบออกใบแรกที่ของไม่พอ, day }]
+   */
+  function iqaDated(local, rows, day, drop) {
+    var by = {}, keys = [];
+    iqaLegs(rows, function (k, q, r, loc, i) {
+      var x = by[k];
+      if (!x) { x = by[k] = { key: k, loc: up(loc), sku: r[0] || r[1], lot: r[2], po: r[3], n: i + 1, outN: 0, need: 0, ev: {}, outs: {} }; keys.push(k); }
+      if (q < 0 && !x.outN) x.outN = i + 1;
+      x.need = round3(x.need + (drop ? q : -q));
+    });
+    keys = keys.filter(function (k) { return by[k].need > 1e-9; });
+    if (!keys.length) return [];
+    var want = {}, vd = voids(local);
+    keys.forEach(function (k) { want[k] = by[k]; });
+    liveDocs(local).forEach(function (d) {
+      if (vd[d.no] || d.type === TYPE_REV || (drop && d.no === drop.no)) return;
+      var at = d.type === TYPE_OPEN ? '' : text(d.date);
+      iqaNet(d.rows).forEach(function (e) {
+        var x = want[e[0]];
+        if (!x) return;
+        x.ev[at] = round3((x.ev[at] || 0) + e[1]);
+        if (e[1] < 0) x.outs[at] = d.no;
+      });
+    });
+    var out = [];
+    keys.forEach(function (k) {
+      var x = by[k], need = drop ? 0 : x.need;
+      if (!(day in x.ev)) x.ev[day] = 0;
+      var days = Object.keys(x.ev).sort(), run = 0, low = Infinity, last = -1, first = '';
+      days.forEach(function (d, i) {
+        run = round3(run + x.ev[d]);
+        if (d < day) return;
+        low = Math.min(low, run);
+        if (run + 1e-9 < need) { last = i; if (!first) first = d; }
+      });
+      if (last < 0) return;
+      out.push({ key: k, n: x.outN || x.n, loc: x.loc, sku: x.sku, lot: x.lot, po: x.po, need: x.need, have: Math.max(0, low),
+        from: days[last + 1] || '', doc: x.outs[first] || '', day: first });
+    });
+    return out;
+  }
+
+  function dayText(d) { return d.slice(8, 10) + '/' + d.slice(5, 7) + '/' + d.slice(0, 4); }
+  function iqaDateText(x, day) {
+    return 'ออกวันที่ ' + dayText(day) + ' ไม่ได้ ที่ ' + x.loc + ' (LOT ' + x.lot + ' ' + x.po + ') มีให้ออก ' + x.have + ' ชิ้น ณ วันนั้น' +
+      (x.from ? ' · ใช้วันที่ ' + dayText(x.from) + ' ขึ้นไป' : ' · แจ้ง Inbound ทำใบโอนเข้า อย่าปรับยอด');
+  }
+
+  /** แผนของหน้า: แถวที่ออกจาก IQA ก่อนวันที่ของเข้า = แถวผิด (ตอนบันทึก plan ตรวจซ้ำ) · แก้แผนในที่ */
+  function iqaCheck(p, local, day) {
+    if (!p || !p.lines || !local || !day) return p;
+    var rows = [], legs = [];
+    p.lines.forEach(function (o) {
+      if (o.st !== 'ok') return;
+      (o.take || []).forEach(function (t) {
+        var r = [up(t.sku), up(t.long), up(t.lot), up(t.po), up(t.from), up(t.to), t.qty, t.type || 'เบิก'];
+        rows.push(r);
+        iqaLegs([r], function (k, q) { if (q < 0) legs.push([o, k]); });
+      });
+    });
+    if (!legs.length) return p;
+    var late = {};
+    iqaDated(local, rows, day).forEach(function (x) { late[x.key] = x; });
+    legs.forEach(function (l) {
+      var o = l[0], x = late[l[1]];
+      if (!x || o.st !== 'ok') return;
+      o.st = 'bad';
+      o.why = iqaDateText(x, day);
+      p.total.bad = (p.total.bad || 0) + 1;
+      if (p.total.ok) p.total.ok--;
+    });
+    return p;
+  }
+
   /** ยอดต่อกองคิดใหม่จากเอกสารทุกชุดในสำเนา (ตามลำดับ seq) · rows = แถวที่ใช้คิด */
   function pilesFromDocs(local) {
     var map = {}, n = 0;
@@ -888,6 +1305,8 @@
    * → { error, … } หรือ { writes: [[path, data]], doc (รูปในเครื่อง), meta, reply }
    */
   function plan(P, ctx) {
+    var lock = openLock(P.op, ctx.meta);
+    if (lock) return lock;
     var now = ctx.now, meta = ctx.meta || { v: V, seq: 0, month: '', next: 1, last: '', rows: 0, open: null, mv: 0 };
     var local = ctx.local || { docs: [], meta: meta, piles: {} };
     var vd = voids(local);
@@ -898,7 +1317,7 @@
     var no = 'T' + month + '-' + pad4(nextNo);
     var st = stamp(now);
     var at = (+meta.rows || 0) + 2;   // เลขแถวแรกแบบแท็บ Transaction (แถว 1 = หัวตาราง)
-    var rows, qty, names = {}, ref = P.ref || '', link = '', why = '', lines = [], reply, open = meta.open || null, rowAt = at, map, chk;
+    var rows, qty, names = {}, ref = P.ref || '', link = '', why = '', lines = [], reply, open = meta.open || null, rowAt = at, map, chk, xf = '', held;
 
     if (P.op === 'bk-void') {
       var d = (local.docs || []).filter(function (x) { return x.no === P.voidNo; })[0];
@@ -911,6 +1330,16 @@
       rows = d.rows.slice().reverse().map(function (r) { return revRow(r, d.no, map); });
       chk = strictCheck(map, rows, at);
       if (chk) return { error: 'ยกเลิก ' + d.no + ' ไม่ได้ ของที่ชุดนี้รับหรือย้ายเข้าถูกใช้ไปแล้ว ' + chk.short.length + ' แถว ให้หัวหน้าปรับยอดแทน', short: chk.short };
+      /* ยอดวันนี้พอ แต่ยกเลิกแล้วใบออกจาก IQA จะกลายเป็นออกก่อนของเข้า */
+      var used = iqaDated(local, d.rows, d.date, d)[0];
+      if (used) {
+        return { error: 'ยกเลิก ' + d.no + ' ไม่ได้ ใบออกจาก IQA' + (used.doc ? ' ' + used.doc : '') + ' วันที่ ' + dayText(used.day) + ' ใช้ของชุดนี้ (LOT ' + used.lot + ' ' + used.po + ') ยกเลิกใบออกก่อน' };
+      }
+      /* ยกเลิกแล้วกองเหลือไม่พอกับชิ้นที่พักรอรับของใบอื่น = ของชุดนี้ถูกใช้ไปแล้ว (ใบที่ยกเลิกเองไม่นับเป็นของพัก) */
+      held = holdShort(local, map, rows, false, d.no);
+      if (held.length) {
+        return { error: 'ยกเลิก ' + d.no + ' ไม่ได้ ที่ ' + held[0].loc + ' ของชุดนี้ถูกใช้ไปแล้ว ที่เหลือ ' + holdWho(held[0].docs), short: held.slice(0, 50) };
+      }
       qty = round3(rows.reduce(function (a, r) { return a + Math.abs(r[6]); }, 0));
       names = d.names;
       ref = 'ยกเลิก ' + d.no + ' · ' + P.why;
@@ -920,6 +1349,9 @@
     } else if (P.op === 'bk-open') {
       var prev = (local.docs || []).filter(function (x) { return x.type === TYPE_OPEN && !vd[x.no]; });
       var others = liveDocs(local).filter(function (x) { return x.type !== TYPE_OPEN; });
+      if (others.length && !open) {
+        return { error: 'มีเอกสารที่ลงก่อนยอดยกมา ' + others.length + ' ชุด (' + others.slice(-5).map(function (x) { return x.no; }).join(', ') + ') จึงลงยอดยกมาไม่ได้ ต้องล้าง docs กับ meta ในฐานก่อน (คู่มือข้อ 1.8 อย่าลบ master)' };
+      }
       if (others.length) {
         return { error: 'มีเอกสารอื่นหลังยอดยกมาแล้ว ' + others.length + ' ชุด (' + others.slice(-5).map(function (x) { return x.no; }).join(', ') + ') ลงยอดยกมาใหม่ไม่ได้ ให้ปรับยอดแทน' };
       }
@@ -968,6 +1400,23 @@
       }
       chk = strictCheck(map, rows, at);
       if (chk) return chk;
+      var late = iqaDated(local, rows, P.day);
+      if (late.length) return { error: iqaDateText(late[0], P.day) + (late.length > 1 ? ' (รวม ' + late.length + ' กอง)' : ''), short: late.slice(0, 50) };
+      if (P.type === TYPE_MOVE) {
+        var mx = moveXfer(rows, ctx.user);
+        if (mx.error) return mx;
+        xf = mx.xf;
+      } else if (P.type === TYPE_ROWS && Object.keys(gridXfer(rows)).length) return { error: GRID_XFER };
+      held = holdShort(local, map, rows, !!xf);
+      if (held.length) {
+        var h0 = held[0];
+        return {
+          error: 'ของรอรับยังใช้ต่อไม่ได้ ที่ ' + h0.loc + ' (LOT ' + h0.lot + ' ' + h0.po + ') ใช้ได้ ' + h0.have + ' ชิ้น · ' + holdWho(h0.docs) +
+            (held.length > 1 ? ' (รวม ' + held.length + ' กอง)' : '') +
+            (P.op === 'bk-adj' ? ' · อย่าปรับยอด ของไม่มาจริงให้กด ไม่รับ แล้วหัวหน้ายกเลิกใบโอน' : ''),
+          short: held.slice(0, 50),
+        };
+      }
       if (P.lines) lines = P.lines;
       reply = P.op === 'bk-cut' || P.op === 'bk-return'
         ? { doc: no, at: st, lines: lines.length, rows: rows.length, qty: qty, book: 1, txAt: at }
@@ -986,6 +1435,7 @@
       at: TIME, stamp: st, ref: ref, link: link, why: why, qty: qty, tr: tr, trState: trState,
       rows: enc(rows), names: encMap(names), orders: lines.length ? linesOut(lines) : '', part: 1,
     };
+    if (xf) docData.xf = xf;
     var parts = splitDoc(P.batch, docData, ctx.partBytes || PART_BYTES);
     if (parts.rest.length + 1 > PARTS_MAX) {
       return { error: 'ชุดนี้ใหญ่เกินที่บันทึกได้ในครั้งเดียว (' + (parts.rest.length + 1) + ' ส่วน เกิน ' + PARTS_MAX + ') แบ่งเป็นหลายชุด' };
@@ -996,8 +1446,10 @@
 
     var doc = docIn(P.batch, docData, []);
     if (parts.rest.length) doc.cut = cutOf(parts.main, parts.rest.map(function (x) { return x.data; }));
-    doc.rows = rows.map(function (r) { return [r[0], r[1], r[2], r[3], r[4], r[5], +r[6] || 0, r[7], r[8], r[9], r[10] || '']; });
-    doc.names = names;
+    doc.rows = rows.map(function (r) {
+      return [str(r[0]), str(r[1]), str(r[2]), str(r[3]), str(r[4]), str(r[5]), fin(r[6]), str(r[7]), str(r[8]), str(r[9]), str(r[10])];
+    });
+    doc.names = decMap(docData.names);
     doc.lines = lines.map(function (l) { return { sys: l.sys, order: l.order, sku: l.sku, qty: l.qty, ref: l.ref, track: l.track, piles: l.piles, cut: l.cut || '' }; });
     reply.app = 'book';
     reply.v = API_V;
@@ -1009,7 +1461,7 @@
    * เบิกโลเดียว = รับกลับเข้าโลเดิม · รับ = เบิกออกจากโลที่รับ · แถวรับกลับใช้ Status ของกองนั้นตอนนี้
    */
   function revRow(r, no, bal) {
-    var note = 'ยกเลิก ' + no + (r[8] ? ' · ' + r[8] : '');
+    var note = ('ยกเลิก ' + no + (r[8] ? ' · ' + r[8] : '')).slice(0, CELL_MAX);
     function st(loc) { var p = bal[pileKey(loc, r[1] || r[0], r[2], r[3])]; return p && p.status === 'เปิด' ? 'เปิด' : ''; }
     if (r[7] === 'ขาย') return [r[0], r[1], r[2], r[3], r[4], '', -r[6], 'ขาย', r[8], r[9], ''];
     if (r[7] === 'เบิก' && r[5]) return [r[0], r[1], r[2], r[3], r[5], r[4], r[6], 'เบิก', note, st(r[4]), ''];
@@ -1078,7 +1530,7 @@
     return y + '-' + pad2(+m) + '-' + pad2(+d);
   }
   function plainDate(v) {
-    var s = text(v).replace(/\s+\d{1,2}:\d{2}.*$/, '');
+    var s = text(v).replace(/(\S)\s+\d{1,2}:\d{2}.*$/, '$1');
     var m = /^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/.exec(s);
     if (m) return ymdTx(m[1], m[2], m[3]);
     m = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2}|\d{4})$/.exec(s);
@@ -1165,7 +1617,7 @@
       out.convert = conv;
     }
     if (master.sup) out.sup = { tab: master.sup.tab || 'PO. Truck', rows: masterRows(master.sup).map(function (r) { return [up(r[0]), text(r[1])]; }), dup: master.sup.dup || [], missing: '' };
-    if (master.cap) out.cap = { tab: master.cap.tab || 'ความจุต่อพาเลท', rows: masterRows(master.cap).map(function (r) { return [up(r[0]), up(r[1]), +r[2] || 0]; }), blank: +master.cap.blank || 0, missing: '' };
+    if (master.cap && (master.cap.rows || !master.cap.rk)) out.cap = { tab: master.cap.tab || 'ความจุต่อพาเลท', rows: masterRows(master.cap).map(function (r) { return [up(r[0]), up(r[1]), +r[2] || 0]; }), blank: +master.cap.blank || 0, missing: '' };
     return out;
   }
 
@@ -1285,15 +1737,20 @@
     TYPE_MOVE: TYPE_MOVE, TYPE_GR: TYPE_GR, TYPE_CONV: TYPE_CONV, TYPE_ADJ: TYPE_ADJ, TYPE_ROWS: TYPE_ROWS,
     TR_WAIT: TR_WAIT, TR_DONE: TR_DONE, TR_NONE: TR_NONE, TR_STATES: TR_STATES, WH_MAIN: WH_MAIN, WH_QA: WH_QA,
     OK_TYPES: OK_TYPES, OK_KEYS: OK_KEYS, OK_MAX: OK_MAX, OK_CHECK: OK_CHECK, OK_APPROVE: OK_APPROVE, OK_DONE: OK_DONE, OK_ACTS: OK_ACTS,
-    okState: okState, okSet: okSet, okIn: okIn,
-    whOf: whOf, whLines: whLines, trNeed: trNeed, docOut: docOut, round3: round3, code: code, dayNo: dayNo, grDay: grDay,
+    OK_REJECT: OK_REJECT, WHY_MAX: WHY_MAX, XF_IN: XF_IN, XF_OUT: XF_OUT, XF_QA: XF_QA, XF_KINDS: XF_KINDS, XF_TH: XF_TH,
+    TEAM_QA: TEAM_QA, TEAMS: TEAMS, TEAM_TH: TEAM_TH, GRID_XFER: GRID_XFER,
+    DOC_KEYS: DOC_KEYS, PART_KEYS: PART_KEYS, META_KEYS: META_KEYS, TR_LOG_MAX: TR_LOG_MAX, BACK_DAYS: BACK_DAYS, dayOk: dayOk,
+    okState: okState, okSet: okSet, okIn: okIn, trLogIn: trLogIn, trLogNext: trLogNext, trLogFull: trLogFull,
+    xferRow: xferRow, xfKind: xfKind, makeWhy: makeWhy, takeWhy: takeWhy, apFirst: apFirst, holds: holds, holdList: holdList, xferCheck: xferCheck,
+    whOf: whOf, iqaLoc: iqaLoc, iqaCheck: iqaCheck, whLines: whLines, trNeed: trNeed, docOut: docOut, round3: round3, code: code, dayNo: dayNo, grDay: grDay,
     text: text, up: up, today: today, stamp: stamp, yymm: yymm, monthsOk: monthsOk, MONTH_TOL: MONTH_TOL, period: period, prevYm: prevYm, monthsBack: monthsBack,
     byteLen: byteLen, enc: enc, dec: dec, encMap: encMap, decMap: decMap, rowsIn: rowsIn, linesOut: linesOut,
     pileKey: pileKey, applyRows: applyRows, applyDoc: applyDoc, pilesFor: pilesFor,
-    prep: prep, retMonths: retMonths, plan: plan, splitDoc: splitDoc, revRow: revRow,
+    prep: prep, retMonths: retMonths, plan: plan, openLock: openLock, splitDoc: splitDoc, revRow: revRow,
     docIn: docIn, voids: voids, liveDocs: liveDocs, cutKeys: cutKeys, returnedLocal: returnedLocal,
     seen: seen, find: find, recent: recent, stock: stock, state: state, rebuild: rebuild, pilesFromDocs: pilesFromDocs, fifo: fifo, allPiles: allPiles,
     ownDate: ownDate, plainDate: plainDate, sheetNum: sheetNum,
+    ID_RE: ID_RE, idOk: idOk, LINES_MAX: LINES_MAX, CELL_MAX: CELL_MAX, safeText: str, safeNum: fin, safeTime: timeIn, partsOf: partsOf,
     OPEN_SHEET: OPEN_SHEET, OPEN_MAX: OPEN_MAX, openingFromSheet: openingFromSheet, pacificDay: pacificDay, pacificReset: pacificReset, plain: plain,
   };
 })();

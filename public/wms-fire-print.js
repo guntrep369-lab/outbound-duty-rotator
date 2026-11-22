@@ -6,7 +6,7 @@
  *   can(v)         เอกสารนี้มีใบพิมพ์ไหม (ย้าย กับ แปลง ที่ไม่ใช่ใบกลับรายการ)
  *
  * หัวใบ ตาราง ช่องเซ็น ใช้หน้าตาเดียวกับ public/warehouse-forms (ใบโอนสินค้า ใบขอแปลงรหัสสินค้า)
- * ช่องเซ็น 3 ช่องตามขั้นในระบบ: ผู้จัดทำ · ผู้ตรวจสอบ · ผู้อนุมัติ ชื่อ + เวลาขึ้นเองเมื่อทำในระบบแล้ว ยังมีเส้นให้เซ็นมือ
+ * ช่องเซ็น 3 ช่องตามขั้นในระบบ: ผู้จัดทำ · ผู้ตรวจสอบ (ใบโอน QA = ผู้รับ) · ผู้อนุมัติ ชื่อ + เวลาขึ้นเองเมื่อทำในระบบแล้ว ยังมีเส้นให้เซ็นมือ
  * ไม่ใช้ไฟล์ภายนอก (สไตล์อยู่ในหน้า) โลโก้ส่งมาเป็น data URL จากหน้าตั้งค่า
  * เปิดเป็น window.WmsFirePrint
  */
@@ -120,7 +120,7 @@
   function sign(v) {
     var boxes = [
       ['ผู้จัดทำ', { name: v.name, at: v.stamp }],
-      ['ผู้ตรวจสอบ', v.ck ? { name: v.ck.name, at: v.ck.at } : null],
+      [v.xf ? 'ผู้รับ' : 'ผู้ตรวจสอบ', v.ck ? { name: v.ck.name, at: v.ck.at } : null],
       ['ผู้อนุมัติ', v.ap ? { name: v.ap.name, at: v.ap.at } : null],
     ];
     return '<div class="sign">' + boxes.map(function (b) {
@@ -141,7 +141,8 @@
     var title = conv ? '<div class="en">Code Conversion</div><div class="th">( ใบขอแปลงรหัสสินค้า )</div>'
       : '<div class="en">Transfer Request Form</div><div class="th">( ใบโอนย้ายสินค้า )</div>';
     var ps = pages(v), total = items(v).reduce(function (a, it) { return a + it.qty; }, 0), start = 1;
-    var state = v.voided ? 'ยกเลิกแล้ว' : v.ok === 'done' ? 'อนุมัติแล้ว' : v.ok === 'approve' ? 'ตรวจแล้ว รออนุมัติ' : v.ok === 'check' ? 'รอตรวจ' : '';
+    var state = v.voided ? 'ยกเลิกแล้ว' : v.ok === 'done' ? 'อนุมัติแล้ว' : v.ok === 'approve' ? (v.xf ? 'รับแล้ว รออนุมัติ' : 'ตรวจแล้ว รออนุมัติ')
+      : v.ok === 'reject' ? 'ไม่รับ · ' + (v.rj ? v.rj.name + ' · ' + v.rj.why : '') : v.ok === 'check' ? (v.xf ? 'รอรับ' : 'รอตรวจ') : '';
     var body = ps.map(function (list, i) {
       var out = '<section class="pg">' +
         (v.voided ? '<div class="stamp">ยกเลิก</div>' : '') +

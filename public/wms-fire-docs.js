@@ -6,8 +6,9 @@
  *   search(list, q, now)      ค้นด้วย เลขที่ SKU โล LOT PO ออเดอร์ เลขอ้างอิง เลขพัสดุ เลข TRcloud ชื่อคนลง Note
  *                             กรองประเภท สถานะ ช่วงวัน · นับต่อประเภท / สถานะให้ชิปบนหน้า
  *   view(local, no)           เอกสารใบเดียว: หัว แถว ออเดอร์ ขั้นตอน ประวัติ ใบเดิม ↔ ใบกลับรายการ
- *   home(local, now, email)   งานวันนี้: ใบที่บันทึกวันนี้ต่อประเภท ของฉัน รอลง TRcloud รอตรวจ / อนุมัติ ใบล่าสุด
- *   okCan(v, user)            ปุ่มตรวจ / อนุมัติของคนนี้ บนเอกสารใบนี้ (ตรงกับ okSet ใน wms-fire-core.js)
+ *   home(local, now, user)    งานวันนี้: ใบที่บันทึกวันนี้ต่อประเภท ของฉัน รอลง TRcloud รอรับ / รอตรวจ / อนุมัติ ใบล่าสุด
+ *   okCan(v, user)            ปุ่มรับ / ไม่รับ / ตรวจ / อนุมัติของคนนี้ บนเอกสารใบนี้ (ตรงกับ okSet ใน wms-fire-core.js)
+ * ใบโอน QA (xf) ใช้ขั้นตรวจเป็น รับ: รอรับ → รับแล้ว → อนุมัติ → TRcloud
  * เปิดเป็น window.WmsFireDocs ต้องโหลด wms-fire-core.js กับ wms-fire-trc.js ก่อน
  */
 (function () {
@@ -17,7 +18,13 @@
   var LAST_MAX = 8;       // ใบล่าสุดบนหน้าวันนี้
   var RANGES = { today: 0, d7: 6, d30: 29 };
   var ST_TH = { wait: 'รอลง TRcloud', done: 'ลง TRcloud แล้ว', none: 'ไม่ต้องลง TRcloud' };
-  var OK_TH = { check: 'รอตรวจ', approve: 'รออนุมัติ', done: 'อนุมัติแล้ว' };
+  var OK_TH = { check: 'รอตรวจ', approve: 'รออนุมัติ', done: 'อนุมัติแล้ว', reject: 'ไม่รับ' };
+  var TAKE_HINT = {
+    in: 'ทีม QA หรือหัวหน้า นับของจริงแล้วกด รับ · ก่อนรับ โอนออกไม่ได้',
+    out: 'คลัง / Inbound หรือหัวหน้า นับของจริงแล้วกด รับ · ก่อนรับ ขายหรือย้ายต่อไม่ได้',
+    qa: 'ทีม QA อีกคนหรือหัวหน้า นับของจริงแล้วกด รับ · ก่อนรับ ใช้ต่อไม่ได้',
+  };
+  function okTh(ok, xf) { return ok === 'check' && xf ? 'รอรับ' : OK_TH[ok] || ''; }
   /* สิ่งที่ต้องทำใน TRcloud ต่อประเภท (ใบกลับรายการดูจากใบเดิม) */
   var NEED = {
     'รับของ': 'สร้าง GR ใน TRcloud แล้วใส่เลข', 'แปลง': 'สร้าง MR + GR ใน TRcloud แล้วใส่เลข', 'คืน': 'สร้างรับคืนใน TRcloud แล้วใส่เลข',
@@ -37,8 +44,28 @@
   /** เวลาเซิร์ฟเวอร์ (ms) → 'yyyy-mm-dd HH:MM:SS' เวลาไทย แบบช่อง stamp · 0 = '' */
   function stampOf(ms) { return typeof ms === 'number' && ms > 0 ? C().stamp(ms) : ''; }
 
+  var AUDIT_OLD = 5 * 3600000;   // ตัวตรวจรันทุกราว 2 ชม. เงียบเกินนี้ = หยุด
+  /**
+   * การ์ดผลตรวจแถวของหัวหน้า (audit/last จาก fire-backup.gs) → { tone, title, sub, n? } | null
+   * o = { audit, error, open มียอดยกมาแล้ว, now, practice ฐานทดลอง / ซ้อม ไม่มีสคริปต์ จึงไม่เตือนให้ติดตั้ง }
+   */
+  function auditCard(o) {
+    var a = o.audit, at = a ? +a.at || 0 : 0, old = !!a && o.now - at > AUDIT_OLD;
+    var st = stampOf(at), when = st ? st.slice(8, 10) + '/' + st.slice(5, 7) + ' ' + st.slice(11, 16) : '';
+    if (a && +a.n > 0) {
+      return { tone: 'bad', n: +a.n, title: 'พบเอกสารผิดกติกา',
+        sub: 'เช็คของจริง แล้วยกเลิกใบหรือปรับยอด · ตรวจเมื่อ ' + when + (old ? ' (ตัวตรวจหยุดหลังจากนั้น)' : '') };
+    }
+    if (!o.open || o.practice) return null;
+    if (o.error) return { tone: 'warn', title: 'อ่านผลตรวจเสกยอดไม่ได้', sub: 'เช็คเน็ต และ Firestore Rules ชุดล่าสุด (คู่มือข้อ 1.3)' };
+    if (!a) return { tone: 'warn', title: 'ยังไม่ตั้งตัวตรวจเสกยอด', sub: 'เจ้าของสคริปต์เรียกใช้ installAudit ใน fire-backup.gs (คู่มือข้อ 1.10)' };
+    if (old) return { tone: 'warn', title: 'ตัวตรวจเสกยอดหยุด', sub: 'ตรวจล่าสุด ' + when + ' · เช็คบันทึกการดำเนินการของ fire-backup.gs' };
+    if (a.more) return { tone: 'info', title: 'ตัวตรวจเสกยอดยังตรวจไม่ครบ', sub: 'ตรวจต่อเองรอบถัดไป (ทุกราว 2 ชั่วโมง)' };
+    return null;
+  }
+
   /** สรุปหนึ่งใบสำหรับตาราง (ไม่มีข้อความค้น) */
-  function brief(d, vd, st) {
+  function brief(d, vd, st, by) {
     var v = vd[d.no] || null;
     return {
       no: d.no, id: d.id, seq: d.seq, type: d.type, date: d.date, stamp: d.stamp, name: d.name, by: d.by,
@@ -46,6 +73,7 @@
       voided: v ? { by: v.voidBy, at: v.voidAt, why: v.why, link: v.link } : null,
       link: d.type === C().TYPE_REV ? d.link : '',
       ok: C().okState(d, vd), ck: d.ckName || '', ap: d.apName || '',
+      xf: C().xfKind(d), rj: d.rjName || '', rjWhy: d.rjWhy || '', lock: T().trLocked(d, by),
     };
   }
 
@@ -53,7 +81,10 @@
   function words(d) {
     var seen = {}, out = [];
     function add(v) { var s = lc(v).trim(); if (s && !seen[s]) { seen[s] = 1; out.push(s); } }
-    [d.no, d.type, d.name, d.by, d.tr, d.date, d.ref, d.link, d.why, d.ckName, d.apName].forEach(add);
+    [d.no, d.type, d.name, d.by, d.tr, d.date, d.ref, d.link, d.why, d.ckName, d.apName, d.rjName, d.rjWhy].forEach(add);
+    (d.trLog || []).forEach(function (e) { add(e.tr); });
+    var xf = C().xfKind(d);
+    if (xf) add(C().XF_TH[xf]);
     d.rows.forEach(function (r) { add(r[0]); add(r[1]); add(r[2]); add(r[3]); add(r[4]); add(r[5]); add(r[8]); add(r[10]); });
     (d.lines || []).forEach(function (l) { add(l.order); add(l.ref); add(l.track); add(l.sku); });
     Object.keys(d.names || {}).forEach(function (k) { add(d.names[k]); });
@@ -62,9 +93,9 @@
 
   /** ทุกเอกสาร ใหม่สุดก่อน [{...brief, text}] */
   function index(local) {
-    var vd = C().voids(local), st = T().trStates(local);
+    var vd = C().voids(local), st = T().trStates(local), by = byNo(local);
     return (local.docs || []).slice().sort(function (a, b) { return b.seq - a.seq; }).map(function (d) {
-      var x = brief(d, vd, st);
+      var x = brief(d, vd, st, by);
       x.text = words(d);
       return x;
     });
@@ -79,11 +110,13 @@
     return [from.getUTCFullYear() + '-' + String(from.getUTCMonth() + 1).padStart(2, '0') + '-' + String(from.getUTCDate()).padStart(2, '0'), day];
   }
 
-  /** ตรงสถานะไหม: wait รอลง TRcloud · check รอตรวจ · approve รออนุมัติ · void ยกเลิกแล้ว · mine ของฉัน */
+  /** ตรงสถานะไหม: wait รอลง TRcloud (ใส่เลขได้แล้ว) · recv รอรับ · check รอตรวจ · approve รออนุมัติ · reject ไม่รับ · void ยกเลิกแล้ว · mine ของฉัน */
   function stOk(x, status, email) {
     if (!status) return true;
-    if (status === 'wait') return x.state === 'wait';
-    if (status === 'check' || status === 'approve') return x.ok === status;
+    if (status === 'wait') return x.state === 'wait' && !x.lock;
+    if (status === 'recv') return x.ok === 'check' && !!x.xf;
+    if (status === 'check') return x.ok === 'check' && !x.xf;
+    if (status === 'approve' || status === 'reject') return x.ok === status;
     if (status === 'void') return !!x.voided;
     if (status === 'mine') return !!email && x.by === email;
     return true;
@@ -92,7 +125,7 @@
   /**
    * ค้นเอกสาร q = { text, type, status, range, email, max }
    * ทุกคำในช่องค้นต้องเจอ (ค้นทีละหลายคำได้ เช่น SKU กับโล) · ช่วงวันดูวันที่ของเอกสาร
-   * → { list, total, types: {ประเภท: n}, states: {wait, check, approve, void, mine}, from, to }
+   * → { list, total, types: {ประเภท: n}, states: {wait, recv, check, approve, reject, void, mine}, from, to }
    */
   function search(list, q, now) {
     q = q || {};
@@ -103,13 +136,14 @@
       for (var i = 0; i < ws.length; i++) if (x.text.indexOf(ws[i]) < 0) return false;
       return true;
     });
-    var types = {}, states = { wait: 0, check: 0, approve: 0, void: 0, mine: 0 };
+    var types = {}, states = { wait: 0, recv: 0, check: 0, approve: 0, reject: 0, void: 0, mine: 0 };
     base.forEach(function (x) {
       if (stOk(x, q.status, q.email)) types[x.type] = (types[x.type] || 0) + 1;
       if (!q.type || x.type === q.type) {
-        if (x.state === 'wait') states.wait++;
-        if (x.ok === 'check') states.check++;
+        if (x.state === 'wait' && !x.lock) states.wait++;
+        if (x.ok === 'check') { if (x.xf) states.recv++; else states.check++; }
         if (x.ok === 'approve') states.approve++;
+        if (x.ok === 'reject') states.reject++;
         if (x.voided) states.void++;
         if (q.email && x.by === q.email) states.mine++;
       }
@@ -120,13 +154,14 @@
 
   /**
    * เอกสารใบเดียว (null = ไม่มีในเครื่องนี้)
-   * steps: บันทึก → ตรวจ → อนุมัติ (ใบย้าย / แปลง) → TRcloud → ยกเลิก (ถ้ามี) · state = done | now | wait | skip | void
+   * steps: บันทึก → รับ หรือ ตรวจ → อนุมัติ (ใบย้าย / แปลง) → TRcloud → ยกเลิก (ถ้ามี) · state = done | now | wait | skip | void
    * history: ใหม่สุดท้าย [{at, who, what, link}]
    */
   function view(local, no) {
     var c = C(), by = byNo(local), d = by[no];
     if (!d) return null;
-    var vd = c.voids(local), st = T().trStates(local), x = brief(d, vd, st);
+    var vd = c.voids(local), st = T().trStates(local), x = brief(d, vd, st, by), xf = x.xf;
+    var first = x.ok === c.OK_CHECK || x.ok === c.OK_APPROVE ? c.apFirst(local, d, vd) : '';
     var rev = d.type === c.TYPE_REV, open = d.type === c.TYPE_OPEN;
     var orig = rev && by[d.link] ? by[d.link] : null;
     var back = x.voided && x.voided.link && by[x.voided.link] ? by[x.voided.link] : null;
@@ -136,16 +171,18 @@
     var steps = [{ k: 'save', label: open ? 'ลงยอดยกมา' : rev ? 'ลงกลับ' : 'บันทึก', state: 'done', at: d.stamp, who: d.name }];
     var okNeed = c.OK_TYPES.indexOf(d.type) >= 0, ckAt = stampOf(d.ckAt), apAt = stampOf(d.apAt);
     if (okNeed) {
-      steps.push(d.ck ? { k: 'check', label: 'ตรวจแล้ว', state: 'done', at: ckAt, who: d.ckName }
-        : x.ok ? { k: 'check', label: 'รอตรวจ', state: 'now', hint: 'คนอื่นที่ไม่ใช่คนทำ เช็คของจริงแล้วกด ตรวจแล้ว' }
-        : { k: 'check', label: 'ไม่ได้ตรวจ', state: 'skip' });
+      steps.push(d.ck ? { k: 'check', label: xf ? 'รับแล้ว' : 'ตรวจแล้ว', state: 'done', at: ckAt, who: d.ckName }
+        : d.rj ? { k: 'check', label: 'ไม่รับ', state: 'void', at: stampOf(d.okAt), who: d.rjName, why: d.rjWhy, hint: x.ok ? 'ของยังล็อก ให้หัวหน้ายกเลิกใบ แล้วทำใบใหม่' : '' }
+        : x.ok ? { k: 'check', label: okTh(c.OK_CHECK, xf), state: 'now', hint: xf ? TAKE_HINT[xf] : 'คนอื่นที่ไม่ใช่คนทำ เช็คของจริงแล้วกด ตรวจแล้ว' }
+        : { k: 'check', label: xf ? 'ไม่ได้รับ' : 'ไม่ได้ตรวจ', state: 'skip' });
       steps.push(d.ap ? { k: 'approve', label: 'อนุมัติแล้ว', state: 'done', at: apAt, who: d.apName }
-        : x.ok === c.OK_APPROVE ? { k: 'approve', label: 'รออนุมัติ', state: 'now', hint: 'หัวหน้ากด อนุมัติ' }
-        : x.ok ? { k: 'approve', label: 'รออนุมัติ', state: 'wait' }
+        : x.ok === c.OK_APPROVE ? { k: 'approve', label: 'รออนุมัติ', state: 'now', hint: first ? 'อนุมัติใบเข้า ' + first + ' ก่อน' : 'หัวหน้ากด อนุมัติ' }
+        : x.ok && !d.rj ? { k: 'approve', label: 'รออนุมัติ', state: 'wait' }
         : { k: 'approve', label: 'ไม่ได้อนุมัติ', state: 'skip' });
     }
     if (!open && d.type !== c.TYPE_SALE) {
-      steps.push(x.state === 'wait' ? { k: 'tr', label: 'รอลง TRcloud', state: 'now', hint: NEED[baseType] || 'ลงใน TRcloud แล้วใส่เลข' }
+      steps.push(x.state === 'wait' && x.lock ? { k: 'tr', label: 'ลง TRcloud หลังอนุมัติ', state: 'wait' }
+        : x.state === 'wait' ? { k: 'tr', label: 'รอลง TRcloud', state: 'now', hint: NEED[baseType] || 'ลงใน TRcloud แล้วใส่เลข' }
         : x.state === 'done' ? { k: 'tr', label: 'ลง TRcloud แล้ว', state: 'done', at: trAt, who: d.trBy, tr: d.tr }
         : { k: 'tr', label: 'ไม่ต้องลง TRcloud', state: 'skip', at: trAt, who: d.trBy });
     }
@@ -154,11 +191,15 @@
     /* link = เลขที่ที่เกี่ยวข้อง (หน้าแอปทำเป็นปุ่ม ต่อท้ายด้วย linkTh) */
     var history = [{ at: d.stamp, who: d.name, what: (rev ? 'ลงกลับรายการ' + (d.why ? ' · ' + d.why : '') : 'บันทึก' + d.type) +
       ' · ' + d.rows.length + ' แถว ' + c.round3(d.qty) + ' ชิ้น', link: rev ? d.link : '', linkTh: rev ? 'ของ' : '' }];
-    if (d.ck) history.push({ at: ckAt, who: d.ckName || d.ck, what: 'ตรวจแล้ว', link: '', linkTh: '' });
+    if (d.ck) history.push({ at: ckAt, who: d.ckName || d.ck, what: xf ? 'รับแล้ว' : 'ตรวจแล้ว', link: '', linkTh: '' });
+    if (d.rj) history.push({ at: stampOf(d.okAt), who: d.rjName || d.rj, what: 'ไม่รับ · ' + (d.rjWhy || ''), link: '', linkTh: '' });
     if (d.ap) history.push({ at: apAt, who: d.apName || d.ap, what: 'อนุมัติ', link: '', linkTh: '' });
-    if (d.trBy) {
-      history.push({ at: trAt, who: d.trBy, what: d.trState === c.TR_DONE ? 'ใส่เลข TRcloud ' + d.tr : d.trState === c.TR_NONE ? 'ตั้งว่าไม่ต้องลง TRcloud' : 'ตั้งกลับเป็นรอลง TRcloud', link: '', linkTh: '' });
-    }
+    /* ทุกครั้งที่ตั้งเลข: ค่าก่อนแก้จาก trLog แล้วตามด้วยค่าปัจจุบัน */
+    var trSay = function (at, who, state, tr) {
+      history.push({ at: at, who: who, what: state === c.TR_DONE ? 'ใส่เลข TRcloud ' + tr : state === c.TR_NONE ? 'ตั้งว่าไม่ต้องลง TRcloud' : 'ตั้งกลับเป็นรอลง TRcloud', link: '', linkTh: '' });
+    };
+    (d.trLog || []).forEach(function (e) { trSay(stampOf(e.at), e.by, e.state, e.tr); });
+    if (d.trBy) trSay(trAt, d.trBy, d.trState, d.tr);
     if (x.voided) {
       history.push({ at: x.voided.at, who: x.voided.by, what: 'ยกเลิก' + (x.voided.why ? ' · ' + x.voided.why : ''), link: x.voided.link, linkTh: x.voided.link ? 'ลงกลับเป็น' : '' });
     }
@@ -171,8 +212,9 @@
       orig: orig ? { no: orig.no, type: orig.type, date: orig.date, name: orig.name } : (rev ? { no: d.link, type: '', date: '', name: '', gone: true } : null),
       back: back ? { no: back.no, stamp: back.stamp, name: back.name } : null,
       canVoid: !open && !rev && !x.voided && !(local.meta && local.meta.open && d.seq < local.meta.open.seq),
-      need: x.state === 'wait' ? (NEED[baseType] || '') : '',
-      ok: x.ok, okTh: OK_TH[x.ok] || '',
+      need: x.state === 'wait' && !x.lock ? (NEED[baseType] || '') : '',
+      ok: x.ok, okTh: okTh(x.ok, xf), xf: xf, xfTh: xf ? c.XF_TH[xf] : '', first: first, lock: x.lock,
+      rj: d.rj ? { email: d.rj, name: d.rjName || d.rj, at: stampOf(d.okAt), why: d.rjWhy || '' } : null,
       ck: d.ck ? { email: d.ck, name: d.ckName || d.ck, at: ckAt } : null,
       ap: d.ap ? { email: d.ap, name: d.apName || d.ap, at: apAt } : null,
       steps: steps, history: history,
@@ -180,21 +222,34 @@
   }
 
   /**
-   * ปุ่มตรวจ / อนุมัติของ user ({email, role}) บนเอกสาร v (จาก view) → { check, approve, both, why }
-   * check = กด ตรวจแล้ว · approve = กด อนุมัติ (มีผู้ตรวจแล้ว) · both = หัวหน้าตรวจและอนุมัติในครั้งเดียว
+   * ปุ่มรับ / ไม่รับ / ตรวจ / อนุมัติของ user ({email, role, team}) บนเอกสาร v (จาก view) → { check, approve, both, reject, why }
+   * check = กด รับ (ใบโอน QA) หรือ ตรวจแล้ว · reject = กด ไม่รับ · approve = กด อนุมัติ · both = หัวหน้ารับ / ตรวจและอนุมัติในครั้งเดียว
    * why = ทำไมกดไม่ได้ (บอกบนหน้า)
    */
   function okCan(v, user) {
-    var out = { check: false, approve: false, both: false, why: '' };
+    var out = { check: false, approve: false, both: false, reject: false, why: '' };
     if (!v || !v.ok || v.ok === 'done') return out;
-    var role = user && user.role, email = user && user.email;
-    if (role !== 'head' && role !== 'staff') { out.why = 'บัญชีนี้ดูได้อย่างเดียว'; return out; }
+    var role = user && user.role, email = user && user.email, head = role === 'head';
+    if (!head && role !== 'staff') { out.why = 'บัญชีนี้ดูได้อย่างเดียว'; return out; }
+    var first = v.first ? 'อนุมัติได้หลังอนุมัติใบเข้า ' + v.first : '';
     if (v.ok === 'check') {
-      if (v.by === email) out.why = role === 'head' ? 'คนทำตรวจใบของตัวเองไม่ได้ ให้คนอื่นตรวจก่อน แล้วค่อยอนุมัติ' : 'คนทำตรวจใบของตัวเองไม่ได้ ให้คนอื่นตรวจ';
-      else { out.check = true; out.both = role === 'head'; }
+      var verb = v.xf ? 'รับ' : 'ตรวจ';
+      if (v.by === email) out.why = 'คนทำ' + verb + 'ใบของตัวเองไม่ได้ ให้คนอื่น' + verb + (head ? 'ก่อน แล้วค่อยอนุมัติ' : '');
+      else {
+        out.why = v.xf ? C().takeWhy(v.xf, user) : '';
+        if (!out.why) {
+          out.check = true;
+          out.reject = !!v.xf;
+          out.both = head && !first;
+          if (head && first) out.why = first;
+        }
+      }
     } else if (v.ok === 'approve') {
-      if (role === 'head') out.approve = true;
-      else out.why = 'รอหัวหน้าอนุมัติ';
+      if (!head) out.why = 'รอหัวหน้าอนุมัติ';
+      else if (first) out.why = first;
+      else out.approve = true;
+    } else if (v.ok === 'reject') {
+      out.why = head ? 'ผู้รับไม่รับ · กด ยกเลิกเอกสารนี้ แล้วให้คนทำลงใบใหม่' : 'ผู้รับไม่รับ · รอหัวหน้ายกเลิกใบ';
     }
     return out;
   }
@@ -202,22 +257,31 @@
   /**
    * งานวันนี้ของหน้าแรก (วันตามเวลาไทย ดูจากเวลาที่บันทึก)
    * types ไม่นับใบที่ยกเลิกแล้ว (นับแยกใน void) · total นับทุกใบที่บันทึกวันนี้ รวมใบกลับรายการ
-   * ok = ใบย้าย / แปลงที่ยังไม่อนุมัติ (ทุกวัน) { check, toCheck คนอื่นทำ (เราตรวจได้), approve, oldest, days }
+   * ok = ใบย้าย / แปลงที่ยังไม่จบ (ทุกวัน) { check, toCheck คนอื่นทำ (เราตรวจได้), approve, oldest, days (รอตรวจ / รออนุมัติ / รอรับ),
+   *      recv รอรับ, toRecv เรารับได้, recvDays ใบเก่าสุดที่เรารับได้ ค้างกี่วัน,
+   *      sent ใบโอนของเราที่ยังไม่มีคนรับ, sentDays, reject ไม่รับที่เราต้องตาม (หัวหน้า = ทุกใบ) }
    * → { day, total, mine, types: {ประเภท: {n, qty, void}}, wait: {n, oldest, days, file, number}, ok, last: [brief], open, trcDay, seq }
    */
-  function home(local, now, email) {
+  function home(local, now, user) {
+    var u = typeof user === 'string' ? { email: user } : user || {}, email = u.email || '';
     var c = C(), day = c.today(now), vd = c.voids(local), st = T().trStates(local), by = byNo(local);
     var types = {}, total = 0, mine = 0, today = [];
     var wait = { n: 0, oldest: '', days: 0, file: 0, number: 0 };
-    var ok = { check: 0, toCheck: 0, approve: 0, oldest: '', days: 0 };
+    var ok = { check: 0, toCheck: 0, approve: 0, oldest: '', days: 0, recv: 0, toRecv: 0, recvDays: 0, sent: 0, sentDays: 0, reject: 0 };
     (local.docs || []).forEach(function (d) {
       var os = c.okState(d, vd);
+      if (os === c.OK_REJECT && (u.role === 'head' || d.by === email)) ok.reject++;
       if (os === c.OK_CHECK || os === c.OK_APPROVE) {
-        if (os === c.OK_CHECK) { ok.check++; if (d.by !== email) ok.toCheck++; } else ok.approve++;
-        var od = (d.stamp || d.date || '').slice(0, 10);
+        var od = (d.stamp || d.date || '').slice(0, 10), age = od ? c.dayNo(day) - c.dayNo(od) : 0;
+        var xf = os === c.OK_CHECK ? c.xfKind(d) : '';
+        if (xf) {
+          ok.recv++;
+          if (d.by === email) { ok.sent++; ok.sentDays = Math.max(ok.sentDays, age); }
+          else if (!c.takeWhy(xf, u)) { ok.toRecv++; ok.recvDays = Math.max(ok.recvDays, age); }
+        } else if (os === c.OK_CHECK) { ok.check++; if (d.by !== email) ok.toCheck++; } else ok.approve++;
         if (od && (!ok.oldest || od < ok.oldest)) ok.oldest = od;
       }
-      if (st[d.no] === c.TR_WAIT) {
+      if (st[d.no] === c.TR_WAIT && !T().trLocked(d, by)) {   // ยังไม่อนุมัติ = งานของคนรับ / หัวหน้า ยังไม่ใช่งาน TRcloud
         wait.n++;
         var s = (d.stamp || d.date || '').slice(0, 10);
         if (s && (!wait.oldest || s < wait.oldest)) wait.oldest = s;
@@ -236,10 +300,10 @@
     today.sort(function (a, b) { return b.seq - a.seq; });
     return {
       day: day, total: total, mine: mine, types: types, wait: wait, ok: ok,
-      last: today.slice(0, LAST_MAX).map(function (d) { return brief(d, vd, st); }),
+      last: today.slice(0, LAST_MAX).map(function (d) { return brief(d, vd, st, by); }),
       open: !!(local.meta && local.meta.open), trcDay: (local.trc && local.trc.data && local.trc.data.day) || '', seq: local.seq || 0,
     };
   }
 
-  window.WmsFireDocs = { LIST_MAX: LIST_MAX, LAST_MAX: LAST_MAX, ST_TH: ST_TH, OK_TH: OK_TH, NEED: NEED, index: index, search: search, rangeOf: rangeOf, view: view, okCan: okCan, home: home };
+  window.WmsFireDocs = { LIST_MAX: LIST_MAX, LAST_MAX: LAST_MAX, ST_TH: ST_TH, OK_TH: OK_TH, NEED: NEED, index: index, search: search, rangeOf: rangeOf, view: view, okCan: okCan, home: home, auditCard: auditCard };
 })();

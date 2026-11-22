@@ -29,7 +29,7 @@
   var LAST_EVERY = 3600000;     // บันทึกเวลาเข้าล่าสุดไม่ถี่กว่าชั่วโมงละครั้ง
   var REPORT_EVERY = 3600000;   // ส่งยอดอ่าน/เขียนของเครื่องนี้ไปรวมที่ use/{วัน} ชั่วโมงละครั้ง
   var ARCH_GAP = 300;           // ตามหลังเกินนี้ (หรือเครื่องใหม่) ลองอ่านก้อนปิดเดือนแทนทีละเอกสาร
-  var ARCH_BATCH = 9;           // ก้อนต่อการเขียนหนึ่งครั้ง (ก้อนละไม่เกิน 900 KB · Rules อ่าน users ทีละเอกสาร เพดาน 20)
+  var ARCH_BATCH = 6;           // ก้อนต่อการเขียนหนึ่งครั้ง (ก้อนละไม่เกิน 900 KB · Rules อ่านก้อนละ 3 = users + exists + get index เพดาน 20)
 
   function clone(o) { return o === undefined || o === null ? o : JSON.parse(JSON.stringify(o)); }
   function diffKeys(a, b) {
@@ -38,12 +38,27 @@
     Object.keys(a).concat(Object.keys(b)).forEach(function (k) { if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) ks[k] = 1; });
     return Object.keys(ks);
   }
+  function has(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+  /** ที่อยู่ของส่วนแยกที่ยังไม่มี (หัวใบบอกกี่ส่วนก็อ่านไม่เกิน PARTS_MAX) */
+  function partPaths(id, part, have) {
+    var out = [], n = C.partsOf(part);
+    for (var i = 2; i <= n; i++) if (!have.some(function (p) { return p.i === i; })) out.push('docs/' + id + '~' + i);
+    return out;
+  }
+  function only(d, keys) { return Object.keys(d).every(function (k) { return keys.indexOf(k) >= 0; }); }
+  /** เท่ากันแบบ == ของ Rules (map ไม่สนลำดับช่อง) */
+  function same(a, b) {
+    if (a === b) return true;
+    if (!a || !b || typeof a !== 'object' || typeof b !== 'object' || Array.isArray(a) !== Array.isArray(b)) return false;
+    var ks = Object.keys(a);
+    return ks.length === Object.keys(b).length && ks.every(function (k) { return has(b, k) && same(a[k], b[k]); });
+  }
   function pad2(n) { return (+n < 10 ? '0' : '') + (+n); }
   function pad4(n) { var s = String(n); while (s.length < 4) s = '0' + s; return s; }
 
   /* ── สิทธิ์แบบ firestore.rules (store จำลองใช้ ตัวจริงเช็คที่ Rules) ─────── */
 
-  var TR_KEYS = ['tr', 'trState', 'trBy', 'trAt'];
+  var TR_KEYS = ['tr', 'trState', 'trBy', 'trAt', 'trLog'];
   /** เพดานการอ่านเอกสารประกอบของ Rules (get / getAfter / exists) ต่อคำขอ: เขียนเอกสารเดียว 10 · transaction หรือ batch 20 นับรวมทุกเอกสาร */
   var RULE_CALLS_ONE = 10;
   var RULE_CALLS_MANY = 20;
@@ -87,9 +102,11 @@
       }
       if (col === 'master' || col === 'trc') { if (!head) return 'เขียน ' + col + ' ได้เฉพาะหัวหน้า'; continue; }
       if (col === 'arch') {
-        /* ปิดเดือน: ก้อนสำเนาของเอกสาร หัวหน้าเขียน ชื่อต้องเป็น index ปปดด-n หรือ ov-n */
+        /* ปิดเดือน: หัวหน้าเขียน ก้อนของเดือนที่อยู่ใน index แล้วทับไม่ได้ · index ต่อท้ายครั้งละเดือน */
         if (!head) return 'ปิดเดือนได้เฉพาะหัวหน้า';
-        if (!/^(index|\d{4}-\d{1,3}|ov-\d{1,3})$/.test(id)) return 'ชื่อก้อนปิดเดือนไม่ถูก ' + id;
+        if (id !== 'index') calls += 2;   // exists + get(arch/index)
+        var archWhy = archRule(id, d, old, before['arch/index'], now);
+        if (archWhy) return archWhy;
         continue;
       }
       if (!staff) return 'บัญชีนี้ดูได้อย่างเดียว';
@@ -100,30 +117,42 @@
       }
       if (col === 'docs') {
         if (old) {
+          if (has(old, 'of')) return 'ส่วนแยกแก้ไม่ได้';
           var changed = Object.keys(d).concat(Object.keys(old)).filter(function (k) { return JSON.stringify(d[k]) !== JSON.stringify(old[k]); });
           if (changed.length && changed.every(function (k) { return C.OK_KEYS.indexOf(k) >= 0; })) {
-            var okWhy = okRule(d, old, changed, email, head);
+            var okWhy = okRule(d, old, changed, email, me, head);
             if (okWhy) return okWhy;
             continue;
           }
           if (changed.some(function (k) { return TR_KEYS.indexOf(k) < 0; }) || d.trBy !== email) return 'เอกสารแก้ได้เฉพาะเลข TRcloud';
           if (C.TR_STATES.indexOf(d.trState) < 0 || d.trAt !== C.TIME || typeof d.tr !== 'string' || d.tr.length > 100) return 'สถานะ TRcloud ไม่ถูก';
+          if (old.type === C.TYPE_MOVE && old.trState === C.TR_WAIT && !old.ap && (d.trState !== C.TR_WAIT || d.tr !== '')) return 'ใบย้ายยังไม่อนุมัติ ใส่เลข TRcloud ไม่ได้';
+          var logWhy = trLogRule(d, old);
+          if (logWhy) return logWhy;
           continue;
         }
         calls += 1;   // getAfter(meta/head)
         /* เอกสารหลัก: meta.last = เอกสารนี้ แปลว่า meta ถูกเขียนในคำขอเดียวกัน เพราะเอกสารเดิมสร้างซ้ำไม่ได้
            ส่วนแยก: meta.at = เวลาของคำขอนี้ (เวลาเซิร์ฟเวอร์) แปลว่า meta เพิ่ง seq +1 ในคำขอนี้ ไม่ใช่เติมส่วนให้เอกสารเก่า */
-        if (d.of) {
-          if (!ma || ma.at !== C.TIME || ma.last !== d.of || ma.seq !== d.seq || d.of + '~' + d.i !== id) return 'ส่วนแยกของเอกสารไม่ตรงกับเอกสารหลัก';
+        if (has(d, 'of')) {
+          if (!ma || ma.at !== C.TIME || typeof d.of !== 'string' || !Number.isInteger(d.i) || ma.last !== d.of || ma.seq !== d.seq || d.of + '~' + d.i !== id) return 'ส่วนแยกของเอกสารไม่ตรงกับเอกสารหลัก';
+          if (!only(d, C.PART_KEYS)) return 'ส่วนแยกมีช่องที่ใส่ไม่ได้';
+          if (d.i < 2 || d.i > C.PARTS_MAX || typeof d.rows !== 'string' || typeof d.orders !== 'string') return 'ส่วนแยกผิดรูป';
           continue;
         }
         if (!ma || ma.seq !== d.seq) return 'เอกสารใหม่ต้องมากับ meta ที่ seq เพิ่ม 1';
         if (ma.last !== id) return 'meta.last ไม่ใช่เอกสารนี้';
         if (d.by !== email) return 'by ต้องเป็นอีเมลคนที่ล็อกอิน';
         if (d.at !== C.TIME) return 'at ต้องเป็นเวลาเซิร์ฟเวอร์';
-        if (C.HEAD_TYPES.indexOf(d.type) >= 0 ? !head : C.STAFF_TYPES.indexOf(d.type) < 0) return 'ประเภท ' + d.type + ' ลงไม่ได้ด้วยสิทธิ์นี้';
+        if (C.HEAD_TYPES.indexOf(d.type) >= 0 ? !head : C.STAFF_TYPES.indexOf(d.type) < 0) return 'ประเภท ' + C.safeText(d.type) + ' ลงไม่ได้ด้วยสิทธิ์นี้';
         if (months.indexOf(ma.month) < 0) return 'เดือนของเลขเอกสารไม่ตรงกับเวลาเซิร์ฟเวอร์ (นาฬิกาเครื่องคลาดเกิน 10 นาที?)';
         if (d.no !== 'T' + ma.month + '-' + pad4(ma.next - 1)) return 'เลขเอกสารไม่ตรงกับเลขถัดไปใน meta';
+        if (d.type === C.TYPE_MOVE) {
+          var mvWhy = moveRule(d, me, head);
+          if (mvWhy) return mvWhy;
+        }
+        var newWhy = newRule(d, me, email, now) || idRule(id, d) || shapeRule(d);
+        if (newWhy) return newWhy;
         continue;
       }
       if (col === 'meta') {
@@ -144,6 +173,8 @@
             (d.trc || '') !== (mb ? mb.trc || '' : '')) {
             return 'บันทึกเอกสารต้องคง mv tv ov trc ของ meta เดิม';
           }
+          var bookWhy = bookRule(d, mb, last, head);
+          if (bookWhy) return bookWhy;
           continue;
         }
         var diff = diffKeys(d, mb);
@@ -168,18 +199,117 @@
     return '';
   }
 
-  /** ตรวจ / อนุมัติทีหลัง แบบ okUpdate ใน firestore.rules (คนเรียกเช็คแล้วว่าเป็นคนลงรายการได้) */
-  function okRule(d, old, changed, email, head) {
+  function nameOf(me, email) { return has(me, 'name') && me.name !== '' ? me.name : email; }
+
+  /** เอกสารใหม่ แบบ newOk ใน firestore.rules */
+  function newRule(d, me, email, now) {
+    if (!only(d, C.DOC_KEYS)) return 'เอกสารใหม่มีช่องที่ใส่ไม่ได้ (รับ อนุมัติ แก้เลขทีหลังเท่านั้น)';
+    if (d.name !== nameOf(me, email)) return 'ชื่อคนทำไม่ตรงรายชื่อ';
+    if (!C.dayOk(d.date, now)) return 'วันที่เอกสารต้องย้อนไม่เกิน ' + C.BACK_DAYS + ' วัน และไม่ล่วงหน้าเกิน 1 วัน';
+    return '';
+  }
+
+  /** รหัสชุด แบบ idOk ใน firestore.rules */
+  function idRule(id, d) {
+    var fine = d.type === C.TYPE_REV ? typeof d.link === 'string' && id === 'rev|' + d.link : C.idOk(id);
+    return fine ? '' : 'รหัสชุดใช้ไม่ได้';
+  }
+
+  /** ชนิดของช่องหัวใบ แบบ shapeOk ใน firestore.rules */
+  var TEXT_KEYS = ['stamp', 'ref', 'link', 'why', 'tr', 'rows', 'names', 'orders'];
+  function shapeRule(d) {
+    var fine = d.v === C.V && Number.isInteger(d.part) && d.part >= 1 && d.part <= C.PARTS_MAX && typeof d.qty === 'number' &&
+      TEXT_KEYS.every(function (k) { return typeof d[k] === 'string'; }) && (d.trState === '' || C.TR_STATES.indexOf(d.trState) >= 0) &&
+      (d.xf === undefined || typeof d.xf === 'string');
+    return fine ? '' : 'รูปเอกสารผิด (ชนิดช่อง หรือจำนวนส่วน)';
+  }
+
+  /** meta ของเอกสารใหม่ md แบบ bookOk ใน firestore.rules */
+  function bookRule(d, old, md, head) {
+    if (d.v !== C.V || !only(d, C.META_KEYS)) return 'รุ่นหรือช่องของ meta ไม่ถูก';
+    var opening = md.type === C.TYPE_OPEN;
+    var base = opening || !old ? 0 : has(old, 'rows') ? old.rows : 0;
+    if (!Number.isInteger(md.n) || md.n < 0 || md.n > C.OPEN_MAX || d.rows !== base + md.n) return 'แถวรวมใน meta ไม่ตรงกับเอกสารใหม่';
+    if (md.row !== base + 2) return 'แถวแรกของเอกสารไม่ต่อจากแถวรวม';
+    var was = old && old.open !== undefined ? old.open : null;
+    if (!opening) return same(d.open === undefined ? null : d.open, was) ? '' : 'ตัวชี้ยอดยกมาเปลี่ยนได้เฉพาะตอนหัวหน้าลงยอดยกมา';
+    if (!head || !same(d.open, { id: d.last, no: md.no, seq: d.seq })) return 'ตัวชี้ยอดยกมาต้องชี้เอกสารยอดยกมาใบนี้ของหัวหน้า';
+    if (was && old.seq !== was.seq) return 'ลงยอดยกมาใหม่ไม่ได้ มีเอกสารหลังยอดยกมาแล้ว';
+    return '';
+  }
+
+  /** ประวัติเลข TRcloud แบบ trLogOk + trWasOk ใน firestore.rules (เวลาใน store จำลองเป็นมิลลิวินาที) */
+  function trLogRule(d, old) {
+    var was = old.trLog === undefined ? [] : old.trLog, log = d.trLog === undefined ? [] : d.trLog;
+    var bad = 'ประวัติเลข TRcloud ต้องเป็นของเดิม + ค่าก่อนแก้ 1 รายการ';
+    if (!old.trBy && !old.tr) return same(log, was) ? '' : bad;
+    if (!Array.isArray(was) || !Array.isArray(log) || was.length >= C.TR_LOG_MAX || log.length !== was.length + 1 || !same(log.slice(0, was.length), was)) return bad;
+    var e = log[was.length], t = Math.floor(old.trBy ? old.trAt : old.at);
+    if (!e || typeof e !== 'object' || !only(e, ['tr', 'state', 'by', 'at'])) return bad;
+    if (e.tr !== (old.tr || '') || e.state !== (old.trState || '') || e.by !== (old.trBy || old.by)) return bad;
+    return typeof e.at === 'number' && Math.abs(e.at - t) <= 1 ? '' : bad;
+  }
+
+  /** ปิดเดือน แบบ archChunkOk archFirst archAdd ใน firestore.rules · idx = arch/index ก่อนเขียน */
+  function archRule(id, d, old, idx, now) {
+    var limit = C.yymm(now + C.MONTH_TOL);
+    if (id !== 'index') {
+      var at = /^(?:ov-)?(\d{4})-\d{1,3}$/.exec(id);
+      if (!at || d.m !== at[1]) return 'ชื่อก้อนปิดเดือนไม่ถูก ' + id;
+      if (d.m >= limit) return 'เดือนยังไม่จบ ปิดไม่ได้';
+      if (idx && d.m <= idx.months[idx.months.length - 1].m) return 'เดือนนี้ปิดแล้ว เขียนทับไม่ได้';
+      return '';
+    }
+    var bad = 'รายชื่อเดือนที่ปิดต่อท้ายได้ครั้งละเดือน ของเดิมแก้ไม่ได้';
+    var was = old ? old.months : [], list = d.months;
+    if (!only(d, ['v', 'months', 'ov']) || !Array.isArray(list) || list.length !== was.length + 1 || !same(list.slice(0, was.length), was)) return bad;
+    var add = list[was.length] || {};
+    if (typeof add.m !== 'string' || !/^\d{4}$/.test(add.m) || !d.ov || d.ov.m !== add.m || (was.length && add.m <= was[was.length - 1].m)) return bad;
+    return add.m >= limit ? 'เดือนยังไม่จบ ปิดไม่ได้' : '';
+  }
+
+  /** ใบย้ายใหม่ แบบ moveOk ใน firestore.rules: ใบโอน QA เริ่มที่ รอลง ไม่มีเลข · คนทำถูกทีม */
+  function moveRule(d, me, head) {
+    var x = d.xf || '', qa = me.team === C.TEAM_QA;
+    if (x === C.XF_IN || x === C.XF_OUT) {
+      if (d.trState !== C.TR_WAIT || d.tr !== '') return 'ใบโอน QA ต้องเริ่มที่รอลง TRcloud ไม่มีเลข';
+    } else if ((x && x !== C.XF_QA) || d.trState !== C.TR_NONE) return 'ใบย้ายข้ามคลังต้องเป็นใบโอน QA (xf)';
+    if (head || !x) return '';
+    return (x === C.XF_IN) !== qa ? '' : 'ทีมนี้ทำใบโอนแบบนี้ไม่ได้';
+  }
+
+  /** ทีมนี้รับ / ไม่รับใบนี้ได้ไหม แบบ takeOk ใน firestore.rules */
+  function takeRule(old, me, head) {
+    var x = old.xf || '';
+    if (head || !x) return true;
+    return (x !== C.XF_OUT) === (me.team === C.TEAM_QA);
+  }
+
+  /** ตรวจ / รับ / ไม่รับ / อนุมัติทีหลัง แบบ okUpdate ใน firestore.rules (คนเรียกเช็คแล้วว่าเป็นคนลงรายการได้) */
+  function okRule(d, old, changed, email, me, head) {
     var ck = ['ck', 'ckName', 'ckAt'].some(function (k) { return changed.indexOf(k) >= 0; });
     var ap = ['ap', 'apName', 'apAt'].some(function (k) { return changed.indexOf(k) >= 0; });
+    var rj = ['rj', 'rjName', 'rjWhy'].some(function (k) { return changed.indexOf(k) >= 0; });
     if (C.OK_TYPES.indexOf(old.type) < 0) return 'ตรวจ / อนุมัติได้เฉพาะใบย้ายกับแปลง';
-    if (!ck && !ap) return 'ไม่มีการตรวจหรืออนุมัติ';
+    if (!ck && !ap && !rj) return 'ไม่มีการตรวจหรืออนุมัติ';
     if (d.okAt !== C.TIME) return 'okAt ต้องเป็นเวลาเซิร์ฟเวอร์';
+    if (old.rj) return 'ใบนี้ผู้รับไม่รับแล้ว';
+    if (rj) {
+      if (ck || ap || old.ck) return 'ไม่รับได้ก่อนรับเท่านั้น';
+      if (old.type !== C.TYPE_MOVE || !old.xf) return 'ไม่รับได้เฉพาะใบโอน QA';
+      if (d.rj !== email) return 'ผู้ไม่รับต้องเป็นคนที่ล็อกอิน';
+      if (d.rj === old.by) return 'คนทำไม่รับใบของตัวเองไม่ได้';
+      if (typeof d.rjName !== 'string' || d.rjName.length > 60 || typeof d.rjWhy !== 'string' || !d.rjWhy || d.rjWhy.length > C.WHY_MAX) return 'ช่องไม่รับไม่ถูก';
+      if (!takeRule(old, me, head)) return 'ทีมนี้รับใบโอนแบบนี้ไม่ได้';
+      if (d.rjName !== nameOf(me, email)) return 'ชื่อผู้ไม่รับไม่ตรงรายชื่อ';
+    }
     if (ck) {
       if (old.ck) return 'ใบนี้ตรวจแล้ว';
       if (d.ck !== email) return 'ผู้ตรวจต้องเป็นคนที่ล็อกอิน';
       if (d.ck === old.by) return 'คนทำตรวจใบของตัวเองไม่ได้';
       if (d.ckAt !== C.TIME || typeof d.ckName !== 'string' || d.ckName.length > 60) return 'ช่องผู้ตรวจไม่ถูก';
+      if (!takeRule(old, me, head)) return 'ทีมนี้รับใบโอนแบบนี้ไม่ได้';
+      if (d.ckName !== nameOf(me, email)) return 'ชื่อผู้ตรวจไม่ตรงรายชื่อ';
     }
     if (ap) {
       if (!head) return 'อนุมัติได้เฉพาะหัวหน้า';
@@ -187,6 +317,7 @@
       if (d.ap !== email) return 'ผู้อนุมัติต้องเป็นคนที่ล็อกอิน';
       if (!d.ck) return 'ต้องมีผู้ตรวจก่อนอนุมัติ';
       if (d.apAt !== C.TIME || typeof d.apName !== 'string' || d.apName.length > 60) return 'ช่องผู้อนุมัติไม่ถูก';
+      if (d.apName !== nameOf(me, email)) return 'ชื่อผู้อนุมัติไม่ตรงรายชื่อ';
     }
     return '';
   }
@@ -236,6 +367,12 @@
     function client() {
       var user = null;
       var own = { reads: 0, writes: 0 };
+      /** ผลตรวจแถว อ่านได้เฉพาะหัวหน้า (get อื่นไม่จำลอง allow read) */
+      function getError(p) {
+        if (opt.rules === false || p.indexOf('audit/') !== 0) return '';
+        var me = user && docs['users/' + user.email];
+        return me && me.d.active === true && me.d.role === 'head' ? '' : 'ผลตรวจดูได้เฉพาะหัวหน้า';
+      }
       /** อ่านทั้งคอลเลกชันได้ไหม (แบบ allow list ใน firestore.rules) */
       function listError(col) {
         if (opt.rules === false) return '';
@@ -243,13 +380,14 @@
         var me = docs['users/' + user.email];
         if (!me || me.d.active !== true) return NO_RIGHT;
         if (col === 'users' && me.d.role !== 'head') return 'รายชื่อดูได้เฉพาะหัวหน้า';
+        if (col === 'audit' && me.d.role !== 'head') return 'ผลตรวจดูได้เฉพาะหัวหน้า';
         return '';
       }
       return {
         kind: 'mem',
         setUser: function (u) { user = u ? { email: String(u.email || '').toLowerCase(), verified: u.verified !== false } : null; },
         user: function () { return user; },
-        get: function (p) { return Promise.resolve(read(p, own)); },
+        get: function (p) { var why = getError(p); return why ? Promise.reject(denied(why)) : Promise.resolve(read(p, own)); },
         getMany: function (ps) { return Promise.resolve(ps.map(function (p) { return read(p, own); })); },
         docsAfter: function (seq, limit) {
           var list = Object.keys(docs).filter(function (p) { return p.indexOf('docs/') === 0 && +docs[p].d.seq > seq; })
@@ -564,6 +702,7 @@
     var domain = String(opt.domain || '').toLowerCase();
     var meter = opt.meter || memMeter();
     var local = emptyLocal(), loaded = false, user = null, syncing = null;
+    var checked = false;   // ถามฐานแล้วอย่างน้อยหนึ่งครั้ง (ก่อนนั้นยังไม่รู้ว่ามียอดยกมาหรือยัง)
     var mark = (function () { var s = store.mine ? store.mine() : store.stats(); return { reads: s.reads, writes: s.writes }; })();
 
     /* ── ตัวนับโควตาของเครื่องนี้ (วันตามเวลาแปซิฟิกแบบ Firebase) ── */
@@ -607,7 +746,21 @@
       } catch (e) { local = emptyLocal(); }
     }
 
-    /** ดึงเฉพาะของใหม่: เอกสารที่ seq ใหม่กว่า (เข้ายอดต่อกองในเครื่องตามลำดับ) master ที่ mv เปลี่ยน */
+    /** ตารางหลักทุกชนิดจากฐาน { kind: เอกสาร } (อ่านชนิดละ 1 ครั้ง) */
+    async function readMasters() {
+      var all = MASTERS.concat(SETUP), out = {};
+      var ms = await store.getMany(all.map(function (n) { return 'master/' + n; }));
+      all.forEach(function (n, j) { if (ms[j]) out[n] = ms[j]; });
+      return out;
+    }
+
+    /**
+     * ดึงเฉพาะของใหม่: เอกสารที่ seq ใหม่กว่า (เข้ายอดต่อกองในเครื่องตามลำดับ) master ที่ mv เปลี่ยน
+     * ก่อนลงยอดยกมา (ไม่มี meta) ยังไม่มีเลขรุ่นให้เทียบ: อ่านตารางหลักทุกครั้งที่ดึง
+     */
+    /** เครื่องนี้มีของรอรับไหม (ไม่นับใบที่ไม่รับแล้ว รอหัวหน้ายกเลิก) */
+    function waiting() { return C.holdList(local).some(function (h) { return h.docs.some(function (e) { return !e.rj; }); }); }
+
     async function syncNow() {
       await ensureLoaded();
       var meta = await store.get('meta/head');
@@ -615,8 +768,19 @@
       if (!meta) {
         if (local.seq) { local = emptyLocal(); await cache.clear(); }
         local.meta = null;
+        checked = true;
+        if (!user) return { seq: 0, added: 0 };   // ยังไม่เข้าระบบ อ่านตารางหลักไม่ได้
+        var early = await readMasters();
+        /* mv -1 = ลงยอดยกมาเมื่อไร (mv เริ่มที่ 0) ดึงใหม่อีกรอบเสมอ เผื่อมีคนแก้หลังรอบนี้ */
+        var moved = local.mv !== -1 || JSON.stringify(early) !== JSON.stringify(local.master || {});
+        local.mv = -1;
+        if (moved) {
+          local.master = early;
+          try { await cache.put(local, []); } catch (e) {}
+        }
         return { seq: 0, added: 0 };
       }
+      checked = true;
       if (meta.v !== C.V || local.v !== C.V || meta.seq < local.seq) { local = emptyLocal(); try { await cache.clear(); } catch (e) {} }
       var fresh = !local.seq, trFrom = local.trAt || 0, okFrom = local.okAt || 0, trFloor = null, okFloor = null;
       /* เครื่องใหม่ / ตามหลังมาก: อ่านเดือนที่ปิดแล้วเป็นก้อน (ทีละไม่กี่ร้อย KB) แทนทีละเอกสาร */
@@ -630,18 +794,15 @@
       while (local.seq < meta.seq && guard++ < 10000) {
         var list = await store.docsAfter(local.seq, PAGE);
         if (!list.length) break;
-        var mains = [], parts = {};
+        var mains = [], parts = Object.create(null), was = local.seq, top = was;
         list.forEach(function (x) {
-          if (x.data.of) (parts[x.data.of] || (parts[x.data.of] = [])).push(x.data);
-          else mains.push(x);
+          top = Math.max(top, C.safeNum(x.data.seq));
+          if (!has(x.data, 'of')) mains.push(x);
+          else if (typeof x.data.of === 'string') (parts[x.data.of] || (parts[x.data.of] = [])).push(x.data);
         });
         for (var i = 0; i < mains.length; i++) {
-          var m = mains[i], have = parts[m.id] || [], need = (+m.data.part || 1) - 1;
-          if (have.length < need) {
-            var ids = [];
-            for (var k = 2; k <= need + 1; k++) if (!have.some(function (p) { return p.i === k; })) ids.push('docs/' + m.id + '~' + k);
-            (await store.getMany(ids)).forEach(function (p) { if (p) have.push(p); });
-          }
+          var m = mains[i], have = parts[m.id] || [], miss = partPaths(m.id, m.data.part, have);
+          if (miss.length) (await store.getMany(miss)).forEach(function (p) { if (p) have.push(p); });
           var d = C.docIn(m.id, m.data, have);
           local.docs.push(d);
           local.piles = C.applyDoc(local.piles || {}, d);
@@ -650,7 +811,11 @@
           if (d.trAt > (local.trAt || 0)) local.trAt = d.trAt;
           if (d.okAt > (local.okAt || 0)) local.okAt = d.okAt;
         }
-        if (!mains.length) break;
+        /* หน้าที่มีแต่ส่วนกำพร้า: ข้ามไป ไม่หยุดทุกเครื่องไว้ตรงนั้น */
+        if (local.seq <= was) {
+          if (top <= was) break;
+          local.seq = top;
+        }
       }
       /*
        * เลข TRcloud ที่มีคนใส่ทีหลัง (แก้เอกสารเก่า seq ไม่เปลี่ยน): tv ใน meta เปลี่ยน = ดึงเอกสารที่ trAt ใหม่กว่าที่เคยเห็น
@@ -658,7 +823,7 @@
        */
       var tv = +meta.tv || 0, ov = +meta.ov || 0, byId = null;
       var ids = function () {
-        if (!byId) { byId = {}; local.docs.forEach(function (x) { byId[x.id] = x; }); }
+        if (!byId) { byId = Object.create(null); local.docs.forEach(function (x) { byId[x.id] = x; }); }
         return byId;
       };
       if (local.tv === null || local.tv === undefined) local.tv = fresh && trFloor === null ? tv : -1;
@@ -667,13 +832,15 @@
         ids();
         var floor = trFloor === null ? trFrom : fresh ? trFloor : Math.min(trFloor, trFrom);
         (await store.trAfter(floor)).forEach(function (x) {
-          var d = byId[x.id];
-          if (!d || x.data.of) return;
-          d.tr = x.data.tr || '';
-          d.trState = x.data.trState || '';
-          d.trBy = x.data.trBy || '';
-          d.trAt = typeof x.data.trAt === 'number' ? x.data.trAt : 0;
-          if (d.trAt > (local.trAt || 0)) local.trAt = d.trAt;
+          var d = byId[x.id], t = C.safeTime(x.data.trAt);
+          if (t > (local.trAt || 0)) local.trAt = t;   // ใบที่ข้ามก็ขยับจุดเริ่ม ไม่อ่านซ้ำทุกครั้งที่มีคนแก้เลข
+          if (!d || has(x.data, 'of')) return;
+          d.tr = C.safeText(x.data.tr);
+          d.trState = C.safeText(x.data.trState);
+          d.trBy = C.safeText(x.data.trBy);
+          d.trAt = t;
+          delete d.trLog;
+          C.trLogIn(d, x.data);
           if (added.indexOf(d) < 0) added.push(d);
         });
         local.tv = tv;
@@ -684,11 +851,11 @@
         var of = okFloor === null ? trFloor : okFloor;
         var oFloor = trFloor === null ? okFrom : fresh ? of : Math.min(of, okFrom);
         (await store.okAfter(oFloor)).forEach(function (x) {
-          var d = byId[x.id];
-          if (!d || x.data.of) return;
+          var d = byId[x.id], t = C.safeTime(x.data.okAt);
+          if (t > (local.okAt || 0)) local.okAt = t;
+          if (!d || has(x.data, 'of')) return;
           C.OK_KEYS.forEach(function (k) { delete d[k]; });
           C.okIn(d, x.data);
-          if (d.okAt > (local.okAt || 0)) local.okAt = d.okAt;
           if (added.indexOf(d) < 0) added.push(d);
         });
         local.ov = ov;
@@ -701,10 +868,9 @@
       }
       /* mk = ชนิดตารางที่สำเนานี้ดึงไว้: รุ่นหน้าใหม่มีชนิดเพิ่ม (เช่น zone) = ดึงใหม่ครั้งเดียว แม้ mv เท่าเดิม */
       var all = MASTERS.concat(SETUP), mk = all.join(' '), mv = +meta.mv || 0;
-      if (mv !== local.mv || (mv > 0 && local.mk !== mk)) {
-        var ms = await store.getMany(all.map(function (n) { return 'master/' + n; }));
-        local.master = {};
-        all.forEach(function (n, j) { if (ms[j]) local.master[n] = ms[j]; });
+      /* ตารางที่ตั้งก่อนยอดยกมา mv ยังเป็น 0 ก็ต้องตามชนิดใหม่เหมือนกัน */
+      if (mv !== local.mv || (local.mk !== mk && (mv > 0 || Object.keys(local.master || {}).length))) {
+        local.master = await readMasters();
         local.mv = mv;
         local.mk = mk;
       }
@@ -724,7 +890,7 @@
       try { idx = await store.get('arch/index'); } catch (e) { return none; }
       var use = T().archUse(idx, local.seq);
       if (!use.length) return none;
-      var added = [], byId = {};
+      var added = [], byId = Object.create(null);
       for (var u = 0; u < use.length; u++) {
         var mo = use[u], list = [], ok = true;
         var ids = [];
@@ -738,12 +904,8 @@
         for (var s = 0; s < (mo.skip || []).length && ok; s++) {
           var main = await store.get('docs/' + mo.skip[s]);
           if (!main) { ok = false; break; }
-          var have = [];
-          if ((+main.part || 1) > 1) {
-            var pids = [];
-            for (var q = 2; q <= +main.part; q++) pids.push('docs/' + mo.skip[s] + '~' + q);
-            (await store.getMany(pids)).forEach(function (p) { if (p) have.push(p); });
-          }
+          var have = [], pids = partPaths(mo.skip[s], main.part, have);
+          if (pids.length) (await store.getMany(pids)).forEach(function (p) { if (p) have.push(p); });
           list.push(C.docIn(mo.skip[s], main, have));
         }
         if (!ok) break;
@@ -763,16 +925,20 @@
       var on = idx.ov ? +idx.ov.n || 0 : 0;
       if (on) {
         var ovIds = [];
-        for (var o = 1; o <= on; o++) ovIds.push('arch/ov-' + o);
+        var ovBase = 'arch/ov-' + (idx.ov.m ? idx.ov.m + '-' : '');   // ไม่มี m = ปิดก่อนแยกชุดตามเดือน
+        for (var o = 1; o <= on; o++) ovIds.push(ovBase + o);
         (await store.getMany(ovIds)).forEach(function (c) {
           T().archFix(c).forEach(function (e) {
             var d = byId[e[0]];
             if (!d) return;
-            if (+e[4] >= (d.trAt || 0)) { d.tr = e[1] || ''; d.trState = e[2] || ''; d.trBy = e[3] || ''; d.trAt = +e[4] || 0; }
-            /* ตรวจ / อนุมัติหลังปิดเดือน [.., ck, ckName, ckAt, ap, apName, apAt, okAt] */
-            if (e.length > 5 && +e[11] >= (d.okAt || 0)) {
+            if (+e[4] >= (d.trAt || 0)) {
+              d.tr = e[1] || ''; d.trState = e[2] || ''; d.trBy = e[3] || ''; d.trAt = +e[4] || 0;
+              if (e[15]) C.trLogIn(d, { trLog: e[15] });
+            }
+            /* ตรวจ / อนุมัติหลังปิดเดือน [.., ck, ckName, ckAt, ap, apName, apAt, okAt (, rj, rjName, rjWhy (, trLog))] · มีแต่ประวัติเลข = okAt ว่าง */
+            if (e.length > 5 && +e[11] > 0 && +e[11] >= (d.okAt || 0)) {
               C.OK_KEYS.forEach(function (k) { delete d[k]; });
-              C.okIn(d, { ck: e[5], ckName: e[6], ckAt: +e[7] || 0, ap: e[8], apName: e[9], apAt: +e[10] || 0, okAt: +e[11] || 0 });
+              C.okIn(d, { ck: e[5], ckName: e[6], ckAt: +e[7] || 0, ap: e[8], apName: e[9], apAt: +e[10] || 0, okAt: +e[11] || 0, rj: e[12], rjName: e[13], rjWhy: e[14] });
             }
           });
         });
@@ -785,6 +951,12 @@
         syncing = syncNow().finally(function () { syncing = null; tally(); report(false); });
       }
       return syncing;
+    }
+
+    /** ดึงรอบใหม่ที่เริ่มหลังการบันทึก (รอบที่ค้างอยู่อาจอ่านไปก่อนบันทึกเสร็จ) */
+    async function syncAfter() {
+      if (syncing) { try { await syncing; } catch (e) {} }
+      return sync();
     }
 
     function inDomain(e) { return !domain || e.slice(-(domain.length + 1)) === '@' + domain; }
@@ -805,7 +977,7 @@
         try { await auth.signOut(); } catch (e) {}
         return fail(u.email + ' ' + NO_RIGHT.replace('บัญชีนี้', ''), { noRight: 1 });
       }
-      user = { email: u.email, name: prof.name || u.name || u.email, role: ROLES.indexOf(prof.role) >= 0 ? prof.role : 'viewer' };
+      user = { email: u.email, name: prof.name || u.email, role: ROLES.indexOf(prof.role) >= 0 ? prof.role : 'viewer', team: prof.team === C.TEAM_QA ? C.TEAM_QA : '' };
       /* เวลาเข้าล่าสุด หัวหน้าเห็นในหน้าตั้งค่า เขียนไม่เกินชั่วโมงละครั้ง พลาดไม่เป็นไร */
       if (!(+prof.last > 0) || now() - prof.last > LAST_EVERY) { try { await store.patch('users/' + u.email, { last: C.TIME }); } catch (e) {} }
       tally();
@@ -830,7 +1002,7 @@
 
     function userRow(id, d) {
       d = d || {};
-      return { email: id, name: d.name || '', role: ROLES.indexOf(d.role) >= 0 ? d.role : 'viewer', active: d.active === true, last: +d.last || 0, by: d.by || '', at: +d.at || 0 };
+      return { email: id, name: d.name || '', role: ROLES.indexOf(d.role) >= 0 ? d.role : 'viewer', team: d.team === C.TEAM_QA ? C.TEAM_QA : '', active: d.active === true, last: +d.last || 0, by: d.by || '', at: +d.at || 0 };
     }
     async function users() {
       if (!user || user.role !== 'head') return fail('รายชื่อดูได้เฉพาะหัวหน้า');
@@ -843,7 +1015,7 @@
       });
       return reply({ users: out, domain: domain });
     }
-    /** เพิ่มหรือแก้คน (ชื่อ สิทธิ์ เปิด/ปิด) ไม่ลบ: คนที่ออกให้ปิดไว้ ชื่อในเอกสารเก่ายังอ่านได้ */
+    /** เพิ่มหรือแก้คน (ชื่อ สิทธิ์ ทีม เปิด/ปิด) ไม่ลบ: คนที่ออกให้ปิดไว้ ชื่อในเอกสารเก่ายังอ่านได้ · ไม่ส่ง team = คงทีมเดิม */
     async function saveUser(email, data) {
       if (!user || user.role !== 'head') return fail('แก้รายชื่อได้เฉพาะหัวหน้า');
       data = data || {};
@@ -853,6 +1025,7 @@
       var name = C.plain(data.name, 60);
       if (!name) return fail('ต้องใส่ชื่อ');
       if (ROLES.indexOf(data.role) < 0) return fail('สิทธิ์ต้องเป็น หัวหน้า ลงรายการ หรือ ดูอย่างเดียว');
+      if (data.team !== undefined && C.TEAMS.indexOf(data.team) < 0) return fail('ทีมต้องเป็น คลัง / Inbound หรือ QA');
       var active = data.active !== false;
       if (e === user.email && (data.role !== 'head' || !active)) return fail('ลดสิทธิ์หรือปิดบัญชีตัวเองไม่ได้ ให้หัวหน้าอีกคนทำ');
       var list;
@@ -864,11 +1037,26 @@
       });
       if (!(data.role === 'head' && active) && !heads) return fail('ต้องมีหัวหน้าที่ใช้งานได้อย่างน้อย 1 คน');
       if (old && data.add) return fail(e + ' มีในรายชื่อแล้ว (' + (old.name || '') + ')');
+      var fields = { name: name, role: data.role, active: active, by: user.email, at: C.TIME };
+      var team = data.team !== undefined ? data.team : (old && old.team) || '';
+      if (team || (old && old.team)) fields.team = team;
       try {
-        await store.patch('users/' + e, { name: name, role: data.role, active: active, by: user.email, at: C.TIME });
+        await store.patch('users/' + e, fields);
       } catch (err) { return fail(String(err && err.message || err)); }
+      if (e === user.email) user.name = name;   // แก้ชื่อตัวเอง เอกสารถัดไปใช้ชื่อใหม่ (Rules เทียบกับรายชื่อ)
       tally();
-      return reply({ user: userRow(e, { name: name, role: data.role, active: active, last: old && old.last, by: user.email, at: now() }), added: !old });
+      return reply({ user: userRow(e, { name: name, role: data.role, team: team, active: active, last: old && old.last, by: user.email, at: now() }), added: !old });
+    }
+
+    /** ถูกปฏิเสธเพราะหัวหน้าแก้ชื่อระหว่างเปิดหน้าไหม (Rules เทียบชื่อในเอกสารกับรายชื่อ) ใช่ = ใช้ชื่อใหม่แล้วลองอีกครั้ง */
+    async function renamed(e) {
+      if (!user || !e || e.code !== 'permission-denied') return false;
+      var prof;
+      try { prof = await store.get('users/' + user.email); } catch (err) { return false; }
+      var name = prof && prof.active === true ? prof.name || user.email : '';
+      if (!name || name === user.name) return false;
+      user.name = name;
+      return true;
     }
 
     /* ── โควตา ── */
@@ -890,9 +1078,10 @@
             Object.keys(u).forEach(function (k) {
               var x = u[k] || {};
               if (k === m.dev) x = { r: m.reads, w: m.writes, by: x.by };
-              all.reads += +x.r || 0;
-              all.writes += +x.w || 0;
-              all.list.push({ dev: k, me: k === m.dev, by: x.by || '', r: +x.r || 0, w: +x.w || 0 });
+              var r = C.safeNum(x.r), w = C.safeNum(x.w);   // ทุกคนในรายชื่อเขียนช่องนี้ได้
+              all.reads += r;
+              all.writes += w;
+              all.list.push({ dev: k, me: k === m.dev, by: C.safeText(x.by), r: r, w: w });
             });
             all.list.sort(function (a, b) { return (b.r + b.w) - (a.r + a.w); });
           }
@@ -930,7 +1119,8 @@
 
     /**
      * ใส่เลข TRcloud / เปลี่ยนสถานะ items = [{no, tr, state}] ไม่เกิน TR_MAX ต่อครั้ง
-     * transaction เดียว: แก้ช่อง tr ของเอกสาร + meta.tv +1 (เครื่องอื่นเห็นภายในรอบดึงถัดไป)
+     * transaction เดียว: อ่านเอกสารจากฐาน → แก้ช่อง tr + ต่อประวัติค่าก่อนแก้ + meta.tv +1 (เครื่องอื่นเห็นภายในรอบดึงถัดไป)
+     * ประวัติคิดจากฐาน ไม่ใช่สำเนา: สำเนาของคนบันทึกเป็นเวลาของเครื่อง และอีกเครื่องอาจเพิ่งแก้
      */
     async function trSave(items) {
       if (!user) return fail('ยังไม่ได้ล็อกอิน');
@@ -938,19 +1128,35 @@
       await sync();
       var chk = T().trSet(local, items, user);
       if (chk.error) return reply(chk);
+      var wrote = [];
       try {
         await store.tx(async function (t) {
+          wrote = [];
           var meta = await t.get('meta/head');
           if (!meta) throw new Error('ยังไม่มีสมุด');
-          chk.writes.forEach(function (w) { t.patch(w[0], w[1]); });
+          var cur = await Promise.all(chk.writes.map(function (w) { return t.get(w[0]); }));
+          chk.writes.forEach(function (w, i) {
+            if (!cur[i]) throw new Error('ไม่พบเอกสาร ' + w[0]);
+            if (C.trLogFull(cur[i])) throw new Error('ประวัติเลข TRcloud เต็ม ' + C.TR_LOG_MAX + ' ครั้ง แก้อีกไม่ได้ ' + (cur[i].no || '') + ' แจ้งหัวหน้า');
+            var fields = clone(w[1]), log = C.trLogNext(cur[i]);
+            if (log) fields.trLog = log;
+            wrote.push([w[0], fields]);
+          });
+          wrote.forEach(function (w) { t.patch(w[0], w[1]); });
           t.patch('meta/head', { tv: (+meta.tv || 0) + 1 });
         });
-      } catch (e) { return fail(errOf(e)); }
+      } catch (e) {
+        if (e && e.code === 'permission-denied' && !/ไม่มีสิทธิ์เขียน:/.test(errOf(e))) {
+          return fail('ฐานข้อมูลไม่รับ (' + errOf(e) + ') · ดึงใหม่แล้วลองอีกครั้ง ถ้ายังไม่ได้ แจ้งหัวหน้าเช็ค Firestore Rules ชุดล่าสุด');
+        }
+        return fail(errOf(e));
+      }
       var at = now(), changed = [];
-      chk.writes.forEach(function (w) {
+      wrote.forEach(function (w) {
         var d = local.docs.filter(function (x) { return 'docs/' + x.id === w[0]; })[0];
         if (!d) return;
         d.tr = w[1].tr; d.trState = w[1].trState; d.trBy = user.email; d.trAt = at;
+        if (w[1].trLog) d.trLog = w[1].trLog;
         changed.push(d);
       });
       try { await cache.put(local, changed); } catch (e) {}
@@ -959,14 +1165,14 @@
     }
 
     /**
-     * ตรวจ / อนุมัติ nos = [เลขที่] ไม่เกิน OK_MAX · act = check | approve | both
+     * ตรวจ / รับ / อนุมัติ nos = [เลขที่] ไม่เกิน OK_MAX · act = check | approve | both | reject (reason = เหตุผลที่ไม่รับ)
      * transaction เดียว: แก้ช่องตรวจ / อนุมัติของเอกสาร + meta.ov +1 (เครื่องอื่นเห็นในรอบดึงถัดไป ดึงเฉพาะการตรวจ / อนุมัติ)
      */
-    async function okSave(nos, act) {
+    async function okSave(nos, act, reason, retried) {
       if (!user) return fail('ยังไม่ได้ล็อกอิน');
       if (user.role === 'viewer') return fail('บัญชีนี้ดูได้อย่างเดียว');
       await sync();
-      var chk = C.okSet(local, nos, user, act);
+      var chk = C.okSet(local, nos, user, act, reason);
       if (chk.error) return reply(chk);
       try {
         await store.tx(async function (t) {
@@ -975,7 +1181,14 @@
           chk.writes.forEach(function (w) { t.patch(w[0], w[1]); });
           t.patch('meta/head', { ov: (+meta.ov || 0) + 1 });
         });
-      } catch (e) { return fail(errOf(e)); }
+      } catch (e) {
+        if (!retried && (await renamed(e))) return okSave(nos, act, reason, true);
+        /* ฐานจริงไม่บอกเหตุผล: คนอื่นกดก่อน ทีมเพิ่งเปลี่ยน หรือยังไม่วาง Rules ชุดที่มีปุ่มไม่รับ */
+        if (e && e.code === 'permission-denied' && !/ไม่มีสิทธิ์เขียน:/.test(errOf(e))) {
+          return fail('ฐานข้อมูลไม่รับ (' + errOf(e) + ') · ดึงใหม่แล้วลองอีกครั้ง ถ้ายังไม่ได้ แจ้งหัวหน้าเช็คทีมของบัญชีนี้ และ Firestore Rules ชุดล่าสุด');
+        }
+        return fail(errOf(e));
+      }
       var at = now(), changed = [];
       chk.writes.forEach(function (w) {
         var d = local.docs.filter(function (x) { return 'docs/' + x.id === w[0]; })[0];
@@ -1019,32 +1232,52 @@
       return r.error ? r : reply({ saved: day, n: made.data.n, trc: r.trc, cmp: r.cmp });
     }
 
-    /** หัวหน้านำเข้าตารางหลัก kind = sup (PO → Supplier) | conv (MASTER แปลงสินค้า) | cap (ความจุต่อพาเลท) + meta.mv +1 ให้ทุกเครื่องดึงใหม่ */
+    /**
+     * transaction ของตารางหลัก: fn(t) อ่าน / เขียน master/{kind} คืน true = เขียนแล้ว → meta.mv +1
+     * ก่อนยอดยกมา transaction ไม่อ่าน meta/head: เอกสารที่อ่านแต่ไม่เขียนจะติดไปเช็คตอน commit และ meta สร้างได้ตอนบันทึกเอกสารเท่านั้น
+     * ถามอีกครั้งหลังเขียน: มีคนลงยอดยกมาแทรก = mv +1 ตาม ทุกเครื่องที่ดึงไปก่อนจะดึงใหม่
+     */
+    async function masterTx(fn) {
+      var had = await store.get('meta/head'), wrote = false;
+      await store.tx(async function (t) {
+        var meta = had ? await t.get('meta/head') : null;
+        wrote = await fn(t);
+        if (wrote && meta) t.patch('meta/head', { mv: (+meta.mv || 0) + 1 });
+      });
+      if (had || !wrote || !(await store.get('meta/head'))) return;
+      await store.tx(async function (t) {
+        var meta = await t.get('meta/head');
+        if (meta) t.patch('meta/head', { mv: (+meta.mv || 0) + 1 });
+      });
+    }
+
+    /** หัวหน้านำเข้าตารางหลัก kind = sup (PO → Supplier) | conv (MASTER แปลงสินค้า) | cap (ความจุต่อพาเลท) + meta.mv +1 ให้ทุกเครื่องดึงใหม่ · ก่อนยอดยกมาเขียนแต่ตาราง */
     async function masterSave(kind, part) {
       if (!user || user.role !== 'head') return fail('แก้ตารางหลักได้เฉพาะหัวหน้า');
       if (MASTERS.indexOf(kind) < 0) return fail('ไม่รู้จักตาราง ' + kind);
       var made = T().masterDoc(kind, part, { by: user.email, name: user.name });
       if (made.error) return reply(made);
       try {
-        await store.tx(async function (t) {
-          var meta = await t.get('meta/head');
-          if (!meta) throw new Error('ลงยอดยกมาก่อน แล้วค่อยนำเข้าตารางหลัก');
+        await masterTx(async function (t) {
           /* นำเข้าทั้งไฟล์ = รุ่นใหม่ของตาราง เก็บประวัติเดิมไว้ (หน้า ข้อมูลหลัก ที่แก้ค้างจะรู้ว่ามีคนบันทึกก่อน) */
           var cur = await t.get('master/' + kind);
           made.data.ver = (+(cur && cur.ver) || 0) + 1;
+          if (kind === 'cap' && cur && cur.rk) made.data.rk = cur.rk;   // ไฟล์ความจุไม่ทับ ขึ้นแร็คราย SKU
           made.data.hist = [{ at: now(), by: user.email, name: user.name, text: 'นำเข้าไฟล์ ' + (made.data.tab || '') + ' ' + made.data.n + ' แถว (แทนทั้งตาราง)' }]
             .concat(Array.isArray(cur && cur.hist) ? cur.hist : []).slice(0, 60);
           t.set('master/' + kind, made.data);
-          t.patch('meta/head', { mv: (+meta.mv || 0) + 1 });
+          return true;
         });
       } catch (e) { return fail(errOf(e)); }
-      await sync();
+      await syncAfter();
       return reply({ saved: kind, n: made.data.n });
     }
 
     /**
      * หัวหน้าบันทึกข้อมูลหลักทั้งตาราง kind = loc | sku | grp | conv | sup | cap | zone · rows = แถวแบบวัตถุ (WmsFireSetup.rowIn)
      * opt = { base: รุ่นที่เริ่มแก้, strict } · รุ่นในฐานไม่ตรง base = มีคนบันทึกก่อน ไม่เขียนทับ
+     * ตั้งก่อนลงยอดยกมาได้: เขียนแต่ master/{kind} (meta/head สร้างได้ตอนบันทึกเอกสารเท่านั้น)
+     * มีคนลงยอดยกมาระหว่างบันทึก = masterTx บวก mv ตามให้
      */
     async function setupSave(kind, rows, opt) {
       opt = opt || {};
@@ -1052,21 +1285,24 @@
       if (SETUP.indexOf(kind) < 0 && MASTERS.indexOf(kind) < 0) return fail('ไม่รู้จักตาราง ' + kind);
       var S = window.WmsFireSetup;
       if (!S) return fail('ยังไม่ได้โหลด wms-fire-setup.js');
-      var made = null;
+      var made = null, stale = false;
       try {
-        await store.tx(async function (t) {
-          var meta = await t.get('meta/head');
-          if (!meta) throw new Error('ลงยอดยกมาก่อน แล้วค่อยตั้งข้อมูลหลัก');
+        await masterTx(async function (t) {
           var cur = await t.get('master/' + kind);
+          stale = (+(cur && cur.ver) || 0) !== (+opt.base || 0);
           made = S.docOf(kind, rows, { by: user.email, name: user.name, at: now(), strict: opt.strict, base: opt.base }, cur);
-          if (made.error) return;
+          if (made.error) return false;
           t.set('master/' + kind, made.data);
-          t.patch('meta/head', { mv: (+meta.mv || 0) + 1 });
+          return true;
         });
       } catch (e) { return fail(errOf(e)); }
-      if (made && made.error) return reply({ error: made.error });
-      await sync();
-      return reply({ saved: kind, n: made.data.n, ver: made.data.ver, text: made.data.hist[0].text });
+      if (made && made.error) {
+        /* คนอื่นบันทึกก่อน: ดึงรุ่นของเขามา หน้าจะมีปุ่ม โหลดตารางใหม่ / ใช้ร่างของฉันทับ ให้กด */
+        if (stale) { try { await syncAfter(); } catch (e) {} }
+        return reply({ error: made.error });
+      }
+      await syncAfter();
+      return reply({ saved: kind, n: made.kept, ver: made.data.ver, text: made.data.hist[0].text });
     }
 
     /** ตารางหลักที่มีอยู่ { sup: {n, tab, at, name}, conv: {…} } */
@@ -1112,6 +1348,15 @@
       return reply({ backup: T().backupOf(local, { users: us.users, trc: local.trc, xfer: xf }, now()) });
     }
 
+    /** ผลตรวจแถวล่าสุดของ fire-backup.gs (อ่าน 1 ครั้ง หัวหน้าเท่านั้น) · ยังไม่เคยตรวจ = audit null */
+    async function auditInfo() {
+      if (!user || user.role !== 'head') return fail('ผลตรวจดูได้เฉพาะหัวหน้า');
+      var a;
+      try { a = await store.get('audit/last'); } catch (e) { return fail(errOf(e), netOf(e)); }
+      tally();
+      return reply({ audit: a || null });
+    }
+
     /** หน้าปิดเดือน: เดือนที่ปิดแล้ว เดือนถัดไปที่ปิดได้ ประมาณการอ่านของเครื่องใหม่ (หัวหน้า · อ่าน arch/index 1 ครั้ง) */
     async function archInfo() {
       if (!user || user.role !== 'head') return fail('ปิดเดือนได้เฉพาะหัวหน้า');
@@ -1134,12 +1379,8 @@
         for (var k = 0; k < part.length; k++) {
           var m = mains[k];
           if (!m) continue;
-          var have = [];
-          if ((+m.part || 1) > 1) {
-            var ids = [];
-            for (var q = 2; q <= +m.part; q++) ids.push('docs/' + part[k].id + '~' + q);
-            (await store.getMany(ids)).forEach(function (p) { if (p) have.push(p); });
-          }
+          var have = [], ids = partPaths(part[k].id, m.part, have);
+          if (ids.length) (await store.getMany(ids)).forEach(function (p) { if (p) have.push(p); });
           var fresh = C.docIn(part[k].id, m, have), at = local.docs.indexOf(part[k]);
           if (at >= 0) { local.docs[at] = fresh; done.push(fresh); }
         }
@@ -1149,7 +1390,7 @@
 
     /**
      * ปิดเดือนถัดไป: ซิงก์ให้ครบ → เขียนก้อน (ครั้งละ ARCH_BATCH) → ก้อนเลข TRcloud → arch/index ใน transaction (จุดยืนยัน)
-     * เขียนไม่ครบ = index ยังเป็นของเดิม กดใหม่ได้ (ก้อนเดิมถูกเขียนทับ) · ไม่แก้ docs เดิม (ไฟล์สำรองยังครบ)
+     * เขียนไม่ครบ = index ยังเป็นของเดิม กดใหม่ได้ (ก้อนที่ยังไม่ยืนยันถูกเขียนทับ · ยืนยันแล้ว Rules ไม่ให้ทับ) · ไม่แก้ docs เดิม (ไฟล์สำรองยังครบ)
      */
     async function archClose() {
       if (!user || user.role !== 'head') return fail('ปิดเดือนได้เฉพาะหัวหน้า');
@@ -1192,9 +1433,19 @@
       var spec = C.OPS[op];
       if (user.role === 'viewer') return fail('บัญชีนี้ดูได้อย่างเดียว');
       if (spec.head && user.role !== 'head') return fail(op === 'bk-void' ? 'ยกเลิกชุดได้เฉพาะหัวหน้ากับรองหัวหน้า' : 'คำสั่งนี้ใช้ได้เฉพาะหัวหน้ากับรองหัวหน้า');
+      /*
+       * ยังไม่มียอดยกมา = ไม่รับเอกสาร ตอบก่อนเช็ครูปข้อมูล (ชุดค้างเก่าวันที่เกินจะไม่ถูกหน้าทิ้ง)
+       * และก่อนเปิด transaction (อ่านแล้วไม่เขียน) · C.plan เช็คซ้ำกับ meta ในฐาน
+       */
+      if (C.openLock(op, local.meta)) {
+        await syncAfter();   // รอบที่ค้างอยู่อาจอ่านก่อนมีคนลงยอดยกมา
+        var lock = C.openLock(op, local.meta);
+        if (lock) return reply(lock);
+      }
       var P = C.prep(op, body, now());
       if (P.error) return reply(P);
       await sync();
+      var retried = false;
       for (var tries = 0; tries < STALE_TRIES; tries++) {
         var res;
         try {
@@ -1209,6 +1460,7 @@
             return { plan: pl };
           });
         } catch (e) {
+          if (!retried && (await renamed(e))) { retried = true; continue; }
           return fail(saveErr(e), netOf(e));
         }
         if (res.stale) { await sync(); continue; }
@@ -1272,13 +1524,18 @@
       login: login, restore: restore, logout: logout, sync: sync, post: post,
       users: users, saveUser: saveUser, quota: quota, reload: reload,
       trList: trList, trSave: trSave, okSave: okSave, trFile: trFile, trc: trc, trcSave: trcSave, masterSave: masterSave, masters: masters, setupSave: setupSave,
-      xferDays: xferDays, xferText: xferText, xferMark: xferMark, backup: backup, archInfo: archInfo, archClose: archClose,
+      xferDays: xferDays, xferText: xferText, xferMark: xferMark, backup: backup, auditInfo: auditInfo, archInfo: archInfo, archClose: archClose,
       user: function () { return user; },
       local: function () { return local; },
+      /** ถามฐานแล้วและยังไม่มียอดยกมา (ช่วงตั้งข้อมูลหลักล่วงหน้า) */
+      preOpen: function () { return checked && !(local.meta && local.meta.open); },
       fifo: function () { return C.fifo(local, now()); },
-      /** มีคนบันทึกจากเครื่องอื่น (meta เปลี่ยน) → cb(meta) · ฟังไม่ได้ (หลุดสิทธิ์ ฯลฯ) → err(e) · คืนฟังก์ชันเลิกฟัง */
+      /**
+       * มีคนบันทึก หรือกดรับตอนเครื่องนี้มีของรอรับ → cb(meta) · ฟังไม่ได้ (หลุดสิทธิ์ ฯลฯ) → err(e) · คืนฟังก์ชันเลิกฟัง
+       * ไม่มีของรอรับ = การตรวจ / อนุมัติไม่เปลี่ยนของที่ใช้ได้ รอดึงพร้อมรอบถัดไป ไม่ให้ทุกเครื่องอ่านตามทุกครั้งที่อนุมัติ
+       */
       watch: function (cb, err) {
-        return store.onMeta(function (meta) { if (meta && +meta.seq !== local.seq) cb(meta); }, err);
+        return store.onMeta(function (meta) { if (meta && (+meta.seq !== local.seq || ((+meta.ov || 0) !== (+local.ov || 0) && waiting()))) cb(meta); }, err);
       },
       usage: function () { return store.stats(); },
     };

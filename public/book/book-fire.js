@@ -64,6 +64,7 @@
 
   var ACCOUNTS = MODE === 'dev' ? [
     { email: 'staff@' + DOMAIN, name: 'ทดลอง', role: 'staff' },
+    { email: 'qa@' + DOMAIN, name: 'QA ทดลอง', role: 'staff', team: 'qa' },
     { email: 'head@' + DOMAIN, name: 'หัวหน้าทดลอง', role: 'head' },
     { email: 'view@' + DOMAIN, name: 'ดูอย่างเดียวทดลอง', role: 'viewer' },
     { email: 'off@' + DOMAIN, name: 'ออกแล้วทดลอง', role: 'staff', off: true },
@@ -72,6 +73,8 @@
   ] : MODE === 'demo' ? [
     { email: 'staff1@' + DOMAIN, name: 'พนักงานซ้อม 1', role: 'staff' },
     { email: 'staff2@' + DOMAIN, name: 'พนักงานซ้อม 2', role: 'staff' },
+    { email: 'qa1@' + DOMAIN, name: 'QA ซ้อม 1', role: 'staff', team: 'qa' },
+    { email: 'qa2@' + DOMAIN, name: 'QA ซ้อม 2', role: 'staff', team: 'qa' },
     { email: 'head@' + DOMAIN, name: 'หัวหน้าซ้อม', role: 'head' },
     { email: 'view@' + DOMAIN, name: 'ดูอย่างเดียวซ้อม', role: 'viewer' },
     { email: 'someone@gmail.test', name: 'บัญชีส่วนตัว (ลองว่าถูกกัน)', role: '' },
@@ -113,8 +116,10 @@
   function remember(email) { if (KEY) lsSet(WHO, email || ''); }
   function remembered() { return KEY ? lsGet(WHO) : ''; }
 
-  var fire = null, shownSeq = -1;
-  var watching = false, seen = -1, stopWatch = null;   // live: ฟัง meta/head (อ่าน 1 ครั้งต่อการบันทึก) แทนถามทุกนาที
+  var fire = null, shownSeq = -1, shownOv = -1;
+  var watching = false, seen = -1, seenOv = -1, stopWatch = null;   // live: ฟัง meta/head (อ่าน 1 ครั้งต่อการบันทึก) แทนถามทุกนาที
+  /** หน้าแสดงสำเนาชุดนี้แล้ว: เลขเอกสาร + รุ่นการรับ / อนุมัติ (ของรอรับเปลี่ยนโดย seq เท่าเดิม) */
+  function shown() { var l = fire.local(); shownSeq = l.seq; shownOv = +l.ov || 0; }
 
   /** ฐานจำลองในเครื่อง (dev / demo) */
   async function startLocal(W) {
@@ -126,7 +131,11 @@
     var data = readSaved();
     if (!data) {
       data = {};
-      ACCOUNTS.forEach(function (a) { if (a.role) data['users/' + a.email] = { name: a.name, role: a.role, active: !a.off }; });
+      ACCOUNTS.forEach(function (a) {
+        if (!a.role) return;
+        var u = data['users/' + a.email] = { name: a.name, role: a.role, active: !a.off };
+        if (a.team) u.team = a.team;
+      });
     }
     var store = W.memStore({ data: data, domain: DOMAIN, onCommit: save });
     save(store.dump());
@@ -190,13 +199,13 @@
   function watchOn() {
     if (MODE !== 'live' || stopWatch || !fire) return;
     try {
-      stopWatch = fire.watch(function (meta) { seen = Math.max(seen, +meta.seq || 0); }, function () { watching = false; stopWatch = null; });
+      stopWatch = fire.watch(function (meta) { seen = Math.max(seen, +meta.seq || 0); seenOv = Math.max(seenOv, +meta.ov || 0); }, function () { watching = false; stopWatch = null; });
       watching = true;
     } catch (e) { watching = false; stopWatch = null; }
   }
   function watchOff() {
     if (stopWatch) { try { stopWatch(); } catch (e) {} }
-    stopWatch = null; watching = false; seen = -1;
+    stopWatch = null; watching = false; seen = -1; seenOv = -1;
   }
 
   /** เข้าแล้ว: แท็บที่เปิดแม้สวิตช์ปิด (?fire=live) ใช้ได้เฉพาะหัวหน้า */
@@ -294,30 +303,38 @@
     fifo: async function () {
       await ready;
       await fire.sync();
-      shownSeq = fire.local().seq;
+      shown();
       return fire.fifo();
     },
     /** หน้ารายงาน (wms-fire-src.js): ดึงเอกสารใหม่แล้วส่งสำเนาในเครื่อง + เวลาของระบบ ให้คิดคำตอบแบบ tx-api เอง */
     snap: async function () {
       await ready;
       await fire.sync();
-      shownSeq = fire.local().seq;
+      shown();
       return { local: fire.local(), now: clockNow() };
     },
     /** หลังบันทึกสำเร็จ: สำเนาในเครื่องรวมชุดใหม่แล้ว ไม่ต้องดึง */
-    fifoNow: function () { shownSeq = fire.local().seq; return fire.fifo(); },
-    /** มีเอกสารใหม่ที่หน้ายังไม่แสดงไหม (ระบบจริงฟังอยู่แล้ว ไม่ต้องอ่านฐานทุกนาที) */
-    changed: async function () {
+    fifoNow: function () { shown(); return fire.fifo(); },
+    /**
+     * มีเอกสารใหม่ที่หน้ายังไม่แสดงไหม (ระบบจริงฟังอยู่แล้ว ไม่ต้องอ่านฐานทุกนาที)
+     * okToo = นับการรับ / อนุมัติด้วย (หน้าสมุด: ของรอรับเปลี่ยน) · หน้ารายงานใช้ยอดจริง ไม่ต้องนับ
+     */
+    changed: async function (okToo) {
       await ready;
-      if (watching) return seen > shownSeq;
+      if (watching) return seen > shownSeq || (okToo === true && seenOv > shownOv);
       await fire.sync();
-      return fire.local().seq !== shownSeq;
+      var l = fire.local();
+      return l.seq !== shownSeq || (okToo === true && (+l.ov || 0) !== shownOv);
     },
+    /** ชิ้นที่พักรอรับ (ใบโอน QA) ให้ WmsBook.stock หักออกจากชิ้นที่ใช้ต่อได้ · ยังไม่พร้อม = [] */
+    holds: function () { return fire && window.WmsFireCore ? window.WmsFireCore.holdList(fire.local()) : []; },
+    /** แผนของหน้า: ใบย้ายปนแบบ / ผิดทีม / โอน QA ในตารางแบบเดิม = แถวผิด */
+    xferCheck: function (plan, mode) { var C = window.WmsFireCore; return fire && C ? C.xferCheck(plan, fire.user(), mode) : plan; },
     users: async function () { await ready; return fire.users(); },
     saveUser: async function (email, data) { await ready; return fire.saveUser(email, data); },
     quota: async function () { await ready; return fire.quota(); },
     /** ล้างสำเนาเครื่องนี้แล้วดึงใหม่ทั้งหมด */
-    reload: async function () { await ready; await fire.reload(); shownSeq = fire.local().seq; return fire.fifo(); },
+    reload: async function () { await ready; await fire.reload(); shown(); return fire.fifo(); },
     /** ขนาดสำเนาในเครื่อง { docs, seq, piles } */
     copy: function () {
       if (!fire) return null;
@@ -329,14 +346,17 @@
     trList: async function () { await ready; return fire.trList(); },
     trSave: async function (items) { await ready; var r = await fire.trSave(items); trVer++; return r; },
     /**
-     * ตรวจ / อนุมัติ nos = [เลขที่] act = check | approve | both · ส่งทีละ OK_MAX ใบ (Rules) ต่อกันจนครบ
+     * รับ / ตรวจ / อนุมัติ nos = [เลขที่] act = check | approve | both | reject (why = เหตุผลที่ไม่รับ)
+     * ส่งทีละ OK_MAX ใบ (Rules) ต่อกันจนครบ เรียงตามลำดับที่บันทึก ใบเข้าจึงอนุมัติก่อนใบออกที่อยู่คนละรอบ
      * พลาดกลางทาง = หยุดตรงนั้น บอกว่าทำไปแล้วกี่ใบ → { saved, error? }
      */
-    okSave: async function (nos, act) {
+    okSave: async function (nos, act, why) {
       await ready;
-      var max = window.WmsFireCore.OK_MAX, saved = 0;
+      var max = window.WmsFireCore.OK_MAX, saved = 0, seq = {};
+      fire.local().docs.forEach(function (d) { seq[d.no] = d.seq; });
+      nos = nos.slice().sort(function (a, b) { return (seq[a] || 0) - (seq[b] || 0); });
       for (var i = 0; i < nos.length; i += max) {
-        var r = await fire.okSave(nos.slice(i, i + max), act);
+        var r = await fire.okSave(nos.slice(i, i + max), act, why);
         trVer++;
         if (r.error) return { saved: saved, error: r.error, bad: r.bad };
         saved += r.saved || 0;
@@ -344,8 +364,8 @@
       return { saved: saved };
     },
     trFile: function (nos) { return fire.trFile(nos); },
-    /** สถานะตรวจ / อนุมัติของเลขที่นี้ { ok, ck, ap } (ชุดในตารางชุดที่บันทึก) */
-    okOf: function (no) { var x = briefOf(no); return x ? { ok: x.ok, ck: x.ck, ap: x.ap } : null; },
+    /** สถานะรับ / ตรวจ / อนุมัติของเลขที่นี้ { ok, ck, ap, xf, rj, rjWhy } (ชุดในตารางชุดที่บันทึก) */
+    okOf: function (no) { var x = briefOf(no); return x ? { ok: x.ok, ck: x.ck, ap: x.ap, xf: x.xf, rj: x.rj, rjWhy: x.rjWhy } : null; },
     trc: async function () { await ready; return fire.trc(); },
     trcSave: async function (parsed, day, files) { await ready; return fire.trcSave(parsed, day, files); },
     masterSave: async function (kind, part) { await ready; return fire.masterSave(kind, part); },
@@ -386,6 +406,10 @@
       var S = window.WmsFireSetup, B = window.BookFire, su = B.setup();
       return S && su ? S.picker(t || su.t, B.setupOcc(), opt) : null;
     },
+    /** แผนของหน้า: ออกจาก IQA ก่อนวันที่ของเข้า = แถวผิด (คิดจากสำเนาในเครื่อง ไม่อ่านฐาน) */
+    iqaCheck: function (plan, day) { var C = window.WmsFireCore; return fire && C ? C.iqaCheck(plan, fire.local(), day) : plan; },
+    /** ยังไม่ลงยอดยกมา = ตั้งข้อมูลหลักล่วงหน้าอยู่ (ยังไม่ได้ถามฐาน = false) */
+    preOpen: function () { return !!(fire && fire.preOpen()); },
     setupSave: async function (kind, rows, opt) { await ready; return fire.setupSave(kind, rows, opt); },
     /** ดึงเอกสาร / ตารางใหม่จากฐาน (ตารางที่คนอื่นเพิ่งบันทึก) */
     sync: async function () { await ready; await fire.sync(); },
@@ -394,7 +418,7 @@
     xferMark: async function (day, info) { await ready; return fire.xferMark(day, info); },
     backup: async function () { await ready; return fire.backup(); },
     /* แอปสมุดสต๊อก: หน้า วันนี้ / เอกสาร คิดจากสำเนาในเครื่อง ไม่อ่านฐาน (ยังไม่พร้อม = null / []) */
-    home: function () { return fire && window.WmsFireDocs ? window.WmsFireDocs.home(fire.local(), clockNow(), (fire.user() || {}).email || '') : null; },
+    home: function () { return fire && window.WmsFireDocs ? window.WmsFireDocs.home(fire.local(), clockNow(), fire.user() || {}) : null; },
     docs: function (q) { return window.WmsFireDocs ? window.WmsFireDocs.search(docList(), Object.assign({ email: fire && fire.user() ? fire.user().email : '' }, q || {}), clockNow()) : null; },
     doc: function (no) { return fire && window.WmsFireDocs ? window.WmsFireDocs.view(fire.local(), no) : null; },
     /** หน้า สินค้า / โล: สต๊อกการ์ดของ SKU (opt.loc เฉพาะโล · opt.sku รหัสสั้น) · ยังไม่พร้อม = null */
@@ -402,6 +426,7 @@
     /** วันนี้ตามนาฬิกาที่ระบบใช้ (เวลาเว็บเมื่อเครื่องคลาด) */
     today: function () { return window.WmsFireCore ? window.WmsFireCore.today(clockNow()) : ''; },
     archInfo: async function () { await ready; return fire.archInfo(); },
+    auditInfo: async function () { await ready; return fire.auditInfo(); },
     archClose: async function () { await ready; return fire.archClose(); },
     /**
      * กู้คืนจากไฟล์สำรองลงฐานทดลอง (ล้างของเดิมทั้งหมด) แล้วโหลดหน้าใหม่ ต้องเข้าระบบใหม่ด้วยรายชื่อในไฟล์
