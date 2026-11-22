@@ -1,0 +1,10 @@
+{
+  "name": "wms-rules-test",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "devDependencies": {
+    "firebase": "12.4.0",
+    "firebase-tools": "15.35.0"
+  }
+}

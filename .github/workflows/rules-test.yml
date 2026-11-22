@@ -1,0 +1,56 @@
+name: Firestore Rules test
+
+# Real Firestore Emulator + fake data only. No secrets, no access to the live project.
+on:
+  push:
+    paths:
+      - 'firebase/**'
+      - 'public/wms-fire*.js'
+      - 'public/wms-book.js'
+      - 'src/data/fire*.test.js'
+      - 'src/dev/fake-gas.js'
+      - '.github/workflows/rules-test.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rules-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  emulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            firebase/rules-test/package-lock.json
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install app test tools
+        run: npm ci
+
+      - name: Install emulator tools
+        working-directory: firebase/rules-test
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Test the Rules on the emulator
+        working-directory: firebase/rules-test
+        run: ./node_modules/.bin/firebase emulators:exec --only firestore --project demo-wms-rules "node run.mjs"
