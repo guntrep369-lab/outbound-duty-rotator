@@ -767,7 +767,7 @@ describe('ต่อสายในหน้า', () => {
     expect(html).toMatch(/MODE === 'master'\) \{ if \(window\.BookMaster\) BookMaster\.paste\(text\)/);
     const app = read('book/book-app.js');
     expect(app).toMatch(/\{ k: 'master', t: 'ข้อมูลหลัก' \}/);
-    expect(app).toMatch(/\n {4}master: '</);
+    expect(app).toMatch(/\{ g: 'setup', t: 'ตั้งค่า' \},\n {4}\{ k: 'master', t: 'ข้อมูลหลัก' \}/);   // หน้าแรกของหมวด ตั้งค่า
     expect(read('book/book-grid.js')).toMatch(/WmsFireSetup\.check\(p, mode, su\.ix, /);
     expect(read('wms-fire.js')).toMatch(/var SETUP = \['loc', 'sku', 'grp', 'zone'\]/);
   });

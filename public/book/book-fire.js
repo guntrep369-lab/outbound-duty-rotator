@@ -419,6 +419,8 @@
     backup: async function () { await ready; return fire.backup(); },
     /* แอปสมุดสต๊อก: หน้า วันนี้ / เอกสาร คิดจากสำเนาในเครื่อง ไม่อ่านฐาน (ยังไม่พร้อม = null / []) */
     home: function () { return fire && window.WmsFireDocs ? window.WmsFireDocs.home(fire.local(), clockNow(), fire.user() || {}) : null; },
+    /** งานของฉันทีละใบ (หน้า วันนี้) จากสำเนาในเครื่อง */
+    queue: function () { return fire && window.WmsFireDocs ? window.WmsFireDocs.queue(fire.local(), clockNow(), fire.user() || {}) : null; },
     docs: function (q) { return window.WmsFireDocs ? window.WmsFireDocs.search(docList(), Object.assign({ email: fire && fire.user() ? fire.user().email : '' }, q || {}), clockNow()) : null; },
     doc: function (no) { return fire && window.WmsFireDocs ? window.WmsFireDocs.view(fire.local(), no) : null; },
     /** หน้า สินค้า / โล: สต๊อกการ์ดของ SKU (opt.loc เฉพาะโล · opt.sku รหัสสั้น) · ยังไม่พร้อม = null */

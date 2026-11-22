@@ -730,6 +730,8 @@
     },
     modes: function () { return Object.keys(KEY); },
     act: function (mode) { renderAct(mode); },
+    /** คิดแผนจากค่าล่าสุดทันที (Ctrl S ไม่รอหน่วงหลังพิมพ์) */
+    flush: function (mode) { if (!KEY[mode] || !$('gTable')) return; clearTimeout(outTimer); updateOut(mode); },
     /** เติมแถวต่อท้ายตารางของแท็บ (ปุ่ม แปลง ในแท็บตัดขาย) */
     append: function (mode, list) { if (KEY[mode]) { append(mode, list); DRAWN = null; } },
     /** แท็บอื่นในเครื่องเดียวกัน (หน้าจัดที่เก็บ) เขียนร่างไว้ อ่านใหม่จากเครื่อง */

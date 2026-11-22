@@ -1098,6 +1098,8 @@
   });
 
   window.BookMaster = {
+    /** ตรวจค่าล่าสุดทันที (Ctrl S) */
+    flush: function () { if (!$('mdTbl')) return; clearTimeout(CHECK_T); refresh(); },
     render: render,
     paste: paste,
     /** ลากไฟล์มาวางในหน้า ข้อมูลหลัก (หัวหน้า) */

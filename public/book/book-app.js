@@ -1,9 +1,9 @@
 /**
  * book-app.js — แอปสมุดสต๊อกของทีม Inventory (ระบบใหม่เท่านั้น: จริง · ซ้อม · ทดลอง)
  *
- *   เมนูของแอปแทนเมนู WMS   วันนี้ · ขาออก · ขาเข้า · ในคลัง · คุมยอด · ค้นหา · ตั้งค่า พร้อมตัวเลขงานค้าง
- *                          จอกว้าง = แถบซ้าย · มือถือ = แถบบน กด ☰ เปิดเมนู
- *   🏠 วันนี้              การ์ดงานค้าง (ชุดรอส่ง รอลง TRcloud ยอดยกมา วางชีตเดิม ปิดเดือน ร่างค้าง) · งานประจำวัน · ใบล่าสุดของวันนี้
+ *   เมนูของแอปแทนเมนู WMS   แถบบน 9 หมวด · เมนูซ้ายเฉพาะหมวดนั้น (ไม่เกิน 8) · หน้า WMS อื่นอยู่ในหมวดเดียวกัน
+ *                          มือถือ = แถบบน กด ☰ เปิดหมวดกับเมนู · ค้นหา Ctrl K และคีย์ลัดอยู่ book-keys.js
+ *   🏠 วันนี้              ตารางงานของฉัน: ต้องทำ · รอคนอื่น · เสร็จวันนี้ ขั้นต่อไปปุ่มเดียวต่อแถว · ใบล่าสุดของวันนี้
  *   📦 สินค้า / โล         อยู่โลไหน คงเหลือ ลำดับตัด วันรับ Supplier ความจุพาเลท คู่แปลง สต๊อกการ์ด (book-item.js)
  *   🔎 เอกสาร             ค้นทุกใบในสำเนาเครื่องนี้ · กดเลขที่ = ดูทีละใบ: ขั้นตอน ประวัติ แถว ออเดอร์
  *                          ใส่เลข TRcloud · ยกเลิก (หัวหน้า) · ใบเดิม ↔ ใบกลับรายการ ลิงก์ถึงกัน · ลิงก์ #doc=เลขที่ ส่งต่อได้
@@ -25,47 +25,93 @@
   var TRC_OLD = 7;            // ยอด TRcloud เก่ากว่านี้ (วัน) เตือนหัวหน้า
   var ROWS_MAX = 500;         // แถวต่อตารางในหน้าดูทีละใบ
 
-  /* ไอคอนเส้น (แบบ Lucide) ตัวเดียวกันทั้งเมนูและหน้าวันนี้ */
+  /* ไอคอนเฉพาะปุ่มของแถบบน (เมนูเป็นตัวหนังสือล้วน) */
   var ICON = {
-    home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/>',
-    cut: '<path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>',
-    gr: '<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>',
-    ret: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
-    move: '<path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/>',
-    conv: '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
-    trc: '<path d="M17.5 19H8a6 6 0 1 1 5.7-7.9A4.5 4.5 0 1 1 17.5 19z"/><path d="m9.5 13.5 2 2 3.5-3.5"/>',
-    adj: '<path d="M12 3v18"/><path d="M5 21h14"/><path d="M3 7h18"/><path d="m6 7-3 7a3 3 0 0 0 6 0z"/><path d="m18 7-3 7a3 3 0 0 0 6 0z"/>',
-    rows: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16"/>',
-    close: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
-    item: '<path d="M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14"/><path d="m7.5 4.27 9 5.15"/><path d="M3.29 7 12 12l8.71-5"/><path d="M12 22V12"/><circle cx="18.5" cy="15.5" r="2.5"/><path d="M20.27 17.27 22 19"/>',
-    docs: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h5"/><path d="M14 3v5h5"/><path d="M19 8v3"/><circle cx="16.5" cy="16.5" r="3"/><path d="m21 21-2.4-2.4"/>',
-    set: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
-    master: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"/>',
-    wms: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
     menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
     x: '<path d="M6 6l12 12M18 6 6 18"/>',
+    find: '<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
   };
-  function ic(k, cls) {
-    return '<svg class="' + (cls || 'bn-ic') + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICON[k] + '</svg>';
+  function ic(k) {
+    return '<svg class="bn-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICON[k] + '</svg>';
   }
 
-  /* เมนูของแอป เรียงตามงานในวันหนึ่ง · head = เฉพาะหัวหน้า */
+  /*
+   * เมนู 9 หมวด (แบบ WMS Desktop ที่เลือก) · g = หมวด
+   * k = หน้าของแอป · to = ทางลัดไปหน้าเดิมพร้อมตัวกรอง (id) · href = หน้า WMS อื่น นับจากรากเว็บ
+   * head = เฉพาะหัวหน้า · src = หน้ารายงานที่อ่านระบบใหม่ได้ · sim = อ่านอย่างเดียว เปิดตอนซ้อมได้ไม่ต้องเตือน
+   */
   var NAV = [
-    { k: 'home', t: 'วันนี้' },
-    { g: 'ขาออก' }, { k: 'cut', t: 'ตัดขาย' },
-    { g: 'ขาเข้า' }, { k: 'gr', t: 'รับของ' }, { k: 'ret', t: 'คืนของ' },
-    { g: 'ในคลัง' }, { k: 'move', t: 'ย้าย / เติม / QA' }, { k: 'conv', t: 'แปลงสินค้า' },
-    { g: 'คุมยอด' }, { k: 'trc', t: 'TRcloud' }, { k: 'adj', t: 'ปรับยอด', head: 1 }, { k: 'rows', t: 'ตารางแบบเดิม', head: 1 },
+    { g: 'today', t: 'วันนี้' },
+    { k: 'home', t: 'งานของฉัน' },
+    { id: 'todo', to: 'docs', t: 'รอรับ / รออนุมัติ' },
+    { href: 'shiftlog/', t: 'สมุดกะ' },
+    { g: 'in', t: 'ขาเข้า' },
+    { k: 'gr', t: 'รับของ' },
+    { href: 'putaway/', t: 'จัดที่เก็บ', src: 1 },
+    { k: 'ret', t: 'คืนของ' },
+    { g: 'qc', t: 'คุณภาพ' },
+    { id: 'qamove', to: 'move', t: 'โอนเข้า / ออก QA' },
+    { id: 'qastock', to: 'item', t: 'ของใน QA / IQA' },
+    { href: 'mfg/', t: 'ความเสี่ยง MFG', src: 1 },
+    { g: 'stock', t: 'ในคลัง' },
+    { k: 'move', t: 'ย้าย / เติม' },
+    { k: 'conv', t: 'แปลงสินค้า' },
+    { k: 'item', t: 'สินค้า / โล' },
+    { href: 'stock-location/', t: 'สต๊อกราย Location', src: 1 },
+    { href: 'stock/', t: 'สต๊อกคงเหลือ' },
+    { href: 'warehouse-forms/', t: 'เอกสารคลัง' },
+    { g: 'out', t: 'ขาออก' },
+    { href: 'order-compare/', t: 'เทียบ Order' },
+    { href: 'order-lookup/', t: 'ค้นหาออเดอร์' },
+    { href: 'order-sheet/', t: 'เบิกตามออเดอร์' },
+    { href: 'picking/', t: 'สรุปหยิบของ' },
+    { k: 'cut', t: 'ตัดขาย' },
+    { g: 'ship', t: 'ขนส่ง' },
+    { href: 'transport-docs/', t: 'ทำใบงานขนส่ง' },
+    { href: 'transport-forms/', t: 'เอกสารขนส่ง' },
+    { g: 'ctrl', t: 'ควบคุม' },
+    { k: 'adj', t: 'ปรับยอด', head: 1 },
+    { href: 'stocktake/', t: 'นับสต๊อกใหญ่' },
+    { href: 'cut-check/', t: 'เช็คตัดสต๊อก', src: 1 },
+    { k: 'trc', t: 'TRcloud' },
+    { href: 'invoice-match/', t: 'จับคู่ Invoice' },
+    { k: 'docs', t: 'เอกสารทั้งหมด' },
     { k: 'close', t: 'ปิดวัน / เดือน', head: 1 },
-    { g: 'ค้นหา' }, { k: 'item', t: 'สินค้า / โล' }, { k: 'docs', t: 'เอกสาร' },
-    { g: '' }, { k: 'master', t: 'ข้อมูลหลัก' }, { k: 'set', t: 'ตั้งค่า' },
+    { k: 'rows', t: 'ตารางแบบเดิม', head: 1 },
+    { g: 'report', t: 'รายงาน' },
+    { href: 'dashboard/', t: 'ภาพรวมสต๊อก', src: 1, sim: 1 },
+    { href: 'balance/', t: 'คงเหลือ ณ วันที่', src: 1, sim: 1 },
+    { href: 'fifo/', t: 'FIFO สต๊อก', src: 1, sim: 1 },
+    { href: 'lot-po/', t: 'LOT / PO ขายออก', src: 1, sim: 1 },
+    { g: 'setup', t: 'ตั้งค่า' },
+    { k: 'master', t: 'ข้อมูลหลัก' },
+    { k: 'set', t: 'คนใช้และสิทธิ์' },
+    { href: 'roster/', t: 'ตารางกะ' },
+    { href: 'settings/', t: 'ตั้งค่าระบบ' },
+    { href: '', t: 'หน้า WMS เดิม' },
   ];
+  var AREAS = [];
+  NAV.forEach(function (n) {
+    if (n.g) AREAS.push({ g: n.g, t: n.t, items: [] });
+    else {
+      var a = AREAS[AREAS.length - 1];
+      n.area = a.g;
+      n.id = n.id || n.k || 'x:' + n.href;
+      a.items.push(n);
+    }
+  });
+  var WEEK = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'];
+  var TODO_ST = ['todo', 'recv', 'check', 'approve', 'reject'];   // ตัวกรองของเมนู รอรับ / รออนุมัติ
   var TYPE_OF = { cut: 'ตัดขาย', gr: 'รับของ', move: 'ย้าย', ret: 'คืน', conv: 'แปลง', adj: 'ปรับยอด', rows: 'ตารางเดิม' };
-  var FLOW = ['cut', 'gr', 'move', 'ret', 'conv'];
   var TYPES = ['ตัดขาย', 'รับของ', 'ย้าย', 'คืน', 'แปลง', 'ปรับยอด', 'ตารางเดิม', 'กลับรายการ', 'ยอดยกมา'];
   var RANGES = [['today', 'วันนี้'], ['d7', '7 วัน'], ['d30', '30 วัน'], ['month', 'เดือนนี้'], ['all', 'ทั้งหมด']];
 
   var NAV_OPEN = false;
+  var VIEW = null;            // เมนูที่กดเข้ามา (หน้าเดียวอยู่ได้สองหมวด เช่น ย้าย กับ โอน QA)
+  var AREA = '';              // หมวดที่เปิดอยู่ตอนหมวดนั้นมีแต่หน้า WMS อื่น (MODE = area)
+  var HOME_F = 'todo';        // ตัวกรองหน้า งานของฉัน: todo | wait | done
+  var AT = '';                // หน้าที่วาดล่าสุด เปลี่ยนหน้า = เลื่อนขึ้นบนสุด
+  var NAV_HTML = '';
   var HX = null, HX_AT = 0, HX_BUSY = false, HX_FOR = '';   // { xfer: [วัน] | null, arch: สรุปปิดเดือน | null, audit: {audit} | {error} ผลตรวจแถว }
   var Q = (function () {
     var q = { text: '', type: '', status: '', range: 'd7' };
@@ -88,10 +134,18 @@
   function C() { return window.WmsFireCore; }
   function docFromHash() { var m = /^#doc=([A-Za-z0-9-]{1,20})$/.exec(location.hash || ''); return m ? m[1].toUpperCase() : ''; }
   function saveQ() { try { localStorage.setItem(Q_KEY, JSON.stringify({ type: Q.type, status: Q.status, range: Q.range })); } catch (e) {} }
-  function thDate(day) {
-    var p = String(day || '').split('-');
-    if (p.length !== 3) return '';
-    return new Date(Date.UTC(+p[0], +p[1] - 1, +p[2], 5)).toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+  function p2(v) { return ('0' + v).slice(-2); }
+  /** 2026-11-23 → 23/11/2026 · จันทร์ 23/11/2026 (week) */
+  function ddmm(day, week) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ''));
+    if (!m) return '';
+    var d = p2(m[3]) + '/' + p2(m[2]) + '/' + m[1];
+    return week ? (WEEK[new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).getUTCDay()] || '') + ' ' + d : d;
+  }
+  /** ค้างตั้งแต่: วันนี้ = เวลา · วันก่อน = วัน/เดือน */
+  function since(stamp, day) {
+    var s = String(stamp || ''), d = s.slice(0, 10);
+    return d === day ? hm(s) : ddmm(d).slice(0, 5);
   }
   function dmy(day) { var p = String(day || '').split('-'); return p.length === 3 ? +p[2] + '/' + +p[1] + '/' + p[0].slice(2) : ''; }
   function hm(stamp) { return String(stamp || '').slice(11, 16); }
@@ -111,7 +165,7 @@
   function local() {
     var out = [];
     NAV.forEach(function (n) {
-      if (!TYPE_OF[n.k] || (n.head && !head())) return;
+      if (!n.k || !TYPE_OF[n.k] || !allowed(n)) return;
       if (n.k === 'cut') {
         if (PENDING) out.push({ k: 'cut', t: n.t, sent: true, held: isHeld(PENDING), rows: PENDING.copy ? PENDING.copy.length : 0 });
         else if (FILES.length) {
@@ -136,7 +190,6 @@
     return HX.xfer.filter(function (d) { return (!d.done || d.more) && d.day < day; });
   }
   function archDue() { return HX && HX.arch && HX.arch.next && HX.arch.next.m ? HX.arch.next : null; }
-  function closeDue() { return head() ? xferLeft().length + (archDue() ? 1 : 0) : 0; }
 
   /** ข้อมูลหัวหน้าของหน้าวันนี้ (อ่านฐานอย่างละ 1 ครั้ง เก็บไว้ HX_MS) */
   async function loadHx(force) {
@@ -153,53 +206,143 @@
 
   /* ── เมนู ──────────────────────────────────────────────────────────── */
 
+  function allowed(n) { return !!n && (!n.head || head()); }
+  /** หน้าที่เปิดได้ (หน้า area = รายการเมนูของหมวดที่มีแต่หน้า WMS อื่น) */
   function tabs() {
-    return NAV.filter(function (n) { return n.k && (!n.head || head()); }).map(function (n) { return [n.k, n.t]; });
+    return NAV.filter(function (n) { return n.k && allowed(n); }).map(function (n) { return [n.k, n.t]; }).concat([['area', 'เมนู']]);
   }
-  function title(k) { var n = NAV.filter(function (x) { return x.k === k; })[0]; return n ? n.t : ''; }
+  function byId(id) { return NAV.filter(function (n) { return n.id === id && allowed(n); })[0] || null; }
+  function areaOf(g) { return AREAS.filter(function (a) { return a.g === g; })[0] || AREAS[0]; }
 
-  /** ใบที่รอเรา: รับได้ (ตามทีม) + ตรวจได้ (คนอื่นทำ) + อนุมัติได้ / ไม่รับที่ต้องยกเลิก (หัวหน้า) */
-  function okTodo(h) { return h && h.ok && !viewer() ? h.ok.toRecv + h.ok.toCheck + (head() ? h.ok.approve + h.ok.reject : 0) : 0; }
-  function okLate(h) { return h.ok.recvDays >= 1 || h.ok.days >= 2 || (head() && h.ok.reject > 0); }
+  /** เมนูที่ตรงกับหน้าที่เปิดอยู่ */
+  function here() {
+    if (MODE === 'area') return null;
+    if (MODE === 'docs' && DOC && BACK) return byId(BACK === 'item' && VIEW && VIEW.to === 'item' ? VIEW.id : BACK);
+    if (MODE === 'docs' && !DOC && Q.status === 'todo') return byId('todo');
+    if (VIEW && allowed(VIEW) && (VIEW.k || VIEW.to) === MODE && (VIEW.id !== 'todo' || TODO_ST.indexOf(Q.status) >= 0)) return VIEW;
+    return byId(MODE);
+  }
 
-  function badge(k, h, mine) {
-    if (k === 'trc' && h && h.wait.n && !viewer()) return '<span class="bn-n' + (h.wait.days >= 2 ? ' bad' : '') + '" title="รอลง TRcloud">' + f(h.wait.n) + '</span>';
-    if (k === 'docs' && okTodo(h)) return '<span class="bn-n' + (okLate(h) ? ' bad' : '') + '" title="รอรับ / รอตรวจ / อนุมัติ">' + f(okTodo(h)) + '</span>';
-    if (k === 'close') { var n = closeDue(); return n ? '<span class="bn-n">' + f(n) + '</span>' : ''; }
-    var p = mine.filter(function (x) { return x.k === k; })[0];
-    if (p) return '<span class="bn-dot' + (p.sent ? ' bad' : '') + '" title="' + (p.sent ? 'มีชุดรอส่ง' : 'มีร่างยังไม่บันทึก') + '"></span>';
-    return '';
+  /** หน้า WMS อื่น · โหมดซ้อม / ทดลอง / สวิตช์ปิด เปิดแท็บใหม่ แอปจะได้ไม่หลุดโหมด */
+  function away() { return FIRE.mode !== 'live' || !!FIRE.override; }
+  function hrefOf(n) { return '../' + n.href + (n.src && away() ? '?fire=' + FIRE.mode : ''); }
+  function simWarn(n) { return FIRE.mode !== 'live' && n.href && !n.sim; }
+  var SIM_ASK = 'หน้านี้ไม่มีโหมดซ้อมครบ สิ่งที่บันทึกในหน้านี้อาจลงระบบจริง';
+  function linkHtml(n, cls, cur) {
+    if (n.href === undefined) {
+      return '<button type="button" class="' + cls + '" data-nav="' + esc(n.id) + '"' + (cur ? ' aria-current="page"' : '') + '>' + esc(n.t) + '</button>';
+    }
+    return '<a class="' + cls + '" data-nav="' + esc(n.id) + '" href="' + esc(hrefOf(n)) + '"' + (away() ? ' target="_blank" rel="noopener"' : '') +
+      (simWarn(n) ? ' title="' + esc(SIM_ASK) + '"' : '') + '>' + esc(n.t) + '</a>';
+  }
+
+  function go(mode) { if (MODE === mode) render(); else setMode(mode); }
+
+  /** เปิดเมนู (ปุ่มในเมนู · ค้นหา Ctrl K) */
+  function openNav(id) {
+    var n = byId(id);
+    if (!n) return;
+    NAV_OPEN = false;
+    if (n.href !== undefined) {
+      if (simWarn(n) && !confirm(SIM_ASK + '\nเปิดไหม?')) return;
+      if (away()) window.open(hrefOf(n), '_blank', 'noopener'); else location.href = hrefOf(n);
+      return;
+    }
+    var mode = n.k || n.to;
+    VIEW = n;
+    if (mode === 'docs') {
+      if (n.id === 'todo') { Q.status = 'todo'; Q.type = ''; Q.text = ''; Q.range = 'all'; }
+      else if (Q.status === 'todo') Q.status = '';
+      saveQ(); SEL = {}; NOTE = null; BACK = '';
+      if (DOC) openDoc(''); else go('docs');
+    } else if (mode === 'item' && window.BookItem) {
+      BookItem.view({ chip: n.id === 'qastock' ? 'qa' : '' });
+    } else {
+      if (mode === 'set' && MODE !== 'set' && window.BookFireSet) BookFireSet.pick('set', 'users');
+      go(mode);
+    }
+    toTop();
+  }
+
+  /** กดหมวด = หน้าแรกของหมวดที่อยู่ในแอป · หมวดที่มีแต่หน้า WMS อื่น = หน้ารายการเมนู */
+  function openArea(g) {
+    var first = areaOf(g).items.filter(function (n) { return n.href === undefined && allowed(n); })[0];
+    if (first) { openNav(first.id); return; }
+    NAV_OPEN = false;
+    VIEW = null; AREA = g;
+    go('area');
+    toTop();
+  }
+
+  /** พื้นที่เลื่อนของหน้า กับตำแหน่งบนสุด */
+  function toTop() {
+    var el = $('bkScroll');
+    if (el) { el.scrollTop = 0; el.scrollLeft = 0; }
+    window.scrollTo(0, 0);
   }
 
   function renderNav() {
-    var el = $('bkNav');
+    var el = $('bkNav'), root = document.documentElement;
     if (!el) return;
-    if (!ON || !USER) { el.hidden = true; document.documentElement.classList.remove('bk-in'); return; }
+    if (!ON || !USER) {
+      el.hidden = true; NAV_HTML = ''; NAV_OPEN = false; el.innerHTML = '';
+      root.classList.remove('bk-in');
+      if (window.BookKeys) BookKeys.close();
+      return;
+    }
     el.hidden = false;
-    document.documentElement.classList.add('bk-in');
-    var h = FIRE.home(), mine = local(), alerts = 0, html = '';
-    NAV.forEach(function (n) {
-      if (n.g !== undefined) { html += n.g ? '<div class="bn-g">' + esc(n.g) + '</div>' : '<div class="bn-sp"></div>'; return; }
-      if (n.head && !head()) return;
-      var b = badge(n.k, h, mine);
-      if (b) alerts++;
-      html += '<button type="button" class="bn-it' + (MODE === n.k ? ' on' : '') + '" data-mode="' + n.k + '"' + (MODE === n.k ? ' aria-current="page"' : '') + '>' +
-        ic(n.k) + '<span class="bn-t">' + esc(n.t) + '</span>' + b + '</button>';
-    });
-    var mode = FIRE.mode === 'demo' ? '<span class="bn-mode">โหมดซ้อม</span>' : FIRE.mode === 'dev' ? '<span class="bn-mode">ฐานทดลอง</span>' : '';
-    el.className = 'bk-nav' + (NAV_OPEN ? ' open' : '');
-    el.innerHTML =
+    root.classList.add('bk-in');
+    var cur = here(), g = cur ? cur.area : MODE === 'area' && AREA ? AREA : 'today', area = areaOf(g);
+    var mode = FIRE.mode === 'demo' ? 'โหมดซ้อม' : FIRE.mode === 'dev' ? 'ฐานทดลอง' : FIRE.override ? 'สวิตช์ปิด' : '';
+    var team = me().team === 'qa' ? ' · ทีม QA' : '';
+    var html =
+      '<button type="button" class="bn-skip" id="bnSkip">ข้ามไปที่งาน</button>' +
       '<div class="bn-top">' +
-        '<button type="button" class="bn-burger" id="bnBurger" aria-expanded="' + NAV_OPEN + '" aria-controls="bnList" aria-label="เมนู">' + ic(NAV_OPEN ? 'x' : 'menu') +
-          (alerts && !NAV_OPEN ? '<span class="bn-alert"></span>' : '') + '</button>' +
-        '<img class="bn-logo" src="../icons/notebook.png" alt="" width="28" height="28">' +
-        '<div class="bn-brand"><b>สมุดสต๊อก</b><span>Inventory</span>' + mode + '</div>' +
-        '<span class="bn-cur">' + esc(title(MODE)) + '</span>' +
+        '<button type="button" class="bn-burger" id="bnBurger" aria-expanded="' + NAV_OPEN + '" aria-controls="bnList" aria-label="เมนู">' + ic(NAV_OPEN ? 'x' : 'menu') + '</button>' +
+        '<button type="button" class="bn-brand" data-nav="home"><b>WMS</b>' +
+          (mode ? '<span class="bn-mode">' + mode + '</span>' : '<span>สมุดสต๊อก</span>') + '</button>' +
+        '<div class="bn-areas" role="group" aria-label="งานหลัก">' + AREAS.map(function (a) {
+          return '<button type="button" class="bn-area" data-area="' + a.g + '"' + (a.g === g ? ' aria-current="true"' : '') + '>' + esc(a.t) + '</button>';
+        }).join('') + '</div>' +
+        '<button type="button" class="bn-find" id="bnFind" aria-label="ค้นหาเมนู SKU โล เอกสาร Ctrl K" aria-keyshortcuts="Control+K">' + ic('find') + '<span>ค้นหา SKU โล เอกสาร</span><kbd>Ctrl K</kbd></button>' +
+        '<div class="bn-me" title="' + esc(USER.email || '') + '"><span><b>' + esc(USER.who) + '</b>' + esc(USER.role) + team + '</span>' +
+          '<button type="button" class="bn-off" id="bkOut">ออก</button></div>' +
       '</div>' +
-      '<div class="bn-list" id="bnList">' + html +
-        '<a class="bn-it bn-out" href="../">' + ic('wms') + '<span class="bn-t">เมนู WMS อื่น</span></a>' +
-        '<div class="bn-me" title="' + esc(USER.email || '') + '"><span><b>' + esc(USER.who) + '</b>' + esc(USER.role) + (me().team === 'qa' ? ' · ทีม QA' : '') + '</span><button type="button" class="bn-off" id="bkOut">ออก</button></div>' +
+      '<div class="bn-side" id="bnList">' +
+        '<div class="bn-areas-m" role="group" aria-label="เลือกหมวดงาน">' + AREAS.map(function (a) {
+          return '<button type="button" class="bn-area-m" data-area="' + a.g + '"' + (a.g === g ? ' aria-current="true"' : '') + '>' + esc(a.t) + '</button>';
+        }).join('') + '</div>' +
+        '<h2 id="bnAreaT">' + esc(area.t) + '</h2>' +
+        '<ul aria-labelledby="bnAreaT">' + area.items.filter(allowed).map(function (n) {
+          return '<li>' + linkHtml(n, 'bn-it', n === cur) + '</li>';
+        }).join('') + '</ul>' +
+        '<div class="bn-who"><span><b>' + esc(USER.who) + '</b>' + esc(USER.role) + team + '</span><button type="button" class="bn-off" id="bkOut2">ออก</button></div>' +
       '</div>';
+    el.className = 'bk-nav' + (NAV_OPEN ? ' open' : '');
+    if (html !== NAV_HTML) {
+      /* วาดใหม่แล้วแป้นพิมพ์ยังอยู่ที่ปุ่มเดิม และหมวดบนไม่เด้งกลับซ้าย */
+      var f0 = el.contains(document.activeElement) ? document.activeElement : null;
+      var sel = !f0 ? '' : f0.id ? '#' + f0.id : f0.dataset.area ? '.' + f0.className + '[data-area="' + f0.dataset.area + '"]'
+        : f0.dataset.nav ? '[data-nav="' + f0.dataset.nav + '"]' : '';
+      var strip = el.querySelector('.bn-areas'), left = strip ? strip.scrollLeft : 0;
+      NAV_HTML = html;
+      el.innerHTML = html;
+      if (el.querySelector('.bn-areas')) el.querySelector('.bn-areas').scrollLeft = left;
+      var f1 = sel ? el.querySelector(sel) : null;
+      if (f1) f1.focus({ preventScroll: true });
+    }
+    var at = MODE + '|' + g + '|' + DOC;
+    if (at !== AT) { AT = at; toTop(); }
+  }
+
+  /** หมวดที่มีแต่หน้า WMS อื่น */
+  function renderArea() {
+    var a = areaOf(AREA);
+    $('act').innerHTML = ''; $('sum').innerHTML = ''; $('docs').innerHTML = '';
+    $('inp').innerHTML = '<div class="bk-top"><span class="bk-h">' + esc(a.t) + '</span></div>';
+    $('body').innerHTML = table([['หน้า'], ['เปิด']], a.items.filter(allowed).map(function (n) {
+      return '<tr><td>' + linkHtml(n, 'bh-link', false) + '</td><td class="c-sub">' + (away() ? 'แท็บใหม่' : 'หน้า WMS') + (simWarn(n) ? ' · ไม่มีโหมดซ้อมครบ' : '') + '</td></tr>';
+    }));
   }
 
   /* ── สถานะเอกสาร (ชิป) ───────────────────────────────────────────────── */
@@ -227,6 +370,7 @@
     if (!out) out = '<span class="ba-st okk">✓ บันทึกแล้ว</span>';
     return out;
   }
+  function backText() { return BACK === 'item' ? '‹ กลับไปหน้าสินค้า' : BACK === 'home' ? '‹ กลับไปงานของฉัน' : '‹ กลับไปรายการ'; }
   function docBtn(no) { return '<button type="button" class="ba-no" data-doc="' + esc(no) + '">' + esc(no) + '</button>'; }
 
   /* ── 🏠 วันนี้ ──────────────────────────────────────────────────────── */
@@ -240,123 +384,167 @@
     var list = auditList();
     if (!list.length) return '';
     return '<section class="ba-sec"><h3>เอกสารผิดกติกา <span>สคริปต์ตรวจเจอ</span></h3>' +
-      table([['เลขที่'], ['วันที่'], ['ประเภท'], ['ผู้ลง'], ['ผิดตรงไหน']], list.map(function (x) {
+      table([['เลขที่'], ['วันที่'], ['ประเภท'], ['ผู้ลง'], ['ผิดตรงไหน']], list.map(function (x) {   // คิวขึ้นแถวเดียว รายใบอยู่ตรงนี้
         return '<tr><td class="c-act">' + (x.no ? docBtn(x.no) : '—') + '</td><td class="c-sub">' + esc(x.date ? dmy(x.date) : '') + '</td><td>' + esc(x.type || '') + '</td>' +
           '<td>' + esc(x.name || '') + '</td><td>' + esc(x.why || '') + '</td></tr>';
       })) + '</section>';
   }
 
+  /**
+   * งานที่ไม่ใช่ใบรับ / ตรวจ / อนุมัติ (แถวละเรื่อง) · top = ขึ้นก่อนใบ
+   * { tone, title ชื่องาน, ref เอกสาร, sub, qty, at ค้างตั้งแต่, word สถานะ, go, sec, act, doc }
+   */
   function cards(h) {
     var out = [], mine = local();
     if (head() && HX && HX.audit && window.WmsFireDocs) {
       var ac = WmsFireDocs.auditCard({ audit: HX.audit.audit, error: HX.audit.error, open: h.open, now: Date.now(), practice: FIRE.mode !== 'live' }), bad1 = auditList()[0];
       if (ac) {
+        ac.top = 1;
         ac.go = 'home';
+        ac.ref = ac.n ? f(ac.n) + ' ใบ' : '';
+        ac.word = ac.tone === 'bad' ? '! ผิดกติกา' : ac.tone === 'warn' ? '! ต้องเช็ค' : 'กำลังตรวจ';
         ac.act = bad1 && bad1.no ? 'เปิดใบ' : 'เช็คใหม่';
         if (bad1 && bad1.no) ac.doc = bad1.no;
         out.push(ac);
       }
     }
     mine.filter(function (p) { return p.sent; }).forEach(function (p) {
-      out.push(p.held ? { tone: 'warn', title: 'ชุดพักส่ง · ' + p.t, sub: heldNote(), go: p.k, act: 'ไปดู' }
-        : { tone: 'bad', title: 'ชุดรอส่ง · ' + p.t, sub: 'ส่งไม่สำเร็จ ระบบส่งซ้ำเองทุก 30 วินาที ไม่บันทึกซ้ำ', go: p.k, act: 'ไปดู' });
+      out.push(p.held
+        ? { top: 1, tone: 'warn', title: 'ชุดพักส่ง · ' + p.t, sub: heldNote(), word: 'พักส่ง', go: p.k, act: 'ไปดู' }
+        : { top: 1, tone: 'bad', title: 'ชุดรอส่ง · ' + p.t, sub: 'ระบบส่งซ้ำเองทุก 30 วินาที ไม่บันทึกซ้ำ', word: '! ส่งไม่สำเร็จ', go: p.k, act: 'ไปดู' });
     });
-    if (h.ok && !viewer()) {
-      var dayText = function (n) { return n ? n + ' วันก่อน' : 'วันนี้'; };
-      if (h.ok.reject) {
-        out.push({ tone: 'bad', n: h.ok.reject, title: 'ผู้รับไม่รับ', sub: head() ? 'ของยังล็อก · ยกเลิกใบ แล้วให้คนทำลงใบใหม่' : 'ของยังล็อก · แจ้งหัวหน้ายกเลิกใบ แล้วทำใบใหม่',
-          go: 'docs', sec: 'reject', act: head() ? 'ยกเลิกใบ' : 'ไปดู' });
-      }
-      if (h.ok.toRecv) {
-        out.push({ tone: h.ok.recvDays ? 'bad' : 'warn', n: h.ok.toRecv, title: h.ok.recvDays ? 'ค้างรับ' : 'รอรับ',
-          sub: 'นับของจริงแล้วกด รับ หรือ ไม่รับ · เก่าสุด ' + dayText(h.ok.recvDays), go: 'docs', sec: 'recv', act: 'รับ' });
-      }
-      if (h.ok.sent) {
-        out.push({ tone: h.ok.sentDays ? 'warn' : 'info', n: h.ok.sent, title: 'ใบโอนของฉันรอคนรับ',
-          sub: 'ของใช้ต่อไม่ได้จนกว่าผู้รับกด · เก่าสุด ' + dayText(h.ok.sentDays), go: 'docs', sec: 'recv', act: 'ไปดู' });
-      }
-    }
-    if (h.ok && h.ok.toCheck && !viewer()) {
-      out.push({ tone: 'warn', n: h.ok.toCheck, title: 'รอตรวจ', sub: 'ใบย้าย / แปลง ที่คนอื่นทำ · เช็คของจริงแล้วกด ตรวจแล้ว', go: 'docs', sec: 'check', act: 'ตรวจ' });
-    }
-    if (h.ok && h.ok.approve && head()) {
-      out.push({ tone: h.ok.days >= 2 ? 'bad' : 'warn', n: h.ok.approve, title: 'รออนุมัติ',
-        sub: 'ตรวจแล้ว รอหัวหน้ากด อนุมัติ · เก่าสุด ' + (h.ok.days ? h.ok.days + ' วันก่อน' : 'วันนี้'), go: 'docs', sec: 'approve', act: 'อนุมัติ' });
-    }
     if (head() && !h.open) {
       /* สวิตช์ยังปิด (?fire=live) = ช่วงเตรียม ไม่เร่งให้ลงยอดก่อนนับเสร็จ */
       out.push({ tone: FIRE.override ? 'warn' : 'bad', title: 'ยังไม่ลงยอดยกมา',
-        sub: '🔒 ลงเอกสารยังล็อก · ลงยอดหลังนับใหญ่เสร็จเท่านั้น · ระหว่างรอ ตั้ง ข้อมูลหลัก ล่วงหน้าได้', go: 'set', sec: 'open', act: 'ลงยอด' });
+        sub: 'ลงหลังนับใหญ่เสร็จเท่านั้น · ระหว่างรอ ตั้งข้อมูลหลักได้', word: 'ลงเอกสารยังล็อก', go: 'set', sec: 'open', act: 'ลงยอด' });
     }
     if (h.wait.n && !viewer()) {
-      out.push({ tone: h.wait.days >= 2 ? 'bad' : 'warn', n: h.wait.n, title: 'รอลง TRcloud',
-        sub: 'เก่าสุด ' + (h.wait.days ? h.wait.days + ' วันก่อน' : 'วันนี้') + (h.wait.file ? ' · ออกไฟล์ปรับยอด ' + f(h.wait.file) : '') + (h.wait.number ? ' · ใส่เลข ' + f(h.wait.number) : ''),
-        go: 'trc', sec: 'wait', act: 'ใส่เลข' });
+      out.push({ tone: h.wait.days >= 2 ? 'bad' : 'warn', title: 'ใส่เลข TRcloud', ref: f(h.wait.n) + ' ใบ',
+        sub: [h.wait.file ? 'ออกไฟล์ปรับยอด ' + f(h.wait.file) : '', h.wait.number ? 'ใส่เลข ' + f(h.wait.number) : ''].filter(Boolean).join(' · '),
+        at: ddmm(h.wait.oldest).slice(0, 5), word: h.wait.days >= 2 ? '! ค้าง ' + h.wait.days + ' วัน' : 'รอเลข', go: 'trc', sec: 'wait', act: 'ใส่เลข' });
     }
     if (head()) {
       var xl = xferLeft();
-      if (xl.length) out.push({ tone: 'warn', n: xl.length, title: 'วางแถวลงชีตเดิม', sub: 'ยังวางกันอยู่ · ' + xl.slice(0, 3).map(function (d) { return dmy(d.day); }).join(', ') + (xl.length > 3 ? ' …' : ''), go: 'close', sec: 'xfer', act: 'คัดลอก' });
+      if (xl.length) {
+        out.push({ tone: 'warn', title: 'วางแถวลงชีตเดิม', ref: f(xl.length) + ' วัน',
+          sub: xl.slice(0, 3).map(function (d) { return ddmm(d.day); }).join(', ') + (xl.length > 3 ? ' …' : ''),
+          at: ddmm(xl.map(function (d) { return d.day; }).sort()[0]).slice(0, 5), word: 'ยังไม่วาง', go: 'close', sec: 'xfer', act: 'คัดลอก' });
+      }
       var ad = archDue();
-      if (ad) out.push({ tone: 'info', title: 'ปิดเดือน ' + ad.label + ' ได้แล้ว', sub: f(ad.docs) + ' เอกสาร · เครื่องใหม่โหลดเร็วขึ้น ประหยัดโควตา', go: 'close', sec: 'arch', act: 'ปิดเดือน' });
+      if (ad) out.push({ tone: 'info', title: 'ปิดเดือน', ref: ad.label, sub: f(ad.docs) + ' เอกสาร · ปิดแล้วเครื่องใหม่โหลดเร็วขึ้น', word: 'ถึงรอบปิด', go: 'close', sec: 'arch', act: 'ปิดเดือน' });
       if (h.open) {
         var old = h.trcDay ? C().dayNo(h.day) - C().dayNo(h.trcDay) : -1;
-        if (old < 0 || old > TRC_OLD) out.push({ tone: 'info', title: h.trcDay ? 'ยอด TRcloud เก่า ' + old + ' วัน' : 'ยังไม่นำเข้ายอด TRcloud', sub: 'นำเข้าไฟล์ยอดคงเหลือ แล้วกระทบยอดราย SKU', go: 'trc', sec: 'imp', act: 'นำเข้า' });
+        if (old < 0 || old > TRC_OLD) {
+          out.push({ tone: 'info', title: 'นำเข้ายอด TRcloud', ref: 'ไฟล์ Stock', sub: 'นำเข้าแล้วกระทบยอดราย SKU',
+            at: h.trcDay ? ddmm(h.trcDay).slice(0, 5) : '', word: h.trcDay ? 'ยอดเก่า ' + old + ' วัน' : 'ยังไม่นำเข้า', go: 'trc', sec: 'imp', act: 'นำเข้า' });
+        }
       }
     }
     mine.filter(function (p) { return !p.sent; }).forEach(function (p) {
-      out.push({ tone: 'info', title: 'ร่างค้าง · ' + p.t, sub: (p.files ? f(p.files) + ' ไฟล์ · ' : '') + f(p.rows) + (p.k === 'cut' ? ' บรรทัดออเดอร์' : ' แถว') + ' ยังไม่บันทึก', go: p.k, act: 'ทำต่อ' });
+      out.push({ tone: 'none', title: 'ร่างค้าง · ' + p.t, ref: 'ยังไม่มีเลข',
+        sub: (p.files ? f(p.files) + ' ไฟล์ · ' : '') + f(p.rows) + (p.k === 'cut' ? ' บรรทัดออเดอร์' : ' แถว') + ' ยังไม่บันทึก', word: 'ร่าง', go: p.k, act: 'ทำต่อ' });
     });
     return out;
   }
 
+  /** แถวของหนึ่งใบในคิว (x จาก FIRE.queue) */
+  function docJob(x, side, day) {
+    var qa = x.xf ? C().XF_TH[x.xf] || 'โอน QA' : x.type, tone = 'warn', title, word, act = 'ดูใบ';
+    var late = function (n, w) { return x.age >= n ? '! ค้าง ' + x.age + ' วัน' : w; };
+    if (side === 'done') {
+      tone = x.step === 'reject' ? 'bad' : 'ok';
+      title = { save: 'บันทึก', recv: 'รับ', check: 'ตรวจ', approve: 'อนุมัติ', reject: 'ไม่รับ' }[x.step] + ' · ' + qa;
+      word = { save: '✓ บันทึกแล้ว', recv: '✓ รับแล้ว', check: '✓ ตรวจแล้ว', approve: '✓ อนุมัติแล้ว', reject: 'ไม่รับ' }[x.step];
+    } else if (side === 'wait') {
+      title = qa;
+      if (x.step === 'first') { word = 'รอใบเข้า ' + x.first; }
+      else if (x.step === 'recv') { tone = x.age ? 'warn' : 'info'; word = late(1, 'รอคนรับ'); }
+      else { tone = x.age >= 2 ? 'warn' : 'info'; word = late(2, x.step === 'check' ? 'รอคนตรวจ' : 'รอหัวหน้าอนุมัติ'); }
+    } else if (x.step === 'void' || x.step === 'redo') {
+      tone = 'bad'; word = '! ไม่รับ';
+      title = x.step === 'void' ? 'ยกเลิกใบที่ไม่รับ' : 'แจ้งหัวหน้ายกเลิกใบ';
+      act = x.step === 'void' ? 'ดูและยกเลิก' : 'ดูเหตุผล';
+    } else if (x.step === 'recv') {
+      if (x.age >= 1) tone = 'bad';
+      title = 'รับ · ' + qa; word = late(1, 'รอรับ'); act = 'ตรวจรับ';
+    } else if (x.step === 'check') {
+      if (x.age >= 2) tone = 'bad';
+      title = 'ตรวจ · ' + qa; word = late(2, 'รอตรวจ'); act = 'ตรวจ';
+    } else {
+      if (x.age >= 2) tone = 'bad';
+      title = 'อนุมัติ · ' + qa; word = late(2, 'รออนุมัติ'); act = 'ดูและอนุมัติ';
+    }
+    var sub = [x.sku, x.po && String(x.po) !== '0' ? 'PO ' + x.po : '', x.rows > 1 ? f(x.rows) + ' แถว' : '', x.name ? 'โดย ' + x.name : ''].filter(Boolean).join(' · ');
+    return { tone: tone, title: title, doc: x.no, sub: sub, qty: +x.qty || 0, at: since(x.stamp, day), word: word, act: act };
+  }
+
+  /** แถวของตารางงานตามตัวกรอง · n = จำนวนบนตัวกรอง */
+  function jobs(h, q) {
+    var side = HOME_F, cs = cards(h), n = { todo: cs.length + q.n.todo, wait: q.n.wait, done: q.n.done };
+    var list = q[side].map(function (x) { return docJob(x, side, h.day); });
+    if (side === 'todo') {
+      var rank = { bad: 0, warn: 1, info: 2, none: 3 };
+      list = cs.filter(function (c) { return c.top; }).concat(list, cs.filter(function (c) { return !c.top; }))
+        .map(function (c, i) { return [c, i]; })
+        .sort(function (a, b) { return (rank[a[0].tone] || 0) - (rank[b[0].tone] || 0) || a[1] - b[1]; })
+        .map(function (p) { return p[0]; });
+    }
+    var more = q.n[side] - q[side].length;
+    if (more > 0) list.push({ tone: 'none', title: 'อีก ' + f(more) + ' ใบ', word: 'ดูในหน้าเอกสาร', go: 'docs', sec: side === 'done' ? '' : 'todo', act: 'ดูทั้งหมด' });
+    return { list: list, n: n };
+  }
+
+  function jobRow(c, i) {
+    var main = HOME_F === 'todo' && i === 0;
+    return '<tr><td class="bh-k">' + esc(c.title) + '</td>' +
+      '<td>' + (c.doc ? docBtn(c.doc) : c.ref ? esc(c.ref) : '<span class="c-sub">–</span>') + '</td>' +
+      '<td class="bh-sub" title="' + esc(c.sub || '') + '">' + esc(c.sub || '') + '</td>' +
+      '<td class="num">' + (c.qty !== undefined ? f(c.qty) : '<span class="c-sub">–</span>') + '</td>' +
+      '<td class="bh-at">' + esc(c.at || '–') + '</td>' +
+      '<td><span class="bh-st t-' + c.tone + '">' + esc(c.word || '') + '</span></td>' +
+      '<td class="bh-act"><button type="button" class="bh-go' + (main ? ' main' : '') + '"' +
+        (c.doc ? ' data-doc="' + esc(c.doc) + '"' : ' data-go="' + esc(c.go) + '"' + (c.sec ? ' data-sec="' + esc(c.sec) + '"' : '')) + '>' + esc(c.act) + '</button></td></tr>';
+  }
+
   function renderHome() {
-    var h = FIRE.home();
+    var h = FIRE.home(), q = h && FIRE.queue();
     $('act').innerHTML = '';
     $('docs').innerHTML = '';
-    if (!h) {
-      $('inp').innerHTML = '<div class="bk-top"><span class="bk-h">วันนี้</span></div>';
+    if (!h || !q) {
+      $('inp').innerHTML = '<div class="bk-top"><span class="bk-h">งานของฉัน</span></div>';
       $('sum').innerHTML = '';
       $('body').innerHTML = '<div class="tx-empty">กำลังเปิดสมุด…</div>';
       return;
     }
-    $('inp').innerHTML = '<div class="bk-top"><span class="bk-h">วันนี้</span><span>' + esc(thDate(h.day)) + '</span>' +
-      '<span class="ba-hi">สวัสดี ' + esc(USER.who) + '</span><span class="sp"></span>' +
-      (HX_BUSY ? '<span>⏳</span>' : '<button type="button" class="tx-opt" id="baRefresh" title="เช็คงานค้างใหม่">🔄</button>') + '</div>';
-    $('sum').innerHTML = '<span class="bk-chip' + (h.total ? '' : ' zero') + '">บันทึกวันนี้ <b>' + f(h.total) + '</b> ใบ</span>' +
-      '<span class="bk-chip' + (h.mine ? '' : ' zero') + '">ของฉัน <b>' + f(h.mine) + '</b></span>' +
-      (h.wait.n ? '<span class="bk-chip c-warn">รอลง TRcloud <b>' + f(h.wait.n) + '</b></span>' : '');
+    var a = document.activeElement, keep = a && a.id === 'baRefresh' ? '#baRefresh' : a && a.dataset && a.dataset.hf ? '[data-hf="' + a.dataset.hf + '"]' : '';
+    $('inp').innerHTML = '<div class="bk-top"><span class="bk-h">งานของฉัน</span><span class="bh-day">' + esc(ddmm(h.day, 1)) + '</span><span class="sp"></span>' +
+      '<button type="button" class="tx-opt" id="baRefresh" title="ดึงเอกสารใหม่และเช็คงานค้าง"' + (HX_BUSY ? ' disabled' : '') + '>' + (HX_BUSY ? 'กำลังเช็ค…' : 'เช็คงานใหม่') + '</button></div>';
 
-    var cs = cards(h);
-    var cardHtml = cs.length ? cs.map(function (c) {
-      return '<button type="button" class="ba-card t-' + c.tone + '"' + (c.doc ? ' data-doc="' + esc(c.doc) + '"' : ' data-go="' + c.go + '"') + (c.sec ? ' data-sec="' + c.sec + '"' : '') + '>' +
-        (c.n ? '<span class="ba-cn">' + f(c.n) + '</span>' : '<span class="ba-cn ba-ci">!</span>') +
-        '<span class="ba-ct"><b>' + esc(c.title) + '</b><span>' + esc(c.sub) + '</span></span><span class="ba-cgo">' + esc(c.act) + ' ›</span></button>';
-    }).join('') : '<div class="ba-clear"><b>✓ ไม่มีงานค้าง</b><span>ชุดที่บันทึกถึงฐานครบ' + (viewer() ? '' : ' · เลข TRcloud ครบ') + '</span></div>';
+    var j = jobs(h, q);
+    $('sum').innerHTML = [['todo', 'ต้องทำ'], ['wait', 'รอคนอื่น'], ['done', 'เสร็จวันนี้']].map(function (x) {
+      return '<button type="button" class="bh-fl" data-hf="' + x[0] + '" aria-pressed="' + (HOME_F === x[0]) + '">' + x[1] + ' <b>' + f(j.n[x[0]]) + '</b></button>';
+    }).join('') + (viewer() ? '<span class="bh-note">บัญชีนี้ดูได้อย่างเดียว</span>' : '');
 
-    /* เลขบนการ์ด = ลำดับงานของวัน (ไม่ใช้ลูกศร จอแคบขึ้นบรรทัดใหม่แล้วลูกศรค้างท้ายแถว) */
-    var step = 0;
-    function tile(k, label, sub, cls) {
-      step++;
-      return '<button type="button" class="ba-tile' + (cls || '') + '" data-mode="' + k + '"><span class="ba-tn">' + step + '</span>' + ic(k, 'ba-ti') +
-        '<b>' + esc(label) + '</b><span>' + sub + '</span></button>';
-    }
-    var flow = FLOW.map(function (k) {
-      var t = h.types[TYPE_OF[k]];
-      return tile(k, title(k), t && (t.n || t.void) ? 'วันนี้ ' + f(t.n) + ' ใบ · ' + f(t.qty) + ' ชิ้น' + (t.void ? ' <i>ยกเลิก ' + f(t.void) + '</i>' : '') : 'วันนี้ยังไม่มี');
-    }).join('') +
-      tile('trc', 'ใส่เลข TRcloud', h.wait.n ? 'รอลง ' + f(h.wait.n) + ' ใบ' : 'ครบแล้ว', h.wait.n ? ' t-warn' : '') +
-      (head() ? tile('close', 'ปิดวัน', closeDue() ? 'มี ' + f(closeDue()) + ' งาน' : 'ตรวจยอด · ชีตเดิม') : '');
+    var none = { todo: '✓ ไม่มีงานค้าง', wait: 'ไม่มีใบของคุณที่รอคนอื่น', done: 'วันนี้คุณยังไม่มีงานที่ทำเสร็จ' }[HOME_F];
+    var work = table([['งาน'], ['เอกสาร'], ['รายละเอียด'], ['ชิ้น', 'num'], [HOME_F === 'done' ? 'เวลา' : 'ค้างตั้งแต่'], ['สถานะ'], ['ขั้นต่อไป', 'bh-act']],
+      j.list.length ? j.list.map(jobRow) : ['<tr><td colspan="7" class="bh-none' + (HOME_F === 'todo' ? ' ok' : '') + '">' + none + '</td></tr>']);
 
-    var last = h.last.length ? table([['เลขที่'], ['เวลา'], ['ประเภท'], ['ผู้ลง'], ['แถว', 'num'], ['ชิ้น', 'num'], ['สถานะ']], h.last.map(function (x) {
-      return '<tr' + (x.voided ? ' class="r-void"' : '') + '><td class="c-act">' + docBtn(x.no) + '</td><td class="c-sub">' + esc(hm(x.stamp)) + '</td><td>' + esc(x.type) + '</td>' +
+    /* ยอดของทั้งคลังวันนี้ต่อประเภท (เดิมอยู่บนการ์ดงานประจำวัน) */
+    var byType = TYPES.filter(function (t) { var x = h.types[t]; return x && (x.n || x.void); }).map(function (t) {
+      var x = h.types[t];
+      return esc(t) + ' ' + f(x.n) + ' ใบ ' + f(x.qty) + ' ชิ้น' + (x.void ? ' (ยกเลิก ' + f(x.void) + ')' : '');
+    }).join(' · ');
+    var last = table([['เลขที่'], ['เวลา'], ['งาน'], ['ผู้ทำ'], ['แถว', 'num'], ['ชิ้น', 'num'], ['สถานะ']], h.last.length ? h.last.map(function (x) {
+      return '<tr' + (x.voided ? ' class="r-void"' : '') + '><td class="c-act">' + docBtn(x.no) + '</td><td>' + esc(hm(x.stamp)) + '</td><td>' + esc(x.xf ? C().XF_TH[x.xf] || x.type : x.type) + '</td>' +
         '<td>' + esc(x.name) + '</td><td class="num">' + f(x.rows) + '</td><td class="num">' + f(x.qty) + '</td><td class="c-act">' + stChips(x) + '</td></tr>';
-    })) : '<div class="ba-none">วันนี้ยังไม่มีเอกสาร</div>';
+    }) : ['<tr><td colspan="7" class="bh-none">วันนี้ยังไม่มีเอกสาร</td></tr>']);
 
-    $('body').innerHTML = '<div class="ba-home">' +
-      '<section class="ba-sec"><h3>งานค้าง</h3><div class="ba-cards">' + cardHtml + '</div></section>' + auditSec() +
-      '<section class="ba-sec"><h3>งานประจำวัน <span>กดเพื่อเริ่ม</span></h3><div class="ba-flow">' + flow + '</div></section>' +
-      '<section class="ba-sec"><h3>บันทึกล่าสุดวันนี้ <button type="button" class="bk-link" data-mode="docs">ดูเอกสารทั้งหมด ›</button></h3>' + last + '</section>' +
-      '</div>';
+    $('body').innerHTML = '<div class="bh">' +
+      '<section class="bh-queue" aria-label="ตารางงานของฉัน">' + work + '</section>' + auditSec() +
+      '<section class="bh-last"><div class="bh-cap"><h2>บันทึกล่าสุดวันนี้</h2>' +
+        (h.total ? '<span>ทั้งหมด ' + f(h.total) + ' ใบ · ของฉัน ' + f(h.mine) + (byType ? ' · ' + byType : '') + '</span>' : '') +
+        '<button type="button" class="bk-link" data-nav="docs">เอกสารทั้งหมด</button></div>' + last + '</section></div>';
+    if (keep && document.querySelector(keep)) document.querySelector(keep).focus({ preventScroll: true });
   }
 
   /* ── 🔎 เอกสาร: รายการ ───────────────────────────────────────────────── */
@@ -382,7 +570,8 @@
       TYPES.filter(function (t) { return r.types[t] || Q.type === t; }).map(function (t) {
         return '<button type="button" class="bk-chip' + (Q.type === t ? ' on' : '') + '" data-qt="' + esc(t) + '">' + esc(t) + ' <b>' + f(r.types[t] || 0) + '</b></button>';
       }).join('');
-    var st = [['recv', 'รอรับ', 'c-warn'], ['check', 'รอตรวจ', 'c-warn'], ['approve', 'รออนุมัติ', 'c-warn'], ['reject', 'ไม่รับ', 'c-red'], ['wait', 'รอลง TRcloud', 'c-warn'], ['void', 'ยกเลิกแล้ว', 'c-red'], ['mine', 'ของฉัน', '']];
+    r.states = Object.assign({}, r.states, { todo: (r.states.recv || 0) + (r.states.check || 0) + (r.states.approve || 0) });
+    var st = [['todo', 'รอรับ / รออนุมัติ', 'c-warn'], ['recv', 'รอรับ', 'c-warn'], ['check', 'รอตรวจ', 'c-warn'], ['approve', 'รออนุมัติ', 'c-warn'], ['reject', 'ไม่รับ', 'c-red'], ['wait', 'รอลง TRcloud', 'c-warn'], ['void', 'ยกเลิกแล้ว', 'c-red'], ['mine', 'ของฉัน', '']];
     var stChipsHtml = st.map(function (s) {
       var n = r.states[s[0]] || 0;
       return '<button type="button" class="bk-chip ' + s[2] + (Q.status === s[0] ? ' on' : '') + (n || Q.status === s[0] ? '' : ' zero') + '" data-qs="' + s[0] + '">' + s[1] + ' <b>' + f(n) + '</b></button>';
@@ -401,6 +590,7 @@
     renderOkBar(can, r);
     if (!r.total) {
       $('body').innerHTML = '<div class="tx-empty">' + (pick && !Q.text ? '✓ ไม่มีใบ' + { recv: 'รอรับ', check: 'รอตรวจ', approve: 'รออนุมัติ' }[Q.status] + (Q.range !== 'all' ? ' ในช่วงนี้ ลองเลือก ทั้งหมด' : '')
+        : Q.status === 'todo' && !Q.text ? '✓ ไม่มีใบรอรับ / รอตรวจ / รออนุมัติ'
         : r.all ? 'ไม่มีเอกสารตรงกับตัวกรอง' : Q.text ? 'ไม่พบ <b>' + esc(Q.text) + '</b> ในช่วงนี้ ลองเลือก ทั้งหมด' : 'ช่วงนี้ยังไม่มีเอกสาร') + '</div>';
       return;
     }
@@ -513,12 +703,12 @@
     var v = CUR = FIRE.doc(DOC);
     $('docs').innerHTML = '';
     if (!v) {
-      $('inp').innerHTML = '<div class="bk-top"><button type="button" class="tx-opt" id="baBack">' + (BACK ? '‹ กลับไปหน้าสินค้า' : '‹ กลับไปรายการ') + '</button><span class="bk-h">' + esc(DOC) + '</span></div>';
+      $('inp').innerHTML = '<div class="bk-top"><button type="button" class="tx-opt" id="baBack">' + backText() + '</button><span class="bk-h">' + esc(DOC) + '</span></div>';
       $('sum').innerHTML = ''; $('act').innerHTML = '';
-      $('body').innerHTML = '<div class="tx-empty">' + (FIRE.home() ? 'ไม่พบเลขที่ <b>' + esc(DOC) + '</b> ในสำเนาเครื่องนี้<br>เอกสารใหม่จากเครื่องอื่น กด 🔄 ดึงสต๊อกใหม่ ที่แถบบน' : 'กำลังเปิดสมุด…') + '</div>';
+      $('body').innerHTML = '<div class="tx-empty">' + (FIRE.home() ? 'ไม่พบเลขที่ <b>' + esc(DOC) + '</b> ในสำเนาเครื่องนี้<br>เอกสารใหม่จากเครื่องอื่น กด ดึงข้อมูลใหม่ ในกล่องสถานะ' : 'กำลังเปิดสมุด…') + '</div>';
       return;
     }
-    $('inp').innerHTML = '<div class="bk-top"><button type="button" class="tx-opt" id="baBack">' + (BACK ? '‹ กลับไปหน้าสินค้า' : '‹ กลับไปรายการ') + '</button>' +
+    $('inp').innerHTML = '<div class="bk-top"><button type="button" class="tx-opt" id="baBack">' + backText() + '</button>' +
       '<span class="bk-h">' + esc(v.no) + '</span><span class="ba-ty">' + esc(v.xfTh || v.type) + '</span>' +
       '<span>วันที่ ' + esc(dmy(v.date)) + ' · ' + esc(v.name) + ' · บันทึก ' + esc(when(v.stamp)) + '</span><span class="sp"></span>' +
       '<button type="button" class="tx-opt" id="baPrint" title="' + (window.WmsFirePrint && WmsFirePrint.can(v) ? 'พิมพ์ใบ' + (v.type === 'แปลง' ? 'ขอแปลงรหัสสินค้า' : 'โอนย้ายสินค้า') + ' A5' : 'พิมพ์หน้านี้') + '">🖨 พิมพ์ใบ</button></div>';
@@ -581,7 +771,7 @@
     no = String(no || '').toUpperCase();
     NOTE = null;
     if (!no && BACK && MODE === 'docs') {
-      var b = BACK, bh = window.BookItem ? BookItem.hash() : '';
+      var b = BACK, bh = b === 'item' && window.BookItem ? BookItem.hash() : '';
       BACK = ''; DOC = '';
       try { history.pushState(null, '', bh || location.pathname + location.search); } catch (e) { location.hash = bh; }
       setMode(b);
@@ -589,7 +779,7 @@
       return;
     }
     if (no && MODE === 'item') BACK = 'item';
-    else if (no && MODE !== 'docs') BACK = '';
+    else if (no && MODE !== 'docs') BACK = MODE === 'home' ? 'home' : '';
     DOC = no;
     var h = no ? '#doc=' + no : '';
     if (location.hash !== h) {
@@ -630,13 +820,33 @@
     if (!active()) return;
     var t = e.target.closest && e.target.closest('button, a');
     if (!t) { if (NAV_OPEN && !e.target.closest('.bk-nav')) { NAV_OPEN = false; renderNav(); } return; }
+    if (t.id === 'bkOut2') { logout(); return; }
+    if (t.id === 'bnSkip') {
+      var main = document.querySelector('.wms-main');
+      if (main) { var first = main.querySelector('#inp input, #body input:not([disabled]), #body button:not([disabled])'); (first || main).focus(); }
+      return;
+    }
+    if (t.id === 'bnFind') { if (window.BookKeys) BookKeys.open(); return; }
+    if (t.dataset.area) { openArea(t.dataset.area); return; }
+    if (t.dataset.nav) {
+      var n = byId(t.dataset.nav);
+      if (n && n.href !== undefined) {
+        /* ลิงก์จริง เปิดตามปกติ (Ctrl คลิก คัดลอกลิงก์ได้) */
+        if (simWarn(n) && !confirm(SIM_ASK + '\nเปิดไหม?')) e.preventDefault();
+        return;
+      }
+      openNav(t.dataset.nav);
+      return;
+    }
+    if (t.dataset.hf) { HOME_F = t.dataset.hf; renderHome(); return; }
     if (t.id === 'bnBurger') { NAV_OPEN = !NAV_OPEN; renderNav(); return; }
     if (t.dataset.mode && NAV_OPEN) { NAV_OPEN = false; renderNav(); }   // เลือกเมนูแล้วพับ (หน้าเปลี่ยนตาม data-mode ของหน้า)
     if (t.dataset.mode === 'docs' && MODE === 'docs' && DOC) { openDoc(''); return; }
     if (t.dataset.doc) { e.preventDefault(); openDoc(t.dataset.doc); return; }
     if (t.dataset.go === 'docs') {
-      /* การ์ด รอตรวจ / รออนุมัติ: เปิดรายการตัวกรองนั้น ทุกช่วงวัน */
+      /* แถวงานที่พาไปรายการเอกสาร: เปิดตัวกรองนั้น ทุกช่วงวัน */
       Q.status = t.dataset.sec || ''; Q.type = ''; Q.text = ''; if (Q.status) Q.range = 'all';
+      VIEW = TODO_ST.indexOf(Q.status) >= 0 ? byId('todo') : null;
       saveQ(); SEL = {}; NOTE = null;
       if (DOC) openDoc(''); else if (MODE === 'docs') render(); else setMode('docs');
       return;
@@ -649,7 +859,7 @@
       if (MODE === t.dataset.go) render(); else setMode(t.dataset.go);
       return;
     }
-    if (t.id === 'baRefresh') { loadHx(true); render(); return; }
+    if (t.id === 'baRefresh') { loadHx(true); load(true); return; }   // เหมือนปุ่ม ดึงสต๊อกใหม่ + งานของหัวหน้า
     if (t.id === 'baBack') { openDoc(''); return; }
     if (t.id === 'baPrint') { printDoc(DOC); return; }
     if (t.dataset.print) { printDoc(t.dataset.print); return; }
@@ -669,7 +879,7 @@
     if (t.id === 'baTrNone') { if (confirm('ตั้งว่า ' + DOC + ' ไม่ต้องลง TRcloud?')) saveTr('none'); return; }
     if (t.dataset.qr) { Q.range = t.dataset.qr; saveQ(); renderDocsPage(); return; }
     if (t.dataset.qt !== undefined) { Q.type = t.dataset.qt; saveQ(); renderDocList(); return; }
-    if (t.dataset.qs) { Q.status = Q.status === t.dataset.qs ? '' : t.dataset.qs; SEL = {}; NOTE = null; saveQ(); renderDocList(); return; }
+    if (t.dataset.qs) { Q.status = Q.status === t.dataset.qs ? '' : t.dataset.qs; SEL = {}; NOTE = null; saveQ(); renderDocList(); renderNav(); return; }
   });
 
   document.addEventListener('change', function (e) {
@@ -701,8 +911,44 @@
     var no = docFromHash();
     if (no === DOC) return;
     DOC = no; NOTE = null;
+    if (!no && BACK === 'home' && MODE === 'docs') { BACK = ''; setMode('home'); return; }   // ย้อนกลับจากใบที่เปิดจากงานของฉัน
     if (no && MODE !== 'docs') setMode('docs'); else if (window.render) window.render();
   });
+
+  /* ── โครงหน้า (ครั้งเดียวตอนโหลด · ระบบเดิมไม่ทำ) ──────────────────── */
+
+  function boot() {
+    var main = document.querySelector('.wms-main'), body = $('body'), docs = $('docs'), act = $('act'), inp = $('inp');
+    if (!main || !body || !docs || !act || !inp) return;
+    var box = document.createElement('div');
+    box.className = 'bk-scroll';
+    box.id = 'bkScroll';
+    box.tabIndex = 0;
+    box.setAttribute('role', 'region');
+    box.setAttribute('aria-label', 'พื้นที่งาน');
+    main.insertBefore(box, body);
+    box.appendChild(body);
+    box.appendChild(docs);
+    main.appendChild(act);                // แถบลงมืออยู่ท้ายจริง ลำดับ Tab ตรงกับที่เห็น
+    main.setAttribute('role', 'main');
+    main.tabIndex = -1;
+    var say = document.createElement('div');
+    say.id = 'bkSay';
+    say.className = 'bk-say';
+    say.setAttribute('role', 'status');
+    document.body.appendChild(say);
+    /* ชื่อหน้าของทุกโมดูล = หัวเรื่องระดับ 1 */
+    var title = function () {
+      var h = inp.querySelector('.bk-top .bk-h');
+      if (!h) return;
+      h.setAttribute('role', 'heading'); h.setAttribute('aria-level', '1');
+      if (typeof USER === 'undefined' || !USER || (MODE !== 'cut' && MODE !== 'move')) return;
+      var n = here();   // ชื่อหน้าตรงกับเมนูที่กด (ย้าย กับ โอน QA เป็นหน้าเดียวกัน)
+      if (n && h.textContent !== n.t) h.textContent = n.t;
+    };
+    if (window.MutationObserver) new MutationObserver(title).observe(inp, { childList: true });
+  }
+  if (ON) boot();
 
   window.BookApp = {
     on: ON,
@@ -714,15 +960,36 @@
       if (mode === 'home') renderHome();
       else if (mode === 'docs') renderDocsPage();
       else if (mode === 'item' && window.BookItem) BookItem.render();
+      else if (mode === 'area') renderArea();
     },
     opened: function (mode) {
+      if (VIEW && (VIEW.k || VIEW.to) !== mode && !(mode === 'docs' && DOC)) VIEW = null;
       if (mode === 'home') loadHx(false);
       if (mode !== 'docs') BACK = '';
       if (mode !== 'docs' && DOC) { DOC = ''; NOTE = null; }
+      /* เปลี่ยนเมนู = ที่อยู่หน้าไม่ค้าง #doc / #sku กดรีเฟรชแล้วไม่เด้งกลับใบเดิม */
+      if (mode !== 'docs' && mode !== 'item' && /^#(doc|sku)=/.test(location.hash || '')) {
+        try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+      }
     },
     /** ประเภทเอกสารของแท็บงาน (ตารางชุดที่บันทึกด้านล่างแสดงเฉพาะของแท็บนั้น) */
     typeOf: function (mode) { return TYPE_OF[mode] || ''; },
     openDoc: openDoc,
+    openNav: openNav,
+    top: toTop,
+    /** เมนูที่คนนี้เห็น (ค้นหา Ctrl K) */
+    menu: function () {
+      return NAV.filter(function (n) { return !n.g && allowed(n); }).map(function (n) {
+        return { id: n.id, t: n.t, area: areaOf(n.area).t, away: n.href !== undefined && away() };
+      });
+    },
+    /** เปิดหน้าเอกสารพร้อมคำค้น */
+    searchDocs: function (text) {
+      Q.text = String(text || ''); Q.type = ''; Q.status = ''; Q.range = 'all';
+      saveQ(); SEL = {}; NOTE = null; BACK = ''; VIEW = null;
+      if (DOC) openDoc(''); else go('docs');
+      toTop();
+    },
     okChip: okChip,
     /** แท็บนี้มีใบพิมพ์ + ตรวจ / อนุมัติไหม (ย้าย / เติม / QA · แปลงสินค้า) */
     okMode: function (mode) { return !!(window.WmsFireCore && WmsFireCore.OK_TYPES.indexOf(TYPE_OF[mode] || '') >= 0); },

@@ -52,13 +52,43 @@
     try { history.pushState(null, '', h || location.pathname + location.search); } catch (e) { location.hash = h; }
   }
 
+  /** เปิดรายการจากเมนู / ค้นหา · chip = ตัวกรองครั้งนี้ ไม่ทับตัวที่จำไว้ · ไม่มี q = คำค้นเดิม */
+  function view(v) {
+    v = v || {};
+    S.code = ''; S.loc = ''; S.note = null;
+    if (v.q !== undefined) S.q = v.q;
+    else if (v.chip) S.q = '';
+    var saved = 'have';
+    try { saved = localStorage.getItem(CHIP_KEY) || 'have'; } catch (e) {}
+    S.chip = v.chip || saved;
+    setHash('');
+    if (MODE !== 'item') setMode('item'); else window.render();
+    if (window.BookApp) BookApp.top();
+  }
+
+  /** ค้นให้ Ctrl K: รหัสตรงตัวก่อน */
+  function find(q, max) {
+    var x = ix();
+    if (!x) return { skus: [], loc: null, exact: false };
+    var r = X().search(x, q, 'all'), U = String(q).trim().toUpperCase();
+    var same = function (it) { return String(it.sku).toUpperCase() === U || String(it.long).toUpperCase() === U; };
+    var top = r.list.filter(same);
+    return {
+      exact: top.length > 0,
+      skus: top.concat(r.list.filter(function (it) { return !same(it); })).slice(0, max).map(function (it) {
+        return { code: it.long || it.sku, sku: it.sku, name: it.name, total: it.total };
+      }),
+      loc: r.loc ? { q: r.loc.q, n: r.loc.locs.length, total: r.loc.total } : null,
+    };
+  }
+
   /** เปิด SKU (รหัสยาวหรือสั้น) · '' = กลับรายการ */
   function open(code) {
     S.code = String(code || '').toUpperCase();
     S.loc = ''; S.more = CARD_STEP; S.note = null;
     setHash(S.code);
     if (MODE !== 'item') setMode('item'); else render();
-    window.scrollTo(0, 0);
+    if (window.BookApp) BookApp.top();
   }
 
   function render() {
@@ -277,5 +307,7 @@
     /** ลิงก์ของหน้าที่เปิดอยู่ (กลับจากใบที่เปิดจากสต๊อกการ์ด) */
     hash: function () { return S.code ? '#sku=' + encodeURIComponent(S.code) : ''; },
     open: open,
+    view: view,
+    find: find,
   };
 })();

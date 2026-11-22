@@ -2196,6 +2196,37 @@ describe('ตรวจ / อนุมัติ ใบย้าย / แปลง
     expect(DOC.home(l, NOW, STAFF_EMAIL).ok).toMatchObject({ check: 1, toCheck: 0, approve: 1, recv: 1, toRecv: 0, sent: 1 });
   });
 
+  it('งานของฉันทีละใบ: แยกตามสิทธิ์และทีม · ไม่ยื่นใบที่กดไม่ได้ · คิดจากสำเนาเท่านั้น', async () => {
+    const x = await ready();
+    await x.head.sync();
+    const brief = (q, k) => q[k].map((r) => [r.no.slice(-4), r.step]);
+    const staff = { email: STAFF_EMAIL, role: 'staff' }, head = { email: HEAD_EMAIL, role: 'head' };
+    const reads = x.store.stats().reads;
+    let l = x.head.local(), s = DOC.queue(l, NOW, staff), h = DOC.queue(l, NOW, head);
+    expect(brief(s, 'todo')).toEqual([['0005', 'check']]);
+    expect(brief(s, 'wait')).toEqual([['0002', 'recv'], ['0003', 'check']]);
+    expect(brief(s, 'done')).toEqual([['0004', 'save'], ['0003', 'save'], ['0002', 'save']]);
+    expect(brief(h, 'todo')).toEqual([['0002', 'recv'], ['0003', 'check']]);
+    expect(brief(h, 'wait')).toEqual([['0005', 'check']]);
+    expect(brief(h, 'done')).toEqual([['0005', 'save']]);   // ยอดยกมาไม่นับเป็นงานของฉัน
+    const other = { email: STAFF2_EMAIL, role: 'staff' };
+    expect(brief(DOC.queue(l, NOW, other), 'todo')).toEqual([['0003', 'check'], ['0005', 'check']]);   // ไม่ใช่ทีม QA ไม่ยื่นใบเข้า QA
+    expect(brief(DOC.queue(l, NOW, { email: QA_EMAIL, role: 'staff', team: 'qa' }), 'todo')).toEqual([['0002', 'recv'], ['0003', 'check'], ['0005', 'check']]);
+    expect(DOC.queue(l, NOW, { email: VIEW_EMAIL, role: 'viewer' }).n).toEqual({ todo: 0, wait: 0, done: 0 });
+    expect(DOC.queue(l, NOW, {}).n).toEqual({ todo: 0, wait: 0, done: 0 });
+    expect(DOC.queue(l, NOW + 3 * DAY, head).todo.map((r) => r.age)).toEqual([3, 3]);
+    expect(x.store.stats().reads).toBe(reads);
+
+    x.tick(60000);
+    ok(await x.staff.okSave(['T2611-0005'], 'check'));
+    await x.head.sync();
+    l = x.head.local();
+    expect(brief(DOC.queue(l, x.clock(), head), 'todo')).toEqual([['0002', 'recv'], ['0003', 'check'], ['0005', 'approve']]);
+    expect(brief(DOC.queue(l, x.clock(), staff), 'done')[0]).toEqual(['0005', 'check']);
+    expect(DOC.queue(l, x.clock() + 2 * DAY, staff).n.done).toBe(0);
+    expect(DOC.search(DOC.index(l), { status: 'todo' }, x.clock()).list.map((d) => d.no)).toEqual(['T2611-0005', 'T2611-0003', 'T2611-0002']);
+  });
+
   it('ใบพิมพ์ A5 แบบเอกสารคลังสินค้า: หัวใบ ตาราง ช่องเซ็น 3 ช่องตามขั้น · แถวเกินขึ้นแผ่นใหม่ · ใบยกเลิกมีตรา · ไม่มีไฟล์ภายนอก', async () => {
     const x = await ready();
     /* ใบย้าย 23 แถว = 3 แผ่น (แผ่นละ 10) */
@@ -3922,5 +3953,66 @@ describe('ขั้น 0: ปิดช่องเขียนปลอม', () 
     g.calls.length = 0;
     g.gs.backupNightly();
     expect(g.calls.length).toBeLessThan(40);
+  });
+});
+
+/* ── แบบ WMS Desktop ขั้น ก: โครง เมนู คีย์ลัด ───────────────────────────── */
+
+describe('แบบ WMS Desktop ขั้น ก', () => {
+  /** book-app.js ตัวจริงบนหน้าจำลอง (เมนูอย่างเดียว ไม่วาดจอ) */
+  function shell(head, mode = 'live') {
+    const win = { BookFire: {}, addEventListener() {} };
+    const doc = { addEventListener() {}, querySelector: () => null, getElementById: () => null };
+    new Function('window', 'document', 'location', 'localStorage', 'FIRE', 'isHead', read('book/book-app.js'))(
+      win, doc, { hash: '' }, { getItem: () => null, setItem() {} }, { mode }, () => head);
+    return win.BookApp;
+  }
+
+  it('9 หมวด หมวดละไม่เกิน 8 เมนู · เมนูหัวหน้าไม่ขึ้นกับคนอื่น · โหมดซ้อมรู้ว่าหน้าอื่นเปิดแท็บใหม่', () => {
+    const all = shell(true).menu(), groups = [...new Set(all.map((m) => m.area))];
+    expect(groups).toEqual(['วันนี้', 'ขาเข้า', 'คุณภาพ', 'ในคลัง', 'ขาออก', 'ขนส่ง', 'ควบคุม', 'รายงาน', 'ตั้งค่า']);
+    groups.forEach((g) => expect(all.filter((m) => m.area === g).length, g).toBeLessThanOrEqual(8));
+    expect(new Set(all.map((m) => m.id)).size).toBe(all.length);
+    expect(all[0]).toMatchObject({ id: 'home', t: 'งานของฉัน' });
+    const staff = shell(false).menu().map((m) => m.id);
+    expect(all.map((m) => m.id).filter((id) => !staff.includes(id))).toEqual(['adj', 'close', 'rows']);
+    expect(all.some((m) => m.away)).toBe(false);
+    expect(shell(true, 'demo').menu().filter((m) => m.away).every((m) => m.id.startsWith('x:'))).toBe(true);
+    expect(shell(true, 'demo').menu().some((m) => m.away)).toBe(true);
+  });
+
+  it('หน้าเดิมทุกหน้าในเมนู WMS ยังกดถึงจากเมนูใหม่ และไฟล์มีจริง', async () => {
+    const { MODULES } = await import('../../public/wms-modules.js');
+    const links = shell(true).menu().filter((m) => m.id.startsWith('x:')).map((m) => m.id.slice(2));
+    for (const m of MODULES.filter((m) => !m.hidden && m.id !== 'book')) expect(links, m.label).toContain(m.path);
+    for (const p of links.filter(Boolean)) expect(fs.existsSync(path.resolve(__dirname, '../../public', p, 'index.html')), p).toBe(true);
+  });
+
+  it('สไตล์ใหม่อยู่ในแอประบบใหม่เท่านั้น · html.bk-in ไม่รับขอบของแถบในหน้า · ฟอนต์ไม่โหลดในระบบเดิม', () => {
+    const css = read('book/book-app.css'), page = read('book/index.html');
+    expect(css).toContain('html.bk-app.bk-in{padding:0;border:0}');
+    expect(css).not.toMatch(/(^|[},\n])\s*(html|body|:root)(?![.\w-])\s*\{/);
+    expect(css).not.toMatch(/(^|[},\n])\s*\.(wms-main|wms-shell|tx-sum|bk-wrap|tx-body)\s*\{/);
+    expect(css).not.toMatch(/https?:\/\//);
+    const guard = page.slice(page.lastIndexOf('<script>', page.indexOf('fonts.googleapis.com/css2')), page.indexOf('fonts.googleapis.com/css2'));
+    expect(guard).toContain('if (window.BookFire) {');
+    expect(guard).toContain("content = '#12343B'");
+    expect(page.split('fonts.googleapis.com/css2?family=IBM+Plex').length).toBe(2);
+    expect(page).toContain('if (APP) APP_PAGES.area = 1;');
+  });
+
+  it('คีย์ลัด: ระบบเดิมไม่ทำงาน · Ctrl S แตะเฉพาะปุ่มบันทึกปกติและถามก่อน · โหลดก่อนสคริปต์ในหน้า', () => {
+    const src = read('book/book-keys.js'), page = read('book/index.html');
+    const off = {};
+    new Function('window', 'document', src)(off, null);   // ระบบเดิม: จบก่อนผูกปุ่ม
+    expect(off.BookKeys).toBe(null);
+    const save = src.match(/var SAVE = \{([^}]*)\}/)[1].match(/'\w+'/g).map((s) => s.slice(1, -1));
+    expect([...new Set(save)].sort()).toEqual(['gSave', 'mdSave', 'saveBtn', 'ttSave']);
+    expect(src.indexOf("if (!confirm('ตรวจแล้ว ")).toBeLessThan(src.indexOf('btn.click()'));
+    expect(src.match(/\.click\(\)/g)).toHaveLength(1);
+    expect(src).not.toMatch(/okSave|bk-void|bk-open|trSave|\.post\(|fetch\(|https?:\/\//);
+    expect(/[\u0E80-\u0EFF]/.test(src)).toBe(false);
+    expect(page.indexOf('<script src="book-keys.js"></script>')).toBeGreaterThan(page.indexOf('<script src="book-master.js"></script>'));
+    expect(page.indexOf('<script src="book-keys.js"></script>')).toBeLessThan(page.indexOf('const $ = id =>'));
   });
 });

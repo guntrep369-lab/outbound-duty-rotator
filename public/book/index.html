@@ -15,6 +15,16 @@
 <script src="../wms-fire-config.js"></script>
 <script src="book-fire.js"></script>
 <script>if (window.BookFire) { window.WMS_GATE_OFF = 1; document.documentElement.classList.add('bk-app'); }</script>
+<script>
+/* ฟอนต์กับสีแถบเบราว์เซอร์ของแอประบบใหม่ ระบบเดิมไม่โหลด */
+if (window.BookFire) {
+  document.querySelector('meta[name="theme-color"]').content = '#12343B';
+  const font = document.createElement('link');
+  font.rel = 'stylesheet';
+  font.href = 'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Thai+Looped:wght@400;500;600&display=swap';
+  document.head.appendChild(font);
+}
+</script>
 <link rel="stylesheet" href="../wms-gate.css">
 <script src="../wms-gate.js"></script>
 <style>
@@ -272,6 +282,7 @@ select.fs-in{min-width:110px;cursor:pointer}
 <script src="book-app.js"></script>
 <script src="book-item.js"></script>
 <script src="book-master.js"></script>
+<script src="book-keys.js"></script>
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -290,6 +301,7 @@ const HEAD_ONLY = { adj: 1, rows: 1, set: 1 };   // แท็บของหั�
 /* ระบบใหม่ = แอปสมุดสต๊อก (book-app.js): เมนูของแอปแทนแท็บ มีหน้า วันนี้ เอกสาร ปิดวัน/เดือน เพิ่ม · เปิดมาเจอหน้าวันนี้ */
 const APP = window.BookApp && window.BookApp.on ? window.BookApp : null;
 const APP_PAGES = { home: 1, docs: 1, item: 1, close: 1, master: 1 };   // หน้าของแอปที่ไม่ใช่งานลงรายการ
+if (APP) APP_PAGES.area = 1;   // หมวดที่มีแต่หน้า WMS อื่น
 let MODE = APP ? APP.start() : (() => { try { const m = localStorage.getItem(MODE_KEY); return MODES.some((x) => x[0] === m) ? m : 'cut'; } catch (e) { return 'cut'; } })();
 const RETRY_MS = 30000;   // ชุดที่ส่งไม่สำเร็จเพราะเน็ต ส่งซ้ำเองทุกเท่านี้
 
@@ -843,11 +855,11 @@ async function readFiles(list) {
 
 /** ป้ายโหมดของระบบใหม่ · โหมดซ้อมมีปุ่มออเดอร์ซ้อม เริ่มซ้อมใหม่ ออก */
 function firePill() {
-  if (FIRE.mode === 'dev') return '<span class="pill warn" title="ฐานจำลองในเครื่องนี้ ไม่ใช่ข้อมูลจริง ล้างด้วย ?fire=reset">🧪 ระบบใหม่ · ฐานทดลองในเครื่อง</span>';
+  if (FIRE.mode === 'dev') return '<span class="pill warn" title="ฐานจำลองในเครื่องนี้ ไม่ใช่ข้อมูลจริง ล้างด้วย ?fire=reset"><b>ฐานทดลอง</b> · ในเครื่องนี้เท่านั้น</span>';
   if (FIRE.mode === 'demo') {
-    return '<span class="pill warn" title="ข้อมูลสมมติเก็บในเครื่องนี้เท่านั้น ไม่ถึงฐานจริง บันทึกอะไรก็ได้">🎓 <b>โหมดซ้อม</b> · ข้อมูลสมมติ ไม่ใช่ของจริง</span>' +
-      (USER ? '<button id="demoOrd" title="ใส่ออเดอร์สมมติในแท็บตัดขาย ไว้ซ้อมตัด">📄 ออเดอร์ซ้อม</button>' : '') +
-      '<button id="demoNew" title="ล้างข้อมูลซ้อมในเครื่องนี้ เริ่มจากยอดยกมาสมมติ">♻️ เริ่มซ้อมใหม่</button><button id="demoOut">ออกจากโหมดซ้อม</button>';
+    return '<span class="pill warn" title="ข้อมูลสมมติเก็บในเครื่องนี้เท่านั้น ไม่ถึงฐานจริง บันทึกอะไรก็ได้"><b>โหมดซ้อม</b> · ข้อมูลสมมติ ไม่ใช่ของจริง</span>' +
+      (USER ? '<button id="demoOrd" title="ใส่ออเดอร์สมมติในแท็บตัดขาย ไว้ซ้อมตัด">ออเดอร์ซ้อม</button>' : '') +
+      '<button id="demoNew" title="ล้างข้อมูลซ้อมในเครื่องนี้ เริ่มจากยอดยกมาสมมติ">เริ่มซ้อมใหม่</button><button id="demoOut">ออกจากโหมดซ้อม</button>';
   }
   const sk = FIRE.clock ? Math.round(FIRE.clock() / 60000) : 0;
   const clock = Math.abs(sk) >= 5 ? '<span class="pill warn" title="ระบบใช้เวลาของเว็บแทน เลขเอกสารและเวลาบันทึกยังถูก แต่ควรตั้งนาฬิกาเครื่องให้ตรง (ตั้งเวลาอัตโนมัติ)">⏰ นาฬิกาเครื่องนี้' +
@@ -872,7 +884,7 @@ function renderSrc() {
   if (RES && !BUSY && (!FIRE || USER)) {
     const when = new Date(WmsShared.stamp(RES)).toLocaleString('th-TH', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
     const who = WmsShared.who(RES);
-    html += `<span class="pill" title="กองที่ใช้ตัดคิดจากสต๊อกชุดนี้ หักชุดที่บันทึกแล้วแต่ยังไม่เห็นในสมุดให้เอง">🕐 สต๊อกเมื่อ <b>${esc(when)}</b>${who ? ` · ${esc(who)}` : ''}</span>`;
+    html += `<span class="pill" title="กองที่ใช้ตัดคิดจากสต๊อกชุดนี้ หักชุดที่บันทึกแล้วแต่ยังไม่เห็นในสมุดให้เอง">${APP ? 'ข้อมูลล่าสุด' : '🕐 สต๊อกเมื่อ'} <b>${esc(when)}</b>${who ? ` · ${esc(who)}` : ''}</span>`;
     if (RES.last) html += `<span class="pill">สมุดลงขายถึง <b>${esc(dm(RES.last))}</b></span>`;
   }
   if (BUSY) html += `<span class="pill">⏳ ${esc(BUSY)}</span>`;
@@ -880,7 +892,7 @@ function renderSrc() {
   if (FIRE && !USER) {
     /* ยังไม่เข้า: ไม่มีปุ่มดึงสต๊อก (Rules จริงไม่ให้อ่านก่อนเข้า) */
   } else if (tx) {
-    html += `<button id="loadBtn" class="${RES ? '' : 'p'}" ${BUSY || WAIT ? 'disabled' : ''}>${BUSY ? 'กำลังดึง…' : WAIT ? 'รอชุดใหม่…' : RES ? '🔄 ดึงสต๊อกใหม่' : '▶️ ดึงสต๊อก'}</button>`;
+    html += `<button id="loadBtn" class="${RES ? '' : 'p'}" ${BUSY || WAIT ? 'disabled' : ''}>${BUSY ? 'กำลังดึง…' : WAIT ? 'รอชุดใหม่…' : RES ? (APP ? 'ดึงสต๊อกใหม่' : '🔄 ดึงสต๊อกใหม่') : APP ? 'ดึงสต๊อก' : '▶️ ดึงสต๊อก'}</button>`;
   } else {
     html += `<span class="pill warn">ยังไม่ได้ตั้ง Apps Script URL ของ Transaction — <a href="../settings/">ตั้งที่หน้าตั้งค่า</a></span>`;
   }
@@ -891,7 +903,7 @@ function renderSrc() {
     /* ระบบใหม่: ยังไม่เข้า = การ์ดเข้าสู่ระบบในพื้นที่ทำงาน · เข้าแล้ว = ชื่อ สิทธิ์ อีเมล */
     if (USER) {
       html += pendingPill();
-      /* แอป: ชื่อคนกับปุ่มออกอยู่ท้ายเมนูของแอป แถบบนเหลือแต่สต๊อก */
+      /* แอป: ชื่อคนกับปุ่มออกอยู่แถบบน ส่วนนี้เป็นกล่องสถานะใต้เมนูซ้าย */
       if (!APP) html += `<span class="pill ok" title="${esc(USER.email)}">👤 <b>${esc(USER.who)}</b> · ${esc(USER.role)}</span><button id="bkOut">ออก</button>`;
     }
   } else if (!url || SETURL) {
@@ -1011,7 +1023,7 @@ function actTail() {
     const next = xf === 'in' ? 'ส่งของพร้อมเลขที่ให้ QA · QA นับแล้วกด รับ จึงโอนออกได้ · หัวหน้าอนุมัติแล้วจึงลง TRcloud'
       : xf === 'out' ? 'ปลายทางนับแล้วกด รับ จึงขาย / ย้ายต่อได้ · หัวหน้าอนุมัติแล้วจึงลง TRcloud'
       : xf === 'qa' ? 'QA อีกคนหรือหัวหน้านับแล้วกด รับ จึงใช้ต่อได้ · หัวหน้ากด อนุมัติ'
-      : 'ให้คนอื่นเช็คของจริงแล้วกด ตรวจแล้ว · หัวหน้ากด อนุมัติ (เมนูเอกสาร › รอตรวจ)';
+      : 'ให้คนอื่นเช็คของจริงแล้วกด ตรวจแล้ว · หัวหน้ากด อนุมัติ (เมนู รอรับ / รออนุมัติ › รอตรวจ)';
     html += `<div class="bk-msg ok">✅ บันทึก <b>${esc(LAST.doc)}</b> แล้ว ${f(LAST.copy.length)} แถว · ยอดเปลี่ยนแล้ว ` +
       `<button class="bk-btn" data-print="${esc(LAST.doc)}">🖨 พิมพ์ใบ</button> <button class="bk-btn" data-doc="${esc(LAST.doc)}">เปิดใบ</button>` +
       `<br><span class="c-sub">ต่อไป: ${next}</span></div>`;
@@ -1139,7 +1151,7 @@ function renderDocs() {
 }
 
 function renderTabs() {
-  if (APP) { $('tabs').innerHTML = ''; return; }   // แอป: เมนูอยู่แถบซ้าย / ☰ บนมือถือ
+  if (APP) { $('tabs').innerHTML = ''; return; }   // แอป: หมวดอยู่แถบบน เมนูของหมวดอยู่ซ้าย / ☰ บนมือถือ
   $('tabs').innerHTML = tabs().map(([k, t]) => {
     const dot = (k === 'cut' ? !!PENDING : BookGrid.pending(k)) ? '<span class="dot" title="มีชุดที่ส่งค้าง"></span>' : '';
     return `<button class="bk-tab${MODE === k ? ' on' : ''}" role="tab" aria-selected="${MODE === k}" data-mode="${k}">${t}${dot}</button>`;
@@ -1152,7 +1164,7 @@ function render() {
   if (APP) APP.nav();
   if (FIRE && !USER) { renderLogin(); return; }
   renderTabs();
-  if (APP && (MODE === 'home' || MODE === 'docs' || MODE === 'item')) {
+  if (APP && (MODE === 'home' || MODE === 'docs' || MODE === 'item' || MODE === 'area')) {
     APP.render(MODE);
   } else if (MODE === 'master' && window.BookMaster) {
     BookMaster.render();

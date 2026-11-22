@@ -7,6 +7,7 @@
  *                             กรองประเภท สถานะ ช่วงวัน · นับต่อประเภท / สถานะให้ชิปบนหน้า
  *   view(local, no)           เอกสารใบเดียว: หัว แถว ออเดอร์ ขั้นตอน ประวัติ ใบเดิม ↔ ใบกลับรายการ
  *   home(local, now, user)    งานวันนี้: ใบที่บันทึกวันนี้ต่อประเภท ของฉัน รอลง TRcloud รอรับ / รอตรวจ / อนุมัติ ใบล่าสุด
+ *   queue(local, now, user)   งานของฉันทีละใบ: ต้องทำ · รอคนอื่น · ที่ฉันทำเสร็จวันนี้
  *   okCan(v, user)            ปุ่มรับ / ไม่รับ / ตรวจ / อนุมัติของคนนี้ บนเอกสารใบนี้ (ตรงกับ okSet ใน wms-fire-core.js)
  * ใบโอน QA (xf) ใช้ขั้นตรวจเป็น รับ: รอรับ → รับแล้ว → อนุมัติ → TRcloud
  * เปิดเป็น window.WmsFireDocs ต้องโหลด wms-fire-core.js กับ wms-fire-trc.js ก่อน
@@ -16,6 +17,8 @@
 
   var LIST_MAX = 300;     // แถวที่ส่งให้หน้าวาดต่อครั้ง
   var LAST_MAX = 8;       // ใบล่าสุดบนหน้าวันนี้
+  var QUEUE_MAX = 100;    // แถวต่อตัวกรองของงานของฉัน
+  var FIRST_MAX = 200;    // ใบรออนุมัติที่เช็คใบเข้าก่อนให้ (มีเป็นพันเครื่องไม่ค้าง)
   var RANGES = { today: 0, d7: 6, d30: 29 };
   var ST_TH = { wait: 'รอลง TRcloud', done: 'ลง TRcloud แล้ว', none: 'ไม่ต้องลง TRcloud' };
   var OK_TH = { check: 'รอตรวจ', approve: 'รออนุมัติ', done: 'อนุมัติแล้ว', reject: 'ไม่รับ' };
@@ -110,10 +113,11 @@
     return [from.getUTCFullYear() + '-' + String(from.getUTCMonth() + 1).padStart(2, '0') + '-' + String(from.getUTCDate()).padStart(2, '0'), day];
   }
 
-  /** ตรงสถานะไหม: wait รอลง TRcloud (ใส่เลขได้แล้ว) · recv รอรับ · check รอตรวจ · approve รออนุมัติ · reject ไม่รับ · void ยกเลิกแล้ว · mine ของฉัน */
+  /** ตรงสถานะไหม: wait รอลง TRcloud (ใส่เลขได้แล้ว) · recv รอรับ · check รอตรวจ · approve รออนุมัติ · todo สามอย่างนี้รวมกัน · reject ไม่รับ · void ยกเลิกแล้ว · mine ของฉัน */
   function stOk(x, status, email) {
     if (!status) return true;
     if (status === 'wait') return x.state === 'wait' && !x.lock;
+    if (status === 'todo') return x.ok === 'check' || x.ok === 'approve';
     if (status === 'recv') return x.ok === 'check' && !!x.xf;
     if (status === 'check') return x.ok === 'check' && !x.xf;
     if (status === 'approve' || status === 'reject') return x.ok === status;
@@ -305,5 +309,53 @@
     };
   }
 
-  window.WmsFireDocs = { LIST_MAX: LIST_MAX, LAST_MAX: LAST_MAX, ST_TH: ST_TH, OK_TH: OK_TH, NEED: NEED, index: index, search: search, rangeOf: rangeOf, view: view, okCan: okCan, home: home, auditCard: auditCard };
+  /**
+   * งานของฉันของหน้าแรก ทีละใบ · คิดจากสำเนาในเครื่อง ไม่อ่านฐาน
+   * todo เก่าสุดก่อน: step recv เรารับได้ · check เราตรวจได้ · approve เราอนุมัติได้ · void หัวหน้ายกเลิกใบที่ไม่รับ · redo ใบเราที่ไม่รับ
+   * wait เก่าสุดก่อน: recv / check / approve ใบของเราที่รอคนอื่น · first หัวหน้ารอใบเข้าใบ first ก่อน
+   * done ใหม่สุดก่อน: ที่คนนี้ทำวันนี้ save · recv · check · approve · reject (ใบละแถว ขั้นล่าสุด)
+   * → { day, todo, wait, done: [{no, type, xf, name, qty, rows, sku, po, stamp, age, step, first}], n: { todo, wait, done } }
+   */
+  function queue(local, now, user) {
+    var c = C(), u = user || {}, email = u.email || '', head = u.role === 'head', can = head || u.role === 'staff';
+    var day = c.today(now), vd = c.voids(local), all = { todo: [], wait: [], done: [] }, checked = 0;
+    function put(k, d, step, at, first) { all[k].push({ d: d, step: step, at: at, first: first || '' }); }
+    (local.docs || []).slice().sort(function (a, b) { return a.seq - b.seq; }).forEach(function (d) {
+      var st = c.okState(d, vd), mine = !!email && d.by === email, xf = st ? c.xfKind(d) : '', at = d.stamp || d.date || '';
+      if (can) {
+        if (st === c.OK_REJECT) {
+          if (head) put('todo', d, 'void', at);
+          else if (mine) put('todo', d, 'redo', at);
+        } else if (st === c.OK_CHECK) {
+          var step = xf ? 'recv' : 'check';
+          if (mine) put('wait', d, step, at);
+          else if (!xf || !c.takeWhy(xf, u)) put('todo', d, step, at);
+        } else if (st === c.OK_APPROVE) {
+          if (head) {
+            var first = checked++ < FIRST_MAX ? c.apFirst(local, d, vd) : '';
+            put(first ? 'wait' : 'todo', d, first ? 'first' : 'approve', at, first);
+          } else if (mine) put('wait', d, 'approve', at);
+        }
+      }
+      if (!email || d.type === c.TYPE_OPEN) return;
+      var last = null, saw = function (step, t) { if (String(t || '').slice(0, 10) === day && (!last || String(t) >= String(last[1]))) last = [step, t]; };
+      if (mine && !vd[d.no]) saw('save', d.stamp);
+      if (d.ck === email) saw(c.xfKind(d) ? 'recv' : 'check', stampOf(d.ckAt));
+      if (d.rj === email) saw('reject', stampOf(d.okAt));
+      if (d.ap === email) saw('approve', stampOf(d.apAt));
+      if (last) put('done', d, last[0], last[1]);
+    });
+    all.done.sort(function (a, b) { return String(b.at).localeCompare(String(a.at)) || b.d.seq - a.d.seq; });
+    function row(e) {
+      var d = e.d, r = (d.rows || [])[0] || [], from = String(d.stamp || d.date || '').slice(0, 10);
+      var age = /^\d{4}-\d{2}-\d{2}$/.test(from) ? c.dayNo(day) - c.dayNo(from) : 0;
+      return { no: d.no, type: d.type, xf: c.xfKind(d) || '', name: d.name, qty: d.qty, rows: (d.rows || []).length,
+        sku: r[0] || r[1] || '', po: r[3] || '', stamp: e.at, age: age > 0 ? age : 0, step: e.step, first: e.first };
+    }
+    var out = { day: day, n: {} };
+    ['todo', 'wait', 'done'].forEach(function (k) { out.n[k] = all[k].length; out[k] = all[k].slice(0, QUEUE_MAX).map(row); });
+    return out;
+  }
+
+  window.WmsFireDocs = { LIST_MAX: LIST_MAX, QUEUE_MAX: QUEUE_MAX, queue: queue, LAST_MAX: LAST_MAX, ST_TH: ST_TH, OK_TH: OK_TH, NEED: NEED, index: index, search: search, rangeOf: rangeOf, view: view, okCan: okCan, home: home, auditCard: auditCard };
 })();
