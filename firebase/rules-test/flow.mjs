@@ -270,6 +270,61 @@ export async function flow({ dry = false } = {}) {
     ]);
     if (a.doc === b.doc) throw new Error('เลขซ้ำ ' + a.doc);
   });
+
+  /*
+   * ชนแบบตั้งใจ: ระหว่างเครื่องหนึ่งอ่านกับ commit อีกเครื่องเขียนเสร็จก่อน (ไม่ต้องลุ้นจังหวะ)
+   * ฐานตัดสิน Rules กับข้อมูลปัจจุบันก่อนเช็คชนรุ่น → ได้ permission-denied · store.tx ต้องเห็นว่าข้อมูลที่อ่านเปลี่ยนแล้วลองใหม่เอง
+   */
+  async function race(name, dev, outer, inner) {
+    await step('ชนกัน: ' + name, async () => {
+      const tx = dev.store.tx;
+      let ran = false;
+      dev.store.tx = (fn) => tx.call(dev.store, async (t) => {
+        const out = await fn(t);
+        if (!ran) { ran = true; await inner(); }
+        return out;
+      });
+      try { await outer(); } finally { dev.store.tx = tx; }
+      if (!ran) throw new Error('ไม่ได้ชน (ไม่มี transaction)');
+    });
+  }
+  const qa2 = await open(dbA, 'qa');
+  await step('เครื่องที่สองของ QA', async () => { must(await qa2.login()); });
+  const sup = (name) => win0.WmsFireTrc.readSheets([{ name: 'PO. Truck', grid: [['Truck', 'PO.'], [name, 'P1']] }]).sup;
+  let q = [], g = [];
+  await step('เตรียมใบสำหรับชนกัน', async () => {
+    for (let i = 0; i < 2; i++) q.push((await post(p.staff, 'bk-move', { copy: [toQa()] })).doc);
+    for (let i = 0; i < 3; i++) g.push((await post(p.staff, 'bk-gr', { copy: [gr(today, 1)] })).doc);
+    await Promise.all([p.staff, p.staff2, p.head, p.qa, qa2].map((d) => d.fire.sync()));
+  });
+  await race('บันทึก ระหว่างอีกเครื่องบันทึก', p.staff,
+    async () => { const a = await post(p.staff, 'bk-move', { copy: [leg('A-01-01', 'A-01-07')] }); if (!a.doc) throw new Error('ไม่ได้เลข'); },
+    async () => { await post(p.staff2, 'bk-move', { copy: [leg('A-01-01', 'A-01-08')] }); });
+  await race('บันทึก ระหว่างอีกเครื่องรับใบโอน QA', p.staff,
+    () => post(p.staff, 'bk-move', { copy: [leg('A-01-01', 'A-01-07')] }),
+    async () => { must(await p.qa.fire.okSave([q[0]], 'check')); });
+  await race('บันทึก ระหว่างอีกเครื่องใส่เลข TRcloud', p.staff,
+    () => post(p.staff, 'bk-move', { copy: [leg('A-01-01', 'A-01-07')] }),
+    async () => { must(await p.staff2.fire.trSave([{ no: g[0], tr: 'TR-R0', state: 'done' }])); });
+  await race('บันทึก ระหว่างหัวหน้าแก้ตารางหลัก', p.staff,
+    () => post(p.staff, 'bk-move', { copy: [leg('A-01-01', 'A-01-07')] }),
+    async () => { must(await p.head.fire.masterSave('sup', sup('ผู้ผลิตสมมติ ก'))); });
+  await race('รับใบโอน QA สองเครื่องคนละใบ', p.qa,
+    async () => { must(await p.qa.fire.okSave([q[1]], 'check')); },
+    async () => { must(await post(p.staff, 'bk-move', { copy: [toQa()] }).then((r) => qa2.fire.sync().then(() => qa2.fire.okSave([r.doc], 'check')))); });
+  await race('ใส่เลข TRcloud สองเครื่องคนละใบ', p.staff,
+    async () => { must(await p.staff.fire.trSave([{ no: g[1], tr: 'TR-R1', state: 'done' }])); },
+    async () => { must(await p.staff2.fire.trSave([{ no: g[2], tr: 'TR-R2', state: 'done' }])); });
+  await race('หัวหน้าแก้ตารางหลัก ระหว่างอีกเครื่องบันทึก', p.head,
+    async () => { must(await p.head.fire.masterSave('sup', sup('ผู้ผลิตสมมติ ข'))); },
+    async () => { await post(p.staff2, 'bk-move', { copy: [leg('A-01-01', 'A-01-08')] }); });
+  await step('หลังชนกัน ทุกเครื่องเห็นเอกสารเท่ากัน ยอดตรวจผ่าน', async () => {
+    await Promise.all([p.staff, p.staff2, p.head].map((d) => d.fire.sync()));
+    same(p.staff.fire.local().docs.length, p.head.fire.local().docs.length, 'จำนวนเอกสาร staff กับ head');
+    same(p.staff2.fire.local().seq, p.head.fire.local().seq, 'seq staff2 กับ head');
+    const sv = (await p.head.store.get('master/sup')) || {};
+    if (!String(sv.rows || '').includes('ผู้ผลิตสมมติ ข')) throw new Error('ตารางหลักไม่ใช่ชุดล่าสุด');
+  });
   await step('เปลี่ยนชื่อระหว่างเปิดหน้า แล้วส่งซ้ำเอง', async () => {
     must(await p.head.fire.saveUser(at('staff2'), { name: 'คลังชื่อใหม่', role: 'staff' }));
     await post(p.staff2, 'bk-move', { copy: [leg('A-01-01', 'A-01-06')] });

@@ -18,6 +18,7 @@
   var SDK_V = '12.4.0';   // ตรึงรุ่น Firebase JS SDK
   var SDK_URL = 'https://www.gstatic.com/firebasejs/' + SDK_V + '/';
   var TX_TRIES = 5;       // transaction ชนกันลองใหม่กี่ครั้ง (แบบ Firestore)
+  var RACE_TRIES = 3;     // ฐานไม่รับเพราะเครื่องอื่นเขียนแทรก (Rules ตัดสินก่อนเช็คชนรุ่น) เปิด transaction ใหม่กี่รอบ
   var STALE_TRIES = 4;    // สำเนาในเครื่องตามไม่ทันระหว่างบันทึก ดึงใหม่แล้วลองกี่ครั้ง
   var PAGE = 300;         // เอกสารต่อการดึงหนึ่งครั้ง
   var MASTERS = ['conv', 'sup', 'cap'];
@@ -32,6 +33,13 @@
   var ARCH_BATCH = 6;           // ก้อนต่อการเขียนหนึ่งครั้ง (ก้อนละไม่เกิน 900 KB · Rules อ่านก้อนละ 3 = users + exists + get index เพดาน 20)
 
   function clone(o) { return o === undefined || o === null ? o : JSON.parse(JSON.stringify(o)); }
+  /** ข้อความเทียบค่า ลำดับช่องไม่มีผล (ฐานจริงส่งช่องของ map มาลำดับไหนก็ได้) */
+  function stable(v) {
+    if (Array.isArray(v)) return '[' + v.map(stable).join(',') + ']';
+    if (v && typeof v === 'object') return '{' + Object.keys(v).sort().map(function (k) { return JSON.stringify(k) + ':' + stable(v[k]); }).join(',') + '}';
+    return JSON.stringify(v === undefined ? null : v);
+  }
+  var RACE_ERR = 'บันทึกชนกับเครื่องอื่นหลายครั้งติดกัน ลองกดส่งใหม่';
   function diffKeys(a, b) {
     a = a || {}; b = b || {};
     var ks = {};
@@ -334,7 +342,7 @@
     var now = opt.now || Date.now;
     var docs = {};
     var plain = {};   // path → data ชุดเดียวกับ docs (ให้เช็คกฎโดยไม่ต้องสร้างใหม่ทุกครั้ง ห้ามแก้จากข้างนอก)
-    var counts = { reads: 0, writes: 0, tx: 0, retries: 0 };
+    var counts = { reads: 0, writes: 0, tx: 0, retries: 0, raced: 0 };
     var listeners = [];
     var hook = null;
     function put(p, d, ver) { docs[p] = { ver: ver, d: d }; plain[p] = d; }
@@ -419,6 +427,11 @@
           own.reads += Math.max(1, ps.length);
           return Promise.resolve(ps.map(function (p) { return { id: p.slice(col.length + 1), data: clone(docs[p].d) }; }));
         },
+        /*
+         * ลำดับแบบฐานจริง (emulator): Rules ตัดสินกับข้อมูลปัจจุบันก่อนเช็คชนรุ่น · update = ช่องที่แก้ทับเอกสารปัจจุบัน
+         * ชนรุ่นแล้ว Rules ไม่รับ = ฐานจริงตอบ permission-denied แล้ว firestoreStore.tx เห็นว่าเอกสารที่อ่านเปลี่ยน จึงเปิดใหม่ (raced)
+         * ชนรุ่นแล้ว Rules รับ = SDK ลองใหม่เอง (aborted) · ทั้งสองทางจึงลองใหม่ แต่นับแยกให้เทสต์รู้ว่าผ่านทางไหน
+         */
         tx: async function (fn) {
           counts.tx++;
           for (var a = 0; a < TX_TRIES; a++) {
@@ -431,14 +444,26 @@
                 if (!docs[p]) throw new Error('ไม่พบเอกสาร ' + p);
                 var d = clone(docs[p].d);
                 Object.keys(fields).forEach(function (k) { d[k] = clone(fields[k]); });
-                writes.push([p, d]);
+                writes.push([p, d, clone(fields)]);
               },
             };
             var out = await fn(t);
             if (hook) { var h = hook; hook = null; await h(); }
             var clash = Object.keys(seen).some(function (p) { return (docs[p] ? docs[p].ver : 0) !== seen[p]; });
-            if (clash) { counts.retries++; continue; }
+            if (clash) {
+              var gone = writes.some(function (w) { return w[2] && !docs[w[0]]; });
+              var cur = writes.map(function (w) {
+                if (!w[2] || gone) return [w[0], w[1]];
+                var d = clone(docs[w[0]].d);
+                Object.keys(w[2]).forEach(function (k) { d[k] = clone(w[2][k]); });
+                return [w[0], d];
+              });
+              if (writes.length && !gone && check(user, cur)) counts.raced++;
+              counts.retries++;
+              continue;
+            }
             if (writes.length) {
+              writes = writes.map(function (w) { return [w[0], w[1]]; });
               var why = check(user, writes);
               if (why) throw denied(why);
               apply(writes, own);
@@ -515,6 +540,16 @@
       Object.keys(d).forEach(function (k) { o[k] = d[k] === C.TIME ? F.serverTimestamp() : d[k]; });
       return o;
     }
+    /** เอกสารที่ transaction อ่านไว้ (path → stable ของค่าที่อ่าน) ตอนนี้ในฐานต่างไปไหม · อ่านจากเซิร์ฟเวอร์ ไม่ใช้แคช · อ่านไม่ได้ = ถือว่าไม่ต่าง */
+    async function moved(seen) {
+      var ps = Object.keys(seen);
+      if (!ps.length) return false;
+      var get = F.getDocFromServer || F.getDoc;
+      try {
+        var cur = await Promise.all(ps.map(function (p) { return get(ref(p)).then(out); }));
+        return ps.some(function (p, i) { return stable(cur[i]) !== seen[p]; });
+      } catch (e) { return false; }
+    }
     var store = {
       kind: 'firestore',
       setUser: function () {},
@@ -541,15 +576,31 @@
           return s.docs.map(function (x) { return { id: x.id, data: out(x) }; });
         });
       },
-      tx: function (fn) {
+      /*
+       * SDK ลองใหม่เองเมื่อชนรุ่น (aborted) แต่ฐานตัดสิน Rules กับข้อมูลปัจจุบันก่อนเช็คชนรุ่น (เห็นจาก emulator)
+       * เครื่องอื่นเขียนแทรกระหว่างอ่านกับ commit → ได้ permission-denied (เช่น meta.seq ต้อง +1 จากค่าปัจจุบัน) ซึ่ง SDK ไม่ลองใหม่
+       * ถูกปฏิเสธ + เอกสารที่ transaction อ่านเปลี่ยนไปแล้ว = ชน ไม่ใช่ไม่มีสิทธิ์ → เปิด transaction ใหม่ (fn คิดจากข้อมูลใหม่)
+       * เอกสารที่อ่านไม่เปลี่ยน = ปฏิเสธจริง ส่งต่อให้หน้าเหมือนเดิม (ชื่อเปลี่ยน ทีมเปลี่ยน ไม่มีสิทธิ์) · อ่านเพิ่มเฉพาะตอนถูกปฏิเสธ
+       */
+      tx: async function (fn) {
         counts.tx++;
-        return F.runTransaction(db, function (t) {
-          return fn({
-            get: function (p) { return t.get(ref(p)).then(out); },
-            set: function (p, d) { counts.writes++; t.set(ref(p), inn(d)); },
-            patch: function (p, d) { counts.writes++; t.update(ref(p), inn(d)); },
-          });
-        });
+        for (var a = 0; ; a++) {
+          var seen = {};
+          try {
+            return await F.runTransaction(db, function (t) {
+              seen = {};
+              return fn({
+                get: function (p) { return t.get(ref(p)).then(function (s) { var d = out(s); seen[p] = stable(d); return d; }); },
+                set: function (p, d) { counts.writes++; t.set(ref(p), inn(d)); },
+                patch: function (p, d) { counts.writes++; t.update(ref(p), inn(d)); },
+              });
+            });
+          } catch (e) {
+            if (!e || e.code !== 'permission-denied' || !(await moved(seen))) throw e;
+            if (a + 1 >= RACE_TRIES) { var x = new Error(RACE_ERR); x.code = 'aborted'; throw x; }
+            counts.retries++;
+          }
+        }
       },
       list: function (col) {
         return F.getDocs(F.collection(db, col)).then(function (s) {

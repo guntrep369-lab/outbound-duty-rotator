@@ -314,6 +314,16 @@ describe('WmsFire: สองเครื่อง สำเนาในเคร
     expect(C.allPiles(x.staff.local())['A-01-01|AAA0000000001|8|P1']).toBeUndefined();
   });
 
+  it('store จำลองเช็คแบบฐานจริง: ชนรุ่นแล้ว Rules ไม่รับ (meta.seq ต้อง +1 จากค่าปัจจุบัน) นับเป็น raced แล้วลองใหม่', async () => {
+    const x = await both();
+    await x.open();
+    await x.staff.sync();
+    const before = x.store.stats().raced;
+    x.store.hook(async () => { await x.head.post('bk-move', body('h-1', [['AAA001', 'AAA0000000001', '8', 'P1', 'A-01-01', 'B-01-01', 1, 'เบิก', 'โอนย้าย', 'เปิด']])); });
+    expect((await x.staff.post('bk-move', body('s-1', [['AAA001', 'AAA0000000001', '8', 'P1', 'A-01-01', 'B-01-02', 1, 'เบิก', 'โอนย้าย', 'เปิด']]))).doc).toBe('T2611-0003');
+    expect(x.store.stats().raced).toBe(before + 1);
+  });
+
   it('เอกสารใหญ่แยกส่วน (~2, ~3) เครื่องใหม่ดึงแล้วต่อกลับได้ครบ ส่งซ้ำได้เลขเดิม', async () => {
     const x = await both({ partBytes: 9000 });
     await x.open();
@@ -410,6 +420,70 @@ describe('WmsFire: สองเครื่อง สำเนาในเคร
     expect((await f.post('bk-move', body('m', [['AAA001', 'AAA0000000001', '8', 'P1', 'R01-01-01', 'A-01-01', 1, 'เบิก', 'โอนย้าย', 'เปิด']]))).error).toBe('บัญชีนี้ดูได้อย่างเดียว');
     expect((await f.post('bk-stock', {})).piles).toHaveLength(5);
     expect((await x.staff.post('bk-login', {}))).toMatchObject({ who: 'ทดลอง', role: 'ลงรายการ', v: 4, app: 'book' });
+  });
+});
+
+/* ── firestoreStore.tx กับ SDK ปลอม: ฐานไม่รับเพราะเครื่องอื่นเขียนแทรก ───────────── */
+
+describe('firestoreStore: ถูกปฏิเสธเพราะเครื่องอื่นเขียนแทรก เปิด transaction ใหม่เอง', () => {
+  const IMPORT = "import(SDK_URL + m + '.js')";
+  /**
+   * SDK ปลอมแบบที่ emulator ทำ: Rules ตัดสินกับข้อมูลปัจจุบันตอน commit (meta.seq ต้อง +1 จากค่าในฐาน) ไม่ผ่าน = permission-denied
+   * between(n) ทำงานระหว่างอ่านกับ commit ของรอบที่ n (เครื่องอื่นเขียนแทรก) · deny = ปฏิเสธทุกครั้ง (ไม่มีสิทธิ์จริง)
+   */
+  async function fake({ between = () => {}, deny = false } = {}) {
+    const db = { 'meta/head': { seq: 5 } }, log = { tx: 0, server: 0 };
+    const snap = (p) => ({ exists: () => p in db, data: () => JSON.parse(JSON.stringify(db[p])) });
+    const fsm = {
+      getFirestore: () => ({}),
+      doc: (_, p) => p,
+      getDoc: async (p) => snap(p),
+      getDocFromServer: async (p) => { log.server++; return snap(p); },
+      serverTimestamp: () => 'TS',
+      async runTransaction(_, fn) {
+        const n = ++log.tx, writes = [];
+        const out = await fn({ get: async (p) => snap(p), set: (p, d) => writes.push([p, d]), update: (p, d) => writes.push([p, { ...db[p], ...d }]) });
+        between(n, db);
+        const bad = deny || writes.some(([p, d]) => p === 'meta/head' && d.seq !== db['meta/head'].seq + 1);
+        if (bad) throw Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' });
+        writes.forEach(([p, d]) => { db[p] = d; });
+        return out;
+      },
+    };
+    const win = { WmsFireCore: C };
+    const src = read('wms-fire.js').replace(IMPORT, () => 'Promise.resolve(__sdk[m])');
+    new Function('window', 'location', '__sdk', src)(win, { hostname: 'rules.test' },
+      { 'firebase-app': { getApps: () => [], initializeApp: () => ({}) }, 'firebase-firestore': fsm, 'firebase-auth': {} });
+    const { store } = await win.WmsFire.firestoreStore({ projectId: 'demo' });
+    const bump = (t) => t.get('meta/head').then((m) => { t.set('meta/head', { seq: m.seq + 1 }); return m.seq + 1; });
+    return { db, log, store, bump };
+  }
+
+  it('รอบแรกมีคนเขียนแทรก → ถูกปฏิเสธ เอกสารที่อ่านเปลี่ยน → รอบสองคิดจากข้อมูลใหม่ ผ่าน', async () => {
+    const x = await fake({ between: (n, db) => { if (n === 1) db['meta/head'] = { seq: 6 }; } });
+    expect(await x.store.tx(x.bump)).toBe(7);
+    expect(x.db['meta/head']).toEqual({ seq: 7 });
+    expect(x.log).toEqual({ tx: 2, server: 1 });
+    expect(x.store.stats().retries).toBe(1);
+  });
+
+  it('ปฏิเสธจริง (ข้อมูลที่อ่านไม่เปลี่ยน) ส่งต่อ permission-denied ทันที ไม่ลองซ้ำ', async () => {
+    const x = await fake({ deny: true });
+    await expect(x.store.tx(x.bump)).rejects.toMatchObject({ code: 'permission-denied' });
+    expect(x.log).toEqual({ tx: 1, server: 1 });
+    expect(x.db['meta/head']).toEqual({ seq: 5 });
+  });
+
+  it('มีคนเขียนแทรกทุกรอบ หยุดที่ 3 รอบ บอกว่าชนกัน ไม่ใช่ไม่มีสิทธิ์', async () => {
+    const x = await fake({ between: (n, db) => { db['meta/head'] = { seq: db['meta/head'].seq + 1 }; } });
+    await expect(x.store.tx(x.bump)).rejects.toMatchObject({ code: 'aborted', message: expect.stringMatching(/บันทึกชนกับเครื่องอื่นหลายครั้ง/) });
+    expect(x.log.tx).toBe(3);
+  });
+
+  it('ไม่ได้อ่านอะไรใน transaction ถูกปฏิเสธ = ส่งต่อ ไม่อ่านเพิ่ม', async () => {
+    const x = await fake({ deny: true });
+    await expect(x.store.tx(async (t) => { t.set('master/sup', { v: 1 }); })).rejects.toMatchObject({ code: 'permission-denied' });
+    expect(x.log).toEqual({ tx: 1, server: 0 });
   });
 });
 
