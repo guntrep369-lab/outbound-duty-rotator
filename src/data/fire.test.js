@@ -3968,9 +3968,9 @@ describe('แบบ WMS Desktop ขั้น ก', () => {
     return win.BookApp;
   }
 
-  it('9 หมวด หมวดละไม่เกิน 8 เมนู · เมนูหัวหน้าไม่ขึ้นกับคนอื่น · โหมดซ้อมรู้ว่าหน้าอื่นเปิดแท็บใหม่', () => {
+  it('8 หมวด หมวดละไม่เกิน 8 เมนู · เมนูหัวหน้าไม่ขึ้นกับคนอื่น · โหมดซ้อมรู้ว่าหน้าอื่นเปิดแท็บใหม่', () => {
     const all = shell(true).menu(), groups = [...new Set(all.map((m) => m.area))];
-    expect(groups).toEqual(['วันนี้', 'ขาเข้า', 'คุณภาพ', 'ในคลัง', 'ขาออก', 'ขนส่ง', 'ควบคุม', 'รายงาน', 'ตั้งค่า']);
+    expect(groups).toEqual(['วันนี้', 'ขาเข้า', 'คุณภาพ', 'ในคลัง', 'ขาออก', 'ควบคุม', 'รายงาน', 'ตั้งค่า']);
     groups.forEach((g) => expect(all.filter((m) => m.area === g).length, g).toBeLessThanOrEqual(8));
     expect(new Set(all.map((m) => m.id)).size).toBe(all.length);
     expect(all[0]).toMatchObject({ id: 'home', t: 'งานของฉัน' });
@@ -3981,11 +3981,15 @@ describe('แบบ WMS Desktop ขั้น ก', () => {
     expect(shell(true, 'demo').menu().some((m) => m.away)).toBe(true);
   });
 
-  it('หน้าเดิมทุกหน้าในเมนู WMS ยังกดถึงจากเมนูใหม่ และไฟล์มีจริง', async () => {
+  it('เมนูใหม่มีแค่หน้า WMS ที่อ่านระบบใหม่ · หน้าที่เอาออกยังอยู่ในเมนู WMS เดิม', async () => {
     const { MODULES } = await import('../../public/wms-modules.js');
     const links = shell(true).menu().filter((m) => m.id.startsWith('x:')).map((m) => m.id.slice(2));
-    for (const m of MODULES.filter((m) => !m.hidden && m.id !== 'book')) expect(links, m.label).toContain(m.path);
-    for (const p of links.filter(Boolean)) expect(fs.existsSync(path.resolve(__dirname, '../../public', p, 'index.html')), p).toBe(true);
+    expect(links).toEqual(['putaway/', 'mfg/', 'stock-location/', 'cut-check/', 'dashboard/', 'balance/', 'fifo/', 'lot-po/']);
+    for (const p of links) expect(read(p + 'index.html'), p).toContain('wms-fire-src.js');
+    const gone = ['shiftlog/', 'stock/', 'warehouse-forms/', 'order-compare/', 'order-lookup/', 'order-sheet/', 'picking/',
+      'transport-docs/', 'transport-forms/', 'stocktake/', 'invoice-match/', 'roster/', 'settings/'];
+    const wms = MODULES.filter((m) => !m.hidden).map((m) => m.path);
+    for (const p of gone) expect(wms, p).toContain(p);
   });
 
   it('สไตล์ใหม่อยู่ในแอประบบใหม่เท่านั้น · html.bk-in ไม่รับขอบของแถบในหน้า · ฟอนต์ไม่โหลดในระบบเดิม', () => {
