@@ -462,11 +462,35 @@
     READY = null;
   }
 
+  /**
+   * ต่อเข้า WmsGas ตอนที่ wms-gas.js ตั้งค่า window.WmsGas — ไม่พึ่งโค้ดในไฟล์นั้น
+   * เบราว์เซอร์ที่เคยเปิดเว็บนี้อาจยังใช้ wms-gas.js รุ่นเก่าในแคช (GitHub Pages เก็บแคช 10 นาที) ซึ่งยังไม่รู้จัก demo:
+   * ถ้าไม่ต่อที่นี่ คำขอ demo:st จะออกเน็ตแล้วขึ้น "Failed to fetch"
+   */
+  var GAS = window.WmsGas;
+  function hook(g) {
+    if (!g || g.__demo) return g;
+    var j = g.json, p = g.post;
+    g.json = function (url, api, o) { return owns(url) ? json(url, api, o) : j.apply(this, arguments); };
+    g.post = function (url, body, o) { return owns(url) ? post(url, body, o) : p.apply(this, arguments); };
+    g.__demo = true;
+    return g;
+  }
+  function owns(url) { return /^demo:/.test(String(url || '')); }
+  try {
+    Object.defineProperty(window, 'WmsGas', {
+      configurable: true, enumerable: true,
+      get: function () { return GAS; },
+      set: function (v) { GAS = hook(v); },
+    });
+    if (GAS) hook(GAS);
+  } catch (e) { /* wms-gas.js รุ่นใหม่ต่อเองอยู่แล้ว */ }
+
   window.WmsDemo = {
     on: true,
     HEAD: HEAD, COUNT: COUNT,
     hideTabs: ['trc', 'opening'],      // กระทบ TRcloud / ตั้งต้นสมุด ผูกกับระบบบัญชีของบริษัท ไม่มีในตัวทดลอง
-    owns: function (url) { return /^demo:/.test(String(url || '')); },
+    owns: owns,
     json: json,
     post: post,
     ready: ready,

@@ -98,6 +98,21 @@ describe('wms-demo.js — โหมดทดลอง', () => {
     expect(again.round).toBe(d.round);
   });
 
+  it('wms-gas.js รุ่นเก่าในแคช (ไม่รู้จัก demo:) ก็ยังตอบจากตัวทดลอง ไม่ออกเน็ต', async () => {
+    const { win } = open('https://x.test/stocktake/?demo=1');
+    const net = [];
+    win.WmsGas = {
+      json: (url) => { net.push(url); return Promise.reject(new Error('Failed to fetch')); },
+      post: (url) => { net.push(url); return Promise.reject(new Error('Failed to fetch')); },
+    };
+    const f = await win.WmsGas.json('demo:tx', 'tx-fifo');
+    expect(f.app).toBe('transaction');
+    const r = await win.WmsGas.json('demo:st?api=st-rounds&t=demo-head');
+    expect(r.rounds.length).toBe(1);
+    await win.WmsGas.json('https://script.example/real', 'x').catch(() => {});
+    expect(net).toEqual(['https://script.example/real']);
+  });
+
   it('สมุดสมมติไม่มีรายการหลังตัดยอด และตอบรูปแบบ tx-fifo', async () => {
     const { win } = open('https://x.test/stocktake/?demo=1');
     const f = await win.WmsDemo.json('demo:tx', 'tx-fifo&shared=1');
