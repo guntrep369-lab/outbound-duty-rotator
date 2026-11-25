@@ -89,11 +89,15 @@
   /** หน้ารายงานที่อ่านสมุดจากระบบใหม่ (wms-fire-src.js) ใช้ URL 'fire:tx' แทนสคริปต์ tx-api.gs */
   function fire(url) { return !!(window.WmsFireSrc && window.WmsFireSrc.owns(url)); }
 
+  /** โหมดทดลองนับสต๊อกใหญ่ (wms-demo.js) ใช้ URL 'demo:st' / 'demo:tx' ตอบในเบราว์เซอร์ ไม่ออกเน็ต */
+  function demo(url) { return !!(window.WmsDemo && window.WmsDemo.owns(url)); }
+
   /** ดึงแล้วแปลงเป็น JSON — ข้อความที่ไม่ใช่ JSON มักเป็นหน้า error ของ Google
       ซึ่งบอกสาเหตุจริงไว้ในนั้น จึงแปะต้นข้อความกลับไปให้เห็น ไม่ใช่แค่ "พังนะ" */
   function json(url, api, opts) {
     var o = opts || {};
     if (fire(url)) return window.WmsFireSrc.json(url, api, o);
+    if (demo(url)) return watched(o, 'get', function () { return window.WmsDemo.json(url, api, o); });
     /* นับรวมตอนอ่านตัวข้อมูลด้วย คำตอบก้อนใหญ่ยังโหลดต่ออีกพักหลังได้หัวคำตอบแล้ว */
     return watched(o, 'get', async function () {
       var resp = await attempts(withApi(url, api), o);
@@ -117,6 +121,7 @@
   function post(url, payload, opts) {
     var o = opts || {};
     if (fire(url)) return window.WmsFireSrc.post(url, payload, o);
+    if (demo(url)) return watched(o, 'post', function () { return window.WmsDemo.post(url, payload, o); });
     return watched(o, 'post', function () { return send(url, payload, o); });
   }
 

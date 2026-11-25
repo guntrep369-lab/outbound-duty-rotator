@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>ทดลองนับสต๊อก — WMS</title>
+<meta name="description" content="ลองระบบนับสต๊อกใหญ่: จอหัวหน้ากับมือถือคนนับ ด้วยข้อมูลสมมติ">
+<link rel="icon" type="image/png" sizes="32x32" href="../wms-icon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="../wms-logo.png">
+<link rel="apple-touch-icon" href="../wms-icon-180.png">
+<link rel="stylesheet" href="../wms-theme.css">
+<!--
+  หน้าทดลองสำหรับคนนอกบริษัท: ซ้าย = จอหัวหน้า (index.html) ขวา = มือถือคนนับ (count.html) ในจอเดียว
+  ทั้งสองหน้าใช้ข้อมูลทดลองชุดเดียวกันในเบราว์เซอร์นี้ (wms-demo.js) ไม่ต่อ Apps Script ไม่มีข้อมูลจริง
+  มือถือเปิดหน้านี้ = เลือกได้ว่าจะลองเป็นคนนับหรือดูจอหัวหน้า (ข้อมูลอยู่ในมือถือเครื่องนั้น ไม่ได้ต่อกับคอม)
+-->
+<script>window.WMS_DEMO_FORCE = 1;</script>
+<script src="../wms-demo.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:var(--wms-font);background:#E9ECF5;color:var(--wms-text)}
+button,a{font-family:inherit}
+
+.dm-top{display:flex;align-items:center;gap:10px;padding:10px 18px;background:#1E1B4B;color:#fff}
+.dm-top .logo{width:30px;height:30px;border-radius:8px;background:#fff url(../wms-logo.png) center/cover}
+.dm-top h1{font-size:16px;font-weight:700;letter-spacing:.1px}
+.dm-top .tag{font-size:12px;font-weight:600;color:#C7D2FE;background:#312E81;border:1px solid #4338CA;border-radius:999px;padding:2px 10px}
+.dm-top .sp{flex:1}
+.dm-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:999px;border:1px solid #4338CA;background:#312E81;
+  color:#E0E7FF;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap}
+.dm-btn:hover{background:#3730A3;color:#fff}
+
+.dm-stage{display:grid;grid-template-columns:minmax(0,1fr) 430px;gap:18px;padding:16px 18px;height:calc(100% - 52px)}
+.dm-pane{display:flex;flex-direction:column;min-height:0}
+.dm-cap{display:flex;align-items:baseline;gap:8px;margin:0 4px 8px;font-size:13px;color:var(--wms-muted)}
+.dm-cap b{font-size:14px;color:var(--wms-text)}
+.dm-desk{flex:1;min-height:0;border-radius:14px;overflow:hidden;background:#fff;box-shadow:0 10px 30px rgba(30,27,75,.12);border:1px solid #D7DBEA}
+.dm-desk iframe,.dm-phone iframe{display:block;width:100%;height:100%;border:0}
+
+.dm-side{align-items:center}
+.dm-side .dm-cap{align-self:stretch}
+.dm-phone{position:relative;width:390px;flex:1;max-height:820px;min-height:0;border-radius:46px;border:11px solid #14142B;background:#14142B;
+  box-shadow:0 18px 44px rgba(30,27,75,.28)}
+.dm-phone .scr{position:absolute;inset:0;border-radius:35px;overflow:hidden;background:var(--wms-bg)}
+
+.dm-steps{align-self:stretch;display:flex;gap:6px;margin:0 0 10px;flex-wrap:wrap}
+.dm-step{flex:1 1 0;min-width:120px;display:flex;gap:7px;align-items:flex-start;padding:8px 10px;border-radius:12px;background:#fff;border:1px solid #D7DBEA;
+  font-size:12px;line-height:1.45;color:#334155}
+.dm-step i{flex:none;display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--wms-primary);color:#fff;font-style:normal;font-size:11px;font-weight:700}
+
+.dm-wait{display:grid;place-items:center;height:100%;color:var(--wms-muted);font-size:14px;text-align:center;padding:20px}
+.dm-err{color:#B91C1C}
+
+/* ป๊อปอัป QR เปิดในมือถือ */
+.dm-qr{position:fixed;inset:0;z-index:20;display:none;place-items:center;background:rgba(15,23,42,.45)}
+.dm-qr.on{display:grid}
+.dm-qr .box{width:320px;padding:22px;border-radius:18px;background:#fff;text-align:center;box-shadow:0 20px 50px rgba(15,23,42,.3)}
+.dm-qr h3{font-size:16px;margin-bottom:4px}
+.dm-qr p{font-size:12.5px;color:var(--wms-muted);line-height:1.5}
+.dm-qr #qr{display:grid;place-items:center;margin:14px auto;width:200px;height:200px}
+.dm-qr #qr img,.dm-qr #qr canvas{width:200px;height:200px}
+.dm-qr .url{font-size:11.5px;word-break:break-all;color:var(--wms-primary-dark);background:var(--wms-primary-light);border-radius:8px;padding:6px 8px;margin-bottom:12px}
+.dm-qr .row{display:flex;gap:8px;justify-content:center}
+.dm-qr button{padding:7px 16px;border-radius:999px;border:1px solid var(--wms-border2);background:#fff;font-size:13px;cursor:pointer}
+.dm-qr button.p{background:var(--wms-primary);border-color:var(--wms-primary);color:#fff;font-weight:600}
+
+/* มือถือ / จอเล็ก: ไม่แสดงสองจอ ให้เลือกว่าจะลองหน้าไหน */
+.dm-mob{display:none;max-width:460px;margin:0 auto;padding:22px 16px 40px}
+.dm-mob h2{font-size:22px;line-height:1.3;margin:6px 0 6px}
+.dm-mob .lead{font-size:14px;color:var(--wms-muted);line-height:1.55;margin-bottom:18px}
+.dm-card{display:flex;gap:14px;align-items:center;padding:16px;margin-bottom:12px;border-radius:16px;background:#fff;border:1px solid #D7DBEA;
+  text-decoration:none;color:inherit;box-shadow:0 4px 14px rgba(30,27,75,.06)}
+.dm-card .ic{flex:none;width:52px;height:52px;border-radius:14px;display:grid;place-items:center;font-size:26px;background:var(--wms-primary-light)}
+.dm-card b{display:block;font-size:16px}
+.dm-card span{font-size:13px;color:var(--wms-muted);line-height:1.45}
+.dm-card.off{pointer-events:none;opacity:.5}
+.dm-note{font-size:12.5px;color:var(--wms-muted);line-height:1.55;margin-top:14px}
+.dm-note button{font:inherit;color:var(--wms-primary-dark);background:none;border:0;text-decoration:underline;cursor:pointer;padding:0}
+
+@media (max-width:1099px){
+  .dm-stage{display:none}
+  .dm-mob{display:block}
+  .dm-top .hide-s{display:none}
+}
+</style>
+</head>
+<body>
+
+<header class="dm-top">
+  <span class="logo" aria-hidden="true"></span>
+  <h1>ทดลองระบบนับสต๊อกใหญ่</h1>
+  <span class="tag hide-s">ข้อมูลสมมติทั้งหมด</span>
+  <span class="sp"></span>
+  <button type="button" class="dm-btn hide-s" id="qrBtn">📱 เปิดในมือถือ</button>
+  <button type="button" class="dm-btn" id="resetBtn">↺ เริ่มใหม่</button>
+</header>
+
+<main class="dm-stage" id="stage">
+  <section class="dm-pane">
+    <p class="dm-cap"><b>🖥 จอหัวหน้า</b> ตั้งรอบ แบ่งทีม ดูความคืบหน้า วิเคราะห์ผลต่าง ปิดรอบ</p>
+    <div class="dm-desk" id="desk"><div class="dm-wait">⏳ กำลังเตรียมรอบนับตัวอย่าง…</div></div>
+  </section>
+  <section class="dm-pane dm-side">
+    <div class="dm-steps">
+      <div class="dm-step"><i>1</i><span>มือถือด้านล่าง: เลือก <b>ทีม 4</b> กับชื่อ แล้วลองนับโล</span></div>
+      <div class="dm-step"><i>2</i><span>ผลนับขึ้นจอหัวหน้าเองภายใน 5 วินาที</span></div>
+      <div class="dm-step"><i>3</i><span>ลองแท็บ <b>วิเคราะห์</b> ดูของขาด เกิน วางผิดโล</span></div>
+    </div>
+    <div class="dm-phone"><div class="scr" id="phone"><div class="dm-wait">⏳</div></div></div>
+  </section>
+</main>
+
+<main class="dm-mob">
+  <p class="dm-cap" style="margin:0"><b>รอบนับตัวอย่าง</b> ทีม 1–3 นับไปบางส่วนแล้ว</p>
+  <h2>ลองใช้ระบบนับสต๊อกใหญ่</h2>
+  <p class="lead">คนนับใช้มือถือของตัวเองเปิดลิงก์ ไม่ต้องลงแอป ไม่ต้องมีบัญชี หัวหน้าดูความคืบหน้าและผลต่างจากคอม</p>
+  <a class="dm-card off" id="goCount" href="#">
+    <span class="ic">📱</span>
+    <span><b>ลองเป็นคนนับ</b><span>เลือกทีม เลือกโล กรอก SKU LOT PO จำนวน เน็ตหลุดก็นับต่อได้</span></span>
+  </a>
+  <a class="dm-card" id="goHead" href="index.html?demo=1&tab=control">
+    <span class="ic">🖥</span>
+    <span><b>ดูจอหัวหน้า</b><span>ห้องควบคุม ความคืบหน้า วิเคราะห์ผลต่าง (ดูบนคอมจะชัดกว่า)</span></span>
+  </a>
+  <p class="dm-note" id="mobNote">ข้อมูลทดลองเก็บในเครื่องนี้เท่านั้น ไม่มีข้อมูลจริงของบริษัท · <button type="button" id="resetMob">เริ่มใหม่</button></p>
+</main>
+
+<div class="dm-qr" id="qrBox" role="dialog" aria-modal="true" aria-labelledby="qrTitle">
+  <div class="box">
+    <h3 id="qrTitle">เปิดหน้าทดลองในมือถือ</h3>
+    <p>สแกนด้วยกล้องมือถือ แล้วเลือก "ลองเป็นคนนับ"<br>ข้อมูลในมือถือแยกจากจอนี้ (ทดลองในเครื่องใครเครื่องมัน)</p>
+    <div id="qr"></div>
+    <div class="url" id="qrUrl"></div>
+    <div class="row"><button type="button" id="qrCopy">คัดลอกลิงก์</button><button type="button" class="p" id="qrClose">ปิด</button></div>
+  </div>
+</div>
+
+<script src="../wms-stocktake.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const wide = () => matchMedia('(min-width:1100px)').matches;
+const pageUrl = location.href.split('#')[0].split('?')[0];
+
+function frame(box, src, title) {
+  box.innerHTML = '';
+  const f = document.createElement('iframe');
+  f.title = title;
+  f.src = src;
+  box.appendChild(f);
+}
+
+async function start() {
+  try {
+    const d = await WmsDemo.ready();
+    $('goCount').href = d.link;
+    $('goCount').classList.remove('off');
+    if (wide()) {
+      frame($('desk'), 'index.html?demo=1&tab=control', 'จอหัวหน้า');
+      frame($('phone'), d.link, 'มือถือคนนับ');
+    }
+  } catch (e) {
+    const msg = `<div class="dm-wait dm-err">${String(e.message).replace(/</g, '&lt;')}</div>`;
+    $('desk').innerHTML = msg;
+    $('mobNote').insertAdjacentHTML('beforebegin', msg);
+  }
+}
+
+/* จอเล็กแล้วขยายเป็นจอใหญ่ (หมุนแท็บเล็ต / ขยายหน้าต่าง) ค่อยโหลดสองจอ */
+matchMedia('(min-width:1100px)').addEventListener('change', (e) => { if (e.matches && !$('desk').querySelector('iframe')) start(); });
+
+function reset() {
+  if (!confirm('ล้างข้อมูลทดลองแล้วเริ่มรอบตัวอย่างใหม่?')) return;
+  WmsDemo.reset();
+  $('desk').innerHTML = '<div class="dm-wait">⏳ กำลังเตรียมรอบนับตัวอย่าง…</div>';
+  $('phone').innerHTML = '<div class="dm-wait">⏳</div>';
+  start();
+}
+$('resetBtn').addEventListener('click', reset);
+$('resetMob').addEventListener('click', reset);
+
+/* QR: โหลดตัวสร้าง QR ตอนกดครั้งแรกเท่านั้น */
+let QR_LOAD = null;
+function qrLib() {
+  if (window.QRCode) return Promise.resolve();
+  if (!QR_LOAD) QR_LOAD = new Promise((ok, no) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+    s.onload = ok; s.onerror = () => { QR_LOAD = null; no(new Error('โหลดตัวสร้าง QR ไม่ได้')); };
+    document.head.appendChild(s);
+  });
+  return QR_LOAD;
+}
+$('qrBtn').addEventListener('click', async () => {
+  $('qrUrl').textContent = pageUrl;
+  $('qrBox').classList.add('on');
+  try {
+    await qrLib();
+    $('qr').innerHTML = '';
+    new QRCode($('qr'), { text: pageUrl, width: 400, height: 400, correctLevel: QRCode.CorrectLevel.M });
+  } catch (e) { $('qr').textContent = e.message; }
+});
+$('qrClose').addEventListener('click', () => $('qrBox').classList.remove('on'));
+$('qrBox').addEventListener('click', (e) => { if (e.target === $('qrBox')) $('qrBox').classList.remove('on'); });
+$('qrCopy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(pageUrl); $('qrCopy').textContent = '✓ คัดลอกแล้ว'; }
+  catch (e) { $('qrCopy').textContent = 'คัดลอกไม่ได้'; }
+});
+
+start();
+</script>
+</body>
+</html>

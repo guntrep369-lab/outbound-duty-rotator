@@ -9,6 +9,8 @@
 <link rel="icon" type="image/png" sizes="192x192" href="../wms-logo.png">
 <link rel="apple-touch-icon" href="../wms-icon-180.png">
 <link rel="stylesheet" href="../wms-theme.css">
+<!-- โหมดทดลอง (ลิงก์ #u=demo:st) ต้องมาก่อนทุกสคริปต์: สลับที่เก็บข้อมูลไปชุดทดลอง ผลนับจริงที่ค้างในเครื่องไม่ถูกแตะ · ปกติไม่ทำอะไร -->
+<script src="../wms-demo.js"></script>
 <script>
 /* ฉากเปิดแอป: ครั้งแรกที่เปิดหน้านี้ในแท็บนี้ (รีเฟรชไม่ขึ้นซ้ำ) · เครื่องที่ตั้งลดการเคลื่อนไหวไว้ไม่ขึ้น */
 try { if (!sessionStorage.getItem('wms:st:intro') && !matchMedia('(prefers-reduced-motion: reduce)').matches) document.documentElement.classList.add('intro'); } catch (e) {}

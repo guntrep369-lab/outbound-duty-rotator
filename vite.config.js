@@ -169,10 +169,36 @@ function fakeGas() {
   };
 }
 
+/**
+ * โหมดทดลองนับสต๊อกใหญ่ (public/wms-demo.js) รัน apps-script/stocktake-api.gs ตัวจริงในเบราว์เซอร์
+ * ไฟล์ .gs ไม่ได้อยู่ใน public/ จึงเสิร์ฟให้ตอน dev และคัดลอกไปเป็น wms-demo-api.gs ตอน build — สคริปต์มีชุดเดียว ไม่มีสำเนาค้างเก่า
+ * ในไฟล์มีแต่โค้ด รหัส HEAD_TOKEN / COUNT_TOKEN ใน repo เป็น '' เสมอ (ตัวทดลองใส่รหัสทดลองเองในเบราว์เซอร์)
+ */
+const DEMO_API = path.resolve('apps-script/stocktake-api.gs');
+function demoApi() {
+  return {
+    name: 'demo-api',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (req.url.split('?')[0] !== '/wms-demo-api.gs') return next();
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.end(fs.readFileSync(DEMO_API, 'utf8'));
+      });
+    },
+    generateBundle() {
+      const source = fs.readFileSync(DEMO_API, 'utf8');
+      if (!source.includes("var HEAD_TOKEN = '';") || !source.includes("var COUNT_TOKEN = '';")) {
+        throw new Error('stocktake-api.gs มีรหัสจริงอยู่ ห้าม build ขึ้นเว็บ (HEAD_TOKEN / COUNT_TOKEN ต้องเป็น \'\')');
+      }
+      this.emitFile({ type: 'asset', fileName: 'wms-demo-api.gs', source });
+    },
+  };
+}
+
 // base: './' produces relative asset URLs so the built site works whether it is
 // served from a user page (user.github.io) or a project page (user.github.io/repo/).
 export default defineConfig({
-  plugins: [folderIndex(), fakeGas()],
+  plugins: [folderIndex(), fakeGas(), demoApi()],
   base: './',
   test: {
     // dist/ holds a verbatim copy of public/, so without this a test placed
